@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use std::{process::Command, path::PathBuf};
 use crate::dot::config;
+use crate::dot::repo as repo_mod;
 
 pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
-    let base = config::repos_base_dir_path()?;
+    let base = config::repos_base_dir()?;
 
     let repo_dir_name = match &repo.name {
         Some(n) => n.clone(),
@@ -44,7 +45,7 @@ pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
 
 pub fn update_all(debug: bool) -> Result<()> {
     let repos = config::load_repos()?;
-    let base = config::repos_base_dir_path()?;
+    let base = config::repos_base_dir()?;
     if repos.is_empty() {
         println!("No repos configured.");
         return Ok(());
@@ -52,39 +53,11 @@ pub fn update_all(debug: bool) -> Result<()> {
 
     let mut any_failed = false;
 
-    for repo in repos.iter() {
-        let repo_dir_name = match &repo.name {
-            Some(n) => n.clone(),
-            None => basename_from_repo(&repo.url),
-        };
-        let target = base.join(repo_dir_name);
-
-        if !target.exists() {
-            eprintln!("Repo destination '{}' does not exist, skipping", target.display());
+    for crepo in repos.iter() {
+        let repo: repo_mod::Repo = crepo.clone().into();
+        if let Err(e) = repo.update(debug) {
+            eprintln!("Failed to update {}: {}", crepo.url, e);
             any_failed = true;
-            continue;
-        }
-
-        if debug {
-            eprintln!("Updating repo at {}", target.display());
-        } else {
-            println!("Updating {}", target.display());
-        }
-
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(&target)
-            .arg("pull")
-            .output()
-            .with_context(|| format!("running git pull in {}", target.display()))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("Failed to update {}: {}", target.display(), stderr);
-            any_failed = true;
-        } else if debug {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            eprintln!("Updated {}: {}", target.display(), stdout);
         }
     }
 
@@ -97,7 +70,7 @@ pub fn update_all(debug: bool) -> Result<()> {
 
 pub fn status_all(debug: bool) -> Result<()> {
     let repos = config::load_repos()?;
-    let base = config::repos_base_dir_path()?;
+    let base = config::repos_base_dir()?;
     if repos.is_empty() {
         println!("No repos configured.");
         return Ok(());

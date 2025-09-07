@@ -1,64 +1,29 @@
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
-use std::{env, fs, path::PathBuf, process::Command};
+use std::{path::PathBuf, process::Command};
+use crate::dot::config;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct Repo {
     pub url: String,
     pub name: Option<String>,
     pub branch: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
-struct Config {
-    pub repos: Vec<Repo>,
-}
-
-fn config_file_path() -> Result<PathBuf> {
-    let home = env::var("HOME").context("HOME environment variable not set")?;
-    let cfg = PathBuf::from(home).join(".config/instant/instant.toml");
-    if let Some(parent) = cfg.parent() {
-        fs::create_dir_all(parent).context("creating config directory")?;
+impl From<config::Repo> for Repo {
+    fn from(r: config::Repo) -> Self {
+        Repo { url: r.url, name: r.name, branch: r.branch }
     }
-    Ok(cfg)
 }
 
-pub fn repos_base_dir() -> Result<PathBuf> {
-    let home = env::var("HOME").context("HOME environment variable not set")?;
-    let base = PathBuf::from(home).join(".local/share/instantos/dots");
-    fs::create_dir_all(&base).context("creating repos base directory")?;
-    Ok(base)
-}
-
-pub fn load_repos() -> Result<Vec<Repo>> {
-    let cfg = config_file_path()?;
-    if !cfg.exists() {
-        return Ok(Vec::new());
+impl From<Repo> for config::Repo {
+    fn from(r: Repo) -> Self {
+        config::Repo { url: r.url, name: r.name, branch: r.branch }
     }
-    let s = fs::read_to_string(&cfg).with_context(|| format!("reading config {}", cfg.display()))?;
-    let c: Config = toml::from_str(&s).context("parsing config toml")?;
-    Ok(c.repos)
-}
-
-pub fn save_repos(repos: &[Repo]) -> Result<()> {
-    let cfg = config_file_path()?;
-    let c = Config { repos: repos.to_vec() };
-    let toml = toml::to_string_pretty(&c).context("serializing config to toml")?;
-    fs::write(cfg, toml).context("writing config file")?;
-    Ok(())
-}
-
-fn basename_from_repo(repo: &str) -> String {
-    let s = repo.trim_end_matches(".git");
-    s.rsplit(|c| c == '/' || c == ':')
-        .next()
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| s.to_string())
 }
 
 impl Repo {
     pub fn local_path(&self) -> Result<PathBuf> {
-        let base = repos_base_dir()?;
+        let base = config::repos_base_dir()?;
         let repo_dir_name = match &self.name {
             Some(n) => n.clone(),
             None => basename_from_repo(&self.url),
@@ -138,6 +103,10 @@ impl Repo {
     }
 }
 
-pub fn config_file_path_str() -> Result<String> {
-    Ok(config_file_path()?.to_string_lossy().to_string())
+fn basename_from_repo(repo: &str) -> String {
+    let s = repo.trim_end_matches(".git");
+    s.rsplit(|c| c == '/' || c == ':')
+        .next()
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| s.to_string())
 }

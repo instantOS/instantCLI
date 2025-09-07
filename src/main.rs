@@ -68,7 +68,7 @@ fn main() {
                     name: name.clone(),
                     branch: branch.clone(),
                 };
-                match dot::add_repo(repo_obj, cli.debug) {
+                match dot::add_repo(repo_obj.into(), cli.debug) {
                     Ok(path) => println!("Added repo '{}' -> {}", repo, path.display()),
                     Err(e) => {
                         eprintln!("Error adding repo '{}': {}", repo, e);
