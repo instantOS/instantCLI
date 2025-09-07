@@ -77,14 +77,6 @@ pub fn repos_base_dir() -> Result<PathBuf> {
     Ok(base)
 }
 
-fn basename_from_repo(repo: &str) -> String {
-    let s = repo.trim_end_matches(".git");
-    s.rsplit(|c| c == '/' || c == ':')
-        .next()
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| s.to_string())
-}
 
-pub fn config_file_path_str() -> Result<String> {
-    Ok(config_file_path()?.to_string_lossy().to_string())
-}
+
+

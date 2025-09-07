@@ -1,7 +1,7 @@
 mod dot;
 
 use clap::{Parser, Subcommand};
-use std::{env, fs, path::PathBuf};
+
 use crate::dot::config::Repo;
 
 /// InstantCLI main parser

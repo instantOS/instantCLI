@@ -66,7 +66,6 @@ pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
 pub fn update_all(debug: bool) -> Result<()> {
     let cfg = config::Config::load()?;
     let repos = cfg.repos.clone();
-    let base = config::repos_base_dir()?;
     if repos.is_empty() {
         println!("No repos configured.");
         return Ok(());

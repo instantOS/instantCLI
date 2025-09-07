@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
@@ -26,30 +25,67 @@ pub fn read_meta(repo_path: &Path) -> Result<RepoMetaData> {
 }
 
 /// Initialize the given repository path as an instantdots repo by creating
-/// an instantdots.toml file with the provided or inferred name.
+/// an instantdots.toml file with either the provided name or one prompted
+/// interactively (defaults to the repo directory name if empty). Also prompts
+/// for an optional description. The function verifies the directory is a git
+/// repository before creating the file.
 pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
+    use std::io::{self, Write};
+    use std::process::Command;
+
+    // ensure repo_path is a git repository
+    let git_check = Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .arg("rev-parse")
+        .arg("--is-inside-work-tree")
+        .output()
+        .context("checking git repository")?;
+    if !git_check.status.success() {
+        anyhow::bail!("current directory is not a git repository");
+    }
+
     let p = repo_path.join("instantdots.toml");
     if p.exists() {
         anyhow::bail!("instantdots.toml already exists at {}", p.display());
     }
 
-    // determine name: use provided, otherwise infer from directory name
-    let name_str = match name {
+    // infer default name from directory name
+    let inferred = repo_path
+        .file_name()
+        .and_then(|os| os.to_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "dotfiles".to_string());
+
+    // Prompt for name (use provided name as default if given)
+    let default_name = match name {
         Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-        _ => repo_path
-            .file_name()
-            .and_then(|os| os.to_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "dotfiles".to_string()),
+        _ => inferred,
+    };
+
+    print!("Name [{}]: ", default_name);
+    io::stdout().flush().ok();
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).context("reading name from stdin")?;
+    let final_name = if input.trim().is_empty() { default_name } else { input.trim().to_string() };
+
+    // Prompt for optional description
+    print!("Description (optional): ");
+    io::stdout().flush().ok();
+    input.clear();
+    io::stdin().read_line(&mut input).context("reading description from stdin")?;
+    let description = match input.trim() {
+        "" => None,
+        s => Some(s.to_string()),
     };
 
     #[derive(Serialize)]
-    struct MetaWrite<'a> {
-        name: &'a str,
-        description: Option<&'a str>,
+    struct MetaWrite {
+        name: String,
+        description: Option<String>,
     }
 
-    let mw = MetaWrite { name: &name_str, description: None };
+    let mw = MetaWrite { name: final_name, description };
     let toml = toml::to_string_pretty(&mw).context("serializing instantdots.toml")?;
     fs::write(&p, toml).with_context(|| format!("writing {}", p.display()))?;
     Ok(())
