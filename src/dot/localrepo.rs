@@ -45,6 +45,11 @@ impl LocalRepo {
         Ok(current)
     }
 
+    pub fn read_meta(&self) -> Result<crate::dot::meta::RepoMetaData> {
+        let target = self.local_path()?;
+        crate::dot::meta::read_meta(&target)
+    }
+
     pub fn update(&self, debug: bool) -> Result<()> {
         let target = self.local_path()?;
         if !target.exists() {

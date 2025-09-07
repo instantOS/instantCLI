@@ -88,13 +88,26 @@ pub fn status_all(debug: bool) -> Result<()> {
             continue;
         }
 
+        // validate instantdots.toml exists and parse it via LocalRepo
+        let local: repo_mod::LocalRepo = crepo.clone().into();
+        match local.read_meta() {
+            Ok(meta) => {
+                if debug {
+                    eprintln!("Repo {} identified as dot repo '{}' - {}", crepo.url, meta.name, meta.description.as_deref().unwrap_or(""));
+                }
+            }
+            Err(e) => {
+                println!("{} -> not a valid instantdots repo: {}", crepo.url, e);
+                continue;
+            }
+        }
+
         let branch = match &crepo.branch {
             Some(b) => b.clone(),
             None => "(no branch configured)".to_string(),
         };
 
         // get checked out branch
-        let local: repo_mod::LocalRepo = crepo.clone().into();
         let current_branch = match local.get_branch() {
             Ok(b) => b,
             Err(e) => {
