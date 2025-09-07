@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{env, fs, path::PathBuf, process::Command};
 
@@ -13,41 +14,41 @@ struct Config {
     pub repos: Vec<Repo>,
 }
 
-fn config_file_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let home = env::var("HOME").map_err(|_| "HOME environment variable not set")?;
+fn config_file_path() -> Result<PathBuf> {
+    let home = env::var("HOME").context("HOME environment variable not set")?;
     let cfg = PathBuf::from(home).join(".config/instant/instant.toml");
     if let Some(parent) = cfg.parent() {
-        std::fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).context("creating config directory")?;
     }
     Ok(cfg)
 }
 
-fn repos_base_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let home = env::var("HOME").map_err(|_| "HOME environment variable not set")?;
+fn repos_base_dir() -> Result<PathBuf> {
+    let home = env::var("HOME").context("HOME environment variable not set")?;
     let base = PathBuf::from(home).join(".local/share/instantos/dots");
-    std::fs::create_dir_all(&base)?;
+    fs::create_dir_all(&base).context("creating repos base directory")?;
     Ok(base)
 }
 
-pub fn load_repos() -> Result<Vec<Repo>, Box<dyn std::error::Error>> {
+pub fn load_repos() -> Result<Vec<Repo>> {
     let cfg = config_file_path()?;
     if !cfg.exists() {
         return Ok(Vec::new());
     }
-    let s = std::fs::read_to_string(&cfg)?;
-    let c: Config = toml::from_str(&s)?;
+    let s = fs::read_to_string(&cfg).with_context(|| format!("reading config {}", cfg.display()))?;
+    let c: Config = toml::from_str(&s).context("parsing config toml")?;
     Ok(c.repos)
 }
 
-pub fn save_repos(repos: &[Repo]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save_repos(repos: &[Repo]) -> Result<()> {
     let cfg = config_file_path()?;
     let c = Config { repos: repos.to_vec() };
-    let toml = toml::to_string_pretty(&c)?;
-    std::fs::write(cfg, toml)?;
+    let toml = toml::to_string_pretty(&c).context("serializing config to toml")?;
+    fs::write(cfg, toml).context("writing config file")?;
     Ok(())
 }
 
-pub fn add_repo(repo: Repo, debug: bool) -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn add_repo(repo: Repo, debug: bool) -> Result<PathBuf> {
     let base = repos_base_dir()?;
 
     let repo_dir_name = match &repo.name {
@@ -58,7 +59,7 @@ pub fn add_repo(repo: Repo, debug: bool) -> Result<PathBuf, Box<dyn std::error::
     let target = base.join(repo_dir_name);
 
     if target.exists() {
-        return Err(format!("Destination '{}' already exists", target.display()).into());
+        return Err(anyhow::anyhow!("Destination '{}' already exists", target.display()));
     }
 
     let mut cmd = Command::new("git");
@@ -72,10 +73,10 @@ pub fn add_repo(repo: Repo, debug: bool) -> Result<PathBuf, Box<dyn std::error::
         eprintln!("Running: {:?}", cmd);
     }
 
-    let output = cmd.output()?;
+    let output = cmd.output().context("running git clone")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git clone failed: {}", stderr).into());
+        return Err(anyhow::anyhow!("git clone failed: {}", stderr));
     }
 
     // append to config
