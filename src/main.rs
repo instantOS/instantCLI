@@ -1,4 +1,6 @@
 use colored::*;
+use shellexpand;
+use std::path::PathBuf;
 
 mod dot;
 
@@ -43,12 +45,18 @@ enum DotCommands {
         #[arg(short = 'b', long = "branch")]
         branch: Option<String>,
     },
-    /// Reset modified dotfiles to their original state
-    Reset,
+    /// Reset modified dotfiles to their original state in the given path
+    Reset {
+        /// Path to reset (relative to ~)
+        path: String,
+    },
     /// Apply dotfiles
     Apply,
-    /// Fetch modified dotfiles
-    Fetch,
+    /// Fetch modified dotfiles (optional path relative to ~ for selective/recursive fetch, e.g., .config/kitty)
+    Fetch {
+        /// Path to fetch (relative to ~)
+        path: Option<String>,
+    },
     /// Pull updates for all configured repos
     Update,
     /// Check each configured repo's git status
@@ -98,33 +106,34 @@ fn main() {
                     }
                 }
             }
-            DotCommands::Reset => {
-                let db = dot::db::Database::new().unwrap();
-                let filemap = dot::get_all_dotfiles().unwrap();
-                for dotfile in filemap.values() {
-                    if dotfile.is_modified(&db) {
-                        dotfile.apply(&db).unwrap();
+            DotCommands::Reset { path } => {
+                match dot::reset_modified(&path) {
+                    Ok(()) => println!("{} {}", "Reset modified dotfiles in".green(), path.green()),
+                    Err(e) => {
+                        eprintln!("{}: {}", "Error resetting dotfiles".red(), e.to_string().red());
+                        std::process::exit(1);
                     }
                 }
-                db.cleanup_hashes().unwrap();
             }
             DotCommands::Apply => {
-                let db = dot::db::Database::new().unwrap();
-                let filemap = dot::get_all_dotfiles().unwrap();
-                for dotfile in filemap.values() {
-                    dotfile.apply(&db).unwrap();
+                match dot::apply_all() {
+                    Ok(()) => println!("{}", "Applied dotfiles".green()),
+                    Err(e) => {
+                        eprintln!("{}: {}", "Error applying dotfiles".red(), e.to_string().red());
+                        std::process::exit(1);
+                    }
                 }
             }
-            DotCommands::Fetch => {
-                let db = dot::db::Database::new().unwrap();
-                let filemap = dot::get_all_dotfiles().unwrap();
-                for dotfile in filemap.values() {
-                    dotfile.fetch(&db).unwrap();
+            DotCommands::Fetch { path } => {
+                match dot::fetch_modified(path.as_deref()) {
+                    Ok(()) => println!("{}", "Fetched modified dotfiles".green()),
+                    Err(e) => {
+                        eprintln!("{}: {}", "Error fetching dotfiles".red(), e.to_string().red());
+                        std::process::exit(1);
+                    }
                 }
-                db.cleanup_hashes().unwrap();
             }
             DotCommands::Update => {
-                let db = dot::db::Database::new().unwrap();
                 match dot::update_all(cli.debug) {
                     Ok(()) => println!("{}", "All repos updated".green()),
                     Err(e) => {
@@ -132,7 +141,6 @@ fn main() {
                         std::process::exit(1);
                     }
                 }
-                db.cleanup_hashes().unwrap();
             }
             DotCommands::Status => match dot::status_all(cli.debug) {
                 Ok(()) => (),

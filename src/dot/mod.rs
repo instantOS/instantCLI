@@ -15,6 +15,8 @@ pub mod meta;
 pub use crate::dot::dotfile::Dotfile;
 pub use git::{add_repo, status_all, update_all};
 
+use crate::dot::db::Database;
+
 pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
     let mut filemap = HashMap::new();
     let repos = config::Config::load()?.repos;
@@ -53,4 +55,48 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
     }
 
     Ok(filemap)
+}
+
+pub fn fetch_modified(path: Option<&str>) -> Result<()> {
+    let db = Database::new()?;
+    let filemap = get_all_dotfiles()?;
+    if let Some(p) = path {
+        let expanded = shellexpand::tilde(p).into_owned();
+        let full_path = PathBuf::from(expanded);
+        for dotfile in filemap.values() {
+            if dotfile.target_path.starts_with(&full_path) {
+                dotfile.fetch(&db)?;
+            }
+        }
+    } else {
+        for dotfile in filemap.values() {
+            dotfile.fetch(&db)?;
+        }
+    }
+    db.cleanup_hashes()?;
+    Ok(())
+}
+
+pub fn apply_all() -> Result<()> {
+    let db = Database::new()?;
+    let filemap = get_all_dotfiles()?;
+    for dotfile in filemap.values() {
+        dotfile.apply(&db)?;
+    }
+    db.cleanup_hashes()?;
+    Ok(())
+}
+
+pub fn reset_modified(path: &str) -> Result<()> {
+    let db = Database::new()?;
+    let filemap = get_all_dotfiles()?;
+    let expanded = shellexpand::tilde(path).into_owned();
+    let full_path = PathBuf::from(expanded);
+    for dotfile in filemap.values() {
+        if dotfile.target_path.starts_with(&full_path) && dotfile.is_modified(&db) {
+            dotfile.apply(&db)?;
+        }
+    }
+    db.cleanup_hashes()?;
+    Ok(())
 }
