@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{env, fs, path::PathBuf, process::Command};
+use std::{env, fs, path::PathBuf};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
@@ -9,9 +9,25 @@ pub struct Repo {
     pub branch: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
-struct Config {
+fn default_clone_depth() -> u32 {
+    1
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Config {
+    #[serde(default)]
     pub repos: Vec<Repo>,
+    #[serde(default = "default_clone_depth")]
+    pub clone_depth: u32,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            repos: Vec::new(),
+            clone_depth: default_clone_depth(),
+        }
+    }
 }
 
 fn config_file_path() -> Result<PathBuf> {
@@ -23,29 +39,42 @@ fn config_file_path() -> Result<PathBuf> {
     Ok(cfg)
 }
 
+impl Config {
+    /// Load the config from disk. If the config file does not exist,
+    /// create a default config file and return the default.
+    pub fn load() -> Result<Config> {
+        let cfg_path = config_file_path()?;
+        if !cfg_path.exists() {
+            let default = Config::default();
+            let toml = toml::to_string_pretty(&default).context("serializing default config")?;
+            fs::write(&cfg_path, toml).with_context(|| format!("writing default config to {}", cfg_path.display()))?;
+            return Ok(default);
+        }
+        let s = fs::read_to_string(&cfg_path).with_context(|| format!("reading config {}", cfg_path.display()))?;
+        let c: Config = toml::from_str(&s).context("parsing config toml")?;
+        Ok(c)
+    }
+
+    /// Save the current config to disk (overwrites file)
+    pub fn save(&self) -> Result<()> {
+        let cfg_path = config_file_path()?;
+        let toml = toml::to_string_pretty(self).context("serializing config to toml")?;
+        fs::write(cfg_path, toml).context("writing config file")?;
+        Ok(())
+    }
+
+    /// Add a repo to the config and persist the change
+    pub fn add_repo(&mut self, repo: Repo) -> Result<()> {
+        self.repos.push(repo);
+        self.save()
+    }
+}
+
 pub fn repos_base_dir() -> Result<PathBuf> {
     let home = env::var("HOME").context("HOME environment variable not set")?;
     let base = PathBuf::from(home).join(".local/share/instantos/dots");
     fs::create_dir_all(&base).context("creating repos base directory")?;
     Ok(base)
-}
-
-pub fn load_repos() -> Result<Vec<Repo>> {
-    let cfg = config_file_path()?;
-    if !cfg.exists() {
-        return Ok(Vec::new());
-    }
-    let s = fs::read_to_string(&cfg).with_context(|| format!("reading config {}", cfg.display()))?;
-    let c: Config = toml::from_str(&s).context("parsing config toml")?;
-    Ok(c.repos)
-}
-
-pub fn save_repos(repos: &[Repo]) -> Result<()> {
-    let cfg = config_file_path()?;
-    let c = Config { repos: repos.to_vec() };
-    let toml = toml::to_string_pretty(&c).context("serializing config to toml")?;
-    fs::write(cfg, toml).context("writing config file")?;
-    Ok(())
 }
 
 fn basename_from_repo(repo: &str) -> String {
@@ -54,88 +83,6 @@ fn basename_from_repo(repo: &str) -> String {
         .next()
         .map(|p| p.to_string())
         .unwrap_or_else(|| s.to_string())
-}
-
-impl Repo {
-    pub fn local_path(&self) -> Result<PathBuf> {
-        let base = repos_base_dir()?;
-        let repo_dir_name = match &self.name {
-            Some(n) => n.clone(),
-            None => basename_from_repo(&self.url),
-        };
-        Ok(base.join(repo_dir_name))
-    }
-
-    pub fn update(&self, debug: bool) -> Result<()> {
-        let target = self.local_path()?;
-        if !target.exists() {
-            return Err(anyhow::anyhow!("Repo destination '{}' does not exist", target.display()));
-        }
-
-        // If branch is specified, ensure we're on that branch
-        if let Some(branch) = &self.branch {
-            let out = Command::new("git")
-                .arg("-C")
-                .arg(&target)
-                .arg("rev-parse")
-                .arg("--abbrev-ref")
-                .arg("HEAD")
-                .output()
-                .context("determining current branch")?;
-
-            let current = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if current != *branch {
-                if debug {
-                    eprintln!("Switching {} -> {}", current, branch);
-                } else {
-                    println!("Switching {} -> {}", current, branch);
-                }
-
-                // fetch the branch and checkout
-                let fetch = Command::new("git")
-                    .arg("-C")
-                    .arg(&target)
-                    .arg("fetch")
-                    .arg("origin")
-                    .arg(branch)
-                    .output()
-                    .with_context(|| format!("fetching branch {} in {}", branch, target.display()))?;
-
-                if !fetch.status.success() {
-                    let stderr = String::from_utf8_lossy(&fetch.stderr);
-                    return Err(anyhow::anyhow!("git fetch failed: {}", stderr));
-                }
-
-                let co = Command::new("git")
-                    .arg("-C")
-                    .arg(&target)
-                    .arg("checkout")
-                    .arg(branch)
-                    .output()
-                    .with_context(|| format!("checking out branch {} in {}", branch, target.display()))?;
-
-                if !co.status.success() {
-                    let stderr = String::from_utf8_lossy(&co.stderr);
-                    return Err(anyhow::anyhow!("git checkout failed: {}", stderr));
-                }
-            }
-        }
-
-        // pull latest
-        let pull = Command::new("git")
-            .arg("-C")
-            .arg(&target)
-            .arg("pull")
-            .output()
-            .with_context(|| format!("running git pull in {}", target.display()))?;
-
-        if !pull.status.success() {
-            let stderr = String::from_utf8_lossy(&pull.stderr);
-            return Err(anyhow::anyhow!("git pull failed: {}", stderr));
-        }
-
-        Ok(())
-    }
 }
 
 pub fn config_file_path_str() -> Result<String> {

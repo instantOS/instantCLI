@@ -17,9 +17,14 @@ pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
         return Err(anyhow::anyhow!("Destination '{}' already exists", target.display()));
     }
 
+    let mut cfg = config::Config::load()?;
+    let depth = cfg.clone_depth;
+
     let mut cmd = Command::new("git");
     cmd.arg("clone");
-    cmd.arg("--depth").arg("1");
+    if depth > 0 {
+        cmd.arg("--depth").arg(depth.to_string());
+    }
     if let Some(branch) = &repo.branch {
         cmd.arg("--branch").arg(branch);
     }
@@ -36,15 +41,31 @@ pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
     }
 
     // append to config
-    let mut repos = config::load_repos()?;
-    repos.push(repo);
-    config::save_repos(&repos)?;
+    let local: repo_mod::LocalRepo = repo.clone().into();
+    cfg.add_repo(repo)?;
+
+    // validate metadata but do not delete invalid clones; report their existence
+    match local.read_meta() {
+        Ok(meta) => {
+            if debug {
+                eprintln!("Repo {} identified as dot repo '{}' - {}", local.url, meta.name, meta.description.as_deref().unwrap_or(""));
+            }
+        }
+        Err(e) => {
+            if debug {
+                eprintln!("{} -> not a valid instantdots repo: {}", local.url, e);
+            } else {
+                println!("{} -> not a valid instantdots repo: {}", local.url, e);
+            }
+        }
+    }
 
     Ok(target)
 }
 
 pub fn update_all(debug: bool) -> Result<()> {
-    let repos = config::load_repos()?;
+    let cfg = config::Config::load()?;
+    let repos = cfg.repos.clone();
     let base = config::repos_base_dir()?;
     if repos.is_empty() {
         println!("No repos configured.");
@@ -54,10 +75,19 @@ pub fn update_all(debug: bool) -> Result<()> {
     let mut any_failed = false;
 
     for crepo in repos.iter() {
-        let repo: repo_mod::LocalRepo = crepo.clone().into();
-        if let Err(e) = repo.update(debug) {
-            eprintln!("Failed to update {}: {}", crepo.url, e);
-            any_failed = true;
+        let local: repo_mod::LocalRepo = crepo.clone().into();
+        match local.read_meta() {
+            Ok(_) => {
+                if let Err(e) = local.update(debug) {
+                    eprintln!("Failed to update {}: {}", crepo.url, e);
+                    any_failed = true;
+                }
+            }
+            Err(e) => {
+                // skip non-instantdots repos but report them
+                println!("{} -> not a valid instantdots repo: {}", crepo.url, e);
+                continue;
+            }
         }
     }
 
@@ -69,7 +99,8 @@ pub fn update_all(debug: bool) -> Result<()> {
 }
 
 pub fn status_all(debug: bool) -> Result<()> {
-    let repos = config::load_repos()?;
+    let cfg = config::Config::load()?;
+    let repos = cfg.repos.clone();
     let base = config::repos_base_dir()?;
     if repos.is_empty() {
         println!("No repos configured.");
