@@ -45,6 +45,11 @@ enum DotCommands {
     Update,
     /// Check each configured repo's git status
     Status,
+    /// Initialize the repo in the current directory as an instantdots repo
+    Init { 
+        /// Optional name to set in instantdots.toml
+        name: Option<String>,
+    },
 }
 
 fn main() {
@@ -90,6 +95,17 @@ fn main() {
                     Ok(()) => (),
                     Err(e) => {
                         eprintln!("Error checking repo status: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            DotCommands::Init { name } => {
+                // initialize the current directory as an instantdots repo
+                let cwd = std::env::current_dir().expect("unable to determine cwd");
+                match dot::meta::init_repo(&cwd, name.as_deref()) {
+                    Ok(()) => println!("Initialized instantdots.toml in {}", cwd.display()),
+                    Err(e) => {
+                        eprintln!("Error initializing repo: {}", e);
                         std::process::exit(1);
                     }
                 }
