@@ -43,6 +43,12 @@ enum DotCommands {
         #[arg(short = 'b', long = "branch")]
         branch: Option<String>,
     },
+    /// Reset modified dotfiles to their original state
+    Reset,
+    /// Apply dotfiles
+    Apply,
+    /// Fetch modified dotfiles
+    Fetch,
     /// Pull updates for all configured repos
     Update,
     /// Check each configured repo's git status
@@ -83,7 +89,33 @@ fn main() {
                     }
                 }
             }
+            DotCommands::Reset => {
+                let db = dot::db::Database::new().unwrap();
+                let filemap = dot::get_all_dotfiles().unwrap();
+                for dotfile in filemap.values() {
+                    if dotfile.is_modified(&db) {
+                        dotfile.apply(&db).unwrap();
+                    }
+                }
+                db.cleanup_hashes().unwrap();
+            }
+            DotCommands::Apply => {
+                let db = dot::db::Database::new().unwrap();
+                let filemap = dot::get_all_dotfiles().unwrap();
+                for dotfile in filemap.values() {
+                    dotfile.apply(&db).unwrap();
+                }
+            }
+            DotCommands::Fetch => {
+                let db = dot::db::Database::new().unwrap();
+                let filemap = dot::get_all_dotfiles().unwrap();
+                for dotfile in filemap.values() {
+                    dotfile.fetch(&db).unwrap();
+                }
+                db.cleanup_hashes().unwrap();
+            }
             DotCommands::Update => {
+                let db = dot::db::Database::new().unwrap();
                 match dot::update_all(cli.debug) {
                     Ok(()) => println!("{}", "All repos updated".green()),
                     Err(e) => {
@@ -91,6 +123,7 @@ fn main() {
                         std::process::exit(1);
                     }
                 }
+                db.cleanup_hashes().unwrap();
             }
             DotCommands::Status => {
                 match dot::status_all(cli.debug) {

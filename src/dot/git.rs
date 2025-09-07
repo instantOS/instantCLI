@@ -97,69 +97,25 @@ pub fn update_all(debug: bool) -> Result<()> {
     }
 }
 
-pub fn status_all(debug: bool) -> Result<()> {
+pub fn status_all(_debug: bool) -> Result<()> {
     let cfg = config::Config::load()?;
     let repos = cfg.repos.clone();
-    let base = config::repos_base_dir()?;
+    let _base = config::repos_base_dir()?;
     if repos.is_empty() {
         println!("No repos configured.");
         return Ok(());
     }
 
-    for crepo in repos.iter() {
-        let repo_dir_name = match &crepo.name {
-            Some(n) => n.clone(),
-            None => basename_from_repo(&crepo.url),
-        };
-        let target = base.join(repo_dir_name);
+    let db = super::db::Database::new()?;
+    let filemap = super::get_all_dotfiles()?;
 
-        if !target.exists() {
-            println!("{} -> {}", crepo.url.bold(), "missing".red());
-            continue;
-        }
-
-        // validate instantdots.toml exists and parse it via LocalRepo
-        let local: repo_mod::LocalRepo = crepo.clone().into();
-        match local.read_meta() {
-            Ok(meta) => {
-                if debug {
-                    eprintln!("Repo {} identified as dot repo '{}' - {}", crepo.url, meta.name, meta.description.as_deref().unwrap_or(""));
-                }
-            }
-            Err(_e) => {
-                println!("{} -> {}", crepo.url.bold(), "not a valid instantdots repo".red());
-                continue;
-            }
-        }
-
-        let _branch = match &crepo.branch {
-            Some(b) => b.clone(),
-            None => "(no branch configured)".to_string(),
-        };
-
-        // get checked out branch
-        let _current_branch = match local.get_branch() {
-            Ok(b) => b,
-            Err(e) => {
-                println!("{} -> cannot determine branch: {}", crepo.url, e);
-                continue;
-            }
-        };
-
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(&target)
-            .arg("status")
-            .arg("--porcelain")
-            .output()
-            .with_context(|| format!("running git status in {}", target.display()))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if stdout.trim().is_empty() {
-            println!("{} -> {}", crepo.url.bold(), "clean".green());
+    for (target_path, dotfile) in filemap.iter() {
+        if dotfile.is_modified(&db) {
+            println!("{} -> {}", target_path.to_string_lossy().bold(), "modified".yellow());
+        } else if dotfile.is_outdated() {
+            println!("{} -> {}", target_path.to_string_lossy().bold(), "outdated".blue());
         } else {
-            println!("{} -> {}
-{}", crepo.url.bold(), "modified".yellow(), stdout);
+            println!("{} -> {}", target_path.to_string_lossy().bold(), "clean".green());
         }
     }
 
