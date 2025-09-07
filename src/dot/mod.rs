@@ -64,6 +64,8 @@ pub fn add_repo(repo: Repo, debug: bool) -> Result<PathBuf> {
 
     let mut cmd = Command::new("git");
     cmd.arg("clone");
+    // shallow clone by default
+    cmd.arg("--depth").arg("1");
     if let Some(branch) = &repo.branch {
         cmd.arg("--branch").arg(branch);
     }
