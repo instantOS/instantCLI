@@ -1,7 +1,7 @@
 use anyhow::Result;
 use shellexpand;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 
@@ -20,7 +20,6 @@ use crate::dot::db::Database;
 use crate::dot::localrepo::LocalRepo;
 use std::env::current_dir;
 use std::fs;
-use std::path::PathBuf;
 
 pub fn get_current_repo(config: &Config, cwd: &Path) -> Result<LocalRepo> {
     let mut this_repo: Option<LocalRepo> = None;
@@ -52,7 +51,8 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
             .filter(|entry| {
                 let path_str = entry.path().to_string_lossy();
                 !path_str.contains("/.git/")
-            }) {
+            })
+        {
             if entry.file_type().is_file() {
                 let source_path = entry.path().to_path_buf();
                 let relative_path = source_path.strip_prefix(&dots_path).unwrap().to_path_buf();

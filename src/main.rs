@@ -1,6 +1,4 @@
 use colored::*;
-use shellexpand;
-use std::path::PathBuf;
 
 mod dot;
 
@@ -60,7 +58,10 @@ enum DotCommands {
     /// Pull updates for all configured repos
     Update,
     /// Check each configured repo's git status
-    Status,
+    Status {
+        /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
+        path: Option<String>,
+    },
     /// Initialize the repo in the current directory as an instantdots repo
     Init {
         /// Optional name to set in instantdots.toml
@@ -106,43 +107,47 @@ fn main() {
                     }
                 }
             }
-            DotCommands::Reset { path } => {
-                match dot::reset_modified(&path) {
-                    Ok(()) => println!("{} {}", "Reset modified dotfiles in".green(), path.green()),
-                    Err(e) => {
-                        eprintln!("{}: {}", "Error resetting dotfiles".red(), e.to_string().red());
-                        std::process::exit(1);
-                    }
+            DotCommands::Reset { path } => match dot::reset_modified(&path) {
+                Ok(()) => println!("{} {}", "Reset modified dotfiles in".green(), path.green()),
+                Err(e) => {
+                    eprintln!(
+                        "{}: {}",
+                        "Error resetting dotfiles".red(),
+                        e.to_string().red()
+                    );
+                    std::process::exit(1);
                 }
-            }
-            DotCommands::Apply => {
-                match dot::apply_all() {
-                    Ok(()) => println!("{}", "Applied dotfiles".green()),
-                    Err(e) => {
-                        eprintln!("{}: {}", "Error applying dotfiles".red(), e.to_string().red());
-                        std::process::exit(1);
-                    }
+            },
+            DotCommands::Apply => match dot::apply_all() {
+                Ok(()) => println!("{}", "Applied dotfiles".green()),
+                Err(e) => {
+                    eprintln!(
+                        "{}: {}",
+                        "Error applying dotfiles".red(),
+                        e.to_string().red()
+                    );
+                    std::process::exit(1);
                 }
-            }
-            DotCommands::Fetch { path } => {
-                match dot::fetch_modified(path.as_deref()) {
-                    Ok(()) => println!("{}", "Fetched modified dotfiles".green()),
-                    Err(e) => {
-                        eprintln!("{}: {}", "Error fetching dotfiles".red(), e.to_string().red());
-                        std::process::exit(1);
-                    }
+            },
+            DotCommands::Fetch { path } => match dot::fetch_modified(path.as_deref()) {
+                Ok(()) => println!("{}", "Fetched modified dotfiles".green()),
+                Err(e) => {
+                    eprintln!(
+                        "{}: {}",
+                        "Error fetching dotfiles".red(),
+                        e.to_string().red()
+                    );
+                    std::process::exit(1);
                 }
-            }
-            DotCommands::Update => {
-                match dot::update_all(cli.debug) {
-                    Ok(()) => println!("{}", "All repos updated".green()),
-                    Err(e) => {
-                        eprintln!("{}: {}", "Error updating repos".red(), e.to_string().red());
-                        std::process::exit(1);
-                    }
+            },
+            DotCommands::Update => match dot::update_all(cli.debug) {
+                Ok(()) => println!("{}", "All repos updated".green()),
+                Err(e) => {
+                    eprintln!("{}: {}", "Error updating repos".red(), e.to_string().red());
+                    std::process::exit(1);
                 }
-            }
-            DotCommands::Status => match dot::status_all(cli.debug) {
+            },
+            DotCommands::Status { path } => match dot::status_all(cli.debug, path.as_deref()) {
                 Ok(()) => (),
                 Err(e) => {
                     eprintln!("Error checking repo status: {}", e);

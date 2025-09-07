@@ -110,7 +110,7 @@ pub fn update_all(debug: bool) -> Result<()> {
     }
 }
 
-pub fn status_all(debug: bool) -> Result<()> {
+pub fn status_all(debug: bool, path: Option<&str>) -> Result<()> {
     let cfg = config::Config::load()?;
     let repos = cfg.repos.clone();
     let base = config::repos_base_dir()?;
@@ -118,6 +118,9 @@ pub fn status_all(debug: bool) -> Result<()> {
         println!("No repos configured.");
         return Ok(());
     }
+
+    let query = path.map(|s| s.to_string());
+    let mut found = false;
 
     for crepo in repos.iter() {
         let repo_dir_name = match &crepo.name {
@@ -168,55 +171,141 @@ pub fn status_all(debug: bool) -> Result<()> {
             }
         };
 
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(&target)
-            .arg("status")
-            .arg("--porcelain")
-            .output()
-            .with_context(|| format!("running git status in {}", target.display()))?;
+        // If a specific path was provided, check whether it belongs to this repo and report
+        if let Some(p) = path {
+            // Normalize provided path (expand ~ and make absolute-ish)
+            let expanded = shellexpand::tilde(p).into_owned();
+            let provided = PathBuf::from(expanded);
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if stdout.trim().is_empty() {
-            println!("{} -> {}", crepo.url.bold(), "clean".green());
+            // If this repo contains the provided dotfile, print its status and repo info
+            if provided.exists() {
+                // Determine if this target path maps to a source under this repo's dots/
+                let dots_dir = target.join("dots");
+                let rel = match provided.strip_prefix(shellexpand::tilde("~").into_owned()) {
+                    Ok(r) => r.to_path_buf(),
+                    Err(_) => provided.clone(),
+                };
+                let source_candidate = dots_dir.join(&rel);
+
+                if source_candidate.exists() && source_candidate.starts_with(&target) {
+                    found = true;
+                    println!("File: {}", provided.display());
+                    println!("Repo: {}", crepo.url);
+
+                    // git status for repo
+                    let output = Command::new("git")
+                        .arg("-C")
+                        .arg(&target)
+                        .arg("status")
+                        .arg("--porcelain")
+                        .output()
+                        .with_context(|| format!("running git status in {}", target.display()))?;
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if stdout.trim().is_empty() {
+                        println!("Repo status: {}", "clean".green());
+                    } else {
+                        println!("Repo status: {}\n{}", "modified".yellow(), stdout);
+                    }
+
+                    // now check file status using db
+                    let db = super::db::Database::new()?;
+                    let filemap = super::get_all_dotfiles()?;
+                    if let Some(dotfile) = filemap.get(&provided) {
+                        println!("Source: {}", dotfile.repo_path.display());
+                        if dotfile.is_modified(&db) {
+                            println!("File status: {}", "modified".yellow());
+                        } else if dotfile.is_outdated() {
+                            println!("File status: {}", "outdated".blue());
+                        } else {
+                            println!("File status: {}", "clean".green());
+                        }
+                    } else {
+                        println!("File not tracked by instantdots in this repo.");
+                    }
+                }
+            } else {
+                // Provided path doesn't exist; still attempt to map to repo source
+                let dots_dir = target.join("dots");
+                // Make provided relative path by trimming leading ~/
+                let rel = p.trim_start_matches("~").trim_start_matches('/');
+                let source_candidate = dots_dir.join(rel);
+                if source_candidate.exists() {
+                    println!("File: {}", p);
+                    println!("Repo: {}", crepo.url);
+                    println!("Source: {}", source_candidate.display());
+                    let db = super::db::Database::new()?;
+                    let dotfile = super::Dotfile {
+                        repo_path: source_candidate.clone(),
+                        target_path: PathBuf::from(shellexpand::tilde("~").to_string()).join(rel),
+                        hash: None,
+                        target_hash: None,
+                    };
+                    if dotfile.is_modified(&db) {
+                        println!("File status: {}", "modified".yellow());
+                    } else if dotfile.is_outdated() {
+                        println!("File status: {}", "outdated".blue());
+                    } else {
+                        println!("File status: {}", "clean".green());
+                    }
+                }
+            }
         } else {
-            println!(
-                "{} -> {}
+            // No specific path: show repo-level and per-file summaries as before
+
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&target)
+                .arg("status")
+                .arg("--porcelain")
+                .output()
+                .with_context(|| format!("running git status in {}", target.display()))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.trim().is_empty() {
+                println!("{} -> {}", crepo.url.bold(), "clean".green());
+            } else {
+                println!(
+                    "{} -> {}
 {}",
-                crepo.url.bold(),
-                "modified".yellow(),
-                stdout
-            );
-        }
+                    crepo.url.bold(),
+                    "modified".yellow(),
+                    stdout
+                );
+            }
 
-        // Now check individual dotfile statuses for this repo
-        let db = super::db::Database::new()?;
-        let filemap = super::get_all_dotfiles()?;
+            // Now check individual dotfile statuses for this repo
+            let db = super::db::Database::new()?;
+            let filemap = super::get_all_dotfiles()?;
 
-        for (target_path, dotfile) in filemap.iter() {
-            // Only show dotfiles belonging to the current repo
-            if dotfile.repo_path.starts_with(&target) {
-                if dotfile.is_modified(&db) {
-                    println!(
-                        "    {} -> {}",
-                        target_path.to_string_lossy().bold(),
-                        "modified".yellow()
-                    );
-                } else if dotfile.is_outdated() {
-                    println!(
-                        "    {} -> {}",
-                        target_path.to_string_lossy().bold(),
-                        "outdated".blue()
-                    );
-                } else {
-                    println!(
-                        "    {} -> {}",
-                        target_path.to_string_lossy().bold(),
-                        "clean".green()
-                    );
+            for (target_path, dotfile) in filemap.iter() {
+                // Only show dotfiles belonging to the current repo
+                if dotfile.repo_path.starts_with(&target) {
+                    if dotfile.is_modified(&db) {
+                        println!(
+                            "    {} -> {}",
+                            target_path.to_string_lossy().bold(),
+                            "modified".yellow()
+                        );
+                    } else if dotfile.is_outdated() {
+                        println!(
+                            "    {} -> {}",
+                            target_path.to_string_lossy().bold(),
+                            "outdated".blue()
+                        );
+                    } else {
+                        println!(
+                            "    {} -> {}",
+                            target_path.to_string_lossy().bold(),
+                            "clean".green()
+                        );
+                    }
                 }
             }
         }
+    }
+
+    if query.is_some() && !found {
+        println!("{} -> not found in any configured repo.", query.unwrap());
     }
 
     Ok(())
