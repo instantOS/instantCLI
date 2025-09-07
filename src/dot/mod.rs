@@ -26,10 +26,17 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
             |name| name.clone(),
         );
         let repo_path = base_dir.join(repo_name);
-        for entry in WalkDir::new(&repo_path).into_iter().filter_map(|e| e.ok()) {
+        let dots_path = repo_path.join("dots");
+        for entry in WalkDir::new(&dots_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|entry| {
+                let path_str = entry.path().to_string_lossy();
+                !path_str.contains("/.git/")
+            }) {
             if entry.file_type().is_file() {
                 let source_path = entry.path().to_path_buf();
-                let relative_path = source_path.strip_prefix(&repo_path).unwrap().to_path_buf();
+                let relative_path = source_path.strip_prefix(&dots_path).unwrap().to_path_buf();
                 let target_path =
                     PathBuf::from(shellexpand::tilde("~").to_string()).join(relative_path);
 
