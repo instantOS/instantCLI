@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.99"
 clap = { version = "4", features = ["derive"] }
+colored = "3.0.0"
 directories = "6.0.0"
 indicatif = "0.18.0"
 owo-colors = "4.2.2"

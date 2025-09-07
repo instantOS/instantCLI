@@ -1,3 +1,4 @@
+use colored::*;
 use anyhow::{Context, Result};
 use std::{process::Command, path::PathBuf};
 use crate::dot::config;
@@ -82,9 +83,8 @@ pub fn update_all(debug: bool) -> Result<()> {
                     any_failed = true;
                 }
             }
-            Err(e) => {
-                // skip non-instantdots repos but report them
-                println!("{} -> not a valid instantdots repo: {}", crepo.url, e);
+            Err(_e) => {
+                println!("{} -> {}", crepo.url.bold(), "not a valid instantdots repo".red());
                 continue;
             }
         }
@@ -114,7 +114,7 @@ pub fn status_all(debug: bool) -> Result<()> {
         let target = base.join(repo_dir_name);
 
         if !target.exists() {
-            println!("{} -> missing at {}", crepo.url, target.display());
+            println!("{} -> {}", crepo.url.bold(), "missing".red());
             continue;
         }
 
@@ -126,19 +126,19 @@ pub fn status_all(debug: bool) -> Result<()> {
                     eprintln!("Repo {} identified as dot repo '{}' - {}", crepo.url, meta.name, meta.description.as_deref().unwrap_or(""));
                 }
             }
-            Err(e) => {
-                println!("{} -> not a valid instantdots repo: {}", crepo.url, e);
+            Err(_e) => {
+                println!("{} -> {}", crepo.url.bold(), "not a valid instantdots repo".red());
                 continue;
             }
         }
 
-        let branch = match &crepo.branch {
+        let _branch = match &crepo.branch {
             Some(b) => b.clone(),
             None => "(no branch configured)".to_string(),
         };
 
         // get checked out branch
-        let current_branch = match local.get_branch() {
+        let _current_branch = match local.get_branch() {
             Ok(b) => b,
             Err(e) => {
                 println!("{} -> cannot determine branch: {}", crepo.url, e);
@@ -156,9 +156,10 @@ pub fn status_all(debug: bool) -> Result<()> {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         if stdout.trim().is_empty() {
-            println!("{} -> clean (branch: {}, configured: {})", crepo.url, current_branch, branch);
+            println!("{} -> {}", crepo.url.bold(), "clean".green());
         } else {
-            println!("{} -> modified (branch: {}, configured: {})\n{}", crepo.url, current_branch, branch, stdout);
+            println!("{} -> {}
+{}", crepo.url.bold(), "modified".yellow(), stdout);
         }
     }
 

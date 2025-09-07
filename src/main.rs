@@ -1,3 +1,5 @@
+use colored::*;
+
 mod dot;
 
 use clap::{Parser, Subcommand};
@@ -74,18 +76,18 @@ fn main() {
                     branch: branch.clone(),
                 };
                 match dot::add_repo(repo_obj.into(), cli.debug) {
-                    Ok(path) => println!("Added repo '{}' -> {}", repo, path.display()),
+                    Ok(path) => println!("{} {} {} {}", "Added repo".green(), repo.green().bold(), "->".green(), path.display()),
                     Err(e) => {
-                        eprintln!("Error adding repo '{}': {}", repo, e);
+                        eprintln!("{} {} {}", "Error adding repo".red(), repo.red().bold(), e.to_string().red());
                         std::process::exit(1);
                     }
                 }
             }
             DotCommands::Update => {
                 match dot::update_all(cli.debug) {
-                    Ok(()) => println!("All repos updated"),
+                    Ok(()) => println!("{}", "All repos updated".green()),
                     Err(e) => {
-                        eprintln!("Error updating repos: {}", e);
+                        eprintln!("{}: {}", "Error updating repos".red(), e.to_string().red());
                         std::process::exit(1);
                     }
                 }
@@ -100,12 +102,11 @@ fn main() {
                 }
             }
             DotCommands::Init { name } => {
-                // initialize the current directory as an instantdots repo
                 let cwd = std::env::current_dir().expect("unable to determine cwd");
                 match dot::meta::init_repo(&cwd, name.as_deref()) {
-                    Ok(()) => println!("Initialized instantdots.toml in {}", cwd.display()),
+                    Ok(()) => println!("{} {}", "Initialized instantdots.toml in".green(), cwd.display()),
                     Err(e) => {
-                        eprintln!("Error initializing repo: {}", e);
+                        eprintln!("{}: {}", "Error initializing repo".red(), e.to_string().red());
                         std::process::exit(1);
                     }
                 }
