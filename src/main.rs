@@ -41,6 +41,10 @@ enum DotCommands {
         #[arg(short = 'b', long = "branch")]
         branch: Option<String>,
     },
+    /// Pull updates for all configured repos
+    Update,
+    /// Check each configured repo's git status
+    Status,
 }
 
 fn main() {
@@ -72,6 +76,24 @@ fn main() {
                     }
                 }
             }
+            DotCommands::Update => {
+                match dot::update_all(cli.debug) {
+                    Ok(()) => println!("All repos updated"),
+                    Err(e) => {
+                        eprintln!("Error updating repos: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            DotCommands::Status => {
+                match dot::status_all(cli.debug) {
+                    Ok(()) => (),
+                    Err(e) => {
+                        eprintln!("Error checking repo status: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
         },
         None => {
             println!("instant: run with --help for usage");
@@ -79,12 +101,3 @@ fn main() {
     }
 }
 
-fn basename_from_repo(repo: &str) -> String {
-    // strip trailing .git if present
-    let s = repo.trim_end_matches(".git");
-    // split on '/' or ':' (to handle ssh-style URLs) and take last segment
-    s.rsplit(|c| c == '/' || c == ':')
-        .next()
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| s.to_string())
-}
