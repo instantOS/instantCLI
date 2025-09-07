@@ -1,6 +1,6 @@
 pub mod config;
 pub mod git;
-pub mod repo;
+pub mod localrepo;
 
-pub use repo::Repo;
+pub use localrepo::LocalRepo;
 pub use git::{add_repo, update_all, status_all};

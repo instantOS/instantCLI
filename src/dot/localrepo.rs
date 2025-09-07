@@ -3,25 +3,25 @@ use std::{path::PathBuf, process::Command};
 use crate::dot::config;
 
 #[derive(Clone, Debug)]
-pub struct Repo {
+pub struct LocalRepo {
     pub url: String,
     pub name: Option<String>,
     pub branch: Option<String>,
 }
 
-impl From<config::Repo> for Repo {
+impl From<config::Repo> for LocalRepo {
     fn from(r: config::Repo) -> Self {
-        Repo { url: r.url, name: r.name, branch: r.branch }
+        LocalRepo { url: r.url, name: r.name, branch: r.branch }
     }
 }
 
-impl From<Repo> for config::Repo {
-    fn from(r: Repo) -> Self {
+impl From<LocalRepo> for config::Repo {
+    fn from(r: LocalRepo) -> Self {
         config::Repo { url: r.url, name: r.name, branch: r.branch }
     }
 }
 
-impl Repo {
+impl LocalRepo {
     pub fn local_path(&self) -> Result<PathBuf> {
         let base = config::repos_base_dir()?;
         let repo_dir_name = match &self.name {
@@ -29,6 +29,20 @@ impl Repo {
             None => basename_from_repo(&self.url),
         };
         Ok(base.join(repo_dir_name))
+    }
+
+    pub fn get_branch(&self) -> Result<String> {
+        let target = self.local_path()?;
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&target)
+            .arg("rev-parse")
+            .arg("--abbrev-ref")
+            .arg("HEAD")
+            .output()
+            .context("determining current branch")?;
+        let current = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        Ok(current)
     }
 
     pub fn update(&self, debug: bool) -> Result<()> {
@@ -39,16 +53,7 @@ impl Repo {
 
         // If branch is specified, ensure we're on that branch
         if let Some(branch) = &self.branch {
-            let out = Command::new("git")
-                .arg("-C")
-                .arg(&target)
-                .arg("rev-parse")
-                .arg("--abbrev-ref")
-                .arg("HEAD")
-                .output()
-                .context("determining current branch")?;
-
-            let current = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let current = self.get_branch()?;
             if current != *branch {
                 if debug {
                     eprintln!("Switching {} -> {}", current, branch);

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::{process::Command, path::PathBuf};
 use crate::dot::config;
-use crate::dot::repo as repo_mod;
+use crate::dot::localrepo as repo_mod;
 
 pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
     let base = config::repos_base_dir()?;
@@ -54,7 +54,7 @@ pub fn update_all(debug: bool) -> Result<()> {
     let mut any_failed = false;
 
     for crepo in repos.iter() {
-        let repo: repo_mod::Repo = crepo.clone().into();
+        let repo: repo_mod::LocalRepo = crepo.clone().into();
         if let Err(e) = repo.update(debug) {
             eprintln!("Failed to update {}: {}", crepo.url, e);
             any_failed = true;
@@ -76,17 +76,32 @@ pub fn status_all(debug: bool) -> Result<()> {
         return Ok(());
     }
 
-    for repo in repos.iter() {
-        let repo_dir_name = match &repo.name {
+    for crepo in repos.iter() {
+        let repo_dir_name = match &crepo.name {
             Some(n) => n.clone(),
-            None => basename_from_repo(&repo.url),
+            None => basename_from_repo(&crepo.url),
         };
         let target = base.join(repo_dir_name);
 
         if !target.exists() {
-            println!("{} -> missing at {}", repo.url, target.display());
+            println!("{} -> missing at {}", crepo.url, target.display());
             continue;
         }
+
+        let branch = match &crepo.branch {
+            Some(b) => b.clone(),
+            None => "(no branch configured)".to_string(),
+        };
+
+        // get checked out branch
+        let local: repo_mod::LocalRepo = crepo.clone().into();
+        let current_branch = match local.get_branch() {
+            Ok(b) => b,
+            Err(e) => {
+                println!("{} -> cannot determine branch: {}", crepo.url, e);
+                continue;
+            }
+        };
 
         let output = Command::new("git")
             .arg("-C")
@@ -98,9 +113,9 @@ pub fn status_all(debug: bool) -> Result<()> {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         if stdout.trim().is_empty() {
-            println!("{} -> clean", repo.url);
+            println!("{} -> clean (branch: {}, configured: {})", crepo.url, current_branch, branch);
         } else {
-            println!("{} -> modified\n{}", repo.url, stdout);
+            println!("{} -> modified (branch: {}, configured: {})\n{}", crepo.url, current_branch, branch, stdout);
         }
     }
 
