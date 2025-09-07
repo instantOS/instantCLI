@@ -66,14 +66,22 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
     print!("Name [{}]: ", default_name);
     io::stdout().flush().ok();
     let mut input = String::new();
-    io::stdin().read_line(&mut input).context("reading name from stdin")?;
-    let final_name = if input.trim().is_empty() { default_name } else { input.trim().to_string() };
+    io::stdin()
+        .read_line(&mut input)
+        .context("reading name from stdin")?;
+    let final_name = if input.trim().is_empty() {
+        default_name
+    } else {
+        input.trim().to_string()
+    };
 
     // Prompt for optional description
     print!("Description (optional): ");
     io::stdout().flush().ok();
     input.clear();
-    io::stdin().read_line(&mut input).context("reading description from stdin")?;
+    io::stdin()
+        .read_line(&mut input)
+        .context("reading description from stdin")?;
     let description = match input.trim() {
         "" => None,
         s => Some(s.to_string()),
@@ -85,7 +93,10 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
         description: Option<String>,
     }
 
-    let mw = MetaWrite { name: final_name, description };
+    let mw = MetaWrite {
+        name: final_name,
+        description,
+    };
     let toml = toml::to_string_pretty(&mw).context("serializing instantdots.toml")?;
     fs::write(&p, toml).with_context(|| format!("writing {}", p.display()))?;
     Ok(())

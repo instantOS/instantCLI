@@ -54,7 +54,7 @@ enum DotCommands {
     /// Check each configured repo's git status
     Status,
     /// Initialize the repo in the current directory as an instantdots repo
-    Init { 
+    Init {
         /// Optional name to set in instantdots.toml
         name: Option<String>,
     },
@@ -68,12 +68,10 @@ fn main() {
     }
 
     match &cli.command {
-        Some(Commands::Greet { name }) => {
-            match name {
-                Some(n) => println!("Hello, {}!", n),
-                None => println!("Hello!"),
-            }
-        }
+        Some(Commands::Greet { name }) => match name {
+            Some(n) => println!("Hello, {}!", n),
+            None => println!("Hello!"),
+        },
         Some(Commands::Dot { command }) => match command {
             DotCommands::Clone { repo, name, branch } => {
                 let repo_obj = Repo {
@@ -82,9 +80,20 @@ fn main() {
                     branch: branch.clone(),
                 };
                 match dot::add_repo(repo_obj.into(), cli.debug) {
-                    Ok(path) => println!("{} {} {} {}", "Added repo".green(), repo.green().bold(), "->".green(), path.display()),
+                    Ok(path) => println!(
+                        "{} {} {} {}",
+                        "Added repo".green(),
+                        repo.green().bold(),
+                        "->".green(),
+                        path.display()
+                    ),
                     Err(e) => {
-                        eprintln!("{} {} {}", "Error adding repo".red(), repo.red().bold(), e.to_string().red());
+                        eprintln!(
+                            "{} {} {}",
+                            "Error adding repo".red(),
+                            repo.red().bold(),
+                            e.to_string().red()
+                        );
                         std::process::exit(1);
                     }
                 }
@@ -125,21 +134,27 @@ fn main() {
                 }
                 db.cleanup_hashes().unwrap();
             }
-            DotCommands::Status => {
-                match dot::status_all(cli.debug) {
-                    Ok(()) => (),
-                    Err(e) => {
-                        eprintln!("Error checking repo status: {}", e);
-                        std::process::exit(1);
-                    }
+            DotCommands::Status => match dot::status_all(cli.debug) {
+                Ok(()) => (),
+                Err(e) => {
+                    eprintln!("Error checking repo status: {}", e);
+                    std::process::exit(1);
                 }
-            }
+            },
             DotCommands::Init { name } => {
                 let cwd = std::env::current_dir().expect("unable to determine cwd");
                 match dot::meta::init_repo(&cwd, name.as_deref()) {
-                    Ok(()) => println!("{} {}", "Initialized instantdots.toml in".green(), cwd.display()),
+                    Ok(()) => println!(
+                        "{} {}",
+                        "Initialized instantdots.toml in".green(),
+                        cwd.display()
+                    ),
                     Err(e) => {
-                        eprintln!("{}: {}", "Error initializing repo".red(), e.to_string().red());
+                        eprintln!(
+                            "{}: {}",
+                            "Error initializing repo".red(),
+                            e.to_string().red()
+                        );
                         std::process::exit(1);
                     }
                 }
@@ -150,4 +165,3 @@ fn main() {
         }
     }
 }
-

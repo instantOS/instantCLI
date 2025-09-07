@@ -1,5 +1,5 @@
-use rusqlite::Connection;
 use anyhow::Result;
+use rusqlite::Connection;
 use std::path::Path;
 
 pub struct Database {
@@ -32,7 +32,9 @@ impl Database {
     }
 
     pub fn get_valid_hashes(&self, path: &Path) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT hash FROM hashes WHERE path = ? AND valid = 1")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT hash FROM hashes WHERE path = ? AND valid = 1")?;
         let hashes = stmt.query_map([path.to_str().unwrap()], |row| row.get(0))?;
         let mut result = Vec::new();
         for hash in hashes {

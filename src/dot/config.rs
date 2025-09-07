@@ -47,10 +47,12 @@ impl Config {
         if !cfg_path.exists() {
             let default = Config::default();
             let toml = toml::to_string_pretty(&default).context("serializing default config")?;
-            fs::write(&cfg_path, toml).with_context(|| format!("writing default config to {}", cfg_path.display()))?;
+            fs::write(&cfg_path, toml)
+                .with_context(|| format!("writing default config to {}", cfg_path.display()))?;
             return Ok(default);
         }
-        let s = fs::read_to_string(&cfg_path).with_context(|| format!("reading config {}", cfg_path.display()))?;
+        let s = fs::read_to_string(&cfg_path)
+            .with_context(|| format!("reading config {}", cfg_path.display()))?;
         let c: Config = toml::from_str(&s).context("parsing config toml")?;
         Ok(c)
     }
@@ -86,6 +88,10 @@ pub fn repos_base_dir() -> Result<PathBuf> {
     Ok(base)
 }
 
-
-
-
+pub fn basename_from_repo(repo: &str) -> String {
+    let s = repo.trim_end_matches(".git");
+    s.rsplit(|c| c == '/' || c == ':')
+        .next()
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| s.to_string())
+}

@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
-use std::fs;
-use sha2::{Sha256, Digest};
 use super::db::Database;
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 pub struct Dotfile {
     pub repo_path: PathBuf,
@@ -20,7 +20,9 @@ impl Dotfile {
         let target_metadata = fs::metadata(&self.target_path).ok();
 
         if let (Some(source_meta), Some(target_meta)) = (source_metadata, target_metadata) {
-            if let (Ok(source_time), Ok(target_time)) = (source_meta.modified(), target_meta.modified()) {
+            if let (Ok(source_time), Ok(target_time)) =
+                (source_meta.modified(), target_meta.modified())
+            {
                 return source_time > target_time;
             }
         }
@@ -126,6 +128,9 @@ mod tests {
 
         fs::write(target_path.join("test.txt"), "modified").unwrap();
         dotfile.fetch(&db).unwrap();
-        assert_eq!(fs::read_to_string(repo_path.join("test.txt")).unwrap(), "modified");
+        assert_eq!(
+            fs::read_to_string(repo_path.join("test.txt")).unwrap(),
+            "modified"
+        );
     }
 }

@@ -1,6 +1,6 @@
+use crate::dot::config;
 use anyhow::{Context, Result};
 use std::{path::PathBuf, process::Command};
-use crate::dot::config;
 
 #[derive(Clone, Debug)]
 pub struct LocalRepo {
@@ -11,13 +11,21 @@ pub struct LocalRepo {
 
 impl From<config::Repo> for LocalRepo {
     fn from(r: config::Repo) -> Self {
-        LocalRepo { url: r.url, name: r.name, branch: r.branch }
+        LocalRepo {
+            url: r.url,
+            name: r.name,
+            branch: r.branch,
+        }
     }
 }
 
 impl From<LocalRepo> for config::Repo {
     fn from(r: LocalRepo) -> Self {
-        config::Repo { url: r.url, name: r.name, branch: r.branch }
+        config::Repo {
+            url: r.url,
+            name: r.name,
+            branch: r.branch,
+        }
     }
 }
 
@@ -53,7 +61,10 @@ impl LocalRepo {
     pub fn update(&self, debug: bool) -> Result<()> {
         let target = self.local_path()?;
         if !target.exists() {
-            return Err(anyhow::anyhow!("Repo destination '{}' does not exist", target.display()));
+            return Err(anyhow::anyhow!(
+                "Repo destination '{}' does not exist",
+                target.display()
+            ));
         }
 
         // If branch is specified, ensure we're on that branch
@@ -74,7 +85,9 @@ impl LocalRepo {
                     .arg("origin")
                     .arg(branch)
                     .output()
-                    .with_context(|| format!("fetching branch {} in {}", branch, target.display()))?;
+                    .with_context(|| {
+                        format!("fetching branch {} in {}", branch, target.display())
+                    })?;
 
                 if !fetch.status.success() {
                     let stderr = String::from_utf8_lossy(&fetch.stderr);
@@ -87,7 +100,9 @@ impl LocalRepo {
                     .arg("checkout")
                     .arg(branch)
                     .output()
-                    .with_context(|| format!("checking out branch {} in {}", branch, target.display()))?;
+                    .with_context(|| {
+                        format!("checking out branch {} in {}", branch, target.display())
+                    })?;
 
                 if !co.status.success() {
                     let stderr = String::from_utf8_lossy(&co.stderr);
