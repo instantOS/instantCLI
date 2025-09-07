@@ -101,3 +101,42 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
     fs::write(&p, toml).with_context(|| format!("writing {}", p.display()))?;
     Ok(())
 }
+
+/// Non-interactive version of init_repo that uses the provided name and optional description without prompting.
+pub fn non_interactive_init(repo_path: &Path, name: &str, description: Option<&str>) -> Result<()> {
+    use std::process::Command;
+
+    // ensure repo_path is a git repository
+    let git_check = Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .arg("rev-parse")
+        .arg("--is-inside-work-tree")
+        .output()
+        .context("checking git repository")?;
+    if !git_check.status.success() {
+        anyhow::bail!("current directory is not a git repository");
+    }
+
+    let p = repo_path.join("instantdots.toml");
+    if p.exists() {
+        anyhow::bail!("instantdots.toml already exists at {}", p.display());
+    }
+
+    let final_name = name.to_string();
+    let desc = description.map(|s| s.to_string());
+
+    #[derive(Serialize)]
+    struct MetaWrite {
+        name: String,
+        description: Option<String>,
+    }
+
+    let mw = MetaWrite {
+        name: final_name,
+        description: desc,
+    };
+    let toml = toml::to_string_pretty(&mw).context("serializing instantdots.toml")?;
+    fs::write(&p, toml).with_context(|| format!("writing {}", p.display()))?;
+    Ok(())
+}

@@ -15,7 +15,24 @@ pub mod meta;
 pub use crate::dot::dotfile::Dotfile;
 pub use git::{add_repo, status_all, update_all};
 
+use crate::dot::config::Config;
 use crate::dot::db::Database;
+use crate::dot::localrepo::LocalRepo;
+use std::env::current_dir;
+use std::fs;
+use std::path::PathBuf;
+
+pub fn get_current_repo(config: &Config, cwd: &Path) -> Result<LocalRepo> {
+    let mut this_repo: Option<LocalRepo> = None;
+    for repo in &config.repos {
+        let local = LocalRepo::from(repo.clone());
+        if cwd.starts_with(local.local_path()?) {
+            this_repo = Some(local);
+            break;
+        }
+    }
+    this_repo.ok_or(anyhow::anyhow!("Not in a dotfile repo"))
+}
 
 pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
     let mut filemap = HashMap::new();
@@ -58,19 +75,79 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
 }
 
 pub fn fetch_modified(path: Option<&str>) -> Result<()> {
+    let cwd = current_dir()?;
     let db = Database::new()?;
-    let filemap = get_all_dotfiles()?;
+    let config = Config::load()?;
+    let this_repo = get_current_repo(&config, &cwd)?;
+    let repo_path = this_repo.local_path()?;
+    let dots_path = repo_path.join("dots");
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
     if let Some(p) = path {
-        let expanded = shellexpand::tilde(p).into_owned();
-        let full_path = PathBuf::from(expanded);
-        for dotfile in filemap.values() {
-            if dotfile.target_path.starts_with(&full_path) {
-                dotfile.fetch(&db)?;
+        let p = p.trim_start_matches('.');
+        let home_subdir = home.join(p);
+        if !home_subdir.exists() {
+            return Ok(());
+        }
+        let md = fs::metadata(&home_subdir)?;
+        if md.is_file() {
+            let source_file = dots_path.join(p);
+            if !source_file.exists() {
+                if let Some(parent) = source_file.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::copy(&home_subdir, &source_file)?;
+                let dotfile = Dotfile {
+                    repo_path: source_file,
+                    target_path: home_subdir,
+                    hash: None,
+                    target_hash: None,
+                };
+                let _ = dotfile.get_source_hash(&db);
             }
+        } else if md.is_dir() {
+            let source_subdir = dots_path.join(p);
+            if source_subdir.exists() {
+                // Walk existing source subdir and fetch tracked
+                for entry in WalkDir::new(&source_subdir)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.file_type().is_file())
+                {
+                    let source_file = entry.path().to_path_buf();
+                    let relative = source_file.strip_prefix(&dots_path).unwrap().to_path_buf();
+                    let target_file = home.join(relative);
+                    if target_file.exists() {
+                        let dotfile = Dotfile {
+                            repo_path: source_file,
+                            target_path: target_file,
+                            hash: None,
+                            target_hash: None,
+                        };
+                        dotfile.fetch(&db)?;
+                    }
+                }
+            }
+            // else do nothing for non-existent source dir
         }
     } else {
-        for dotfile in filemap.values() {
-            dotfile.fetch(&db)?;
+        // Global fetch: walk all dots/ and fetch tracked
+        for entry in WalkDir::new(&dots_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+        {
+            let source_file = entry.path().to_path_buf();
+            let relative = source_file.strip_prefix(&dots_path).unwrap().to_path_buf();
+            let target_file = home.join(relative);
+            if target_file.exists() {
+                let dotfile = Dotfile {
+                    repo_path: source_file,
+                    target_path: target_file,
+                    hash: None,
+                    target_hash: None,
+                };
+                dotfile.fetch(&db)?;
+            }
         }
     }
     db.cleanup_hashes()?;
