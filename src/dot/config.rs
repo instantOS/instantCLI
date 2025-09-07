@@ -70,6 +70,15 @@ impl Config {
     }
 }
 
+pub fn db_path() -> Result<PathBuf> {
+    let home = env::var("HOME").context("HOME environment variable not set")?;
+    let path = PathBuf::from(home).join(".local/share/instantos/instant.db");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).context("creating db directory")?;
+    }
+    Ok(path)
+}
+
 pub fn repos_base_dir() -> Result<PathBuf> {
     let home = env::var("HOME").context("HOME environment variable not set")?;
     let base = PathBuf::from(home).join(".local/share/instantos/dots");
