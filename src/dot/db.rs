@@ -124,7 +124,8 @@ impl Database {
         let mut stmt = self
             .conn
             .prepare("SELECT hash, created, path, unmodified FROM hashes WHERE path = ? AND unmodified = 1 ORDER BY created DESC")?;
-
+        // TODO: centralize the logic for parsing a DotFileHash from a row
+        // Search for other places where we parse a DotFileHash from a row and replace them with the centralized logic
         let hashes = stmt.query_map([path.to_str().unwrap()], |row| {
             let created_str: String = row.get(1)?;
             let created = chrono::DateTime::parse_from_rfc3339(&created_str)

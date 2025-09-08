@@ -23,6 +23,39 @@ use crate::dot::localrepo::LocalRepo;
 use std::env::current_dir;
 use std::fs;
 
+/// Represents a dotfile directory with its repository context
+#[derive(Debug, Clone)]
+pub struct DotfileDirInfo {
+    pub repo_name: String,
+    pub repo_path: PathBuf,
+    pub subdir_name: String,
+    pub dir_path: PathBuf,
+    pub is_active: bool,
+}
+
+/// Get a list of all active dotfile directories, ordered by repository relevance
+pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<DotfileDirInfo>> {
+    let mut active_dirs = Vec::new();
+
+    // Process repos in order of their configuration (relevance)
+    for repo in &config.repos {
+        let local_repo = LocalRepo::from(repo.clone());
+
+        // Delegate to repo method to get active directories
+        match local_repo.get_active_dotfile_dirs(&config) {
+            Ok(repo_dirs) => {
+                active_dirs.extend(repo_dirs);
+            }
+            Err(_) => {
+                // Skip repos with errors (invalid metadata, etc.)
+                continue;
+            }
+        }
+    }
+
+    Ok(active_dirs)
+}
+
 /// Find the repository that contains the current working directory.
 pub fn get_current_repo(config: &Config, cwd: &Path) -> Result<LocalRepo> {
     let mut this_repo: Option<LocalRepo> = None;
@@ -36,64 +69,38 @@ pub fn get_current_repo(config: &Config, cwd: &Path) -> Result<LocalRepo> {
     this_repo.ok_or(anyhow::anyhow!("Not in a dotfile repo"))
 }
 
-pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
+pub fn get_all_dotfiles(config: &Config) -> Result<HashMap<PathBuf, Dotfile>> {
     let mut filemap = HashMap::new();
-    let config = config::Config::load()?;
-    let repos = config.repos;
-    let base_dir = config::repos_base_dir()?;
+    let active_dirs = get_active_dotfile_dirs(config)?;
+    let home_path = PathBuf::from(shellexpand::tilde("~").to_string());
 
-    for repo in repos {
-        let repo_name = repo.name.clone();
-        let repo_path = base_dir.join(repo_name);
+    // Process active dotfile directories in order of relevance
+    for dotfile_dir in active_dirs {
+        for entry in WalkDir::new(&dotfile_dir.dir_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|entry| {
+                let path_str = entry.path().to_string_lossy();
+                !path_str.contains("/.git/")
+            })
+        {
+            if entry.file_type().is_file() {
+                let source_path = entry.path().to_path_buf();
+                let relative_path = source_path
+                    .strip_prefix(&dotfile_dir.dir_path)
+                    .unwrap()
+                    .to_path_buf();
+                let target_path = home_path.join(relative_path);
 
-        // Get active subdirectories for this repo (defaults to ["dots"])
-        let active_subdirs = repo.active_subdirs.clone();
+                let dotfile = Dotfile {
+                    source_path: source_path,
+                    target_path: target_path.clone(),
+                    hash: None,
+                    target_hash: None,
+                };
 
-        // Read repo metadata to get available dots directories
-        let meta = match crate::dot::localrepo::LocalRepo::from(repo.clone()).read_meta() {
-            Ok(meta) => meta,
-            Err(_) => {
-                // If metadata is invalid, skip this repo
-                continue;
-            }
-        };
-
-        // Process each active subdirectory
-        for subdir in active_subdirs {
-            // Check if this subdirectory exists in the repo's metadata
-            if !meta.dots_dirs.contains(&subdir) {
-                continue;
-            }
-
-            let dots_path = repo_path.join(&subdir);
-            if !dots_path.exists() {
-                continue;
-            }
-
-            for entry in WalkDir::new(&dots_path)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|entry| {
-                    let path_str = entry.path().to_string_lossy();
-                    !path_str.contains("/.git/")
-                })
-            {
-                if entry.file_type().is_file() {
-                    let source_path = entry.path().to_path_buf();
-                    let relative_path = source_path.strip_prefix(&dots_path).unwrap().to_path_buf();
-                    let target_path =
-                        PathBuf::from(shellexpand::tilde("~").to_string()).join(relative_path);
-
-                    let dotfile = Dotfile {
-                        source_path: source_path,
-                        target_path: target_path.clone(),
-                        hash: None,
-                        target_hash: None,
-                    };
-
-                    // Later repos override earlier ones for the same file path
-                    filemap.insert(target_path, dotfile);
-                }
+                // Later repos override earlier ones for the same file path
+                filemap.insert(target_path, dotfile);
             }
         }
     }
@@ -102,8 +109,13 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
 }
 
 /// Fetch a single file from home directory to the repository
-fn fetch_single_file(home_subdir: PathBuf, this_repo: &LocalRepo, db: &Database) -> Result<()> {
-    if let Some(source_file) = this_repo.target_to_source(&home_subdir)? {
+fn fetch_single_file(
+    home_subdir: PathBuf,
+    this_repo: &LocalRepo,
+    db: &Database,
+    config: &Config,
+) -> Result<()> {
+    if let Some(source_file) = this_repo.target_to_source(&home_subdir, config)? {
         fs::copy(&home_subdir, &source_file)?;
         let dotfile = Dotfile {
             source_path: source_file,
@@ -117,8 +129,14 @@ fn fetch_single_file(home_subdir: PathBuf, this_repo: &LocalRepo, db: &Database)
 }
 
 /// Fetch files from a specific subdirectory
-fn fetch_directory(path: &str, this_repo: &LocalRepo, db: &Database, home: &PathBuf) -> Result<()> {
-    let dotfiles = this_repo.get_all_dotfiles()?;
+fn fetch_directory(
+    path: &str,
+    this_repo: &LocalRepo,
+    db: &Database,
+    home: &PathBuf,
+    config: &Config,
+) -> Result<()> {
+    let dotfiles = this_repo.get_all_dotfiles(&config)?;
     let relative_path = path.trim_start_matches('/');
     let target_path = home.join(relative_path);
 
@@ -131,8 +149,13 @@ fn fetch_directory(path: &str, this_repo: &LocalRepo, db: &Database, home: &Path
 }
 
 /// Fetch all tracked files globally
-fn fetch_all_files(this_repo: &LocalRepo, db: &Database, _home: &PathBuf) -> Result<()> {
-    let dotfiles = this_repo.get_all_dotfiles()?;
+fn fetch_all_files(
+    this_repo: &LocalRepo,
+    db: &Database,
+    _home: &PathBuf,
+    config: &Config,
+) -> Result<()> {
+    let dotfiles = this_repo.get_all_dotfiles(config)?;
 
     for dotfile in dotfiles.values() {
         if dotfile.target_path.exists() {
@@ -143,11 +166,10 @@ fn fetch_all_files(this_repo: &LocalRepo, db: &Database, _home: &PathBuf) -> Res
 }
 
 /// Fetch modified files from home directory back to the repository
-pub fn fetch_modified(path: Option<&str>) -> Result<()> {
+pub fn fetch_modified(config: &Config, path: Option<&str>) -> Result<()> {
     let cwd = current_dir()?;
     let db = Database::new()?;
-    let config = Config::load()?;
-    let this_repo = get_current_repo(&config, &cwd)?;
+    let this_repo = get_current_repo(config, &cwd)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
     if let Some(p) = path {
@@ -159,21 +181,21 @@ pub fn fetch_modified(path: Option<&str>) -> Result<()> {
 
         let md = fs::metadata(&home_subdir)?;
         if md.is_file() {
-            fetch_single_file(home_subdir, &this_repo, &db)?;
+            fetch_single_file(home_subdir, &this_repo, &db, config)?;
         } else if md.is_dir() {
-            fetch_directory(p, &this_repo, &db, &home)?;
+            fetch_directory(p, &this_repo, &db, &home, config)?;
         }
     } else {
         // Global fetch: get all dotfiles from the current repo and fetch tracked
-        fetch_all_files(&this_repo, &db, &home)?;
+        fetch_all_files(&this_repo, &db, &home, config)?;
     }
     db.cleanup_hashes()?;
     Ok(())
 }
 
-pub fn apply_all() -> Result<()> {
+pub fn apply_all(config: &Config) -> Result<()> {
     let db = Database::new()?;
-    let filemap = get_all_dotfiles()?;
+    let filemap = get_all_dotfiles(config)?;
     for dotfile in filemap.values() {
         dotfile.apply(&db)?;
     }
@@ -181,9 +203,9 @@ pub fn apply_all() -> Result<()> {
     Ok(())
 }
 
-pub fn reset_modified(path: &str) -> Result<()> {
+pub fn reset_modified(config: &Config, path: &str) -> Result<()> {
     let db = Database::new()?;
-    let filemap = get_all_dotfiles()?;
+    let filemap = get_all_dotfiles(config)?;
     let expanded = shellexpand::tilde(path).into_owned();
     let full_path = PathBuf::from(expanded);
     for dotfile in filemap.values() {
@@ -196,18 +218,20 @@ pub fn reset_modified(path: &str) -> Result<()> {
 }
 
 /// List available subdirectories for a repository
-pub fn list_repo_subdirs(repo_name: &str) -> Result<Vec<String>> {
-    let config = Config::load()?;
-    let repo = find_repo_by_name(&config, repo_name)?;
+pub fn list_repo_subdirs(config: &Config, repo_name: &str) -> Result<Vec<String>> {
+    let repo = find_repo_by_name(config, repo_name)?;
     let local_repo = localrepo::LocalRepo::from(repo);
     let meta = local_repo.read_meta()?;
     Ok(meta.dots_dirs)
 }
 
 /// Set active subdirectories for a repository
-pub fn set_repo_active_subdirs(repo_name: &str, subdirs: Vec<String>) -> Result<()> {
-    let mut config = Config::load()?;
-    let repo = find_repo_by_name(&config, repo_name)?;
+pub fn set_repo_active_subdirs(
+    config: &mut Config,
+    repo_name: &str,
+    subdirs: Vec<String>,
+) -> Result<()> {
+    let repo = find_repo_by_name(config, repo_name)?;
 
     // Validate that the subdirectories exist in the repo metadata
     let local_repo = localrepo::LocalRepo::from(repo.clone());
@@ -228,9 +252,8 @@ pub fn set_repo_active_subdirs(repo_name: &str, subdirs: Vec<String>) -> Result<
 }
 
 /// Show active subdirectories for a repository
-pub fn show_repo_active_subdirs(repo_name: &str) -> Result<Vec<String>> {
-    let config = Config::load()?;
-    let repo = find_repo_by_name(&config, repo_name)?;
+pub fn show_repo_active_subdirs(config: &Config, repo_name: &str) -> Result<Vec<String>> {
+    let repo = find_repo_by_name(config, repo_name)?;
 
     let active_subdirs = config
         .get_active_subdirs(&repo.url)
@@ -250,11 +273,10 @@ fn find_repo_by_name(config: &Config, repo_name: &str) -> Result<config::Repo> {
 }
 
 /// Add a new dotfile to tracking
-pub fn add_dotfile(path: &str) -> Result<()> {
+pub fn add_dotfile(config: &Config, path: &str) -> Result<()> {
     let cwd = current_dir()?;
     let db = Database::new()?;
-    let config = Config::load()?;
-    let this_repo = get_current_repo(&config, &cwd)?;
+    let this_repo = get_current_repo(config, &cwd)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
     let expanded = shellexpand::tilde(path).into_owned();
@@ -270,7 +292,7 @@ pub fn add_dotfile(path: &str) -> Result<()> {
     }
 
     // Find the corresponding source path in the repo
-    if let Some(source_path) = this_repo.target_to_source(&full_path)? {
+    if let Some(source_path) = this_repo.target_to_source(&full_path, config)? {
         // Copy the file to the repo
         if let Some(parent) = source_path.parent() {
             fs::create_dir_all(parent)?;
@@ -298,9 +320,8 @@ pub fn add_dotfile(path: &str) -> Result<()> {
 }
 
 /// Remove a repository from configuration
-pub fn remove_repo(repo_name: &str, remove_files: bool) -> Result<()> {
-    let mut config = Config::load()?;
-    let repo = find_repo_by_name(&config, repo_name)?;
+pub fn remove_repo(config: &mut Config, repo_name: &str, remove_files: bool) -> Result<()> {
+    let repo = find_repo_by_name(config, repo_name)?;
 
     // Safety check: ask for confirmation if removing files
     if remove_files {

@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::{path::PathBuf, process::Command};
 
-pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
+pub fn add_repo(cfg: &mut config::Config, repo: config::Repo, debug: bool) -> Result<PathBuf> {
     let base = config::repos_base_dir()?;
 
     let repo_dir_name = repo.name.clone();
@@ -19,7 +19,6 @@ pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
         ));
     }
 
-    let mut cfg = config::Config::load()?;
     let depth = cfg.clone_depth;
 
     let mut cmd = Command::new("git");
@@ -75,8 +74,7 @@ pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
     Ok(target)
 }
 
-pub fn update_all(debug: bool) -> Result<()> {
-    let cfg = config::Config::load()?;
+pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
     let repos = cfg.repos.clone();
     if repos.is_empty() {
         println!("No repos configured.");
@@ -112,8 +110,7 @@ pub fn update_all(debug: bool) -> Result<()> {
     }
 }
 
-pub fn status_all(debug: bool, path: Option<&str>) -> Result<()> {
-    let cfg = config::Config::load()?;
+pub fn status_all(cfg: &config::Config, debug: bool, path: Option<&str>) -> Result<()> {
     let repos = cfg.repos.clone();
     let base = config::repos_base_dir()?;
     if repos.is_empty() {
@@ -208,7 +205,7 @@ pub fn status_all(debug: bool, path: Option<&str>) -> Result<()> {
 
                     // now check file status using db
                     let db = super::db::Database::new()?;
-                    let filemap = super::get_all_dotfiles()?;
+                    let filemap = super::get_all_dotfiles(cfg)?;
                     if let Some(dotfile) = filemap.get(&provided) {
                         println!("Source: {}", dotfile.source_path.display());
                         if dotfile.is_modified(&db) {
@@ -274,7 +271,7 @@ pub fn status_all(debug: bool, path: Option<&str>) -> Result<()> {
 
             // Now check individual dotfile statuses for this repo
             let db = super::db::Database::new()?;
-            let filemap = super::get_all_dotfiles()?;
+            let filemap = super::get_all_dotfiles(cfg)?;
 
             for (target_path, dotfile) in filemap.iter() {
                 // Only show dotfiles belonging to the current repo

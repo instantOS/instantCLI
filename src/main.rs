@@ -4,7 +4,7 @@ mod dot;
 
 use clap::{Parser, Subcommand};
 
-use crate::dot::config::{Repo, basename_from_repo};
+use crate::dot::config::{Config, Repo, basename_from_repo};
 
 /// InstantCLI main parser
 #[derive(Parser, Debug)]
@@ -103,6 +103,19 @@ fn main() {
         eprintln!("Debug mode is on");
     }
 
+    // Load configuration once at startup
+    let mut config = match Config::load() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!(
+                "{}: {}",
+                "Error loading configuration".red(),
+                e.to_string().red()
+            );
+            std::process::exit(1);
+        }
+    };
+
     match &cli.command {
         Some(Commands::Dot { command }) => match command {
             DotCommands::Clone { repo, name, branch } => {
@@ -113,7 +126,7 @@ fn main() {
                     branch: branch.clone(),
                     active_subdirs: Vec::new(), // Will be set to default by config
                 };
-                match dot::add_repo(repo_obj.into(), cli.debug) {
+                match dot::add_repo(&mut config, repo_obj.into(), cli.debug) {
                     Ok(path) => println!(
                         "{} {} {} {}",
                         "Added repo".green(),
@@ -132,7 +145,7 @@ fn main() {
                     }
                 }
             }
-            DotCommands::Reset { path } => match dot::reset_modified(&path) {
+            DotCommands::Reset { path } => match dot::reset_modified(&config, &path) {
                 Ok(()) => println!("{} {}", "Reset modified dotfiles in".green(), path.green()),
                 Err(e) => {
                     eprintln!(
@@ -143,7 +156,7 @@ fn main() {
                     std::process::exit(1);
                 }
             },
-            DotCommands::Apply => match dot::apply_all() {
+            DotCommands::Apply => match dot::apply_all(&config) {
                 Ok(()) => println!("{}", "Applied dotfiles".green()),
                 Err(e) => {
                     eprintln!(
@@ -154,7 +167,7 @@ fn main() {
                     std::process::exit(1);
                 }
             },
-            DotCommands::Fetch { path } => match dot::fetch_modified(path.as_deref()) {
+            DotCommands::Fetch { path } => match dot::fetch_modified(&config, path.as_deref()) {
                 Ok(()) => println!("{}", "Fetched modified dotfiles".green()),
                 Err(e) => {
                     eprintln!(
@@ -165,27 +178,29 @@ fn main() {
                     std::process::exit(1);
                 }
             },
-            DotCommands::Add { path } => match dot::add_dotfile(&path) {
+            DotCommands::Add { path } => match dot::add_dotfile(&config, &path) {
                 Ok(()) => println!("{} {}", "Added dotfile".green(), path.green()),
                 Err(e) => {
                     eprintln!("{}: {}", "Error adding dotfile".red(), e.to_string().red());
                     std::process::exit(1);
                 }
             },
-            DotCommands::Update => match dot::update_all(cli.debug) {
+            DotCommands::Update => match dot::update_all(&config, cli.debug) {
                 Ok(()) => println!("{}", "All repos updated".green()),
                 Err(e) => {
                     eprintln!("{}: {}", "Error updating repos".red(), e.to_string().red());
                     std::process::exit(1);
                 }
             },
-            DotCommands::Status { path } => match dot::status_all(cli.debug, path.as_deref()) {
-                Ok(()) => (),
-                Err(e) => {
-                    eprintln!("Error checking repo status: {}", e);
-                    std::process::exit(1);
+            DotCommands::Status { path } => {
+                match dot::status_all(&config, cli.debug, path.as_deref()) {
+                    Ok(()) => (),
+                    Err(e) => {
+                        eprintln!("Error checking repo status: {}", e);
+                        std::process::exit(1);
+                    }
                 }
-            },
+            }
             DotCommands::Init { name } => {
                 let cwd = std::env::current_dir().expect("unable to determine cwd");
                 match dot::meta::init_repo(&cwd, name.as_deref()) {
@@ -204,7 +219,7 @@ fn main() {
                     }
                 }
             }
-            DotCommands::ListSubdirs { repo } => match dot::list_repo_subdirs(&repo) {
+            DotCommands::ListSubdirs { repo } => match dot::list_repo_subdirs(&config, &repo) {
                 Ok(subdirs) => {
                     println!("Available subdirectories for {}:", repo.green());
                     for subdir in subdirs {
@@ -221,7 +236,7 @@ fn main() {
                 }
             },
             DotCommands::SetSubdirs { repo, subdirs } => {
-                match dot::set_repo_active_subdirs(&repo, subdirs.clone()) {
+                match dot::set_repo_active_subdirs(&mut config, &repo, subdirs.clone()) {
                     Ok(()) => println!(
                         "{} {} for {}",
                         "Set active subdirectories".green(),
@@ -238,33 +253,37 @@ fn main() {
                     }
                 }
             }
-            DotCommands::ShowSubdirs { repo } => match dot::show_repo_active_subdirs(&repo) {
-                Ok(subdirs) => {
-                    println!("Active subdirectories for {}:", repo.green());
-                    for subdir in subdirs {
-                        println!("  - {}", subdir);
+            DotCommands::ShowSubdirs { repo } => {
+                match dot::show_repo_active_subdirs(&config, &repo) {
+                    Ok(subdirs) => {
+                        println!("Active subdirectories for {}:", repo.green());
+                        for subdir in subdirs {
+                            println!("  - {}", subdir);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{}: {}",
+                            "Error showing active subdirectories".red(),
+                            e.to_string().red()
+                        );
+                        std::process::exit(1);
                     }
                 }
-                Err(e) => {
-                    eprintln!(
-                        "{}: {}",
-                        "Error showing active subdirectories".red(),
-                        e.to_string().red()
-                    );
-                    std::process::exit(1);
+            }
+            DotCommands::Remove { repo, files } => {
+                match dot::remove_repo(&mut config, &repo, *files) {
+                    Ok(()) => println!("{} {}", "Removed repository".green(), repo.green()),
+                    Err(e) => {
+                        eprintln!(
+                            "{}: {}",
+                            "Error removing repository".red(),
+                            e.to_string().red()
+                        );
+                        std::process::exit(1);
+                    }
                 }
-            },
-            DotCommands::Remove { repo, files } => match dot::remove_repo(&repo, *files) {
-                Ok(()) => println!("{} {}", "Removed repository".green(), repo.green()),
-                Err(e) => {
-                    eprintln!(
-                        "{}: {}",
-                        "Error removing repository".red(),
-                        e.to_string().red()
-                    );
-                    std::process::exit(1);
-                }
-            },
+            }
         },
         None => {
             println!("instant: run with --help for usage");

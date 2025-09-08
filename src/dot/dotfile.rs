@@ -62,12 +62,9 @@ impl Dotfile {
             if newest_hash.created >= file_time {
                 // Database has a hash newer than or equal to file modification time,
                 // so we can return the newest unmodified hash for this file
-                if newest_hash.unmodified {
-                    return Ok(newest_hash.hash);
-                }
+                return Ok(newest_hash.hash);
             }
         }
-
         // No newer hash found, compute the hash
         let hash = Self::get_hash(&self.target_path)?;
         // Only add hash if it doesn't already exist in the database
