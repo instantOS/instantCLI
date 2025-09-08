@@ -28,9 +28,8 @@ impl DotfileDir {
     }
 
     /// Get all dotfiles in this directory
-    pub fn get_dotfiles(&self) -> Result<Vec<(PathBuf, PathBuf)>> {
+    pub fn get_dotfiles(&self) -> Result<Vec<crate::dot::dotfile::Dotfile>> {
         let mut dotfiles = Vec::new();
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
         if !self.exists() {
             return Ok(dotfiles);
@@ -47,8 +46,16 @@ impl DotfileDir {
             if entry.file_type().is_file() {
                 let source_path = entry.path().to_path_buf();
                 let relative_path = source_path.strip_prefix(&self.path).unwrap().to_path_buf();
-                let target_path = home.join(relative_path);
-                dotfiles.push((source_path, target_path));
+                let target_path =
+                    PathBuf::from(shellexpand::tilde("~").to_string()).join(relative_path);
+
+                let dotfile = crate::dot::dotfile::Dotfile {
+                    source_path,
+                    target_path: target_path.clone(),
+                    hash: None,
+                    target_hash: None,
+                };
+                dotfiles.push(dotfile);
             }
         }
 
@@ -179,14 +186,8 @@ impl LocalRepo {
             if dotfile_dir.is_active && dotfile_dir.exists() {
                 match dotfile_dir.get_dotfiles() {
                     Ok(dotfiles) => {
-                        for (source_path, target_path) in dotfiles {
-                            let dotfile = crate::dot::dotfile::Dotfile {
-                                source_path: source_path,
-                                target_path: target_path.clone(),
-                                hash: None,
-                                target_hash: None,
-                            };
-                            filemap.insert(target_path, dotfile);
+                        for dotfile in dotfiles {
+                            filemap.insert(dotfile.target_path.clone(), dotfile);
                         }
                     }
                     Err(e) => {
