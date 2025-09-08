@@ -33,9 +33,8 @@ impl Dotfile {
             return false;
         }
 
-        //TODO: change this:
-        //If the unmodified hashes contain the target_hash, then the file is unmodified, otherwise
-        //return true (modified)
+        // If the unmodified hashes contain the target_hash, then the file is unmodified, otherwise
+        // return true (modified)
         if let Ok(target_hash) = self.get_target_hash(db) {
             if let Ok(unmodified_hashes) = db.get_unmodified_hashes(&self.target_path) {
                 return !unmodified_hashes.iter().any(|h| h.hash == target_hash);
@@ -68,9 +67,9 @@ impl Dotfile {
         }
         // No newer hash found, compute the hash
         let hash = Self::compute_hash(&self.target_path)?;
-        // TODO: check if this file is modified by checking if there are any valid hashes which
-        // match the newly computed one. If there are, save this as an unmodified hash
-        db.add_hash(&hash, &self.target_path, false)?;
+        let all_hashes = db.get_all_hashes(&self.target_path).unwrap_or_default();
+        let is_unmodified = all_hashes.iter().any(|h| h.hash == hash);
+        db.add_hash(&hash, &self.target_path, is_unmodified)?;
         Ok(hash)
     }
 
@@ -115,9 +114,10 @@ impl Dotfile {
             return Ok(());
         }
 
-        //TODO: only do this if the target file does not yet exist
-        if let Some(parent) = self.target_path.parent() {
-            fs::create_dir_all(parent)?;
+        if !self.target_path.exists() {
+            if let Some(parent) = self.target_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
         }
 
         fs::copy(&self.source_path, &self.target_path)?;
