@@ -67,6 +67,23 @@ enum DotCommands {
         /// Optional name to set in instantdots.toml
         name: Option<String>,
     },
+    /// List available subdirectories in a repo
+    ListSubdirs {
+        /// Repository name or URL
+        repo: String,
+    },
+    /// Set active subdirectories for a repo
+    SetSubdirs {
+        /// Repository name or URL
+        repo: String,
+        /// Subdirectories to activate (space-separated)
+        subdirs: Vec<String>,
+    },
+    /// Show active subdirectories for a repo
+    ShowSubdirs {
+        /// Repository name or URL
+        repo: String,
+    },
 }
 
 fn main() {
@@ -87,6 +104,7 @@ fn main() {
                     url: repo.clone(),
                     name: name.clone(),
                     branch: branch.clone(),
+                    active_subdirs: Vec::new(), // Will be set to default by config
                 };
                 match dot::add_repo(repo_obj.into(), cli.debug) {
                     Ok(path) => println!(
@@ -166,6 +184,60 @@ fn main() {
                         eprintln!(
                             "{}: {}",
                             "Error initializing repo".red(),
+                            e.to_string().red()
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
+            DotCommands::ListSubdirs { repo } => {
+                match dot::list_repo_subdirs(&repo) {
+                    Ok(subdirs) => {
+                        println!("Available subdirectories for {}:", repo.green());
+                        for subdir in subdirs {
+                            println!("  - {}", subdir);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{}: {}",
+                            "Error listing subdirectories".red(),
+                            e.to_string().red()
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
+            DotCommands::SetSubdirs { repo, subdirs } => {
+                match dot::set_repo_active_subdirs(&repo, subdirs.clone()) {
+                    Ok(()) => println!(
+                        "{} {} for {}",
+                        "Set active subdirectories".green(),
+                        subdirs.join(", ").green(),
+                        repo.green()
+                    ),
+                    Err(e) => {
+                        eprintln!(
+                            "{}: {}",
+                            "Error setting active subdirectories".red(),
+                            e.to_string().red()
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
+            DotCommands::ShowSubdirs { repo } => {
+                match dot::show_repo_active_subdirs(&repo) {
+                    Ok(subdirs) => {
+                        println!("Active subdirectories for {}:", repo.green());
+                        for subdir in subdirs {
+                            println!("  - {}", subdir);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{}: {}",
+                            "Error showing active subdirectories".red(),
                             e.to_string().red()
                         );
                         std::process::exit(1);

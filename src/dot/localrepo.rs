@@ -1,6 +1,6 @@
 use crate::dot::config;
 use anyhow::{Context, Result};
-use std::{path::PathBuf, process::Command};
+use std::{path::Path, path::PathBuf, process::Command};
 
 #[derive(Clone, Debug)]
 pub struct LocalRepo {
@@ -25,6 +25,7 @@ impl From<LocalRepo> for config::Repo {
             url: r.url,
             name: r.name,
             branch: r.branch,
+            active_subdirs: Vec::new(), // Default empty, will be set by config
         }
     }
 }
@@ -56,6 +57,60 @@ impl LocalRepo {
     pub fn read_meta(&self) -> Result<crate::dot::meta::RepoMetaData> {
         let target = self.local_path()?;
         crate::dot::meta::read_meta(&target)
+    }
+
+    /// Get all active dots directories for this repo
+    pub fn get_active_dots_dirs(&self) -> Result<Vec<PathBuf>> {
+        let meta = self.read_meta()?;
+        // TODO: do not load config multiple times in an app run. 
+        // come up with something better, maybe a singleton?
+        let config = crate::dot::config::Config::load()?;
+        let active_subdirs = config.get_active_subdirs(&self.url)
+            .unwrap_or_else(|| vec!["dots".to_string()]);
+        
+        let repo_path = self.local_path()?;
+        let mut active_dirs = Vec::new();
+        
+        for subdir in active_subdirs {
+            if meta.dots_dirs.contains(&subdir) {
+                let dir_path = repo_path.join(&subdir);
+                if dir_path.exists() {
+                    active_dirs.push(dir_path);
+                }
+            }
+        }
+        
+        Ok(active_dirs)
+    }
+
+    /// Find which dots directory a source file belongs to
+    pub fn find_dots_dir_for_file(&self, source_file: &Path) -> Result<Option<PathBuf>> {
+        let active_dirs = self.get_active_dots_dirs()?;
+        
+        for dots_dir in active_dirs {
+            if source_file.starts_with(&dots_dir) {
+                return Ok(Some(dots_dir));
+            }
+        }
+        
+        Ok(None)
+    }
+
+    /// Convert a target path (in home directory) to source path (in repo)
+    pub fn target_to_source(&self, target_path: &Path) -> Result<Option<PathBuf>> {
+        let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
+        let relative = target_path.strip_prefix(&home).unwrap_or(target_path);
+        
+        let active_dirs = self.get_active_dots_dirs()?;
+        
+        for dots_dir in active_dirs {
+            let source_path = dots_dir.join(relative);
+            if source_path.exists() {
+                return Ok(Some(source_path));
+            }
+        }
+        
+        Ok(None)
     }
 
     pub fn update(&self, debug: bool) -> Result<()> {

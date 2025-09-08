@@ -35,7 +35,8 @@ pub fn get_current_repo(config: &Config, cwd: &Path) -> Result<LocalRepo> {
 
 pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
     let mut filemap = HashMap::new();
-    let repos = config::Config::load()?.repos;
+    let config = config::Config::load()?;
+    let repos = config.repos;
     let base_dir = config::repos_base_dir()?;
 
     for repo in repos {
@@ -44,29 +45,55 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
             |name| name.clone(),
         );
         let repo_path = base_dir.join(repo_name);
-        let dots_path = repo_path.join("dots");
-        for entry in WalkDir::new(&dots_path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|entry| {
-                let path_str = entry.path().to_string_lossy();
-                !path_str.contains("/.git/")
-            })
-        {
-            if entry.file_type().is_file() {
-                let source_path = entry.path().to_path_buf();
-                let relative_path = source_path.strip_prefix(&dots_path).unwrap().to_path_buf();
-                let target_path =
-                    PathBuf::from(shellexpand::tilde("~").to_string()).join(relative_path);
+        
+        // Get active subdirectories for this repo (defaults to ["dots"])
+        let active_subdirs = repo.active_subdirs.clone();
+        
+        // Read repo metadata to get available dots directories
+        let meta = match crate::dot::localrepo::LocalRepo::from(repo.clone()).read_meta() {
+            Ok(meta) => meta,
+            Err(_) => {
+                // If metadata is invalid, skip this repo
+                continue;
+            }
+        };
+        
+        // Process each active subdirectory
+        for subdir in active_subdirs {
+            // Check if this subdirectory exists in the repo's metadata
+            if !meta.dots_dirs.contains(&subdir) {
+                continue;
+            }
+            
+            let dots_path = repo_path.join(&subdir);
+            if !dots_path.exists() {
+                continue;
+            }
+            
+            for entry in WalkDir::new(&dots_path)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|entry| {
+                    let path_str = entry.path().to_string_lossy();
+                    !path_str.contains("/.git/")
+                })
+            {
+                if entry.file_type().is_file() {
+                    let source_path = entry.path().to_path_buf();
+                    let relative_path = source_path.strip_prefix(&dots_path).unwrap().to_path_buf();
+                    let target_path =
+                        PathBuf::from(shellexpand::tilde("~").to_string()).join(relative_path);
 
-                let dotfile = Dotfile {
-                    repo_path: source_path,
-                    target_path: target_path.clone(),
-                    hash: None,
-                    target_hash: None,
-                };
+                    let dotfile = Dotfile {
+                        repo_path: source_path,
+                        target_path: target_path.clone(),
+                        hash: None,
+                        target_hash: None,
+                    };
 
-                filemap.insert(target_path, dotfile);
+                    // Later repos override earlier ones for the same file path
+                    filemap.insert(target_path, dotfile);
+                }
             }
         }
     }
@@ -79,22 +106,19 @@ pub fn fetch_modified(path: Option<&str>) -> Result<()> {
     let db = Database::new()?;
     let config = Config::load()?;
     let this_repo = get_current_repo(&config, &cwd)?;
-    let repo_path = this_repo.local_path()?;
-    let dots_path = repo_path.join("dots");
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    
     if let Some(p) = path {
         let p = p.trim_start_matches('.');
         let home_subdir = home.join(p);
         if !home_subdir.exists() {
             return Ok(());
         }
+        
         let md = fs::metadata(&home_subdir)?;
         if md.is_file() {
-            let source_file = dots_path.join(p);
-            if !source_file.exists() {
-                if let Some(parent) = source_file.parent() {
-                    fs::create_dir_all(parent)?;
-                }
+            // Try to find corresponding source file in active dots directories
+            if let Some(source_file) = this_repo.target_to_source(&home_subdir)? {
                 fs::copy(&home_subdir, &source_file)?;
                 let dotfile = Dotfile {
                     repo_path: source_file,
@@ -105,48 +129,57 @@ pub fn fetch_modified(path: Option<&str>) -> Result<()> {
                 let _ = dotfile.get_source_hash(&db);
             }
         } else if md.is_dir() {
-            let source_subdir = dots_path.join(p);
-            if source_subdir.exists() {
-                // Walk existing source subdir and fetch tracked
-                for entry in WalkDir::new(&source_subdir)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.file_type().is_file())
-                {
-                    let source_file = entry.path().to_path_buf();
-                    let relative = source_file.strip_prefix(&dots_path).unwrap().to_path_buf();
-                    let target_file = home.join(relative);
-                    if target_file.exists() {
-                        let dotfile = Dotfile {
-                            repo_path: source_file,
-                            target_path: target_file,
-                            hash: None,
-                            target_hash: None,
-                        };
-                        dotfile.fetch(&db)?;
+            // Handle directory fetch - check all active dots directories
+            let active_dirs = this_repo.get_active_dots_dirs()?;
+            let relative_path = p.trim_start_matches('/');
+            
+            for dots_dir in active_dirs {
+                let source_subdir = dots_dir.join(relative_path);
+                if source_subdir.exists() {
+                    // Walk existing source subdir and fetch tracked
+                    for entry in WalkDir::new(&source_subdir)
+                        .into_iter()
+                        .filter_map(|e| e.ok())
+                        .filter(|e| e.file_type().is_file())
+                    {
+                        let source_file = entry.path().to_path_buf();
+                        let relative = source_file.strip_prefix(&dots_dir).unwrap().to_path_buf();
+                        let target_file = home.join(relative);
+                        if target_file.exists() {
+                            let dotfile = Dotfile {
+                                repo_path: source_file,
+                                target_path: target_file,
+                                hash: None,
+                                target_hash: None,
+                            };
+                            dotfile.fetch(&db)?;
+                        }
                     }
                 }
             }
-            // else do nothing for non-existent source dir
         }
     } else {
-        // Global fetch: walk all dots/ and fetch tracked
-        for entry in WalkDir::new(&dots_path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-        {
-            let source_file = entry.path().to_path_buf();
-            let relative = source_file.strip_prefix(&dots_path).unwrap().to_path_buf();
-            let target_file = home.join(relative);
-            if target_file.exists() {
-                let dotfile = Dotfile {
-                    repo_path: source_file,
-                    target_path: target_file,
-                    hash: None,
-                    target_hash: None,
-                };
-                dotfile.fetch(&db)?;
+        // Global fetch: walk all active dots directories and fetch tracked
+        let active_dirs = this_repo.get_active_dots_dirs()?;
+        
+        for dots_dir in active_dirs {
+            for entry in WalkDir::new(&dots_dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+            {
+                let source_file = entry.path().to_path_buf();
+                let relative = source_file.strip_prefix(&dots_dir).unwrap().to_path_buf();
+                let target_file = home.join(relative);
+                if target_file.exists() {
+                    let dotfile = Dotfile {
+                        repo_path: source_file,
+                        target_path: target_file,
+                        hash: None,
+                        target_hash: None,
+                    };
+                    dotfile.fetch(&db)?;
+                }
             }
         }
     }
@@ -176,4 +209,70 @@ pub fn reset_modified(path: &str) -> Result<()> {
     }
     db.cleanup_hashes()?;
     Ok(())
+}
+
+/// List available subdirectories for a repository
+pub fn list_repo_subdirs(repo_identifier: &str) -> Result<Vec<String>> {
+    let config = Config::load()?;
+    let repo = find_repo_by_identifier(&config, repo_identifier)?;
+    let local_repo = localrepo::LocalRepo::from(repo);
+    let meta = local_repo.read_meta()?;
+    Ok(meta.dots_dirs)
+}
+
+/// Set active subdirectories for a repository
+pub fn set_repo_active_subdirs(repo_identifier: &str, subdirs: Vec<String>) -> Result<()> {
+    let mut config = Config::load()?;
+    let repo = find_repo_by_identifier(&config, repo_identifier)?;
+    
+    // Validate that the subdirectories exist in the repo metadata
+    let local_repo = localrepo::LocalRepo::from(repo.clone());
+    let meta = local_repo.read_meta()?;
+    
+    for subdir in &subdirs {
+        if !meta.dots_dirs.contains(subdir) {
+            return Err(anyhow::anyhow!(
+                "Subdirectory '{}' not found in repository. Available: {:?}",
+                subdir, meta.dots_dirs
+            ));
+        }
+    }
+    
+    config.set_active_subdirs(&repo.url, subdirs)?;
+    Ok(())
+}
+
+/// Show active subdirectories for a repository
+pub fn show_repo_active_subdirs(repo_identifier: &str) -> Result<Vec<String>> {
+    let config = Config::load()?;
+    let repo = find_repo_by_identifier(&config, repo_identifier)?;
+    
+    let active_subdirs = config.get_active_subdirs(&repo.url)
+        .unwrap_or_else(|| vec!["dots".to_string()]);
+    
+    Ok(active_subdirs)
+}
+
+/// Helper function to find a repository by name or URL
+fn find_repo_by_identifier(config: &Config, identifier: &str) -> Result<config::Repo> {
+    // Try to find by URL first
+    if let Some(repo) = config.repos.iter().find(|r| r.url == identifier) {
+        return Ok(repo.clone());
+    }
+    
+    // Try to find by name
+    if let Some(repo) = config.repos.iter().find(|r| r.name.as_deref() == Some(identifier)) {
+        return Ok(repo.clone());
+    }
+    
+    // Try to find by matching the repo name from URL
+    let basename = config::basename_from_repo(identifier);
+    if let Some(repo) = config.repos.iter().find(|r| {
+        r.name.as_deref() == Some(&basename) || 
+        config::basename_from_repo(&r.url) == basename
+    }) {
+        return Ok(repo.clone());
+    }
+    
+    Err(anyhow::anyhow!("Repository '{}' not found", identifier))
 }

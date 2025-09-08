@@ -23,6 +23,12 @@ fn ensure_git_repo(repo_path: &Path) -> Result<()> {
 pub struct RepoMetaData {
     pub name: String,
     pub description: Option<String>,
+    #[serde(default = "default_dots_dirs")]
+    pub dots_dirs: Vec<String>,
+}
+
+fn default_dots_dirs() -> Vec<String> {
+    vec!["dots".to_string()]
 }
 
 pub fn read_meta(repo_path: &Path) -> Result<RepoMetaData> {
@@ -98,11 +104,13 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
     struct MetaWrite {
         name: String,
         description: Option<String>,
+        dots_dirs: Vec<String>,
     }
 
     let mw = MetaWrite {
         name: final_name,
         description,
+        dots_dirs: vec!["dots".to_string()],
     };
     let toml = toml::to_string_pretty(&mw).context("serializing instantdots.toml")?;
     fs::write(&p, toml).with_context(|| format!("writing {}", p.display()))?;
@@ -126,11 +134,13 @@ pub fn non_interactive_init(repo_path: &Path, name: &str, description: Option<&s
     struct MetaWrite {
         name: String,
         description: Option<String>,
+        dots_dirs: Vec<String>,
     }
 
     let mw = MetaWrite {
         name: final_name,
         description: desc,
+        dots_dirs: vec!["dots".to_string()],
     };
     let toml = toml::to_string_pretty(&mw).context("serializing instantdots.toml")?;
     fs::write(&p, toml).with_context(|| format!("writing {}", p.display()))?;

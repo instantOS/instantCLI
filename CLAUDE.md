@@ -107,3 +107,41 @@ branch = "main"
 - `instant dot update`: Update all configured repositories
 - `instant dot status [<path>]`: Check repository status
 - `instant dot init`: Initialize current directory as a dotfile repo
+
+## Multiple Subdirectories Support
+
+InstantCLI repositories can declare multiple subdirectories containing dotfiles, with configurable active subdirectories per repository.
+
+### Repository Structure
+
+Repositories can define multiple dots directories in their `instantdots.toml`:
+
+```toml
+name = "my-dotfiles"
+description = "My personal dotfiles collection"
+dots_dirs = ["dots", "themes", "configs"]
+```
+
+### Active Subdirectories Configuration
+
+The global configuration can specify which subdirectories are active for each repository:
+
+```toml
+[[repos]]
+url = "https://github.com/user/dotfiles.git"
+name = "my-dotfiles"
+active_subdirs = ["dots", "themes"]
+```
+
+### Subdirectory Management Commands
+
+- `instant dot list-subdirs <repo>`: List available subdirectories in a repository
+- `instant dot set-subdirs <repo> <subdirs...>`: Set active subdirectories for a repository
+- `instant dot show-subdirs <repo>`: Show currently active subdirectories for a repository
+
+### Default Behavior
+
+- If `dots_dirs` is not specified in `instantdots.toml`, defaults to `["dots"]`
+- If `active_subdirs` is not specified in global config, defaults to `["dots"]`
+- Only the first subdirectory is active by default to maintain backward compatibility
+- Later repositories override earlier ones for the same file paths (overlay system)
