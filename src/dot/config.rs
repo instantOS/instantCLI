@@ -133,18 +133,18 @@ pub fn repos_dir() -> Result<PathBuf> {
 
 /// Extract a repository name from a git URL by removing the .git suffix
 /// and splitting on path separators and colons to get the last component.
-/// 
+///
 /// # Arguments
 /// * `repo` - The git repository URL or path
-/// 
+///
 /// # Returns
 /// The extracted repository name as a String
-/// 
+///
 /// # Examples
 /// ```
 /// let name = basename_from_repo("https://github.com/user/my-repo.git");
 /// assert_eq!(name, "my-repo");
-/// 
+///
 /// let name = basename_from_repo("git@github.com:user/dotfiles");
 /// assert_eq!(name, "dotfiles");
 /// ```

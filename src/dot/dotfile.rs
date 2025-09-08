@@ -67,8 +67,7 @@ impl Dotfile {
         }
         // No newer hash found, compute the hash
         let hash = Self::compute_hash(&self.target_path)?;
-        let all_hashes = db.get_all_hashes(&self.target_path).unwrap_or_default();
-        let is_unmodified = all_hashes.iter().any(|h| h.hash == hash);
+        let is_unmodified = db.hash_exists(&hash, &self.target_path)?;
         db.add_hash(&hash, &self.target_path, is_unmodified)?;
         Ok(hash)
     }
@@ -155,8 +154,6 @@ mod tests {
         let dotfile = Dotfile {
             source_path: repo_path.join("test.txt"),
             target_path: target_path.join("test.txt"),
-            hash: None,
-            target_hash: None,
         };
 
         dotfile.apply(&db).unwrap();

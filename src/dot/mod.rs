@@ -31,11 +31,19 @@ pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<PathBuf>> {
     for repo in &config.repos {
         let local_repo = match LocalRepo::new(config, repo.name.clone()) {
             Ok(repo) => repo,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!(
+                    "{}",
+                    format!("Warning: skipping repo '{}': {}", repo.name, e).yellow()
+                );
+                continue;
+            }
         };
 
         for dotfile_dir in &local_repo.dotfile_dirs {
             if dotfile_dir.is_active {
+                //TODO: the default 'dots' dir is not always active when no active repos are
+                //configured, fix.  (the cause is not in this function)
                 active_dirs.push(dotfile_dir.path.clone());
             }
         }
@@ -110,13 +118,7 @@ fn fetch_single_file(
 }
 
 /// Fetch files from a specific subdirectory
-fn fetch_directory(
-    path: &str,
-    this_repo: &LocalRepo,
-    db: &Database,
-    home: &PathBuf,
-    config: &Config,
-) -> Result<()> {
+fn fetch_directory(path: &str, this_repo: &LocalRepo, db: &Database, home: &PathBuf) -> Result<()> {
     let dotfiles = this_repo.get_all_dotfiles()?;
     let relative_path = path.trim_start_matches('/');
     let target_path = home.join(relative_path);
@@ -130,12 +132,7 @@ fn fetch_directory(
 }
 
 /// Fetch all tracked files globally
-fn fetch_all_files(
-    this_repo: &LocalRepo,
-    db: &Database,
-    _home: &PathBuf,
-    config: &Config,
-) -> Result<()> {
+fn fetch_all_files(this_repo: &LocalRepo, db: &Database, _home: &PathBuf) -> Result<()> {
     let dotfiles = this_repo.get_all_dotfiles()?;
 
     for dotfile in dotfiles.values() {
@@ -164,11 +161,11 @@ pub fn fetch_modified(config: &Config, path: Option<&str>) -> Result<()> {
         if md.is_file() {
             fetch_single_file(home_subdir, &this_repo, &db, config)?;
         } else if md.is_dir() {
-            fetch_directory(p, &this_repo, &db, &home, config)?;
+            fetch_directory(p, &this_repo, &db, &home)?
         }
     } else {
         // Global fetch: get all dotfiles from the current repo and fetch tracked
-        fetch_all_files(&this_repo, &db, &home, config)?;
+        fetch_all_files(&this_repo, &db, &home)?;
     }
     db.cleanup_hashes()?;
     Ok(())
