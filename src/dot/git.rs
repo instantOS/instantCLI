@@ -202,8 +202,6 @@ pub fn status_all(cfg: &config::Config, debug: bool, path: Option<&str>) -> Resu
                     let dotfile = super::Dotfile {
                         source_path: source_candidate.clone(),
                         target_path: PathBuf::from(shellexpand::tilde("~").to_string()).join(rel),
-                        hash: None,
-                        target_hash: None,
                     };
                     if dotfile.is_modified(&db) {
                         println!("File status: {}", "modified".yellow());

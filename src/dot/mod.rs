@@ -80,8 +80,6 @@ pub fn get_all_dotfiles(config: &Config) -> Result<HashMap<PathBuf, Dotfile>> {
                 let dotfile = Dotfile {
                     source_path: source_path,
                     target_path: target_path.clone(),
-                    hash: None,
-                    target_hash: None,
                 };
 
                 // Later repos override earlier ones for the same file path
@@ -105,8 +103,6 @@ fn fetch_single_file(
         let dotfile = Dotfile {
             source_path: source_file,
             target_path: home_subdir,
-            hash: None,
-            target_hash: None,
         };
         let _ = dotfile.get_source_hash(db);
     }
@@ -285,8 +281,6 @@ pub fn add_dotfile(config: &Config, path: &str) -> Result<()> {
         let dotfile = Dotfile {
             source_path: source_path,
             target_path: full_path,
-            hash: None,
-            target_hash: None,
         };
         let _ = dotfile.get_source_hash(&db);
 

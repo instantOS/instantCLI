@@ -33,6 +33,9 @@ impl Dotfile {
             return false;
         }
 
+        //TODO: change this:
+        //If the unmodified hashes contain the target_hash, then the file is unmodified, otherwise
+        //return true (modified)
         if let Ok(target_hash) = self.get_target_hash(db) {
             if let Ok(unmodified_hashes) = db.get_unmodified_hashes(&self.target_path) {
                 return !unmodified_hashes.iter().any(|h| h.hash == target_hash);
@@ -112,6 +115,7 @@ impl Dotfile {
             return Ok(());
         }
 
+        //TODO: only do this if the target file does not yet exist
         if let Some(parent) = self.target_path.parent() {
             fs::create_dir_all(parent)?;
         }

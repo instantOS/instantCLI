@@ -57,8 +57,6 @@ impl DotfileDir {
                 let dotfile = crate::dot::dotfile::Dotfile {
                     source_path,
                     target_path: target_path.clone(),
-                    hash: None,
-                    target_hash: None,
                 };
                 dotfiles.push(dotfile);
             }
