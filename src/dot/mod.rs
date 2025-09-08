@@ -1,4 +1,5 @@
 use anyhow::Result;
+use colored::*;
 use shellexpand;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -270,4 +271,53 @@ fn find_repo_by_identifier(config: &Config, identifier: &str) -> Result<config::
     }
     
     Err(anyhow::anyhow!("Repository '{}' not found", identifier))
+}
+
+/// Remove a repository from configuration
+pub fn remove_repo(repo_identifier: &str, remove_files: bool) -> Result<()> {
+    let mut config = Config::load()?;
+    let repo = find_repo_by_identifier(&config, repo_identifier)?;
+    
+    // Safety check: ask for confirmation if removing files
+    if remove_files {
+        use dialoguer::Confirm;
+        
+        println!("⚠️  {} {} {} {}", 
+            "WARNING:".red().bold(),
+            "You are about to remove repository".red(),
+            repo.name.green().bold(),
+            "and all its local files!".red()
+        );
+        println!("{}: {}", "Local path".yellow(), LocalRepo::from(repo.clone()).local_path()?.display());
+        
+        let should_remove = Confirm::new()
+            .with_prompt("Are you sure?")
+            .default(false)
+            .interact()?;
+        
+        if !should_remove {
+            println!("{}", "Operation cancelled.".yellow());
+            return Ok(());
+        }
+    }
+    
+    // Remove the repository from configuration
+    config.repos.retain(|r| r.name != repo.name);
+    config.save()?;
+    
+    // Optionally remove local files
+    if remove_files {
+        let local_repo = LocalRepo::from(repo);
+        let local_path = local_repo.local_path()?;
+        
+        if local_path.exists() {
+            if let Err(e) = std::fs::remove_dir_all(&local_path) {
+                eprintln!("{}: {}", "Warning: failed to remove local files".yellow(), e);
+            } else {
+                println!("{} {}", "Removed local files:".green(), local_path.display());
+            }
+        }
+    }
+    
+    Ok(())
 }

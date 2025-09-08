@@ -84,6 +84,14 @@ enum DotCommands {
         /// Repository name or URL
         repo: String,
     },
+    /// Remove a repository from configuration
+    Remove {
+        /// Repository name to remove
+        repo: String,
+        /// Whether to also remove local files (default: false)
+        #[arg(short, long)]
+        files: bool,
+    },
 }
 
 fn main() {
@@ -239,6 +247,23 @@ fn main() {
                         eprintln!(
                             "{}: {}",
                             "Error showing active subdirectories".red(),
+                            e.to_string().red()
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
+            DotCommands::Remove { repo, files } => {
+                match dot::remove_repo(&repo, *files) {
+                    Ok(()) => println!(
+                        "{} {}",
+                        "Removed repository".green(),
+                        repo.green()
+                    ),
+                    Err(e) => {
+                        eprintln!(
+                            "{}: {}",
+                            "Error removing repository".red(),
                             e.to_string().red()
                         );
                         std::process::exit(1);

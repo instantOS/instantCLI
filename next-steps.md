@@ -204,9 +204,34 @@ The InstantCLI project has a solid foundation with the following components impl
   - Uses `indicatif` crate with custom spinner characters and templates
   - Provides clear status messages during long-running operations
 
+### ✅ Completed (Code Refactoring)
+- **Spinner Logic Consolidation**: Refactored duplicated spinner creation logic into shared utility function
+  - Created `src/dot/utils.rs` module with `create_spinner()` helper function
+  - Eliminated code duplication across `git.rs` and `localrepo.rs`
+  - Centralized spinner styling and configuration for consistent appearance
+  - Improved maintainability and adherence to DRY principles
+
+### ✅ Completed (Repository Removal Command)
+- **Phase 3.1**: Implemented repository removal command with safety features
+  - Added `remove` subcommand to CLI with proper clap integration
+  - Support for removing repository from configuration only (default behavior)
+  - Optional `--files` flag to also remove local files with confirmation
+  - Safety checks with interactive confirmation for file deletion
+  - Clear warning messages and colored output for dangerous operations
+  - Proper error handling for repository not found scenarios
+  - Backward compatibility with repository identification by name, basename, or URL
+
+### ✅ Completed (Interactive Prompts with dialoguer)
+- **Phase 2.3**: Replaced existing manual confirmation with professional dialoguer prompts
+  - Added dialoguer dependency to Cargo.toml with minimal feature set
+  - Replaced manual confirmation in `remove_repo()` with professional dialoguer Confirm prompt
+  - Maintained existing behavior while improving user experience
+  - Consistent styling with existing colored output and error handling
+  - Professional-looking prompts that integrate seamlessly with existing CLI
+
 ### 📋 Upcoming
-1. **Phase 2**: Complete CLI experience enhancements (verbose output, interactive confirmation)
-2. **Phase 3**: Advanced repository management features (removal, prioritization, configuration editing)
+1. **Phase 2**: Complete CLI experience enhancements (verbose output, dry-run mode)
+2. **Phase 3**: Advanced repository management features (prioritization, configuration editing)
 3. **Phase 4**: Expand test coverage for remaining core functionality
 4. **Performance optimizations**: Hash caching, database query optimization, filesystem operation caching
 
