@@ -39,7 +39,7 @@ installs to
 
 instantOS should remain hackable without bothering users who do not want to
 learn its tools. This means user configurations should not be overridden, ever.
-The tool will keep a list of valid hashes for a file, and if a file doesn't
+The tool will keep a list of unmodified hashes for a file, and if a file doesn't
 match any of them, it is assumed to be modified by the user or another program
 and will be left alone. 
 
@@ -75,7 +75,7 @@ impl dotfile {
             modified = false
         else if newest_hash is newer than file modification date
             modified = false
-        else if self.get_target_hash in get_valid_hashes(self.path)
+        else if self.get_target_hash in get_unmodified_hashes(self.path)
             modified = false
         else
             modified = true
@@ -98,7 +98,7 @@ impl dotfile {
     
     fn get_source_hash() {
         // similar to target_hash, but hash should be inserted into
-valid_hashes. Slightly less lazy
+unmodified_hashes. Slightly less lazy
     }
     fn apply {
         if self.is_modified()
@@ -133,7 +133,7 @@ for file on filemap.values
 # tech
 
 Rust clap CLI
-validhashes in sqlite DB
+unmodified_hashes in sqlite DB
 repo sources in toml config
     commands to add and remove repos
     command to edit the config file
@@ -186,6 +186,6 @@ dots_dir = ./dots
 
 # Cleanup
 
-old invalid hashes should be cleaned
-newest invalid hash should be kept
-all valid hashes should be kept
+old modified hashes should be cleaned
+newest modified hash should be kept
+all unmodified hashes should be kept

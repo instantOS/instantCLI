@@ -68,7 +68,7 @@ impl Database {
                         created TEXT NOT NULL,
                         hash TEXT NOT NULL,
                         path TEXT NOT NULL,
-                        valid INTEGER NOT NULL,
+                        unmodified INTEGER NOT NULL,
                         PRIMARY KEY (hash, path)
                     )",
                     (),
@@ -86,10 +86,10 @@ impl Database {
         Ok(())
     }
 
-    pub fn add_hash(&self, hash: &str, path: &Path, valid: bool) -> Result<()> {
+    pub fn add_hash(&self, hash: &str, path: &Path, unmodified: bool) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO hashes (created, hash, path, valid) VALUES (datetime('now'), ?, ?, ?)",
-            (hash, path.to_str().unwrap(), valid),
+            "INSERT OR REPLACE INTO hashes (created, hash, path, unmodified) VALUES (datetime('now'), ?, ?, ?)",
+            (hash, path.to_str().unwrap(), unmodified),
         )?;
         Ok(())
     }
@@ -103,10 +103,10 @@ impl Database {
         Ok(result.next().is_some())
     }
 
-    pub fn get_valid_hashes(&self, path: &Path) -> Result<Vec<String>> {
+    pub fn get_unmodified_hashes(&self, path: &Path) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT hash FROM hashes WHERE path = ? AND valid = 1")?;
+            .prepare("SELECT hash FROM hashes WHERE path = ? AND unmodified = 1")?;
         let hashes = stmt.query_map([path.to_str().unwrap()], |row| row.get(0))?;
         let mut result = Vec::new();
         for hash in hashes {
@@ -125,22 +125,22 @@ impl Database {
     }
 
     pub fn cleanup_hashes(&self) -> Result<()> {
-        // Keep all valid hashes, and for invalid hashes:
-        // 1. Keep the newest invalid hash per file (for rollback capability)
-        // 2. Remove invalid hashes older than 30 days
+        // Keep all unmodified hashes, and for modified hashes:
+        // 1. Keep the newest modified hash per file (for rollback capability)
+        // 2. Remove modified hashes older than 30 days
 
-        // First, remove invalid hashes older than 30 days
+        // First, remove modified hashes older than 30 days
         self.conn.execute(
-            "DELETE FROM hashes WHERE valid = 0 AND created < datetime('now', '-30 days')",
+            "DELETE FROM hashes WHERE unmodified = 0 AND created < datetime('now', '-30 days')",
             (),
         )?;
 
-        // Then, for each file, keep only the newest invalid hash
+        // Then, for each file, keep only the newest modified hash
         self.conn.execute(
-            "DELETE FROM hashes WHERE valid = 0 AND rowid NOT IN (
+            "DELETE FROM hashes WHERE unmodified = 0 AND rowid NOT IN (
                 SELECT MAX(rowid) 
                 FROM hashes 
-                WHERE valid = 0 
+                WHERE unmodified = 0 
                 GROUP BY path
             )",
             (),
@@ -157,13 +157,13 @@ impl Database {
         )?;
         
         let valid: i32 = self.conn.query_row(
-            "SELECT COUNT(*) FROM hashes WHERE valid = 1",
+            "SELECT COUNT(*) FROM hashes WHERE unmodified = 1",
             [],
             |row| row.get(0),
         )?;
         
         let invalid: i32 = self.conn.query_row(
-            "SELECT COUNT(*) FROM hashes WHERE valid = 0",
+            "SELECT COUNT(*) FROM hashes WHERE unmodified = 0",
             [],
             |row| row.get(0),
         )?;
@@ -172,7 +172,7 @@ impl Database {
     }
     
     pub fn cleanup_all_invalid_hashes(&self) -> Result<()> {
-        self.conn.execute("DELETE FROM hashes WHERE valid = 0", [])?;
+        self.conn.execute("DELETE FROM hashes WHERE unmodified = 0", [])?;
         Ok(())
     }
 }
@@ -195,7 +195,7 @@ mod tests {
                 created TEXT NOT NULL,
                 hash TEXT NOT NULL,
                 path TEXT NOT NULL,
-                valid INTEGER NOT NULL,
+                unmodified INTEGER NOT NULL,
                 PRIMARY KEY (hash, path)
             )",
             (),
@@ -207,7 +207,7 @@ mod tests {
         // Add test hashes
         let test_path = PathBuf::from("/home/user/test.txt");
 
-        // Add valid hashes (should never be cleaned up)
+        // Add unmodified hashes (should never be cleaned up)
         db.add_hash("valid1", &test_path, true).unwrap();
         db.add_hash("valid2", &test_path, true).unwrap();
 
@@ -246,7 +246,7 @@ mod tests {
         // Verify the remaining invalid hash is the newest one
         let remaining_invalid: String = db
             .conn
-            .query_row("SELECT hash FROM hashes WHERE valid = 0", [], |row| {
+            .query_row("SELECT hash FROM hashes WHERE unmodified = 0", [], |row| {
                 row.get(0)
             })
             .unwrap();
@@ -264,7 +264,7 @@ mod tests {
                 created TEXT NOT NULL,
                 hash TEXT NOT NULL,
                 path TEXT NOT NULL,
-                valid INTEGER NOT NULL,
+                unmodified INTEGER NOT NULL,
                 PRIMARY KEY (hash, path)
             )",
             (),

@@ -60,7 +60,7 @@ cargo test test_apply_and_fetch
 **User Modification Protection**:
 - SHA256 hashes track file states in SQLite database
 - User-modified files are never overwritten automatically
-- Files are only updated if they match known valid hashes
+- Files are only updated if they match known unmodified hashes
 
 ### Database Schema
 
@@ -70,7 +70,7 @@ CREATE TABLE hashes (
     created TEXT NOT NULL,
     hash TEXT NOT NULL, 
     path TEXT NOT NULL,
-    valid INTEGER NOT NULL,
+    unmodified INTEGER NOT NULL,
     PRIMARY KEY (hash, path)
 )
 ```

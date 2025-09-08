@@ -36,8 +36,8 @@ impl Dotfile {
         }
 
         if let Ok(target_hash) = self.get_target_hash(db) {
-            if let Ok(valid_hashes) = db.get_valid_hashes(&self.target_path) {
-                return !valid_hashes.contains(&target_hash);
+            if let Ok(unmodified_hashes) = db.get_unmodified_hashes(&self.target_path) {
+                return !unmodified_hashes.contains(&target_hash);
             }
         }
 
@@ -59,9 +59,9 @@ impl Dotfile {
                 let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
                 if db_time >= file_time {
                     // Database has a hash newer than or equal to file modification time,
-                    // so we can return the newest valid hash for this file
-                    let valid_hashes = db.get_valid_hashes(&self.target_path)?;
-                    if let Some(newest_hash) = valid_hashes.last() {
+                    // so we can return the newest unmodified hash for this file
+                    let unmodified_hashes = db.get_unmodified_hashes(&self.target_path)?;
+                    if let Some(newest_hash) = unmodified_hashes.last() {
                         return Ok(newest_hash.clone());
                     }
                 }
@@ -88,9 +88,12 @@ impl Dotfile {
                 let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
                 if db_time >= file_time {
                     // Database has a hash newer than or equal to file modification time,
-                    // so we can return the newest valid hash for this file
-                    let valid_hashes = db.get_valid_hashes(&self.target_path)?;
-                    if let Some(newest_hash) = valid_hashes.last() {
+                    // so we can return the newest unmodified hash for this file
+                    // TODO: this does too many DV calls, and getting the newest hash (already
+                    // being done) should be enough. Create a DotfileHash struct which has a date
+                    // and hash and can get saved and read from the DB. Breaking changes allowed
+                    let unmodified_hashes = db.get_unmodified_hashes(&self.target_path)?;
+                    if let Some(newest_hash) = unmodified_hashes.last() {
                         return Ok(newest_hash.clone());
                     }
                 }
