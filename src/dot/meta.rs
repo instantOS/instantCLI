@@ -116,4 +116,3 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
     fs::write(&p, toml).with_context(|| format!("writing {}", p.display()))?;
     Ok(())
 }
-

@@ -192,24 +192,22 @@ fn main() {
                     }
                 }
             }
-            DotCommands::ListSubdirs { repo } => {
-                match dot::list_repo_subdirs(&repo) {
-                    Ok(subdirs) => {
-                        println!("Available subdirectories for {}:", repo.green());
-                        for subdir in subdirs {
-                            println!("  - {}", subdir);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error listing subdirectories".red(),
-                            e.to_string().red()
-                        );
-                        std::process::exit(1);
+            DotCommands::ListSubdirs { repo } => match dot::list_repo_subdirs(&repo) {
+                Ok(subdirs) => {
+                    println!("Available subdirectories for {}:", repo.green());
+                    for subdir in subdirs {
+                        println!("  - {}", subdir);
                     }
                 }
-            }
+                Err(e) => {
+                    eprintln!(
+                        "{}: {}",
+                        "Error listing subdirectories".red(),
+                        e.to_string().red()
+                    );
+                    std::process::exit(1);
+                }
+            },
             DotCommands::SetSubdirs { repo, subdirs } => {
                 match dot::set_repo_active_subdirs(&repo, subdirs.clone()) {
                     Ok(()) => println!(
@@ -228,41 +226,33 @@ fn main() {
                     }
                 }
             }
-            DotCommands::ShowSubdirs { repo } => {
-                match dot::show_repo_active_subdirs(&repo) {
-                    Ok(subdirs) => {
-                        println!("Active subdirectories for {}:", repo.green());
-                        for subdir in subdirs {
-                            println!("  - {}", subdir);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error showing active subdirectories".red(),
-                            e.to_string().red()
-                        );
-                        std::process::exit(1);
+            DotCommands::ShowSubdirs { repo } => match dot::show_repo_active_subdirs(&repo) {
+                Ok(subdirs) => {
+                    println!("Active subdirectories for {}:", repo.green());
+                    for subdir in subdirs {
+                        println!("  - {}", subdir);
                     }
                 }
-            }
-            DotCommands::Remove { repo, files } => {
-                match dot::remove_repo(&repo, *files) {
-                    Ok(()) => println!(
-                        "{} {}",
-                        "Removed repository".green(),
-                        repo.green()
-                    ),
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error removing repository".red(),
-                            e.to_string().red()
-                        );
-                        std::process::exit(1);
-                    }
+                Err(e) => {
+                    eprintln!(
+                        "{}: {}",
+                        "Error showing active subdirectories".red(),
+                        e.to_string().red()
+                    );
+                    std::process::exit(1);
                 }
-            }
+            },
+            DotCommands::Remove { repo, files } => match dot::remove_repo(&repo, *files) {
+                Ok(()) => println!("{} {}", "Removed repository".green(), repo.green()),
+                Err(e) => {
+                    eprintln!(
+                        "{}: {}",
+                        "Error removing repository".red(),
+                        e.to_string().red()
+                    );
+                    std::process::exit(1);
+                }
+            },
         },
         None => {
             println!("instant: run with --help for usage");

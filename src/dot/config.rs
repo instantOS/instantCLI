@@ -5,7 +5,7 @@ use std::{env, fs, path::PathBuf, sync::Mutex};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
     pub url: String,
-    pub name: String,  // Now mandatory
+    pub name: String, // Now mandatory
     pub branch: Option<String>,
     #[serde(default = "default_active_subdirs")]
     pub active_subdirs: Vec<String>,
@@ -54,11 +54,12 @@ impl Config {
             if let Some(config) = &*cache {
                 return Ok(config.clone());
             }
-            
+
             let cfg_path = config_file_path()?;
             if !cfg_path.exists() {
                 let default = Config::default();
-                let toml = toml::to_string_pretty(&default).context("serializing default config")?;
+                let toml =
+                    toml::to_string_pretty(&default).context("serializing default config")?;
                 fs::write(&cfg_path, toml)
                     .with_context(|| format!("writing default config to {}", cfg_path.display()))?;
                 *cache = Some(default.clone());
@@ -74,7 +75,8 @@ impl Config {
             let cfg_path = config_file_path()?;
             if !cfg_path.exists() {
                 let default = Config::default();
-                let toml = toml::to_string_pretty(&default).context("serializing default config")?;
+                let toml =
+                    toml::to_string_pretty(&default).context("serializing default config")?;
                 fs::write(&cfg_path, toml)
                     .with_context(|| format!("writing default config to {}", cfg_path.display()))?;
                 return Ok(default);
@@ -91,20 +93,19 @@ impl Config {
         let cfg_path = config_file_path()?;
         let toml = toml::to_string_pretty(self).context("serializing config to toml")?;
         fs::write(cfg_path, toml).context("writing config file")?;
-        
+
         // Clear the cache after saving so next load will get the updated config
         clear_config_cache();
         Ok(())
     }
-    
-    
+
     /// Add a repo to the config and persist the change
     pub fn add_repo(&mut self, mut repo: Repo) -> Result<()> {
         // Auto-generate name if not provided (though it's now mandatory in the struct)
         if repo.name.trim().is_empty() {
             repo.name = basename_from_repo(&repo.url);
         }
-        
+
         // Check for duplicate names
         if self.repos.iter().any(|r| r.name == repo.name) {
             return Err(anyhow::anyhow!(
@@ -112,7 +113,7 @@ impl Config {
                 repo.name
             ));
         }
-        
+
         self.repos.push(repo);
         self.save()
     }
@@ -125,12 +126,16 @@ impl Config {
                 return self.save();
             }
         }
-        Err(anyhow::anyhow!("Repository with name '{}' not found", repo_name))
+        Err(anyhow::anyhow!(
+            "Repository with name '{}' not found",
+            repo_name
+        ))
     }
 
     /// Get active subdirectories for a specific repo by name
     pub fn get_active_subdirs(&self, repo_name: &str) -> Option<Vec<String>> {
-        self.repos.iter()
+        self.repos
+            .iter()
             .find(|repo| repo.name == repo_name)
             .map(|repo| repo.active_subdirs.clone())
     }

@@ -6,7 +6,7 @@ use std::{path::Path, path::PathBuf, process::Command};
 #[derive(Clone, Debug)]
 pub struct LocalRepo {
     pub url: String,
-    pub name: String,  // Now mandatory
+    pub name: String, // Now mandatory
     pub branch: Option<String>,
 }
 
@@ -61,12 +61,13 @@ impl LocalRepo {
         let meta = self.read_meta()?;
         // Config is now cached to avoid loading multiple times per app run
         let config = crate::dot::config::Config::load()?;
-        let active_subdirs = config.get_active_subdirs(&self.name)
+        let active_subdirs = config
+            .get_active_subdirs(&self.name)
             .unwrap_or_else(|| vec!["dots".to_string()]);
-        
+
         let repo_path = self.local_path()?;
         let mut active_dirs = Vec::new();
-        
+
         for subdir in active_subdirs {
             if meta.dots_dirs.contains(&subdir) {
                 let dir_path = repo_path.join(&subdir);
@@ -75,25 +76,24 @@ impl LocalRepo {
                 }
             }
         }
-        
+
         Ok(active_dirs)
     }
 
-    
     /// Convert a target path (in home directory) to source path (in repo)
     pub fn target_to_source(&self, target_path: &Path) -> Result<Option<PathBuf>> {
         let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
         let relative = target_path.strip_prefix(&home).unwrap_or(target_path);
-        
+
         let active_dirs = self.get_active_dots_dirs()?;
-        
+
         for dots_dir in active_dirs {
             let source_path = dots_dir.join(relative);
             if source_path.exists() {
                 return Ok(Some(source_path));
             }
         }
-        
+
         Ok(None)
     }
 
@@ -178,4 +178,3 @@ impl LocalRepo {
         Ok(())
     }
 }
-

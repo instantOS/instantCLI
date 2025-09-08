@@ -44,10 +44,10 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
     for repo in repos {
         let repo_name = repo.name.clone();
         let repo_path = base_dir.join(repo_name);
-        
+
         // Get active subdirectories for this repo (defaults to ["dots"])
         let active_subdirs = repo.active_subdirs.clone();
-        
+
         // Read repo metadata to get available dots directories
         let meta = match crate::dot::localrepo::LocalRepo::from(repo.clone()).read_meta() {
             Ok(meta) => meta,
@@ -56,19 +56,19 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
                 continue;
             }
         };
-        
+
         // Process each active subdirectory
         for subdir in active_subdirs {
             // Check if this subdirectory exists in the repo's metadata
             if !meta.dots_dirs.contains(&subdir) {
                 continue;
             }
-            
+
             let dots_path = repo_path.join(&subdir);
             if !dots_path.exists() {
                 continue;
             }
-            
+
             for entry in WalkDir::new(&dots_path)
                 .into_iter()
                 .filter_map(|e| e.ok())
@@ -106,14 +106,14 @@ pub fn fetch_modified(path: Option<&str>) -> Result<()> {
     let config = Config::load()?;
     let this_repo = get_current_repo(&config, &cwd)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    
+
     if let Some(p) = path {
         let p = p.trim_start_matches('.');
         let home_subdir = home.join(p);
         if !home_subdir.exists() {
             return Ok(());
         }
-        
+
         let md = fs::metadata(&home_subdir)?;
         if md.is_file() {
             // Try to find corresponding source file in active dots directories
@@ -131,7 +131,7 @@ pub fn fetch_modified(path: Option<&str>) -> Result<()> {
             // Handle directory fetch - check all active dots directories
             let active_dirs = this_repo.get_active_dots_dirs()?;
             let relative_path = p.trim_start_matches('/');
-            
+
             for dots_dir in active_dirs {
                 let source_subdir = dots_dir.join(relative_path);
                 if source_subdir.exists() {
@@ -160,7 +160,7 @@ pub fn fetch_modified(path: Option<&str>) -> Result<()> {
     } else {
         // Global fetch: walk all active dots directories and fetch tracked
         let active_dirs = this_repo.get_active_dots_dirs()?;
-        
+
         for dots_dir in active_dirs {
             for entry in WalkDir::new(&dots_dir)
                 .into_iter()
@@ -223,20 +223,21 @@ pub fn list_repo_subdirs(repo_identifier: &str) -> Result<Vec<String>> {
 pub fn set_repo_active_subdirs(repo_identifier: &str, subdirs: Vec<String>) -> Result<()> {
     let mut config = Config::load()?;
     let repo = find_repo_by_identifier(&config, repo_identifier)?;
-    
+
     // Validate that the subdirectories exist in the repo metadata
     let local_repo = localrepo::LocalRepo::from(repo.clone());
     let meta = local_repo.read_meta()?;
-    
+
     for subdir in &subdirs {
         if !meta.dots_dirs.contains(subdir) {
             return Err(anyhow::anyhow!(
                 "Subdirectory '{}' not found in repository. Available: {:?}",
-                subdir, meta.dots_dirs
+                subdir,
+                meta.dots_dirs
             ));
         }
     }
-    
+
     config.set_active_subdirs(&repo.url, subdirs)?;
     Ok(())
 }
@@ -245,16 +246,18 @@ pub fn set_repo_active_subdirs(repo_identifier: &str, subdirs: Vec<String>) -> R
 pub fn show_repo_active_subdirs(repo_identifier: &str) -> Result<Vec<String>> {
     let config = Config::load()?;
     let repo = find_repo_by_identifier(&config, repo_identifier)?;
-    
-    let active_subdirs = config.get_active_subdirs(&repo.url)
+
+    let active_subdirs = config
+        .get_active_subdirs(&repo.url)
         .unwrap_or_else(|| vec!["dots".to_string()]);
-    
+
     Ok(active_subdirs)
 }
 
 /// Helper function to find a repository by name
 fn find_repo_by_identifier(config: &Config, identifier: &str) -> Result<config::Repo> {
-    config.repos
+    config
+        .repos
         .iter()
         .find(|r| r.name == identifier)
         .cloned()
@@ -265,47 +268,60 @@ fn find_repo_by_identifier(config: &Config, identifier: &str) -> Result<config::
 pub fn remove_repo(repo_identifier: &str, remove_files: bool) -> Result<()> {
     let mut config = Config::load()?;
     let repo = find_repo_by_identifier(&config, repo_identifier)?;
-    
+
     // Safety check: ask for confirmation if removing files
     if remove_files {
         use dialoguer::Confirm;
-        
-        println!("⚠️  {} {} {} {}", 
+
+        println!(
+            "⚠️  {} {} {} {}",
             "WARNING:".red().bold(),
             "You are about to remove repository".red(),
             repo.name.green().bold(),
             "and all its local files!".red()
         );
-        println!("{}: {}", "Local path".yellow(), LocalRepo::from(repo.clone()).local_path()?.display());
-        
+        println!(
+            "{}: {}",
+            "Local path".yellow(),
+            LocalRepo::from(repo.clone()).local_path()?.display()
+        );
+
         let should_remove = Confirm::new()
             .with_prompt("Are you sure?")
             .default(false)
             .interact()?;
-        
+
         if !should_remove {
             println!("{}", "Operation cancelled.".yellow());
             return Ok(());
         }
     }
-    
+
     // Remove the repository from configuration
     config.repos.retain(|r| r.name != repo.name);
     config.save()?;
-    
+
     // Optionally remove local files
     if remove_files {
         let local_repo = LocalRepo::from(repo);
         let local_path = local_repo.local_path()?;
-        
+
         if local_path.exists() {
             if let Err(e) = std::fs::remove_dir_all(&local_path) {
-                eprintln!("{}: {}", "Warning: failed to remove local files".yellow(), e);
+                eprintln!(
+                    "{}: {}",
+                    "Warning: failed to remove local files".yellow(),
+                    e
+                );
             } else {
-                println!("{} {}", "Removed local files:".green(), local_path.display());
+                println!(
+                    "{} {}",
+                    "Removed local files:".green(),
+                    local_path.display()
+                );
             }
         }
     }
-    
+
     Ok(())
 }

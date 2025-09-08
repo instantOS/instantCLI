@@ -35,7 +35,8 @@ impl Database {
         let mut stmt = self
             .conn
             .prepare("SELECT 1 FROM hashes WHERE hash = ? AND path = ?")?;
-        let mut result = stmt.query_map([hash, path.to_str().unwrap()], |row| row.get::<_, i32>(0))?;
+        let mut result =
+            stmt.query_map([hash, path.to_str().unwrap()], |row| row.get::<_, i32>(0))?;
         Ok(result.next().is_some())
     }
 
@@ -75,9 +76,7 @@ impl Database {
 
         Ok(())
     }
-
-    
-  }
+}
 
 #[cfg(test)]
 mod tests {
@@ -198,18 +197,18 @@ mod tests {
         let dir = tempdir().unwrap();
         let test_path = dir.path().join("test_file");
         std::fs::write(&test_path, "test content").unwrap();
-        
+
         let db = Database::new().unwrap();
-        
+
         // Initially hash should not exist
         assert!(!db.hash_exists("test_hash", &test_path).unwrap());
-        
+
         // Add hash
         db.add_hash("test_hash", &test_path, true).unwrap();
-        
+
         // Now hash should exist
         assert!(db.hash_exists("test_hash", &test_path).unwrap());
-        
+
         // Different hash should not exist
         assert!(!db.hash_exists("different_hash", &test_path).unwrap());
     }
