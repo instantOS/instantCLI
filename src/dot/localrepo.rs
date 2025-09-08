@@ -102,7 +102,7 @@ impl LocalRepo {
                     let target_path = home.join(relative_path);
 
                     let dotfile = crate::dot::dotfile::Dotfile {
-                        repo_path: source_path,
+                        source_path: source_path,
                         target_path: target_path.clone(),
                         hash: None,
                         target_hash: None,

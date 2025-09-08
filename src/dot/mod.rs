@@ -85,7 +85,7 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
                         PathBuf::from(shellexpand::tilde("~").to_string()).join(relative_path);
 
                     let dotfile = Dotfile {
-                        repo_path: source_path,
+                        source_path: source_path,
                         target_path: target_path.clone(),
                         hash: None,
                         target_hash: None,
@@ -106,7 +106,7 @@ fn fetch_single_file(home_subdir: PathBuf, this_repo: &LocalRepo, db: &Database)
     if let Some(source_file) = this_repo.target_to_source(&home_subdir)? {
         fs::copy(&home_subdir, &source_file)?;
         let dotfile = Dotfile {
-            repo_path: source_file,
+            source_path: source_file,
             target_path: home_subdir,
             hash: None,
             target_hash: None,
@@ -279,7 +279,7 @@ pub fn add_dotfile(path: &str) -> Result<()> {
         
         // Create dotfile and compute hash
         let dotfile = Dotfile {
-            repo_path: source_path,
+            source_path: source_path,
             target_path: full_path,
             hash: None,
             target_hash: None,

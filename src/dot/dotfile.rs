@@ -4,8 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub struct Dotfile {
-    //TODO: change to source_path
-    pub repo_path: PathBuf,
+    pub source_path: PathBuf,
     pub target_path: PathBuf,
     pub hash: Option<String>,
     pub target_hash: Option<String>,
@@ -17,7 +16,7 @@ impl Dotfile {
             return true;
         }
 
-        let source_metadata = fs::metadata(&self.repo_path).ok();
+        let source_metadata = fs::metadata(&self.source_path).ok();
         let target_metadata = fs::metadata(&self.target_path).ok();
 
         if let (Some(source_meta), Some(target_meta)) = (source_metadata, target_metadata) {
@@ -68,7 +67,7 @@ impl Dotfile {
     }
 
     pub fn get_source_hash(&self, db: &Database) -> Option<String> {
-        let hash = Self::get_hash(&self.repo_path).unwrap();
+        let hash = Self::get_hash(&self.source_path).unwrap();
         // Only add hash if it doesn't already exist in the database
         match db.hash_exists(&hash, &self.target_path) {
             Ok(exists) => {
@@ -107,7 +106,7 @@ impl Dotfile {
             fs::create_dir_all(parent)?;
         }
 
-        fs::copy(&self.repo_path, &self.target_path)?;
+        fs::copy(&self.source_path, &self.target_path)?;
 
         self.get_source_hash(db);
 
@@ -116,7 +115,7 @@ impl Dotfile {
 
     pub fn fetch(&self, db: &Database) -> Result<(), std::io::Error> {
         if self.is_modified(db) {
-            fs::copy(&self.target_path, &self.repo_path)?;
+            fs::copy(&self.target_path, &self.source_path)?;
             self.get_target_hash(db);
         }
         Ok(())
@@ -140,7 +139,7 @@ mod tests {
 
         let db = Database::new().unwrap();
         let dotfile = Dotfile {
-            repo_path: repo_path.join("test.txt"),
+            source_path: repo_path.join("test.txt"),
             target_path: target_path.join("test.txt"),
             hash: None,
             target_hash: None,

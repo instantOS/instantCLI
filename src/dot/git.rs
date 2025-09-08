@@ -210,7 +210,7 @@ pub fn status_all(debug: bool, path: Option<&str>) -> Result<()> {
                     let db = super::db::Database::new()?;
                     let filemap = super::get_all_dotfiles()?;
                     if let Some(dotfile) = filemap.get(&provided) {
-                        println!("Source: {}", dotfile.repo_path.display());
+                        println!("Source: {}", dotfile.source_path.display());
                         if dotfile.is_modified(&db) {
                             println!("File status: {}", "modified".yellow());
                         } else if dotfile.is_outdated() {
@@ -234,7 +234,7 @@ pub fn status_all(debug: bool, path: Option<&str>) -> Result<()> {
                     println!("Source: {}", source_candidate.display());
                     let db = super::db::Database::new()?;
                     let dotfile = super::Dotfile {
-                        repo_path: source_candidate.clone(),
+                        source_path: source_candidate.clone(),
                         target_path: PathBuf::from(shellexpand::tilde("~").to_string()).join(rel),
                         hash: None,
                         target_hash: None,
@@ -278,7 +278,7 @@ pub fn status_all(debug: bool, path: Option<&str>) -> Result<()> {
 
             for (target_path, dotfile) in filemap.iter() {
                 // Only show dotfiles belonging to the current repo
-                if dotfile.repo_path.starts_with(&target) {
+                if dotfile.source_path.starts_with(&target) {
                     if dotfile.is_modified(&db) {
                         println!(
                             "    {} -> {}",
