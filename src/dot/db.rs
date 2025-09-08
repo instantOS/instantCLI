@@ -1,6 +1,23 @@
 use anyhow::Result;
-use rusqlite::Connection;
+use chrono::{DateTime, Utc};
+use rusqlite::{Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+/// Represents a hash with its creation timestamp
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DotfileHash {
+    pub hash: String,
+    pub created: DateTime<Utc>,
+    pub path: String,
+    pub unmodified: bool,
+}
+
+impl PartialEq for DotfileHash {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash && self.path == other.path
+    }
+}
 
 pub struct Database {
     conn: Connection,
@@ -103,11 +120,31 @@ impl Database {
         Ok(result.next().is_some())
     }
 
-    pub fn get_unmodified_hashes(&self, path: &Path) -> Result<Vec<String>> {
+    pub fn get_unmodified_hashes(&self, path: &Path) -> Result<Vec<DotfileHash>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT hash FROM hashes WHERE path = ? AND unmodified = 1")?;
-        let hashes = stmt.query_map([path.to_str().unwrap()], |row| row.get(0))?;
+            .prepare("SELECT hash, created, path, unmodified FROM hashes WHERE path = ? AND unmodified = 1 ORDER BY created DESC")?;
+
+        let hashes = stmt.query_map([path.to_str().unwrap()], |row| {
+            let created_str: String = row.get(1)?;
+            let created = chrono::DateTime::parse_from_rfc3339(&created_str)
+                .map_err(|e| {
+                    rusqlite::Error::InvalidColumnType(
+                        1,
+                        "created".to_string(),
+                        rusqlite::types::Type::Text,
+                    )
+                })?
+                .with_timezone(&Utc);
+
+            Ok(DotfileHash {
+                hash: row.get(0)?,
+                created,
+                path: row.get(2)?,
+                unmodified: row.get(3)?,
+            })
+        })?;
+
         let mut result = Vec::new();
         for hash in hashes {
             result.push(hash?);
@@ -115,13 +152,34 @@ impl Database {
         Ok(result)
     }
 
-    /// Get the newest hash timestamp for a file, if any exists
-    // TODO: change this to return the newest hash once the hash struct mentioned in another TODO comment is implemented
-    pub fn get_newest_hash_timestamp(&self, path: &Path) -> Result<Option<String>> {
+    /// Get the newest hash for a file, if any exists
+    pub fn get_newest_hash(&self, path: &Path) -> Result<Option<DotfileHash>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT MAX(created) FROM hashes WHERE path = ?")?;
-        let result: Option<String> = stmt.query_row([path.to_str().unwrap()], |row| row.get(0))?;
+            .prepare("SELECT hash, created, path, unmodified FROM hashes WHERE path = ? ORDER BY created DESC LIMIT 1")?;
+
+        let result: Option<DotfileHash> = stmt
+            .query_row([path.to_str().unwrap()], |row| {
+                let created_str: String = row.get(1)?;
+                let created = chrono::DateTime::parse_from_rfc3339(&created_str)
+                    .map_err(|e| {
+                        rusqlite::Error::InvalidColumnType(
+                            1,
+                            "created".to_string(),
+                            rusqlite::types::Type::Text,
+                        )
+                    })?
+                    .with_timezone(&Utc);
+
+                Ok(DotfileHash {
+                    hash: row.get(0)?,
+                    created,
+                    path: row.get(2)?,
+                    unmodified: row.get(3)?,
+                })
+            })
+            .optional()?;
+
         Ok(result)
     }
 

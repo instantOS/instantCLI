@@ -5,7 +5,7 @@ the base command will just be `instant`
 
 # Dotfiles
 
-I wrote about ideas for dotfile management a while back. 
+I wrote about ideas for dotfile management a while back.
 I thought about it some more. I am abandoning the "home dir as git worktree"
 approach. It's just not flexible enough.
 
@@ -13,10 +13,10 @@ What follows is incomprehensible pseudocode for the new solution
 
 # Overlaying repos
 
-Dotfiles can come from multiple repos. 
+Dotfiles can come from multiple repos.
 Those repos have an order. If a dotfile exists in multiple repos, the
-version from the one with higher priority gets used. 
-This allows for easy application of themes. 
+version from the one with higher priority gets used.
+This allows for easy application of themes.
 It is not specified, which applications a theme can theme, and multiple
 themes can be used and removed very easily
 
@@ -41,7 +41,7 @@ instantOS should remain hackable without bothering users who do not want to
 learn its tools. This means user configurations should not be overridden, ever.
 The tool will keep a list of unmodified hashes for a file, and if a file doesn't
 match any of them, it is assumed to be modified by the user or another program
-and will be left alone. 
+and will be left alone.
 
 # resetting files
 
@@ -95,7 +95,7 @@ impl dotfile {
                 return newhash
         }
     }
-    
+
     fn get_source_hash() {
         // similar to target_hash, but hash should be inserted into
 unmodified_hashes. Slightly less lazy
@@ -124,8 +124,8 @@ for repo in repos
 
 for file on filemap.values
     file.applyfile
-    
-                
+
+
 
 ```
 
@@ -140,11 +140,6 @@ repo sources in toml config
 libgit2 or simple git wrapper to clone things
 probably anyhow for errors
 
-TODO
-
-look for good sql lib
-should support schema updates
-look for good terminal output lib
 
 # interface
 

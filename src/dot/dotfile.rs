@@ -37,7 +37,7 @@ impl Dotfile {
 
         if let Ok(target_hash) = self.get_target_hash(db) {
             if let Ok(unmodified_hashes) = db.get_unmodified_hashes(&self.target_path) {
-                return !unmodified_hashes.contains(&target_hash);
+                return !unmodified_hashes.iter().any(|h| h.hash == target_hash);
             }
         }
 
@@ -56,17 +56,14 @@ impl Dotfile {
         let file_metadata = fs::metadata(&self.target_path)?;
         let file_modified = file_metadata.modified()?;
 
-        if let Ok(Some(newest_hash_timestamp)) = db.get_newest_hash_timestamp(&self.target_path) {
-            // Parse the database timestamp and compare with file modification time
-            if let Ok(db_time) = chrono::DateTime::parse_from_rfc3339(&newest_hash_timestamp) {
-                let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
-                if db_time >= file_time {
-                    // Database has a hash newer than or equal to file modification time,
-                    // so we can return the newest unmodified hash for this file
-                    let unmodified_hashes = db.get_unmodified_hashes(&self.target_path)?;
-                    if let Some(newest_hash) = unmodified_hashes.last() {
-                        return Ok(newest_hash.clone());
-                    }
+        if let Ok(Some(newest_hash)) = db.get_newest_hash(&self.target_path) {
+            // Compare the database timestamp with file modification time
+            let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
+            if newest_hash.created >= file_time {
+                // Database has a hash newer than or equal to file modification time,
+                // so we can return the newest unmodified hash for this file
+                if newest_hash.unmodified {
+                    return Ok(newest_hash.hash);
                 }
             }
         }
@@ -85,20 +82,14 @@ impl Dotfile {
         let file_metadata = fs::metadata(&self.source_path)?;
         let file_modified = file_metadata.modified()?;
 
-        if let Ok(Some(newest_hash_timestamp)) = db.get_newest_hash_timestamp(&self.target_path) {
-            // Parse the database timestamp and compare with file modification time
-            if let Ok(db_time) = chrono::DateTime::parse_from_rfc3339(&newest_hash_timestamp) {
-                let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
-                if db_time >= file_time {
-                    // Database has a hash newer than or equal to file modification time,
-                    // so we can return the newest unmodified hash for this file
-                    // TODO: this does too many DB calls, and getting the newest hash (already
-                    // being done) should be enough. Create a DotfileHash struct which has a date
-                    // and hash and can get saved and read from the DB. Breaking changes allowed
-                    let unmodified_hashes = db.get_unmodified_hashes(&self.target_path)?;
-                    if let Some(newest_hash) = unmodified_hashes.last() {
-                        return Ok(newest_hash.clone());
-                    }
+        if let Ok(Some(newest_hash)) = db.get_newest_hash(&self.target_path) {
+            // Compare the database timestamp with file modification time
+            let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
+            if newest_hash.created >= file_time {
+                // Database has a hash newer than or equal to file modification time,
+                // so we can return the newest unmodified hash for this file
+                if newest_hash.unmodified {
+                    return Ok(newest_hash.hash);
                 }
             }
         }
