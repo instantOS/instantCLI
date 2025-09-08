@@ -17,7 +17,7 @@ pub mod utils;
 pub use crate::dot::dotfile::Dotfile;
 pub use git::{add_repo, status_all, update_all};
 
-use crate::dot::config::Config;
+use crate::dot::config::{Config, repos_dir};
 use crate::dot::db::Database;
 use crate::dot::localrepo::LocalRepo;
 use std::env::current_dir;
@@ -42,8 +42,6 @@ pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<PathBuf>> {
 
         for dotfile_dir in &local_repo.dotfile_dirs {
             if dotfile_dir.is_active {
-                //TODO: the default 'dots' dir is not always active when no active repos are
-                //configured, fix.  (the cause is not in this function)
                 active_dirs.push(dotfile_dir.path.clone());
             }
         }
