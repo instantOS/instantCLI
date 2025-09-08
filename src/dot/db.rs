@@ -122,17 +122,24 @@ impl Database {
 
     fn row_to_dotfile_hash(row: &rusqlite::Row) -> Result<DotfileHash, rusqlite::Error> {
         let created_str: String = row.get(1)?;
-        let created = chrono::DateTime::parse_from_rfc3339(&created_str).map_err(|_| {
-            rusqlite::Error::InvalidColumnType(
+        
+        // Try to parse as SQLite datetime format first (YYYY-MM-DD HH:MM:SS)
+        let created = if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&created_str, "%Y-%m-%d %H:%M:%S") {
+            chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc)
+        } else if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&created_str) {
+            // Fallback to RFC3339 format
+            dt.with_timezone(&Utc)
+        } else {
+            return Err(rusqlite::Error::InvalidColumnType(
                 1,
                 "created".to_string(),
                 rusqlite::types::Type::Text,
-            )
-        })?;
+            ));
+        };
 
         Ok(DotfileHash {
             hash: row.get(0)?,
-            created: created.with_timezone(&Utc),
+            created,
             path: row.get(2)?,
             unmodified: row.get(3)?,
         })
