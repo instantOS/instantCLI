@@ -118,33 +118,13 @@ fn fetch_single_file(home_subdir: PathBuf, this_repo: &LocalRepo, db: &Database)
 
 /// Fetch files from a specific subdirectory
 fn fetch_directory(path: &str, this_repo: &LocalRepo, db: &Database, home: &PathBuf) -> Result<()> {
-    // TODO: iterate over all dotfiles from source dir, filter the beginning of their paths and run
-    // their fetch method. this is needlessly complicated. 
-    let active_dirs = this_repo.get_active_dots_dirs()?;
+    let dotfiles = this_repo.get_all_dotfiles()?;
     let relative_path = path.trim_start_matches('/');
-
-    for dots_dir in active_dirs {
-        let source_subdir = dots_dir.join(relative_path);
-        if source_subdir.exists() {
-            // Walk existing source subdir and fetch tracked
-            for entry in WalkDir::new(&source_subdir)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file())
-            {
-                let source_file = entry.path().to_path_buf();
-                let relative = source_file.strip_prefix(&dots_dir).unwrap().to_path_buf();
-                let target_file = home.join(relative);
-                if target_file.exists() {
-                    let dotfile = Dotfile {
-                        repo_path: source_file,
-                        target_path: target_file,
-                        hash: None,
-                        target_hash: None,
-                    };
-                    dotfile.fetch(db)?;
-                }
-            }
+    let target_path = home.join(relative_path);
+    
+    for dotfile in dotfiles.values() {
+        if dotfile.target_path.starts_with(&target_path) && dotfile.target_path.exists() {
+            dotfile.fetch(db)?;
         }
     }
     Ok(())
