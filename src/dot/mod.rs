@@ -254,23 +254,11 @@ pub fn show_repo_active_subdirs(repo_identifier: &str) -> Result<Vec<String>> {
 
 /// Helper function to find a repository by name
 fn find_repo_by_identifier(config: &Config, identifier: &str) -> Result<config::Repo> {
-    // Try to find by name
-    if let Some(repo) = config.repos.iter().find(|r| r.name == identifier) {
-        return Ok(repo.clone());
-    }
-    
-    // Try to find by matching basename (for backwards compatibility)
-    let basename = config::basename_from_repo(identifier);
-    if let Some(repo) = config.repos.iter().find(|r| r.name == basename) {
-        return Ok(repo.clone());
-    }
-    
-    // Try to find by URL (backwards compatibility for existing configs)
-    if let Some(repo) = config.repos.iter().find(|r| r.url == identifier) {
-        return Ok(repo.clone());
-    }
-    
-    Err(anyhow::anyhow!("Repository '{}' not found", identifier))
+    config.repos
+        .iter()
+        .find(|r| r.name == identifier)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", identifier))
 }
 
 /// Remove a repository from configuration

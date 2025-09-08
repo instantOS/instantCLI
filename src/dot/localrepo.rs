@@ -79,19 +79,7 @@ impl LocalRepo {
         Ok(active_dirs)
     }
 
-    /// Find which dots directory a source file belongs to
-    pub fn find_dots_dir_for_file(&self, source_file: &Path) -> Result<Option<PathBuf>> {
-        let active_dirs = self.get_active_dots_dirs()?;
-        
-        for dots_dir in active_dirs {
-            if source_file.starts_with(&dots_dir) {
-                return Ok(Some(dots_dir));
-            }
-        }
-        
-        Ok(None)
-    }
-
+    
     /// Convert a target path (in home directory) to source path (in repo)
     pub fn target_to_source(&self, target_path: &Path) -> Result<Option<PathBuf>> {
         let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
