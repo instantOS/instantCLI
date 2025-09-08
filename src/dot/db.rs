@@ -31,6 +31,14 @@ impl Database {
         Ok(())
     }
 
+    pub fn hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT 1 FROM hashes WHERE hash = ? AND path = ?")?;
+        let mut result = stmt.query_map([hash, path.to_str().unwrap()], |row| row.get::<_, i32>(0))?;
+        Ok(result.next().is_some())
+    }
+
     pub fn get_valid_hashes(&self, path: &Path) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
@@ -209,5 +217,26 @@ mod tests {
         assert_eq!(total_after, 1);
         assert_eq!(valid_after, 1);
         assert_eq!(invalid_after, 0);
+    }
+
+    #[test]
+    fn test_hash_exists() {
+        let dir = tempdir().unwrap();
+        let test_path = dir.path().join("test_file");
+        std::fs::write(&test_path, "test content").unwrap();
+        
+        let db = Database::new().unwrap();
+        
+        // Initially hash should not exist
+        assert!(!db.hash_exists("test_hash", &test_path).unwrap());
+        
+        // Add hash
+        db.add_hash("test_hash", &test_path, true).unwrap();
+        
+        // Now hash should exist
+        assert!(db.hash_exists("test_hash", &test_path).unwrap());
+        
+        // Different hash should not exist
+        assert!(!db.hash_exists("different_hash", &test_path).unwrap());
     }
 }

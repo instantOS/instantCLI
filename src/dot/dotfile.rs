@@ -49,15 +49,35 @@ impl Dotfile {
             return None;
         }
         let hash = Self::get_hash(&self.target_path).unwrap();
-        //TODO: do not add hash if the current hash is one already in the DB
-        //TODO: check if this behavior is already present
-        db.add_hash(&hash, &self.target_path, false).ok();
+        // Only add hash if it doesn't already exist in the database
+        match db.hash_exists(&hash, &self.target_path) {
+            Ok(exists) => {
+                if !exists {
+                    db.add_hash(&hash, &self.target_path, false).ok();
+                }
+            }
+            Err(_) => {
+                // If checking existence fails, fall back to adding the hash
+                db.add_hash(&hash, &self.target_path, false).ok();
+            }
+        }
         Some(hash)
     }
 
     pub fn get_source_hash(&self, db: &Database) -> Option<String> {
         let hash = Self::get_hash(&self.repo_path).unwrap();
-        db.add_hash(&hash, &self.target_path, true).ok();
+        // Only add hash if it doesn't already exist in the database
+        match db.hash_exists(&hash, &self.target_path) {
+            Ok(exists) => {
+                if !exists {
+                    db.add_hash(&hash, &self.target_path, true).ok();
+                }
+            }
+            Err(_) => {
+                // If checking existence fails, fall back to adding the hash
+                db.add_hash(&hash, &self.target_path, true).ok();
+            }
+        }
         Some(hash)
     }
 

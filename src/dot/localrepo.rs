@@ -5,7 +5,7 @@ use std::{path::Path, path::PathBuf, process::Command};
 #[derive(Clone, Debug)]
 pub struct LocalRepo {
     pub url: String,
-    pub name: Option<String>,
+    pub name: String,  // Now mandatory
     pub branch: Option<String>,
 }
 
@@ -33,11 +33,7 @@ impl From<LocalRepo> for config::Repo {
 impl LocalRepo {
     pub fn local_path(&self) -> Result<PathBuf> {
         let base = config::repos_base_dir()?;
-        let repo_dir_name = match &self.name {
-            Some(n) => n.clone(),
-            None => basename_from_repo(&self.url),
-        };
-        Ok(base.join(repo_dir_name))
+        Ok(base.join(&self.name))
     }
 
     pub fn get_branch(&self) -> Result<String> {
@@ -65,7 +61,7 @@ impl LocalRepo {
         // TODO: do not load config multiple times in an app run. 
         // come up with something better, maybe a singleton?
         let config = crate::dot::config::Config::load()?;
-        let active_subdirs = config.get_active_subdirs(&self.url)
+        let active_subdirs = config.get_active_subdirs(&self.name)
             .unwrap_or_else(|| vec!["dots".to_string()]);
         
         let repo_path = self.local_path()?;

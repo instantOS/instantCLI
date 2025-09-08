@@ -5,7 +5,7 @@ use std::{env, fs, path::PathBuf};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
     pub url: String,
-    pub name: Option<String>,
+    pub name: String,  // Now mandatory
     pub branch: Option<String>,
     #[serde(default = "default_active_subdirs")]
     pub active_subdirs: Vec<String>,
@@ -73,38 +73,39 @@ impl Config {
     }
 
     /// Add a repo to the config and persist the change
-    pub fn add_repo(&mut self, repo: Repo) -> Result<()> {
+    pub fn add_repo(&mut self, mut repo: Repo) -> Result<()> {
+        // Auto-generate name if not provided (though it's now mandatory in the struct)
+        if repo.name.trim().is_empty() {
+            repo.name = basename_from_repo(&repo.url);
+        }
+        
+        // Check for duplicate names
+        if self.repos.iter().any(|r| r.name == repo.name) {
+            return Err(anyhow::anyhow!(
+                "Repository with name '{}' already exists",
+                repo.name
+            ));
+        }
+        
         self.repos.push(repo);
         self.save()
     }
 
-    /// Set active subdirectories for a specific repo by URL
-    pub fn set_active_subdirs(&mut self, repo_url: &str, subdirs: Vec<String>) -> Result<()> {
+    /// Set active subdirectories for a specific repo by name
+    pub fn set_active_subdirs(&mut self, repo_name: &str, subdirs: Vec<String>) -> Result<()> {
         for repo in &mut self.repos {
-            if repo.url == repo_url {
+            if repo.name == repo_name {
                 repo.active_subdirs = subdirs;
                 return self.save();
             }
         }
-        Err(anyhow::anyhow!("Repository with URL '{}' not found", repo_url))
+        Err(anyhow::anyhow!("Repository with name '{}' not found", repo_name))
     }
 
-    /// Get active subdirectories for a specific repo by URL
-    pub fn get_active_subdirs(&self, repo_url: &str) -> Option<Vec<String>> {
+    /// Get active subdirectories for a specific repo by name
+    pub fn get_active_subdirs(&self, repo_name: &str) -> Option<Vec<String>> {
         self.repos.iter()
-            .find(|repo| repo.url == repo_url)
-            .map(|repo| repo.active_subdirs.clone())
-    }
-    
-    // TODO make name not url the identifier used for repos. makee name  mandatory. when adding
-    // repos, get the name automatically, but  do add it
-    // remove the variants which use urlbfor identifying repos. when adding repos, make sure no two
-    // repos have the same name
-
-    /// Get active subdirectories for a repo by its local name
-    pub fn get_active_subdirs_by_name(&self, repo_name: &str) -> Option<Vec<String>> {
-        self.repos.iter()
-            .find(|repo| repo.name.as_deref() == Some(repo_name) || repo.name.as_deref().unwrap_or("") == repo_name)
+            .find(|repo| repo.name == repo_name)
             .map(|repo| repo.active_subdirs.clone())
     }
 }

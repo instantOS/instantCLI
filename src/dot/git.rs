@@ -1,5 +1,4 @@
 use crate::dot::config;
-use crate::dot::config::basename_from_repo;
 use crate::dot::localrepo as repo_mod;
 use anyhow::{Context, Result};
 use colored::*;
@@ -8,10 +7,7 @@ use std::{path::PathBuf, process::Command};
 pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
     let base = config::repos_base_dir()?;
 
-    let repo_dir_name = match &repo.name {
-        Some(n) => n.clone(),
-        None => basename_from_repo(&repo.url),
-    };
+    let repo_dir_name = repo.name.clone();
 
     let target = base.join(repo_dir_name);
 
@@ -123,10 +119,7 @@ pub fn status_all(debug: bool, path: Option<&str>) -> Result<()> {
     let mut found = false;
 
     for crepo in repos.iter() {
-        let repo_dir_name = match &crepo.name {
-            Some(n) => n.clone(),
-            None => basename_from_repo(&crepo.url),
-        };
+        let repo_dir_name = crepo.name.clone();
         let target = base.join(repo_dir_name);
 
         if !target.exists() {

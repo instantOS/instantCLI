@@ -40,10 +40,7 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
     let base_dir = config::repos_base_dir()?;
 
     for repo in repos {
-        let repo_name = repo.name.as_ref().map_or_else(
-            || config::basename_from_repo(&repo.url),
-            |name| name.clone(),
-        );
+        let repo_name = repo.name.clone();
         let repo_path = base_dir.join(repo_name);
         
         // Get active subdirectories for this repo (defaults to ["dots"])
@@ -253,24 +250,21 @@ pub fn show_repo_active_subdirs(repo_identifier: &str) -> Result<Vec<String>> {
     Ok(active_subdirs)
 }
 
-/// Helper function to find a repository by name or URL
+/// Helper function to find a repository by name
 fn find_repo_by_identifier(config: &Config, identifier: &str) -> Result<config::Repo> {
-    // Try to find by URL first
-    if let Some(repo) = config.repos.iter().find(|r| r.url == identifier) {
-        return Ok(repo.clone());
-    }
-    
     // Try to find by name
-    if let Some(repo) = config.repos.iter().find(|r| r.name.as_deref() == Some(identifier)) {
+    if let Some(repo) = config.repos.iter().find(|r| r.name == identifier) {
         return Ok(repo.clone());
     }
     
-    // Try to find by matching the repo name from URL
+    // Try to find by matching basename (for backwards compatibility)
     let basename = config::basename_from_repo(identifier);
-    if let Some(repo) = config.repos.iter().find(|r| {
-        r.name.as_deref() == Some(&basename) || 
-        config::basename_from_repo(&r.url) == basename
-    }) {
+    if let Some(repo) = config.repos.iter().find(|r| r.name == basename) {
+        return Ok(repo.clone());
+    }
+    
+    // Try to find by URL (backwards compatibility for existing configs)
+    if let Some(repo) = config.repos.iter().find(|r| r.url == identifier) {
         return Ok(repo.clone());
     }
     
