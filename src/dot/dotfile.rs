@@ -6,8 +6,6 @@ use std::path::{Path, PathBuf};
 pub struct Dotfile {
     pub source_path: PathBuf,
     pub target_path: PathBuf,
-    pub hash: Option<String>,
-    pub target_hash: Option<String>,
 }
 
 impl Dotfile {
@@ -66,11 +64,10 @@ impl Dotfile {
             }
         }
         // No newer hash found, compute the hash
-        let hash = Self::get_hash(&self.target_path)?;
-        // Only add hash if it doesn't already exist in the database
-        if !db.hash_exists(&hash, &self.target_path)? {
-            db.add_hash(&hash, &self.target_path, false)?;
-        }
+        let hash = Self::compute_hash(&self.target_path)?;
+        // TODO: check if this file is modified by checking if there are any valid hashes which
+        // match the newly computed one. If there are, save this as an unmodified hash
+        db.add_hash(&hash, &self.target_path, false)?;
         Ok(hash)
     }
 
@@ -92,15 +89,13 @@ impl Dotfile {
         }
 
         // No newer hash found, compute the hash
-        let hash = Self::get_hash(&self.source_path)?;
+        let hash = Self::compute_hash(&self.source_path)?;
         // Only add hash if it doesn't already exist in the database
-        if !db.hash_exists(&hash, &self.target_path)? {
-            db.add_hash(&hash, &self.target_path, true)?;
-        }
+        db.add_hash(&hash, &self.target_path, true)?;
         Ok(hash)
     }
 
-    fn get_hash(path: &Path) -> Result<String, anyhow::Error> {
+    fn compute_hash(path: &Path) -> Result<String, anyhow::Error> {
         let content = fs::read(path)?;
         let mut hasher = Sha256::new();
         hasher.update(content);

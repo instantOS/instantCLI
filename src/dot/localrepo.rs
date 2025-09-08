@@ -15,7 +15,7 @@ pub struct DotfileDir {
 impl DotfileDir {
     pub fn new(name: String, repo_path: &PathBuf, is_active: bool) -> Result<Self> {
         let path = repo_path.join(&name);
-        
+
         // Check if path exists on creation
         if !path.exists() {
             return Err(anyhow::anyhow!(
@@ -24,7 +24,7 @@ impl DotfileDir {
                 path.display()
             ));
         }
-        
+
         Ok(DotfileDir {
             name,
             path,
@@ -66,7 +66,6 @@ impl DotfileDir {
 
         Ok(dotfiles)
     }
-
 }
 
 #[derive(Clone, Debug)]
@@ -112,11 +111,7 @@ impl LocalRepo {
         }
 
         // Get active subdirectories from config (used to set the 'active' field on dotfile directories)
-        let active_subdirs = cfg
-            //TODO: make get_active_subdirs default to dots if there are none configured, and check
-            //the places where get_active_subdirs is used to not do this manually
-            .get_active_subdirs(&name)
-            .unwrap_or_else(|| vec!["dots".to_string()]);
+        let active_subdirs = cfg.get_active_subdirs(&name);
 
         // Create dotfile_dirs
         let dotfile_dirs =
@@ -142,11 +137,11 @@ impl LocalRepo {
     }
 
     /// Create DotfileDir instances for all available subdirectories from metadata
-    /// 
+    ///
     /// Arguments:
     /// - available_subdirs: All subdirectories configured in the repo metadata
     /// - active_subdirs: Subdirectories that should be marked as active (from config)
-    /// 
+    ///
     /// This creates DotfileDir instances for ALL available subdirectories,
     /// using active_subdirs only to determine which ones should be active.
     fn dotfile_dirs_from_path(
@@ -180,9 +175,7 @@ impl LocalRepo {
     }
 
     /// Get all dotfiles from this repository for active subdirectories
-    pub fn get_all_dotfiles(
-        &self,
-    ) -> Result<HashMap<PathBuf, crate::dot::dotfile::Dotfile>> {
+    pub fn get_all_dotfiles(&self) -> Result<HashMap<PathBuf, crate::dot::dotfile::Dotfile>> {
         let mut filemap = HashMap::new();
 
         // Get dotfiles from active directories

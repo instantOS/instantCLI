@@ -53,8 +53,7 @@ impl Config {
         let cfg_path = config_file_path()?;
         if !cfg_path.exists() {
             let default = Config::default();
-            let toml =
-                toml::to_string_pretty(&default).context("serializing default config")?;
+            let toml = toml::to_string_pretty(&default).context("serializing default config")?;
             fs::write(&cfg_path, toml)
                 .with_context(|| format!("writing default config to {}", cfg_path.display()))?;
             return Ok(default);
@@ -107,11 +106,12 @@ impl Config {
     }
 
     /// Get active subdirectories for a specific repo by name
-    pub fn get_active_subdirs(&self, repo_name: &str) -> Option<Vec<String>> {
+    pub fn get_active_subdirs(&self, repo_name: &str) -> Vec<String> {
         self.repos
             .iter()
             .find(|repo| repo.name == repo_name)
             .map(|repo| repo.active_subdirs.clone())
+            .unwrap_or_else(|| vec!["dots".to_string()])
     }
 }
 
@@ -131,6 +131,7 @@ pub fn repos_dir() -> Result<PathBuf> {
     Ok(base)
 }
 
+// TODO: add doc comment to this
 pub fn basename_from_repo(repo: &str) -> String {
     let s = repo.trim_end_matches(".git");
     s.rsplit(|c| c == '/' || c == ':')
@@ -138,4 +139,3 @@ pub fn basename_from_repo(repo: &str) -> String {
         .map(|p| p.to_string())
         .unwrap_or_else(|| s.to_string())
 }
-

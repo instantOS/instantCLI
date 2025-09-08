@@ -74,10 +74,7 @@ pub fn get_all_dotfiles(config: &Config) -> Result<HashMap<PathBuf, Dotfile>> {
         {
             if entry.file_type().is_file() {
                 let source_path = entry.path().to_path_buf();
-                let relative_path = source_path
-                    .strip_prefix(&dir_path)
-                    .unwrap()
-                    .to_path_buf();
+                let relative_path = source_path.strip_prefix(&dir_path).unwrap().to_path_buf();
                 let target_path = home_path.join(relative_path);
 
                 let dotfile = Dotfile {
@@ -242,9 +239,7 @@ pub fn set_repo_active_subdirs(
 pub fn show_repo_active_subdirs(config: &Config, repo_name: &str) -> Result<Vec<String>> {
     let repo = find_repo_by_name(config, repo_name)?;
 
-    let active_subdirs = config
-        .get_active_subdirs(&repo.url)
-        .unwrap_or_else(|| vec!["dots".to_string()]);
+    let active_subdirs = config.get_active_subdirs(&repo.url);
 
     Ok(active_subdirs)
 }
