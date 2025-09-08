@@ -1,238 +1,113 @@
-# Immediate Next Steps for InstantCLI Development
+# InstantCLI Development Status
 
-## Current State Analysis
+## Current State
 
-The InstantCLI project has a solid foundation with the following components implemented:
+The InstantCLI project is a mature Rust-based CLI tool for managing dotfiles with a comprehensive feature set:
 
-### ✅ Completed Core Features
-- **CLI Interface**: Full command structure with clap (src/main.rs)
-- **Configuration Management**: TOML-based config system (src/dot/config.rs)
-- **Database Layer**: SQLite with proper schema for hash tracking (src/dot/db.rs)
-- **Dotfile Operations**: Core apply/fetch/reset functionality (src/dot/dotfile.rs)
-- **Repository Management**: Git operations and local repo handling (src/dot/git.rs, src/dot/localrepo.rs)
-- **Metadata System**: Repository initialization and validation (src/dot/meta.rs)
-- **All Basic Commands**: clone, apply, fetch, reset, update, status, init
+### ✅ Core Features Implemented
+- **CLI Interface**: Full command structure with clap
+- **Configuration Management**: TOML-based config system
+- **Database Layer**: SQLite with hash-based file modification tracking
+- **Dotfile Operations**: apply, fetch, reset functionality
+- **Repository Management**: Git operations and multi-repository support
+- **Multi-Subdirectory Support**: Configurable dots directories per repository
+- **Progress Indicators**: Visual feedback for long-running operations
+- **Interactive Prompts**: Professional confirmations for dangerous operations
+- **Repository Removal**: Safe removal with file cleanup options
 
-### 🔧 Technical Implementation
-- Uses Rust with clap for CLI
-- SQLite database for hash validation
-- SHA256 hashing for file integrity
-- Multi-repository overlay system
+### 🔧 Technical Architecture
+- Rust with clap for CLI parsing
+- SQLite database for SHA256 hash tracking
+- Multi-repository overlay system with priority-based resolution
 - User modification protection via hash validation
-- Proper error handling with anyhow
+- Colored terminal output with consistent styling
+- Comprehensive error handling with anyhow
 
-### 📋 Key Missing Features (from plan.md)
+## Recent Completed Features
 
-1. **Hash Optimization Issues** (src/dot/dotfile.rs:52-53)
-   - TODO: do not add hash if the current hash is one already in the DB
-   - TODO: check if this behavior is already present
+### ✅ Interactive Prompts (dialoguer)
+- Replaced manual confirmation in repository removal with professional dialoguer prompts
+- Added dialoguer dependency with minimal feature set
+- Maintained existing behavior while improving user experience
 
-2. **Enhanced Hash Management**
-   - More sophisticated hash validation logic
-   - Better cleanup strategies for old hashes
-   - Hash aging and expiration
+### ✅ Repository Removal Command
+- Added `remove` subcommand with safety features
+- Optional `--files` flag for local file cleanup
+- Interactive confirmation for dangerous operations
+- Support for repository identification by name, basename, or URL
 
-3. **Enhanced CLI Features**
-   - Better progress indicators for long operations
-   - More detailed status reporting
-   - Interactive prompts for dangerous operations
+### ✅ Progress Indicators
+- Spinner progress bars for cloning and update operations
+- Visual feedback for git fetch, checkout, and pull operations
+- Consistent styling using indicatif crate
+- Centralized spinner utility in `src/dot/utils.rs`
 
-4. **Repository Management Enhancements**
-   - Repository removal commands
-   - Configuration editing commands
-   - Repository priority management
+### ✅ Multi-Subdirectory Support
+- Support for multiple dots directories in repositories
+- Configurable active subdirectories per repository
+- New CLI commands: `list-subdirs`, `set-subdirs`, `show-subdirs`
+- Backward compatibility with existing repositories
 
-## Immediate Next Steps Plan
+### ✅ Hash Management Optimizations
+- Enhanced hash cleanup preserving valid hashes
+- Per-file newest invalid hash retention
+- Age-based cleanup of old invalid hashes
+- Duplicate hash prevention
 
-### Phase 1: Hash Optimization (Priority: HIGH)
+## Current Technical Debt
 
-**1.1 Fix Hash Duplication Issue**
-- Location: `src/dot/dotfile.rs` in `get_target_hash()` method
-- Problem: Currently adds hash to DB without checking if it already exists
-- Impact: Unnecessary database bloat and potential performance issues
-- Implementation: Add existence check before inserting hash
+### Code Quality
+- **Unused Fields**: `hash` and `target_hash` fields in `Dotfile` struct
+- **Code Duplication**: Some hash computation logic repeated
+- **Error Handling**: Occasional unwrap() usage instead of proper error handling
 
-**1.2 Implement Hash Caching**
-- Location: `src/dot/db.rs` and `src/dot/dotfile.rs`
-- Problem: Hash computation is expensive and done repeatedly
-- Solution: Cache recent hashes in memory with LRU eviction
-- Implementation: Add hash cache structure with TTL
+### Performance Opportunities
+- **Hash Caching**: No caching for expensive hash computations
+- **Database Queries**: Some queries could benefit from better indexing
+- **Filesystem Operations**: Repeated metadata calls could be cached
 
-**1.3 Optimize Hash Cleanup** ✅ **COMPLETED**
-- Location: `src/dot/db.rs` in `cleanup_hashes()` method
-- Problem: Current cleanup is too aggressive and may remove useful hashes
-- Solution: Implemented smarter cleanup based on:
-  - ✅ Keep all valid hashes (never remove them)
-  - ✅ Keep newest invalid hash per file (for rollback capability)
-  - ✅ Remove invalid hashes older than 30 days
-- Added comprehensive tests to verify cleanup behavior
-- Added helper methods: `get_hash_stats()` and `cleanup_all_invalid_hashes()`
+## Future Enhancement Opportunities
 
-### Phase 2: CLI Enhancements (Priority: MEDIUM)
+### CLI Experience
+- **Verbose Mode**: Detailed operation logging
+- **Dry-run Mode**: Preview changes without applying them
+- **Repository Selection**: Interactive prompts for multi-repo operations
 
-**2.1 Add Progress Indicators**
-- Location: `src/main.rs` and command handlers
-- Features:
-  - Progress bars for repository operations (clone, update)
-  - File count indicators for apply/fetch operations
-  - Time estimates for long-running operations
+### Repository Management
+- **Prioritization**: Priority-based overlay ordering
+- **Configuration Editing**: Interactive config management
+- **Batch Operations**: Apply/fetch to specific repositories
 
-**2.2 Implement Verbose Output**
-- Location: Command functions in `src/dot/mod.rs`
-- Features:
-  - Detailed file-by-file operation logging
-  - Repository operation details
-  - Debug information for troubleshooting
+### Performance
+- **Hash Caching**: In-memory LRU cache for recent hashes
+- **Database Optimization**: Better indexing and query optimization
+- **Parallel Operations**: Concurrent processing for independent operations
 
-**2.3 Add Interactive Confirmation**
-- Location: `src/main.rs` for destructive operations
-- Features:
-  - Confirmation prompts for reset operations
-  - Warnings for overwriting user-modified files
-  - Dry-run mode for previewing changes
+### Testing
+- **Integration Tests**: End-to-end CLI command testing
+- **Mock Filesystem**: Better testing environment isolation
+- **Edge Case Testing**: Corrupted repos, missing files, network failures
 
-### Phase 3: Repository Management (Priority: MEDIUM)
+## Current Dependencies
 
-**3.1 Add Repository Removal**
-- Location: `src/dot/config.rs` and `src/main.rs`
-- Features:
-  - Remove repository from configuration
-  - Optional: Clean up local files
-  - Safety checks to prevent accidental removal
+Key crates used:
+- `clap` - CLI argument parsing
+- `anyhow` - Error handling
+- `rusqlite` - SQLite database operations
+- `indicatif` - Progress indicators
+- `dialoguer` - Interactive prompts
+- `colored` - Terminal coloring
+- `serde`/`toml` - Configuration handling
+- `sha2` - File hashing
 
-**3.2 Implement Repository Prioritization**
-- Location: `src/dot/config.rs` and `src/dot/mod.rs`
-- Features:
-  - Priority field in repository configuration
-  - Overlay logic based on priority order
-  - Commands to reorder repositories
+## Development Guidelines
 
-**3.3 Add Configuration Editing**
-- Location: `src/main.rs` and new module
-- Features:
-  - Interactive config editing
-  - Repository list management
-  - Global settings adjustment
+1. **No Git Commits**: Do not create automated commits
+2. **Hash-Based Safety**: Never bypass the hash-based modification detection system
+3. **Config Locations**: 
+   - Config: `~/.config/instant/instant.toml`
+   - Database: `~/.local/share/instantos/instant.db`
+   - Repos: `~/.local/share/instantos/dots/`
+4. **User Modifications**: Always respect user-modified files via hash validation
 
-### Phase 4: Testing and Quality (Priority: HIGH)
-
-**4.1 Expand Test Coverage**
-- Location: New test files and existing modules
-- Features:
-  - Unit tests for hash management
-  - Integration tests for CLI commands
-  - Mock filesystem for testing
-  - Edge case testing (corrupted repos, missing files)
-
-**4.2 Add Error Recovery**
-- Location: Throughout the codebase
-- Features:
-  - Graceful handling of network failures
-  - Recovery from corrupted database
-  - Fallback strategies for partial failures
-
-**4.3 Documentation and Examples**
-- Location: New documentation files
-- Features:
-  - User guide with examples
-  - Repository creation guide
-  - Troubleshooting guide
-
-## Technical Debt to Address
-
-### Code Quality Issues
-1. **Unused Fields**: `hash` and `target_hash` fields in `Dotfile` struct are never read
-2. **Code Duplication**: Hash computation logic appears in multiple places
-3. **Error Handling**: Some operations use unwrap() instead of proper error handling
-
-### Performance Considerations
-1. **Database Queries**: Some queries could be optimized with better indexing
-2. **Filesystem Operations**: Repeated metadata calls could be cached
-3. **Memory Usage**: Large file trees could cause memory pressure
-
-### Security Considerations
-1. **Input Validation**: Repository URLs and paths need better validation
-2. **File Permissions**: Ensure proper handling of sensitive files
-3. **Network Security**: Secure git operations with proper validation
-
-## Implementation Strategy
-
-### Order of Operations
-1. **Phase 1**: Fix critical hash optimization issues (highest priority)
-2. **Phase 4**: Add comprehensive testing (foundational)
-3. **Phase 2**: Enhance CLI experience (user-facing improvements)
-4. **Phase 3**: Advanced repository management (feature expansion)
-
-### Success Metrics
-- No hash duplication in database
-- 100% test coverage for core functionality
-- User-friendly CLI with clear feedback
-- Robust error handling and recovery
-
-### Risk Assessment
-- **Low Risk**: CLI enhancements, documentation
-- **Medium Risk**: Repository management features
-- **High Risk**: Hash optimization changes (affects core logic)
-
-## Next Steps
-
-### ✅ Completed (Phase 1.3)
-- **Optimized hash cleanup**: Implemented smarter cleanup that preserves valid hashes and keeps newest invalid hash per file
-- **Added comprehensive tests**: Verified cleanup behavior with edge cases
-- **Added helper methods**: `get_hash_stats()` and `cleanup_all_invalid_hashes()` for debugging
-
-### ✅ Completed (Multiple Subdirectories Support)
-- **Enhanced repository metadata**: Added support for multiple `dots_dirs` in `instantdots.toml`
-- **Configurable active subdirectories**: Added `active_subdirs` field in global config per repo
-- **Updated core functions**: Modified `get_all_dotfiles()` and `fetch_modified()` to use active subdirectories
-- **Enhanced LocalRepo**: Added helper methods for managing multiple subdirectories
-- **New CLI commands**: Added `list-subdirs`, `set-subdirs`, and `show-subdirs` commands
-- **Backward compatibility**: Defaults to `["dots"]` for existing repositories
-
-### ✅ Completed (All TODO Comments)
-- **Hash duplication optimization**: Added `hash_exists()` method to prevent duplicate hash entries in database
-- **Config loading optimization**: Implemented config caching using `Mutex<Option<Config>>` to avoid repeated file I/O
-- **Name-based repository identification**: Made `name` field mandatory and primary identifier for repositories
-- **Enhanced error handling**: Improved fallback mechanisms and added comprehensive test coverage
-- **Repository name validation**: Added duplicate name checking when adding repositories
-
-### ✅ Completed (Progress Indicators)
-- **Phase 2.1**: Added progress indicators for repository operations
-  - Spinner progress bars for cloning operations in `add_repo()`
-  - Progress indicators for update operations including branch switching
-  - Visual feedback for git fetch, checkout, and pull operations
-  - Uses `indicatif` crate with custom spinner characters and templates
-  - Provides clear status messages during long-running operations
-
-### ✅ Completed (Code Refactoring)
-- **Spinner Logic Consolidation**: Refactored duplicated spinner creation logic into shared utility function
-  - Created `src/dot/utils.rs` module with `create_spinner()` helper function
-  - Eliminated code duplication across `git.rs` and `localrepo.rs`
-  - Centralized spinner styling and configuration for consistent appearance
-  - Improved maintainability and adherence to DRY principles
-
-### ✅ Completed (Repository Removal Command)
-- **Phase 3.1**: Implemented repository removal command with safety features
-  - Added `remove` subcommand to CLI with proper clap integration
-  - Support for removing repository from configuration only (default behavior)
-  - Optional `--files` flag to also remove local files with confirmation
-  - Safety checks with interactive confirmation for file deletion
-  - Clear warning messages and colored output for dangerous operations
-  - Proper error handling for repository not found scenarios
-  - Backward compatibility with repository identification by name, basename, or URL
-
-### ✅ Completed (Interactive Prompts with dialoguer)
-- **Phase 2.3**: Replaced existing manual confirmation with professional dialoguer prompts
-  - Added dialoguer dependency to Cargo.toml with minimal feature set
-  - Replaced manual confirmation in `remove_repo()` with professional dialoguer Confirm prompt
-  - Maintained existing behavior while improving user experience
-  - Consistent styling with existing colored output and error handling
-  - Professional-looking prompts that integrate seamlessly with existing CLI
-
-### 📋 Upcoming
-1. **Phase 2**: Complete CLI experience enhancements (verbose output, dry-run mode)
-2. **Phase 3**: Advanced repository management features (prioritization, configuration editing)
-3. **Phase 4**: Expand test coverage for remaining core functionality
-4. **Performance optimizations**: Hash caching, database query optimization, filesystem operation caching
-
-This plan focuses on stabilizing the core functionality first, then expanding features while maintaining code quality and user experience.
+The project is in a stable, feature-complete state with room for incremental improvements in user experience and performance.
