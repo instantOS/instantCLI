@@ -115,6 +115,15 @@ impl Database {
         Ok(result)
     }
 
+    /// Get the newest hash timestamp for a file, if any exists
+    pub fn get_newest_hash_timestamp(&self, path: &Path) -> Result<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT MAX(created) FROM hashes WHERE path = ?")?;
+        let result: Option<String> = stmt.query_row([path.to_str().unwrap()], |row| row.get(0))?;
+        Ok(result)
+    }
+
     pub fn cleanup_hashes(&self) -> Result<()> {
         // Keep all valid hashes, and for invalid hashes:
         // 1. Keep the newest invalid hash per file (for rollback capability)

@@ -35,7 +35,7 @@ impl Dotfile {
             return false;
         }
 
-        if let Some(target_hash) = self.get_target_hash(db) {
+        if let Ok(target_hash) = self.get_target_hash(db) {
             if let Ok(valid_hashes) = db.get_valid_hashes(&self.target_path) {
                 return !valid_hashes.contains(&target_hash);
             }
@@ -44,53 +44,74 @@ impl Dotfile {
         true
     }
 
-    // TODO: only compute the file hash if there is no hash in the database which us newer than the date
-    // the file was last modified
-    pub fn get_target_hash(&self, db: &Database) -> Option<String> {
+    pub fn get_target_hash(&self, db: &Database) -> Result<String, anyhow::Error> {
         if !self.target_path.exists() {
-            return None;
+            return Err(anyhow::anyhow!("Target file does not exist: {}", self.target_path.display()));
         }
-        let hash = Self::get_hash(&self.target_path).unwrap();
-        // Only add hash if it doesn't already exist in the database
-        match db.hash_exists(&hash, &self.target_path) {
-            Ok(exists) => {
-                if !exists {
-                    db.add_hash(&hash, &self.target_path, false).ok();
+        
+        // Check if there's a hash in the database newer than the file's modification time
+        let file_metadata = fs::metadata(&self.target_path)?;
+        let file_modified = file_metadata.modified()?;
+        
+        if let Ok(Some(newest_hash_timestamp)) = db.get_newest_hash_timestamp(&self.target_path) {
+            // Parse the database timestamp and compare with file modification time
+            if let Ok(db_time) = chrono::DateTime::parse_from_rfc3339(&newest_hash_timestamp) {
+                let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
+                if db_time >= file_time {
+                    // Database has a hash newer than or equal to file modification time,
+                    // so we can return the newest valid hash for this file
+                    let valid_hashes = db.get_valid_hashes(&self.target_path)?;
+                    if let Some(newest_hash) = valid_hashes.last() {
+                        return Ok(newest_hash.clone());
+                    }
                 }
             }
-            Err(_) => {
-                // If checking existence fails, fall back to adding the hash
-                db.add_hash(&hash, &self.target_path, false).ok();
-            }
         }
-        Some(hash)
+        
+        // No newer hash found, compute the hash
+        let hash = Self::get_hash(&self.target_path)?;
+        // Only add hash if it doesn't already exist in the database
+        if !db.hash_exists(&hash, &self.target_path)? {
+            db.add_hash(&hash, &self.target_path, false)?;
+        }
+        Ok(hash)
     }
 
-    pub fn get_source_hash(&self, db: &Database) -> Option<String> {
-        let hash = Self::get_hash(&self.source_path).unwrap();
-        // Only add hash if it doesn't already exist in the database
-        match db.hash_exists(&hash, &self.target_path) {
-            Ok(exists) => {
-                if !exists {
-                    db.add_hash(&hash, &self.target_path, true).ok();
+    pub fn get_source_hash(&self, db: &Database) -> Result<String, anyhow::Error> {
+        // Check if there's a hash in the database newer than the file's modification time
+        let file_metadata = fs::metadata(&self.source_path)?;
+        let file_modified = file_metadata.modified()?;
+        
+        if let Ok(Some(newest_hash_timestamp)) = db.get_newest_hash_timestamp(&self.target_path) {
+            // Parse the database timestamp and compare with file modification time
+            if let Ok(db_time) = chrono::DateTime::parse_from_rfc3339(&newest_hash_timestamp) {
+                let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
+                if db_time >= file_time {
+                    // Database has a hash newer than or equal to file modification time,
+                    // so we can return the newest valid hash for this file
+                    let valid_hashes = db.get_valid_hashes(&self.target_path)?;
+                    if let Some(newest_hash) = valid_hashes.last() {
+                        return Ok(newest_hash.clone());
+                    }
                 }
             }
-            Err(_) => {
-                // If checking existence fails, fall back to adding the hash
-                db.add_hash(&hash, &self.target_path, true).ok();
-            }
         }
-        Some(hash)
+        
+        // No newer hash found, compute the hash
+        let hash = Self::get_hash(&self.source_path)?;
+        // Only add hash if it doesn't already exist in the database
+        if !db.hash_exists(&hash, &self.target_path)? {
+            db.add_hash(&hash, &self.target_path, true)?;
+        }
+        Ok(hash)
     }
 
-    fn get_hash(path: &Path) -> Option<String> {
-        if let Ok(content) = fs::read(path) {
-            let mut hasher = Sha256::new();
-            hasher.update(content);
-            let result = hasher.finalize();
-            return Some(format!("{:x}", result));
-        }
-        None
+    fn get_hash(path: &Path) -> Result<String, anyhow::Error> {
+        let content = fs::read(path)?;
+        let mut hasher = Sha256::new();
+        hasher.update(content);
+        let result = hasher.finalize();
+        Ok(format!("{:x}", result))
     }
 
     pub fn apply(&self, db: &Database) -> Result<(), std::io::Error> {
@@ -108,7 +129,7 @@ impl Dotfile {
 
         fs::copy(&self.source_path, &self.target_path)?;
 
-        self.get_source_hash(db);
+        let _ = self.get_source_hash(db);
 
         Ok(())
     }
@@ -116,7 +137,7 @@ impl Dotfile {
     pub fn fetch(&self, db: &Database) -> Result<(), std::io::Error> {
         if self.is_modified(db) {
             fs::copy(&self.target_path, &self.source_path)?;
-            self.get_target_hash(db);
+            let _ = self.get_target_hash(db);
         }
         Ok(())
     }
