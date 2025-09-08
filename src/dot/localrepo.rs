@@ -1,7 +1,8 @@
 use crate::dot::config;
 use crate::dot::utils;
 use anyhow::{Context, Result};
-use std::{path::Path, path::PathBuf, process::Command};
+use std::{collections::HashMap, path::Path, path::PathBuf, process::Command};
+use walkdir::WalkDir;
 
 #[derive(Clone, Debug)]
 pub struct LocalRepo {
@@ -78,6 +79,41 @@ impl LocalRepo {
         }
 
         Ok(active_dirs)
+    }
+
+    /// Get all dotfiles from this repository for active subdirectories
+    pub fn get_all_dotfiles(&self) -> Result<HashMap<PathBuf, crate::dot::dotfile::Dotfile>> {
+        let mut filemap = HashMap::new();
+        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let active_dirs = self.get_active_dots_dirs()?;
+
+        for dots_dir in active_dirs {
+            for entry in WalkDir::new(&dots_dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|entry| {
+                    let path_str = entry.path().to_string_lossy();
+                    !path_str.contains("/.git/")
+                })
+            {
+                if entry.file_type().is_file() {
+                    let source_path = entry.path().to_path_buf();
+                    let relative_path = source_path.strip_prefix(&dots_dir).unwrap().to_path_buf();
+                    let target_path = home.join(relative_path);
+
+                    let dotfile = crate::dot::dotfile::Dotfile {
+                        repo_path: source_path,
+                        target_path: target_path.clone(),
+                        hash: None,
+                        target_hash: None,
+                    };
+
+                    filemap.insert(target_path, dotfile);
+                }
+            }
+        }
+
+        Ok(filemap)
     }
 
     /// Convert a target path (in home directory) to source path (in repo)

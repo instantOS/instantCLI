@@ -8,6 +8,8 @@ pub struct Repo {
     pub name: String, // Now mandatory
     pub branch: Option<String>,
     #[serde(default = "default_active_subdirs")]
+    // TODO: create a dotfiledir struct and move some of the logic from repo. 
+    // come up with a plan first for which parts this makes sense for
     pub active_subdirs: Vec<String>,
 }
 

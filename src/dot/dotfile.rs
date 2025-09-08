@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub struct Dotfile {
+    //TODO: change to source_path
     pub repo_path: PathBuf,
     pub target_path: PathBuf,
     pub hash: Option<String>,

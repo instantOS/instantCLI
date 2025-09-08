@@ -149,27 +149,12 @@ fn fetch_directory(path: &str, this_repo: &LocalRepo, db: &Database, home: &Path
 }
 
 /// Fetch all tracked files globally
-fn fetch_all_files(this_repo: &LocalRepo, db: &Database, home: &PathBuf) -> Result<()> {
-    let active_dirs = this_repo.get_active_dots_dirs()?;
-
-    for dots_dir in active_dirs {
-        for entry in WalkDir::new(&dots_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-        {
-            let source_file = entry.path().to_path_buf();
-            let relative = source_file.strip_prefix(&dots_dir).unwrap().to_path_buf();
-            let target_file = home.join(relative);
-            if target_file.exists() {
-                let dotfile = Dotfile {
-                    repo_path: source_file,
-                    target_path: target_file,
-                    hash: None,
-                    target_hash: None,
-                };
-                dotfile.fetch(db)?;
-            }
+fn fetch_all_files(this_repo: &LocalRepo, db: &Database, _home: &PathBuf) -> Result<()> {
+    let dotfiles = this_repo.get_all_dotfiles()?;
+    
+    for dotfile in dotfiles.values() {
+        if dotfile.target_path.exists() {
+            dotfile.fetch(db)?;
         }
     }
     Ok(())
@@ -197,8 +182,7 @@ pub fn fetch_modified(path: Option<&str>) -> Result<()> {
             fetch_directory(p, &this_repo, &db, &home)?;
         }
     } else {
-        // Global fetch: walk all active dots directories and fetch tracked
-        // TODO: add way to get all dotfiles from a single repo (for the active subdirs), and use that here
+        // Global fetch: get all dotfiles from the current repo and fetch tracked
         fetch_all_files(&this_repo, &db, &home)?;
     }
     db.cleanup_hashes()?;

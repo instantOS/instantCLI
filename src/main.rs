@@ -48,6 +48,9 @@ enum DotCommands {
     /// Apply dotfiles
     Apply,
     /// Fetch modified dotfiles (optional path relative to ~ for selective/recursive fetch, e.g., .config/kitty)
+    // TODO: split this into fetch and add
+    // fetch should iterate through dotfiles in a source repo and copy the modified ones from the
+    // home dir to the source repo. 
     Fetch {
         /// Path to fetch (relative to ~)
         path: Option<String>,
