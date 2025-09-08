@@ -214,18 +214,18 @@ pub fn reset_modified(path: &str) -> Result<()> {
 }
 
 /// List available subdirectories for a repository
-pub fn list_repo_subdirs(repo_identifier: &str) -> Result<Vec<String>> {
+pub fn list_repo_subdirs(repo_name: &str) -> Result<Vec<String>> {
     let config = Config::load()?;
-    let repo = find_repo_by_identifier(&config, repo_identifier)?;
+    let repo = find_repo_by_name(&config, repo_name)?;
     let local_repo = localrepo::LocalRepo::from(repo);
     let meta = local_repo.read_meta()?;
     Ok(meta.dots_dirs)
 }
 
 /// Set active subdirectories for a repository
-pub fn set_repo_active_subdirs(repo_identifier: &str, subdirs: Vec<String>) -> Result<()> {
+pub fn set_repo_active_subdirs(repo_name: &str, subdirs: Vec<String>) -> Result<()> {
     let mut config = Config::load()?;
-    let repo = find_repo_by_identifier(&config, repo_identifier)?;
+    let repo = find_repo_by_name(&config, repo_name)?;
 
     // Validate that the subdirectories exist in the repo metadata
     let local_repo = localrepo::LocalRepo::from(repo.clone());
@@ -246,9 +246,9 @@ pub fn set_repo_active_subdirs(repo_identifier: &str, subdirs: Vec<String>) -> R
 }
 
 /// Show active subdirectories for a repository
-pub fn show_repo_active_subdirs(repo_identifier: &str) -> Result<Vec<String>> {
+pub fn show_repo_active_subdirs(repo_name: &str) -> Result<Vec<String>> {
     let config = Config::load()?;
-    let repo = find_repo_by_identifier(&config, repo_identifier)?;
+    let repo = find_repo_by_name(&config, repo_name)?;
 
     let active_subdirs = config
         .get_active_subdirs(&repo.url)
@@ -257,21 +257,20 @@ pub fn show_repo_active_subdirs(repo_identifier: &str) -> Result<Vec<String>> {
     Ok(active_subdirs)
 }
 
-/// Helper function to find a repository by name
-// TODO: come up with better name for this
-fn find_repo_by_identifier(config: &Config, identifier: &str) -> Result<config::Repo> {
+/// Find a repository by its name
+fn find_repo_by_name(config: &Config, repo_name: &str) -> Result<config::Repo> {
     config
         .repos
         .iter()
-        .find(|r| r.name == identifier)
+        .find(|r| r.name == repo_name)
         .cloned()
-        .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", identifier))
+        .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", repo_name))
 }
 
 /// Remove a repository from configuration
-pub fn remove_repo(repo_identifier: &str, remove_files: bool) -> Result<()> {
+pub fn remove_repo(repo_name: &str, remove_files: bool) -> Result<()> {
     let mut config = Config::load()?;
-    let repo = find_repo_by_identifier(&config, repo_identifier)?;
+    let repo = find_repo_by_name(&config, repo_name)?;
 
     // Safety check: ask for confirmation if removing files
     if remove_files {
