@@ -111,7 +111,7 @@ impl LocalRepo {
             ));
         }
 
-        // Get active subdirectories from config
+        // Get active subdirectories from config (used to set the 'active' field on dotfile directories)
         let active_subdirs = cfg
             .get_active_subdirs(&name)
             .unwrap_or_else(|| vec!["dots".to_string()]);
@@ -139,24 +139,14 @@ impl LocalRepo {
         Ok(base.join(name))
     }
 
-    /// Create DotfileDir instances for this repository
-    pub fn create_dotfile_dirs(
-        &self,
-        available_subdirs: &[String],
-        active_subdirs: &[String],
-    ) -> Result<Vec<DotfileDir>> {
-        let repo_path = self.local_path().unwrap_or_else(|_| PathBuf::new());
-        let mut dotfile_dirs = Vec::new();
-
-        for subdir_name in available_subdirs {
-            let is_active = active_subdirs.contains(subdir_name);
-            let dotfile_dir = DotfileDir::new(subdir_name.clone(), &repo_path, is_active)?;
-            dotfile_dirs.push(dotfile_dir);
-        }
-
-        Ok(dotfile_dirs)
-    }
-
+    /// Create DotfileDir instances for all available subdirectories from metadata
+    /// 
+    /// Arguments:
+    /// - available_subdirs: All subdirectories configured in the repo metadata
+    /// - active_subdirs: Subdirectories that should be marked as active (from config)
+    /// 
+    /// This creates DotfileDir instances for ALL available subdirectories,
+    /// using active_subdirs only to determine which ones should be active.
     fn dotfile_dirs_from_path(
         repo_path: &PathBuf,
         available_subdirs: &[String],
@@ -199,6 +189,7 @@ impl LocalRepo {
                 match dotfile_dir.get_dotfiles() {
                     Ok(dotfiles) => {
                         for dotfile in dotfiles {
+                            // dotfile dirs override each other
                             filemap.insert(dotfile.target_path.clone(), dotfile);
                         }
                     }
@@ -289,6 +280,8 @@ impl LocalRepo {
     }
 
     pub fn update(&self, debug: bool) -> Result<()> {
+        //TODO: verify that the repo exists upon creation (this might already be done)
+        //and do not check every time you use it
         let target = self.local_path()?;
         if !target.exists() {
             return Err(anyhow::anyhow!(

@@ -146,7 +146,7 @@ fn fetch_directory(
     home: &PathBuf,
     config: &Config,
 ) -> Result<()> {
-    let dotfiles = this_repo.get_all_dotfiles(&config)?;
+    let dotfiles = this_repo.get_all_dotfiles()?;
     let relative_path = path.trim_start_matches('/');
     let target_path = home.join(relative_path);
 
@@ -165,7 +165,7 @@ fn fetch_all_files(
     _home: &PathBuf,
     config: &Config,
 ) -> Result<()> {
-    let dotfiles = this_repo.get_all_dotfiles(config)?;
+    let dotfiles = this_repo.get_all_dotfiles()?;
 
     for dotfile in dotfiles.values() {
         if dotfile.target_path.exists() {
