@@ -2,6 +2,23 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
+/// Validate that the given path is a git repository
+fn ensure_git_repo(repo_path: &Path) -> Result<()> {
+    use std::process::Command;
+    
+    let git_check = Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .arg("rev-parse")
+        .arg("--is-inside-work-tree")
+        .output()
+        .context("checking git repository")?;
+    if !git_check.status.success() {
+        anyhow::bail!("current directory is not a git repository");
+    }
+    Ok(())
+}
+
 #[derive(Deserialize, Debug)]
 pub struct RepoMetaData {
     pub name: String,
@@ -31,19 +48,9 @@ pub fn read_meta(repo_path: &Path) -> Result<RepoMetaData> {
 /// repository before creating the file.
 pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
     use std::io::{self, Write};
-    use std::process::Command;
 
     // ensure repo_path is a git repository
-    let git_check = Command::new("git")
-        .arg("-C")
-        .arg(repo_path)
-        .arg("rev-parse")
-        .arg("--is-inside-work-tree")
-        .output()
-        .context("checking git repository")?;
-    if !git_check.status.success() {
-        anyhow::bail!("current directory is not a git repository");
-    }
+    ensure_git_repo(repo_path)?;
 
     let p = repo_path.join("instantdots.toml");
     if p.exists() {
@@ -104,19 +111,9 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
 
 /// Non-interactive version of init_repo that uses the provided name and optional description without prompting.
 pub fn non_interactive_init(repo_path: &Path, name: &str, description: Option<&str>) -> Result<()> {
-    use std::process::Command;
 
     // ensure repo_path is a git repository
-    let git_check = Command::new("git")
-        .arg("-C")
-        .arg(repo_path)
-        .arg("rev-parse")
-        .arg("--is-inside-work-tree")
-        .output()
-        .context("checking git repository")?;
-    if !git_check.status.success() {
-        anyhow::bail!("current directory is not a git repository");
-    }
+    ensure_git_repo(repo_path)?;
 
     let p = repo_path.join("instantdots.toml");
     if p.exists() {
