@@ -44,6 +44,8 @@ impl Dotfile {
         true
     }
 
+    // TODO: only compute the file hash if there is no hash in the database which us newer than the date
+    // the file was last modified
     pub fn get_target_hash(&self, db: &Database) -> Option<String> {
         if !self.target_path.exists() {
             return None;

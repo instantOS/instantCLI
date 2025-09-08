@@ -23,6 +23,7 @@ use crate::dot::localrepo::LocalRepo;
 use std::env::current_dir;
 use std::fs;
 
+//TODO: look at what this is used and add doc comment
 pub fn get_current_repo(config: &Config, cwd: &Path) -> Result<LocalRepo> {
     let mut this_repo: Option<LocalRepo> = None;
     for repo in &config.repos {
@@ -100,6 +101,7 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
     Ok(filemap)
 }
 
+// TODO: split into more functions
 pub fn fetch_modified(path: Option<&str>) -> Result<()> {
     let cwd = current_dir()?;
     let db = Database::new()?;
@@ -159,6 +161,7 @@ pub fn fetch_modified(path: Option<&str>) -> Result<()> {
         }
     } else {
         // Global fetch: walk all active dots directories and fetch tracked
+        // TODO: add way to get all dotfiles from a single repo (for the active subdirs), and use that here
         let active_dirs = this_repo.get_active_dots_dirs()?;
 
         for dots_dir in active_dirs {
@@ -255,6 +258,7 @@ pub fn show_repo_active_subdirs(repo_identifier: &str) -> Result<Vec<String>> {
 }
 
 /// Helper function to find a repository by name
+// TODO: come up with better name for this
 fn find_repo_by_identifier(config: &Config, identifier: &str) -> Result<config::Repo> {
     config
         .repos
