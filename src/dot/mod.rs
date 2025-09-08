@@ -23,7 +23,7 @@ use crate::dot::localrepo::LocalRepo;
 use std::env::current_dir;
 use std::fs;
 
-//TODO: look at what this is used and add doc comment
+/// Find the repository that contains the current working directory.
 pub fn get_current_repo(config: &Config, cwd: &Path) -> Result<LocalRepo> {
     let mut this_repo: Option<LocalRepo> = None;
     for repo in &config.repos {
@@ -101,7 +101,81 @@ pub fn get_all_dotfiles() -> Result<HashMap<PathBuf, Dotfile>> {
     Ok(filemap)
 }
 
-// TODO: split into more functions
+/// Fetch a single file from home directory to the repository
+fn fetch_single_file(home_subdir: PathBuf, this_repo: &LocalRepo, db: &Database) -> Result<()> {
+    if let Some(source_file) = this_repo.target_to_source(&home_subdir)? {
+        fs::copy(&home_subdir, &source_file)?;
+        let dotfile = Dotfile {
+            repo_path: source_file,
+            target_path: home_subdir,
+            hash: None,
+            target_hash: None,
+        };
+        let _ = dotfile.get_source_hash(db);
+    }
+    Ok(())
+}
+
+/// Fetch files from a specific subdirectory
+fn fetch_directory(path: &str, this_repo: &LocalRepo, db: &Database, home: &PathBuf) -> Result<()> {
+    let active_dirs = this_repo.get_active_dots_dirs()?;
+    let relative_path = path.trim_start_matches('/');
+
+    for dots_dir in active_dirs {
+        let source_subdir = dots_dir.join(relative_path);
+        if source_subdir.exists() {
+            // Walk existing source subdir and fetch tracked
+            for entry in WalkDir::new(&source_subdir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+            {
+                let source_file = entry.path().to_path_buf();
+                let relative = source_file.strip_prefix(&dots_dir).unwrap().to_path_buf();
+                let target_file = home.join(relative);
+                if target_file.exists() {
+                    let dotfile = Dotfile {
+                        repo_path: source_file,
+                        target_path: target_file,
+                        hash: None,
+                        target_hash: None,
+                    };
+                    dotfile.fetch(db)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Fetch all tracked files globally
+fn fetch_all_files(this_repo: &LocalRepo, db: &Database, home: &PathBuf) -> Result<()> {
+    let active_dirs = this_repo.get_active_dots_dirs()?;
+
+    for dots_dir in active_dirs {
+        for entry in WalkDir::new(&dots_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+        {
+            let source_file = entry.path().to_path_buf();
+            let relative = source_file.strip_prefix(&dots_dir).unwrap().to_path_buf();
+            let target_file = home.join(relative);
+            if target_file.exists() {
+                let dotfile = Dotfile {
+                    repo_path: source_file,
+                    target_path: target_file,
+                    hash: None,
+                    target_hash: None,
+                };
+                dotfile.fetch(db)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Fetch modified files from home directory back to the repository
 pub fn fetch_modified(path: Option<&str>) -> Result<()> {
     let cwd = current_dir()?;
     let db = Database::new()?;
@@ -118,72 +192,14 @@ pub fn fetch_modified(path: Option<&str>) -> Result<()> {
 
         let md = fs::metadata(&home_subdir)?;
         if md.is_file() {
-            // Try to find corresponding source file in active dots directories
-            if let Some(source_file) = this_repo.target_to_source(&home_subdir)? {
-                fs::copy(&home_subdir, &source_file)?;
-                let dotfile = Dotfile {
-                    repo_path: source_file,
-                    target_path: home_subdir,
-                    hash: None,
-                    target_hash: None,
-                };
-                let _ = dotfile.get_source_hash(&db);
-            }
+            fetch_single_file(home_subdir, &this_repo, &db)?;
         } else if md.is_dir() {
-            // Handle directory fetch - check all active dots directories
-            let active_dirs = this_repo.get_active_dots_dirs()?;
-            let relative_path = p.trim_start_matches('/');
-
-            for dots_dir in active_dirs {
-                let source_subdir = dots_dir.join(relative_path);
-                if source_subdir.exists() {
-                    // Walk existing source subdir and fetch tracked
-                    for entry in WalkDir::new(&source_subdir)
-                        .into_iter()
-                        .filter_map(|e| e.ok())
-                        .filter(|e| e.file_type().is_file())
-                    {
-                        let source_file = entry.path().to_path_buf();
-                        let relative = source_file.strip_prefix(&dots_dir).unwrap().to_path_buf();
-                        let target_file = home.join(relative);
-                        if target_file.exists() {
-                            let dotfile = Dotfile {
-                                repo_path: source_file,
-                                target_path: target_file,
-                                hash: None,
-                                target_hash: None,
-                            };
-                            dotfile.fetch(&db)?;
-                        }
-                    }
-                }
-            }
+            fetch_directory(p, &this_repo, &db, &home)?;
         }
     } else {
         // Global fetch: walk all active dots directories and fetch tracked
         // TODO: add way to get all dotfiles from a single repo (for the active subdirs), and use that here
-        let active_dirs = this_repo.get_active_dots_dirs()?;
-
-        for dots_dir in active_dirs {
-            for entry in WalkDir::new(&dots_dir)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file())
-            {
-                let source_file = entry.path().to_path_buf();
-                let relative = source_file.strip_prefix(&dots_dir).unwrap().to_path_buf();
-                let target_file = home.join(relative);
-                if target_file.exists() {
-                    let dotfile = Dotfile {
-                        repo_path: source_file,
-                        target_path: target_file,
-                        hash: None,
-                        target_hash: None,
-                    };
-                    dotfile.fetch(&db)?;
-                }
-            }
-        }
+        fetch_all_files(&this_repo, &db, &home)?;
     }
     db.cleanup_hashes()?;
     Ok(())
