@@ -39,19 +39,26 @@ pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<DotfileDirInfo>> {
 
     // Process repos in order of their configuration (relevance)
     for repo in &config.repos {
-        let local_repo = match LocalRepo::new(repo.clone()) {
+        let local_repo = match LocalRepo::new(config, repo.name.clone()) {
             Ok(repo) => repo,
             Err(_) => continue,
         };
 
-        // Delegate to repo method to get active directories
-        match local_repo.get_active_dotfile_dirs(&config) {
-            Ok(repo_dirs) => {
-                active_dirs.extend(repo_dirs);
-            }
-            Err(_) => {
-                // Skip repos with errors (invalid metadata, etc.)
-                continue;
+        // Use the dotfile_dirs from the LocalRepo directly
+        let repo_path = match local_repo.local_path() {
+            Ok(path) => path,
+            Err(_) => continue,
+        };
+
+        for dotfile_dir in &local_repo.dotfile_dirs {
+            if dotfile_dir.is_active && dotfile_dir.path.exists() {
+                active_dirs.push(DotfileDirInfo {
+                    repo_name: local_repo.name.clone(),
+                    repo_path: repo_path.clone(),
+                    subdir_name: dotfile_dir.name.clone(),
+                    dir_path: dotfile_dir.path.clone(),
+                    is_active: true,
+                });
             }
         }
     }
@@ -63,7 +70,7 @@ pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<DotfileDirInfo>> {
 pub fn get_current_repo(config: &Config, cwd: &Path) -> Result<LocalRepo> {
     let mut this_repo: Option<LocalRepo> = None;
     for repo in &config.repos {
-        let local = LocalRepo::new(repo.clone())?;
+        let local = LocalRepo::new(config, repo.name.clone())?;
         if cwd.starts_with(local.local_path()?) {
             this_repo = Some(local);
             break;
@@ -222,10 +229,9 @@ pub fn reset_modified(config: &Config, path: &str) -> Result<()> {
 
 /// List available subdirectories for a repository
 pub fn list_repo_subdirs(config: &Config, repo_name: &str) -> Result<Vec<String>> {
-    let repo = find_repo_by_name(config, repo_name)?;
-    let local_repo = localrepo::LocalRepo::new(repo)?;
-    let meta = local_repo.read_meta()?;
-    Ok(meta.dots_dirs)
+    let _repo = find_repo_by_name(config, repo_name)?;
+    let local_repo = localrepo::LocalRepo::new(config, repo_name.to_string())?;
+    Ok(local_repo.meta.dots_dirs)
 }
 
 /// Set active subdirectories for a repository
@@ -237,8 +243,8 @@ pub fn set_repo_active_subdirs(
     let repo = find_repo_by_name(config, repo_name)?;
 
     // Validate that the subdirectories exist in the repo metadata
-    let local_repo = localrepo::LocalRepo::new(repo.clone())?;
-    let meta = local_repo.read_meta()?;
+    let local_repo = localrepo::LocalRepo::new(config, repo_name.to_string())?;
+    let meta = &local_repo.meta;
 
     for subdir in &subdirs {
         if !meta.dots_dirs.contains(subdir) {
@@ -340,7 +346,9 @@ pub fn remove_repo(config: &mut Config, repo_name: &str, remove_files: bool) -> 
         println!(
             "{}: {}",
             "Local path".yellow(),
-            LocalRepo::new(repo.clone())?.local_path()?.display()
+            LocalRepo::new(config, repo_name.to_string())?
+                .local_path()?
+                .display()
         );
 
         let should_remove = Confirm::new()
@@ -360,7 +368,7 @@ pub fn remove_repo(config: &mut Config, repo_name: &str, remove_files: bool) -> 
 
     // Optionally remove local files
     if remove_files {
-        let local_repo = LocalRepo::new(repo)?;
+        let local_repo = LocalRepo::new(config, repo_name.to_string())?;
         let local_path = local_repo.local_path()?;
 
         if local_path.exists() {

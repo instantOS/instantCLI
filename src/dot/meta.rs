@@ -19,7 +19,7 @@ fn ensure_git_repo(repo_path: &Path) -> Result<()> {
     Ok(())
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct RepoMetaData {
     pub name: String,
     pub description: Option<String>,

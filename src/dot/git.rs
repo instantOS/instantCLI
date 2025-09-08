@@ -47,28 +47,19 @@ pub fn add_repo(cfg: &mut config::Config, repo: config::Repo, debug: bool) -> Re
     }
 
     // append to config
-    let local = repo_mod::LocalRepo::new(repo.clone())?;
-    cfg.add_repo(repo)?;
+    cfg.add_repo(repo.clone())?;
 
     // validate metadata but do not delete invalid clones; report their existence
-    match local.read_meta() {
-        Ok(meta) => {
-            if debug {
-                eprintln!(
-                    "Repo {} identified as dot repo '{}' - {}",
-                    local.url,
-                    meta.name,
-                    meta.description.as_deref().unwrap_or("")
-                );
-            }
-        }
-        Err(e) => {
-            if debug {
-                eprintln!("{} -> not a valid instantdots repo: {}", local.url, e);
-            } else {
-                println!("{} -> not a valid instantdots repo: {}", local.url, e);
-            }
-        }
+    let local = repo_mod::LocalRepo::new(cfg, repo.name.clone())?;
+    let meta = &local.meta;
+
+    if debug {
+        eprintln!(
+            "Repo {} identified as dot repo '{}' - {}",
+            local.url,
+            meta.name,
+            meta.description.as_deref().unwrap_or("")
+        );
     }
 
     Ok(target)
@@ -84,22 +75,10 @@ pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
     let mut any_failed = false;
 
     for crepo in repos.iter() {
-        let local = repo_mod::LocalRepo::new(crepo.clone())?;
-        match local.read_meta() {
-            Ok(_) => {
-                if let Err(e) = local.update(debug) {
-                    eprintln!("Failed to update {}: {}", crepo.url, e);
-                    any_failed = true;
-                }
-            }
-            Err(_e) => {
-                println!(
-                    "{} -> {}",
-                    crepo.url.bold(),
-                    "not a valid instantdots repo".red()
-                );
-                continue;
-            }
+        let local = repo_mod::LocalRepo::new(cfg, crepo.name.clone())?;
+        if let Err(e) = local.update(debug) {
+            eprintln!("Failed to update {}: {}", crepo.url, e);
+            any_failed = true;
         }
     }
 
@@ -131,26 +110,16 @@ pub fn status_all(cfg: &config::Config, debug: bool, path: Option<&str>) -> Resu
         }
 
         // validate instantdots.toml exists and parse it via LocalRepo
-        let local = repo_mod::LocalRepo::new(crepo.clone())?;
-        match local.read_meta() {
-            Ok(meta) => {
-                if debug {
-                    eprintln!(
-                        "Repo {} identified as dot repo '{}' - {}",
-                        crepo.url,
-                        meta.name,
-                        meta.description.as_deref().unwrap_or("")
-                    );
-                }
-            }
-            Err(_e) => {
-                println!(
-                    "{} -> {}",
-                    crepo.url.bold(),
-                    "not a valid instantdots repo".red()
-                );
-                continue;
-            }
+        let local = repo_mod::LocalRepo::new(cfg, crepo.name.clone())?;
+        let meta = &local.meta;
+
+        if debug {
+            eprintln!(
+                "Repo {} identified as dot repo '{}' - {}",
+                crepo.url,
+                meta.name,
+                meta.description.as_deref().unwrap_or("")
+            );
         }
 
         let _branch = match &crepo.branch {
@@ -159,7 +128,7 @@ pub fn status_all(cfg: &config::Config, debug: bool, path: Option<&str>) -> Resu
         };
 
         // get checked out branch
-        let _current_branch = match local.get_branch() {
+        let _current_branch = match local.get_checked_out_branch() {
             Ok(b) => b,
             Err(e) => {
                 println!("{} -> cannot determine branch: {}", crepo.url, e);

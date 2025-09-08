@@ -1,5 +1,4 @@
 use crate::dot::config::{self, Config};
-use crate::dot::meta::RepoMetaData;
 use crate::dot::utils;
 use anyhow::{Context, Result};
 use std::{collections::HashMap, path::Path, path::PathBuf, process::Command};
@@ -14,6 +13,8 @@ pub struct DotfileDir {
 }
 
 impl DotfileDir {
+    //TODO: check if path exists on creation, err out if it does not
+    //Then remove the duplicated verification throughout the codebase
     pub fn new(name: String, repo_path: &PathBuf, is_active: bool) -> Self {
         let path = repo_path.join(&name);
         DotfileDir {
@@ -77,19 +78,79 @@ pub struct LocalRepo {
     pub name: String,
     pub branch: Option<String>,
     pub dotfile_dirs: Vec<DotfileDir>,
+    pub meta: crate::dot::meta::RepoMetaData,
 }
 
 impl LocalRepo {
     pub fn new(cfg: &Config, name: String) -> Result<Self> {
-        //TODO: check if the name exists in the config
-        // then go to the path where the repo is and check if there is a valid metadata file.
-        // when theres no metadata file, error out
-        // 
+        // Check if the name exists in the config
+        let repo_config = cfg
+            .repos
+            .iter()
+            .find(|repo| repo.name == name)
+            .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found in configuration", name))?;
+
+        // Get the local path where the repo should be
+        let local_path = Self::local_path_from_name(&name)?;
+
+        // Check if the repo directory exists
+        if !local_path.exists() {
+            return Err(anyhow::anyhow!(
+                "Repository directory '{}' does not exist",
+                local_path.display()
+            ));
+        }
+
+        // Read metadata file
+        let meta = crate::dot::meta::read_meta(&local_path)
+            .with_context(|| format!("Failed to read metadata for repository '{}'", name))?;
+
+        // Validate that metadata name matches config name
+        if meta.name != name {
+            return Err(anyhow::anyhow!(
+                "Metadata name '{}' does not match config name '{}' for repository",
+                meta.name,
+                name
+            ));
+        }
+
+        // Get active subdirectories from config
+        let active_subdirs = cfg
+            .get_active_subdirs(&name)
+            .unwrap_or_else(|| vec!["dots".to_string()]);
+
+        // Create dotfile_dirs
+        let dotfile_dirs =
+            Self::create_dotfile_dirs_from_path(&local_path, &meta.dots_dirs, &active_subdirs);
+
+        // Validate that configured subdirectories exist
+        for dotfile_dir in &dotfile_dirs {
+            if dotfile_dir.is_active && !dotfile_dir.path.exists() {
+                return Err(anyhow::anyhow!(
+                    "Active subdirectory '{}' does not exist in repository '{}'",
+                    dotfile_dir.name,
+                    name
+                ));
+            }
+        }
+
+        Ok(LocalRepo {
+            url: repo_config.url.clone(),
+            name,
+            branch: repo_config.branch.clone(),
+            dotfile_dirs,
+            meta,
+        })
     }
 
     pub fn local_path(&self) -> Result<PathBuf> {
         let base = config::repos_base_dir()?;
         Ok(base.join(&self.name))
+    }
+
+    fn local_path_from_name(name: &str) -> Result<PathBuf> {
+        let base = config::repos_base_dir()?;
+        Ok(base.join(name))
     }
 
     /// Create DotfileDir instances for this repository
@@ -110,7 +171,23 @@ impl LocalRepo {
         dotfile_dirs
     }
 
-    pub fn get_branch(&self) -> Result<String> {
+    fn create_dotfile_dirs_from_path(
+        repo_path: &PathBuf,
+        available_subdirs: &[String],
+        active_subdirs: &[String],
+    ) -> Vec<DotfileDir> {
+        let mut dotfile_dirs = Vec::new();
+
+        for subdir_name in available_subdirs {
+            let is_active = active_subdirs.contains(subdir_name);
+            let dotfile_dir = DotfileDir::new(subdir_name.clone(), repo_path, is_active);
+            dotfile_dirs.push(dotfile_dir);
+        }
+
+        dotfile_dirs
+    }
+
+    pub fn get_checked_out_branch(&self) -> Result<String> {
         let target = self.local_path()?;
         let out = Command::new("git")
             .arg("-C")
@@ -124,49 +201,6 @@ impl LocalRepo {
         Ok(current)
     }
 
-    pub fn read_meta(&self) -> Result<crate::dot::meta::RepoMetaData> {
-        let target = self.local_path()?;
-        crate::dot::meta::read_meta(&target)
-    }
-
-    /// Get active dotfile directory information for this repo
-    pub fn get_active_dotfile_dirs(
-        &self,
-        config: &crate::dot::config::Config,
-    ) -> Result<Vec<crate::dot::DotfileDirInfo>> {
-        let mut active_dirs = Vec::new();
-        let repo_path = self.local_path()?;
-
-        // Read repo metadata to get available dots directories
-        // TODO: a localrepo should read its meta upon creation and fail to create if the metadata is invalid
-        // replace any self.read_metadata calls
-        let meta = self.read_meta()?;
-        let active_subdirs = config
-            .get_active_subdirs(&self.name)
-            .unwrap_or_else(|| vec!["dots".to_string()]);
-
-        // Process active subdirectories in the order they appear in active_subdirs
-        for subdir_name in active_subdirs {
-            // Check if this subdirectory exists in the repo's metadata
-            if !meta.dots_dirs.contains(&subdir_name) {
-                continue;
-            }
-
-            let dir_path = repo_path.join(&subdir_name);
-            if dir_path.exists() {
-                active_dirs.push(crate::dot::DotfileDirInfo {
-                    repo_name: self.name.clone(),
-                    repo_path: repo_path.clone(),
-                    subdir_name: subdir_name.clone(),
-                    dir_path: dir_path.clone(),
-                    is_active: true,
-                });
-            }
-        }
-
-        Ok(active_dirs)
-    }
-
     /// Get all dotfiles from this repository for active subdirectories
     pub fn get_all_dotfiles(
         &self,
@@ -175,7 +209,7 @@ impl LocalRepo {
         let mut filemap = HashMap::new();
 
         // Get DotfileDir instances for this repo
-        let meta = self.read_meta()?;
+        let meta = &self.meta;
         let active_subdirs = config
             .get_active_subdirs(&self.name)
             .unwrap_or_else(|| vec!["dots".to_string()]);
@@ -208,21 +242,18 @@ impl LocalRepo {
     pub fn target_to_source(
         &self,
         target_path: &Path,
-        config: &crate::dot::config::Config,
+        _config: &crate::dot::config::Config,
     ) -> Result<Option<PathBuf>> {
-        let active_dirs = crate::dot::get_active_dotfile_dirs(config)?;
-        let repo_active_dirs: Vec<_> = active_dirs
-            .into_iter()
-            .filter(|dir| dir.repo_name == self.name)
-            .collect();
+        let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
+        let relative = target_path.strip_prefix(&home).unwrap_or(target_path);
 
-        // Try to find the source path in active directories
-        for dotfile_dir in repo_active_dirs {
-            let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
-            let relative = target_path.strip_prefix(&home).unwrap_or(target_path);
-            let source_path = dotfile_dir.dir_path.join(relative);
-            if source_path.exists() {
-                return Ok(Some(source_path));
+        // Try to find the source path in active dotfile directories
+        for dotfile_dir in &self.dotfile_dirs {
+            if dotfile_dir.is_active {
+                let source_path = dotfile_dir.path.join(relative);
+                if source_path.exists() {
+                    return Ok(Some(source_path));
+                }
             }
         }
 
@@ -231,7 +262,7 @@ impl LocalRepo {
 
     fn switch_branch(&self, branch: &str, debug: bool) -> Result<()> {
         let target = self.local_path()?;
-        let current = self.get_branch()?;
+        let current = self.get_checked_out_branch()?;
         if current != branch {
             if debug {
                 eprintln!("Switching {} -> {}", current, branch);
@@ -290,7 +321,6 @@ impl LocalRepo {
         }
 
         // If branch is specified, ensure we're on that branch
-        // TODO: extract this into a separate function
         if let Some(branch) = &self.branch {
             self.switch_branch(branch, debug)?;
         }
