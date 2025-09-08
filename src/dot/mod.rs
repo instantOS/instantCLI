@@ -121,7 +121,7 @@ fn fetch_directory(path: &str, this_repo: &LocalRepo, db: &Database, home: &Path
     let dotfiles = this_repo.get_all_dotfiles()?;
     let relative_path = path.trim_start_matches('/');
     let target_path = home.join(relative_path);
-    
+
     for dotfile in dotfiles.values() {
         if dotfile.target_path.starts_with(&target_path) && dotfile.target_path.exists() {
             dotfile.fetch(db)?;
@@ -133,7 +133,7 @@ fn fetch_directory(path: &str, this_repo: &LocalRepo, db: &Database, home: &Path
 /// Fetch all tracked files globally
 fn fetch_all_files(this_repo: &LocalRepo, db: &Database, _home: &PathBuf) -> Result<()> {
     let dotfiles = this_repo.get_all_dotfiles()?;
-    
+
     for dotfile in dotfiles.values() {
         if dotfile.target_path.exists() {
             dotfile.fetch(db)?;
@@ -256,19 +256,19 @@ pub fn add_dotfile(path: &str) -> Result<()> {
     let config = Config::load()?;
     let this_repo = get_current_repo(&config, &cwd)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    
+
     let expanded = shellexpand::tilde(path).into_owned();
     let full_path = PathBuf::from(expanded);
-    
+
     if !full_path.exists() {
         return Err(anyhow::anyhow!("File '{}' does not exist", path));
     }
-    
+
     // Check if the file is in the home directory
     if !full_path.starts_with(&home) {
         return Err(anyhow::anyhow!("File '{}' is not in home directory", path));
     }
-    
+
     // Find the corresponding source path in the repo
     if let Some(source_path) = this_repo.target_to_source(&full_path)? {
         // Copy the file to the repo
@@ -276,7 +276,7 @@ pub fn add_dotfile(path: &str) -> Result<()> {
             fs::create_dir_all(parent)?;
         }
         fs::copy(&full_path, &source_path)?;
-        
+
         // Create dotfile and compute hash
         let dotfile = Dotfile {
             source_path: source_path,
@@ -285,12 +285,15 @@ pub fn add_dotfile(path: &str) -> Result<()> {
             target_hash: None,
         };
         let _ = dotfile.get_source_hash(&db);
-        
+
         println!("Added {} to tracking", path);
     } else {
-        return Err(anyhow::anyhow!("No matching source directory found for '{}'", path));
+        return Err(anyhow::anyhow!(
+            "No matching source directory found for '{}'",
+            path
+        ));
     }
-    
+
     Ok(())
 }
 

@@ -168,11 +168,7 @@ fn main() {
             DotCommands::Add { path } => match dot::add_dotfile(&path) {
                 Ok(()) => println!("{} {}", "Added dotfile".green(), path.green()),
                 Err(e) => {
-                    eprintln!(
-                        "{}: {}",
-                        "Error adding dotfile".red(),
-                        e.to_string().red()
-                    );
+                    eprintln!("{}: {}", "Error adding dotfile".red(), e.to_string().red());
                     std::process::exit(1);
                 }
             },

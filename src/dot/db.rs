@@ -12,16 +12,16 @@ impl Database {
     pub fn new() -> Result<Self> {
         let db_path = super::config::db_path()?;
         let conn = Connection::open(db_path)?;
-        
+
         // Enable foreign keys
         conn.execute("PRAGMA foreign_keys = ON", ())?;
-        
+
         // Initialize or update schema
         Self::init_schema(&conn)?;
-        
+
         Ok(Database { conn })
     }
-    
+
     fn init_schema(conn: &Connection) -> Result<()> {
         // Create schema version table if it doesn't exist
         conn.execute(
@@ -32,7 +32,7 @@ impl Database {
             )",
             (),
         )?;
-        
+
         // Get current schema version
         let version = match conn.query_row(
             "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
@@ -50,15 +50,15 @@ impl Database {
             }
             Err(e) => return Err(e.into()),
         };
-        
+
         // Run migrations if needed
         if version < CURRENT_SCHEMA_VERSION {
             Self::migrate_schema(conn, version)?;
         }
-        
+
         Ok(())
     }
-    
+
     fn migrate_schema(conn: &Connection, from_version: i32) -> Result<()> {
         match from_version {
             0 => {
@@ -73,7 +73,7 @@ impl Database {
                     )",
                     (),
                 )?;
-                
+
                 // Update to version 1
                 conn.execute(
                     "INSERT INTO schema_version (version, updated) VALUES (1, datetime('now'))",
@@ -116,6 +116,7 @@ impl Database {
     }
 
     /// Get the newest hash timestamp for a file, if any exists
+    // TODO: change this to return the newest hash once the hash struct mentioned in another TODO comment is implemented
     pub fn get_newest_hash_timestamp(&self, path: &Path) -> Result<Option<String>> {
         let mut stmt = self
             .conn
@@ -138,9 +139,9 @@ impl Database {
         // Then, for each file, keep only the newest modified hash
         self.conn.execute(
             "DELETE FROM hashes WHERE unmodified = 0 AND rowid NOT IN (
-                SELECT MAX(rowid) 
-                FROM hashes 
-                WHERE unmodified = 0 
+                SELECT MAX(rowid)
+                FROM hashes
+                WHERE unmodified = 0
                 GROUP BY path
             )",
             (),
@@ -148,31 +149,30 @@ impl Database {
 
         Ok(())
     }
-    
+
     pub fn get_hash_stats(&self) -> Result<(i32, i32, i32)> {
-        let total: i32 = self.conn.query_row(
-            "SELECT COUNT(*) FROM hashes",
-            [],
-            |row| row.get(0),
-        )?;
-        
+        let total: i32 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM hashes", [], |row| row.get(0))?;
+
         let valid: i32 = self.conn.query_row(
             "SELECT COUNT(*) FROM hashes WHERE unmodified = 1",
             [],
             |row| row.get(0),
         )?;
-        
+
         let invalid: i32 = self.conn.query_row(
             "SELECT COUNT(*) FROM hashes WHERE unmodified = 0",
             [],
             |row| row.get(0),
         )?;
-        
+
         Ok((total, valid, invalid))
     }
-    
+
     pub fn cleanup_all_invalid_hashes(&self) -> Result<()> {
-        self.conn.execute("DELETE FROM hashes WHERE unmodified = 0", [])?;
+        self.conn
+            .execute("DELETE FROM hashes WHERE unmodified = 0", [])?;
         Ok(())
     }
 }
@@ -214,7 +214,7 @@ mod tests {
         // Add invalid hashes with different timestamps
         db.conn
             .execute(
-                "INSERT INTO hashes (created, hash, path, valid) VALUES 
+                "INSERT INTO hashes (created, hash, path, valid) VALUES
                 (datetime('now', '-40 days'), 'old_invalid1', ?, 0),
                 (datetime('now', '-35 days'), 'old_invalid2', ?, 0),
                 (datetime('now', '-10 days'), 'recent_invalid1', ?, 0),

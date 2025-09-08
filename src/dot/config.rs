@@ -1,6 +1,10 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{env, fs, path::PathBuf, sync::Mutex};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
@@ -8,8 +12,6 @@ pub struct Repo {
     pub name: String, // Now mandatory
     pub branch: Option<String>,
     #[serde(default = "default_active_subdirs")]
-    // TODO: create a dotfiledir struct and move some of the logic from repo. 
-    // come up with a plan first for which parts this makes sense for
     pub active_subdirs: Vec<String>,
 }
 
