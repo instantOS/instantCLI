@@ -1,15 +1,11 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-    sync::Mutex,
-};
+use std::{env, fs, path::PathBuf, sync::Mutex};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
     pub url: String,
-    pub name: String, // Now mandatory
+    pub name: String,
     pub branch: Option<String>,
     #[serde(default = "default_active_subdirs")]
     pub active_subdirs: Vec<String>,

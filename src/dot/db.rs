@@ -120,30 +120,31 @@ impl Database {
         Ok(result.next().is_some())
     }
 
+    fn row_to_dotfile_hash(row: &rusqlite::Row) -> Result<DotfileHash, rusqlite::Error> {
+        let created_str: String = row.get(1)?;
+        let created = chrono::DateTime::parse_from_rfc3339(&created_str).map_err(|_| {
+            rusqlite::Error::InvalidColumnType(
+                1,
+                "created".to_string(),
+                rusqlite::types::Type::Text,
+            )
+        })?;
+
+        Ok(DotfileHash {
+            hash: row.get(0)?,
+            created: created.with_timezone(&Utc),
+            path: row.get(2)?,
+            unmodified: row.get(3)?,
+        })
+    }
+
     pub fn get_unmodified_hashes(&self, path: &Path) -> Result<Vec<DotfileHash>> {
         let mut stmt = self
             .conn
             .prepare("SELECT hash, created, path, unmodified FROM hashes WHERE path = ? AND unmodified = 1 ORDER BY created DESC")?;
-        // TODO: centralize the logic for parsing a DotFileHash from a row
-        // Search for other places where we parse a DotFileHash from a row and replace them with the centralized logic
-        let hashes = stmt.query_map([path.to_str().unwrap()], |row| {
-            let created_str: String = row.get(1)?;
-            let created = chrono::DateTime::parse_from_rfc3339(&created_str)
-                .map_err(|e| {
-                    rusqlite::Error::InvalidColumnType(
-                        1,
-                        "created".to_string(),
-                        rusqlite::types::Type::Text,
-                    )
-                })?
-                .with_timezone(&Utc);
 
-            Ok(DotfileHash {
-                hash: row.get(0)?,
-                created,
-                path: row.get(2)?,
-                unmodified: row.get(3)?,
-            })
+        let hashes = stmt.query_map([path.to_str().unwrap()], |row| {
+            Self::row_to_dotfile_hash(row)
         })?;
 
         let mut result = Vec::new();
@@ -161,23 +162,7 @@ impl Database {
 
         let result: Option<DotfileHash> = stmt
             .query_row([path.to_str().unwrap()], |row| {
-                let created_str: String = row.get(1)?;
-                let created = chrono::DateTime::parse_from_rfc3339(&created_str)
-                    .map_err(|e| {
-                        rusqlite::Error::InvalidColumnType(
-                            1,
-                            "created".to_string(),
-                            rusqlite::types::Type::Text,
-                        )
-                    })?
-                    .with_timezone(&Utc);
-
-                Ok(DotfileHash {
-                    hash: row.get(0)?,
-                    created,
-                    path: row.get(2)?,
-                    unmodified: row.get(3)?,
-                })
+                Self::row_to_dotfile_hash(row)
             })
             .optional()?;
 

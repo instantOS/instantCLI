@@ -47,7 +47,7 @@ pub fn add_repo(cfg: &mut config::Config, repo: config::Repo, debug: bool) -> Re
     }
 
     // append to config
-    let local: repo_mod::LocalRepo = repo.clone().into();
+    let local = repo_mod::LocalRepo::new(repo.clone())?;
     cfg.add_repo(repo)?;
 
     // validate metadata but do not delete invalid clones; report their existence
@@ -84,7 +84,7 @@ pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
     let mut any_failed = false;
 
     for crepo in repos.iter() {
-        let local: repo_mod::LocalRepo = crepo.clone().into();
+        let local = repo_mod::LocalRepo::new(crepo.clone())?;
         match local.read_meta() {
             Ok(_) => {
                 if let Err(e) = local.update(debug) {
@@ -131,7 +131,7 @@ pub fn status_all(cfg: &config::Config, debug: bool, path: Option<&str>) -> Resu
         }
 
         // validate instantdots.toml exists and parse it via LocalRepo
-        let local: repo_mod::LocalRepo = crepo.clone().into();
+        let local = repo_mod::LocalRepo::new(crepo.clone())?;
         match local.read_meta() {
             Ok(meta) => {
                 if debug {

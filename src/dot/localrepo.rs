@@ -1,4 +1,5 @@
-use crate::dot::config;
+use crate::dot::config::{self, Config};
+use crate::dot::meta::RepoMetaData;
 use crate::dot::utils;
 use anyhow::{Context, Result};
 use std::{collections::HashMap, path::Path, path::PathBuf, process::Command};
@@ -78,29 +79,14 @@ pub struct LocalRepo {
     pub dotfile_dirs: Vec<DotfileDir>,
 }
 
-impl From<config::Repo> for LocalRepo {
-    fn from(r: config::Repo) -> Self {
-        LocalRepo {
-            url: r.url,
-            name: r.name,
-            branch: r.branch,
-            dotfile_dirs: Vec::new(), // Initialize empty, will be populated when needed
-        }
-    }
-}
-
-impl From<LocalRepo> for config::Repo {
-    fn from(r: LocalRepo) -> Self {
-        config::Repo {
-            url: r.url,
-            name: r.name,
-            branch: r.branch,
-            active_subdirs: Vec::new(), // Default empty, will be set by config
-        }
-    }
-}
-
 impl LocalRepo {
+    pub fn new(cfg: &Config, name: String) -> Result<Self> {
+        //TODO: check if the name exists in the config
+        // then go to the path where the repo is and check if there is a valid metadata file.
+        // when theres no metadata file, error out
+        // 
+    }
+
     pub fn local_path(&self) -> Result<PathBuf> {
         let base = config::repos_base_dir()?;
         Ok(base.join(&self.name))
@@ -243,6 +229,57 @@ impl LocalRepo {
         Ok(None)
     }
 
+    fn switch_branch(&self, branch: &str, debug: bool) -> Result<()> {
+        let target = self.local_path()?;
+        let current = self.get_branch()?;
+        if current != branch {
+            if debug {
+                eprintln!("Switching {} -> {}", current, branch);
+            } else {
+                println!("Switching {} -> {}", current, branch);
+            }
+
+            // fetch the branch and checkout
+            let pb = utils::create_spinner(format!("Fetching branch {}...", branch));
+
+            let fetch = Command::new("git")
+                .arg("-C")
+                .arg(&target)
+                .arg("fetch")
+                .arg("origin")
+                .arg(branch)
+                .output()
+                .with_context(|| format!("fetching branch {} in {}", branch, target.display()))?;
+
+            pb.finish_with_message(format!("Fetched branch {}", branch));
+
+            if !fetch.status.success() {
+                let stderr = String::from_utf8_lossy(&fetch.stderr);
+                return Err(anyhow::anyhow!("git fetch failed: {}", stderr));
+            }
+
+            let pb = utils::create_spinner(format!("Checking out {}...", branch));
+
+            let co = Command::new("git")
+                .arg("-C")
+                .arg(&target)
+                .arg("checkout")
+                .arg(branch)
+                .output()
+                .with_context(|| {
+                    format!("checking out branch {} in {}", branch, target.display())
+                })?;
+
+            pb.finish_with_message(format!("Checked out {}", branch));
+
+            if !co.status.success() {
+                let stderr = String::from_utf8_lossy(&co.stderr);
+                return Err(anyhow::anyhow!("git checkout failed: {}", stderr));
+            }
+        }
+        Ok(())
+    }
+
     pub fn update(&self, debug: bool) -> Result<()> {
         let target = self.local_path()?;
         if !target.exists() {
@@ -255,54 +292,7 @@ impl LocalRepo {
         // If branch is specified, ensure we're on that branch
         // TODO: extract this into a separate function
         if let Some(branch) = &self.branch {
-            let current = self.get_branch()?;
-            if current != *branch {
-                if debug {
-                    eprintln!("Switching {} -> {}", current, branch);
-                } else {
-                    println!("Switching {} -> {}", current, branch);
-                }
-
-                // fetch the branch and checkout
-                let pb = utils::create_spinner(format!("Fetching branch {}...", branch));
-
-                let fetch = Command::new("git")
-                    .arg("-C")
-                    .arg(&target)
-                    .arg("fetch")
-                    .arg("origin")
-                    .arg(branch)
-                    .output()
-                    .with_context(|| {
-                        format!("fetching branch {} in {}", branch, target.display())
-                    })?;
-
-                pb.finish_with_message(format!("Fetched branch {}", branch));
-
-                if !fetch.status.success() {
-                    let stderr = String::from_utf8_lossy(&fetch.stderr);
-                    return Err(anyhow::anyhow!("git fetch failed: {}", stderr));
-                }
-
-                let pb = utils::create_spinner(format!("Checking out {}...", branch));
-
-                let co = Command::new("git")
-                    .arg("-C")
-                    .arg(&target)
-                    .arg("checkout")
-                    .arg(branch)
-                    .output()
-                    .with_context(|| {
-                        format!("checking out branch {} in {}", branch, target.display())
-                    })?;
-
-                pb.finish_with_message(format!("Checked out {}", branch));
-
-                if !co.status.success() {
-                    let stderr = String::from_utf8_lossy(&co.stderr);
-                    return Err(anyhow::anyhow!("git checkout failed: {}", stderr));
-                }
-            }
+            self.switch_branch(branch, debug)?;
         }
 
         // pull latest
