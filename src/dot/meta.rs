@@ -5,7 +5,7 @@ use std::{fs, path::Path};
 /// Validate that the given path is a git repository
 fn ensure_git_repo(repo_path: &Path) -> Result<()> {
     use std::process::Command;
-    
+
     let git_check = Command::new("git")
         .arg("-C")
         .arg(repo_path)
@@ -111,7 +111,6 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
 
 /// Non-interactive version of init_repo that uses the provided name and optional description without prompting.
 pub fn non_interactive_init(repo_path: &Path, name: &str, description: Option<&str>) -> Result<()> {
-
     // ensure repo_path is a git repository
     ensure_git_repo(repo_path)?;
 

@@ -44,12 +44,170 @@ impl Database {
     }
 
     pub fn cleanup_hashes(&self) -> Result<()> {
+        // Keep all valid hashes, and for invalid hashes:
+        // 1. Keep the newest invalid hash per file (for rollback capability)
+        // 2. Remove invalid hashes older than 30 days
+
+        // First, remove invalid hashes older than 30 days
         self.conn.execute(
-            "DELETE FROM hashes WHERE valid = 0 AND hash NOT IN (
-                SELECT hash FROM hashes WHERE valid = 0 ORDER BY created DESC LIMIT 1
+            "DELETE FROM hashes WHERE valid = 0 AND created < datetime('now', '-30 days')",
+            (),
+        )?;
+
+        // Then, for each file, keep only the newest invalid hash
+        self.conn.execute(
+            "DELETE FROM hashes WHERE valid = 0 AND rowid NOT IN (
+                SELECT MAX(rowid) 
+                FROM hashes 
+                WHERE valid = 0 
+                GROUP BY path
             )",
             (),
         )?;
+
         Ok(())
+    }
+
+    /// Get statistics about hash database for debugging and monitoring
+    pub fn get_hash_stats(&self) -> Result<(usize, usize, usize)> {
+        let total_hashes: usize =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM hashes", [], |row| row.get(0))?;
+
+        let valid_hashes: usize =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM hashes WHERE valid = 1", [], |row| {
+                    row.get(0)
+                })?;
+
+        let invalid_hashes: usize =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM hashes WHERE valid = 0", [], |row| {
+                    row.get(0)
+                })?;
+
+        Ok((total_hashes, valid_hashes, invalid_hashes))
+    }
+
+    /// Force cleanup of all invalid hashes (useful for testing or aggressive cleanup)
+    pub fn cleanup_all_invalid_hashes(&self) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM hashes WHERE valid = 0", [])?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_hash_cleanup() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let conn = Connection::open(db_path).unwrap();
+
+        // Create test database
+        conn.execute(
+            "CREATE TABLE hashes (
+                created TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                path TEXT NOT NULL,
+                valid INTEGER NOT NULL,
+                PRIMARY KEY (hash, path)
+            )",
+            (),
+        )
+        .unwrap();
+
+        let db = Database { conn };
+
+        // Add test hashes
+        let test_path = PathBuf::from("/home/user/test.txt");
+
+        // Add valid hashes (should never be cleaned up)
+        db.add_hash("valid1", &test_path, true).unwrap();
+        db.add_hash("valid2", &test_path, true).unwrap();
+
+        // Add invalid hashes with different timestamps
+        db.conn
+            .execute(
+                "INSERT INTO hashes (created, hash, path, valid) VALUES 
+                (datetime('now', '-40 days'), 'old_invalid1', ?, 0),
+                (datetime('now', '-35 days'), 'old_invalid2', ?, 0),
+                (datetime('now', '-10 days'), 'recent_invalid1', ?, 0),
+                (datetime('now', '-5 days'), 'recent_invalid2', ?, 0)",
+                &[
+                    test_path.to_str().unwrap(),
+                    test_path.to_str().unwrap(),
+                    test_path.to_str().unwrap(),
+                    test_path.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+
+        // Test initial state
+        let (total, valid, invalid) = db.get_hash_stats().unwrap();
+        assert_eq!(total, 6);
+        assert_eq!(valid, 2);
+        assert_eq!(invalid, 4);
+
+        // Run cleanup
+        db.cleanup_hashes().unwrap();
+
+        // Check results
+        let (total_after, valid_after, invalid_after) = db.get_hash_stats().unwrap();
+        assert_eq!(valid_after, 2); // Valid hashes should remain
+        assert_eq!(invalid_after, 1); // Only newest invalid hash should remain
+        assert_eq!(total_after, 3);
+
+        // Verify the remaining invalid hash is the newest one
+        let remaining_invalid: String = db
+            .conn
+            .query_row("SELECT hash FROM hashes WHERE valid = 0", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(remaining_invalid, "recent_invalid2");
+    }
+
+    #[test]
+    fn test_cleanup_all_invalid() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let conn = Connection::open(db_path).unwrap();
+
+        conn.execute(
+            "CREATE TABLE hashes (
+                created TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                path TEXT NOT NULL,
+                valid INTEGER NOT NULL,
+                PRIMARY KEY (hash, path)
+            )",
+            (),
+        )
+        .unwrap();
+
+        let db = Database { conn };
+
+        let test_path = PathBuf::from("/home/user/test.txt");
+        db.add_hash("valid1", &test_path, true).unwrap();
+        db.add_hash("invalid1", &test_path, false).unwrap();
+        db.add_hash("invalid2", &test_path, false).unwrap();
+
+        let (total, valid, invalid) = db.get_hash_stats().unwrap();
+        assert_eq!(total, 3);
+        assert_eq!(valid, 1);
+        assert_eq!(invalid, 2);
+
+        db.cleanup_all_invalid_hashes().unwrap();
+
+        let (total_after, valid_after, invalid_after) = db.get_hash_stats().unwrap();
+        assert_eq!(total_after, 1);
+        assert_eq!(valid_after, 1);
+        assert_eq!(invalid_after, 0);
     }
 }
