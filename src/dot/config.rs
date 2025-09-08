@@ -97,11 +97,7 @@ impl Config {
         Ok(())
     }
     
-    /// Clear the config cache (used for testing and when config is modified)
-    pub fn clear_cache() {
-        clear_config_cache();
-    }
-
+    
     /// Add a repo to the config and persist the change
     pub fn add_repo(&mut self, mut repo: Repo) -> Result<()> {
         // Auto-generate name if not provided (though it's now mandatory in the struct)

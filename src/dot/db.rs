@@ -76,34 +76,8 @@ impl Database {
         Ok(())
     }
 
-    /// Get statistics about hash database for debugging and monitoring
-    pub fn get_hash_stats(&self) -> Result<(usize, usize, usize)> {
-        let total_hashes: usize =
-            self.conn
-                .query_row("SELECT COUNT(*) FROM hashes", [], |row| row.get(0))?;
-
-        let valid_hashes: usize =
-            self.conn
-                .query_row("SELECT COUNT(*) FROM hashes WHERE valid = 1", [], |row| {
-                    row.get(0)
-                })?;
-
-        let invalid_hashes: usize =
-            self.conn
-                .query_row("SELECT COUNT(*) FROM hashes WHERE valid = 0", [], |row| {
-                    row.get(0)
-                })?;
-
-        Ok((total_hashes, valid_hashes, invalid_hashes))
-    }
-
-    /// Force cleanup of all invalid hashes (useful for testing or aggressive cleanup)
-    pub fn cleanup_all_invalid_hashes(&self) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM hashes WHERE valid = 0", [])?;
-        Ok(())
-    }
-}
+    
+  }
 
 #[cfg(test)]
 mod tests {

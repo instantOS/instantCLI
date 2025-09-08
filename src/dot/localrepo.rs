@@ -191,10 +191,3 @@ impl LocalRepo {
     }
 }
 
-fn basename_from_repo(repo: &str) -> String {
-    let s = repo.trim_end_matches(".git");
-    s.rsplit(|c| c == '/' || c == ':')
-        .next()
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| s.to_string())
-}

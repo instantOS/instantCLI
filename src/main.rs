@@ -20,9 +20,6 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Greet someone
-    Greet { name: Option<String> },
-
     /// Dotfile management commands
     Dot {
         #[command(subcommand)]
@@ -102,10 +99,6 @@ fn main() {
     }
 
     match &cli.command {
-        Some(Commands::Greet { name }) => match name {
-            Some(n) => println!("Hello, {}!", n),
-            None => println!("Hello!"),
-        },
         Some(Commands::Dot { command }) => match command {
             DotCommands::Clone { repo, name, branch } => {
                 let repo_name = name.clone().unwrap_or_else(|| basename_from_repo(&repo));

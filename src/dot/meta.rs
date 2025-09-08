@@ -117,32 +117,3 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Non-interactive version of init_repo that uses the provided name and optional description without prompting.
-pub fn non_interactive_init(repo_path: &Path, name: &str, description: Option<&str>) -> Result<()> {
-    // ensure repo_path is a git repository
-    ensure_git_repo(repo_path)?;
-
-    let p = repo_path.join("instantdots.toml");
-    if p.exists() {
-        anyhow::bail!("instantdots.toml already exists at {}", p.display());
-    }
-
-    let final_name = name.to_string();
-    let desc = description.map(|s| s.to_string());
-
-    #[derive(Serialize)]
-    struct MetaWrite {
-        name: String,
-        description: Option<String>,
-        dots_dirs: Vec<String>,
-    }
-
-    let mw = MetaWrite {
-        name: final_name,
-        description: desc,
-        dots_dirs: vec!["dots".to_string()],
-    };
-    let toml = toml::to_string_pretty(&mw).context("serializing instantdots.toml")?;
-    fs::write(&p, toml).with_context(|| format!("writing {}", p.display()))?;
-    Ok(())
-}
