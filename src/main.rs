@@ -47,13 +47,15 @@ enum DotCommands {
     },
     /// Apply dotfiles
     Apply,
-    /// Fetch modified dotfiles (optional path relative to ~ for selective/recursive fetch, e.g., .config/kitty)
-    // TODO: split this into fetch and add
-    // fetch should iterate through dotfiles in a source repo and copy the modified ones from the
-    // home dir to the source repo. 
+    /// Fetch modified dotfiles from home directory back to repository
     Fetch {
         /// Path to fetch (relative to ~)
         path: Option<String>,
+    },
+    /// Add new dotfiles to tracking
+    Add {
+        /// Path to add (relative to ~)
+        path: String,
     },
     /// Pull updates for all configured repos
     Update,
@@ -158,6 +160,17 @@ fn main() {
                     eprintln!(
                         "{}: {}",
                         "Error fetching dotfiles".red(),
+                        e.to_string().red()
+                    );
+                    std::process::exit(1);
+                }
+            },
+            DotCommands::Add { path } => match dot::add_dotfile(&path) {
+                Ok(()) => println!("{} {}", "Added dotfile".green(), path.green()),
+                Err(e) => {
+                    eprintln!(
+                        "{}: {}",
+                        "Error adding dotfile".red(),
                         e.to_string().red()
                     );
                     std::process::exit(1);
