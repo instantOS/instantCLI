@@ -58,8 +58,7 @@ impl LocalRepo {
     /// Get all active dots directories for this repo
     pub fn get_active_dots_dirs(&self) -> Result<Vec<PathBuf>> {
         let meta = self.read_meta()?;
-        // TODO: do not load config multiple times in an app run. 
-        // come up with something better, maybe a singleton?
+        // Config is now cached to avoid loading multiple times per app run
         let config = crate::dot::config::Config::load()?;
         let active_subdirs = config.get_active_subdirs(&self.name)
             .unwrap_or_else(|| vec!["dots".to_string()]);
