@@ -172,8 +172,14 @@ pub fn fetch_modified(config: &Config, path: Option<&str>) -> Result<()> {
 pub fn apply_all(config: &Config) -> Result<()> {
     let db = Database::new()?;
     let filemap = get_all_dotfiles(config)?;
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
     for dotfile in filemap.values() {
+        let was_missing = !dotfile.target_path.exists();
         dotfile.apply(&db)?;
+        if was_missing {
+            let relative = dotfile.target_path.strip_prefix(&home).unwrap().to_string_lossy();
+            println!("Created new dotfile: ~/{}", relative);
+        }
     }
     db.cleanup_hashes()?;
     Ok(())

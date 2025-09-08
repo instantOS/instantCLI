@@ -92,7 +92,7 @@ impl Dotfile {
         // No newer hash found, compute the hash
         let hash = Self::compute_hash(&self.source_path)?;
         // Only add hash if it doesn't already exist in the database
-        db.add_hash(&hash, &self.target_path, true)?;
+        db.add_hash(&hash, &self.source_path, true)?;
         Ok(hash)
     }
 
@@ -110,6 +110,7 @@ impl Dotfile {
         }
 
         if !self.is_outdated() {
+            let _ = self.get_source_hash(db);
             return Ok(());
         }
 
