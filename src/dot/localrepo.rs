@@ -113,6 +113,8 @@ impl LocalRepo {
 
         // Get active subdirectories from config (used to set the 'active' field on dotfile directories)
         let active_subdirs = cfg
+            //TODO: make get_active_subdirs default to dots if there are none configured, and check
+            //the places where get_active_subdirs is used to not do this manually
             .get_active_subdirs(&name)
             .unwrap_or_else(|| vec!["dots".to_string()]);
 

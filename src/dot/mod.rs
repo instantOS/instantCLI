@@ -23,18 +23,8 @@ use crate::dot::localrepo::LocalRepo;
 use std::env::current_dir;
 use std::fs;
 
-/// Represents a dotfile directory with its repository context
-#[derive(Debug, Clone)]
-pub struct DotfileDirInfo {
-    pub repo_name: String,
-    pub repo_path: PathBuf,
-    pub subdir_name: String,
-    pub dir_path: PathBuf,
-    pub is_active: bool,
-}
-
-/// Get a list of all active dotfile directories, ordered by repository relevance
-pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<DotfileDirInfo>> {
+/// Get a list of all active dotfile directory paths, ordered by repository relevance
+pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<PathBuf>> {
     let mut active_dirs = Vec::new();
 
     // Process repos in order of their configuration (relevance)
@@ -44,21 +34,9 @@ pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<DotfileDirInfo>> {
             Err(_) => continue,
         };
 
-        // Use the dotfile_dirs from the LocalRepo directly
-        let repo_path = match local_repo.local_path() {
-            Ok(path) => path,
-            Err(_) => continue,
-        };
-
         for dotfile_dir in &local_repo.dotfile_dirs {
             if dotfile_dir.is_active {
-                active_dirs.push(DotfileDirInfo {
-                    repo_name: local_repo.name.clone(),
-                    repo_path: repo_path.clone(),
-                    subdir_name: dotfile_dir.name.clone(),
-                    dir_path: dotfile_dir.path.clone(),
-                    is_active: true,
-                });
+                active_dirs.push(dotfile_dir.path.clone());
             }
         }
     }
@@ -85,8 +63,8 @@ pub fn get_all_dotfiles(config: &Config) -> Result<HashMap<PathBuf, Dotfile>> {
     let home_path = PathBuf::from(shellexpand::tilde("~").to_string());
 
     // Process active dotfile directories in order of relevance
-    for dotfile_dir in active_dirs {
-        for entry in WalkDir::new(&dotfile_dir.dir_path)
+    for dir_path in active_dirs {
+        for entry in WalkDir::new(&dir_path)
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|entry| {
@@ -97,7 +75,7 @@ pub fn get_all_dotfiles(config: &Config) -> Result<HashMap<PathBuf, Dotfile>> {
             if entry.file_type().is_file() {
                 let source_path = entry.path().to_path_buf();
                 let relative_path = source_path
-                    .strip_prefix(&dotfile_dir.dir_path)
+                    .strip_prefix(&dir_path)
                     .unwrap()
                     .to_path_buf();
                 let target_path = home_path.join(relative_path);
