@@ -214,7 +214,7 @@ mod tests {
         // Add invalid hashes with different timestamps
         db.conn
             .execute(
-                "INSERT INTO hashes (created, hash, path, valid) VALUES
+                "INSERT INTO hashes (created, hash, path, unmodified) VALUES
                 (datetime('now', '-40 days'), 'old_invalid1', ?, 0),
                 (datetime('now', '-35 days'), 'old_invalid2', ?, 0),
                 (datetime('now', '-10 days'), 'recent_invalid1', ?, 0),
