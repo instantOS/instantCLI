@@ -6,21 +6,84 @@ pub struct Database {
     conn: Connection,
 }
 
+const CURRENT_SCHEMA_VERSION: i32 = 1;
+
 impl Database {
     pub fn new() -> Result<Self> {
         let db_path = super::config::db_path()?;
         let conn = Connection::open(db_path)?;
+        
+        // Enable foreign keys
+        conn.execute("PRAGMA foreign_keys = ON", ())?;
+        
+        // Initialize or update schema
+        Self::init_schema(&conn)?;
+        
+        Ok(Database { conn })
+    }
+    
+    fn init_schema(conn: &Connection) -> Result<()> {
+        // Create schema version table if it doesn't exist
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS hashes (
-                created TEXT NOT NULL,
-                hash TEXT NOT NULL,
-                path TEXT NOT NULL,
-                valid INTEGER NOT NULL,
-                PRIMARY KEY (hash, path)
+            "CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER NOT NULL,
+                updated TEXT NOT NULL,
+                PRIMARY KEY (version)
             )",
             (),
         )?;
-        Ok(Database { conn })
+        
+        // Get current schema version
+        let version = match conn.query_row(
+            "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        ) {
+            Ok(v) => v,
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                // No schema version found, initialize with version 0
+                conn.execute(
+                    "INSERT INTO schema_version (version, updated) VALUES (0, datetime('now'))",
+                    [],
+                )?;
+                0
+            }
+            Err(e) => return Err(e.into()),
+        };
+        
+        // Run migrations if needed
+        if version < CURRENT_SCHEMA_VERSION {
+            Self::migrate_schema(conn, version)?;
+        }
+        
+        Ok(())
+    }
+    
+    fn migrate_schema(conn: &Connection, from_version: i32) -> Result<()> {
+        match from_version {
+            0 => {
+                // Initial schema creation
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS hashes (
+                        created TEXT NOT NULL,
+                        hash TEXT NOT NULL,
+                        path TEXT NOT NULL,
+                        valid INTEGER NOT NULL,
+                        PRIMARY KEY (hash, path)
+                    )",
+                    (),
+                )?;
+                
+                // Update to version 1
+                conn.execute(
+                    "INSERT INTO schema_version (version, updated) VALUES (1, datetime('now'))",
+                    [],
+                )?;
+            }
+            // Future migrations can be added here
+            _ => {}
+        }
+        Ok(())
     }
 
     pub fn add_hash(&self, hash: &str, path: &Path, valid: bool) -> Result<()> {
@@ -74,6 +137,33 @@ impl Database {
             (),
         )?;
 
+        Ok(())
+    }
+    
+    pub fn get_hash_stats(&self) -> Result<(i32, i32, i32)> {
+        let total: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM hashes",
+            [],
+            |row| row.get(0),
+        )?;
+        
+        let valid: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM hashes WHERE valid = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        
+        let invalid: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM hashes WHERE valid = 0",
+            [],
+            |row| row.get(0),
+        )?;
+        
+        Ok((total, valid, invalid))
+    }
+    
+    pub fn cleanup_all_invalid_hashes(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM hashes WHERE valid = 0", [])?;
         Ok(())
     }
 }
