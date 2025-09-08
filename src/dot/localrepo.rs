@@ -130,12 +130,12 @@ impl LocalRepo {
     }
 
     pub fn local_path(&self) -> Result<PathBuf> {
-        let base = config::repos_base_dir()?;
+        let base = config::repos_dir()?;
         Ok(base.join(&self.name))
     }
 
     fn local_path_from_name(name: &str) -> Result<PathBuf> {
-        let base = config::repos_base_dir()?;
+        let base = config::repos_dir()?;
         Ok(base.join(name))
     }
 
@@ -280,15 +280,8 @@ impl LocalRepo {
     }
 
     pub fn update(&self, debug: bool) -> Result<()> {
-        //TODO: verify that the repo exists upon creation (this might already be done)
-        //and do not check every time you use it
+        // Note: Repo existence is verified in LocalRepo::new(), no need to check again
         let target = self.local_path()?;
-        if !target.exists() {
-            return Err(anyhow::anyhow!(
-                "Repo destination '{}' does not exist",
-                target.display()
-            ));
-        }
 
         // If branch is specified, ensure we're on that branch
         if let Some(branch) = &self.branch {

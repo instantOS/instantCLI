@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{env, fs, path::PathBuf, sync::Mutex};
+use std::{env, fs, path::PathBuf};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
@@ -50,42 +50,19 @@ impl Config {
     /// Load the config from disk. If the config file does not exist,
     /// create a default config file and return the default.
     pub fn load() -> Result<Config> {
-        if let Ok(mut cache) = CONFIG_CACHE.lock() {
-            if let Some(config) = &*cache {
-                return Ok(config.clone());
-            }
-
-            let cfg_path = config_file_path()?;
-            if !cfg_path.exists() {
-                let default = Config::default();
-                let toml =
-                    toml::to_string_pretty(&default).context("serializing default config")?;
-                fs::write(&cfg_path, toml)
-                    .with_context(|| format!("writing default config to {}", cfg_path.display()))?;
-                *cache = Some(default.clone());
-                return Ok(default);
-            }
-            let s = fs::read_to_string(&cfg_path)
-                .with_context(|| format!("reading config {}", cfg_path.display()))?;
-            let c: Config = toml::from_str(&s).context("parsing config toml")?;
-            *cache = Some(c.clone());
-            Ok(c)
-        } else {
-            // Fallback if mutex is poisoned
-            let cfg_path = config_file_path()?;
-            if !cfg_path.exists() {
-                let default = Config::default();
-                let toml =
-                    toml::to_string_pretty(&default).context("serializing default config")?;
-                fs::write(&cfg_path, toml)
-                    .with_context(|| format!("writing default config to {}", cfg_path.display()))?;
-                return Ok(default);
-            }
-            let s = fs::read_to_string(&cfg_path)
-                .with_context(|| format!("reading config {}", cfg_path.display()))?;
-            let c: Config = toml::from_str(&s).context("parsing config toml")?;
-            Ok(c)
+        let cfg_path = config_file_path()?;
+        if !cfg_path.exists() {
+            let default = Config::default();
+            let toml =
+                toml::to_string_pretty(&default).context("serializing default config")?;
+            fs::write(&cfg_path, toml)
+                .with_context(|| format!("writing default config to {}", cfg_path.display()))?;
+            return Ok(default);
         }
+        let s = fs::read_to_string(&cfg_path)
+            .with_context(|| format!("reading config {}", cfg_path.display()))?;
+        let c: Config = toml::from_str(&s).context("parsing config toml")?;
+        Ok(c)
     }
 
     /// Save the current config to disk (overwrites file)
@@ -93,9 +70,6 @@ impl Config {
         let cfg_path = config_file_path()?;
         let toml = toml::to_string_pretty(self).context("serializing config to toml")?;
         fs::write(cfg_path, toml).context("writing config file")?;
-
-        // Clear the cache after saving so next load will get the updated config
-        clear_config_cache();
         Ok(())
     }
 
@@ -150,7 +124,7 @@ pub fn db_path() -> Result<PathBuf> {
     Ok(path)
 }
 
-pub fn repos_base_dir() -> Result<PathBuf> {
+pub fn repos_dir() -> Result<PathBuf> {
     let home = env::var("HOME").context("HOME environment variable not set")?;
     let base = PathBuf::from(home).join(".local/share/instantos/dots");
     fs::create_dir_all(&base).context("creating repos base directory")?;
@@ -165,10 +139,3 @@ pub fn basename_from_repo(repo: &str) -> String {
         .unwrap_or_else(|| s.to_string())
 }
 
-static CONFIG_CACHE: Mutex<Option<Config>> = Mutex::new(None);
-
-fn clear_config_cache() {
-    if let Ok(mut cache) = CONFIG_CACHE.lock() {
-        *cache = None;
-    }
-}
