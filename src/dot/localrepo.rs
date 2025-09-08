@@ -13,15 +13,23 @@ pub struct DotfileDir {
 }
 
 impl DotfileDir {
-    //TODO: check if path exists on creation, err out if it does not
-    //Then remove the duplicated verification throughout the codebase
-    pub fn new(name: String, repo_path: &PathBuf, is_active: bool) -> Self {
+    pub fn new(name: String, repo_path: &PathBuf, is_active: bool) -> Result<Self> {
         let path = repo_path.join(&name);
-        DotfileDir {
+        
+        // Check if path exists on creation
+        if !path.exists() {
+            return Err(anyhow::anyhow!(
+                "Dotfile directory '{}' does not exist at '{}'",
+                name,
+                path.display()
+            ));
+        }
+        
+        Ok(DotfileDir {
             name,
             path,
             is_active,
-        }
+        })
     }
 
     /// Get all dotfiles in this directory
@@ -59,17 +67,6 @@ impl DotfileDir {
         Ok(dotfiles)
     }
 
-    /// Convert a target path to source path within this directory
-    pub fn target_to_source(&self, target_path: &Path) -> Option<PathBuf> {
-        let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
-        let relative = target_path.strip_prefix(&home).unwrap_or(target_path);
-        let source_path = self.path.join(relative);
-        if source_path.exists() {
-            Some(source_path)
-        } else {
-            None
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -121,18 +118,7 @@ impl LocalRepo {
 
         // Create dotfile_dirs
         let dotfile_dirs =
-            Self::create_dotfile_dirs_from_path(&local_path, &meta.dots_dirs, &active_subdirs);
-
-        // Validate that configured subdirectories exist
-        for dotfile_dir in &dotfile_dirs {
-            if dotfile_dir.is_active && !dotfile_dir.path.exists() {
-                return Err(anyhow::anyhow!(
-                    "Active subdirectory '{}' does not exist in repository '{}'",
-                    dotfile_dir.name,
-                    name
-                ));
-            }
-        }
+            Self::dotfile_dirs_from_path(&local_path, &meta.dots_dirs, &active_subdirs)?;
 
         Ok(LocalRepo {
             url: repo_config.url.clone(),
@@ -158,33 +144,33 @@ impl LocalRepo {
         &self,
         available_subdirs: &[String],
         active_subdirs: &[String],
-    ) -> Vec<DotfileDir> {
+    ) -> Result<Vec<DotfileDir>> {
         let repo_path = self.local_path().unwrap_or_else(|_| PathBuf::new());
         let mut dotfile_dirs = Vec::new();
 
         for subdir_name in available_subdirs {
             let is_active = active_subdirs.contains(subdir_name);
-            let dotfile_dir = DotfileDir::new(subdir_name.clone(), &repo_path, is_active);
+            let dotfile_dir = DotfileDir::new(subdir_name.clone(), &repo_path, is_active)?;
             dotfile_dirs.push(dotfile_dir);
         }
 
-        dotfile_dirs
+        Ok(dotfile_dirs)
     }
 
-    fn create_dotfile_dirs_from_path(
+    fn dotfile_dirs_from_path(
         repo_path: &PathBuf,
         available_subdirs: &[String],
         active_subdirs: &[String],
-    ) -> Vec<DotfileDir> {
+    ) -> Result<Vec<DotfileDir>> {
         let mut dotfile_dirs = Vec::new();
 
         for subdir_name in available_subdirs {
             let is_active = active_subdirs.contains(subdir_name);
-            let dotfile_dir = DotfileDir::new(subdir_name.clone(), repo_path, is_active);
+            let dotfile_dir = DotfileDir::new(subdir_name.clone(), repo_path, is_active)?;
             dotfile_dirs.push(dotfile_dir);
         }
 
-        dotfile_dirs
+        Ok(dotfile_dirs)
     }
 
     pub fn get_checked_out_branch(&self) -> Result<String> {
@@ -204,21 +190,12 @@ impl LocalRepo {
     /// Get all dotfiles from this repository for active subdirectories
     pub fn get_all_dotfiles(
         &self,
-        config: &crate::dot::config::Config,
     ) -> Result<HashMap<PathBuf, crate::dot::dotfile::Dotfile>> {
         let mut filemap = HashMap::new();
 
-        // Get DotfileDir instances for this repo
-        let meta = &self.meta;
-        let active_subdirs = config
-            .get_active_subdirs(&self.name)
-            .unwrap_or_else(|| vec!["dots".to_string()]);
-
-        let dotfile_dirs = self.create_dotfile_dirs(&meta.dots_dirs, &active_subdirs);
-
         // Get dotfiles from active directories
-        for dotfile_dir in dotfile_dirs {
-            if dotfile_dir.is_active && dotfile_dir.path.exists() {
+        for dotfile_dir in self.dotfile_dirs.iter() {
+            if dotfile_dir.is_active {
                 match dotfile_dir.get_dotfiles() {
                     Ok(dotfiles) => {
                         for dotfile in dotfiles {

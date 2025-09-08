@@ -51,7 +51,7 @@ pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<DotfileDirInfo>> {
         };
 
         for dotfile_dir in &local_repo.dotfile_dirs {
-            if dotfile_dir.is_active && dotfile_dir.path.exists() {
+            if dotfile_dir.is_active {
                 active_dirs.push(DotfileDirInfo {
                     repo_name: local_repo.name.clone(),
                     repo_path: repo_path.clone(),
