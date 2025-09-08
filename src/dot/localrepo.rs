@@ -1,4 +1,5 @@
 use crate::dot::config;
+use crate::dot::utils;
 use anyhow::{Context, Result};
 use std::{path::Path, path::PathBuf, process::Command};
 
@@ -128,6 +129,8 @@ impl LocalRepo {
                 }
 
                 // fetch the branch and checkout
+                let pb = utils::create_spinner(format!("Fetching branch {}...", branch));
+
                 let fetch = Command::new("git")
                     .arg("-C")
                     .arg(&target)
@@ -139,10 +142,14 @@ impl LocalRepo {
                         format!("fetching branch {} in {}", branch, target.display())
                     })?;
 
+                pb.finish_with_message(format!("Fetched branch {}", branch));
+
                 if !fetch.status.success() {
                     let stderr = String::from_utf8_lossy(&fetch.stderr);
                     return Err(anyhow::anyhow!("git fetch failed: {}", stderr));
                 }
+
+                let pb = utils::create_spinner(format!("Checking out {}...", branch));
 
                 let co = Command::new("git")
                     .arg("-C")
@@ -154,6 +161,8 @@ impl LocalRepo {
                         format!("checking out branch {} in {}", branch, target.display())
                     })?;
 
+                pb.finish_with_message(format!("Checked out {}", branch));
+
                 if !co.status.success() {
                     let stderr = String::from_utf8_lossy(&co.stderr);
                     return Err(anyhow::anyhow!("git checkout failed: {}", stderr));
@@ -162,12 +171,16 @@ impl LocalRepo {
         }
 
         // pull latest
+        let pb = utils::create_spinner(format!("Updating {}...", self.name));
+
         let pull = Command::new("git")
             .arg("-C")
             .arg(&target)
             .arg("pull")
             .output()
             .with_context(|| format!("running git pull in {}", target.display()))?;
+
+        pb.finish_with_message(format!("Updated {}", self.name));
 
         if !pull.status.success() {
             let stderr = String::from_utf8_lossy(&pull.stderr);

@@ -11,6 +11,7 @@ pub mod dotfile;
 pub mod git;
 pub mod localrepo;
 pub mod meta;
+pub mod utils;
 
 pub use crate::dot::dotfile::Dotfile;
 pub use git::{add_repo, status_all, update_all};

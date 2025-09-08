@@ -1,5 +1,6 @@
 use crate::dot::config;
 use crate::dot::localrepo as repo_mod;
+use crate::dot::utils;
 use anyhow::{Context, Result};
 use colored::*;
 use std::{path::PathBuf, process::Command};
@@ -35,7 +36,12 @@ pub fn add_repo(repo: config::Repo, debug: bool) -> Result<PathBuf> {
         eprintln!("Running: {:?}", cmd);
     }
 
+    // Create progress bar for cloning operation
+    let pb = utils::create_spinner(format!("Cloning {}...", repo.url));
+
     let output = cmd.output().context("running git clone")?;
+    pb.finish_with_message(format!("Cloned {}", repo.url));
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(anyhow::anyhow!("git clone failed: {}", stderr));
