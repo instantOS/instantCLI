@@ -261,7 +261,7 @@ async fn test_invalid_repository_url() -> Result<()> {
     assert!(output.stderr.contains("error") || output.stderr.contains("Error"));
     
     // Clean up after the test
-    env.cleanup_config()?;
+    env.cleanup_all_test_state()?;
     
     Ok(())
 }

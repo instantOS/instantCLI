@@ -101,6 +101,9 @@ impl TestEnvironment {
         let test_dirs = ["test-app", "modify-test", "fetch-test", "overlap", "multi-app1", "multi-app2", "remove-test"];
         self.cleanup_home_files(&test_dirs)?;
         
+        // Small delay to ensure filesystem operations complete
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        
         Ok(())
     }
 }
