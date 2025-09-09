@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::*;
 use shellexpand;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use walkdir::WalkDir;
 
@@ -20,7 +20,7 @@ pub use git::{add_repo, status_all, update_all};
 use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::localrepo::LocalRepo;
-use std::env::current_dir;
+
 use std::fs;
 
 /// Get a list of all active dotfile directory paths, ordered by repository relevance
@@ -50,18 +50,7 @@ pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<PathBuf>> {
     Ok(active_dirs)
 }
 
-/// Find the repository that contains the current working directory.
-pub fn get_current_repo(config: &Config, cwd: &Path) -> Result<LocalRepo> {
-    let mut this_repo: Option<LocalRepo> = None;
-    for repo in &config.repos {
-        let local = LocalRepo::new(config, repo.name.clone())?;
-        if cwd.starts_with(local.local_path()?) {
-            this_repo = Some(local);
-            break;
-        }
-    }
-    this_repo.ok_or_else(|| anyhow::anyhow!("Not in a dotfile repo"))
-}
+
 
 pub fn get_all_dotfiles(config: &Config) -> Result<HashMap<PathBuf, Dotfile>> {
     let mut filemap = HashMap::new();
@@ -97,76 +86,108 @@ pub fn get_all_dotfiles(config: &Config) -> Result<HashMap<PathBuf, Dotfile>> {
     Ok(filemap)
 }
 
-/// Fetch a single file from home directory to the repository
-fn fetch_single_file(
-    home_subdir: PathBuf,
-    this_repo: &LocalRepo,
-    db: &Database,
+pub fn fetch_modified(
     config: &Config,
+    db: &Database,
+    path: Option<&str>,
+    dry_run: bool,
 ) -> Result<()> {
-    if let Some(source_file) = this_repo.target_to_source(&home_subdir, config)? {
-        fs::copy(&home_subdir, &source_file)?;
-        let dotfile = Dotfile {
-            source_path: source_file,
-            target_path: home_subdir,
-        };
-        let _ = dotfile.get_source_hash(db);
+    let modified_dotfiles = get_modified_dotfiles(config, db, path)?;
+
+    if modified_dotfiles.is_empty() {
+        println!("{}", "No modified dotfiles to fetch.".green());
+        return Ok(());
     }
+
+    let grouped_by_repo = group_dotfiles_by_repo(&modified_dotfiles, config)?;
+
+    print_fetch_plan(&grouped_by_repo, dry_run);
+
+    if !dry_run {
+        fetch_dotfiles(&modified_dotfiles, db)?;
+    }
+
     Ok(())
 }
 
-/// Fetch files from a specific subdirectory
-fn fetch_directory(path: &str, this_repo: &LocalRepo, db: &Database, home: &PathBuf) -> Result<()> {
-    let dotfiles = this_repo.get_all_dotfiles()?;
-    let relative_path = path.trim_start_matches('/');
-    let target_path = home.join(relative_path);
-
-    for dotfile in dotfiles.values() {
-        if dotfile.target_path.starts_with(&target_path) && dotfile.target_path.exists() {
-            dotfile.fetch(db)?;
-        }
-    }
-    Ok(())
-}
-
-/// Fetch all tracked files globally
-fn fetch_all_files(this_repo: &LocalRepo, db: &Database, _home: &PathBuf) -> Result<()> {
-    let dotfiles = this_repo.get_all_dotfiles()?;
-
-    for dotfile in dotfiles.values() {
-        if dotfile.target_path.exists() {
-            dotfile.fetch(db)?;
-        }
-    }
-    Ok(())
-}
-
-/// Fetch modified files from home directory back to the repository
-pub fn fetch_modified(config: &Config, db: &Database, path: Option<&str>) -> Result<()> {
-    let cwd = current_dir()?;
-    let this_repo = get_current_repo(config, &cwd)?;
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+fn get_modified_dotfiles(
+    config: &Config,
+    db: &Database,
+    path: Option<&str>,
+) -> Result<Vec<Dotfile>> {
+    let all_dotfiles = get_all_dotfiles(config)?;
+    let mut modified_dotfiles = Vec::new();
 
     if let Some(p) = path {
-        let p = p.trim_start_matches('.');
-        let home_subdir = home.join(p);
-        if !home_subdir.exists() {
-            return Ok(());
+        let expanded = shellexpand::tilde(p).into_owned();
+        let full_path = PathBuf::from(expanded);
+
+        if !full_path.exists() {
+            return Err(anyhow::anyhow!("Path does not exist: {}", p));
         }
 
-        let md = fs::metadata(&home_subdir)?;
-        if md.is_file() {
-            fetch_single_file(home_subdir, &this_repo, &db, config)?;
-        } else if md.is_dir() {
-            fetch_directory(p, &this_repo, &db, &home)?
+        for (target_path, dotfile) in all_dotfiles {
+            if target_path.starts_with(&full_path) && dotfile.is_modified(db) {
+                modified_dotfiles.push(dotfile);
+            }
         }
     } else {
-        // Global fetch: get all dotfiles from the current repo and fetch tracked
-        fetch_all_files(&this_repo, &db, &home)?;
+        for (_, dotfile) in all_dotfiles {
+            if dotfile.is_modified(db) {
+                modified_dotfiles.push(dotfile);
+            }
+        }
+    }
+
+    Ok(modified_dotfiles)
+}
+
+fn group_dotfiles_by_repo<'a>(
+    dotfiles: &'a [Dotfile],
+    config: &Config,
+) -> Result<HashMap<String, Vec<&'a Dotfile>>> {
+    let mut grouped_by_repo: HashMap<String, Vec<&Dotfile>> = HashMap::new();
+    for dotfile in dotfiles {
+        for repo in &config.repos {
+            let local_repo = LocalRepo::new(config, repo.name.clone())?;
+            if dotfile.source_path.starts_with(local_repo.local_path()?) {
+                grouped_by_repo
+                    .entry(repo.name.clone())
+                    .or_default()
+                    .push(dotfile);
+                break;
+            }
+        }
+    }
+    Ok(grouped_by_repo)
+}
+
+fn print_fetch_plan(grouped_by_repo: &HashMap<String, Vec<&Dotfile>>, dry_run: bool) {
+    if dry_run {
+        println!("{}", "Dry run: The following files would be fetched:".yellow());
+    } else {
+        println!("{}", "Fetching the following modified files:".yellow());
+    }
+
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    for (repo_name, dotfiles) in grouped_by_repo {
+        println!("  Repo: {}", repo_name.bold());
+        for dotfile in dotfiles {
+            let relative_path = dotfile.target_path.strip_prefix(&home).unwrap();
+            println!("    - ~/{}", relative_path.display());
+        }
+    }
+}
+
+fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database) -> Result<()> {
+    for dotfile in dotfiles {
+        dotfile.fetch(db)?;
     }
     db.cleanup_hashes()?;
+    println!("\n{}", "Fetch complete.".green());
     Ok(())
 }
+
 
 pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
     let filemap = get_all_dotfiles(config)?;
@@ -254,8 +275,8 @@ fn find_repo_by_name(config: &Config, repo_name: &str) -> Result<config::Repo> {
 
 /// Add a new dotfile to tracking
 pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
-    let cwd = current_dir()?;
-    let this_repo = get_current_repo(config, &cwd)?;
+    let this_repo_config = config.repos.last().ok_or_else(|| anyhow::anyhow!("No repositories configured"))?;
+    let this_repo = LocalRepo::new(config, this_repo_config.name.clone())?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
     let expanded = shellexpand::tilde(path).into_owned();
@@ -288,8 +309,9 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
         println!("Added {} to tracking", path);
     } else {
         return Err(anyhow::anyhow!(
-            "No matching source directory found for '{}'",
-            path
+            "No matching source directory found for '{}' in repo '{}'",
+            path,
+            this_repo.name
         ));
     }
 

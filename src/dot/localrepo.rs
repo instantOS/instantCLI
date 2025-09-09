@@ -1,19 +1,18 @@
 use crate::dot::config::{self, Config};
 use crate::dot::utils;
 use anyhow::{Context, Result};
-use std::{collections::HashMap, path::Path, path::PathBuf, process::Command};
-use walkdir::WalkDir;
+use std::{path::Path, path::PathBuf, process::Command};
+
 
 /// Represents a single dotfile directory within a repository
 #[derive(Debug, Clone)]
 pub struct DotfileDir {
-    pub name: String,
     pub path: PathBuf,
     pub is_active: bool,
 }
 
 impl DotfileDir {
-    pub fn new(name: String, repo_path: &PathBuf, is_active: bool) -> Result<Self> {
+    pub fn new(name: &str, repo_path: &PathBuf, is_active: bool) -> Result<Self> {
         let path = repo_path.join(&name);
 
         // Check if path exists on creation
@@ -26,43 +25,9 @@ impl DotfileDir {
         }
 
         Ok(DotfileDir {
-            name,
             path,
             is_active,
         })
-    }
-
-    /// Get all dotfiles in this directory
-    pub fn get_dotfiles(&self) -> Result<Vec<crate::dot::dotfile::Dotfile>> {
-        let mut dotfiles = Vec::new();
-
-        if !self.path.exists() {
-            return Ok(dotfiles);
-        }
-
-        for entry in WalkDir::new(&self.path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|entry| {
-                let path_str = entry.path().to_string_lossy();
-                !path_str.contains("/.git/")
-            })
-        {
-            if entry.file_type().is_file() {
-                let source_path = entry.path().to_path_buf();
-                let relative_path = source_path.strip_prefix(&self.path).unwrap().to_path_buf();
-                let target_path =
-                    PathBuf::from(shellexpand::tilde("~").to_string()).join(relative_path);
-
-                let dotfile = crate::dot::dotfile::Dotfile {
-                    source_path,
-                    target_path: target_path.clone(),
-                };
-                dotfiles.push(dotfile);
-            }
-        }
-
-        Ok(dotfiles)
     }
 }
 
@@ -151,7 +116,7 @@ impl LocalRepo {
 
         for subdir_name in available_subdirs {
             let is_active = active_subdirs.contains(subdir_name);
-            let dotfile_dir = DotfileDir::new(subdir_name.clone(), repo_path, is_active)?;
+            let dotfile_dir = DotfileDir::new(subdir_name, repo_path, is_active)?;
             dotfile_dirs.push(dotfile_dir);
         }
 
@@ -172,32 +137,7 @@ impl LocalRepo {
         Ok(current)
     }
 
-    /// Get all dotfiles from this repository for active subdirectories
-    pub fn get_all_dotfiles(&self) -> Result<HashMap<PathBuf, crate::dot::dotfile::Dotfile>> {
-        let mut filemap = HashMap::new();
-
-        // Get dotfiles from active directories
-        for dotfile_dir in self.dotfile_dirs.iter() {
-            if dotfile_dir.is_active {
-                match dotfile_dir.get_dotfiles() {
-                    Ok(dotfiles) => {
-                        for dotfile in dotfiles {
-                            // dotfile dirs override each other
-                            filemap.insert(dotfile.target_path.clone(), dotfile);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "Warning: Failed to get dotfiles from {}: {}",
-                            dotfile_dir.name, e
-                        );
-                    }
-                }
-            }
-        }
-
-        Ok(filemap)
-    }
+    
 
     /// Convert a target path (in home directory) to source path (in repo)
     pub fn target_to_source(

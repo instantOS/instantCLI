@@ -53,6 +53,9 @@ enum DotCommands {
     Fetch {
         /// Path to fetch (relative to ~)
         path: Option<String>,
+        /// Perform a dry run, showing which files would be fetched
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Add new dotfiles to tracking
     Add {
@@ -182,16 +185,17 @@ fn main() -> Result<()> {
                     return Err(e);
                 }
             },
-            DotCommands::Fetch { path } => match dot::fetch_modified(&config, &db, path.as_deref())
-            {
-                Ok(()) => println!("{}", "Fetched modified dotfiles".green()),
-                Err(e) => {
-                    eprintln!(
-                        "{}: {}",
-                        "Error fetching dotfiles".red(),
-                        e.to_string().red()
-                    );
-                    return Err(e);
+            DotCommands::Fetch { path, dry_run } => {
+                match dot::fetch_modified(&config, &db, path.as_deref(), *dry_run) {
+                    Ok(()) => println!("{}", "Fetched modified dotfiles".green()),
+                    Err(e) => {
+                        eprintln!(
+                            "{}: {}",
+                            "Error fetching dotfiles".red(),
+                            e.to_string().red()
+                        );
+                        return Err(e);
+                    }
                 }
             },
             DotCommands::Add { path } => match dot::add_dotfile(&config, &db, &path) {
