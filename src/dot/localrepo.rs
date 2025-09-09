@@ -1,4 +1,4 @@
-use crate::dot::config::{self, Config};
+use crate::dot::config::Config;
 use crate::dot::utils;
 use anyhow::{Context, Result};
 use std::{path::Path, path::PathBuf, process::Command};
