@@ -1,3 +1,4 @@
+use anyhow::Result;
 use colored::*;
 
 mod dot;
@@ -5,6 +6,7 @@ mod dot;
 use clap::{Parser, Subcommand};
 
 use crate::dot::config::{Config, Repo, basename_from_repo};
+use crate::dot::db::Database;
 
 /// InstantCLI main parser
 #[derive(Parser, Debug)]
@@ -96,7 +98,7 @@ enum DotCommands {
     },
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if cli.debug {
@@ -112,7 +114,20 @@ fn main() {
                 "Error loading configuration".red(),
                 e.to_string().red()
             );
-            std::process::exit(1);
+            return Err(e);
+        }
+    };
+
+    // Create database instance once at startup
+    let db = match Database::new(dot::config::db_path()?) {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!(
+                "{}: {}",
+                "Error opening database".red(),
+                e.to_string().red()
+            );
+            return Err(e);
         }
     };
 
@@ -141,11 +156,11 @@ fn main() {
                             repo.red().bold(),
                             e.to_string().red()
                         );
-                        std::process::exit(1);
+                        return Err(e);
                     }
                 }
             }
-            DotCommands::Reset { path } => match dot::reset_modified(&config, &path) {
+            DotCommands::Reset { path } => match dot::reset_modified(&config, &db, &path) {
                 Ok(()) => println!("{} {}", "Reset modified dotfiles in".green(), path.green()),
                 Err(e) => {
                     eprintln!(
@@ -153,10 +168,10 @@ fn main() {
                         "Error resetting dotfiles".red(),
                         e.to_string().red()
                     );
-                    std::process::exit(1);
+                    return Err(e);
                 }
             },
-            DotCommands::Apply => match dot::apply_all(&config) {
+            DotCommands::Apply => match dot::apply_all(&config, &db) {
                 Ok(()) => println!("{}", "Applied dotfiles".green()),
                 Err(e) => {
                     eprintln!(
@@ -164,10 +179,11 @@ fn main() {
                         "Error applying dotfiles".red(),
                         e.to_string().red()
                     );
-                    std::process::exit(1);
+                    return Err(e);
                 }
             },
-            DotCommands::Fetch { path } => match dot::fetch_modified(&config, path.as_deref()) {
+            DotCommands::Fetch { path } => match dot::fetch_modified(&config, &db, path.as_deref())
+            {
                 Ok(()) => println!("{}", "Fetched modified dotfiles".green()),
                 Err(e) => {
                     eprintln!(
@@ -175,29 +191,29 @@ fn main() {
                         "Error fetching dotfiles".red(),
                         e.to_string().red()
                     );
-                    std::process::exit(1);
+                    return Err(e);
                 }
             },
-            DotCommands::Add { path } => match dot::add_dotfile(&config, &path) {
+            DotCommands::Add { path } => match dot::add_dotfile(&config, &db, &path) {
                 Ok(()) => println!("{} {}", "Added dotfile".green(), path.green()),
                 Err(e) => {
                     eprintln!("{}: {}", "Error adding dotfile".red(), e.to_string().red());
-                    std::process::exit(1);
+                    return Err(e);
                 }
             },
             DotCommands::Update => match dot::update_all(&config, cli.debug) {
                 Ok(()) => println!("{}", "All repos updated".green()),
                 Err(e) => {
                     eprintln!("{}: {}", "Error updating repos".red(), e.to_string().red());
-                    std::process::exit(1);
+                    return Err(e);
                 }
             },
             DotCommands::Status { path } => {
-                match dot::status_all(&config, cli.debug, path.as_deref()) {
+                match dot::status_all(&config, cli.debug, path.as_deref(), &db) {
                     Ok(()) => (),
                     Err(e) => {
                         eprintln!("Error checking repo status: {}", e);
-                        std::process::exit(1);
+                        return Err(e);
                     }
                 }
             }
@@ -215,7 +231,7 @@ fn main() {
                             "Error initializing repo".red(),
                             e.to_string().red()
                         );
-                        std::process::exit(1);
+                        return Err(e);
                     }
                 }
             }
@@ -232,7 +248,7 @@ fn main() {
                         "Error listing subdirectories".red(),
                         e.to_string().red()
                     );
-                    std::process::exit(1);
+                    return Err(e);
                 }
             },
             DotCommands::SetSubdirs { repo, subdirs } => {
@@ -249,7 +265,7 @@ fn main() {
                             "Error setting active subdirectories".red(),
                             e.to_string().red()
                         );
-                        std::process::exit(1);
+                        return Err(e);
                     }
                 }
             }
@@ -267,7 +283,7 @@ fn main() {
                             "Error showing active subdirectories".red(),
                             e.to_string().red()
                         );
-                        std::process::exit(1);
+                        return Err(e);
                     }
                 }
             }
@@ -280,7 +296,7 @@ fn main() {
                             "Error removing repository".red(),
                             e.to_string().red()
                         );
-                        std::process::exit(1);
+                        return Err(e);
                     }
                 }
             }
@@ -289,4 +305,5 @@ fn main() {
             println!("instant: run with --help for usage");
         }
     }
+    Ok(())
 }

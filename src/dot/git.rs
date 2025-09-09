@@ -89,7 +89,12 @@ pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
     }
 }
 
-pub fn status_all(cfg: &config::Config, debug: bool, path: Option<&str>) -> Result<()> {
+pub fn status_all(
+    cfg: &config::Config,
+    debug: bool,
+    path: Option<&str>,
+    db: &super::db::Database,
+) -> Result<()> {
     let repos = cfg.repos.clone();
     let base = config::repos_dir()?;
     if repos.is_empty() {
@@ -173,7 +178,6 @@ pub fn status_all(cfg: &config::Config, debug: bool, path: Option<&str>) -> Resu
                     }
 
                     // now check file status using db
-                    let db = super::db::Database::new()?;
                     let filemap = super::get_all_dotfiles(cfg)?;
                     if let Some(dotfile) = filemap.get(&provided) {
                         println!("Source: {}", dotfile.source_path.display());
@@ -198,7 +202,6 @@ pub fn status_all(cfg: &config::Config, debug: bool, path: Option<&str>) -> Resu
                     println!("File: {}", p);
                     println!("Repo: {}", crepo.url);
                     println!("Source: {}", source_candidate.display());
-                    let db = super::db::Database::new()?;
                     let dotfile = super::Dotfile {
                         source_path: source_candidate.clone(),
                         target_path: PathBuf::from(shellexpand::tilde("~").to_string()).join(rel),
@@ -237,7 +240,6 @@ pub fn status_all(cfg: &config::Config, debug: bool, path: Option<&str>) -> Resu
             }
 
             // Now check individual dotfile statuses for this repo
-            let db = super::db::Database::new()?;
             let filemap = super::get_all_dotfiles(cfg)?;
 
             for (target_path, dotfile) in filemap.iter() {

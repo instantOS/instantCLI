@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Represents a hash with its creation timestamp
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,9 +26,8 @@ pub struct Database {
 const CURRENT_SCHEMA_VERSION: i32 = 1;
 
 impl Database {
-    pub fn new() -> Result<Self> {
-        let db_path = super::config::db_path()?;
-        let conn = Connection::open(db_path)?;
+    pub fn new(path: PathBuf) -> Result<Self> {
+        let conn = Connection::open(path)?;
 
         // Enable foreign keys
         conn.execute("PRAGMA foreign_keys = ON", ())?;
@@ -122,9 +121,11 @@ impl Database {
 
     fn row_to_dotfile_hash(row: &rusqlite::Row) -> Result<DotfileHash, rusqlite::Error> {
         let created_str: String = row.get(1)?;
-        
+
         // Try to parse as SQLite datetime format first (YYYY-MM-DD HH:MM:SS)
-        let created = if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&created_str, "%Y-%m-%d %H:%M:%S") {
+        let created = if let Ok(dt) =
+            chrono::NaiveDateTime::parse_from_str(&created_str, "%Y-%m-%d %H:%M:%S")
+        {
             chrono::DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc)
         } else if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&created_str) {
             // Fallback to RFC3339 format
@@ -214,7 +215,8 @@ mod tests {
         let test_path = dir.path().join("test_file");
         std::fs::write(&test_path, "test content").unwrap();
 
-        let db = Database::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let db = Database::new(db_path).unwrap();
 
         // Initially hash should not exist
         assert!(!db.hash_exists("test_hash", &test_path).unwrap());

@@ -17,7 +17,7 @@ pub mod utils;
 pub use crate::dot::dotfile::Dotfile;
 pub use git::{add_repo, status_all, update_all};
 
-use crate::dot::config::{Config, repos_dir};
+use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::localrepo::LocalRepo;
 use std::env::current_dir;
@@ -142,9 +142,8 @@ fn fetch_all_files(this_repo: &LocalRepo, db: &Database, _home: &PathBuf) -> Res
 }
 
 /// Fetch modified files from home directory back to the repository
-pub fn fetch_modified(config: &Config, path: Option<&str>) -> Result<()> {
+pub fn fetch_modified(config: &Config, db: &Database, path: Option<&str>) -> Result<()> {
     let cwd = current_dir()?;
-    let db = Database::new()?;
     let this_repo = get_current_repo(config, &cwd)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
@@ -169,15 +168,18 @@ pub fn fetch_modified(config: &Config, path: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-pub fn apply_all(config: &Config) -> Result<()> {
-    let db = Database::new()?;
+pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
     let filemap = get_all_dotfiles(config)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
     for dotfile in filemap.values() {
         let was_missing = !dotfile.target_path.exists();
         dotfile.apply(&db)?;
         if was_missing {
-            let relative = dotfile.target_path.strip_prefix(&home).unwrap().to_string_lossy();
+            let relative = dotfile
+                .target_path
+                .strip_prefix(&home)
+                .unwrap()
+                .to_string_lossy();
             println!("Created new dotfile: ~/{}", relative);
         }
     }
@@ -185,8 +187,7 @@ pub fn apply_all(config: &Config) -> Result<()> {
     Ok(())
 }
 
-pub fn reset_modified(config: &Config, path: &str) -> Result<()> {
-    let db = Database::new()?;
+pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> {
     let filemap = get_all_dotfiles(config)?;
     let expanded = shellexpand::tilde(path).into_owned();
     let full_path = PathBuf::from(expanded);
@@ -252,9 +253,8 @@ fn find_repo_by_name(config: &Config, repo_name: &str) -> Result<config::Repo> {
 }
 
 /// Add a new dotfile to tracking
-pub fn add_dotfile(config: &Config, path: &str) -> Result<()> {
+pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
     let cwd = current_dir()?;
-    let db = Database::new()?;
     let this_repo = get_current_repo(config, &cwd)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
