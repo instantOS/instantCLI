@@ -3,9 +3,28 @@ mod utils;
 
 use anyhow::Result;
 use common::TestEnvironment;
+use std::sync::Mutex;
+
+// Global mutex to ensure tests run one at a time
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+/// Ensures complete test isolation by using a global mutex
+fn setup_test() -> std::sync::MutexGuard<'static, ()> {
+    let guard = TEST_MUTEX.lock().unwrap();
+    
+    // Create a temporary test environment for cleanup
+    if let Ok(env) = TestEnvironment::new() {
+        let _ = env.cleanup_all_test_state();
+        // Additional delay to ensure cleanup completes
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    
+    guard
+}
 
 #[test]
 fn test_clone_and_apply_basic_repo() -> Result<()> {
+    let _guard = setup_test();
     let env = TestEnvironment::new()?;
     
     // Clean up any existing state before starting
@@ -45,6 +64,7 @@ fn test_clone_and_apply_basic_repo() -> Result<()> {
 
 #[test]
 fn test_repository_removal() -> Result<()> {
+    let _guard = setup_test();
     let env = TestEnvironment::new()?;
     
     // Clean up any existing state before starting
@@ -78,8 +98,9 @@ fn test_repository_removal() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_multiple_repositories_priority() -> Result<()> {
+#[test]
+fn test_multiple_repositories_priority() -> Result<()> {
+    let _guard = setup_test();
     let env = TestEnvironment::new()?;
     
     // Clean up any existing state before starting
@@ -121,8 +142,9 @@ async fn test_multiple_repositories_priority() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_user_modification_detection() -> Result<()> {
+#[test]
+fn test_user_modification_detection() -> Result<()> {
+    let _guard = setup_test();
     let env = TestEnvironment::new()?;
     
     // Clean up any existing state before starting
@@ -156,8 +178,9 @@ async fn test_user_modification_detection() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_fetch_modified_files() -> Result<()> {
+#[test]
+fn test_fetch_modified_files() -> Result<()> {
+    let _guard = setup_test();
     let env = TestEnvironment::new()?;
     
     // Clean up any existing state before starting
@@ -194,8 +217,9 @@ async fn test_fetch_modified_files() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_multiple_subdirectories() -> Result<()> {
+#[test]
+fn test_multiple_subdirectories() -> Result<()> {
+    let _guard = setup_test();
     let env = TestEnvironment::new()?;
     
     // Clean up any existing state before starting
@@ -246,8 +270,9 @@ async fn test_multiple_subdirectories() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_invalid_repository_url() -> Result<()> {
+#[test]
+fn test_invalid_repository_url() -> Result<()> {
+    let _guard = setup_test();
     let env = TestEnvironment::new()?;
     
     // Clean up any existing state before starting

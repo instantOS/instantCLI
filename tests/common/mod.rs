@@ -100,21 +100,38 @@ impl TestEnvironment {
     
     /// Clean up all test state (comprehensive cleanup)
     pub fn cleanup_all_test_state(&self) -> Result<()> {
-        // Clean up all test repositories
-        self.cleanup_all_repos()?;
+        // Clean up all repositories (not just test ones)
+        let repos_dir = self.real_home().join(".local").join("share").join("instantos").join("dots");
+        if repos_dir.exists() {
+            std::fs::remove_dir_all(&repos_dir)?;
+        }
         
-        // Clean up config
-        self.cleanup_config()?;
+        // Clean up config directory
+        let config_dir = self.real_home().join(".config").join("instant");
+        if config_dir.exists() {
+            std::fs::remove_dir_all(&config_dir)?;
+        }
         
         // Clean up database
         self.cleanup_database()?;
         
-        // Clean up common test directories from home
-        let test_dirs = ["test-app", "modify-test", "fetch-test", "overlap", "multi-app1", "multi-app2", "remove-test"];
+        // Clean up ALL possible test directories from home
+        let test_dirs = [
+            "test-app", "modify-test", "fetch-test", "overlap", 
+            "multi-app1", "multi-app2", "remove-test",
+            "test-basic", "test-remove", "test-priority1", "test-priority2",
+            "test-modify", "test-fetch", "test-sub"
+        ];
         self.cleanup_home_files(&test_dirs)?;
         
-        // Small delay to ensure filesystem operations complete
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        // Also clean up any .instantos directories
+        let instantos_dir = self.real_home().join(".instantos");
+        if instantos_dir.exists() {
+            std::fs::remove_dir_all(&instantos_dir)?;
+        }
+        
+        // Longer delay to ensure filesystem operations complete
+        std::thread::sleep(std::time::Duration::from_millis(50));
         
         Ok(())
     }
