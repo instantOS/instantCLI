@@ -64,14 +64,7 @@ impl LocalRepo {
         let meta = crate::dot::meta::read_meta(&local_path)
             .with_context(|| format!("Failed to read metadata for repository '{}'", name))?;
 
-        // Validate that metadata name matches config name
-        if meta.name != name {
-            return Err(anyhow::anyhow!(
-                "Metadata name '{}' does not match config name '{}' for repository",
-                meta.name,
-                name
-            ));
-        }
+        // Note: We allow metadata name to differ from config name to support flexible naming
 
         // Get active subdirectories from config (used to set the 'active' field on dotfile directories)
         let active_subdirs = cfg.get_active_subdirs(&name);
