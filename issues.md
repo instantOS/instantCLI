@@ -19,3 +19,10 @@ was just created from the target. Some logic here is odd.
 
 This uses self-made and duplicated logic for resolving the home directory or xdg
 config path. use the `dirs` crate instead and centralize this more. 
+
+## E2E Tests touch instant.toml
+
+Allow specifying which config file to use with the CLI (defaulting instant.toml
+in the config dir)
+The E2E tests should use their own config file, specified via the arg
+
