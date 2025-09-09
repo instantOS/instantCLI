@@ -44,21 +44,9 @@ impl Default for Config {
     }
 }
 
-fn get_home_dir() -> Result<PathBuf> {
-    // Check for test override first
-    if let Ok(test_home) = env::var("INSTANT_TEST_HOME_DIR") {
-        return Ok(PathBuf::from(test_home));
-    }
-
-    // Fall back to real home directory
-    env::var("HOME")
-        .context("HOME environment variable not set")
-        .map(PathBuf::from)
-}
-
 fn config_file_path() -> Result<PathBuf> {
-    let home = get_home_dir()?;
-    let cfg = home.join(".config/instant/instant.toml");
+    let home = env::var("HOME").context("HOME environment variable not set")?;
+    let cfg = PathBuf::from(home).join(".config/instant/instant.toml");
     if let Some(parent) = cfg.parent() {
         fs::create_dir_all(parent).context("creating config directory")?;
     }
@@ -141,8 +129,8 @@ impl Config {
 }
 
 pub fn db_path() -> Result<PathBuf> {
-    let home = get_home_dir()?;
-    let path = home.join(".local/share/instantos/instant.db");
+    let home = env::var("HOME").context("HOME environment variable not set")?;
+    let path = PathBuf::from(home).join(".local/share/instantos/instant.db");
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).context("creating db directory")?;
     }
@@ -150,8 +138,8 @@ pub fn db_path() -> Result<PathBuf> {
 }
 
 pub fn repos_dir() -> Result<PathBuf> {
-    let home = get_home_dir()?;
-    let base = home.join(".local/share/instantos/dots");
+    let home = env::var("HOME").context("HOME environment variable not set")?;
+    let base = PathBuf::from(home).join(".local/share/instantos/dots");
     fs::create_dir_all(&base).context("creating repos base directory")?;
     Ok(base)
 }

@@ -36,11 +36,7 @@ use crate::dot::localrepo::{DotfileDir, LocalRepo};
 /// - The path doesn't exist
 /// - The path is outside the home directory
 pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
-    let home = if let Ok(test_home) = std::env::var("INSTANT_TEST_HOME_DIR") {
-        PathBuf::from(test_home)
-    } else {
-        PathBuf::from(shellexpand::tilde("~").to_string())
-    };
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
     let resolved_path = if path.starts_with('~') {
         // Expand tilde to home directory
