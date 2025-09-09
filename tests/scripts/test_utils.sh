@@ -25,9 +25,10 @@ setup_test_env() {
     mkdir -p "$REPO_DIR"
     mkdir -p "$REPOS_DIR"
     
-    # Create initial config with custom repos_dir
+    # Create initial config with custom directories
     cat > "$CONFIG_FILE" << EOF
 repos_dir = "$REPOS_DIR"
+database_dir = "$DB_FILE"
 clone_depth = 1
 EOF
     
@@ -104,10 +105,10 @@ run_instant() {
     binary_path="$(get_instant_binary)"
     
     if [ "$DEBUG" = "1" ]; then
-        echo "Running: HOME=\"$HOME_DIR\" $binary_path --config \"$CONFIG_FILE\" --database \"$DB_FILE\" $@"
+        echo "Running: HOME=\"$HOME_DIR\" $binary_path --config \"$CONFIG_FILE\" $@"
     fi
     
-    HOME="$HOME_DIR" "$binary_path" --config "$CONFIG_FILE" --database "$DB_FILE" "$@"
+    HOME="$HOME_DIR" "$binary_path" --config "$CONFIG_FILE" "$@"
 }
 
 # Create a simple test repository

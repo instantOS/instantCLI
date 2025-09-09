@@ -12,6 +12,7 @@ pub mod dotfile;
 pub mod git;
 pub mod localrepo;
 pub mod meta;
+pub mod path_serde;
 pub mod utils;
 
 #[cfg(test)]
@@ -194,7 +195,7 @@ fn group_dotfiles_by_repo<'a>(
     for dotfile in dotfiles {
         for repo in &config.repos {
             let local_repo = LocalRepo::new(config, repo.name.clone())?;
-            if dotfile.source_path.starts_with(local_repo.local_path()?) {
+            if dotfile.source_path.starts_with(local_repo.local_path(config)?) {
                 grouped_by_repo
                     .entry(repo.name.clone())
                     .or_default()
@@ -392,7 +393,7 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
     let chosen_dir = select_dots_dir(&local_repo)?;
 
     // Construct destination path inside the repo
-    let repo_base = local_repo.local_path()?;
+    let repo_base = local_repo.local_path(config)?;
     let dest_base = repo_base.join(&chosen_dir.path);
 
     // Compute relative path from home and final destination
@@ -442,7 +443,7 @@ pub fn remove_repo(config: &mut Config, repo_name: &str, remove_files: bool) -> 
             "{}: {}",
             "Local path".yellow(),
             LocalRepo::new(config, repo_name.to_string())?
-                .local_path()?
+                .local_path(config)?
                 .display()
         );
 
@@ -464,7 +465,7 @@ pub fn remove_repo(config: &mut Config, repo_name: &str, remove_files: bool) -> 
     // Optionally remove local files
     if remove_files {
         let local_repo = LocalRepo::new(config, repo_name.to_string())?;
-        let local_path = local_repo.local_path()?;
+        let local_path = local_repo.local_path(config)?;
 
         if local_path.exists() {
             if let Err(e) = std::fs::remove_dir_all(&local_path) {

@@ -10,9 +10,8 @@ pub fn add_repo(
     config_manager: &mut config::ConfigManager,
     repo: config::Repo,
     debug: bool,
-    db_path: Option<&str>,
 ) -> Result<PathBuf> {
-    let base = crate::dot::config::repos_dir(config_manager.config.repos_dir.as_deref())?;
+    let base = config_manager.config.repos_path();
 
     let repo_dir_name = repo.name.clone();
 
@@ -75,7 +74,7 @@ pub fn add_repo(
 
     // Initialize database with source file hashes to prevent false "modified" status
     // when identical files already exist in the home directory
-    if let Ok(db) = crate::dot::db::Database::new(crate::dot::config::db_path(db_path)?) {
+    if let Ok(db) = crate::dot::db::Database::new(config_manager.config.database_path().to_path_buf()) {
         if let Ok(dotfiles) = get_all_dotfiles(&config_manager.config) {
             for (_, dotfile) in dotfiles {
                 // Only register hashes for dotfiles from this repository
@@ -113,7 +112,7 @@ pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
 
     for repo in repos.iter() {
         let local_repo = repo_mod::LocalRepo::new(cfg, repo.name.clone())?;
-        if let Err(e) = local_repo.update(debug) {
+        if let Err(e) = local_repo.update(cfg, debug) {
             eprintln!("Failed to update {}: {}", repo.url, e);
             any_failed = true;
         }
@@ -135,7 +134,7 @@ pub fn status_all(
     db: &super::db::Database,
 ) -> Result<()> {
     let repos = cfg.repos.clone();
-    let base = config::repos_dir(cfg.repos_dir.as_deref())?;
+    let base = cfg.repos_path();
     if repos.is_empty() {
         println!("No repos configured.");
         return Ok(());
@@ -172,7 +171,7 @@ pub fn status_all(
         };
 
         // get checked out branch
-        let _current_branch = match local.get_checked_out_branch() {
+        let _current_branch = match local.get_checked_out_branch(cfg) {
             Ok(b) => b,
             Err(e) => {
                 println!("{} -> cannot determine branch: {}", crepo.url, e);

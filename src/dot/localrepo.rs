@@ -78,14 +78,12 @@ impl LocalRepo {
         })
     }
 
-    pub fn local_path(&self) -> Result<PathBuf> {
-        let base = config::repos_dir(None)?; // This should also use config, but we don't have access to it here
-        Ok(base.join(&self.name))
+    pub fn local_path(&self, cfg: &Config) -> Result<PathBuf> {
+        Ok(cfg.repos_path().join(&self.name))
     }
 
     fn local_path_from_name(cfg: &Config, name: &str) -> Result<PathBuf> {
-        let base = config::repos_dir(cfg.repos_dir.as_deref())?;
-        Ok(base.join(name))
+        Ok(cfg.repos_path().join(name))
     }
 
     /// Create DotfileDir instances for all available subdirectories from metadata
@@ -112,8 +110,8 @@ impl LocalRepo {
         Ok(dotfile_dirs)
     }
 
-    pub fn get_checked_out_branch(&self) -> Result<String> {
-        let target = self.local_path()?;
+    pub fn get_checked_out_branch(&self, cfg: &Config) -> Result<String> {
+        let target = self.local_path(cfg)?;
         let out = Command::new("git")
             .arg("-C")
             .arg(&target)
@@ -148,9 +146,9 @@ impl LocalRepo {
         Ok(None)
     }
 
-    fn switch_branch(&self, branch: &str, debug: bool) -> Result<()> {
-        let target = self.local_path()?;
-        let current = self.get_checked_out_branch()?;
+    fn switch_branch(&self, cfg: &Config, branch: &str, debug: bool) -> Result<()> {
+        let target = self.local_path(cfg)?;
+        let current = self.get_checked_out_branch(cfg)?;
         if current != branch {
             if debug {
                 eprintln!("Switching {} -> {}", current, branch);
@@ -199,12 +197,12 @@ impl LocalRepo {
         Ok(())
     }
 
-    pub fn update(&self, debug: bool) -> Result<()> {
-        let target = self.local_path()?;
+    pub fn update(&self, cfg: &Config, debug: bool) -> Result<()> {
+        let target = self.local_path(cfg)?;
 
         // If branch is specified, ensure we're on that branch
         if let Some(branch) = &self.branch {
-            self.switch_branch(branch, debug)?;
+            self.switch_branch(cfg, branch, debug)?;
         }
 
         // pull latest

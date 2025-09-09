@@ -20,9 +20,6 @@ struct Cli {
     #[arg(short = 'c', long = "config", global = true)]
     config: Option<String>,
 
-    /// Custom database file path
-    #[arg(long = "database", global = true)]
-    database: Option<String>,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -132,8 +129,9 @@ fn main() -> Result<()> {
         }
     };
 
-    // Create database instance once at startup
-    let db = match Database::new(dot::config::db_path(cli.database.as_deref())?) {
+    // Ensure directories exist and create database instance once at startup
+    config_manager.config.ensure_directories()?;
+    let db = match Database::new(config_manager.config.database_path().to_path_buf()) {
         Ok(db) => db,
         Err(e) => {
             eprintln!(
@@ -155,7 +153,7 @@ fn main() -> Result<()> {
                     branch: branch.clone(),
                     active_subdirectories: Vec::new(), // Will be set to default by config
                 };
-                match dot::add_repo(&mut config_manager, repo_obj.into(), cli.debug, cli.database.as_deref()) {
+                match dot::add_repo(&mut config_manager, repo_obj.into(), cli.debug) {
                     Ok(path) => println!(
                         "{} {} {} {}",
                         "Added repo".green(),

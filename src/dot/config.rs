@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{fs, path::{Path, PathBuf}};
+
+use crate::dot::path_serde::TildePath;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
@@ -24,6 +26,22 @@ fn default_hash_cleanup_days() -> u32 {
     30
 }
 
+fn default_repos_dir() -> TildePath {
+    let default_path = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+        .join("instantos")
+        .join("dots");
+    TildePath::new(default_path)
+}
+
+fn default_database_dir() -> TildePath {
+    let default_path = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+        .join("instantos")
+        .join("instant.db");
+    TildePath::new(default_path)
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     #[serde(default)]
@@ -32,8 +50,10 @@ pub struct Config {
     pub clone_depth: u32,
     #[serde(default = "default_hash_cleanup_days")]
     pub hash_cleanup_days: u32,
-    #[serde(default)]
-    pub repos_dir: Option<String>,
+    #[serde(default = "default_repos_dir")]
+    pub repos_dir: TildePath,
+    #[serde(default = "default_database_dir")]
+    pub database_dir: TildePath,
 }
 
 impl Default for Config {
@@ -42,7 +62,8 @@ impl Default for Config {
             repos: Vec::new(),
             clone_depth: default_clone_depth(),
             hash_cleanup_days: default_hash_cleanup_days(),
-            repos_dir: None,
+            repos_dir: default_repos_dir(),
+            database_dir: default_database_dir(),
         }
     }
 }
@@ -143,6 +164,26 @@ impl Config {
             })
             .unwrap_or_else(|| default_active_subdirs())
     }
+
+    /// Get the database path as a PathBuf
+    pub fn database_path(&self) -> &Path {
+        self.database_dir.as_path()
+    }
+    
+    /// Get the repos directory as a PathBuf
+    pub fn repos_path(&self) -> &Path {
+        self.repos_dir.as_path()
+    }
+    
+    /// Ensure all directory paths exist
+    pub fn ensure_directories(&self) -> Result<()> {
+        if let Some(parent) = self.database_path().parent() {
+            fs::create_dir_all(parent).context("creating database directory")?;
+        }
+        
+        fs::create_dir_all(self.repos_path()).context("creating repos directory")?;
+        Ok(())
+    }
 }
 
 /// Wrapper that holds config and its custom path
@@ -173,38 +214,6 @@ impl ConfigManager {
     }
 }
 
-pub fn db_path(custom_path: Option<&str>) -> Result<PathBuf> {
-    if let Some(path) = custom_path {
-        let path = PathBuf::from(path);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).context("creating db directory")?;
-        }
-        return Ok(path);
-    }
-
-    let data_dir = dirs::data_dir()
-        .context("Unable to determine data directory")?
-        .join("instantos");
-
-    fs::create_dir_all(&data_dir).context("creating db directory")?;
-    Ok(data_dir.join("instant.db"))
-}
-
-pub fn repos_dir(custom_path: Option<&str>) -> Result<PathBuf> {
-    if let Some(path) = custom_path {
-        let base = PathBuf::from(path);
-        fs::create_dir_all(&base).context("creating repos directory")?;
-        return Ok(base);
-    }
-
-    let data_dir = dirs::data_dir()
-        .context("Unable to determine data directory")?
-        .join("instantos")
-        .join("dots");
-
-    fs::create_dir_all(&data_dir).context("creating repos base directory")?;
-    Ok(data_dir)
-}
 
 /// Extract a repository name from a git URL by removing the .git suffix
 /// and splitting on path separators and colons to get the last component.
