@@ -32,9 +32,12 @@ impl Dotfile {
         if !self.target_path.exists() {
             return false;
         }
+        // Recompute the source hash first in case the repository file was
+        // modified; this ensures DB has an up-to-date source hash entry.
+        let _ = self.get_source_hash(db);
 
-        // If the unmodified hashes contain the target_hash, then the file is unmodified, otherwise
-        // return true (modified)
+        // If the unmodified hashes contain the target_hash, then the file is
+        // unmodified; otherwise return true (modified).
         if let Ok(target_hash) = self.get_target_hash(db) {
             if let Ok(unmodified_hashes) = db.get_unmodified_hashes(&self.target_path) {
                 return !unmodified_hashes.iter().any(|h| h.hash == target_hash);
@@ -56,7 +59,7 @@ impl Dotfile {
         let file_metadata = fs::metadata(&self.target_path)?;
         let file_modified = file_metadata.modified()?;
 
-        if let Ok(Some(newest_hash)) = db.get_newest_hash(&self.target_path) {
+        if let Ok(Some(newest_hash)) = db.get_newest_hash(&self.source_path) {
             // Compare the database timestamp with file modification time
             let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
             if newest_hash.created >= file_time {
@@ -91,8 +94,7 @@ impl Dotfile {
 
         // No newer hash found, compute the hash
         let hash = Self::compute_hash(&self.source_path)?;
-        // Only add hash if it doesn't already exist in the database
-        db.add_hash(&hash, &self.source_path, true)?;
+        db.add_hash(&hash, &self.source_path, false)?;
         Ok(hash)
     }
 
@@ -146,8 +148,11 @@ impl Dotfile {
         // Copy target -> source
         fs::copy(&self.target_path, &self.source_path)?;
 
-        // Compute and register the source hash as unmodified
-        let _ = self.get_source_hash(db)?;
+        // Compute and register the source hash as unmodified. Recompute the
+        // source hash to ensure DB reflects the current contents of the
+        // repository file.
+        let hash = self.get_source_hash(db)?;
+        db.add_hash(&hash, &self.target_path, true)?;
 
         Ok(())
     }

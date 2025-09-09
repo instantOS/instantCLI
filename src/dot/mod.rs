@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::*;
 use shellexpand;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 
@@ -332,17 +332,39 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
 pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
     use dialoguer::{Select, theme::ColorfulTheme};
 
-    // Expand and validate the provided path
-    let expanded = shellexpand::tilde(path).into_owned();
-    let full_path = PathBuf::from(&expanded);
+    // Compute the full path to the target file.
+    // Behavior:
+    // - If path starts with '~', expand it.
+    // - If path is absolute, use it.
+    // - Otherwise treat relative paths as relative to the home directory.
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+
+    //TODO: think about how dotfile path arguments should be handled, also extract into its own
+    //function. Multiple commands might take dotfiles as CLI arguments
+    let full_path = if path.starts_with('~') {
+        PathBuf::from(shellexpand::tilde(path).into_owned())
+    } else if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else {
+        // First try relative to current working directory (so users can run the
+        // command from a dotfile directory and pass a filename). If that path
+        // exists, use it. Otherwise fall back to treating the path as relative
+        // to the home directory.
+        let cwd = std::env::current_dir()?;
+        let cwd_candidate = cwd.join(path);
+        if cwd_candidate.exists() {
+            cwd_candidate
+        } else {
+            home.join(path)
+        }
+    };
 
     if !full_path.exists() {
-        return Err(anyhow::anyhow!("File '{}' does not exist", path));
+        return Err(anyhow::anyhow!("File '{}' does not exist", full_path.display()));
     }
 
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
     if !full_path.starts_with(&home) {
-        return Err(anyhow::anyhow!("File '{}' is not in home directory", path));
+        return Err(anyhow::anyhow!("File '{}' is not in home directory", full_path.display()));
     }
 
 
