@@ -6,6 +6,8 @@ use tempfile::TempDir;
 pub struct TestEnvironment {
     temp_dir: TempDir,
     test_id: String,
+    config_file: PathBuf,
+    database_file: PathBuf,
 }
 
 impl TestEnvironment {
@@ -13,7 +15,11 @@ impl TestEnvironment {
         let temp_dir = tempfile::tempdir()?;
         let test_id = format!("instant-test-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs());
         
-        Ok(Self { temp_dir, test_id })
+        // Create isolated config and database files in temp directory
+        let config_file = temp_dir.path().join("instant.toml");
+        let database_file = temp_dir.path().join("instant.db");
+        
+        Ok(Self { temp_dir, test_id, config_file, database_file })
     }
     
     /// Get the real home directory
@@ -24,6 +30,16 @@ impl TestEnvironment {
     /// Get the temp directory path for storing test repositories
     pub fn path(&self) -> &std::path::Path {
         self.temp_dir.path()
+    }
+    
+    /// Get the config file path for this test environment
+    pub fn config_file(&self) -> &std::path::Path {
+        &self.config_file
+    }
+    
+    /// Get the database file path for this test environment
+    pub fn database_file(&self) -> &std::path::Path {
+        &self.database_file
     }
     
     /// Clean up test files from the real home directory

@@ -16,6 +16,14 @@ struct Cli {
     #[arg(short, long, global = true)]
     debug: bool,
 
+    /// Custom config file path
+    #[arg(short = 'c', long = "config", global = true)]
+    config: Option<String>,
+
+    /// Custom database file path
+    #[arg(short = 'd', long = "database", global = true)]
+    database: Option<String>,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -109,7 +117,7 @@ fn main() -> Result<()> {
     }
 
     // Load configuration once at startup
-    let mut config = match Config::load() {
+    let mut config = match Config::load_from(cli.config.as_deref()) {
         Ok(config) => config,
         Err(e) => {
             eprintln!(
@@ -122,7 +130,7 @@ fn main() -> Result<()> {
     };
 
     // Create database instance once at startup
-    let db = match Database::new(dot::config::db_path()?) {
+    let db = match Database::new(dot::config::db_path(cli.database.as_deref())?) {
         Ok(db) => db,
         Err(e) => {
             eprintln!(

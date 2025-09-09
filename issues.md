@@ -15,6 +15,11 @@ in the config dir)
 The E2E tests should use their own config file, specified via the arg. Users
 might also be interested in being able to specify their own config file path. 
 
+## E2E tests touch the database
+
+Same as for the config file, allow specifying this to be different with the CLI (defaulting to what it is now), make the
+test command runner use a different database
+
 ## E2E test cleanup
 
 E2E tests should clean up after themselves, meaning repos they created and

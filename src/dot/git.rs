@@ -6,7 +6,7 @@ use colored::*;
 use std::{path::PathBuf, process::Command};
 
 pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) -> Result<PathBuf> {
-    let base = crate::dot::config::repos_dir()?;
+    let base = crate::dot::config::repos_dir(None)?;
 
     let repo_dir_name = repo.name.clone();
 
@@ -102,7 +102,7 @@ pub fn status_all(
     db: &super::db::Database,
 ) -> Result<()> {
     let repos = cfg.repos.clone();
-    let base = config::repos_dir()?;
+    let base = config::repos_dir(None)?;
     if repos.is_empty() {
         println!("No repos configured.");
         return Ok(());

@@ -13,7 +13,7 @@ pub struct CommandOutput {
 }
 
 pub fn run_instant_command(
-    _env: &TestEnvironment,
+    env: &TestEnvironment,
     args: &[&str],
 ) -> Result<CommandOutput> {
     // Build the binary first
@@ -34,9 +34,16 @@ pub fn run_instant_command(
     let project_dir = env::current_dir()?;
     let binary_path = project_dir.join("./target/debug/instant");
     
+    // Build command arguments with custom config and database paths
+    let mut cmd_args = vec![
+        "--config", env.config_file().to_str().unwrap(),
+        "--database", env.database_file().to_str().unwrap(),
+    ];
+    cmd_args.extend_from_slice(args);
+    
     // Run the binary directly from the project directory
     let mut cmd = Command::new(&binary_path);
-    cmd.args(args)
+    cmd.args(&cmd_args)
         .current_dir(&project_dir); // Important: run from project directory
     
     let output = cmd.output()?;
@@ -146,4 +153,9 @@ pub fn write_file(path: &Path, content: &str) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     Ok(fs::write(path, content)?)
+}
+
+/// Generate a proper test dotfile path under ~/.config/instanttests/
+pub fn test_dotfile_path(file_path: &str) -> String {
+    format!(".config/instanttests/{}", file_path)
 }

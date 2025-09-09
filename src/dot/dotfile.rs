@@ -155,10 +155,12 @@ impl Dotfile {
         // Copy target -> source
         fs::copy(&self.target_path, &self.source_path)?;
 
-        // Compute and register the source hash as unmodified. Recompute the
-        // source hash to ensure DB reflects the current contents of the
-        // repository file.
-        let hash = self.get_source_hash(db)?;
+        // Compute the hash of the copied content
+        let hash = Self::compute_hash(&self.source_path)?;
+        
+        // Register the hash as unmodified for both source and target
+        // This ensures that both files are considered in sync
+        db.add_hash(&hash, &self.source_path, true)?;
         db.add_hash(&hash, &self.target_path, true)?;
 
         Ok(())

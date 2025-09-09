@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{env, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
@@ -44,20 +44,29 @@ impl Default for Config {
     }
 }
 
-fn config_file_path() -> Result<PathBuf> {
-    let home = env::var("HOME").context("HOME environment variable not set")?;
-    let cfg = PathBuf::from(home).join(".config/instant/instant.toml");
-    if let Some(parent) = cfg.parent() {
-        fs::create_dir_all(parent).context("creating config directory")?;
+pub fn config_file_path(custom_path: Option<&str>) -> Result<PathBuf> {
+    if let Some(path) = custom_path {
+        return Ok(PathBuf::from(path));
     }
-    Ok(cfg)
+    
+    let config_dir = dirs::config_dir()
+        .context("Unable to determine config directory")?
+        .join("instant");
+    
+    fs::create_dir_all(&config_dir).context("creating config directory")?;
+    Ok(config_dir.join("instant.toml"))
 }
 
 impl Config {
     /// Load the config from disk. If the config file does not exist,
     /// create a default config file and return the default.
     pub fn load() -> Result<Config> {
-        let cfg_path = config_file_path()?;
+        Self::load_from(None)
+    }
+
+    /// Load config from a specific path or the default location
+    pub fn load_from(custom_path: Option<&str>) -> Result<Config> {
+        let cfg_path = config_file_path(custom_path)?;
         if !cfg_path.exists() {
             let default = Config::default();
             let toml = toml::to_string_pretty(&default).context("serializing default config")?;
@@ -73,7 +82,12 @@ impl Config {
 
     /// Save the current config to disk (overwrites file)
     pub fn save(&self) -> Result<()> {
-        let cfg_path = config_file_path()?;
+        self.save_to(None)
+    }
+
+    /// Save config to a specific path or the default location
+    pub fn save_to(&self, custom_path: Option<&str>) -> Result<()> {
+        let cfg_path = config_file_path(custom_path)?;
         let toml = toml::to_string_pretty(self).context("serializing config to toml")?;
         fs::write(cfg_path, toml).context("writing config file")?;
         Ok(())
@@ -128,20 +142,37 @@ impl Config {
     }
 }
 
-pub fn db_path() -> Result<PathBuf> {
-    let home = env::var("HOME").context("HOME environment variable not set")?;
-    let path = PathBuf::from(home).join(".local/share/instantos/instant.db");
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).context("creating db directory")?;
+pub fn db_path(custom_path: Option<&str>) -> Result<PathBuf> {
+    if let Some(path) = custom_path {
+        let path = PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).context("creating db directory")?;
+        }
+        return Ok(path);
     }
-    Ok(path)
+    
+    let data_dir = dirs::data_dir()
+        .context("Unable to determine data directory")?
+        .join("instantos");
+    
+    fs::create_dir_all(&data_dir).context("creating db directory")?;
+    Ok(data_dir.join("instant.db"))
 }
 
-pub fn repos_dir() -> Result<PathBuf> {
-    let home = env::var("HOME").context("HOME environment variable not set")?;
-    let base = PathBuf::from(home).join(".local/share/instantos/dots");
-    fs::create_dir_all(&base).context("creating repos base directory")?;
-    Ok(base)
+pub fn repos_dir(custom_path: Option<&str>) -> Result<PathBuf> {
+    if let Some(path) = custom_path {
+        let base = PathBuf::from(path);
+        fs::create_dir_all(&base).context("creating repos directory")?;
+        return Ok(base);
+    }
+    
+    let data_dir = dirs::data_dir()
+        .context("Unable to determine data directory")?
+        .join("instantos")
+        .join("dots");
+    
+    fs::create_dir_all(&data_dir).context("creating repos base directory")?;
+    Ok(data_dir)
 }
 
 /// Extract a repository name from a git URL by removing the .git suffix

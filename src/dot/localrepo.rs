@@ -79,12 +79,12 @@ impl LocalRepo {
     }
 
     pub fn local_path(&self) -> Result<PathBuf> {
-        let base = config::repos_dir()?;
+        let base = config::repos_dir(None)?;
         Ok(base.join(&self.name))
     }
 
     fn local_path_from_name(name: &str) -> Result<PathBuf> {
-        let base = config::repos_dir()?;
+        let base = config::repos_dir(None)?;
         Ok(base.join(name))
     }
 

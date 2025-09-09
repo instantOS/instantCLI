@@ -34,7 +34,7 @@ fn test_clone_and_apply_basic_repo() -> Result<()> {
     let repo_path = utils::create_test_repo(
         &env,
         "test-basic",
-        &[("test-app/config.txt", "test content")],
+        &[(utils::test_dotfile_path("test-app/config.txt").as_str(), "test content")],
         &["dots"],
     )?;
     
@@ -50,7 +50,7 @@ fn test_clone_and_apply_basic_repo() -> Result<()> {
     assert_eq!(output.exit_code, 0, "Apply command failed: {}", output.stderr);
     
     // The file should be created in the real home directory
-    let target_file = env.real_home().join("test-app/config.txt");
+    let target_file = env.real_home().join(utils::test_dotfile_path("test-app/config.txt"));
     assert!(utils::file_exists(&target_file), "Target file was not created");
     
     let content = utils::read_file(&target_file)?;
