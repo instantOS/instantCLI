@@ -119,6 +119,15 @@ impl Database {
         Ok(result.next().is_some())
     }
 
+    pub fn unmodified_hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT 1 FROM hashes WHERE hash = ? AND path = ? AND unmodified = 1")?;
+        let mut result =
+            stmt.query_map([hash, path.to_str().unwrap()], |row| row.get::<_, i32>(0))?;
+        Ok(result.next().is_some())
+    }
+
     fn row_to_dotfile_hash(row: &rusqlite::Row) -> Result<DotfileHash, rusqlite::Error> {
         let created_str: String = row.get(1)?;
 

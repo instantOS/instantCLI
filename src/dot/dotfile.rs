@@ -81,7 +81,7 @@ impl Dotfile {
         }
         // No newer hash found, compute the hash
         let hash = Self::compute_hash(&self.target_path)?;
-        let is_unmodified = db.hash_exists(&hash, &self.target_path)?;
+        let is_unmodified = db.unmodified_hash_exists(&hash, &self.target_path)?;
         db.add_hash(&hash, &self.target_path, is_unmodified)?;
         Ok(hash)
     }
@@ -105,11 +105,12 @@ impl Dotfile {
 
         // No newer hash found, compute the hash
         let hash = Self::compute_hash(&self.source_path)?;
-        db.add_hash(&hash, &self.source_path, false)?;
+        let is_unmodified = db.unmodified_hash_exists(&hash, &self.source_path)?;
+        db.add_hash(&hash, &self.source_path, is_unmodified)?;
         Ok(hash)
     }
 
-    fn compute_hash(path: &Path) -> Result<String, anyhow::Error> {
+    pub fn compute_hash(path: &Path) -> Result<String, anyhow::Error> {
         let content = fs::read(path)?;
         let mut hasher = Sha256::new();
         hasher.update(content);
