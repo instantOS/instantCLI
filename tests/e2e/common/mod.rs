@@ -17,7 +17,9 @@ impl TestEnvironment {
         let original_home = env::var("HOME").ok();
         
         // Set fake home directory for testing
-        env::set_var("INSTANT_TEST_HOME_DIR", &fake_home);
+        unsafe {
+            env::set_var("INSTANT_TEST_HOME_DIR", &fake_home);
+        }
         
         Ok(Self { temp_dir, original_home })
     }
@@ -34,12 +36,14 @@ impl TestEnvironment {
 impl Drop for TestEnvironment {
     fn drop(&mut self) {
         // Restore original HOME environment variable
-        if let Some(home) = &self.original_home {
-            env::set_var("HOME", home);
-        } else {
-            env::remove_var("HOME");
+        unsafe {
+            if let Some(home) = &self.original_home {
+                env::set_var("HOME", home);
+            } else {
+                env::remove_var("HOME");
+            }
+            env::remove_var("INSTANT_TEST_HOME_DIR");
         }
-        env::remove_var("INSTANT_TEST_HOME_DIR");
         // temp_dir will be cleaned up when dropped
     }
 }
