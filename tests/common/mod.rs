@@ -35,36 +35,6 @@ impl TestEnvironment {
         Ok(())
     }
     
-    /// Clean up a repository by name
-    pub fn cleanup_repo(&self, repo_name: &str) -> Result<()> {
-        let repo_path = self.real_home().join(".local").join("share").join("instantos").join("dots").join(repo_name);
-        if repo_path.exists() {
-            std::fs::remove_dir_all(&repo_path)?;
-        }
-        Ok(())
-    }
-    
-    /// Clean up all test repositories
-    pub fn cleanup_all_repos(&self) -> Result<()> {
-        let repos_dir = self.real_home().join(".local").join("share").join("instantos").join("dots");
-        if repos_dir.exists() {
-            for entry in std::fs::read_dir(&repos_dir)? {
-                let entry = entry?;
-                let file_name = entry.file_name();
-                let file_name_str = file_name.to_string_lossy();
-                
-                // Only remove test repositories (those starting with "test-")
-                if file_name_str.starts_with("test-") {
-                    let repo_path = repos_dir.join(&file_name);
-                    if repo_path.is_dir() {
-                        std::fs::remove_dir_all(&repo_path)?;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-    
     /// Clean up files from home directory
     pub fn cleanup_home_files(&self, paths: &[&str]) -> Result<()> {
         for path in paths {
@@ -76,15 +46,6 @@ impl TestEnvironment {
                     std::fs::remove_file(&file_path)?;
                 }
             }
-        }
-        Ok(())
-    }
-    
-    /// Clean up instant config
-    pub fn cleanup_config(&self) -> Result<()> {
-        let config_path = self.real_home().join(".config").join("instant").join("instant.toml");
-        if config_path.exists() {
-            std::fs::remove_file(&config_path)?;
         }
         Ok(())
     }
