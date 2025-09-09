@@ -43,7 +43,7 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!("git clone failed: {}", stderr));
+        return Err(anyhow::anyhow!("git clone failed for {}: {}", repo.url, stderr));
     }
 
     // append to config
@@ -83,7 +83,7 @@ pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
     }
 
     if any_failed {
-        Err(anyhow::anyhow!("One or more repos failed to update"))
+        Err(anyhow::anyhow!("One or more repositories failed to update (see error messages above for details)"))
     } else {
         Ok(())
     }
