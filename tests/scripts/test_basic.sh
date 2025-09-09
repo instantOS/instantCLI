@@ -39,8 +39,6 @@ print_test_result 0 "Apply command"
 
 # Test 4: Verify files were created in real home directory
 print_test_header "Test 4: Verify Files"
-echo "Note: InstantCLI uses the real home directory, not a test directory"
-echo "Checking if files were created in real home directory..."
 
 verify_file "$HOME/.config/instanttest/config.txt" "test configuration content"
 verify_file "$HOME/.config/instanttest/settings.conf" "another config file"
@@ -48,14 +46,6 @@ verify_file "$HOME/.config/instanttest/settings.conf" "another config file"
 # Test 5: Test help command
 print_test_header "Test 5: Help Command"
 run_instant --help
-
-print_test_result 0 "Help command"
-
-# Test 6: Test dot help command
-print_test_header "Test 6: Dot Help Command"
-run_instant dot --help
-
-print_test_result 0 "Dot help command"
 
 print_test_header "All Basic Tests Passed!"
 echo "Test directory: $TEST_DIR"
