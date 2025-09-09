@@ -6,6 +6,7 @@ These need investigation, fixing and changing
 
 This uses self-made and duplicated logic for resolving the home directory or xdg config path.
 Tests also use their own weird logic. use the `dirs` crate instead and centralize this more. 
+The test environment does not need to fake the home directory.
 
 ## E2E Tests touch instant.toml
 
