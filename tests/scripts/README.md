@@ -33,30 +33,6 @@ These tests provide basic functionality verification for InstantCLI using shell 
 DEBUG=1 ./tests/scripts/run_all.sh
 ```
 
-### Running Individual Tests
-
-```bash
-# Run basic functionality test
-./tests/scripts/test_basic.sh
-
-# Run init functionality test
-./tests/scripts/test_init.sh
-
-# Run with debug output
-DEBUG=1 ./tests/scripts/test_basic.sh
-```
-
-### Running from Different Directories
-
-Since InstantCLI is a dotfile manager, you might want to run tests from other directories:
-
-```bash
-# From home directory
-cd ~ && /path/to/instantCLI/tests/scripts/test_basic.sh
-
-# From any directory
-cd /some/other/path && /path/to/instantCLI/tests/scripts/test_basic.sh
-```
 
 ## Test Environment
 
@@ -70,76 +46,6 @@ Each test script creates a isolated test environment:
 
 The test environment is automatically cleaned up after each test run.
 
-## Test Coverage
-
-### Basic Functionality (`test_basic.sh`)
-- Repository cloning
-- Dotfile application
-- Status checking
-- File verification
-- Help commands
-
-### Repository Initialization (`test_init.sh`)
-- Non-interactive init with custom name
-- Non-interactive init with default name (directory name)
-- Error handling for non-git directories
-- Error handling for existing instantdots.toml
-- Full workflow with actual dotfiles
-
-## Debugging
-
-### Enable Debug Output
-
-```bash
-DEBUG=1 ./tests/scripts/test_basic.sh
-```
-
-This shows the exact `cargo run` commands being executed.
-
-### Manual Inspection
-
-Tests pause before cleanup, allowing you to inspect files:
-
-```bash
-# Run test and inspect files before cleanup
-./tests/scripts/test_basic.sh
-# Look at the output for the test directory path
-cd /tmp/instant-test-XXXXX  # Use the actual path shown
-ls -la
-```
-
-### Test Specific Functionality
-
-You can modify individual test scripts to focus on specific areas:
-
-1. Edit the test script
-2. Comment out other test cases
-3. Run the specific test
-
-### Test Directory Not Cleaned Up
-
-If a test is interrupted, temporary directories might remain:
-
-```bash
-# Clean up all test directories
-rm -rf /tmp/instant-test-*
-```
-
-## Current Limitations
-
-The current test implementation has some limitations due to the architecture:
-
-1. **Config Persistence**: The config file is saved to the default location even when using custom config paths. This is a known limitation of the current architecture.
-
-2. **Repository Management**: Tests demonstrate repository cloning and basic operations, but the config persistence issue affects some operations.
-
-3. **Isolation**: While tests use custom database paths and custom repository directories, the config file persistence is not fully isolated.
-
-Despite these limitations, the tests successfully demonstrate:
-- The non-interactive init feature works correctly
-- Repository cloning to custom directories works
-- Basic CLI functionality is operational
-- Error handling works as expected
 
 ## Future Enhancements
 
