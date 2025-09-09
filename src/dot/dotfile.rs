@@ -108,6 +108,11 @@ impl Dotfile {
 
     pub fn apply(&self, db: &Database) -> Result<(), std::io::Error> {
         if self.is_modified(db) {
+            // Skip modified files, as they could contain user modifications
+            // This project is a dotfile manager which can be run in the background, and should not
+            // override files touched by the user or other programs. If an unmodified hash exists,
+            // this means the file was created by this program and has not not been touched by
+            // anything else, so it can be overridden without concern
             return Ok(());
         }
 
