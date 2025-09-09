@@ -151,7 +151,8 @@ mod tests {
         fs::create_dir_all(&repo_path).unwrap();
         fs::write(repo_path.join("test.txt"), "test").unwrap();
 
-        let db = Database::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let db = Database::new(db_path).unwrap();
         let dotfile = Dotfile {
             source_path: repo_path.join("test.txt"),
             target_path: target_path.join("test.txt"),
