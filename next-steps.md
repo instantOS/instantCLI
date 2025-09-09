@@ -59,118 +59,6 @@ When this environment variable is set, all paths will be derived from it instead
 - Database: `$INSTANT_TEST_HOME_DIR/.local/share/instantos/instant.db`
 - Repos: `$INSTANT_TEST_HOME_DIR/.local/share/instantos/dots`
 
-### Implementation Changes
-
-**1. Add to `src/dot/config.rs`:**
-```rust
-fn get_home_dir() -> Result<PathBuf> {
-    // Check for test override first
-    if let Ok(test_home) = env::var("INSTANT_TEST_HOME_DIR") {
-        return Ok(PathBuf::from(test_home));
-    }
-    
-    // Fall back to real home directory
-    env::var("HOME").context("HOME environment variable not set")
-        .map(PathBuf::from)
-}
-
-fn config_file_path() -> Result<PathBuf> {
-    let home = get_home_dir()?;
-    let cfg = home.join(".config/instant/instant.toml");
-    // ... rest unchanged
-}
-
-pub fn db_path() -> Result<PathBuf> {
-    let home = get_home_dir()?;
-    let path = home.join(".local/share/instantos/instant.db");
-    // ... rest unchanged
-}
-
-pub fn repos_dir() -> Result<PathBuf> {
-    let home = get_home_dir()?;
-    let base = home.join(".local/share/instantos/dots");
-    // ... rest unchanged
-}
-```
-
-**2. Update `src/dot/mod.rs`:**
-```rust
-pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
-    let home = if let Ok(test_home) = env::var("INSTANT_TEST_HOME_DIR") {
-        PathBuf::from(test_home)
-    } else {
-        PathBuf::from(shellexpand::tilde("~").to_string())
-    };
-    // ... rest unchanged
-}
-```
-
-### Test Environment Setup
-```rust
-pub struct TestEnvironment {
-    temp_dir: TempDir,
-    original_home: Option<String>,
-}
-
-impl TestEnvironment {
-    pub fn new() -> Result<Self> {
-        let temp_dir = tempfile::tempdir()?;
-        let fake_home = temp_dir.path().join("home");
-        
-        // Store original HOME environment variable
-        let original_home = env::var("HOME").ok();
-        
-        // Set fake home directory for testing
-        env::set_var("INSTANT_TEST_HOME_DIR", &fake_home);
-        
-        Ok(Self { temp_dir, original_home })
-    }
-    
-    pub fn fake_home(&self) -> PathBuf {
-        PathBuf::from(env::var("INSTANT_TEST_HOME_DIR").unwrap())
-    }
-}
-
-impl Drop for TestEnvironment {
-    fn drop(&mut self) {
-        // Restore original HOME environment variable
-        if let Some(home) = &self.original_home {
-            env::set_var("HOME", home);
-        } else {
-            env::remove_var("HOME");
-        }
-        env::remove_var("INSTANT_TEST_HOME_DIR");
-        // temp_dir will be cleaned up when dropped
-    }
-}
-```
-
-### Directory Structure for Tests
-```
-/tmp/instant-test-XXXXXX/
-└── home/                    # Fake home directory (INSTANT_TEST_HOME_DIR)
-    ├── .config/
-    │   └── instant/
-    │       └── instant.toml # Test config
-    └── .local/
-        └── share/
-            └── instantos/
-                ├── instant.db      # Test database
-                └── dots/           # Test repositories
-                    ├── test-repo-1/
-                    ├── test-repo-2/
-                    └── test-repo-3/
-```
-
-## Test Data Strategy
-
-### Repository Naming Convention
-- Use unique, unlikely-to-exist names
-- Format: `instant-test-<timestamp>-<purpose>`
-- Examples:
-  - `instant-test-1735689600-basic`
-  - `instant-test-1735689600-multi-subdir`
-
 ### Test File Paths
 - Use unique paths that won't conflict with real user files
 - Format: `~/.config/instantdottest/<test-specific-path>`
@@ -278,26 +166,6 @@ async fn test_path_outside_home_directory() {
 }
 ```
 
-## Test Implementation Strategy
-
-### Shell Script vs Rust Implementation
-
-**Recommendation: Use Rust with shell helpers**
-
-**Rationale:**
-- Better integration with existing codebase
-- Type safety and error handling
-- Cross-platform compatibility
-- Easier to maintain and debug
-- Can leverage existing utilities
-
-**Hybrid Approach:**
-- Use Rust for main test logic
-- Use shell scripts for:
-  - Git repository creation
-  - File system setup
-  - Environment variable management
-  - Cleanup operations
 
 ### Test Utilities
 
@@ -309,7 +177,7 @@ pub fn create_test_repo(
     files: &[(&str, &str)], // (path, content) pairs
     subdirs: &[&str],
 ) -> Result<PathBuf> {
-    let repo_path = env.fake_home().join(".local/share/instantos/dots").join(name);
+    let repo_path = // homestuff
     
     // Create git repository
     std::process::Command::new("git")
@@ -370,9 +238,9 @@ pub fn run_instant_command(
 ) -> Result<CommandOutput> {
     let mut cmd = std::process::Command::new("cargo");
     cmd.args(&["run", "--bin", "instant", "--"])
-        .args(args)
-        .env("INSTANT_TEST_HOME_DIR", env.fake_home().to_str().unwrap());
-    
+        .args(args);
+    // make sure this can be run from different dirs, cargo run needs to know
+    // where the project lives
     let output = cmd.output()?;
     
     Ok(CommandOutput {
