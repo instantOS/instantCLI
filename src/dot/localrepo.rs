@@ -3,7 +3,6 @@ use crate::dot::utils;
 use anyhow::{Context, Result};
 use std::{path::Path, path::PathBuf, process::Command};
 
-
 /// Represents a single dotfile directory within a repository
 #[derive(Debug, Clone)]
 pub struct DotfileDir {
@@ -24,10 +23,7 @@ impl DotfileDir {
             ));
         }
 
-        Ok(DotfileDir {
-            path,
-            is_active,
-        })
+        Ok(DotfileDir { path, is_active })
     }
 }
 
@@ -129,8 +125,6 @@ impl LocalRepo {
         let current = String::from_utf8_lossy(&out.stdout).trim().to_string();
         Ok(current)
     }
-
-    
 
     /// Convert a target path (in home directory) to source path (in repo)
     pub fn target_to_source(

@@ -197,7 +197,7 @@ fn main() -> Result<()> {
                         return Err(e);
                     }
                 }
-            },
+            }
             DotCommands::Add { path } => match dot::add_dotfile(&config, &db, &path) {
                 Ok(()) => println!("{} {}", "Added dotfile".green(), path.green()),
                 Err(e) => {

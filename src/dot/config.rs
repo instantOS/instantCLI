@@ -112,12 +112,12 @@ impl Config {
             .find(|repo| repo.name == repo_name)
             .map(|repo| {
                 if repo.active_subdirectories.is_empty() {
-                    vec!["dots".to_string()]
+                    default_active_subdirs()
                 } else {
                     repo.active_subdirectories.clone()
                 }
             })
-            .unwrap_or_else(|| vec!["dots".to_string()])
+            .unwrap_or_else(|| default_active_subdirs())
     }
 }
 

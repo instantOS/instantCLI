@@ -19,38 +19,42 @@ pub use git::{add_repo, status_all, update_all};
 
 use crate::dot::config::Config;
 use crate::dot::db::Database;
-use crate::dot::localrepo::{LocalRepo, DotfileDir};
+use crate::dot::localrepo::{DotfileDir, LocalRepo};
 
 use std::fs;
 
-/// Get a list of all active dotfile directory paths, ordered by repository relevance
+/// Get active dotfile directories from a single repository
+fn get_repo_active_dirs(config: &Config, repo: &config::Repo) -> Result<Vec<PathBuf>> {
+    let local_repo = LocalRepo::new(config, repo.name.clone())?;
+    Ok(local_repo
+        .dotfile_dirs
+        .iter()
+        .filter(|dir| dir.is_active)
+        .map(|dir| dir.path.clone())
+        .collect())
+}
+
+/// Get all active dotfile directories from all repositories
 pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<PathBuf>> {
     let mut active_dirs = Vec::new();
 
     // Process repos in order of their configuration (relevance)
     for repo in &config.repos {
-        let local_repo = match LocalRepo::new(config, repo.name.clone()) {
-            Ok(repo) => repo,
+        match get_repo_active_dirs(config, repo) {
+            Ok(mut dirs) => {
+                active_dirs.append(&mut dirs);
+            }
             Err(e) => {
                 eprintln!(
                     "{}",
                     format!("Warning: skipping repo '{}': {}", repo.name, e).yellow()
                 );
-                continue;
-            }
-        };
-
-        for dotfile_dir in &local_repo.dotfile_dirs {
-            if dotfile_dir.is_active {
-                active_dirs.push(dotfile_dir.path.clone());
             }
         }
     }
 
     Ok(active_dirs)
 }
-
-
 
 pub fn get_all_dotfiles(config: &Config) -> Result<HashMap<PathBuf, Dotfile>> {
     let mut filemap = HashMap::new();
@@ -164,7 +168,10 @@ fn group_dotfiles_by_repo<'a>(
 
 fn print_fetch_plan(grouped_by_repo: &HashMap<String, Vec<&Dotfile>>, dry_run: bool) {
     if dry_run {
-        println!("{}", "Dry run: The following files would be fetched:".yellow());
+        println!(
+            "{}",
+            "Dry run: The following files would be fetched:".yellow()
+        );
     } else {
         println!("{}", "Fetching the following modified files:".yellow());
     }
@@ -187,7 +194,6 @@ fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database) -> Result<()> {
     println!("\n{}", "Fetch complete.".green());
     Ok(())
 }
-
 
 pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
     let filemap = get_all_dotfiles(config)?;
@@ -302,7 +308,10 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
     let dirs = &local_repo.dotfile_dirs;
 
     if dirs.is_empty() {
-        return Err(anyhow::anyhow!("Repository '{}' has no configured dots_dirs", local_repo.name));
+        return Err(anyhow::anyhow!(
+            "Repository '{}' has no configured dots_dirs",
+            local_repo.name
+        ));
     }
 
     if dirs.len() == 1 {
@@ -320,7 +329,10 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
         .collect();
 
     let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt(format!("Select target dots_dir in repo '{}'", local_repo.name))
+        .with_prompt(format!(
+            "Select target dots_dir in repo '{}'",
+            local_repo.name
+        ))
         .default(0)
         .items(&items)
         .interact()?;
@@ -350,13 +362,18 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
     };
 
     if !full_path.exists() {
-        return Err(anyhow::anyhow!("File '{}' does not exist", full_path.display()));
+        return Err(anyhow::anyhow!(
+            "File '{}' does not exist",
+            full_path.display()
+        ));
     }
 
     if !full_path.starts_with(&home) {
-        return Err(anyhow::anyhow!("File '{}' is not in home directory", full_path.display()));
+        return Err(anyhow::anyhow!(
+            "File '{}' is not in home directory",
+            full_path.display()
+        ));
     }
-
 
     // Repository selection
     let repo_config = select_repo(config)?;
@@ -388,7 +405,10 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| chosen_dir.path.display().to_string());
 
-    println!("Added {} to repo '{}' in directory '{}'", path, local_repo.name, chosen_dir_name);
+    println!(
+        "Added {} to repo '{}' in directory '{}'",
+        path, local_repo.name, chosen_dir_name
+    );
 
     Ok(())
 }
