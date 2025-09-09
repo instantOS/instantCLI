@@ -14,6 +14,9 @@ pub mod localrepo;
 pub mod meta;
 pub mod utils;
 
+#[cfg(test)]
+mod path_tests;
+
 pub use crate::dot::dotfile::Dotfile;
 pub use git::{add_repo, status_all, update_all};
 
@@ -21,7 +24,49 @@ use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::localrepo::{DotfileDir, LocalRepo};
 
-use std::fs;
+/// Resolve a path argument to an absolute path in the home directory
+/// 
+/// This function handles path resolution similar to git:
+/// - If path starts with '~', expand it to home directory
+/// - If path is absolute, validate it's within home directory
+/// - If path is relative, resolve it relative to current working directory,
+///   then validate it's within home directory
+/// 
+/// Returns the resolved absolute path if valid, or an error if:
+/// - The path doesn't exist
+/// - The path is outside the home directory
+pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    
+    let resolved_path = if path.starts_with('~') {
+        // Expand tilde to home directory
+        PathBuf::from(shellexpand::tilde(path).into_owned())
+    } else if Path::new(path).is_absolute() {
+        // Use absolute path as-is
+        PathBuf::from(path)
+    } else {
+        // For relative paths, resolve relative to current working directory
+        let current_dir = std::env::current_dir()
+            .map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
+        current_dir.join(path)
+    };
+    
+    // Canonicalize the path to resolve any symlinks or relative components
+    let canonical_path = resolved_path.canonicalize()
+        .map_err(|e| anyhow::anyhow!("Failed to resolve path '{}': {}", path, e))?;
+    
+    // Validate that the path is within the home directory
+    if !canonical_path.starts_with(&home) {
+        return Err(anyhow::anyhow!(
+            "Path '{}' is outside the home directory. Only files in {} are allowed.",
+            canonical_path.display(),
+            home.display()
+        ));
+    }
+    
+    Ok(canonical_path)
+}
+
 
 /// Get active dotfile directories from a single repository
 fn get_repo_active_dirs(config: &Config, repo: &config::Repo) -> Result<Vec<PathBuf>> {
@@ -123,12 +168,7 @@ fn get_modified_dotfiles(
     let mut modified_dotfiles = Vec::new();
 
     if let Some(p) = path {
-        let expanded = shellexpand::tilde(p).into_owned();
-        let full_path = PathBuf::from(expanded);
-
-        if !full_path.exists() {
-            return Err(anyhow::anyhow!("Path does not exist: {}", p));
-        }
+        let full_path = resolve_dotfile_path(p)?;
 
         for (target_path, dotfile) in all_dotfiles {
             if target_path.starts_with(&full_path) && dotfile.is_modified(db) {
@@ -216,8 +256,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
 
 pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> {
     let filemap = get_all_dotfiles(config)?;
-    let expanded = shellexpand::tilde(path).into_owned();
-    let full_path = PathBuf::from(expanded);
+    let full_path = resolve_dotfile_path(path)?;
     for dotfile in filemap.values() {
         if dotfile.target_path.starts_with(&full_path) && dotfile.is_modified(&db) {
             dotfile.apply(&db)?;
@@ -342,38 +381,9 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
 
 /// Add a new dotfile to tracking
 pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
-    use dialoguer::{Select, theme::ColorfulTheme};
 
-    // Compute the full path to the target file.
-    // Behavior:
-    // - If path starts with '~', expand it.
-    // - If path is absolute, use it.
-    // - Otherwise treat relative paths as relative to the home directory.
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-
-    // Resolve the path to an absolute path
-    let full_path = if path.starts_with('~') {
-        PathBuf::from(shellexpand::tilde(path).into_owned())
-    } else if Path::new(path).is_absolute() {
-        PathBuf::from(path)
-    } else {
-        // For relative paths, treat them as relative to the home directory
-        home.join(path)
-    };
-
-    if !full_path.exists() {
-        return Err(anyhow::anyhow!(
-            "File '{}' does not exist",
-            full_path.display()
-        ));
-    }
-
-    if !full_path.starts_with(&home) {
-        return Err(anyhow::anyhow!(
-            "File '{}' is not in home directory",
-            full_path.display()
-        ));
-    }
+    // Resolve the path using git-style resolution
+    let full_path = resolve_dotfile_path(path)?;
 
     // Repository selection
     let repo_config = select_repo(config)?;
@@ -387,6 +397,7 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
     let dest_base = repo_base.join(&chosen_dir.path);
 
     // Compute relative path from home and final destination
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
     let relative = full_path.strip_prefix(&home).unwrap_or(&full_path);
     let dest_path = dest_base.join(relative);
 

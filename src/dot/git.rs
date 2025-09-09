@@ -143,69 +143,49 @@ pub fn status_all(
 
         // If a specific path was provided, check whether it belongs to this repo and report
         if let Some(p) = path {
-            // Normalize provided path (expand ~ and make absolute-ish)
-            let expanded = shellexpand::tilde(p).into_owned();
-            let provided = PathBuf::from(expanded);
+            // Use the new path resolution function
+            let provided = match super::resolve_dotfile_path(p) {
+                Ok(path) => path,
+                Err(e) => {
+                    // If path resolution fails, show error but continue with other repos
+                    eprintln!("Error resolving path '{}': {}", p, e);
+                    continue;
+                }
+            };
 
             // If this repo contains the provided dotfile, print its status and repo info
-            if provided.exists() {
-                // Determine if this target path maps to a source under this repo's dots/
-                let dots_dir = target.join("dots");
-                let rel = match provided.strip_prefix(shellexpand::tilde("~").into_owned()) {
-                    Ok(r) => r.to_path_buf(),
-                    Err(_) => provided.clone(),
-                };
-                let source_candidate = dots_dir.join(&rel);
+            // Determine if this target path maps to a source under this repo's dots/
+            let dots_dir = target.join("dots");
+            let rel = match provided.strip_prefix(shellexpand::tilde("~").into_owned()) {
+                Ok(r) => r.to_path_buf(),
+                Err(_) => provided.clone(),
+            };
+            let source_candidate = dots_dir.join(&rel);
 
-                if source_candidate.exists() && source_candidate.starts_with(&target) {
-                    found = true;
-                    println!("File: {}", provided.display());
-                    println!("Repo: {}", crepo.url);
+            if source_candidate.exists() && source_candidate.starts_with(&target) {
+                found = true;
+                println!("File: {}", provided.display());
+                println!("Repo: {}", crepo.url);
 
-                    // git status for repo
-                    let output = Command::new("git")
-                        .arg("-C")
-                        .arg(&target)
-                        .arg("status")
-                        .arg("--porcelain")
-                        .output()
-                        .with_context(|| format!("running git status in {}", target.display()))?;
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    if stdout.trim().is_empty() {
-                        println!("Repo status: {}", "clean".green());
-                    } else {
-                        println!("Repo status: {}\n{}", "modified".yellow(), stdout);
-                    }
-
-                    // now check file status using db
-                    let filemap = super::get_all_dotfiles(cfg)?;
-                    if let Some(dotfile) = filemap.get(&provided) {
-                        println!("Source: {}", dotfile.source_path.display());
-                        if dotfile.is_modified(&db) {
-                            println!("File status: {}", "modified".yellow());
-                        } else if dotfile.is_outdated() {
-                            println!("File status: {}", "outdated".blue());
-                        } else {
-                            println!("File status: {}", "clean".green());
-                        }
-                    } else {
-                        println!("File not tracked by instantdots in this repo.");
-                    }
+                // git status for repo
+                let output = Command::new("git")
+                    .arg("-C")
+                    .arg(&target)
+                    .arg("status")
+                    .arg("--porcelain")
+                    .output()
+                    .with_context(|| format!("running git status in {}", target.display()))?;
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if stdout.trim().is_empty() {
+                    println!("Repo status: {}", "clean".green());
+                } else {
+                    println!("Repo status: {}\n{}", "modified".yellow(), stdout);
                 }
-            } else {
-                // Provided path doesn't exist; still attempt to map to repo source
-                let dots_dir = target.join("dots");
-                // Make provided relative path by trimming leading ~/
-                let rel = p.trim_start_matches("~").trim_start_matches('/');
-                let source_candidate = dots_dir.join(rel);
-                if source_candidate.exists() {
-                    println!("File: {}", p);
-                    println!("Repo: {}", crepo.url);
-                    println!("Source: {}", source_candidate.display());
-                    let dotfile = super::Dotfile {
-                        source_path: source_candidate.clone(),
-                        target_path: PathBuf::from(shellexpand::tilde("~").to_string()).join(rel),
-                    };
+
+                // now check file status using db
+                let filemap = super::get_all_dotfiles(cfg)?;
+                if let Some(dotfile) = filemap.get(&provided) {
+                    println!("Source: {}", dotfile.source_path.display());
                     if dotfile.is_modified(&db) {
                         println!("File status: {}", "modified".yellow());
                     } else if dotfile.is_outdated() {
@@ -213,6 +193,8 @@ pub fn status_all(
                     } else {
                         println!("File status: {}", "clean".green());
                     }
+                } else {
+                    println!("File not tracked by instantdots in this repo.");
                 }
             }
         } else {
