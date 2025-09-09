@@ -134,6 +134,23 @@ impl Dotfile {
         }
         Ok(())
     }
+
+    /// Create the source file in the repository by copying from the target (home) file,
+    /// and register its hash in the database as an unmodified source.
+    pub fn create_source_from_target(&self, db: &Database) -> Result<(), anyhow::Error> {
+        // Ensure parent directories exist
+        if let Some(parent) = self.source_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Copy target -> source
+        fs::copy(&self.target_path, &self.source_path)?;
+
+        // Compute and register the source hash as unmodified
+        let _ = self.get_source_hash(db)?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

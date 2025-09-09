@@ -19,7 +19,7 @@ pub use git::{add_repo, status_all, update_all};
 
 use crate::dot::config::Config;
 use crate::dot::db::Database;
-use crate::dot::localrepo::LocalRepo;
+use crate::dot::localrepo::{LocalRepo, DotfileDir};
 
 use std::fs;
 
@@ -273,47 +273,110 @@ fn find_repo_by_name(config: &Config, repo_name: &str) -> Result<config::Repo> {
         .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", repo_name))
 }
 
+/// Prompt the user to select one of the configured repositories.
+fn select_repo(config: &Config) -> Result<config::Repo> {
+    use dialoguer::{Select, theme::ColorfulTheme};
+
+    if config.repos.is_empty() {
+        return Err(anyhow::anyhow!("No repositories configured"));
+    }
+
+    if config.repos.len() == 1 {
+        return Ok(config.repos[0].clone());
+    }
+
+    let items: Vec<String> = config.repos.iter().map(|r| r.name.clone()).collect();
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select repository to add the dotfile to")
+        .default(0)
+        .items(&items)
+        .interact()?;
+
+    Ok(config.repos[selection].clone())
+}
+
+/// Prompt the user to select one of the repo's configured `dots_dirs`.
+fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
+    use dialoguer::{Select, theme::ColorfulTheme};
+
+    let dirs = &local_repo.dotfile_dirs;
+
+    if dirs.is_empty() {
+        return Err(anyhow::anyhow!("Repository '{}' has no configured dots_dirs", local_repo.name));
+    }
+
+    if dirs.len() == 1 {
+        return Ok(dirs[0].clone());
+    }
+
+    let items: Vec<String> = dirs
+        .iter()
+        .map(|d| {
+            d.path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| d.path.display().to_string())
+        })
+        .collect();
+
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!("Select target dots_dir in repo '{}'", local_repo.name))
+        .default(0)
+        .items(&items)
+        .interact()?;
+
+    Ok(dirs[selection].clone())
+}
+
 /// Add a new dotfile to tracking
 pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
-    let this_repo_config = config.repos.last().ok_or_else(|| anyhow::anyhow!("No repositories configured"))?;
-    let this_repo = LocalRepo::new(config, this_repo_config.name.clone())?;
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    use dialoguer::{Select, theme::ColorfulTheme};
 
+    // Expand and validate the provided path
     let expanded = shellexpand::tilde(path).into_owned();
-    let full_path = PathBuf::from(expanded);
+    let full_path = PathBuf::from(&expanded);
 
     if !full_path.exists() {
         return Err(anyhow::anyhow!("File '{}' does not exist", path));
     }
 
-    // Check if the file is in the home directory
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
     if !full_path.starts_with(&home) {
         return Err(anyhow::anyhow!("File '{}' is not in home directory", path));
     }
 
-    // Find the corresponding source path in the repo
-    if let Some(source_path) = this_repo.target_to_source(&full_path, config)? {
-        // Copy the file to the repo
-        if let Some(parent) = source_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::copy(&full_path, &source_path)?;
 
-        // Create dotfile and compute hash
-        let dotfile = Dotfile {
-            source_path: source_path,
-            target_path: full_path,
-        };
-        let _ = dotfile.get_source_hash(&db);
+    // Repository selection
+    let repo_config = select_repo(config)?;
+    let local_repo = LocalRepo::new(config, repo_config.name.clone())?;
 
-        println!("Added {} to tracking", path);
-    } else {
-        return Err(anyhow::anyhow!(
-            "No matching source directory found for '{}' in repo '{}'",
-            path,
-            this_repo.name
-        ));
-    }
+    // dots_dir selection
+    let chosen_dir = select_dots_dir(&local_repo)?;
+
+    // Construct destination path inside the repo
+    let repo_base = local_repo.local_path()?;
+    let dest_base = repo_base.join(&chosen_dir.path);
+
+    // Compute relative path from home and final destination
+    let relative = full_path.strip_prefix(&home).unwrap_or(&full_path);
+    let dest_path = dest_base.join(relative);
+
+    // Use Dotfile methods to perform the copy and DB registration
+    let dotfile = Dotfile {
+        source_path: dest_path.clone(),
+        target_path: full_path.clone(),
+    };
+    // If the source already exists, treat as overwrite; Dotfile methods may be extended
+    // later to prompt or handle conflicts more gracefully.
+    dotfile.create_source_from_target(db)?;
+
+    let chosen_dir_name = chosen_dir
+        .path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| chosen_dir.path.display().to_string());
+
+    println!("Added {} to repo '{}' in directory '{}'", path, local_repo.name, chosen_dir_name);
 
     Ok(())
 }
