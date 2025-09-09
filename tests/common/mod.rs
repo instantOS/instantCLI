@@ -89,6 +89,15 @@ impl TestEnvironment {
         Ok(())
     }
     
+    /// Clean up the database file
+    pub fn cleanup_database(&self) -> Result<()> {
+        let db_path = self.real_home().join(".local").join("share").join("instantos").join("instant.db");
+        if db_path.exists() {
+            std::fs::remove_file(&db_path)?;
+        }
+        Ok(())
+    }
+    
     /// Clean up all test state (comprehensive cleanup)
     pub fn cleanup_all_test_state(&self) -> Result<()> {
         // Clean up all test repositories
@@ -96,6 +105,9 @@ impl TestEnvironment {
         
         // Clean up config
         self.cleanup_config()?;
+        
+        // Clean up database
+        self.cleanup_database()?;
         
         // Clean up common test directories from home
         let test_dirs = ["test-app", "modify-test", "fetch-test", "overlap", "multi-app1", "multi-app2", "remove-test"];

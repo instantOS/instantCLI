@@ -129,7 +129,9 @@ impl Dotfile {
 
         fs::copy(&self.source_path, &self.target_path)?;
 
-        let _ = self.get_source_hash(db);
+        // After applying, record the target hash as unmodified since we just copied from source
+        let source_hash = self.get_source_hash(db)?;
+        db.add_hash(&source_hash, &self.target_path, true)?;
 
         Ok(())
     }

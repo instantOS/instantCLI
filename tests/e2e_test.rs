@@ -4,8 +4,8 @@ mod utils;
 use anyhow::Result;
 use common::TestEnvironment;
 
-#[tokio::test]
-async fn test_clone_and_apply_basic_repo() -> Result<()> {
+#[test]
+fn test_clone_and_apply_basic_repo() -> Result<()> {
     let env = TestEnvironment::new()?;
     
     // Clean up any existing state before starting
@@ -43,8 +43,8 @@ async fn test_clone_and_apply_basic_repo() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_repository_removal() -> Result<()> {
+#[test]
+fn test_repository_removal() -> Result<()> {
     let env = TestEnvironment::new()?;
     
     // Clean up any existing state before starting

@@ -1,0 +1,6 @@
+[build]
+jobs = 1
+
+[test]
+# Run tests sequentially to avoid database conflicts
+test-threads = 1
