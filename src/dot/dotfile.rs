@@ -80,7 +80,7 @@ impl Dotfile {
         let file_metadata = fs::metadata(&self.source_path)?;
         let file_modified = file_metadata.modified()?;
 
-        if let Ok(Some(newest_hash)) = db.get_newest_hash(&self.target_path) {
+        if let Ok(Some(newest_hash)) = db.get_newest_hash(&self.source_path) {
             // Compare the database timestamp with file modification time
             let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
             if newest_hash.created >= file_time {
@@ -94,7 +94,7 @@ impl Dotfile {
 
         // No newer hash found, compute the hash
         let hash = Self::compute_hash(&self.source_path)?;
-        db.add_hash(&hash, &self.target_path, false)?;
+        db.add_hash(&hash, &self.source_path, false)?;
         Ok(hash)
     }
 
