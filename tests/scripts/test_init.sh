@@ -94,10 +94,9 @@ git commit -m "Add dotfiles and instantdots.toml" >/dev/null 2>&1
 
 # Now test if we can clone and apply from this repository
 cd "$TEST_DIR"
-CLONE_DIR="$TEST_DIR/cloned-repo"
-run_instant dot clone "file://full-test-repo"
+run_instant dot clone "file://$TEST_DIR/full-test-repo"
 
-if [ -d "$CLONE_DIR" ]; then
+if [ -d "$REPOS_DIR/full-test-repo" ]; then
     echo "✓ Repository cloned successfully"
 else
     echo "✗ Repository clone failed"
@@ -107,12 +106,11 @@ fi
 # Apply the dotfiles
 run_instant dot apply
 
-# Verify files were applied in real home directory
-echo "Note: InstantCLI uses the real home directory, not a test directory"
-echo "Checking if files were created in real home directory..."
+# Verify files were applied in test home directory
+echo "Checking if files were created in test home directory..."
 
-verify_file "$HOME/.config/instanttest/app.conf" "app configuration"
-verify_file "$HOME/.config/instanttest/settings.ini" "test settings"
+verify_file "$HOME_DIR/.config/instanttest/app.conf" "app configuration"
+verify_file "$HOME_DIR/.config/instanttest/settings.ini" "test settings"
 
 print_test_header "All Init Tests Passed!"
 echo "Test directory: $TEST_DIR"

@@ -37,11 +37,11 @@ run_instant dot apply
 
 print_test_result 0 "Apply command"
 
-# Test 4: Verify files were created in real home directory
+# Test 4: Verify files were created in test home directory
 print_test_header "Test 4: Verify Files"
 
-verify_file "$HOME/.config/instanttest/config.txt" "test configuration content"
-verify_file "$HOME/.config/instanttest/settings.conf" "another config file"
+verify_file "$HOME_DIR/.config/instanttest/config.txt" "test configuration content"
+verify_file "$HOME_DIR/.config/instanttest/settings.conf" "another config file"
 
 # Test 5: Test help command
 print_test_header "Test 5: Help Command"

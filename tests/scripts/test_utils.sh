@@ -13,8 +13,7 @@ setup_test_env() {
     export TEST_DIR="$test_dir"
     export CONFIG_FILE="$TEST_DIR/instant.toml"
     export DB_FILE="$TEST_DIR/instant.db"
-    # TODO: instant always uses the real home directory, do not use a fake one
-    # just make sure the tests do not modify dotfiles of real applications
+    # Test home directory - instant commands use this via HOME="$HOME_DIR"
     export HOME_DIR="$TEST_DIR/home"
     export REPO_DIR="$TEST_DIR/repo"
     export REPOS_DIR="$TEST_DIR/repos"
