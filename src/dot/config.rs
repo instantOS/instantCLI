@@ -49,9 +49,10 @@ fn get_home_dir() -> Result<PathBuf> {
     if let Ok(test_home) = env::var("INSTANT_TEST_HOME_DIR") {
         return Ok(PathBuf::from(test_home));
     }
-    
+
     // Fall back to real home directory
-    env::var("HOME").context("HOME environment variable not set")
+    env::var("HOME")
+        .context("HOME environment variable not set")
         .map(PathBuf::from)
 }
 

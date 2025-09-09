@@ -25,19 +25,23 @@ use crate::dot::db::Database;
 use crate::dot::localrepo::{DotfileDir, LocalRepo};
 
 /// Resolve a path argument to an absolute path in the home directory
-/// 
+///
 /// This function handles path resolution similar to git:
 /// - If path starts with '~', expand it to home directory
 /// - If path is absolute, validate it's within home directory
 /// - If path is relative, resolve it relative to current working directory,
 ///   then validate it's within home directory
-/// 
+///
 /// Returns the resolved absolute path if valid, or an error if:
 /// - The path doesn't exist
 /// - The path is outside the home directory
 pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    
+    let home = if let Ok(test_home) = std::env::var("INSTANT_TEST_HOME_DIR") {
+        PathBuf::from(test_home)
+    } else {
+        PathBuf::from(shellexpand::tilde("~").to_string())
+    };
+
     let resolved_path = if path.starts_with('~') {
         // Expand tilde to home directory
         PathBuf::from(shellexpand::tilde(path).into_owned())
@@ -50,11 +54,12 @@ pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
         current_dir.join(path)
     };
-    
+
     // Canonicalize the path to resolve any symlinks or relative components
-    let canonical_path = resolved_path.canonicalize()
+    let canonical_path = resolved_path
+        .canonicalize()
         .map_err(|e| anyhow::anyhow!("Failed to resolve path '{}': {}", path, e))?;
-    
+
     // Validate that the path is within the home directory
     if !canonical_path.starts_with(&home) {
         return Err(anyhow::anyhow!(
@@ -63,10 +68,9 @@ pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
             home.display()
         ));
     }
-    
+
     Ok(canonical_path)
 }
-
 
 /// Get active dotfile directories from a single repository
 fn get_repo_active_dirs(config: &Config, repo: &config::Repo) -> Result<Vec<PathBuf>> {
@@ -381,7 +385,6 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
 
 /// Add a new dotfile to tracking
 pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
-
     // Resolve the path using git-style resolution
     let full_path = resolve_dotfile_path(path)?;
 
