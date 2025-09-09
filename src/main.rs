@@ -21,7 +21,7 @@ struct Cli {
     config: Option<String>,
 
     /// Custom database file path
-    #[arg(short = 'd', long = "database", global = true)]
+    #[arg(long = "database", global = true)]
     database: Option<String>,
 
     #[command(subcommand)]

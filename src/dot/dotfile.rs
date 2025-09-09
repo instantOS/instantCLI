@@ -9,11 +9,20 @@ pub struct Dotfile {
 }
 
 impl Dotfile {
-    pub fn is_outdated(&self) -> bool {
+    pub fn is_outdated(&self, db: &Database) -> bool {
         if !self.target_path.exists() {
             return true;
         }
 
+        // First, check if both files have the same hash in the database
+        if let (Ok(source_hash), Ok(target_hash)) = (self.get_source_hash(db), self.get_target_hash(db)) {
+            if source_hash == target_hash {
+                // Files have the same content, not outdated
+                return false;
+            }
+        }
+
+        // Fall back to modification time comparison
         let source_metadata = fs::metadata(&self.source_path).ok();
         let target_metadata = fs::metadata(&self.target_path).ok();
 
@@ -116,7 +125,7 @@ impl Dotfile {
             return Ok(());
         }
 
-        if !self.is_outdated() {
+        if !self.is_outdated(db) {
             let _ = self.get_source_hash(db);
             return Ok(());
         }

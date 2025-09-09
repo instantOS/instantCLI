@@ -194,7 +194,7 @@ pub fn status_all(
                     println!("Source: {}", dotfile.source_path.display());
                     if dotfile.is_modified(&db) {
                         println!("File status: {}", "modified".yellow());
-                    } else if dotfile.is_outdated() {
+                    } else if dotfile.is_outdated(&db) {
                         println!("File status: {}", "outdated".blue());
                     } else {
                         println!("File status: {}", "clean".green());
@@ -239,7 +239,7 @@ pub fn status_all(
                             target_path.to_string_lossy().bold(),
                             "modified".yellow()
                         );
-                    } else if dotfile.is_outdated() {
+                    } else if dotfile.is_outdated(&db) {
                         println!(
                             "    {} -> {}",
                             target_path.to_string_lossy().bold(),

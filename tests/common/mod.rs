@@ -92,14 +92,11 @@ impl TestEnvironment {
         // Clean up database
         self.cleanup_database()?;
         
-        // Clean up ALL possible test directories from home
-        let test_dirs = [
-            "test-app", "modify-test", "fetch-test", "overlap", 
-            "multi-app1", "multi-app2", "remove-test",
-            "test-basic", "test-remove", "test-priority1", "test-priority2",
-            "test-modify", "test-fetch", "test-sub"
-        ];
-        self.cleanup_home_files(&test_dirs)?;
+        // Clean up test directory
+        let test_config_dir = self.real_home().join(".config/instanttests");
+        if test_config_dir.exists() {
+            std::fs::remove_dir_all(&test_config_dir)?;
+        }
         
         // Also clean up any .instantos directories
         let instantos_dir = self.real_home().join(".instantos");
