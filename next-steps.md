@@ -1,305 +1,150 @@
-# InstantCLI End-to-End Testing Plan
+# Next Steps: Replace E2E Testing with Simple Shell Scripts
 
-## Overview
+## Current Problem
 
-This document outlines a comprehensive end-to-end testing strategy for InstantCLI, a Rust-based command-line tool for managing dotfiles and instantOS configurations. The testing approach focuses on validating the complete user workflow from repository management through dotfile application and modification tracking.
+The current e2e testing suite is overly complex and difficult to debug:
+- Located in `tests/e2e_test.rs` with supporting modules in `tests/e2e/`
+- Uses complex Rust test framework with temporary directories, environment variables, and mutex locking
+- Requires deep understanding of the testing infrastructure to debug issues
+- Too much complexity for basic functionality verification
 
-## Current Testing State
+## Proposed Solution
 
-**Existing Tests:**
-- Basic path resolution tests in `src/dot/path_tests.rs`
-- Limited unit test coverage
-- No integration or end-to-end tests
-- Manual testing through CLI commands
+Replace the complex Rust e2e tests with simple shell scripts that:
+- Use existing CLI arguments for custom config/database paths
+- Provide basic functionality verification
+- Allow manual inspection of outputs
+- Are easy to understand and modify
 
-**Testing Gaps:**
-- No integration tests between components
-- No end-to-end workflow validation
-- No multi-repository scenario testing
-- No error condition handling tests
-- No configuration edge case testing
+## CLI Arguments Available
 
-## Testing Philosophy
+The CLI already supports custom paths:
+- `--config <path>` or `-c <path>`: Custom config file path
+- `--database <path>`: Custom database file path
+- `--debug`: Enable debug output
 
-1. **Isolation**: Each test runs in a clean, isolated environment
-2. **Deterministic**: Tests produce consistent results across runs
-3. **Comprehensive**: Cover all major workflows and edge cases
-4. **Realistic**: Use actual git repositories and file operations
-5. **Cleanup**: Properly clean up all test artifacts
+## Required Features
 
-## Testing Architecture
+### 1. Non-Interactive Init Flag
 
-### Test Structure
-```
-tests/
-  e2e/
-    main.rs              # Test runner and setup
-    fixtures/            # Test fixtures and helpers
-    workflows/           # End-to-end workflow tests
-    utils/               # Test utilities
-    common/              # Shared test utilities
-```
+Add a `--non-interactive` flag to `instant dot init`:
+- Uses provided name without prompting
+- Uses directory name as default if no name provided
+- Skips all interactive prompts
 
-### Test Categories
+### 2. Shell Script Test Suite
 
-1. **End-to-End Workflows**: Complete user scenarios
-3. **Error Handling**: Edge case and error condition testing
-4. **Performance**: Large repository and file count testing
+Create simple shell scripts in `tests/scripts/`:
 
-## Test Environment Setup - Simplified Approach
+#### Basic Test Structure
+```bash
+#!/bin/bash
+set -e
 
-### Centralized Home Directory Override
+# Setup test environment
+TEST_DIR="/tmp/instant-test-$$"
+CONFIG_FILE="$TEST_DIR/instant.toml"
+DB_FILE="$TEST_DIR/instant.db"
+HOME_DIR="$TEST_DIR/home"
 
-Since all paths in InstantCLI are derived from the home directory, we can implement a simple, centralized solution by adding just **one environment variable override**:
-
-**Environment Variable: `INSTANT_TEST_HOME_DIR`**
-
-When this environment variable is set, all paths will be derived from it instead of the real home directory:
-- Config: `$INSTANT_TEST_HOME_DIR/.config/instant/instant.toml`
-- Database: `$INSTANT_TEST_HOME_DIR/.local/share/instantos/instant.db`
-- Repos: `$INSTANT_TEST_HOME_DIR/.local/share/instantos/dots`
-
-### Test File Paths
-- Use unique paths that won't conflict with real user files
-- Format: `~/.config/instantdottest/<test-specific-path>`
-- Examples:
-  - `~/.config/instantdottest/basic-config.txt`
-  - `~/.config/instantdottest/theme/colors.conf`
-  - `~/.config/instantdottest/app/settings.toml`
-
-## Test Scenarios
-
-### 1. Basic Repository Management
-
-#### Test: Repository Clone and Apply
-
-```rust
-#[tokio::test]
-async fn test_clone_and_apply_basic_repo() {
-    // Setup: Create a git repo with basic dotfiles
-    // Test: Clone repository and apply dotfiles
-    // Verify: Files are correctly placed in home directory
-    // Verify: Database tracks file hashes correctly
+# Cleanup function
+cleanup() {
+    rm -rf "$TEST_DIR"
 }
+trap cleanup EXIT
+
+# Create test environment
+mkdir -p "$HOME_DIR"
+mkdir -p "$(dirname "$CONFIG_FILE")"
+mkdir -p "$(dirname "$DB_FILE")"
+
+# Test functions
+run_instant() {
+    cargo run -- --config "$CONFIG_FILE" --database "$DB_FILE" "$@"
+}
+# TODO: come up with a way to run the program when outside of the repo
+# this is a dotfile manager, so running it from other directories (cd
+# otherstuff) is to be expected
+
+# Test cases
+echo "=== Testing basic functionality ==="
+run_instant dot clone <test-repo-url>
+run_instant dot apply
+run_instant dot status
 ```
 
-#### Test: Repository Removal
-```rust
-#[tokio::test]
-async fn test_repository_removal() {
-    // Setup: Add a repository to configuration
-    // Test: Remove repository from configuration
-    // Verify: Repository is removed from config
-    // Verify: Local files are optionally cleaned up
-}
+#### Test Scripts to Create
+
+1. `test_basic.sh` - Basic clone/apply/status operations
+2. `test_multiple_repos.sh` - Multiple repository handling
+3. `test_modification_detection.sh` - User modification detection
+4. `test_fetch_reset.sh` - Fetch and reset operations
+5. `test_subdirectories.sh` - Multiple subdirectories support
+6. `test_init.sh` - Repository initialization (non-interactive)
+
+## Implementation Plan
+
+### Phase 1: Add Non-Interactive Init
+1. Modify `src/dot/meta.rs` to add `--non-interactive` flag
+2. Update `src/main.rs` to pass the flag through
+3. Skip prompts when flag is set
+
+### Phase 2: Create Shell Script Tests
+1. Create `tests/scripts/` directory
+2. Write basic test scripts with common setup
+3. Each script tests one major feature area
+4. Include cleanup and error handling
+
+### Phase 3: Documentation and Usage
+1. Add `README.md` in `tests/scripts/` explaining usage
+2. Document how to run individual tests
+3. Explain expected outputs for manual verification
+
+### Phase 4: Remove Old Tests
+1. Remove `tests/e2e_test.rs`
+2. Remove `tests/e2e/` directory
+3. Update `Cargo.toml` if needed
+
+## Benefits
+
+- **Simplicity**: Shell scripts are easy to understand and modify
+- **Debugging**: Easy to step through and debug issues
+- **Flexibility**: Can easily add new test cases
+- **Manual Verification**: User can inspect outputs directly
+- **No Complex Framework**: No need for Rust testing infrastructure
+- **Isolation**: Uses custom config/db paths, won't affect user data
+
+## Test Coverage
+
+The shell scripts will cover:
+- Basic repository cloning and applying
+- Multiple repository management
+- User modification detection
+- Fetch and reset operations
+- Subdirectory management
+- Repository initialization
+- Error handling for invalid inputs
+
+## Expected Output
+
+Each test script will:
+- Print clear section headers
+- Show command outputs
+- Indicate success/failure
+- Clean up after itself
+- Allow manual inspection of files created
+
+## Usage
+
+```bash
+# Run all tests
+./tests/scripts/run_all.sh
+
+# Run specific test
+./tests/scripts/test_basic.sh
+
+# Run with debug output
+DEBUG=1 ./tests/scripts/test_basic.sh
 ```
 
-### 2. Multi-Repository Scenarios
-
-#### Test: Multiple Repositories with Priority
-```rust
-#[tokio::test]
-async fn test_multiple_repositories_priority() {
-    // Setup: Create 3 repositories with overlapping files
-    // Test: Apply all repositories in order
-    // Verify: Later repositories override earlier ones correctly
-    // Verify: Priority system works as expected
-}
-```
-
-### 3. File Modification Tracking
-
-#### Test: User Modification Detection
-```rust
-#[tokio::test]
-async fn test_user_modification_detection() {
-    // Setup: Apply dotfiles, then modify some files
-    // Test: Run status command to detect modifications
-    // Verify: Modified files are correctly identified
-    // Verify: Hash comparison works correctly
-}
-```
-
-#### Test: Fetch Modified Files
-```rust
-#[tokio::test]
-async fn test_fetch_modified_files() {
-    // Setup: Apply dotfiles, modify files, then fetch
-    // Test: Fetch modified files back to repository
-    // Verify: Files are correctly updated in repository
-    // Verify: Database entries are updated
-}
-```
-
-### 4. Subdirectory Management
-
-#### Test: Multiple Subdirectories
-```rust
-#[tokio::test]
-async fn test_multiple_subdirectories() {
-    // Setup: Create repo with multiple subdirectories
-    // Test: List, set, and activate subdirectories
-    // Verify: Only active subdirectories are processed
-    // Verify: Subdirectory switching works correctly
-}
-```
-
-### 5. Error Handling
-
-#### Test: Invalid Repository URL
-```rust
-#[tokio::test]
-async fn test_invalid_repository_url() {
-    // Test: Attempt to clone invalid repository
-    // Verify: Proper error handling and messages
-    // Verify: System state remains consistent
-}
-```
-
-#### Test: Path Outside Home Directory
-```rust
-#[tokio::test]
-async fn test_path_outside_home_directory() {
-    // Test: Attempt operations on paths outside home
-    // Verify: Operations are properly rejected
-    // Verify: Security boundaries are enforced
-}
-```
-
-
-### Test Utilities
-
-#### Repository Creation Helper
-```rust
-pub fn create_test_repo(
-    env: &TestEnvironment,
-    name: &str,
-    files: &[(&str, &str)], // (path, content) pairs
-    subdirs: &[&str],
-) -> Result<PathBuf> {
-    let repo_path = // homestuff
-    
-    // Create git repository
-    std::process::Command::new("git")
-        .args(&["init", "--bare", repo_path.to_str().unwrap()])
-        .output()?;
-    
-    // Create temporary working directory for adding files
-    let work_dir = tempfile::tempdir()?;
-    
-    // Clone bare repo to working directory
-    std::process::Command::new("git")
-        .args(&["clone", repo_path.to_str().unwrap(), work_dir.path().to_str().unwrap()])
-        .output()?;
-    
-    // Add files to specified subdirectories
-    for (subdir, files_in_subdir) in subdirs.iter().zip(files.chunks(files.len() / subdirs.len())) {
-        let subdir_path = work_dir.path().join(subdir);
-        fs::create_dir_all(&subdir_path)?;
-        
-        for (file_path, content) in files_in_subdir {
-            let full_path = subdir_path.join(file_path);
-            fs::create_dir_all(full_path.parent().unwrap())?;
-            fs::write(&full_path, content)?;
-        }
-    }
-    
-    // Commit and push back to bare repo
-    std::process::Command::new("git")
-        .args(&["add", "."])
-        .current_dir(work_dir.path())
-        .output()?;
-    
-    std::process::Command::new("git")
-        .args(&["commit", "-m", "Initial commit"])
-        .current_dir(work_dir.path())
-        .output()?;
-    
-    std::process::Command::new("git")
-        .args(&["push", "origin", "main"])
-        .current_dir(work_dir.path())
-        .output()?;
-    
-    Ok(repo_path)
-}
-```
-
-#### Command Execution Helper
-```rust
-pub struct CommandOutput {
-    pub stdout: String,
-    pub stderr: String,
-    pub exit_code: i32,
-}
-
-pub fn run_instant_command(
-    env: &TestEnvironment,
-    args: &[&str],
-) -> Result<CommandOutput> {
-    let mut cmd = std::process::Command::new("cargo");
-    cmd.args(&["run", "--bin", "instant", "--"])
-        .args(args);
-    // make sure this can be run from different dirs, cargo run needs to know
-    // where the project lives
-    let output = cmd.output()?;
-    
-    Ok(CommandOutput {
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        exit_code: output.status.code().unwrap_or(-1),
-    })
-}
-```
-
-
-### Test Data Management
-
-1. **Static Test Fixtures**
-   - Pre-created repository templates
-   - Common configuration patterns
-   - Sample dotfile collections
-
-2. **Dynamic Test Data**
-   - Generated repositories with random content
-   - Variable file sizes and counts
-   - Different git repository structures
-
-## Test Cleanup Strategy
-
-### Automatic Cleanup
-```rust
-impl Drop for TestEnvironment {
-    fn drop(&mut self) {
-        // Remove temporary directories
-        // Kill any lingering processes
-        // Restore system state
-    }
-}
-```
-
-### Cleanup Verification
-- Verify all temporary files are removed
-- Verify no processes remain running
-- Verify system state is restored
-- Verify no side effects on real user data
-
-## Test Reporting and Metrics
-
-### Test Output Format
-```rust
-pub struct TestResult {
-    pub test_name: String,
-    pub passed: bool,
-    pub duration: Duration,
-    pub output: CommandOutput,
-    pub artifacts: Vec<PathBuf>,
-}
-```
-
-### Metrics Collection
-- Test execution time
-- Memory usage
-- File system operations
-- Network operations (for git operations)
-- Database operations
-
+This approach provides a much simpler testing solution that focuses on basic functionality verification while being easy to debug and maintain.

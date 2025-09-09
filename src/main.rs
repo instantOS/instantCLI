@@ -81,6 +81,9 @@ enum DotCommands {
     Init {
         /// Optional name to set in instantdots.toml
         name: Option<String>,
+        /// Run non-interactively (use provided name or directory name)
+        #[arg(long)]
+        non_interactive: bool,
     },
     /// List available subdirectories in a repo
     ListSubdirs {
@@ -229,9 +232,9 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            DotCommands::Init { name } => {
+            DotCommands::Init { name, non_interactive } => {
                 let cwd = std::env::current_dir().expect("unable to determine cwd");
-                match dot::meta::init_repo(&cwd, name.as_deref()) {
+                match dot::meta::init_repo(&cwd, name.as_deref(), *non_interactive) {
                     Ok(()) => println!(
                         "{} {}",
                         "Initialized instantdots.toml in".green(),

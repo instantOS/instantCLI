@@ -53,7 +53,7 @@ pub fn read_meta(repo_path: &Path) -> Result<RepoMetaData> {
 /// interactively (defaults to the repo directory name if empty). Also prompts
 /// for an optional description. The function verifies the directory is a git
 /// repository before creating the file.
-pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
+pub fn init_repo(repo_path: &Path, name: Option<&str>, non_interactive: bool) -> Result<()> {
     use std::io::{self, Write};
 
     // ensure repo_path is a git repository
@@ -71,46 +71,59 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
         .map(|s| s.to_string())
         .unwrap_or_else(|| "dotfiles".to_string());
 
-    // Prompt for name (use provided name as default if given)
-    let default_name = match name {
-        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-        _ => inferred,
-    };
-
-    print!("Name [{}]: ", default_name);
-    io::stdout().flush().ok();
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .context("reading name from stdin")?;
-    let final_name = if input.trim().is_empty() {
-        default_name
+    // Use name (non-interactive mode or prompt)
+    let final_name = if non_interactive {
+        match name {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => inferred,
+        }
     } else {
-        input.trim().to_string()
+        let default_name = match name {
+            Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+            _ => inferred,
+        };
+
+        print!("Name [{}]: ", default_name);
+        io::stdout().flush().ok();
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .context("reading name from stdin")?;
+        if input.trim().is_empty() {
+            default_name
+        } else {
+            input.trim().to_string()
+        }
     };
 
-    // Prompt for optional author
-    print!("Author (optional): ");
-    io::stdout().flush().ok();
-    input.clear();
-    io::stdin()
-        .read_line(&mut input)
-        .context("reading author from stdin")?;
-    let author = match input.trim() {
-        "" => None,
-        s => Some(s.to_string()),
-    };
+    // Get author and description (non-interactive mode or prompt)
+    let (author, description) = if non_interactive {
+        (None, None)
+    } else {
+        // Prompt for optional author
+        print!("Author (optional): ");
+        io::stdout().flush().ok();
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .context("reading author from stdin")?;
+        let author = match input.trim() {
+            "" => None,
+            s => Some(s.to_string()),
+        };
 
-    // Prompt for optional description
-    print!("Description (optional): ");
-    io::stdout().flush().ok();
-    input.clear();
-    io::stdin()
-        .read_line(&mut input)
-        .context("reading description from stdin")?;
-    let description = match input.trim() {
-        "" => None,
-        s => Some(s.to_string()),
+        // Prompt for optional description
+        print!("Description (optional): ");
+        io::stdout().flush().ok();
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .context("reading description from stdin")?;
+        let description = match input.trim() {
+            "" => None,
+            s => Some(s.to_string()),
+        };
+        (author, description)
     };
 
     #[derive(Serialize)]
