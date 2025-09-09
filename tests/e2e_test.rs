@@ -25,15 +25,10 @@ async fn test_clone_and_apply_basic_repo() -> Result<()> {
     
     // Apply dotfiles
     let output = utils::run_instant_command(&env, &["dot", "apply"])?;
-    println!("Apply exit code: {}", output.exit_code);
-    println!("Apply stdout: {}", output.stdout);
-    println!("Apply stderr: {}", output.stderr);
     assert_eq!(output.exit_code, 0, "Apply command failed: {}", output.stderr);
     
     // The file should be created in the real home directory
     let target_file = env.real_home().join("test-app/config.txt");
-    println!("Looking for file at: {}", target_file.display());
-    println!("File exists: {}", utils::file_exists(&target_file));
     assert!(utils::file_exists(&target_file), "Target file was not created");
     
     let content = utils::read_file(&target_file)?;
@@ -101,7 +96,7 @@ async fn test_multiple_repositories_priority() -> Result<()> {
     utils::run_instant_command(&env, &["dot", "apply"])?;
     
     // Verify that repo2 content takes precedence (added later)
-    let target_file = env.test_path("overlap/config.txt");
+    let target_file = env.real_home().join("overlap/config.txt");
     let content = utils::read_file(&target_file)?;
     assert_eq!(content, "repo2 content");
     
@@ -127,7 +122,7 @@ async fn test_user_modification_detection() -> Result<()> {
     utils::run_instant_command(&env, &["dot", "apply"])?;
     
     // Modify the file
-    let target_file = env.test_path("modify-test/config.txt");
+    let target_file = env.real_home().join("modify-test/config.txt");
     utils::write_file(&target_file, "modified content")?;
     
     // Check status - should detect modification
@@ -156,7 +151,7 @@ async fn test_fetch_modified_files() -> Result<()> {
     utils::run_instant_command(&env, &["dot", "apply"])?;
     
     // Modify the file
-    let target_file = env.test_path("fetch-test/config.txt");
+    let target_file = env.real_home().join("fetch-test/config.txt");
     utils::write_file(&target_file, "modified content")?;
     
     // Fetch the modification
@@ -187,17 +182,10 @@ async fn test_multiple_subdirectories() -> Result<()> {
     let repo_url = format!("file://{}", repo_path.to_str().unwrap());
     
     // Add repository
-    let clone_output = utils::run_instant_command(&env, &["dot", "clone", &repo_url])?;
-    println!("Clone exit code: {}", clone_output.exit_code);
-    println!("Clone stdout: {}", clone_output.stdout);
-    println!("Clone stderr: {}", clone_output.stderr);
-    assert_eq!(clone_output.exit_code, 0);
+    utils::run_instant_command(&env, &["dot", "clone", &repo_url])?;
     
     // List subdirectories
     let output = utils::run_instant_command(&env, &["dot", "list-subdirs", "test-multi"])?;
-    println!("Exit code: {}", output.exit_code);
-    println!("Stdout: {}", output.stdout);
-    println!("Stderr: {}", output.stderr);
     assert_eq!(output.exit_code, 0);
     assert!(output.stdout.contains("app1"));
     assert!(output.stdout.contains("app2"));
@@ -207,20 +195,11 @@ async fn test_multiple_subdirectories() -> Result<()> {
     assert_eq!(output.exit_code, 0);
     
     // Apply dotfiles
-    let apply_output = utils::run_instant_command(&env, &["dot", "apply"])?;
-    println!("Apply exit code: {}", apply_output.exit_code);
-    println!("Apply stdout: {}", apply_output.stdout);
-    println!("Apply stderr: {}", apply_output.stderr);
-    assert_eq!(apply_output.exit_code, 0);
+    utils::run_instant_command(&env, &["dot", "apply"])?;
     
     // Verify both files were created
     let file1 = env.real_home().join("multi-app1/config.txt");
     let file2 = env.real_home().join("multi-app2/config.txt");
-    
-    println!("Checking for file1: {}", file1.display());
-    println!("File1 exists: {}", utils::file_exists(&file1));
-    println!("Checking for file2: {}", file2.display());
-    println!("File2 exists: {}", utils::file_exists(&file2));
     
     assert!(utils::file_exists(&file1));
     assert!(utils::file_exists(&file2));

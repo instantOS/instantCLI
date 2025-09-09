@@ -1,12 +1,5 @@
 # Issues
 
-## Running the cli for testing purposes
-
-`cargo run` does not work outside of the working directory of this project
-Testing might require cd ing into different directories, so you cannot just use
-cargo run without further configuration or args, it needs to know which project
-to run. 
-
 
 ## Immediately Outdated
 
@@ -17,8 +10,8 @@ was just created from the target. Some logic here is odd.
 
 ## Chaotic directory management
 
-This uses self-made and duplicated logic for resolving the home directory or xdg
-config path. use the `dirs` crate instead and centralize this more. 
+This uses self-made and duplicated logic for resolving the home directory or xdg config path.
+Tests also use their own weird logic. use the `dirs` crate instead and centralize this more. 
 
 ## E2E Tests touch instant.toml
 
@@ -26,3 +19,7 @@ Allow specifying which config file to use with the CLI (defaulting instant.toml
 in the config dir)
 The E2E tests should use their own config file, specified via the arg
 
+## E2E test cleanup
+
+E2E tests should clean up after themselves, meaning repos they created and
+cloned should be removed
