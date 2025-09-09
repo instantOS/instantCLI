@@ -5,7 +5,7 @@ mod dot;
 
 use clap::{Parser, Subcommand};
 
-use crate::dot::config::{Config, Repo, extract_repo_name};
+use crate::dot::config::{ConfigManager, Repo, extract_repo_name};
 use crate::dot::db::Database;
 
 /// InstantCLI main parser
@@ -120,8 +120,8 @@ fn main() -> Result<()> {
     }
 
     // Load configuration once at startup
-    let mut config = match Config::load_from(cli.config.as_deref()) {
-        Ok(config) => config,
+    let mut config_manager = match ConfigManager::load_from(cli.config.as_deref()) {
+        Ok(manager) => manager,
         Err(e) => {
             eprintln!(
                 "{}: {}",
@@ -155,7 +155,7 @@ fn main() -> Result<()> {
                     branch: branch.clone(),
                     active_subdirectories: Vec::new(), // Will be set to default by config
                 };
-                match dot::add_repo(&mut config, repo_obj.into(), cli.debug) {
+                match dot::add_repo(&mut config_manager, repo_obj.into(), cli.debug) {
                     Ok(path) => println!(
                         "{} {} {} {}",
                         "Added repo".green(),
@@ -174,18 +174,20 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            DotCommands::Reset { path } => match dot::reset_modified(&config, &db, &path) {
-                Ok(()) => println!("{} {}", "Reset modified dotfiles in".green(), path.green()),
-                Err(e) => {
-                    eprintln!(
-                        "{}: {}",
-                        "Error resetting dotfiles".red(),
-                        e.to_string().red()
-                    );
-                    return Err(e);
+            DotCommands::Reset { path } => {
+                match dot::reset_modified(&config_manager.config, &db, &path) {
+                    Ok(()) => println!("{} {}", "Reset modified dotfiles in".green(), path.green()),
+                    Err(e) => {
+                        eprintln!(
+                            "{}: {}",
+                            "Error resetting dotfiles".red(),
+                            e.to_string().red()
+                        );
+                        return Err(e);
+                    }
                 }
-            },
-            DotCommands::Apply => match dot::apply_all(&config, &db) {
+            }
+            DotCommands::Apply => match dot::apply_all(&config_manager.config, &db) {
                 Ok(()) => println!("{}", "Applied dotfiles".green()),
                 Err(e) => {
                     eprintln!(
@@ -197,7 +199,7 @@ fn main() -> Result<()> {
                 }
             },
             DotCommands::Fetch { path, dry_run } => {
-                match dot::fetch_modified(&config, &db, path.as_deref(), *dry_run) {
+                match dot::fetch_modified(&config_manager.config, &db, path.as_deref(), *dry_run) {
                     Ok(()) => println!("{}", "Fetched modified dotfiles".green()),
                     Err(e) => {
                         eprintln!(
@@ -209,14 +211,15 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            DotCommands::Add { path } => match dot::add_dotfile(&config, &db, &path) {
+            DotCommands::Add { path } => match dot::add_dotfile(&config_manager.config, &db, &path)
+            {
                 Ok(()) => println!("{} {}", "Added dotfile".green(), path.green()),
                 Err(e) => {
                     eprintln!("{}: {}", "Error adding dotfile".red(), e.to_string().red());
                     return Err(e);
                 }
             },
-            DotCommands::Update => match dot::update_all(&config, cli.debug) {
+            DotCommands::Update => match dot::update_all(&config_manager.config, cli.debug) {
                 Ok(()) => println!("{}", "All repos updated".green()),
                 Err(e) => {
                     eprintln!("{}: {}", "Error updating repos".red(), e.to_string().red());
@@ -224,7 +227,7 @@ fn main() -> Result<()> {
                 }
             },
             DotCommands::Status { path } => {
-                match dot::status_all(&config, cli.debug, path.as_deref(), &db) {
+                match dot::status_all(&config_manager.config, cli.debug, path.as_deref(), &db) {
                     Ok(()) => (),
                     Err(e) => {
                         eprintln!("Error checking repo status: {}", e);
@@ -232,7 +235,10 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            DotCommands::Init { name, non_interactive } => {
+            DotCommands::Init {
+                name,
+                non_interactive,
+            } => {
                 let cwd = std::env::current_dir().expect("unable to determine cwd");
                 match dot::meta::init_repo(&cwd, name.as_deref(), *non_interactive) {
                     Ok(()) => println!(
@@ -250,24 +256,30 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            DotCommands::ListSubdirs { repo } => match dot::list_repo_subdirs(&config, &repo) {
-                Ok(subdirs) => {
-                    println!("Available subdirectories for {}:", repo.green());
-                    for subdir in subdirs {
-                        println!("  - {}", subdir);
+            DotCommands::ListSubdirs { repo } => {
+                match dot::list_repo_subdirs(&config_manager.config, &repo) {
+                    Ok(subdirs) => {
+                        println!("Available subdirectories for {}:", repo.green());
+                        for subdir in subdirs {
+                            println!("  - {}", subdir);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{}: {}",
+                            "Error listing subdirectories".red(),
+                            e.to_string().red()
+                        );
+                        return Err(e);
                     }
                 }
-                Err(e) => {
-                    eprintln!(
-                        "{}: {}",
-                        "Error listing subdirectories".red(),
-                        e.to_string().red()
-                    );
-                    return Err(e);
-                }
-            },
+            }
             DotCommands::SetSubdirs { repo, subdirs } => {
-                match dot::set_repo_active_subdirs(&mut config, &repo, subdirs.clone()) {
+                match dot::set_repo_active_subdirs(
+                    config_manager.config_mut(),
+                    &repo,
+                    subdirs.clone(),
+                ) {
                     Ok(()) => println!(
                         "{} {} for {}",
                         "Set active subdirectories".green(),
@@ -285,7 +297,7 @@ fn main() -> Result<()> {
                 }
             }
             DotCommands::ShowSubdirs { repo } => {
-                match dot::show_repo_active_subdirs(&config, &repo) {
+                match dot::show_repo_active_subdirs(&config_manager.config, &repo) {
                     Ok(subdirs) => {
                         println!("Active subdirectories for {}:", repo.green());
                         for subdir in subdirs {
@@ -303,7 +315,7 @@ fn main() -> Result<()> {
                 }
             }
             DotCommands::Remove { repo, files } => {
-                match dot::remove_repo(&mut config, &repo, *files) {
+                match dot::remove_repo(config_manager.config_mut(), &repo, *files) {
                     Ok(()) => println!("{} {}", "Removed repository".green(), repo.green()),
                     Err(e) => {
                         eprintln!(

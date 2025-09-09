@@ -5,8 +5,12 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::{path::PathBuf, process::Command};
 
-pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) -> Result<PathBuf> {
-    let base = crate::dot::config::repos_dir(None)?;
+pub fn add_repo(
+    config_manager: &mut config::ConfigManager,
+    repo: config::Repo,
+    debug: bool,
+) -> Result<PathBuf> {
+    let base = crate::dot::config::repos_dir(config_manager.config.repos_dir.as_deref())?;
 
     let repo_dir_name = repo.name.clone();
 
@@ -19,7 +23,7 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
         ));
     }
 
-    let depth = config.clone_depth;
+    let depth = config_manager.config.clone_depth;
 
     let mut cmd = Command::new("git");
     cmd.arg("clone");
@@ -51,10 +55,11 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
     }
 
     // append to config
-    config.add_repo(repo.clone())?;
+    config_manager.config_mut().add_repo(repo.clone())?;
+    config_manager.save()?;
 
     // validate metadata but do not delete invalid clones; report their existence
-    let local_repo = repo_mod::LocalRepo::new(config, repo.name.clone())?;
+    let local_repo = repo_mod::LocalRepo::new(&config_manager.config, repo.name.clone())?;
     let meta = &local_repo.meta;
 
     if debug {

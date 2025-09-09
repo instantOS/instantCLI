@@ -32,6 +32,8 @@ pub struct Config {
     pub clone_depth: u32,
     #[serde(default = "default_hash_cleanup_days")]
     pub hash_cleanup_days: u32,
+    #[serde(default)]
+    pub repos_dir: Option<String>,
 }
 
 impl Default for Config {
@@ -40,6 +42,7 @@ impl Default for Config {
             repos: Vec::new(),
             clone_depth: default_clone_depth(),
             hash_cleanup_days: default_hash_cleanup_days(),
+            repos_dir: None,
         }
     }
 }
@@ -48,11 +51,11 @@ pub fn config_file_path(custom_path: Option<&str>) -> Result<PathBuf> {
     if let Some(path) = custom_path {
         return Ok(PathBuf::from(path));
     }
-    
+
     let config_dir = dirs::config_dir()
         .context("Unable to determine config directory")?
         .join("instant");
-    
+
     fs::create_dir_all(&config_dir).context("creating config directory")?;
     Ok(config_dir.join("instant.toml"))
 }
@@ -142,6 +145,34 @@ impl Config {
     }
 }
 
+/// Wrapper that holds config and its custom path
+#[derive(Debug, Clone)]
+pub struct ConfigManager {
+    pub config: Config,
+    pub custom_path: Option<String>,
+}
+
+impl ConfigManager {
+    /// Load config from a specific path or the default location
+    pub fn load_from(custom_path: Option<&str>) -> Result<Self> {
+        let config = Config::load_from(custom_path)?;
+        Ok(Self {
+            config,
+            custom_path: custom_path.map(|s| s.to_string()),
+        })
+    }
+
+    /// Save the config to the original path it was loaded from
+    pub fn save(&self) -> Result<()> {
+        self.config.save_to(self.custom_path.as_deref())
+    }
+
+    /// Get a mutable reference to the config
+    pub fn config_mut(&mut self) -> &mut Config {
+        &mut self.config
+    }
+}
+
 pub fn db_path(custom_path: Option<&str>) -> Result<PathBuf> {
     if let Some(path) = custom_path {
         let path = PathBuf::from(path);
@@ -150,11 +181,11 @@ pub fn db_path(custom_path: Option<&str>) -> Result<PathBuf> {
         }
         return Ok(path);
     }
-    
+
     let data_dir = dirs::data_dir()
         .context("Unable to determine data directory")?
         .join("instantos");
-    
+
     fs::create_dir_all(&data_dir).context("creating db directory")?;
     Ok(data_dir.join("instant.db"))
 }
@@ -165,12 +196,12 @@ pub fn repos_dir(custom_path: Option<&str>) -> Result<PathBuf> {
         fs::create_dir_all(&base).context("creating repos directory")?;
         return Ok(base);
     }
-    
+
     let data_dir = dirs::data_dir()
         .context("Unable to determine data directory")?
         .join("instantos")
         .join("dots");
-    
+
     fs::create_dir_all(&data_dir).context("creating repos base directory")?;
     Ok(data_dir)
 }

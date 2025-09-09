@@ -46,7 +46,7 @@ impl LocalRepo {
             .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found in configuration", name))?;
 
         // Get the local path where the repo should be
-        let local_path = Self::local_path_from_name(&name)?;
+        let local_path = Self::local_path_from_name(cfg, &name)?;
 
         // Check if the repo directory exists
         if !local_path.exists() {
@@ -79,12 +79,12 @@ impl LocalRepo {
     }
 
     pub fn local_path(&self) -> Result<PathBuf> {
-        let base = config::repos_dir(None)?;
+        let base = config::repos_dir(None)?; // This should also use config, but we don't have access to it here
         Ok(base.join(&self.name))
     }
 
-    fn local_path_from_name(name: &str) -> Result<PathBuf> {
-        let base = config::repos_dir(None)?;
+    fn local_path_from_name(cfg: &Config, name: &str) -> Result<PathBuf> {
+        let base = config::repos_dir(cfg.repos_dir.as_deref())?;
         Ok(base.join(name))
     }
 

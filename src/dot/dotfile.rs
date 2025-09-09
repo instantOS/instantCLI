@@ -15,7 +15,9 @@ impl Dotfile {
         }
 
         // First, check if both files have the same hash in the database
-        if let (Ok(source_hash), Ok(target_hash)) = (self.get_source_hash(db), self.get_target_hash(db)) {
+        if let (Ok(source_hash), Ok(target_hash)) =
+            (self.get_source_hash(db), self.get_target_hash(db))
+        {
             if source_hash == target_hash {
                 // Files have the same content, not outdated
                 return false;
@@ -166,7 +168,7 @@ impl Dotfile {
 
         // Compute the hash of the copied content
         let hash = Self::compute_hash(&self.source_path)?;
-        
+
         // Register the hash as unmodified for both source and target
         // This ensures that both files are considered in sync
         db.add_hash(&hash, &self.source_path, true)?;
