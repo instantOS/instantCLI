@@ -155,7 +155,7 @@ fn main() -> Result<()> {
                     branch: branch.clone(),
                     active_subdirectories: Vec::new(), // Will be set to default by config
                 };
-                match dot::add_repo(&mut config_manager, repo_obj.into(), cli.debug) {
+                match dot::add_repo(&mut config_manager, repo_obj.into(), cli.debug, cli.database.as_deref()) {
                     Ok(path) => println!(
                         "{} {} {} {}",
                         "Added repo".green(),

@@ -4,11 +4,13 @@ use crate::dot::utils;
 use anyhow::{Context, Result};
 use colored::*;
 use std::{path::PathBuf, process::Command};
+use crate::dot::get_all_dotfiles;
 
 pub fn add_repo(
     config_manager: &mut config::ConfigManager,
     repo: config::Repo,
     debug: bool,
+    db_path: Option<&str>,
 ) -> Result<PathBuf> {
     let base = crate::dot::config::repos_dir(config_manager.config.repos_dir.as_deref())?;
 
@@ -71,6 +73,32 @@ pub fn add_repo(
         );
     }
 
+    // Initialize database with source file hashes to prevent false "modified" status
+    // when identical files already exist in the home directory
+    if let Ok(db) = crate::dot::db::Database::new(crate::dot::config::db_path(db_path)?) {
+        if let Ok(dotfiles) = get_all_dotfiles(&config_manager.config) {
+            for (_, dotfile) in dotfiles {
+                // Only register hashes for dotfiles from this repository
+                if dotfile.source_path.starts_with(&target) {
+                    // Register the source file hash as unmodified
+                    if let Ok(source_hash) = crate::dot::dotfile::Dotfile::compute_hash(&dotfile.source_path) {
+                        db.add_hash(&source_hash, &dotfile.source_path, true)?;
+                        
+                        // If the target file exists and has the same content, 
+                        // register it as unmodified too
+                        if dotfile.target_path.exists() {
+                            if let Ok(target_hash) = crate::dot::dotfile::Dotfile::compute_hash(&dotfile.target_path) {
+                                if target_hash == source_hash {
+                                    db.add_hash(&target_hash, &dotfile.target_path, true)?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(target)
 }
 
@@ -107,7 +135,7 @@ pub fn status_all(
     db: &super::db::Database,
 ) -> Result<()> {
     let repos = cfg.repos.clone();
-    let base = config::repos_dir(None)?;
+    let base = config::repos_dir(cfg.repos_dir.as_deref())?;
     if repos.is_empty() {
         println!("No repos configured.");
         return Ok(());

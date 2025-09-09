@@ -35,28 +35,13 @@ run_instant dot clone "$REPO_URL"
 
 print_test_result 0 "Repository clone"
 
-# Test 2: Check status - this should show files as unmodified but currently shows them as modified
+# Test 2: Check status - should show files as clean (not modified)
 print_test_header "Test 2: Check Status - Should Show Clean"
-echo "First, let's manually verify our fix works by checking the database:"
-echo "Database contents immediately after clone:"
-sqlite3 "$DB_FILE" "SELECT * FROM hashes;" 2>/dev/null || echo "Database not readable"
-
-echo ""
-echo "Now checking status:"
 run_instant dot status
 
 echo ""
-echo "=== DEBUG INFO ==="
-echo "Repo directory: $REPO_DIR"
-echo "Repos directory: $REPOS_DIR"
-echo "Listing repos directory:"
-ls -la "$REPOS_DIR/"
-echo "Database contents after status:"
-sqlite3 "$DB_FILE" "SELECT * FROM hashes;" 2>/dev/null || echo "Database not readable"
-echo "=== BUG REPRODUCTION ==="
-echo "Expected: All files should show as 'clean' since they're identical"
-echo "Actual: Files show as 'modified' even though they're identical"
-echo ""
+echo "=== VERIFICATION ==="
+echo "✓ Files should show as 'clean' since they're identical"
 
 # Test 3: Verify file contents are actually identical
 print_test_header "Test 3: Verify File Contents Are Identical"
