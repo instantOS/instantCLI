@@ -200,7 +200,6 @@ impl LocalRepo {
     }
 
     pub fn update(&self, debug: bool) -> Result<()> {
-        // Note: Repo existence is verified in LocalRepo::new(), no need to check again
         let target = self.local_path()?;
 
         // If branch is specified, ensure we're on that branch

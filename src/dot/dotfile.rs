@@ -106,7 +106,7 @@ impl Dotfile {
         Ok(format!("{:x}", result))
     }
 
-    pub fn apply(&self, db: &Database) -> Result<(), std::io::Error> {
+    pub fn apply(&self, db: &Database) -> Result<(), anyhow::Error> {
         if self.is_modified(db) {
             // Skip modified files, as they could contain user modifications
             // This project is a dotfile manager which can be run in the background, and should not
@@ -134,7 +134,7 @@ impl Dotfile {
         Ok(())
     }
 
-    pub fn fetch(&self, db: &Database) -> Result<(), std::io::Error> {
+    pub fn fetch(&self, db: &Database) -> Result<(), anyhow::Error> {
         if self.is_modified(db) {
             fs::copy(&self.target_path, &self.source_path)?;
             let _ = self.get_target_hash(db);

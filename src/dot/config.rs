@@ -20,12 +20,18 @@ fn default_clone_depth() -> u32 {
     1
 }
 
+fn default_hash_cleanup_days() -> u32 {
+    30
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     #[serde(default)]
     pub repos: Vec<Repo>,
     #[serde(default = "default_clone_depth")]
     pub clone_depth: u32,
+    #[serde(default = "default_hash_cleanup_days")]
+    pub hash_cleanup_days: u32,
 }
 
 impl Default for Config {
@@ -33,6 +39,7 @@ impl Default for Config {
         Config {
             repos: Vec::new(),
             clone_depth: default_clone_depth(),
+            hash_cleanup_days: default_hash_cleanup_days(),
         }
     }
 }

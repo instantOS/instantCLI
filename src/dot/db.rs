@@ -177,14 +177,17 @@ impl Database {
         Ok(result)
     }
 
-    pub fn cleanup_hashes(&self) -> Result<()> {
+    pub fn cleanup_hashes(&self, days: u32) -> Result<()> {
         // Keep all unmodified hashes, and for modified hashes:
         // 1. Keep the newest modified hash per file (for rollback capability)
-        // 2. Remove modified hashes older than 30 days
+        // 2. Remove modified hashes older than the configured number of days
 
-        // First, remove modified hashes older than 30 days
+        // First, remove modified hashes older than the configured number of days
         self.conn.execute(
-            "DELETE FROM hashes WHERE unmodified = 0 AND created < datetime('now', '-30 days')",
+            &format!(
+                "DELETE FROM hashes WHERE unmodified = 0 AND created < datetime('now', '-{} days')",
+                days
+            ),
             (),
         )?;
 
@@ -206,7 +209,7 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use tempfile::tempdir;
 
     #[test]

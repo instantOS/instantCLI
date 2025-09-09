@@ -108,7 +108,7 @@ pub fn fetch_modified(
     print_fetch_plan(&grouped_by_repo, dry_run);
 
     if !dry_run {
-        fetch_dotfiles(&modified_dotfiles, db)?;
+        fetch_dotfiles(&modified_dotfiles, db, config.hash_cleanup_days)?;
     }
 
     Ok(())
@@ -186,11 +186,11 @@ fn print_fetch_plan(grouped_by_repo: &HashMap<String, Vec<&Dotfile>>, dry_run: b
     }
 }
 
-fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database) -> Result<()> {
+fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -> Result<()> {
     for dotfile in dotfiles {
         dotfile.fetch(db)?;
     }
-    db.cleanup_hashes()?;
+    db.cleanup_hashes(hash_cleanup_days)?;
     println!("\n{}", "Fetch complete.".green());
     Ok(())
 }
@@ -210,7 +210,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
             println!("Created new dotfile: ~/{}", relative);
         }
     }
-    db.cleanup_hashes()?;
+    db.cleanup_hashes(config.hash_cleanup_days)?;
     Ok(())
 }
 
@@ -223,7 +223,7 @@ pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> 
             dotfile.apply(&db)?;
         }
     }
-    db.cleanup_hashes()?;
+    db.cleanup_hashes(config.hash_cleanup_days)?;
     Ok(())
 }
 
