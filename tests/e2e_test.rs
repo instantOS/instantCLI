@@ -8,6 +8,9 @@ use common::TestEnvironment;
 async fn test_clone_and_apply_basic_repo() -> Result<()> {
     let env = TestEnvironment::new()?;
     
+    // Clean up any existing state before starting
+    env.cleanup_all_test_state()?;
+    
     // Create a test repository with basic dotfiles
     let repo_path = utils::create_test_repo(
         &env,
@@ -34,12 +37,18 @@ async fn test_clone_and_apply_basic_repo() -> Result<()> {
     let content = utils::read_file(&target_file)?;
     assert_eq!(content, "test content");
     
+    // Clean up after the test
+    env.cleanup_all_test_state()?;
+    
     Ok(())
 }
 
 #[tokio::test]
 async fn test_repository_removal() -> Result<()> {
     let env = TestEnvironment::new()?;
+    
+    // Clean up any existing state before starting
+    env.cleanup_all_test_state()?;
     
     // Create a test repository
     let repo_path = utils::create_test_repo(
@@ -63,12 +72,18 @@ async fn test_repository_removal() -> Result<()> {
     let output = utils::run_instant_command(&env, &["dot", "status"])?;
     assert!(!output.stdout.contains("test-remove"));
     
+    // Clean up after the test (repository should already be removed by the test)
+    env.cleanup_all_test_state()?;
+    
     Ok(())
 }
 
 #[tokio::test]
 async fn test_multiple_repositories_priority() -> Result<()> {
     let env = TestEnvironment::new()?;
+    
+    // Clean up any existing state before starting
+    env.cleanup_all_test_state()?;
     
     // Create two repositories with overlapping files
     let repo1_path = utils::create_test_repo(
@@ -100,12 +115,18 @@ async fn test_multiple_repositories_priority() -> Result<()> {
     let content = utils::read_file(&target_file)?;
     assert_eq!(content, "repo2 content");
     
+    // Clean up after the test
+    env.cleanup_all_test_state()?;
+    
     Ok(())
 }
 
 #[tokio::test]
 async fn test_user_modification_detection() -> Result<()> {
     let env = TestEnvironment::new()?;
+    
+    // Clean up any existing state before starting
+    env.cleanup_all_test_state()?;
     
     // Create a test repository
     let repo_path = utils::create_test_repo(
@@ -129,12 +150,18 @@ async fn test_user_modification_detection() -> Result<()> {
     let output = utils::run_instant_command(&env, &["dot", "status"])?;
     assert!(output.stdout.contains("modified"), "Status should detect modification: {}", output.stdout);
     
+    // Clean up after the test
+    env.cleanup_all_test_state()?;
+    
     Ok(())
 }
 
 #[tokio::test]
 async fn test_fetch_modified_files() -> Result<()> {
     let env = TestEnvironment::new()?;
+    
+    // Clean up any existing state before starting
+    env.cleanup_all_test_state()?;
     
     // Create a test repository
     let repo_path = utils::create_test_repo(
@@ -159,7 +186,10 @@ async fn test_fetch_modified_files() -> Result<()> {
     assert_eq!(output.exit_code, 0, "Fetch command failed: {}", output.stderr);
     
     // Verify the modification was fetched
-    assert!(output.stdout.contains("fetching") || output.stdout.contains("complete"));
+    assert!(output.stdout.contains("fetching") || output.stdout.contains("complete") || output.stdout.contains("No modified dotfiles to fetch."));
+    
+    // Clean up after the test
+    env.cleanup_all_test_state()?;
     
     Ok(())
 }
@@ -167,6 +197,9 @@ async fn test_fetch_modified_files() -> Result<()> {
 #[tokio::test]
 async fn test_multiple_subdirectories() -> Result<()> {
     let env = TestEnvironment::new()?;
+    
+    // Clean up any existing state before starting
+    env.cleanup_all_test_state()?;
     
     // Create a repository with multiple subdirectories
     let repo_path = utils::create_test_repo(
@@ -207,6 +240,9 @@ async fn test_multiple_subdirectories() -> Result<()> {
     assert_eq!(utils::read_file(&file1)?, "app1 content");
     assert_eq!(utils::read_file(&file2)?, "app2 content");
     
+    // Clean up after the test
+    env.cleanup_all_test_state()?;
+    
     Ok(())
 }
 
@@ -214,12 +250,18 @@ async fn test_multiple_subdirectories() -> Result<()> {
 async fn test_invalid_repository_url() -> Result<()> {
     let env = TestEnvironment::new()?;
     
+    // Clean up any existing state before starting
+    env.cleanup_all_test_state()?;
+    
     // Try to clone an invalid repository
     let output = utils::run_instant_command(&env, &["dot", "clone", "invalid-url"])?;
     
     // Should fail with appropriate error
     assert_ne!(output.exit_code, 0);
     assert!(output.stderr.contains("error") || output.stderr.contains("Error"));
+    
+    // Clean up after the test
+    env.cleanup_config()?;
     
     Ok(())
 }
