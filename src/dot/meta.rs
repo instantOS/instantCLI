@@ -22,6 +22,7 @@ fn ensure_git_repo(repo_path: &Path) -> Result<()> {
 #[derive(Deserialize, Debug, Clone)]
 pub struct RepoMetaData {
     pub name: String,
+    pub author: Option<String>,
     pub description: Option<String>,
     #[serde(default = "default_dots_dirs")]
     pub dots_dirs: Vec<String>,
@@ -88,6 +89,18 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
         input.trim().to_string()
     };
 
+    // Prompt for optional author
+    print!("Author (optional): ");
+    io::stdout().flush().ok();
+    input.clear();
+    io::stdin()
+        .read_line(&mut input)
+        .context("reading author from stdin")?;
+    let author = match input.trim() {
+        "" => None,
+        s => Some(s.to_string()),
+    };
+
     // Prompt for optional description
     print!("Description (optional): ");
     io::stdout().flush().ok();
@@ -103,12 +116,14 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>) -> Result<()> {
     #[derive(Serialize)]
     struct MetaWrite {
         name: String,
+        author: Option<String>,
         description: Option<String>,
         dots_dirs: Vec<String>,
     }
 
     let mw = MetaWrite {
         name: final_name,
+        author,
         description,
         dots_dirs: vec!["dots".to_string()],
     };
