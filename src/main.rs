@@ -5,7 +5,7 @@ mod dot;
 
 use clap::{Parser, Subcommand};
 
-use crate::dot::config::{Config, Repo, basename_from_repo};
+use crate::dot::config::{Config, Repo, extract_repo_name};
 use crate::dot::db::Database;
 
 /// InstantCLI main parser
@@ -137,12 +137,12 @@ fn main() -> Result<()> {
     match &cli.command {
         Some(Commands::Dot { command }) => match command {
             DotCommands::Clone { repo, name, branch } => {
-                let repo_name = name.clone().unwrap_or_else(|| basename_from_repo(&repo));
+                let repo_name = name.clone().unwrap_or_else(|| extract_repo_name(&repo));
                 let repo_obj = Repo {
                     url: repo.clone(),
                     name: repo_name,
                     branch: branch.clone(),
-                    active_subdirs: Vec::new(), // Will be set to default by config
+                    active_subdirectories: Vec::new(), // Will be set to default by config
                 };
                 match dot::add_repo(&mut config, repo_obj.into(), cli.debug) {
                     Ok(path) => println!(

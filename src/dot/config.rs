@@ -8,7 +8,7 @@ pub struct Repo {
     pub name: String,
     pub branch: Option<String>,
     #[serde(default = "default_active_subdirs")]
-    pub active_subdirs: Vec<String>,
+    pub active_subdirectories: Vec<String>,
 }
 
 fn default_active_subdirs() -> Vec<String> {
@@ -76,7 +76,7 @@ impl Config {
     pub fn add_repo(&mut self, mut repo: Repo) -> Result<()> {
         // Auto-generate name if not provided (though it's now mandatory in the struct)
         if repo.name.trim().is_empty() {
-            repo.name = basename_from_repo(&repo.url);
+            repo.name = extract_repo_name(&repo.url);
         }
 
         // Check for duplicate names
@@ -95,7 +95,7 @@ impl Config {
     pub fn set_active_subdirs(&mut self, repo_name: &str, subdirs: Vec<String>) -> Result<()> {
         for repo in &mut self.repos {
             if repo.name == repo_name {
-                repo.active_subdirs = subdirs;
+                repo.active_subdirectories = subdirs;
                 return self.save();
             }
         }
@@ -111,10 +111,10 @@ impl Config {
             .iter()
             .find(|repo| repo.name == repo_name)
             .map(|repo| {
-                if repo.active_subdirs.is_empty() {
+                if repo.active_subdirectories.is_empty() {
                     vec!["dots".to_string()]
                 } else {
-                    repo.active_subdirs.clone()
+                    repo.active_subdirectories.clone()
                 }
             })
             .unwrap_or_else(|| vec!["dots".to_string()])
@@ -148,13 +148,13 @@ pub fn repos_dir() -> Result<PathBuf> {
 ///
 /// # Examples
 /// ```
-/// let name = basename_from_repo("https://github.com/user/my-repo.git");
+/// let name = extract_repo_name("https://github.com/user/my-repo.git");
 /// assert_eq!(name, "my-repo");
 ///
-/// let name = basename_from_repo("git@github.com:user/dotfiles");
+/// let name = extract_repo_name("git@github.com:user/dotfiles");
 /// assert_eq!(name, "dotfiles");
 /// ```
-pub fn basename_from_repo(repo: &str) -> String {
+pub fn extract_repo_name(repo: &str) -> String {
     let s = repo.trim_end_matches(".git");
     s.rsplit(|c| c == '/' || c == ':')
         .next()

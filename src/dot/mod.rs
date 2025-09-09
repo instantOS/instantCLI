@@ -250,7 +250,7 @@ pub fn set_repo_active_subdirs(
         }
     }
 
-    config.set_active_subdirs(&repo.url, subdirs)?;
+    config.set_active_subdirs(&repo.name, subdirs)?;
     Ok(())
 }
 
@@ -258,7 +258,7 @@ pub fn set_repo_active_subdirs(
 pub fn show_repo_active_subdirs(config: &Config, repo_name: &str) -> Result<Vec<String>> {
     let repo = find_repo_by_name(config, repo_name)?;
 
-    let active_subdirs = config.get_active_subdirs(&repo.url);
+    let active_subdirs = config.get_active_subdirs(&repo.name);
 
     Ok(active_subdirs)
 }
@@ -339,24 +339,14 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
     // - Otherwise treat relative paths as relative to the home directory.
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
 
-    //TODO: think about how dotfile path arguments should be handled, also extract into its own
-    //function. Multiple commands might take dotfiles as CLI arguments
+    // Resolve the path to an absolute path
     let full_path = if path.starts_with('~') {
         PathBuf::from(shellexpand::tilde(path).into_owned())
     } else if Path::new(path).is_absolute() {
         PathBuf::from(path)
     } else {
-        // First try relative to current working directory (so users can run the
-        // command from a dotfile directory and pass a filename). If that path
-        // exists, use it. Otherwise fall back to treating the path as relative
-        // to the home directory.
-        let cwd = std::env::current_dir()?;
-        let cwd_candidate = cwd.join(path);
-        if cwd_candidate.exists() {
-            cwd_candidate
-        } else {
-            home.join(path)
-        }
+        // For relative paths, treat them as relative to the home directory
+        home.join(path)
     };
 
     if !full_path.exists() {

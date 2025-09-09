@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::{path::PathBuf, process::Command};
 
-pub fn add_repo(cfg: &mut config::Config, repo: config::Repo, debug: bool) -> Result<PathBuf> {
-    let base = config::repos_dir()?;
+pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) -> Result<PathBuf> {
+    let base = crate::dot::config::repos_dir()?;
 
     let repo_dir_name = repo.name.clone();
 
@@ -19,7 +19,7 @@ pub fn add_repo(cfg: &mut config::Config, repo: config::Repo, debug: bool) -> Re
         ));
     }
 
-    let depth = cfg.clone_depth;
+    let depth = config.clone_depth;
 
     let mut cmd = Command::new("git");
     cmd.arg("clone");
@@ -47,16 +47,16 @@ pub fn add_repo(cfg: &mut config::Config, repo: config::Repo, debug: bool) -> Re
     }
 
     // append to config
-    cfg.add_repo(repo.clone())?;
+    config.add_repo(repo.clone())?;
 
     // validate metadata but do not delete invalid clones; report their existence
-    let local = repo_mod::LocalRepo::new(cfg, repo.name.clone())?;
-    let meta = &local.meta;
+    let local_repo = repo_mod::LocalRepo::new(config, repo.name.clone())?;
+    let meta = &local_repo.meta;
 
     if debug {
         eprintln!(
             "Repo {} identified as dot repo '{}' - {}",
-            local.url,
+            local_repo.url,
             meta.name,
             meta.description.as_deref().unwrap_or("")
         );
@@ -74,10 +74,10 @@ pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
 
     let mut any_failed = false;
 
-    for crepo in repos.iter() {
-        let local = repo_mod::LocalRepo::new(cfg, crepo.name.clone())?;
-        if let Err(e) = local.update(debug) {
-            eprintln!("Failed to update {}: {}", crepo.url, e);
+    for repo in repos.iter() {
+        let local_repo = repo_mod::LocalRepo::new(cfg, repo.name.clone())?;
+        if let Err(e) = local_repo.update(debug) {
+            eprintln!("Failed to update {}: {}", repo.url, e);
             any_failed = true;
         }
     }
