@@ -23,3 +23,9 @@ The E2E tests should use their own config file, specified via the arg
 
 E2E tests should clean up after themselves, meaning repos they created and
 cloned should be removed
+
+## E2E test dotfile names
+
+The dotfiles the E2E tests create should be in ~/.config/instanttests/`<stuff>`
+not `~/thisisatestfile` or similar
+
