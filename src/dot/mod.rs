@@ -106,7 +106,9 @@ pub fn get_all_dotfiles(config: &Config, db: &Database) -> Result<HashMap<PathBu
         {
             if entry.file_type().is_file() {
                 let source_path = entry.path().to_path_buf();
-                let relative_path = source_path.strip_prefix(&dir_path).unwrap().to_path_buf();
+                let relative_path = source_path.strip_prefix(&dir_path)
+                    .map_err(|e| anyhow::anyhow!("Failed to strip prefix from path {}: {}", source_path.display(), e))?
+                    .to_path_buf();
                 let target_path = home_path.join(relative_path);
 
                 let dotfile = Dotfile {
@@ -138,7 +140,7 @@ pub fn fetch_modified(
 
     let grouped_by_repo = group_dotfiles_by_repo(&modified_dotfiles, config)?;
 
-    print_fetch_plan(&grouped_by_repo, dry_run);
+    print_fetch_plan(&grouped_by_repo, dry_run)?;
 
     if !dry_run {
         fetch_dotfiles(&modified_dotfiles, db, config.hash_cleanup_days)?;
@@ -194,7 +196,7 @@ fn group_dotfiles_by_repo<'a>(
     Ok(grouped_by_repo)
 }
 
-fn print_fetch_plan(grouped_by_repo: &HashMap<String, Vec<&Dotfile>>, dry_run: bool) {
+fn print_fetch_plan(grouped_by_repo: &HashMap<String, Vec<&Dotfile>>, dry_run: bool) -> Result<()> {
     if dry_run {
         println!(
             "{}",
@@ -208,10 +210,12 @@ fn print_fetch_plan(grouped_by_repo: &HashMap<String, Vec<&Dotfile>>, dry_run: b
     for (repo_name, dotfiles) in grouped_by_repo {
         println!("  Repo: {}", repo_name.bold());
         for dotfile in dotfiles {
-            let relative_path = dotfile.target_path.strip_prefix(&home).unwrap();
+            let relative_path = dotfile.target_path.strip_prefix(&home)
+                .map_err(|e| anyhow::anyhow!("Failed to strip prefix from path {}: {}", dotfile.target_path.display(), e))?;
             println!("    - ~/{}", relative_path.display());
         }
     }
+    Ok(())
 }
 
 fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -> Result<()> {
@@ -233,7 +237,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
             let relative = dotfile
                 .target_path
                 .strip_prefix(&home)
-                .unwrap()
+                .map_err(|e| anyhow::anyhow!("Failed to strip prefix from path {}: {}", dotfile.target_path.display(), e))?
                 .to_string_lossy();
             println!("Created new dotfile: ~/{}", relative);
         }

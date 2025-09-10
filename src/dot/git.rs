@@ -26,6 +26,8 @@ pub fn add_repo(
 
     let depth = config_manager.config.clone_depth;
 
+    //TODO: abstract away git usage to avoid repeating code, git is used in multiple places in this
+    //repo
     let mut cmd = Command::new("git");
     cmd.arg("clone");
     if depth > 0 {
@@ -40,7 +42,6 @@ pub fn add_repo(
         eprintln!("Running: {:?}", cmd);
     }
 
-    // Create progress bar for cloning operation
     let pb = utils::create_spinner(format!("Cloning {}...", repo.url));
 
     let output = cmd.output().context("running git clone")?;
@@ -132,6 +133,7 @@ pub fn status_all(
     db: &super::db::Database,
 ) -> Result<()> {
     let all_dotfiles = super::get_all_dotfiles(cfg, db)?;
+    //TODO: use `dirs` crate instead?
     let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
     
     if let Some(path_str) = path {
@@ -195,6 +197,7 @@ pub fn status_all(
 }
 
 fn get_dotfile_status_string(dotfile: &super::Dotfile, db: &super::db::Database) -> String {
+    //TODO: add DotFileStatus enum which in turn has a Display impl
     if dotfile.is_modified(db) {
         "modified".yellow().to_string()
     } else if dotfile.is_outdated(db) {

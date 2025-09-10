@@ -190,7 +190,7 @@ fn main() -> Result<()> {
                 name,
                 non_interactive,
             } => {
-                let cwd = std::env::current_dir().expect("unable to determine cwd");
+                let cwd = std::env::current_dir().map_err(|e| anyhow::anyhow!("Unable to determine current directory: {}", e))?;
                 match dot::meta::init_repo(&cwd, name.as_deref(), *non_interactive) {
                     Ok(()) => println!(
                         "{} {}",
