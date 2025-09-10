@@ -13,6 +13,7 @@ pub mod git;
 pub mod localrepo;
 pub mod meta;
 pub mod path_serde;
+pub mod repo;
 pub mod utils;
 
 #[cfg(test)]
@@ -81,30 +82,16 @@ fn get_repo_active_dirs(config: &Config, repo: &config::Repo) -> Result<Vec<Path
 }
 
 /// Get all active dotfile directories from all repositories
-pub fn get_active_dotfile_dirs(config: &Config) -> Result<Vec<PathBuf>> {
-    let mut active_dirs = Vec::new();
-
-    // Process repos in order of their configuration (relevance)
-    for repo in &config.repos {
-        match get_repo_active_dirs(config, repo) {
-            Ok(mut dirs) => {
-                active_dirs.append(&mut dirs);
-            }
-            Err(e) => {
-                eprintln!(
-                    "{}",
-                    format!("Warning: skipping repo '{}': {}", repo.name, e).yellow()
-                );
-            }
-        }
-    }
-
-    Ok(active_dirs)
+pub fn get_active_dotfile_dirs(config: &Config, db: &Database) -> Result<Vec<PathBuf>> {
+    use crate::dot::repo::RepositoryManager;
+    
+    let repo_manager = RepositoryManager::new(config, db);
+    repo_manager.get_active_dotfile_dirs()
 }
 
-pub fn get_all_dotfiles(config: &Config) -> Result<HashMap<PathBuf, Dotfile>> {
+pub fn get_all_dotfiles(config: &Config, db: &Database) -> Result<HashMap<PathBuf, Dotfile>> {
     let mut filemap = HashMap::new();
-    let active_dirs = get_active_dotfile_dirs(config)?;
+    let active_dirs = get_active_dotfile_dirs(config, db)?;
     let home_path = PathBuf::from(shellexpand::tilde("~").to_string());
 
     // Process active dotfile directories in order of relevance
@@ -165,7 +152,7 @@ fn get_modified_dotfiles(
     db: &Database,
     path: Option<&str>,
 ) -> Result<Vec<Dotfile>> {
-    let all_dotfiles = get_all_dotfiles(config)?;
+    let all_dotfiles = get_all_dotfiles(config, db)?;
     let mut modified_dotfiles = Vec::new();
 
     if let Some(p) = path {
@@ -237,7 +224,7 @@ fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -
 }
 
 pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
-    let filemap = get_all_dotfiles(config)?;
+    let filemap = get_all_dotfiles(config, db)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
     for dotfile in filemap.values() {
         let was_missing = !dotfile.target_path.exists();
@@ -256,7 +243,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
 }
 
 pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> {
-    let filemap = get_all_dotfiles(config)?;
+    let filemap = get_all_dotfiles(config, db)?;
     let full_path = resolve_dotfile_path(path)?;
     for dotfile in filemap.values() {
         if dotfile.target_path.starts_with(&full_path) && dotfile.is_modified(&db) {

@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 
 use crate::dot::config::{ConfigManager, Repo, extract_repo_name};
 use crate::dot::db::Database;
+use crate::dot::repo::cli::{RepoCommands, SubdirCommands};
 
 /// InstantCLI main parser
 #[derive(Parser, Debug)]
@@ -36,16 +37,10 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum DotCommands {
-    /// Clone a dotfiles repo into the local store
-    Clone {
-        /// Repository URL to clone
-        repo: String,
-        /// Optional name to use for the repo directory (defaults to repo basename)
-        #[arg(short, long)]
-        name: Option<String>,
-        /// Optional branch to checkout during clone
-        #[arg(short = 'b', long = "branch")]
-        branch: Option<String>,
+    /// Repository management commands
+    Repo {
+        #[command(subcommand)]
+        command: RepoCommands,
     },
     /// Reset modified dotfiles to their original state in the given path
     Reset {
@@ -67,9 +62,9 @@ enum DotCommands {
         /// Path to add (relative to ~)
         path: String,
     },
-    /// Pull updates for all configured repos
+    /// Pull updates for all configured repos and apply changes
     Update,
-    /// Check each configured repo's git status
+    /// Check dotfile status
     Status {
         /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
         path: Option<String>,
@@ -81,31 +76,6 @@ enum DotCommands {
         /// Run non-interactively (use provided name or directory name)
         #[arg(long)]
         non_interactive: bool,
-    },
-    /// List available subdirectories in a repo
-    ListSubdirs {
-        /// Repository name or URL
-        repo: String,
-    },
-    /// Set active subdirectories for a repo
-    SetSubdirs {
-        /// Repository name or URL
-        repo: String,
-        /// Subdirectories to activate (space-separated)
-        subdirs: Vec<String>,
-    },
-    /// Show active subdirectories for a repo
-    ShowSubdirs {
-        /// Repository name or URL
-        repo: String,
-    },
-    /// Remove a repository from configuration
-    Remove {
-        /// Repository name to remove
-        repo: String,
-        /// Whether to also remove local files (default: false)
-        #[arg(short, long)]
-        files: bool,
     },
 }
 
@@ -145,27 +115,13 @@ fn main() -> Result<()> {
 
     match &cli.command {
         Some(Commands::Dot { command }) => match command {
-            DotCommands::Clone { repo, name, branch } => {
-                let repo_name = name.clone().unwrap_or_else(|| extract_repo_name(&repo));
-                let repo_obj = Repo {
-                    url: repo.clone(),
-                    name: repo_name,
-                    branch: branch.clone(),
-                    active_subdirectories: Vec::new(), // Will be set to default by config
-                };
-                match dot::add_repo(&mut config_manager, repo_obj.into(), cli.debug) {
-                    Ok(path) => println!(
-                        "{} {} {} {}",
-                        "Added repo".green(),
-                        repo.green().bold(),
-                        "->".green(),
-                        path.display()
-                    ),
+            DotCommands::Repo { command } => {
+                match dot::repo::commands::handle_repo_command(&mut config_manager, &db, command, cli.debug) {
+                    Ok(()) => (),
                     Err(e) => {
                         eprintln!(
-                            "{} {} {}",
-                            "Error adding repo".red(),
-                            repo.red().bold(),
+                            "{}: {}",
+                            "Error handling repository command".red(),
                             e.to_string().red()
                         );
                         return Err(e);
@@ -248,77 +204,6 @@ fn main() -> Result<()> {
                         eprintln!(
                             "{}: {}",
                             "Error initializing repo".red(),
-                            e.to_string().red()
-                        );
-                        return Err(e);
-                    }
-                }
-            }
-            DotCommands::ListSubdirs { repo } => {
-                match dot::list_repo_subdirs(&config_manager.config, &repo) {
-                    Ok(subdirs) => {
-                        println!("Available subdirectories for {}:", repo.green());
-                        for subdir in subdirs {
-                            println!("  - {}", subdir);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error listing subdirectories".red(),
-                            e.to_string().red()
-                        );
-                        return Err(e);
-                    }
-                }
-            }
-            DotCommands::SetSubdirs { repo, subdirs } => {
-                match dot::set_repo_active_subdirs(
-                    config_manager.config_mut(),
-                    &repo,
-                    subdirs.clone(),
-                ) {
-                    Ok(()) => println!(
-                        "{} {} for {}",
-                        "Set active subdirectories".green(),
-                        subdirs.join(", ").green(),
-                        repo.green()
-                    ),
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error setting active subdirectories".red(),
-                            e.to_string().red()
-                        );
-                        return Err(e);
-                    }
-                }
-            }
-            DotCommands::ShowSubdirs { repo } => {
-                match dot::show_repo_active_subdirs(&config_manager.config, &repo) {
-                    Ok(subdirs) => {
-                        println!("Active subdirectories for {}:", repo.green());
-                        for subdir in subdirs {
-                            println!("  - {}", subdir);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error showing active subdirectories".red(),
-                            e.to_string().red()
-                        );
-                        return Err(e);
-                    }
-                }
-            }
-            DotCommands::Remove { repo, files } => {
-                match dot::remove_repo(config_manager.config_mut(), &repo, *files) {
-                    Ok(()) => println!("{} {}", "Removed repository".green(), repo.green()),
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error removing repository".red(),
                             e.to_string().red()
                         );
                         return Err(e);

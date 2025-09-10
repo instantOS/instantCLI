@@ -11,11 +11,17 @@ pub struct Repo {
     pub branch: Option<String>,
     #[serde(default = "default_active_subdirs")]
     pub active_subdirectories: Vec<String>,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
 }
 
 fn default_active_subdirs() -> Vec<String> {
     // By default, only the first subdirectory is active
     vec!["dots".to_string()]
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_clone_depth() -> u32 {
@@ -163,6 +169,34 @@ impl Config {
                 }
             })
             .unwrap_or_else(|| default_active_subdirs())
+    }
+
+    /// Enable a repository by name
+    pub fn enable_repo(&mut self, repo_name: &str) -> Result<()> {
+        for repo in &mut self.repos {
+            if repo.name == repo_name {
+                repo.enabled = true;
+                return self.save();
+            }
+        }
+        Err(anyhow::anyhow!(
+            "Repository with name '{}' not found",
+            repo_name
+        ))
+    }
+
+    /// Disable a repository by name
+    pub fn disable_repo(&mut self, repo_name: &str) -> Result<()> {
+        for repo in &mut self.repos {
+            if repo.name == repo_name {
+                repo.enabled = false;
+                return self.save();
+            }
+        }
+        Err(anyhow::anyhow!(
+            "Repository with name '{}' not found",
+            repo_name
+        ))
     }
 
     /// Get the database path as a PathBuf

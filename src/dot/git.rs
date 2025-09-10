@@ -55,9 +55,7 @@ pub fn add_repo(
         ));
     }
 
-    // append to config
-    config_manager.config_mut().add_repo(repo.clone())?;
-    config_manager.save()?;
+    // Note: config addition is now handled by the caller (add_repository function)
 
     // validate metadata but do not delete invalid clones; report their existence
     let local_repo = repo_mod::LocalRepo::new(&config_manager.config, repo.name.clone())?;
@@ -75,7 +73,7 @@ pub fn add_repo(
     // Initialize database with source file hashes to prevent false "modified" status
     // when identical files already exist in the home directory
     if let Ok(db) = crate::dot::db::Database::new(config_manager.config.database_path().to_path_buf()) {
-        if let Ok(dotfiles) = get_all_dotfiles(&config_manager.config) {
+        if let Ok(dotfiles) = get_all_dotfiles(&config_manager.config, &db) {
             for (_, dotfile) in dotfiles {
                 // Only register hashes for dotfiles from this repository
                 if dotfile.source_path.starts_with(&target) {
@@ -128,6 +126,95 @@ pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
 }
 
 pub fn status_all(
+    cfg: &config::Config,
+    debug: bool,
+    path: Option<&str>,
+    db: &super::db::Database,
+) -> Result<()> {
+    let all_dotfiles = super::get_all_dotfiles(cfg, db)?;
+    let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
+    
+    if let Some(path_str) = path {
+        // Show status for specific path
+        let target_path = super::resolve_dotfile_path(path_str)?;
+        
+        if let Some(dotfile) = all_dotfiles.get(&target_path) {
+            println!("{} -> {}", target_path.display(), get_dotfile_status_string(dotfile, db));
+            println!("  Source: {}", dotfile.source_path.display());
+            println!("  Repo: {}", get_repo_name_for_dotfile(&dotfile, cfg));
+        } else {
+            println!("{} -> not tracked", target_path.display());
+        }
+    } else {
+        // Show status for all dotfiles
+        let mut has_modified = false;
+        let mut has_outdated = false;
+        let mut has_clean = false;
+        
+        for (target_path, dotfile) in all_dotfiles {
+            let status = get_dotfile_status_string(&dotfile, db);
+            let relative_path = target_path.strip_prefix(&home)
+                .unwrap_or(&target_path);
+            
+            match status.as_str() {
+                "modified" => has_modified = true,
+                "outdated" => has_outdated = true,
+                "clean" => has_clean = true,
+                _ => {}
+            }
+            
+            // Only show non-clean files by default
+            if status != "clean" {
+                println!("~{} -> {} ({})", 
+                    relative_path.display(), 
+                    status, 
+                    get_repo_name_for_dotfile(&dotfile, cfg)
+                );
+            }
+        }
+        
+        // Show summary
+        if !has_modified && !has_outdated {
+            if has_clean {
+                println!("All dotfiles are clean.");
+            } else {
+                println!("No dotfiles found.");
+            }
+        } else {
+            if has_modified {
+                println!("\n{} dotfile(s) modified", "modified".yellow());
+            }
+            if has_outdated {
+                println!("{} dotfile(s) outdated", "outdated".blue());
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+fn get_dotfile_status_string(dotfile: &super::Dotfile, db: &super::db::Database) -> String {
+    if dotfile.is_modified(db) {
+        "modified".yellow().to_string()
+    } else if dotfile.is_outdated(db) {
+        "outdated".blue().to_string()
+    } else {
+        "clean".green().to_string()
+    }
+}
+
+fn get_repo_name_for_dotfile(dotfile: &super::Dotfile, cfg: &config::Config) -> String {
+    // Find which repository this dotfile comes from
+    for repo_config in &cfg.repos {
+        if dotfile.source_path.starts_with(&cfg.repos_path().join(&repo_config.name)) {
+            return repo_config.name.clone();
+        }
+    }
+    "unknown".to_string()
+}
+
+// Legacy status function - kept for compatibility but should be removed
+pub fn status_all_legacy(
     cfg: &config::Config,
     debug: bool,
     path: Option<&str>,
@@ -221,7 +308,7 @@ pub fn status_all(
                 }
 
                 // now check file status using db
-                let filemap = super::get_all_dotfiles(cfg)?;
+                let filemap = super::get_all_dotfiles(cfg, db)?;
                 if let Some(dotfile) = filemap.get(&provided) {
                     println!("Source: {}", dotfile.source_path.display());
                     if dotfile.is_modified(&db) {
@@ -260,7 +347,7 @@ pub fn status_all(
             }
 
             // Now check individual dotfile statuses for this repo
-            let filemap = super::get_all_dotfiles(cfg)?;
+            let filemap = super::get_all_dotfiles(cfg, db)?;
 
             for (target_path, dotfile) in filemap.iter() {
                 // Only show dotfiles belonging to the current repo
