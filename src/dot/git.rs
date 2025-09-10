@@ -206,14 +206,15 @@ fn get_dotfile_status_string(dotfile: &super::Dotfile, db: &super::db::Database)
     status.to_string()
 }
 
-fn get_repo_name_for_dotfile(dotfile: &super::Dotfile, cfg: &config::Config) -> String {
+//TODO: make this use reponame and propagate the needed changes
+fn get_repo_name_for_dotfile(dotfile: &super::Dotfile, cfg: &config::Config) -> super::RepoName {
     // Find which repository this dotfile comes from
     for repo_config in &cfg.repos {
         if dotfile.source_path.starts_with(&cfg.repos_path().join(&repo_config.name)) {
-            return repo_config.name.clone();
+            return super::RepoName::new(repo_config.name.clone());
         }
     }
-    "unknown".to_string()
+    super::RepoName::new("unknown".to_string())
 }
 
 // Legacy status function - kept for compatibility but should be removed

@@ -3,6 +3,10 @@
 make the `instant dot repo remove` command remove the repo files by default, add
 a --keep-files flag to keep the files. Do not keep backwards compatibility.
 
+# change `instant dot repo info` to include author if present
+
+Author is currently unused, the info command should show this among other
+things. Change it
 
 # rework test utils
 
