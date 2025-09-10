@@ -1,10 +1,10 @@
 use super::db::Database;
 use sha2::{Digest, Sha256};
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::fs;
 use std::io::Read as _;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 // Simple in-memory cache for file hashes
 static HASH_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
@@ -131,13 +131,13 @@ impl Dotfile {
                 return Ok(cached_hash.clone());
             }
         }
-        
+
         // Compute hash with buffered reading for large files
         let file = fs::File::open(path)?;
         let mut hasher = Sha256::new();
         let mut buffer = [0; 8192]; // 8KB buffer
         let mut file = std::io::BufReader::new(file);
-        
+
         loop {
             let bytes_read = std::io::Read::read(&mut file, &mut buffer)?;
             if bytes_read == 0 {
@@ -145,10 +145,10 @@ impl Dotfile {
             }
             hasher.update(&buffer[..bytes_read]);
         }
-        
+
         let result = hasher.finalize();
         let hash = format!("{:x}", result);
-        
+
         // Cache the result
         {
             let mut cache = get_hash_cache().lock().unwrap();
@@ -161,7 +161,7 @@ impl Dotfile {
             }
             cache.insert(path_str, hash.clone());
         }
-        
+
         Ok(hash)
     }
 

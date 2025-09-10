@@ -5,18 +5,18 @@ pub enum RepoCommands {
     /// List all configured repositories
     List,
     /// Add a new repository (and immediately apply)
-    Add { 
-        url: String, 
+    Add {
+        url: String,
         #[arg(long)]
-        name: Option<String>, 
+        name: Option<String>,
         #[arg(long, short = 'b')]
-        branch: Option<String> 
+        branch: Option<String>,
     },
     /// Remove a repository
-    Remove { 
-        name: String, 
+    Remove {
+        name: String,
         #[arg(long)]
-        keep_files: bool 
+        keep_files: bool,
     },
     /// Show detailed repository information
     Info { name: String },
@@ -34,14 +34,11 @@ pub enum RepoCommands {
 #[derive(Subcommand, Debug)]
 pub enum SubdirCommands {
     /// List available subdirectories
-    List { 
+    List {
         name: String,
         #[arg(long)]
-        active: bool 
+        active: bool,
     },
     /// Set active subdirectories
-    Set { 
-        name: String, 
-        subdirs: Vec<String> 
-    },
+    Set { name: String, subdirs: Vec<String> },
 }

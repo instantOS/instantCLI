@@ -11,11 +11,11 @@ impl RepoName {
     pub fn new(name: String) -> Self {
         RepoName(name)
     }
-    
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
-    
+
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -99,23 +99,19 @@ pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
     Ok(canonical_path)
 }
 
-
 /// Get all active dotfile directories from all repositories
 pub fn get_active_dotfile_dirs(config: &Config, db: &Database) -> Result<Vec<PathBuf>> {
     use crate::dot::repo::RepositoryManager;
-    
+
     let repo_manager = RepositoryManager::new(config, db);
     repo_manager.get_active_dotfile_dirs()
 }
 
 /// Helper function to scan a directory for dotfiles
 // should only be run within a dotfile subdir, NOT the home directory
-fn scan_directory_for_dotfiles(
-    dir_path: &Path,
-    home_path: &Path,
-) -> Result<Vec<Dotfile>> {
+fn scan_directory_for_dotfiles(dir_path: &Path, home_path: &Path) -> Result<Vec<Dotfile>> {
     let mut dotfiles = Vec::new();
-    
+
     for entry in WalkDir::new(dir_path)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -126,8 +122,15 @@ fn scan_directory_for_dotfiles(
     {
         if entry.file_type().is_file() {
             let source_path = entry.path().to_path_buf();
-            let relative_path = source_path.strip_prefix(dir_path)
-                .map_err(|e| anyhow::anyhow!("Failed to strip prefix from path {}: {}", source_path.display(), e))?
+            let relative_path = source_path
+                .strip_prefix(dir_path)
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to strip prefix from path {}: {}",
+                        source_path.display(),
+                        e
+                    )
+                })?
                 .to_path_buf();
             let target_path = home_path.join(relative_path);
 
@@ -137,35 +140,35 @@ fn scan_directory_for_dotfiles(
             });
         }
     }
-    
+
     Ok(dotfiles)
 }
 
 /// Helper function to merge dotfiles with later repos overriding earlier ones
 fn merge_dotfiles(dotfiles_list: Vec<Vec<Dotfile>>) -> HashMap<PathBuf, Dotfile> {
     let mut filemap = HashMap::new();
-    
+
     // Process in order - later repos override earlier ones
     for dotfiles in dotfiles_list {
         for dotfile in dotfiles {
             filemap.insert(dotfile.target_path.clone(), dotfile);
         }
     }
-    
+
     filemap
 }
 
 pub fn get_all_dotfiles(config: &Config, db: &Database) -> Result<HashMap<PathBuf, Dotfile>> {
     let active_dirs = get_active_dotfile_dirs(config, db)?;
     let home_path = PathBuf::from(shellexpand::tilde("~").to_string());
-    
+
     // Scan each directory for dotfiles
     let mut all_dotfiles = Vec::new();
     for dir_path in active_dirs {
         let dotfiles = scan_directory_for_dotfiles(&dir_path, &home_path)?;
         all_dotfiles.push(dotfiles);
     }
-    
+
     // Merge with proper override behavior
     Ok(merge_dotfiles(all_dotfiles))
 }
@@ -225,7 +228,10 @@ fn get_modified_dotfiles(
 fn find_repo_for_dotfile(dotfile: &Dotfile, config: &Config) -> Result<Option<RepoName>> {
     for repo in &config.repos {
         let local_repo = LocalRepo::new(config, repo.name.clone())?;
-        if dotfile.source_path.starts_with(local_repo.local_path(config)?) {
+        if dotfile
+            .source_path
+            .starts_with(local_repo.local_path(config)?)
+        {
             return Ok(Some(RepoName::new(repo.name.clone())));
         }
     }
@@ -237,20 +243,20 @@ fn group_dotfiles_by_repo<'a>(
     config: &Config,
 ) -> Result<HashMap<RepoName, Vec<&'a Dotfile>>> {
     let mut grouped_by_repo: HashMap<RepoName, Vec<&Dotfile>> = HashMap::new();
-    
+
     for dotfile in dotfiles {
         if let Some(repo_name) = find_repo_for_dotfile(dotfile, config)? {
-            grouped_by_repo
-                .entry(repo_name)
-                .or_default()
-                .push(dotfile);
+            grouped_by_repo.entry(repo_name).or_default().push(dotfile);
         }
     }
-    
+
     Ok(grouped_by_repo)
 }
 
-fn print_fetch_plan(grouped_by_repo: &HashMap<RepoName, Vec<&Dotfile>>, dry_run: bool) -> Result<()> {
+fn print_fetch_plan(
+    grouped_by_repo: &HashMap<RepoName, Vec<&Dotfile>>,
+    dry_run: bool,
+) -> Result<()> {
     if dry_run {
         println!(
             "{}",
@@ -264,8 +270,13 @@ fn print_fetch_plan(grouped_by_repo: &HashMap<RepoName, Vec<&Dotfile>>, dry_run:
     for (repo_name, dotfiles) in grouped_by_repo {
         println!("  Repo: {}", repo_name.as_str().bold());
         for dotfile in dotfiles {
-            let relative_path = dotfile.target_path.strip_prefix(&home)
-                .map_err(|e| anyhow::anyhow!("Failed to strip prefix from path {}: {}", dotfile.target_path.display(), e))?;
+            let relative_path = dotfile.target_path.strip_prefix(&home).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to strip prefix from path {}: {}",
+                    dotfile.target_path.display(),
+                    e
+                )
+            })?;
             println!("    - ~/{}", relative_path.display());
         }
     }
@@ -291,7 +302,13 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
             let relative = dotfile
                 .target_path
                 .strip_prefix(&home)
-                .map_err(|e| anyhow::anyhow!("Failed to strip prefix from path {}: {}", dotfile.target_path.display(), e))?
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to strip prefix from path {}: {}",
+                        dotfile.target_path.display(),
+                        e
+                    )
+                })?
                 .to_string_lossy();
             println!("Created new dotfile: ~/{}", relative);
         }
@@ -303,10 +320,10 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
 pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> {
     let filemap = get_all_dotfiles(config, db)?;
     let full_path = resolve_dotfile_path(path)?;
-    
+
     let mut reset_files = Vec::new();
     let mut already_clean_files = Vec::new();
-    
+
     for dotfile in filemap.values() {
         if dotfile.target_path.starts_with(&full_path) {
             if dotfile.is_modified(&db) {
@@ -317,7 +334,7 @@ pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> 
             }
         }
     }
-    
+
     // Print results
     if !reset_files.is_empty() {
         println!("{}", "Reset the following modified files:".green());
@@ -325,15 +342,17 @@ pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> 
             println!("  {}", file_path.display());
         }
     } else if !already_clean_files.is_empty() {
-        println!("{}", "No files needed reset - all files are already clean".green());
+        println!(
+            "{}",
+            "No files needed reset - all files are already clean".green()
+        );
     } else {
         println!("{}", "No dotfiles found in the specified path".yellow());
     }
-    
+
     db.cleanup_hashes(config.hash_cleanup_days)?;
     Ok(())
 }
-
 
 /// Prompt the user to select one of the configured repositories.
 fn select_repo(config: &Config) -> Result<config::Repo> {
@@ -439,4 +458,3 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
 
     Ok(())
 }
-

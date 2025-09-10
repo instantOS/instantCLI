@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use crate::dot::path_serde::TildePath;
 
@@ -203,18 +206,18 @@ impl Config {
     pub fn database_path(&self) -> &Path {
         self.database_dir.as_path()
     }
-    
+
     /// Get the repos directory as a PathBuf
     pub fn repos_path(&self) -> &Path {
         self.repos_dir.as_path()
     }
-    
+
     /// Ensure all directory paths exist
     pub fn ensure_directories(&self) -> Result<()> {
         if let Some(parent) = self.database_path().parent() {
             fs::create_dir_all(parent).context("creating database directory")?;
         }
-        
+
         fs::create_dir_all(self.repos_path()).context("creating repos directory")?;
         Ok(())
     }
@@ -247,7 +250,6 @@ impl ConfigManager {
         &mut self.config
     }
 }
-
 
 /// Extract a repository name from a git URL by removing the .git suffix
 /// and splitting on path separators and colons to get the last component.

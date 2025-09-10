@@ -57,7 +57,9 @@ pub fn git_command_in_dir(
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context(format!("Failed to execute git {}", operation_name))?;
+    let output = cmd
+        .output()
+        .context(format!("Failed to execute git {}", operation_name))?;
     if !output.status.success() {
         anyhow::bail!(
             "Git {} failed: {}",
@@ -79,7 +81,9 @@ pub fn git_command_in_dir_with_output(
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context(format!("Failed to execute git {}", operation_name))?;
+    let output = cmd
+        .output()
+        .context(format!("Failed to execute git {}", operation_name))?;
     if !output.status.success() {
         anyhow::bail!(
             "Git {} failed: {}",

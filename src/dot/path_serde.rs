@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::path::{Path, PathBuf};
 use shellexpand;
+use std::path::{Path, PathBuf};
 
 /// A PathBuf that automatically handles tilde expansion/compression
 #[derive(Debug, Clone, PartialEq)]
@@ -11,34 +11,34 @@ impl TildePath {
     pub fn new(path: PathBuf) -> Self {
         TildePath(path)
     }
-    
+
     pub fn as_path(&self) -> &Path {
         &self.0
     }
-    
+
     pub fn into_path_buf(self) -> PathBuf {
         self.0
     }
-    
+
     /// Create from a string with tilde expansion
     pub fn from_str(s: &str) -> Result<Self> {
         let expanded = shellexpand::tilde(s).to_string();
         let path = PathBuf::from(expanded);
         Ok(TildePath(path))
     }
-    
+
     /// Convert to string with tilde compression (replace home dir with ~)
     pub fn to_tilde_string(&self) -> Result<String> {
         let home_dir = dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
-        
+
         if let Ok(relative) = self.0.strip_prefix(&home_dir) {
             if relative.as_os_str().is_empty() {
                 return Ok("~".to_string());
             }
             return Ok(format!("~/{}", relative.display()));
         }
-        
+
         Ok(self.0.to_string_lossy().to_string())
     }
 }
@@ -60,8 +60,7 @@ impl Serialize for TildePath {
     where
         S: Serializer,
     {
-        let tilde_string = self.to_tilde_string()
-            .map_err(serde::ser::Error::custom)?;
+        let tilde_string = self.to_tilde_string().map_err(serde::ser::Error::custom)?;
         tilde_string.serialize(serializer)
     }
 }
@@ -85,14 +84,18 @@ impl Default for TildePath {
 #[cfg(test)]
 mod tests {
     use super::*;
-        
+
     #[test]
     fn test_tilde_expansion() {
         let tilde_path = TildePath::from_str("~/test/path").unwrap();
         let expanded = tilde_path.as_path();
-        assert!(expanded.to_string_lossy().contains(&std::env::var("HOME").unwrap()));
+        assert!(
+            expanded
+                .to_string_lossy()
+                .contains(&std::env::var("HOME").unwrap())
+        );
     }
-    
+
     #[test]
     fn test_tilde_compression() {
         let home = dirs::home_dir().unwrap();
@@ -101,7 +104,7 @@ mod tests {
         let compressed = tilde_path.to_tilde_string().unwrap();
         assert_eq!(compressed, "~/test/path");
     }
-    
+
     #[test]
     fn test_serialization_roundtrip() {
         let original = TildePath::from_str("~/test/path").unwrap();

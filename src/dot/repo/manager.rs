@@ -1,8 +1,8 @@
+use crate::dot::config::Config;
+use crate::dot::db::Database;
+use crate::dot::localrepo::LocalRepo;
 use anyhow::Result;
 use colored::Colorize;
-use crate::dot::config::Config;
-use crate::dot::localrepo::LocalRepo;
-use crate::dot::db::Database;
 
 /// RepositoryManager provides centralized iteration and management of repositories
 /// following the existing borrowed references pattern
@@ -17,13 +17,10 @@ impl<'a> RepositoryManager<'a> {
         Self { config, db }
     }
 
-
-
     /// Get detailed information about a specific repository
     pub fn get_repository_info(&self, name: &str) -> Result<LocalRepo> {
         LocalRepo::new(self.config, name.to_string())
     }
-
 
     /// Get active dotfile directories from all enabled repositories
     pub fn get_active_dotfile_dirs(&self) -> Result<Vec<std::path::PathBuf>> {
@@ -54,4 +51,3 @@ impl<'a> RepositoryManager<'a> {
         Ok(active_dirs)
     }
 }
-

@@ -1,11 +1,11 @@
 use crate::dot::config;
+use crate::dot::get_all_dotfiles;
 use crate::dot::localrepo as repo_mod;
 use crate::dot::utils;
 use anyhow::{Context, Result};
 use colored::*;
 use std::path::PathBuf;
 use std::process::Command;
-use crate::dot::get_all_dotfiles;
 
 pub fn add_repo(
     config_manager: &mut config::ConfigManager,
@@ -36,7 +36,7 @@ pub fn add_repo(
         depth as i32,
         debug,
     )?;
-    
+
     pb.finish_with_message(format!("Cloned {}", repo.url));
 
     // Note: config addition is now handled by the caller (add_repository function)
@@ -56,19 +56,25 @@ pub fn add_repo(
 
     // Initialize database with source file hashes to prevent false "modified" status
     // when identical files already exist in the home directory
-    if let Ok(db) = crate::dot::db::Database::new(config_manager.config.database_path().to_path_buf()) {
+    if let Ok(db) =
+        crate::dot::db::Database::new(config_manager.config.database_path().to_path_buf())
+    {
         if let Ok(dotfiles) = get_all_dotfiles(&config_manager.config, &db) {
             for (_, dotfile) in dotfiles {
                 // Only register hashes for dotfiles from this repository
                 if dotfile.source_path.starts_with(&target) {
                     // Register the source file hash as unmodified
-                    if let Ok(source_hash) = crate::dot::dotfile::Dotfile::compute_hash(&dotfile.source_path) {
+                    if let Ok(source_hash) =
+                        crate::dot::dotfile::Dotfile::compute_hash(&dotfile.source_path)
+                    {
                         db.add_hash(&source_hash, &dotfile.source_path, true)?;
-                        
-                        // If the target file exists and has the same content, 
+
+                        // If the target file exists and has the same content,
                         // register it as unmodified too
                         if dotfile.target_path.exists() {
-                            if let Ok(target_hash) = crate::dot::dotfile::Dotfile::compute_hash(&dotfile.target_path) {
+                            if let Ok(target_hash) =
+                                crate::dot::dotfile::Dotfile::compute_hash(&dotfile.target_path)
+                            {
                                 if target_hash == source_hash {
                                     db.add_hash(&target_hash, &dotfile.target_path, true)?;
                                 }
@@ -114,75 +120,182 @@ pub fn status_all(
     debug: bool,
     path: Option<&str>,
     db: &super::db::Database,
+    show_all: bool,
 ) -> Result<()> {
     let all_dotfiles = super::get_all_dotfiles(cfg, db)?;
-    let home = dirs::home_dir().context("Failed to get home directory")?;
-    
+
     if let Some(path_str) = path {
         // Show status for specific path
-        let target_path = super::resolve_dotfile_path(path_str)?;
-        
-        if let Some(dotfile) = all_dotfiles.get(&target_path) {
-            let repo_name = get_repo_name_for_dotfile(&dotfile, cfg);
-            let dotfile_dir = get_dotfile_dir_name(&dotfile, cfg);
-            println!("{} -> {}", target_path.display(), get_dotfile_status(dotfile, db));
-            println!("  Source: {}", dotfile.source_path.display());
-            println!("  Repo: {} ({})", repo_name, dotfile_dir);
-        } else {
-            println!("{} -> not tracked", target_path.display());
-        }
+        show_single_file_status(path_str, &all_dotfiles, cfg, db)?;
     } else {
-        // Show status for all dotfiles
-        let mut has_modified = false;
-        let mut has_outdated = false;
-        let mut has_clean = false;
-        
-        for (target_path, dotfile) in all_dotfiles {
-            let status = get_dotfile_status(&dotfile, db);
-            let relative_path = target_path.strip_prefix(&home)
-                .unwrap_or(&target_path);
-            
-            match status {
-                DotFileStatus::Modified => has_modified = true,
-                DotFileStatus::Outdated => has_outdated = true,
-                DotFileStatus::Clean => has_clean = true,
+        // Show summary and file list
+        show_status_summary(&all_dotfiles, cfg, db, show_all)?;
+    }
+
+    Ok(())
+}
+
+fn show_single_file_status(
+    path_str: &str,
+    all_dotfiles: &std::collections::HashMap<PathBuf, super::Dotfile>,
+    cfg: &config::Config,
+    db: &super::db::Database,
+) -> Result<()> {
+    let target_path = super::resolve_dotfile_path(path_str)?;
+
+    if let Some(dotfile) = all_dotfiles.get(&target_path) {
+        let repo_name = get_repo_name_for_dotfile(&dotfile, cfg);
+        let dotfile_dir = get_dotfile_dir_name(&dotfile, cfg);
+        println!(
+            "{} -> {}",
+            target_path.display(),
+            get_dotfile_status(dotfile, db)
+        );
+        println!("  Source: {}", dotfile.source_path.display());
+        println!("  Repo: {} ({})", repo_name, dotfile_dir);
+    } else {
+        println!("{} -> not tracked", target_path.display());
+    }
+
+    Ok(())
+}
+
+fn show_status_summary(
+    all_dotfiles: &std::collections::HashMap<PathBuf, super::Dotfile>,
+    cfg: &config::Config,
+    db: &super::db::Database,
+    show_all: bool,
+) -> Result<()> {
+    let home = dirs::home_dir().context("Failed to get home directory")?;
+    let mut files_by_status = std::collections::HashMap::new();
+    let mut repo_stats = std::collections::HashMap::new();
+
+    // Categorize files by status and collect repo statistics
+    // TODO: extract this into a separate function
+    for (target_path, dotfile) in all_dotfiles {
+        let status = get_dotfile_status(&dotfile, db);
+        let repo_name = get_repo_name_for_dotfile(&dotfile, cfg);
+        let dotfile_dir = get_dotfile_dir_name(&dotfile, cfg);
+
+        // Store file info for later display
+        files_by_status
+            .entry(status.clone())
+            .or_insert_with(Vec::new)
+            .push((
+                target_path.clone(),
+                dotfile.clone(),
+                repo_name.clone(),
+                dotfile_dir.clone(),
+            ));
+
+        // Update repo statistics
+        let repo_entry = repo_stats
+            .entry(repo_name.clone())
+            .or_insert_with(|| std::collections::HashMap::new());
+        *repo_entry.entry(dotfile_dir.clone()).or_insert(0) += 1;
+    }
+
+    let total_files = all_dotfiles.len();
+    let clean_count = files_by_status
+        .get(&DotFileStatus::Clean)
+        .map_or(0, |v| v.len());
+    let modified_count = files_by_status
+        .get(&DotFileStatus::Modified)
+        .map_or(0, |v| v.len());
+    let outdated_count = files_by_status
+        .get(&DotFileStatus::Outdated)
+        .map_or(0, |v| v.len());
+
+    println!("Total tracked: {} files", total_files);
+    println!("{} Clean: {} files", "✓".green(), clean_count);
+
+    if modified_count > 0 {
+        println!("{} Modified: {} files", "⚠".yellow(), modified_count);
+    }
+
+    if outdated_count > 0 {
+        println!("{} Outdated: {} files", "↓".blue(), outdated_count);
+    }
+
+    // Show files with issues
+    if modified_count > 0 || outdated_count > 0 {
+        println!();
+
+        if let Some(modified_files) = files_by_status.get(&DotFileStatus::Modified) {
+            println!("{}", "Modified files:".yellow().bold());
+            for (target_path, dotfile, repo_name, dotfile_dir) in modified_files {
+                let relative_path = target_path.strip_prefix(&home).unwrap_or(&target_path);
+                let tilde_path = format!("~/{}", relative_path.display());
+                println!(
+                    "  {} -> {} ({}: {})",
+                    tilde_path,
+                    "modified".yellow(),
+                    repo_name,
+                    dotfile_dir
+                );
             }
-            
-            // Show all files including clean ones
-            let path_str = relative_path.display().to_string();
-            let tilde_path = format!("~/{}", path_str);
-            let repo_name = get_repo_name_for_dotfile(&dotfile, cfg);
-            let dotfile_dir = get_dotfile_dir_name(&dotfile, cfg);
-            println!("{} -> {} ({}: {})", 
-                tilde_path, 
-                status, 
+            println!();
+        }
+
+        if let Some(outdated_files) = files_by_status.get(&DotFileStatus::Outdated) {
+            println!("{}", "Outdated files:".blue().bold());
+            for (target_path, dotfile, repo_name, dotfile_dir) in outdated_files {
+                let relative_path = target_path.strip_prefix(&home).unwrap_or(&target_path);
+                let tilde_path = format!("~/{}", relative_path.display());
+                println!(
+                    "  {} -> {} ({}: {})",
+                    tilde_path,
+                    "outdated".blue(),
+                    repo_name,
+                    dotfile_dir
+                );
+            }
+            println!();
+        }
+    }
+
+    // Show all files if requested
+    if show_all && clean_count > 0 {
+        println!("{}", "Clean files:".green().bold());
+        for (target_path, dotfile, repo_name, dotfile_dir) in files_by_status
+            .get(&DotFileStatus::Clean)
+            .unwrap_or(&vec![])
+        {
+            let relative_path = target_path.strip_prefix(&home).unwrap_or(&target_path);
+            let tilde_path = format!("~/{}", relative_path.display());
+            println!(
+                "  {} -> {} ({}: {})",
+                tilde_path,
+                "clean".green(),
                 repo_name,
                 dotfile_dir
             );
         }
-        
-        // Show summary
-        if !has_modified && !has_outdated {
-            if has_clean {
-                // Note: Clean files were already shown above, so don't say "No dotfiles found"
-                println!("All dotfiles are clean.");
-            } else {
-                println!("No dotfiles found.");
-            }
-        } else {
-            if has_modified {
-                println!("\n{} dotfile(s) modified", "modified".yellow());
-            }
-            if has_outdated {
-                println!("{} dotfile(s) outdated", "outdated".blue());
-            }
-        }
+        println!();
     }
-    
+
+    // Show action suggestions
+    // TODO: extract this into a separate function
+    if modified_count > 0 || outdated_count > 0 {
+        println!("{}", "Suggested actions:".bold());
+        if modified_count > 0 {
+            println!("  Use 'instant dot apply' to apply changes from repositories");
+            println!("  Use 'instant dot fetch' to save your modifications to repositories");
+        }
+        if outdated_count > 0 {
+            println!("  Use 'instant dot reset <path>' to restore files to their original state");
+        }
+        println!("  Use 'instant dot status --all' to see all tracked files including clean ones");
+    } else if clean_count > 0 {
+        println!("✓ All dotfiles are clean and up to date!");
+    } else {
+        println!("No dotfiles found. Use 'instant dot repo add <url>' to add a repository.");
+    }
+
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 enum DotFileStatus {
     Modified,
     Outdated,
@@ -232,7 +345,10 @@ fn get_dotfile_dir_name(dotfile: &super::Dotfile, cfg: &config::Config) -> Strin
 fn get_repo_name_for_dotfile(dotfile: &super::Dotfile, cfg: &config::Config) -> super::RepoName {
     // Find which repository this dotfile comes from
     for repo_config in &cfg.repos {
-        if dotfile.source_path.starts_with(&cfg.repos_path().join(&repo_config.name)) {
+        if dotfile
+            .source_path
+            .starts_with(&cfg.repos_path().join(&repo_config.name))
+        {
             return super::RepoName::new(repo_config.name.clone());
         }
     }

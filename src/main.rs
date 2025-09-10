@@ -46,7 +46,6 @@ struct Cli {
     #[arg(short = 'c', long = "config", global = true)]
     config: Option<String>,
 
-
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -93,6 +92,9 @@ enum DotCommands {
     Status {
         /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
         path: Option<String>,
+        /// Show all dotfiles including clean ones
+        #[arg(long)]
+        all: bool,
     },
     /// Initialize the repo in the current directory as an instantdots repo
     Init {
@@ -130,7 +132,12 @@ fn main() -> Result<()> {
         Some(Commands::Dot { command }) => match command {
             DotCommands::Repo { command } => {
                 execute_with_error_handling(
-                    dot::repo::commands::handle_repo_command(&mut config_manager, &db, command, cli.debug),
+                    dot::repo::commands::handle_repo_command(
+                        &mut config_manager,
+                        &db,
+                        command,
+                        cli.debug,
+                    ),
                     "Error handling repository command",
                     None,
                 )?;
@@ -169,10 +176,16 @@ fn main() -> Result<()> {
                     "Error updating repos",
                     Some("All repos updated"),
                 )?;
-            },
-            DotCommands::Status { path } => {
+            }
+            DotCommands::Status { path, all } => {
                 execute_with_error_handling(
-                    dot::status_all(&config_manager.config, cli.debug, path.as_deref(), &db),
+                    dot::status_all(
+                        &config_manager.config,
+                        cli.debug,
+                        path.as_deref(),
+                        &db,
+                        *all,
+                    ),
                     "Error checking repo status",
                     None,
                 )?;
@@ -181,11 +194,15 @@ fn main() -> Result<()> {
                 name,
                 non_interactive,
             } => {
-                let cwd = std::env::current_dir().map_err(|e| anyhow::anyhow!("Unable to determine current directory: {}", e))?;
+                let cwd = std::env::current_dir()
+                    .map_err(|e| anyhow::anyhow!("Unable to determine current directory: {}", e))?;
                 execute_with_error_handling(
                     dot::meta::init_repo(&cwd, name.as_deref(), *non_interactive),
                     "Error initializing repo",
-                    Some(&format!("Initialized instantdots.toml in {}", cwd.display())),
+                    Some(&format!(
+                        "Initialized instantdots.toml in {}",
+                        cwd.display()
+                    )),
                 )?;
             }
         },

@@ -114,7 +114,9 @@ impl Database {
         let mut stmt = self
             .conn
             .prepare("SELECT 1 FROM hashes WHERE hash = ? AND path = ?")?;
-        let path_str = path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
         let mut result = stmt.query_map([hash, path_str], |row| row.get::<_, i32>(0))?;
         Ok(result.next().is_some())
     }
@@ -123,7 +125,9 @@ impl Database {
         let mut stmt = self
             .conn
             .prepare("SELECT 1 FROM hashes WHERE hash = ? AND path = ? AND unmodified = 1")?;
-        let path_str = path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
         let mut result = stmt.query_map([hash, path_str], |row| row.get::<_, i32>(0))?;
         Ok(result.next().is_some())
     }
@@ -160,10 +164,10 @@ impl Database {
             .conn
             .prepare("SELECT hash, created, path, unmodified FROM hashes WHERE path = ? AND unmodified = 1 ORDER BY created DESC")?;
 
-        let path_str = path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
-        let hashes = stmt.query_map([path_str], |row| {
-            Self::row_to_dotfile_hash(row)
-        })?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
+        let hashes = stmt.query_map([path_str], |row| Self::row_to_dotfile_hash(row))?;
 
         let mut result = Vec::new();
         for hash in hashes {
@@ -179,9 +183,12 @@ impl Database {
             .prepare("SELECT hash, created, path, unmodified FROM hashes WHERE path = ? ORDER BY created DESC LIMIT 1")?;
 
         let result: Option<DotfileHash> = stmt
-            .query_row([path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?], |row| {
-                Self::row_to_dotfile_hash(row)
-            })
+            .query_row(
+                [path
+                    .to_str()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?],
+                |row| Self::row_to_dotfile_hash(row),
+            )
             .optional()?;
 
         Ok(result)
