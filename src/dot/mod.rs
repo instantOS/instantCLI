@@ -245,11 +245,33 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
 pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> {
     let filemap = get_all_dotfiles(config, db)?;
     let full_path = resolve_dotfile_path(path)?;
+    
+    let mut reset_files = Vec::new();
+    let mut already_clean_files = Vec::new();
+    
     for dotfile in filemap.values() {
-        if dotfile.target_path.starts_with(&full_path) && dotfile.is_modified(&db) {
-            dotfile.reset(&db)?;
+        if dotfile.target_path.starts_with(&full_path) {
+            if dotfile.is_modified(&db) {
+                dotfile.reset(&db)?;
+                reset_files.push(dotfile.target_path.clone());
+            } else {
+                already_clean_files.push(dotfile.target_path.clone());
+            }
         }
     }
+    
+    // Print results
+    if !reset_files.is_empty() {
+        println!("{}", "Reset the following modified files:".green());
+        for file_path in &reset_files {
+            println!("  {}", file_path.display());
+        }
+    } else if !already_clean_files.is_empty() {
+        println!("{}", "No files needed reset - all files are already clean".green());
+    } else {
+        println!("{}", "No dotfiles found in the specified path".yellow());
+    }
+    
     db.cleanup_hashes(config.hash_cleanup_days)?;
     Ok(())
 }

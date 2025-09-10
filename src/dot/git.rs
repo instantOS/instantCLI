@@ -163,21 +163,20 @@ pub fn status_all(
                 _ => {}
             }
             
-            // Only show non-clean files by default
-            if status != "clean" {
-                let path_str = relative_path.display().to_string();
-                let tilde_path = format!("~/{}", path_str);
-                println!("{} -> {} ({})", 
-                    tilde_path, 
-                    status, 
-                    get_repo_name_for_dotfile(&dotfile, cfg)
-                );
-            }
+            // Show all files including clean ones
+            let path_str = relative_path.display().to_string();
+            let tilde_path = format!("~/{}", path_str);
+            println!("{} -> {} ({})", 
+                tilde_path, 
+                status, 
+                get_repo_name_for_dotfile(&dotfile, cfg)
+            );
         }
         
         // Show summary
         if !has_modified && !has_outdated {
             if has_clean {
+                // Note: Clean files were already shown above, so don't say "No dotfiles found"
                 println!("All dotfiles are clean.");
             } else {
                 println!("No dotfiles found.");

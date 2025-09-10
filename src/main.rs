@@ -129,16 +129,13 @@ fn main() -> Result<()> {
                 }
             }
             DotCommands::Reset { path } => {
-                match dot::reset_modified(&config_manager.config, &db, &path) {
-                    Ok(()) => println!("{} {}", "Reset modified dotfiles in".green(), path.green()),
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error resetting dotfiles".red(),
-                            e.to_string().red()
-                        );
-                        return Err(e);
-                    }
+                if let Err(e) = dot::reset_modified(&config_manager.config, &db, &path) {
+                    eprintln!(
+                        "{}: {}",
+                        "Error resetting dotfiles".red(),
+                        e.to_string().red()
+                    );
+                    return Err(e);
                 }
             }
             DotCommands::Apply => match dot::apply_all(&config_manager.config, &db) {
