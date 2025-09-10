@@ -31,7 +31,28 @@ just test
 
 # Run specific test
 cargo test test_apply_and_fetch
+
+# Install locally for user testing (builds and copies to ~/.local/bin/)
+just install
 ```
+
+### User Testing
+For testing purposes, you can install the CLI locally and use it as a normal user would:
+
+```bash
+# Install the CLI (builds and installs to ~/.local/bin/)
+just install
+
+# Test from home directory (simulates real user usage)
+cd ~ && instant <command>
+
+# Example test commands
+cd ~ && instant dot status
+cd ~ && instant --debug dot apply
+cd ~ && instant dot reset .config
+```
+
+**Note**: Using `cd ~ && instant <command>` is the preferred testing method as it simulates how real users will interact with the CLI, avoiding working directory concerns and ensuring the tool behaves correctly in normal usage scenarios.
 
 ## Architecture
 
