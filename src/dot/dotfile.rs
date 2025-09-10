@@ -2,6 +2,18 @@ use super::db::Database;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::io::Read as _;
+
+// Simple in-memory cache for file hashes
+static HASH_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+const HASH_CACHE_SIZE: usize = 1000; // Limit cache size to prevent memory bloat
+
+fn get_hash_cache() -> &'static Mutex<HashMap<String, String>> {
+    HASH_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 pub struct Dotfile {
     pub source_path: PathBuf,
@@ -111,11 +123,46 @@ impl Dotfile {
     }
 
     pub fn compute_hash(path: &Path) -> Result<String, anyhow::Error> {
-        let content = fs::read(path)?;
+        // Check cache first
+        let path_str = path.to_string_lossy().to_string();
+        {
+            let cache = get_hash_cache().lock().unwrap();
+            if let Some(cached_hash) = cache.get(&path_str) {
+                return Ok(cached_hash.clone());
+            }
+        }
+        
+        // Compute hash with buffered reading for large files
+        let file = fs::File::open(path)?;
         let mut hasher = Sha256::new();
-        hasher.update(content);
+        let mut buffer = [0; 8192]; // 8KB buffer
+        let mut file = std::io::BufReader::new(file);
+        
+        loop {
+            let bytes_read = std::io::Read::read(&mut file, &mut buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..bytes_read]);
+        }
+        
         let result = hasher.finalize();
-        Ok(format!("{:x}", result))
+        let hash = format!("{:x}", result);
+        
+        // Cache the result
+        {
+            let mut cache = get_hash_cache().lock().unwrap();
+            if cache.len() >= HASH_CACHE_SIZE {
+                // Simple eviction: clear half the cache
+                let keys: Vec<String> = cache.keys().cloned().collect();
+                for key in keys.iter().take(HASH_CACHE_SIZE / 2) {
+                    cache.remove(key);
+                }
+            }
+            cache.insert(path_str, hash.clone());
+        }
+        
+        Ok(hash)
     }
 
     pub fn apply(&self, db: &Database) -> Result<(), anyhow::Error> {

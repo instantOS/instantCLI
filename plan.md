@@ -1,31 +1,8 @@
-# Technical debt
+# change remove command
 
-Search this repository for technical debt and come up with a plan to fix it.
-Document that plan in issues.md
-Do not execute the plan or edit code yet. Just come up with a report and a plan. 
+make the `instant dot repo remove` command remove the repo files by default, add
+a --keep-files flag to keep the files. Do not keep backwards compatibility.
 
-# Reset command issues
-
-Rework how the reset command output is printed.
-
-Make sure that the reset command prints all files which it reset. In case there
-are no files to reset, or the files to be reset were already clean, print a
-message that no files were reset or that they were clean in case that was the
-case. 
-
-# status shows 'no dotfiles found'
-
-```
-$ instant dot status
-~/.config/kitty/kitty.conf -> clean (dotfiles)
-~/.config/alacritty/alacritty.toml -> clean (dotfiles)
-~/tester.txt -> clean (dotfiles)
-~/.config/kitty/current-theme.conf -> clean (dotfiles)
-No dotfiles found.
-```
-
-this clearly shows there are dotfiles, there might be something wrong with the
-logic of this command. 
 
 # rework test utils
 

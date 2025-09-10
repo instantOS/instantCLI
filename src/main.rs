@@ -5,6 +5,31 @@ mod dot;
 
 use clap::{Parser, Subcommand};
 
+/// Helper function to format and print errors consistently
+fn handle_error(context: &str, error: &anyhow::Error) -> String {
+    format!("{}: {}", context.red(), error.to_string().red())
+}
+
+/// Helper function to execute a fallible operation with consistent error handling
+fn execute_with_error_handling<T>(
+    operation: Result<T>,
+    error_context: &str,
+    success_message: Option<&str>,
+) -> Result<T> {
+    match operation {
+        Ok(result) => {
+            if let Some(msg) = success_message {
+                println!("{}", msg.green());
+            }
+            Ok(result)
+        }
+        Err(e) => {
+            eprintln!("{}", handle_error(error_context, &e));
+            Err(e)
+        }
+    }
+}
+
 use crate::dot::config::{ConfigManager, Repo, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::repo::cli::{RepoCommands, SubdirCommands};
@@ -87,125 +112,81 @@ fn main() -> Result<()> {
     }
 
     // Load configuration once at startup
-    let mut config_manager = match ConfigManager::load_from(cli.config.as_deref()) {
-        Ok(manager) => manager,
-        Err(e) => {
-            eprintln!(
-                "{}: {}",
-                "Error loading configuration".red(),
-                e.to_string().red()
-            );
-            return Err(e);
-        }
-    };
+    let mut config_manager = execute_with_error_handling(
+        ConfigManager::load_from(cli.config.as_deref()),
+        "Error loading configuration",
+        None,
+    )?;
 
     // Ensure directories exist and create database instance once at startup
     config_manager.config.ensure_directories()?;
-    let db = match Database::new(config_manager.config.database_path().to_path_buf()) {
-        Ok(db) => db,
-        Err(e) => {
-            eprintln!(
-                "{}: {}",
-                "Error opening database".red(),
-                e.to_string().red()
-            );
-            return Err(e);
-        }
-    };
+    let db = execute_with_error_handling(
+        Database::new(config_manager.config.database_path().to_path_buf()),
+        "Error opening database",
+        None,
+    )?;
 
     match &cli.command {
         Some(Commands::Dot { command }) => match command {
             DotCommands::Repo { command } => {
-                match dot::repo::commands::handle_repo_command(&mut config_manager, &db, command, cli.debug) {
-                    Ok(()) => (),
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error handling repository command".red(),
-                            e.to_string().red()
-                        );
-                        return Err(e);
-                    }
-                }
+                execute_with_error_handling(
+                    dot::repo::commands::handle_repo_command(&mut config_manager, &db, command, cli.debug),
+                    "Error handling repository command",
+                    None,
+                )?;
             }
             DotCommands::Reset { path } => {
-                if let Err(e) = dot::reset_modified(&config_manager.config, &db, &path) {
-                    eprintln!(
-                        "{}: {}",
-                        "Error resetting dotfiles".red(),
-                        e.to_string().red()
-                    );
-                    return Err(e);
-                }
+                execute_with_error_handling(
+                    dot::reset_modified(&config_manager.config, &db, &path),
+                    "Error resetting dotfiles",
+                    None,
+                )?;
             }
-            DotCommands::Apply => match dot::apply_all(&config_manager.config, &db) {
-                Ok(()) => println!("{}", "Applied dotfiles".green()),
-                Err(e) => {
-                    eprintln!(
-                        "{}: {}",
-                        "Error applying dotfiles".red(),
-                        e.to_string().red()
-                    );
-                    return Err(e);
-                }
-            },
+            DotCommands::Apply => {
+                execute_with_error_handling(
+                    dot::apply_all(&config_manager.config, &db),
+                    "Error applying dotfiles",
+                    Some("Applied dotfiles"),
+                )?;
+            }
             DotCommands::Fetch { path, dry_run } => {
-                match dot::fetch_modified(&config_manager.config, &db, path.as_deref(), *dry_run) {
-                    Ok(()) => println!("{}", "Fetched modified dotfiles".green()),
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error fetching dotfiles".red(),
-                            e.to_string().red()
-                        );
-                        return Err(e);
-                    }
-                }
+                execute_with_error_handling(
+                    dot::fetch_modified(&config_manager.config, &db, path.as_deref(), *dry_run),
+                    "Error fetching dotfiles",
+                    Some("Fetched modified dotfiles"),
+                )?;
             }
-            DotCommands::Add { path } => match dot::add_dotfile(&config_manager.config, &db, &path)
-            {
-                Ok(()) => println!("{} {}", "Added dotfile".green(), path.green()),
-                Err(e) => {
-                    eprintln!("{}: {}", "Error adding dotfile".red(), e.to_string().red());
-                    return Err(e);
-                }
-            },
-            DotCommands::Update => match dot::update_all(&config_manager.config, cli.debug) {
-                Ok(()) => println!("{}", "All repos updated".green()),
-                Err(e) => {
-                    eprintln!("{}: {}", "Error updating repos".red(), e.to_string().red());
-                    return Err(e);
-                }
+            DotCommands::Add { path } => {
+                execute_with_error_handling(
+                    dot::add_dotfile(&config_manager.config, &db, &path),
+                    "Error adding dotfile",
+                    Some(&format!("Added dotfile {}", path.green())),
+                )?;
+            }
+            DotCommands::Update => {
+                execute_with_error_handling(
+                    dot::update_all(&config_manager.config, cli.debug),
+                    "Error updating repos",
+                    Some("All repos updated"),
+                )?;
             },
             DotCommands::Status { path } => {
-                match dot::status_all(&config_manager.config, cli.debug, path.as_deref(), &db) {
-                    Ok(()) => (),
-                    Err(e) => {
-                        eprintln!("Error checking repo status: {}", e);
-                        return Err(e);
-                    }
-                }
+                execute_with_error_handling(
+                    dot::status_all(&config_manager.config, cli.debug, path.as_deref(), &db),
+                    "Error checking repo status",
+                    None,
+                )?;
             }
             DotCommands::Init {
                 name,
                 non_interactive,
             } => {
                 let cwd = std::env::current_dir().map_err(|e| anyhow::anyhow!("Unable to determine current directory: {}", e))?;
-                match dot::meta::init_repo(&cwd, name.as_deref(), *non_interactive) {
-                    Ok(()) => println!(
-                        "{} {}",
-                        "Initialized instantdots.toml in".green(),
-                        cwd.display()
-                    ),
-                    Err(e) => {
-                        eprintln!(
-                            "{}: {}",
-                            "Error initializing repo".red(),
-                            e.to_string().red()
-                        );
-                        return Err(e);
-                    }
-                }
+                execute_with_error_handling(
+                    dot::meta::init_repo(&cwd, name.as_deref(), *non_interactive),
+                    "Error initializing repo",
+                    Some(&format!("Initialized instantdots.toml in {}", cwd.display())),
+                )?;
             }
         },
         None => {
