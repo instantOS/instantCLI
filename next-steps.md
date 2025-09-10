@@ -1,372 +1,273 @@
-# Custom Directory Configuration Analysis and Improvement Plan
+# Repository Management CLI Improvement Plan
 
 ## Current State Analysis
 
-### 1. CLI Argument Handling
-**Current Implementation:**
-- Config directory: `--config` flag (`src/main.rs:20`)
-- Database path: `--database` flag (`src/main.rs:24`) - TO BE REMOVED
-- No CLI flag for repos directory (configured via config file) - FINAL STATE
+### Issues with Current CLI Structure
 
-**Target Architecture:**
-- **Config directory**: CLI-only (as requested)
-- **Database directory**: Config-only (mandatory PathBuf with auto tilde handling)
-- **Repos directory**: Config-only (mandatory PathBuf with auto tilde handling)
-- **All path access**: Direct config field access as PathBuf
+1. **Monolithic mod.rs (489 lines)**: The main dotfile module has grown too large, mixing repository management, dotfile operations, and CLI logic.
 
-### 2. Configuration Management
-**Current Structure** (`src/dot/config.rs`):
-```rust
-pub struct Config {
-    pub repos_dir: Option<String>,  // ❌ Should be PathBuf with custom serialization
-    // ❌ Missing: database_dir field
-}
+2. **Scattered Repository Commands**: Repository-related operations are spread across different command structures:
+   - `clone` - Add new repositories
+   - `remove` - Remove repositories  
+   - `update` - Update all repositories
+   - `status` - Check repository status
+   - `list-subdirs/set-subdirs/show-subdirs` - Subdirectory management
+
+4. **Missing Repository Operations**: No direct way to:
+   - View repository details
+   - Enable/disable repositories
+
+## Proposed CLI Structure
+
+### New Repository Subcommand Group
+
+The `update` command should remain separate and update all repositories then apply changes. After adding a repo, it should also be immediately applied.
+
+```
+instant dot repo <subcommand>
 ```
 
-**Current Path Resolution:**
-- `config_file_path(custom_path)` - handles custom config path ✅
-- `db_path(custom_path)` - only uses CLI argument, ignores config ❌ (TO BE REMOVED)
-- `repos_dir(custom_path)` - uses config field `repos_dir` ❌ (TO BE: direct PathBuf access)
+#### Repository Management Commands
+- `instant dot repo add <url> [--name] [--branch]` - Add a new repository 
+- `instant dot repo remove <name> [--files]` - Remove a repository
+- `instant dot repo list` - List all configured repositories
+- `instant dot repo info <name>` - Show detailed repository information, list subdirs and display which ones are active, as well as status info
 
-### 3. Directory Usage Patterns
+#### Repository Operations
+- `instant dot repo enable <name>` - Enable a disabled repository
+- `instant dot repo disable <name>` - Disable a repository temporarily
 
-**Database Path:**
-- `src/main.rs:136`: `Database::new(dot::config::db_path(cli.database.as_deref())?)`
-- `src/main.rs:158`: Passed to `dot::add_repo()` as `db_path` parameter
-- `src/dot/git.rs:78`: Uses `crate::dot::config::db_path(db_path)?`
+#### Subdirectory Management (improved)
+- `instant dot repo subdirs set <name> <subdirs...>` - Set active subdirectories
+- `instant dot repo subdirs list <name> [--active]` - List available subdirectories, optionally only active ones
 
-**Repos Directory:**
-- `src/dot/localrepo.rs:87`: `config::repos_dir(cfg.repos_dir.as_deref())?`
-- `src/dot/git.rs:15`: `config::repos_dir(config_manager.config.repos_dir.as_deref())?`
-- `src/dot/localrepo.rs:82`: Bug comment indicates should use config but doesn't have access
+### Backward Compatibility
+Breaking changes are allowed. The plan eliminates the need for backward compatibility to clean up the CLI interface.
 
-### 4. Current Defaults
-From `src/dot/config.rs`:
-- Database default: `dirs::data_dir()?.join("instantos").join("instant.db")`
-- Repos default: `dirs::data_dir()?.join("instantos").join("dots")`
+## Code Refactoring Plan
 
-## Issues Identified
+### 1. Module Reorganization
 
-### 1. String Instead of Path Types
-- Current config uses `String` for paths instead of proper `PathBuf`
-- Manual tilde expansion required throughout the codebase
+```
+src/dot/
+       mod.rs                    # Main orchestration (simplified)
+       repo/                     # New repository management module
+            mod.rs               # Repository module exports
+            manager.rs           # Repository manager struct
+            commands.rs          # Repository command implementations
+            cli.rs               # Repository CLI definitions
+       dotfile/                 # Dotfile operations (existing)
+       config.rs                # Configuration management (existing)
+       db.rs                    # Database operations (existing)
+       git.rs                   # Git operations (existing)
+       localrepo.rs             # Local repository representation (existing)
+       meta.rs                  # Repository metadata (existing)
+       utils.rs                 # Utility functions (existing)
+```
 
-### 2. Unnecessary Path Resolution Functions
-- `db_path()` and `repos_dir()` functions add unnecessary complexity
-- Direct field access with automatic tilde handling would be simpler
+### 2. Repository Manager Structure
 
-### 3. Missing Custom Serialization
-- No automatic tilde replacement during serialization
-- No automatic tilde expansion during deserialization
+Create a `RepositoryManager` struct that respects existing dependency injection patterns and uses existing structs:
 
-### 4. Optional Directory Configuration
-- `repos_dir` is `Option<String>` - should be mandatory `PathBuf`
-- Missing `database_dir` field entirely
+### RepositoryManager Design Analysis
 
-## Improvement Plan
+After analyzing the codebase, here are the key findings:
 
-### Phase 1: Create Custom Path Serialization Module
+**Is RepositoryManager needed?** **Yes, but with a different scope:**
 
-**1. Create Path Serialization Module** (`src/dot/path_serde.rs`)
+1. **Existing Iteration Patterns Found**:
+   - `get_active_dotfile_dirs()` iterates over `config.repos` 
+   - `update_all()` in `git.rs` iterates over `config.repos`
+   - `status_all()` in `git.rs` iterates over `config.repos`
+   - Multiple `LocalRepo::new()` calls throughout the codebase
+
+2. **Current Duplication**: Each function that works with repositories repeats the same pattern:
+   ```rust
+   for repo in &config.repos {
+       let local_repo = LocalRepo::new(config, repo.name.clone())?;
+       // ... do something with local_repo
+   }
+   ```
+
+3. **RepositoryManager Value**: Instead of eliminating iteration, the RepositoryManager should:
+   - **Centralize the iteration logic** that's currently duplicated
+   - **Handle enable/disable filtering** consistently
+   - **Provide a single source of truth** for repository operations
+   - **Allow existing functions** to be refactored to use it
+
+**Enable/Disable Implementation Plan**:
+
+1. **Add `enabled` field to `Repo` struct** in `config.rs`:
+   ```rust
+   #[derive(Serialize, Deserialize, Debug, Clone)]
+   pub struct Repo {
+       pub url: String,
+       pub name: String,
+       pub branch: Option<String>,
+       #[serde(default = "default_active_subdirs")]
+       pub active_subdirectories: Vec<String>,
+       #[serde(default = "default_enabled")]
+       pub enabled: bool,
+   }
+   
+   fn default_enabled() -> bool { true }
+   ```
+
+2. **Update Core Functions** to respect the `enabled` flag:
+   - `get_active_dotfile_dirs()` should skip disabled repos
+   - `get_all_dotfiles()` should skip disabled repos
+   - `update_all()` should skip disabled repos but show they were skipped
+   - `status_all()` should show disabled repos with appropriate status
+
+3. **Visibility**: Disabled repos should appear in listing commands with clear indicators but be excluded from operations like apply/fetch.
+
+**Dependency Injection Analysis**: You're absolutely right! The existing codebase consistently passes `&Config` and `&Database` references to functions rather than having structs own copies. Looking at patterns like:
+
 ```rust
-use anyhow::Result;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::path::{Path, PathBuf};
-use shellexpand;
+pub fn apply_all(config: &Config, db: &Database) -> Result<()>
+pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()>
+pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()>
+```
 
-/// A PathBuf that automatically handles tilde expansion/compression
-#[derive(Debug, Clone, PartialEq)]
-pub struct TildePath(PathBuf);
+**RepositoryManager should follow the same pattern**:
 
-impl TildePath {
-    pub fn new(path: PathBuf) -> Self {
-        TildePath(path)
+```rust
+// RepositoryManager is a temporary helper, not a long-lived owner
+pub struct RepositoryManager<'a> {
+    config: &'a Config,
+    db: &'a Database,
+}
+
+impl<'a> RepositoryManager<'a> {
+    pub fn new(config: &'a Config, db: &'a Database) -> Self {
+        Self { config, db }
     }
     
-    pub fn as_path(&self) -> &Path {
-        &self.0
-    }
+    // All methods use the borrowed references
+    pub fn for_each_enabled_repo<F>(&self, mut callback: F) -> Result<()>
+    where F: FnMut(&config::Repo, &LocalRepo) -> Result<()>;
+}
+
+impl<'a> RepositoryManager<'a> {
+    // Core operations
+    pub fn add_repository(&self, url: &str, name: Option<String>, branch: Option<String>) -> Result<()>;
+    pub fn remove_repository(&self, name: &str, remove_files: bool) -> Result<()>;
     
-    pub fn into_path_buf(self) -> PathBuf {
-        self.0
-    }
+    // Enable/disable functionality  
+    pub fn enable_repository(&self, name: &str) -> Result<()>;
+    pub fn disable_repository(&self, name: &str) -> Result<()>;
     
-    /// Create from a string with tilde expansion
-    pub fn from_str(s: &str) -> Result<Self> {
-        let expanded = shellexpand::tilde(s).to_string();
-        let path = PathBuf::from(expanded);
-        Ok(TildePath(path))
-    }
+    // Centralized iteration with filtering
+    pub fn for_each_enabled_repo<F>(&self, mut callback: F) -> Result<()> 
+    where F: FnMut(&config::Repo, &LocalRepo) -> Result<()>;
     
-    /// Convert to string with tilde compression (replace home dir with ~)
-    pub fn to_tilde_string(&self) -> Result<String> {
-        let home_dir = dirs::home_dir()
-            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
-        
-        if let Ok(relative) = self.0.strip_prefix(&home_dir) {
-            if relative.as_os_str().is_empty() {
-                return Ok("~".to_string());
-            }
-            return Ok(format!("~{}", relative.display()));
-        }
-        
-        Ok(self.0.to_string_lossy().to_string())
-    }
-}
-
-impl From<TildePath> for PathBuf {
-    fn from(tilde_path: TildePath) -> Self {
-        tilde_path.0
-    }
-}
-
-impl AsRef<Path> for TildePath {
-    fn as_ref(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Serialize for TildePath {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let tilde_string = self.to_tilde_string()
-            .map_err(serde::ser::Error::custom)?;
-        tilde_string.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for TildePath {
-    fn deserialize<D>(deserializer: D) -> Result<TildePath, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        TildePath::from_str(&s).map_err(serde::de::Error::custom)
-    }
-}
-
-impl Default for TildePath {
-    fn default() -> Self {
-        TildePath(PathBuf::new())
-    }
-}
-```
-
-### Phase 2: Update Config Structure with PathBuf Fields
-
-**1. Update Config Struct** (`src/dot/config.rs:28`)
-```rust
-use crate::dot::path_serde::TildePath;
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Config {
-    #[serde(default)]
-    pub repos: Vec<Repo>,
-    #[serde(default = "default_clone_depth")]
-    pub clone_depth: u32,
-    #[serde(default = "default_hash_cleanup_days")]
-    pub hash_cleanup_days: u32,
-    #[serde(default = "default_repos_dir")]
-    pub repos_dir: TildePath,  // CHANGED: Option<String> -> TildePath
-    #[serde(default = "default_database_dir")]
-    pub database_dir: TildePath,  // NEW: mandatory TildePath field
-}
-```
-
-**2. Add Default Functions** (`src/dot/config.rs`)
-```rust
-fn default_repos_dir() -> TildePath {
-    let default_path = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("instantos")
-        .join("dots");
-    TildePath::new(default_path)
-}
-
-fn default_database_dir() -> TildePath {
-    let default_path = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("instantos")
-        .join("instant.db");
-    TildePath::new(default_path)
-}
-```
-
-**3. Update Default Implementation** (`src/dot/config.rs:40`)
-```rust
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            repos: Vec::new(),
-            clone_depth: default_clone_depth(),
-            hash_cleanup_days: default_hash_cleanup_days(),
-            repos_dir: default_repos_dir(),
-            database_dir: default_database_dir(),
-        }
-    }
-}
-```
-
-### Phase 3: Add Helper Methods to Config
-
-**1. Add Convenience Methods** (`src/dot/config.rs`)
-```rust
-impl Config {
-    // ... existing methods ...
+    pub fn for_all_repos<F>(&self, mut callback: F) -> Result<()> 
+    where F: FnMut(&config::Repo, &LocalRepo) -> Result<()>;
     
-    /// Get the database path as a PathBuf
-    pub fn database_path(&self) -> &Path {
-        self.database_dir.as_path()
-    }
+    // Repository listing and info
+    pub fn list_repositories(&self) -> Result<Vec<(config::Repo, LocalRepo)>>;
+    pub fn get_repository_info(&self, name: &str) -> Result<LocalRepo>;
     
-    /// Get the repos directory as a PathBuf
-    pub fn repos_path(&self) -> &Path {
-        self.repos_dir.as_path()
-    }
-    
-    /// Ensure all directory paths exist
-    pub fn ensure_directories(&self) -> Result<()> {
-        if let Some(parent) = self.database_path().parent() {
-            fs::create_dir_all(parent).context("creating database directory")?;
-        }
-        
-        fs::create_dir_all(self.repos_path()).context("creating repos directory")?;
-        Ok(())
-    }
+    // Subdirectory management
+    pub fn list_subdirectories(&self, name: &str) -> Result<Vec<String>>;
+    pub fn set_subdirectories(&self, name: &str, subdirs: Vec<String>) -> Result<()>;
 }
 ```
 
-### Phase 4: Remove Path Resolution Functions
+**Key Design Change**: Instead of returning `LocalRepo` vectors, return tuples of `(config::Repo, LocalRepo)` to provide both configuration and runtime information. The iterator-style methods (`for_each_enabled_repo`, `for_all_repos`) eliminate duplication in existing functions.
 
-**1. Remove db_path() Function** (`src/dot/config.rs:176`)
-- Delete entire `db_path()` function
-- Replace all usage with direct `config.database_path()` access
+### 3. Enhanced Repository Information
 
-**2. Remove repos_dir() Function** (`src/dot/config.rs:193`)
-- Delete entire `repos_dir()` function  
-- Replace all usage with direct `config.repos_path()` access
+Instead of creating new structs, enhance the existing `LocalRepo` struct to provide comprehensive information. The `LocalRepo` already contains:
+- `url`, `name`, `branch` fields
+- `dotfile_dirs: Vec<DotfileDir>` with active/inactive status
+- `meta: RepoMetaData` with repository metadata
+- Methods for git operations and path resolution
 
-### Phase 5: Update Usage Throughout Codebase
+Additional helper functions can be added to provide status information without creating duplicate data structures.
 
-**1. Update Main Function** (`src/main.rs:136`)
+### 4. CLI Structure Improvements
+
+#### Main CLI Structure (simplified)
 ```rust
-// Remove CLI database path, use config directly
-config_manager.config.ensure_directories()?;
-let db = match Database::new(config_manager.config.database_path().to_path_buf()) {
-    Ok(db) => db,
-    Err(e) => {
-        eprintln!(
-            "{}: {}",
-            "Error opening database".red(),
-            e.to_string().red()
-        );
-        return Err(e);
-    }
-};
-```
-
-**2. Update LocalRepo Methods** (`src/dot/localrepo.rs:81`)
-```rust
-pub fn local_path(&self, cfg: &Config) -> Result<PathBuf> {
-    Ok(cfg.repos_path().join(&self.name))
+#[derive(Subcommand, Debug)]
+enum DotCommands {
+    // Repository operations (new structure)
+    Repo {
+        #[command(subcommand)]
+        command: RepoCommands,
+    },
+    
+    // Core dotfile operations
+    Apply,
+    Fetch { path: Option<String>, dry_run: bool },
+    Reset { path: String },
+    Add { path: String },
+    
+    // Global update command (updates all repos and applies changes)
+    Update,
+    
+    // Other operations
+    Status { path: Option<String> },
+    Init { name: Option<String>, non_interactive: bool },
 }
 ```
 
-**3. Update Git Operations** (`src/dot/git.rs:15`)
+#### Repository Subcommands
 ```rust
-let base = config_manager.config.repos_path();
-```
+#[derive(Subcommand, Debug)]
+enum RepoCommands {
+    /// List all configured repositories
+    List,
+    /// Add a new repository (and immediately apply)
+    Add { 
+        url: String, 
+        #[arg(long)]
+        name: Option<String>, 
+        #[arg(long, short = 'b')]
+        branch: Option<String> 
+    },
+    /// Remove a repository
+    Remove { 
+        name: String, 
+        #[arg(short, long)]
+        files: bool 
+    },
+    /// Show detailed repository information
+    Info { name: String },
+    /// Enable a disabled repository
+    Enable { name: String },
+    /// Disable a repository temporarily
+    Disable { name: String },
+    /// Subdirectory management
+    Subdirs {
+        #[command(subcommand)]
+        command: SubdirCommands,
+    },
+}
 
-**4. Remove Legacy CLI Database Flag**
-- Remove `database: Option<String>` from `Cli` struct (`src/main.rs:24`)
-- Remove all `cli.database.as_deref()` calls
-- Remove `db_path` parameter from all function signatures
-
-### Phase 6: Update Tests
-
-**1. Modify Test Config** (`tests/scripts/test_utils.sh:28`)
-```bash
-# Create initial config with portable directory paths
-cat > "$CONFIG_FILE" << EOF
-repos_dir = "~/instant-test/repos"
-database_dir = "~/instant-test/instant.db"
-clone_depth = 1
-EOF
-```
-
-**2. Update Test Execution** (`tests/scripts/test_utils.sh:110`)
-```bash
-# Remove --database flag, use config instead
-HOME="$HOME_DIR" "$binary_path" --config "$CONFIG_FILE" "$@"
-```
-
-### Phase 7: Add Module Integration
-
-**1. Update Module Exports** (`src/dot/mod.rs`)
-```rust
-mod path_serde;
-pub use path_serde::TildePath;
-```
-
-**2. Add Unit Tests for Path Serialization** (`src/dot/path_serde.rs`)
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-    
-    #[test]
-    fn test_tilde_expansion() {
-        let tilde_path = TildePath::from_str("~/test/path").unwrap();
-        let expanded = tilde_path.as_path();
-        assert!(expanded.to_string_lossy().contains(std::env::var("HOME").unwrap()));
-    }
-    
-    #[test]
-    fn test_tilde_compression() {
-        let home = dirs::home_dir().unwrap();
-        let test_path = home.join("test").join("path");
-        let tilde_path = TildePath::new(test_path);
-        let compressed = tilde_path.to_tilde_string().unwrap();
-        assert_eq!(compressed, "~/test/path");
-    }
-    
-    #[test]
-    fn test_serialization_roundtrip() {
-        let original = TildePath::from_str("~/test/path").unwrap();
-        let serialized = serde_json::to_string(&original).unwrap();
-        let deserialized: TildePath = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(original.as_path(), deserialized.as_path());
-    }
+#[derive(Subcommand, Debug)]
+enum SubdirCommands {
+    /// List available subdirectories
+    List { 
+        name: String,
+        #[arg(long)]
+        active: bool 
+    },
+    /// Set active subdirectories
+    Set { 
+        name: String, 
+        subdirs: Vec<String> 
+    },
 }
 ```
 
-## Implementation Priority
+## Key Design Principles
 
-1. **High**: Create TildePath serialization module with tests
-2. **High**: Update Config struct to use TildePath fields
-3. **High**: Add convenience methods to Config
-4. **High**: Remove path resolution functions and update direct usage
-5. **Medium**: Remove CLI database flag and update all function calls
-6. **Medium**: Update tests to use portable tilde-based config
-7. **Low**: Add directory creation helpers and validation
+1. **Respect Existing Patterns**: Use existing dependency injection with `&Config` and `&Database` references, not ownership
+2. **Leverage Existing Structs**: Utilize `LocalRepo` and `DotfileDir` instead of creating redundant data structures  
+3. **Minimal Abstraction**: RepositoryManager is a temporary helper for centralizing iteration, not a long-lived owner of data
+4. **Consistent Error Handling**: Follow existing error handling patterns throughout the codebase
+5. **Preserve Functionality**: Ensure all existing capabilities are maintained during refactoring, although breaking backward compatibility in terms of interfaces is allowed
+6. **Borrowed References**: All RepositoryManager methods use borrowed references to maintain consistency with existing codebase patterns
 
-## Testing Strategy
-
-1. **Unit Tests**: Test TildePath serialization/deserialization thoroughly
-2. **Integration Tests**: Test full workflow with portable config files
-3. **Roundtrip Tests**: Ensure serialize/deserialize preserves paths correctly
-4. **Cross-platform Tests**: Test tilde handling on different platforms
-5. **Migration Tests**: Test upgrading from old config format
-
-## Benefits of This Approach
-
-1. **Type Safety**: PathBuf fields instead of strings with compile-time path safety
-2. **Transparency**: Automatic tilde handling is invisible to code using the config
-3. **Portability**: Config files use `~` and work across different machines
-4. **Simplicity**: Direct field access, no manual path expansion needed
-5. **Maintainability**: Custom serialization logic is isolated in one module
-6. **User Experience**: Config files are easily shareable and human-readable
-7. **Clean Architecture**: Zero abstraction overhead for path operations
