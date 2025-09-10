@@ -15,8 +15,8 @@ pub enum RepoCommands {
     /// Remove a repository
     Remove { 
         name: String, 
-        #[arg(short, long)]
-        files: bool 
+        #[arg(long)]
+        keep_files: bool 
     },
     /// Show detailed repository information
     Info { name: String },

@@ -20,8 +20,8 @@ pub fn handle_repo_command(
         RepoCommands::Add { url, name, branch } => {
             add_repository(config_manager, db, url, name.as_deref(), branch.as_deref(), debug)
         }
-        RepoCommands::Remove { name, files } => {
-            remove_repository(config_manager, db, name, *files)
+        RepoCommands::Remove { name, keep_files } => {
+            remove_repository(config_manager, db, name, !*keep_files)
         }
         RepoCommands::Info { name } => {
             show_repository_info(config_manager, db, name)
@@ -174,6 +174,13 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
     println!("Branch: {}", repo_config.branch.as_deref().unwrap_or("default"));
     println!("Status: {}", if repo_config.enabled { "enabled".green() } else { "disabled".yellow() });
     println!("Local path: {}", local_repo.local_path(config)?.display());
+    
+    if let Some(author) = &local_repo.meta.author {
+        println!("Author: {}", author);
+    }
+    if let Some(description) = &local_repo.meta.description {
+        println!("Description: {}", description);
+    }
     
     println!("\nSubdirectories:");
     for dir in &local_repo.dotfile_dirs {
