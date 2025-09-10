@@ -1,7 +1,6 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use colored::*;
 use std::fmt::Display;
-use tokio::join;
 
 #[derive(Debug, Clone)]
 pub enum CheckStatus {
@@ -102,7 +101,7 @@ pub fn print_results(results: &[CheckResult]) {
         "Status".bold(),
         "Message".bold()
     );
-    println!("{}", header);
+    println!("{header}");
 
     let mut failed_checks = vec![];
     for result in results {
@@ -113,7 +112,7 @@ pub fn print_results(results: &[CheckResult]) {
             status_str,
             result.status.message()
         );
-        println!("{}", line);
+        println!("{line}");
         if !result.status.is_success() && result.fix_message.is_some() {
             failed_checks.push(result.clone());
         }
@@ -121,7 +120,7 @@ pub fn print_results(results: &[CheckResult]) {
 
     if !failed_checks.is_empty() {
         let fixes_msg = "\nAvailable fixes:".bold().yellow();
-        println!("{}", fixes_msg);
+        println!("{fixes_msg}");
         for result in &failed_checks {
             if let Some(ref msg) = result.fix_message {
                 println!("  - {}: {}", result.name, msg);

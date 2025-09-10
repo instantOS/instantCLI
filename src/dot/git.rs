@@ -5,7 +5,6 @@ use crate::dot::utils;
 use anyhow::{Context, Result};
 use colored::*;
 use std::path::PathBuf;
-use std::process::Command;
 
 pub fn add_repo(
     config_manager: &mut config::ConfigManager,
@@ -144,15 +143,15 @@ fn show_single_file_status(
     let target_path = super::resolve_dotfile_path(path_str)?;
 
     if let Some(dotfile) = all_dotfiles.get(&target_path) {
-        let repo_name = get_repo_name_for_dotfile(&dotfile, cfg);
-        let dotfile_dir = get_dotfile_dir_name(&dotfile, cfg);
+        let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
+        let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
         println!(
             "{} -> {}",
             target_path.display(),
             get_dotfile_status(dotfile, db)
         );
         println!("  Source: {}", dotfile.source_path.display());
-        println!("  Repo: {} ({})", repo_name, dotfile_dir);
+        println!("  Repo: {repo_name} ({dotfile_dir})");
     } else {
         println!("{} -> not tracked", target_path.display());
     }
@@ -173,17 +172,17 @@ fn show_status_summary(
     // Categorize files by status and collect repo statistics
     // TODO: extract this into a separate function
     for (target_path, dotfile) in all_dotfiles {
-        let status = get_dotfile_status(&dotfile, db);
-        let repo_name = get_repo_name_for_dotfile(&dotfile, cfg);
-        let dotfile_dir = get_dotfile_dir_name(&dotfile, cfg);
+        let status = get_dotfile_status(dotfile, db);
+        let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
+        let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
 
         // Store file info for later display
         files_by_status
-            .entry(status.clone())
+            .entry(status)
             .or_insert_with(Vec::new)
             .push((
                 target_path.clone(),
-                dotfile.clone(),
+                dotfile,
                 repo_name.clone(),
                 dotfile_dir.clone(),
             ));
@@ -191,7 +190,7 @@ fn show_status_summary(
         // Update repo statistics
         let repo_entry = repo_stats
             .entry(repo_name.clone())
-            .or_insert_with(|| std::collections::HashMap::new());
+            .or_insert_with(std::collections::HashMap::new);
         *repo_entry.entry(dotfile_dir.clone()).or_insert(0) += 1;
     }
 
@@ -206,7 +205,7 @@ fn show_status_summary(
         .get(&DotFileStatus::Outdated)
         .map_or(0, |v| v.len());
 
-    println!("Total tracked: {} files", total_files);
+    println!("Total tracked: {total_files} files");
     println!("{} Clean: {} files", "✓".green(), clean_count);
 
     if modified_count > 0 {
@@ -224,7 +223,7 @@ fn show_status_summary(
         if let Some(modified_files) = files_by_status.get(&DotFileStatus::Modified) {
             println!("{}", "Modified files:".yellow().bold());
             for (target_path, dotfile, repo_name, dotfile_dir) in modified_files {
-                let relative_path = target_path.strip_prefix(&home).unwrap_or(&target_path);
+                let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
                 let tilde_path = format!("~/{}", relative_path.display());
                 println!(
                     "  {} -> {} ({}: {})",
@@ -240,7 +239,7 @@ fn show_status_summary(
         if let Some(outdated_files) = files_by_status.get(&DotFileStatus::Outdated) {
             println!("{}", "Outdated files:".blue().bold());
             for (target_path, dotfile, repo_name, dotfile_dir) in outdated_files {
-                let relative_path = target_path.strip_prefix(&home).unwrap_or(&target_path);
+                let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
                 let tilde_path = format!("~/{}", relative_path.display());
                 println!(
                     "  {} -> {} ({}: {})",
@@ -261,7 +260,7 @@ fn show_status_summary(
             .get(&DotFileStatus::Clean)
             .unwrap_or(&vec![])
         {
-            let relative_path = target_path.strip_prefix(&home).unwrap_or(&target_path);
+            let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
             let tilde_path = format!("~/{}", relative_path.display());
             println!(
                 "  {} -> {} ({}: {})",
@@ -347,7 +346,7 @@ fn get_repo_name_for_dotfile(dotfile: &super::Dotfile, cfg: &config::Config) -> 
     for repo_config in &cfg.repos {
         if dotfile
             .source_path
-            .starts_with(&cfg.repos_path().join(&repo_config.name))
+            .starts_with(cfg.repos_path().join(&repo_config.name))
         {
             return super::RepoName::new(repo_config.name.clone());
         }
@@ -415,7 +414,7 @@ pub fn status_all_legacy(
                 Ok(path) => path,
                 Err(e) => {
                     // If path resolution fails, show error but continue with other repos
-                    eprintln!("Error resolving path '{}': {}", p, e);
+                    eprintln!("Error resolving path '{p}': {e}");
                     continue;
                 }
             };
@@ -451,9 +450,9 @@ pub fn status_all_legacy(
                 let filemap = super::get_all_dotfiles(cfg, db)?;
                 if let Some(dotfile) = filemap.get(&provided) {
                     println!("Source: {}", dotfile.source_path.display());
-                    if dotfile.is_modified(&db) {
+                    if dotfile.is_modified(db) {
                         println!("File status: {}", "modified".yellow());
-                    } else if dotfile.is_outdated(&db) {
+                    } else if dotfile.is_outdated(db) {
                         println!("File status: {}", "outdated".blue());
                     } else {
                         println!("File status: {}", "clean".green());
@@ -490,13 +489,13 @@ pub fn status_all_legacy(
             for (target_path, dotfile) in filemap.iter() {
                 // Only show dotfiles belonging to the current repo
                 if dotfile.source_path.starts_with(&target) {
-                    if dotfile.is_modified(&db) {
+                    if dotfile.is_modified(db) {
                         println!(
                             "    {} -> {}",
                             target_path.to_string_lossy().bold(),
                             "modified".yellow()
                         );
-                    } else if dotfile.is_outdated(&db) {
+                    } else if dotfile.is_outdated(db) {
                         println!(
                             "    {} -> {}",
                             target_path.to_string_lossy().bold(),

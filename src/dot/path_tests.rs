@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::dot::resolve_dotfile_path;
-    use shellexpand;
+    
     use std::fs;
     use std::path::PathBuf;
 

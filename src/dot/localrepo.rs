@@ -1,7 +1,7 @@
 use crate::dot::config::Config;
 use crate::dot::utils;
 use anyhow::{Context, Result};
-use std::{path::Path, path::PathBuf, process::Command};
+use std::{path::Path, path::PathBuf};
 
 /// Represents a single dotfile directory within a repository
 #[derive(Debug, Clone)]
@@ -12,7 +12,7 @@ pub struct DotfileDir {
 
 impl DotfileDir {
     pub fn new(name: &str, repo_path: &PathBuf, is_active: bool) -> Result<Self> {
-        let path = repo_path.join(&name);
+        let path = repo_path.join(name);
 
         // Check if path exists on creation
         if !path.exists() {
@@ -58,7 +58,7 @@ impl LocalRepo {
 
         // Read metadata file
         let meta = crate::dot::meta::read_meta(&local_path)
-            .with_context(|| format!("Failed to read metadata for repository '{}'", name))?;
+            .with_context(|| format!("Failed to read metadata for repository '{name}'"))?;
 
         // Note: We allow metadata name to differ from config name to support flexible naming
 
@@ -146,13 +146,13 @@ impl LocalRepo {
         let current = self.get_checked_out_branch(cfg)?;
         if current != branch {
             if debug {
-                eprintln!("Switching {} -> {}", current, branch);
+                eprintln!("Switching {current} -> {branch}");
             } else {
-                println!("Switching {} -> {}", current, branch);
+                println!("Switching {current} -> {branch}");
             }
 
             // fetch the branch and checkout
-            let pb = utils::create_spinner(format!("Fetching branch {}...", branch));
+            let pb = utils::create_spinner(format!("Fetching branch {branch}..."));
 
             utils::git_command_in_dir_with_output(
                 &target,
@@ -160,9 +160,9 @@ impl LocalRepo {
                 &format!("fetching branch {} in {}", branch, target.display()),
             )?;
 
-            pb.finish_with_message(format!("Fetched branch {}", branch));
+            pb.finish_with_message(format!("Fetched branch {branch}"));
 
-            let pb = utils::create_spinner(format!("Checking out {}...", branch));
+            let pb = utils::create_spinner(format!("Checking out {branch}..."));
 
             utils::git_command_in_dir_with_output(
                 &target,
@@ -170,7 +170,7 @@ impl LocalRepo {
                 &format!("checking out branch {} in {}", branch, target.display()),
             )?;
 
-            pb.finish_with_message(format!("Checked out {}", branch));
+            pb.finish_with_message(format!("Checked out {branch}"));
         }
         Ok(())
     }

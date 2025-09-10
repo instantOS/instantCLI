@@ -167,7 +167,7 @@ impl Database {
         let path_str = path
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
-        let hashes = stmt.query_map([path_str], |row| Self::row_to_dotfile_hash(row))?;
+        let hashes = stmt.query_map([path_str], Self::row_to_dotfile_hash)?;
 
         let mut result = Vec::new();
         for hash in hashes {
@@ -187,7 +187,7 @@ impl Database {
                 [path
                     .to_str()
                     .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?],
-                |row| Self::row_to_dotfile_hash(row),
+                Self::row_to_dotfile_hash,
             )
             .optional()?;
 

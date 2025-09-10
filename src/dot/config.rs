@@ -171,7 +171,7 @@ impl Config {
                     repo.active_subdirectories.clone()
                 }
             })
-            .unwrap_or_else(|| default_active_subdirs())
+            .unwrap_or_else(default_active_subdirs)
     }
 
     /// Enable a repository by name
@@ -270,7 +270,7 @@ impl ConfigManager {
 /// ```
 pub fn extract_repo_name(repo: &str) -> String {
     let s = repo.trim_end_matches(".git");
-    s.rsplit(|c| c == '/' || c == ':')
+    s.rsplit(['/', ':'])
         .next()
         .map(|p| p.to_string())
         .unwrap_or_else(|| s.to_string())

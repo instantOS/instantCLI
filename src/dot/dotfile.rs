@@ -147,7 +147,7 @@ impl Dotfile {
         }
 
         let result = hasher.finalize();
-        let hash = format!("{:x}", result);
+        let hash = format!("{result:x}");
 
         // Cache the result
         {

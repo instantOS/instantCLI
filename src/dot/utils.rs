@@ -33,7 +33,7 @@ pub fn git_clone(
     cmd.arg(url).arg(target);
 
     if debug {
-        eprintln!("Running: {:?}", cmd);
+        eprintln!("Running: {cmd:?}");
     }
 
     let output = cmd.output().context("Failed to execute git clone")?;
@@ -59,7 +59,7 @@ pub fn git_command_in_dir(
 
     let output = cmd
         .output()
-        .context(format!("Failed to execute git {}", operation_name))?;
+        .context(format!("Failed to execute git {operation_name}"))?;
     if !output.status.success() {
         anyhow::bail!(
             "Git {} failed: {}",
@@ -83,7 +83,7 @@ pub fn git_command_in_dir_with_output(
 
     let output = cmd
         .output()
-        .context(format!("Failed to execute git {}", operation_name))?;
+        .context(format!("Failed to execute git {operation_name}"))?;
     if !output.status.success() {
         anyhow::bail!(
             "Git {} failed: {}",

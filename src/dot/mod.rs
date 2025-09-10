@@ -1,6 +1,5 @@
 use anyhow::Result;
 use colored::*;
-use shellexpand;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -49,7 +48,7 @@ pub mod utils;
 mod path_tests;
 
 pub use crate::dot::dotfile::Dotfile;
-pub use git::{add_repo, status_all, update_all};
+pub use git::{status_all, update_all};
 
 use crate::dot::config::Config;
 use crate::dot::db::Database;
@@ -297,7 +296,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
     for dotfile in filemap.values() {
         let was_missing = !dotfile.target_path.exists();
-        dotfile.apply(&db)?;
+        dotfile.apply(db)?;
         if was_missing {
             let relative = dotfile
                 .target_path
@@ -310,7 +309,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
                     )
                 })?
                 .to_string_lossy();
-            println!("Created new dotfile: ~/{}", relative);
+            println!("Created new dotfile: ~/{relative}");
         }
     }
     db.cleanup_hashes(config.hash_cleanup_days)?;
@@ -326,8 +325,8 @@ pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> 
 
     for dotfile in filemap.values() {
         if dotfile.target_path.starts_with(&full_path) {
-            if dotfile.is_modified(&db) {
-                dotfile.reset(&db)?;
+            if dotfile.is_modified(db) {
+                dotfile.reset(db)?;
                 reset_files.push(dotfile.target_path.clone());
             } else {
                 already_clean_files.push(dotfile.target_path.clone());

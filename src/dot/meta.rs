@@ -77,7 +77,7 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>, non_interactive: bool) ->
             _ => inferred,
         };
 
-        print!("Name [{}]: ", default_name);
+        print!("Name [{default_name}]: ");
         io::stdout().flush().ok();
         let mut input = String::new();
         io::stdin()

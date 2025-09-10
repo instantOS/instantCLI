@@ -54,7 +54,7 @@ fn list_repositories(config_manager: &ConfigManager, db: &Database) -> Result<()
         let branch_info = repo_config
             .branch
             .as_deref()
-            .map(|b| format!(" ({})", b))
+            .map(|b| format!(" ({b})"))
             .unwrap_or_default();
 
         let active_subdirs = if repo_config.active_subdirectories.is_empty() {
@@ -70,7 +70,7 @@ fn list_repositories(config_manager: &ConfigManager, db: &Database) -> Result<()
             repo_config.url,
             status
         );
-        println!("    Active subdirs: {}", active_subdirs);
+        println!("    Active subdirs: {active_subdirs}");
     }
 
     Ok(())
@@ -90,7 +90,7 @@ fn add_repository(
         .unwrap_or_else(|| extract_repo_name(url));
 
     // Create the repo config
-    let mut repo_config = crate::dot::config::Repo {
+    let repo_config = crate::dot::config::Repo {
         url: url.to_string(),
         name: repo_name.clone(),
         branch: branch.map(|s| s.to_string()),
@@ -109,18 +109,18 @@ fn add_repository(
     );
 
     // Clone the repository
-    match git_add_repo(config_manager, repo_config.into(), debug) {
+    match git_add_repo(config_manager, repo_config, debug) {
         Ok(path) => {
             println!("Cloned to: {}", path.display());
 
             // Apply the repository immediately after adding
             println!("Applying dotfiles from new repository...");
             if let Err(e) = apply_all_repos(config_manager, db) {
-                eprintln!("Warning: Failed to apply dotfiles: {}", e);
+                eprintln!("Warning: Failed to apply dotfiles: {e}");
             }
         }
         Err(e) => {
-            eprintln!("Warning: Failed to clone repository: {}", e);
+            eprintln!("Warning: Failed to clone repository: {e}");
             // Remove from config since clone failed
             config_manager.config.repos.retain(|r| r.name != repo_name);
             config_manager.save()?;
@@ -206,10 +206,10 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
     println!("Local path: {}", local_repo.local_path(config)?.display());
 
     if let Some(author) = &local_repo.meta.author {
-        println!("Author: {}", author);
+        println!("Author: {author}");
     }
     if let Some(description) = &local_repo.meta.description {
-        println!("Description: {}", description);
+        println!("Description: {description}");
     }
 
     println!("\nSubdirectories:");
@@ -224,7 +224,7 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
-        println!("  {} - {}", dir_name, status);
+        println!("  {dir_name} - {status}");
     }
 
     Ok(())
@@ -302,7 +302,7 @@ fn list_subdirectories(
             "not configured".dimmed()
         };
 
-        println!("  {} - {} ({})", dir_name, status, configured_status);
+        println!("  {dir_name} - {status} ({configured_status})");
     }
 
     Ok(())

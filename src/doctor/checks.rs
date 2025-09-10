@@ -1,7 +1,7 @@
 use super::{CheckStatus, DoctorCheck};
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::process::{Child, Command as TokioCommand};
+use tokio::process::Command as TokioCommand;
 
 pub struct InternetCheck;
 

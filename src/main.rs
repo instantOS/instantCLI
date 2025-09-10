@@ -31,9 +31,9 @@ fn execute_with_error_handling<T>(
     }
 }
 
-use crate::dot::config::{ConfigManager, Repo, extract_repo_name};
+use crate::dot::config::ConfigManager;
 use crate::dot::db::Database;
-use crate::dot::repo::cli::{RepoCommands, SubdirCommands};
+use crate::dot::repo::cli::RepoCommands;
 
 /// InstantCLI main parser
 #[derive(Parser, Debug)]
@@ -149,7 +149,7 @@ async fn main() -> Result<()> {
                 }
                 DotCommands::Reset { path } => {
                     execute_with_error_handling(
-                        dot::reset_modified(&config_manager.config, &db, &path),
+                        dot::reset_modified(&config_manager.config, &db, path),
                         "Error resetting dotfiles",
                         None,
                     )?;
@@ -170,7 +170,7 @@ async fn main() -> Result<()> {
                 }
                 DotCommands::Add { path } => {
                     execute_with_error_handling(
-                        dot::add_dotfile(&config_manager.config, &db, &path),
+                        dot::add_dotfile(&config_manager.config, &db, path),
                         "Error adding dotfile",
                         Some(&format!("Added dotfile {}", path.green())),
                     )?;
@@ -224,7 +224,7 @@ async fn main() -> Result<()> {
                 if !result.status.is_success() && result.fix_message.is_some() {
                     let check_name = &result.name;
                     let fix_msg = result.fix_message.as_ref().unwrap();
-                    let prompt = format!("Apply fix for {}? ({})", check_name, fix_msg);
+                    let prompt = format!("Apply fix for {check_name}? ({fix_msg})");
                     let apply_fix = Confirm::new()
                         .with_prompt(&prompt)
                         .default(true)
