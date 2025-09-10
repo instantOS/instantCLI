@@ -140,6 +140,7 @@ pub fn status_all(
             let relative_path = target_path.strip_prefix(&home)
                 .unwrap_or(&target_path);
             
+            //TODO: do not do as_str and use the DotFileStatus enum
             match status.as_str() {
                 "modified" => has_modified = true,
                 "outdated" => has_outdated = true,
