@@ -1,21 +1,15 @@
+use crate::dot::utils;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
 /// Validate that the given path is a git repository
 fn ensure_git_repo(repo_path: &Path) -> Result<()> {
-    use std::process::Command;
-
-    let git_check = Command::new("git")
-        .arg("-C")
-        .arg(repo_path)
-        .arg("rev-parse")
-        .arg("--is-inside-work-tree")
-        .output()
-        .context("checking git repository")?;
-    if !git_check.status.success() {
-        anyhow::bail!("current directory is not a git repository");
-    }
+    utils::git_command_in_dir_with_output(
+        repo_path,
+        &["rev-parse", "--is-inside-work-tree"],
+        "checking git repository",
+    )?;
     Ok(())
 }
 

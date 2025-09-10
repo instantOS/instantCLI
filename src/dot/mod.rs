@@ -82,6 +82,7 @@ pub fn get_active_dotfile_dirs(config: &Config, db: &Database) -> Result<Vec<Pat
 }
 
 /// Helper function to scan a directory for dotfiles
+// should only be run within a dotfile subdir, NOT the home directory
 fn scan_directory_for_dotfiles(
     dir_path: &Path,
     home_path: &Path,

@@ -33,7 +33,7 @@ pub fn add_repo(
         &repo.url,
         &target,
         repo.branch.as_deref(),
-        depth,
+        depth as i32,
         debug,
     )?;
     
