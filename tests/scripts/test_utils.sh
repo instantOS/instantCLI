@@ -5,34 +5,61 @@
 
 set -e
 
+# Global flag to track if we're in a test wrapper
+export IN_TEST_WRAPPER=""
+
 # Test environment setup
 setup_test_env() {
     local test_dir="$1"
     
     # Create test directory structure
     export TEST_DIR="$test_dir"
-    export CONFIG_FILE="$TEST_DIR/instant.toml"
-    export DB_FILE="$TEST_DIR/instant.db"
-    # Test home directory - instant commands use this via HOME="$HOME_DIR"
     export HOME_DIR="$TEST_DIR/home"
     export REPO_DIR="$TEST_DIR/repo"
-    export REPOS_DIR="$TEST_DIR/repos"
     
     # Create directories
     mkdir -p "$HOME_DIR"
-    mkdir -p "$(dirname "$CONFIG_FILE")"
-    mkdir -p "$(dirname "$DB_FILE")"
     mkdir -p "$REPO_DIR"
-    mkdir -p "$REPOS_DIR"
-    
-    # Create initial config with custom directories
-    cat > "$CONFIG_FILE" << EOF
-repos_dir = "$REPOS_DIR"
-database_dir = "$DB_FILE"
-clone_depth = 1
-EOF
     
     echo "Test environment created in: $TEST_DIR"
+}
+
+# Ensure test is running within wrapper - exit if not
+ensure_test_wrapper() {
+    if [ -z "$IN_TEST_WRAPPER" ]; then
+        echo "ERROR: Test must be run within run_with_test_home wrapper" >&2
+        exit 1
+    fi
+}
+
+# Run command with test home directory wrapper
+run_with_test_home() {
+    local cmd="$1"
+    shift
+    
+    # Set the wrapper flag
+    local old_wrapper="$IN_TEST_WRAPPER"
+    export IN_TEST_WRAPPER="1"
+    export HOME="$HOME_DIR"
+    
+    # Run the command
+    if [ "$DEBUG" = "1" ]; then
+        echo "Running with HOME=$HOME_DIR: $cmd $@"
+    fi
+    
+    # Execute command and capture output
+    local output
+    output=$("$cmd" "$@")
+    local exit_code=$?
+    
+    # Restore wrapper flag
+    export IN_TEST_WRAPPER="$old_wrapper"
+    export HOME="$old_wrapper"
+    
+    # Always show output for review
+    echo "$output"
+    
+    return $exit_code
 }
 
 # Cleanup function
@@ -44,8 +71,8 @@ cleanup_test_env() {
 }
 
 
-# Get InstantCLI directory - simple approach that finds the repo and compiles the binary
-get_instant_dir() {
+# Get InstantCLI binary path
+get_instant_binary() {
     local script_dir
     local instant_dir
     
@@ -53,38 +80,6 @@ get_instant_dir() {
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     instant_dir="$(dirname "$script_dir")"  # from tests/scripts to tests
     instant_dir="$(dirname "$instant_dir")"  # from tests to repo root
-    
-    # Verify this is the InstantCLI repo
-    if [ -f "$instant_dir/Cargo.toml" ] && grep -q "name = \"instant\"" "$instant_dir/Cargo.toml" 2>/dev/null; then
-        echo "$instant_dir"
-        return 0
-    fi
-    
-    # Fallback: search upwards from current directory
-    local current_dir
-    current_dir="$(pwd)"
-    
-    while [ "$current_dir" != "/" ]; do
-        if [ -f "$current_dir/Cargo.toml" ] && grep -q "name = \"instant\"" "$current_dir/Cargo.toml" 2>/dev/null; then
-            echo "$current_dir"
-            return 0
-        fi
-        current_dir="$(dirname "$current_dir")"
-    done
-    
-    echo "ERROR: Could not find InstantCLI directory" >&2
-    return 1
-}
-
-# Compile and get the absolute path to the instant binary
-get_instant_binary() {
-    local instant_dir
-    instant_dir="$(get_instant_dir)"
-    
-    if [ "$instant_dir" = "ERROR: Could not find InstantCLI directory" ]; then
-        echo "ERROR: Could not find InstantCLI directory" >&2
-        return 1
-    fi
     
     local binary_path="$instant_dir/target/debug/instant"
     
@@ -99,16 +94,12 @@ get_instant_binary() {
     echo "$binary_path"
 }
 
-# Run InstantCLI command using the compiled binary
+# Run InstantCLI command using the wrapper
 run_instant() {
+    ensure_test_wrapper
     local binary_path
     binary_path="$(get_instant_binary)"
-    
-    if [ "$DEBUG" = "1" ]; then
-        echo "Running: HOME=\"$HOME_DIR\" $binary_path --config \"$CONFIG_FILE\" $@"
-    fi
-    
-    HOME="$HOME_DIR" "$binary_path" --config "$CONFIG_FILE" "$@"
+    run_with_test_home "$binary_path" "$@"
 }
 
 # Create a simple test repository
@@ -201,6 +192,127 @@ print_test_result() {
 # Trap cleanup on exit
 trap cleanup_test_env EXIT
 
+# Output verification utilities
+check_output_contains() {
+    local output="$1"
+    local keyword="$2"
+    local description="${3:-Check if output contains keyword}"
+    
+    echo "Checking: $description"
+    echo "Looking for: '$keyword' in output"
+    
+    if echo "$output" | grep -q "$keyword"; then
+        echo "✓ Found keyword: '$keyword'"
+        return 0
+    else
+        echo "✗ Keyword not found: '$keyword'"
+        echo "Output was:"
+        echo "$output"
+        return 1
+    fi
+}
+
+check_output_not_contains() {
+    local output="$1"
+    local keyword="$2"
+    local description="${3:-Check if output does not contain keyword}"
+    
+    echo "Checking: $description"
+    echo "Looking for absence of: '$keyword' in output"
+    
+    if echo "$output" | grep -q "$keyword"; then
+        echo "✗ Found unwanted keyword: '$keyword'"
+        echo "Output was:"
+        echo "$output"
+        return 1
+    else
+        echo "✓ Keyword not found (as expected): '$keyword'"
+        return 0
+    fi
+}
+
+check_files_different() {
+    local file1="$1"
+    local file2="$2"
+    local description="${3:-Check if files are different}"
+    
+    echo "Checking: $description"
+    
+    if [ ! -f "$file1" ]; then
+        echo "✗ File not found: $file1"
+        return 1
+    fi
+    
+    if [ ! -f "$file2" ]; then
+        echo "✗ File not found: $file2"
+        return 1
+    fi
+    
+    if cmp -s "$file1" "$file2"; then
+        echo "✗ Files are identical: $file1 and $file2"
+        return 1
+    else
+        echo "✓ Files are different: $file1 and $file2"
+        return 0
+    fi
+}
+
+check_files_same() {
+    local file1="$1"
+    local file2="$2"
+    local description="${3:-Check if files are the same}"
+    
+    echo "Checking: $description"
+    
+    if [ ! -f "$file1" ]; then
+        echo "✗ File not found: $file1"
+        return 1
+    fi
+    
+    if [ ! -f "$file2" ]; then
+        echo "✗ File not found: $file2"
+        return 1
+    fi
+    
+    if cmp -s "$file1" "$file2"; then
+        echo "✓ Files are identical: $file1 and $file2"
+        return 0
+    else
+        echo "✗ Files are different: $file1 and $file2"
+        return 1
+    fi
+}
+
+# Run command and capture output for verification
+run_and_capture() {
+    local cmd="$1"
+    local description="${2:-Command}"
+    
+    echo "Running: $description"
+    if [ "$DEBUG" = "1" ]; then
+        echo "Command: $cmd"
+    fi
+    
+    local output
+    output=$(eval "$cmd")
+    local exit_code=$?
+    
+    echo "Output:"
+    echo "$output"
+    echo ""
+    
+    if [ $exit_code -eq 0 ]; then
+        echo "✓ $description succeeded"
+    else
+        echo "✗ $description failed (exit code: $exit_code)"
+    fi
+    
+    # Return both exit code and output for further processing
+    return $exit_code
+}
+
 # Export functions
-export setup_test_env cleanup_test_env run_instant get_instant_dir
-export create_test_repo verify_file run_cmd print_test_header print_test_result
+export setup_test_env run_instant create_test_repo verify_file
+export ensure_test_wrapper run_with_test_home
+export check_output_contains check_output_not_contains
+export check_files_different check_files_same run_and_capture

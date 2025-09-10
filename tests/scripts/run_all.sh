@@ -1,5 +1,4 @@
 #!/bin/bash
-# TODO: add a justfile recipe for testing
 set -e
 
 # Master test runner for InstantCLI shell script tests

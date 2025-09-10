@@ -12,10 +12,10 @@ echo "=== Testing Repository Initialization ==="
 setup_test_env "/tmp/instant-test-init-$$"
 
 # Test 1: Non-interactive init with custom name
-print_test_header "Test 1: Non-Interactive Init with Custom Name"
+echo "=== Test 1: Non-Interactive Init with Custom Name ==="
 cd "$REPO_DIR"
 git init
-run_instant dot init --non-interactive "test-custom-name"
+run_and_capture "run_instant dot init --non-interactive 'test-custom-name'" "Init repo with custom name"
 
 verify_file "$REPO_DIR/instantdots.toml"
 
@@ -28,12 +28,12 @@ else
 fi
 
 # Test 2: Non-interactive init with default name (directory name)
-print_test_header "Test 2: Non-Interactive Init with Default Name"
+echo "=== Test 2: Non-Interactive Init with Default Name ==="
 cd "$TEST_DIR"
 mkdir test-default-repo
 cd test-default-repo
 git init
-run_instant dot init --non-interactive
+run_and_capture "run_instant dot init --non-interactive" "Init repo with default name"
 
 verify_file "instantdots.toml"
 
@@ -46,7 +46,7 @@ else
 fi
 
 # Test 3: Test that init fails in non-git directory
-print_test_header "Test 3: Init Fails in Non-Git Directory"
+echo "=== Test 3: Init Fails in Non-Git Directory ==="
 cd "$TEST_DIR"
 mkdir non-git-dir
 cd non-git-dir
@@ -59,7 +59,7 @@ else
 fi
 
 # Test 4: Test that init fails when instantdots.toml already exists
-print_test_header "Test 4: Init Fails When instantdots.toml Exists"
+echo "=== Test 4: Init Fails When instantdots.toml Exists ==="
 cd "$REPO_DIR"
 # We already have instantdots.toml from Test 1
 
@@ -71,7 +71,7 @@ else
 fi
 
 # Test 5: Create a repository with actual dotfiles and test the full workflow
-print_test_header "Test 5: Full Workflow with Init"
+echo "=== Test 5: Full Workflow with Init ==="
 cd "$TEST_DIR"
 mkdir full-test-repo
 cd full-test-repo
@@ -83,7 +83,7 @@ echo "app configuration" > dots/.config/instanttest/app.conf
 echo "test settings" > dots/.config/instanttest/settings.ini
 
 # Initialize the repository
-run_instant dot init --non-interactive "full-test-repo"
+run_and_capture "run_instant dot init --non-interactive 'full-test-repo'" "Init repo with dotfiles"
 
 # Verify instantdots.toml exists
 verify_file "instantdots.toml"
@@ -94,7 +94,7 @@ git commit -m "Add dotfiles and instantdots.toml" >/dev/null 2>&1
 
 # Now test if we can clone and apply from this repository
 cd "$TEST_DIR"
-run_instant dot repo add "file://$TEST_DIR/full-test-repo" --name "full-test-repo"
+run_and_capture "run_instant dot repo add 'file://$TEST_DIR/full-test-repo' --name 'full-test-repo'" "Add full-test-repo"
 
 if [ -d "$REPOS_DIR/full-test-repo" ]; then
     echo "✓ Repository cloned successfully"
@@ -104,7 +104,7 @@ else
 fi
 
 # Apply the dotfiles
-run_instant dot apply
+run_and_capture "run_instant dot apply" "Apply dotfiles from full-test-repo"
 
 # Verify files were applied in test home directory
 echo "Checking if files were created in test home directory..."
@@ -112,6 +112,6 @@ echo "Checking if files were created in test home directory..."
 verify_file "$HOME_DIR/.config/instanttest/app.conf" "app configuration"
 verify_file "$HOME_DIR/.config/instanttest/settings.ini" "test settings"
 
-print_test_header "All Init Tests Passed!"
+echo "=== All Init Tests Passed! ==="
 echo "Test directory: $TEST_DIR"
 echo "You can inspect the files before cleanup"
