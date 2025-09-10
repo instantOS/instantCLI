@@ -1,6 +1,6 @@
 use anyhow::Result;
 use colored::Colorize;
-use crate::dot::config::{Config, Repo};
+use crate::dot::config::Config;
 use crate::dot::localrepo::LocalRepo;
 use crate::dot::db::Database;
 

@@ -70,16 +70,6 @@ pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
     Ok(canonical_path)
 }
 
-/// Get active dotfile directories from a single repository
-fn get_repo_active_dirs(config: &Config, repo: &config::Repo) -> Result<Vec<PathBuf>> {
-    let local_repo = LocalRepo::new(config, repo.name.clone())?;
-    Ok(local_repo
-        .dotfile_dirs
-        .iter()
-        .filter(|dir| dir.is_active)
-        .map(|dir| dir.path.clone())
-        .collect())
-}
 
 /// Get all active dotfile directories from all repositories
 pub fn get_active_dotfile_dirs(config: &Config, db: &Database) -> Result<Vec<PathBuf>> {
@@ -280,57 +270,6 @@ pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> 
     Ok(())
 }
 
-/// List available subdirectories for a repository
-pub fn list_repo_subdirs(config: &Config, repo_name: &str) -> Result<Vec<String>> {
-    let _repo = find_repo_by_name(config, repo_name)?;
-    let local_repo = localrepo::LocalRepo::new(config, repo_name.to_string())?;
-    Ok(local_repo.meta.dots_dirs)
-}
-
-/// Set active subdirectories for a repository
-pub fn set_repo_active_subdirs(
-    config: &mut Config,
-    repo_name: &str,
-    subdirs: Vec<String>,
-) -> Result<()> {
-    let repo = find_repo_by_name(config, repo_name)?;
-
-    // Validate that the subdirectories exist in the repo metadata
-    let local_repo = localrepo::LocalRepo::new(config, repo_name.to_string())?;
-    let meta = &local_repo.meta;
-
-    for subdir in &subdirs {
-        if !meta.dots_dirs.contains(subdir) {
-            return Err(anyhow::anyhow!(
-                "Subdirectory '{}' not found in repository. Available: {:?}",
-                subdir,
-                meta.dots_dirs
-            ));
-        }
-    }
-
-    config.set_active_subdirs(&repo.name, subdirs)?;
-    Ok(())
-}
-
-/// Show active subdirectories for a repository
-pub fn show_repo_active_subdirs(config: &Config, repo_name: &str) -> Result<Vec<String>> {
-    let repo = find_repo_by_name(config, repo_name)?;
-
-    let active_subdirs = config.get_active_subdirs(&repo.name);
-
-    Ok(active_subdirs)
-}
-
-/// Find a repository by its name
-fn find_repo_by_name(config: &Config, repo_name: &str) -> Result<config::Repo> {
-    config
-        .repos
-        .iter()
-        .find(|r| r.name == repo_name)
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", repo_name))
-}
 
 /// Prompt the user to select one of the configured repositories.
 fn select_repo(config: &Config) -> Result<config::Repo> {
@@ -437,65 +376,3 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
     Ok(())
 }
 
-/// Remove a repository from configuration
-pub fn remove_repo(config: &mut Config, repo_name: &str, remove_files: bool) -> Result<()> {
-    let repo = find_repo_by_name(config, repo_name)?;
-
-    // Safety check: ask for confirmation if removing files
-    if remove_files {
-        use dialoguer::Confirm;
-
-        println!(
-            "⚠️  {} {} {} {}",
-            "WARNING:".red().bold(),
-            "You are about to remove repository".red(),
-            repo.name.green().bold(),
-            "and all its local files!".red()
-        );
-        println!(
-            "{}: {}",
-            "Local path".yellow(),
-            LocalRepo::new(config, repo_name.to_string())?
-                .local_path(config)?
-                .display()
-        );
-
-        let should_remove = Confirm::new()
-            .with_prompt("Are you sure?")
-            .default(false)
-            .interact()?;
-
-        if !should_remove {
-            println!("{}", "Operation cancelled.".yellow());
-            return Ok(());
-        }
-    }
-
-    // Remove the repository from configuration
-    config.repos.retain(|r| r.name != repo.name);
-    config.save()?;
-
-    // Optionally remove local files
-    if remove_files {
-        let local_repo = LocalRepo::new(config, repo_name.to_string())?;
-        let local_path = local_repo.local_path(config)?;
-
-        if local_path.exists() {
-            if let Err(e) = std::fs::remove_dir_all(&local_path) {
-                eprintln!(
-                    "{}: {}",
-                    "Warning: failed to remove local files".yellow(),
-                    e
-                );
-            } else {
-                println!(
-                    "{} {}",
-                    "Removed local files:".green(),
-                    local_path.display()
-                );
-            }
-        }
-    }
-
-    Ok(())
-}
