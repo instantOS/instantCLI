@@ -94,7 +94,7 @@ git commit -m "Add dotfiles and instantdots.toml" >/dev/null 2>&1
 
 # Now test if we can clone and apply from this repository
 cd "$TEST_DIR"
-run_instant dot clone "file://$TEST_DIR/full-test-repo"
+run_instant dot repo add "file://$TEST_DIR/full-test-repo" --name "full-test-repo"
 
 if [ -d "$REPOS_DIR/full-test-repo" ]; then
     echo "✓ Repository cloned successfully"

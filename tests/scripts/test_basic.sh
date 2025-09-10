@@ -21,7 +21,7 @@ REPO_URL="file://$REPO_DIR"
 # Test 1: Clone repository
 print_test_header "Test 1: Clone Repository"
 cd "$TEST_DIR"
-run_instant dot clone "$REPO_URL"
+run_instant dot repo add "$REPO_URL" --name "test-basic-repo"
 
 print_test_result 0 "Repository clone"
 

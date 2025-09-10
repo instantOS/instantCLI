@@ -31,7 +31,7 @@ ls -la "$HOME_DIR/.config/instanttest/"
 # Test 1: Clone repository
 print_test_header "Test 1: Clone Repository with Existing Identical Files"
 cd "$TEST_DIR"
-run_instant dot clone "$REPO_URL"
+run_instant dot repo add "$REPO_URL" --name "test-bug-repo"
 
 print_test_result 0 "Repository clone"
 

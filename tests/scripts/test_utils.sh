@@ -50,7 +50,7 @@ get_instant_dir() {
     local instant_dir
     
     # Find the script location and navigate to repo root
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[1]}")" && pwd)"
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     instant_dir="$(dirname "$script_dir")"  # from tests/scripts to tests
     instant_dir="$(dirname "$instant_dir")"  # from tests to repo root
     
@@ -202,5 +202,5 @@ print_test_result() {
 trap cleanup_test_env EXIT
 
 # Export functions
-export -f setup_test_env cleanup_test_env run_instant get_instant_dir
-export -f create_test_repo verify_file run_cmd print_test_header print_test_result
+export setup_test_env cleanup_test_env run_instant get_instant_dir
+export create_test_repo verify_file run_cmd print_test_header print_test_result
