@@ -123,9 +123,11 @@ pub fn status_all(
         let target_path = super::resolve_dotfile_path(path_str)?;
         
         if let Some(dotfile) = all_dotfiles.get(&target_path) {
-            println!("{} -> {}", target_path.display(), get_dotfile_status_string(dotfile, db));
+            let repo_name = get_repo_name_for_dotfile(&dotfile, cfg);
+            let dotfile_dir = get_dotfile_dir_name(&dotfile, cfg);
+            println!("{} -> {}", target_path.display(), get_dotfile_status(dotfile, db));
             println!("  Source: {}", dotfile.source_path.display());
-            println!("  Repo: {}", get_repo_name_for_dotfile(&dotfile, cfg));
+            println!("  Repo: {} ({})", repo_name, dotfile_dir);
         } else {
             println!("{} -> not tracked", target_path.display());
         }
@@ -136,25 +138,26 @@ pub fn status_all(
         let mut has_clean = false;
         
         for (target_path, dotfile) in all_dotfiles {
-            let status = get_dotfile_status_string(&dotfile, db);
+            let status = get_dotfile_status(&dotfile, db);
             let relative_path = target_path.strip_prefix(&home)
                 .unwrap_or(&target_path);
             
-            //TODO: do not do as_str and use the DotFileStatus enum
-            match status.as_str() {
-                "modified" => has_modified = true,
-                "outdated" => has_outdated = true,
-                "clean" => has_clean = true,
-                _ => {}
+            match status {
+                DotFileStatus::Modified => has_modified = true,
+                DotFileStatus::Outdated => has_outdated = true,
+                DotFileStatus::Clean => has_clean = true,
             }
             
             // Show all files including clean ones
             let path_str = relative_path.display().to_string();
             let tilde_path = format!("~/{}", path_str);
-            println!("{} -> {} ({})", 
+            let repo_name = get_repo_name_for_dotfile(&dotfile, cfg);
+            let dotfile_dir = get_dotfile_dir_name(&dotfile, cfg);
+            println!("{} -> {} ({}: {})", 
                 tilde_path, 
                 status, 
-                get_repo_name_for_dotfile(&dotfile, cfg)
+                repo_name,
+                dotfile_dir
             );
         }
         
@@ -196,18 +199,36 @@ impl std::fmt::Display for DotFileStatus {
     }
 }
 
-fn get_dotfile_status_string(dotfile: &super::Dotfile, db: &super::db::Database) -> String {
-    let status = if dotfile.is_modified(db) {
+fn get_dotfile_status(dotfile: &super::Dotfile, db: &super::db::Database) -> DotFileStatus {
+    if dotfile.is_modified(db) {
         DotFileStatus::Modified
     } else if dotfile.is_outdated(db) {
         DotFileStatus::Outdated
     } else {
         DotFileStatus::Clean
-    };
-    status.to_string()
+    }
 }
 
-//TODO: make this use reponame and propagate the needed changes
+// Get the dotfile directory name for a dotfile
+fn get_dotfile_dir_name(dotfile: &super::Dotfile, cfg: &config::Config) -> String {
+    // Find which repository this dotfile comes from
+    for repo_config in &cfg.repos {
+        let repo_path = cfg.repos_path().join(&repo_config.name);
+        if dotfile.source_path.starts_with(&repo_path) {
+            // Extract the dotfile directory name from the source path
+            // Source path format: {repo_path}/{dotfile_dir}/{relative_path}
+            if let Ok(relative) = dotfile.source_path.strip_prefix(&repo_path) {
+                if let Some(dotfile_dir) = relative.components().next() {
+                    return dotfile_dir.as_os_str().to_string_lossy().to_string();
+                }
+            }
+            return "dots".to_string(); // default
+        }
+    }
+    "unknown".to_string()
+}
+
+// Get the repository name for a dotfile (improved version)
 fn get_repo_name_for_dotfile(dotfile: &super::Dotfile, cfg: &config::Config) -> super::RepoName {
     // Find which repository this dotfile comes from
     for repo_config in &cfg.repos {
