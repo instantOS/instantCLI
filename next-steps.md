@@ -23,6 +23,34 @@
 
 The `update` command should remain separate and update all repositories then apply changes. After adding a repo, it should also be immediately applied.
 
+## Adjusted Plan (Based on Codebase Analysis)
+
+### Key Insights from Codebase Review
+
+1. **RepositoryManager is needed** but should follow existing borrowed references pattern with `&Config` and `&Database`
+2. **Status command needs complete redesign** to show dotfile statuses instead of repository git statuses  
+3. **Enable/disable functionality** should be added to the `Repo` struct with default `true`
+4. **Module reorganization** will help reduce the monolithic `mod.rs` (489 lines)
+5. **Existing iteration patterns** are duplicated across multiple functions and can be centralized
+
+### Status Command Redesign Requirements
+
+The status command should be completely redesigned to:
+- Show dotfile status: outdated, clean, modified
+- Show which repo each dotfile came from
+- Hide clean files by default, show with `--all` flag
+- Focus on dotfile status rather than repository git status
+- Format: `~/.config/file.conf -> modified (from my-dotfiles)`
+
+### Implementation Priority
+
+**Add enable/disable functionality** to `Repo` struct in `config.rs`
+**Create repository management module** (`src/dot/repo/`) 
+**Implement RepositoryManager** with centralized iteration patterns
+**Update CLI structure** to use new repository subcommands
+**Refactor existing functions** to use RepositoryManager
+**Refactor status command** to show dotfile statuses (major change)
+
 ```
 instant dot repo <subcommand>
 ```
@@ -270,4 +298,6 @@ enum SubdirCommands {
 4. **Consistent Error Handling**: Follow existing error handling patterns throughout the codebase
 5. **Preserve Functionality**: Ensure all existing capabilities are maintained during refactoring, although breaking backward compatibility in terms of interfaces is allowed
 6. **Borrowed References**: All RepositoryManager methods use borrowed references to maintain consistency with existing codebase patterns
+7. **Status Command Focus**: Redesign status to show dotfile statuses rather than repository git statuses
+8. **Enable/Disable by Default**: New repositories should be enabled by default to maintain current behavior
 
