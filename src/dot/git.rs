@@ -3,7 +3,8 @@ use crate::dot::localrepo as repo_mod;
 use crate::dot::utils;
 use anyhow::{Context, Result};
 use colored::*;
-use std::{path::PathBuf, process::Command};
+use std::path::PathBuf;
+use std::process::Command;
 use crate::dot::get_all_dotfiles;
 
 pub fn add_repo(
@@ -26,35 +27,17 @@ pub fn add_repo(
 
     let depth = config_manager.config.clone_depth;
 
-    //TODO: abstract away git usage to avoid repeating code, git is used in multiple places in this
-    //repo
-    let mut cmd = Command::new("git");
-    cmd.arg("clone");
-    if depth > 0 {
-        cmd.arg("--depth").arg(depth.to_string());
-    }
-    if let Some(branch) = &repo.branch {
-        cmd.arg("--branch").arg(branch);
-    }
-    cmd.arg(&repo.url).arg(&target);
-
-    if debug {
-        eprintln!("Running: {:?}", cmd);
-    }
-
     let pb = utils::create_spinner(format!("Cloning {}...", repo.url));
 
-    let output = cmd.output().context("running git clone")?;
+    utils::git_clone(
+        &repo.url,
+        &target,
+        repo.branch.as_deref(),
+        depth,
+        debug,
+    )?;
+    
     pb.finish_with_message(format!("Cloned {}", repo.url));
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!(
-            "git clone failed for {}: {}",
-            repo.url,
-            stderr
-        ));
-    }
 
     // Note: config addition is now handled by the caller (add_repository function)
 
@@ -133,8 +116,7 @@ pub fn status_all(
     db: &super::db::Database,
 ) -> Result<()> {
     let all_dotfiles = super::get_all_dotfiles(cfg, db)?;
-    //TODO: use `dirs` crate instead?
-    let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
+    let home = dirs::home_dir().context("Failed to get home directory")?;
     
     if let Some(path_str) = path {
         // Show status for specific path
@@ -196,15 +178,32 @@ pub fn status_all(
     Ok(())
 }
 
-fn get_dotfile_status_string(dotfile: &super::Dotfile, db: &super::db::Database) -> String {
-    //TODO: add DotFileStatus enum which in turn has a Display impl
-    if dotfile.is_modified(db) {
-        "modified".yellow().to_string()
-    } else if dotfile.is_outdated(db) {
-        "outdated".blue().to_string()
-    } else {
-        "clean".green().to_string()
+#[derive(Debug, Clone, Copy)]
+enum DotFileStatus {
+    Modified,
+    Outdated,
+    Clean,
+}
+
+impl std::fmt::Display for DotFileStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DotFileStatus::Modified => write!(f, "{}", "modified".yellow()),
+            DotFileStatus::Outdated => write!(f, "{}", "outdated".blue()),
+            DotFileStatus::Clean => write!(f, "{}", "clean".green()),
+        }
     }
+}
+
+fn get_dotfile_status_string(dotfile: &super::Dotfile, db: &super::db::Database) -> String {
+    let status = if dotfile.is_modified(db) {
+        DotFileStatus::Modified
+    } else if dotfile.is_outdated(db) {
+        DotFileStatus::Outdated
+    } else {
+        DotFileStatus::Clean
+    };
+    status.to_string()
 }
 
 fn get_repo_name_for_dotfile(dotfile: &super::Dotfile, cfg: &config::Config) -> String {
@@ -297,13 +296,11 @@ pub fn status_all_legacy(
                 println!("Repo: {}", crepo.url);
 
                 // git status for repo
-                let output = Command::new("git")
-                    .arg("-C")
-                    .arg(&target)
-                    .arg("status")
-                    .arg("--porcelain")
-                    .output()
-                    .with_context(|| format!("running git status in {}", target.display()))?;
+                let output = utils::git_command_in_dir_with_output(
+                    &target,
+                    &["status", "--porcelain"],
+                    "status",
+                )?;
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 if stdout.trim().is_empty() {
                     println!("Repo status: {}", "clean".green());
@@ -329,13 +326,11 @@ pub fn status_all_legacy(
         } else {
             // No specific path: show repo-level and per-file summaries as before
 
-            let output = Command::new("git")
-                .arg("-C")
-                .arg(&target)
-                .arg("status")
-                .arg("--porcelain")
-                .output()
-                .with_context(|| format!("running git status in {}", target.display()))?;
+            let output = utils::git_command_in_dir_with_output(
+                &target,
+                &["status", "--porcelain"],
+                "status",
+            )?;
 
             let stdout = String::from_utf8_lossy(&output.stdout);
             if stdout.trim().is_empty() {

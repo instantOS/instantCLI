@@ -112,16 +112,11 @@ impl LocalRepo {
 
     pub fn get_checked_out_branch(&self, cfg: &Config) -> Result<String> {
         let target = self.local_path(cfg)?;
-        let out = Command::new("git")
-            .arg("-C")
-            .arg(&target)
-            .arg("rev-parse")
-            .arg("--abbrev-ref")
-            .arg("HEAD")
-            .output()
-            .context("determining current branch")?;
-        let current = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        Ok(current)
+        utils::git_command_in_dir(
+            &target,
+            &["rev-parse", "--abbrev-ref", "HEAD"],
+            "determining current branch",
+        )
     }
 
     /// Convert a target path (in home directory) to source path (in repo)
@@ -159,40 +154,23 @@ impl LocalRepo {
             // fetch the branch and checkout
             let pb = utils::create_spinner(format!("Fetching branch {}...", branch));
 
-            let fetch = Command::new("git")
-                .arg("-C")
-                .arg(&target)
-                .arg("fetch")
-                .arg("origin")
-                .arg(branch)
-                .output()
-                .with_context(|| format!("fetching branch {} in {}", branch, target.display()))?;
+            utils::git_command_in_dir_with_output(
+                &target,
+                &["fetch", "origin", branch],
+                &format!("fetching branch {} in {}", branch, target.display()),
+            )?;
 
             pb.finish_with_message(format!("Fetched branch {}", branch));
 
-            if !fetch.status.success() {
-                let stderr = String::from_utf8_lossy(&fetch.stderr);
-                return Err(anyhow::anyhow!("git fetch failed: {}", stderr));
-            }
-
             let pb = utils::create_spinner(format!("Checking out {}...", branch));
 
-            let co = Command::new("git")
-                .arg("-C")
-                .arg(&target)
-                .arg("checkout")
-                .arg(branch)
-                .output()
-                .with_context(|| {
-                    format!("checking out branch {} in {}", branch, target.display())
-                })?;
+            utils::git_command_in_dir_with_output(
+                &target,
+                &["checkout", branch],
+                &format!("checking out branch {} in {}", branch, target.display()),
+            )?;
 
             pb.finish_with_message(format!("Checked out {}", branch));
-
-            if !co.status.success() {
-                let stderr = String::from_utf8_lossy(&co.stderr);
-                return Err(anyhow::anyhow!("git checkout failed: {}", stderr));
-            }
         }
         Ok(())
     }
@@ -208,19 +186,13 @@ impl LocalRepo {
         // pull latest
         let pb = utils::create_spinner(format!("Updating {}...", self.name));
 
-        let pull = Command::new("git")
-            .arg("-C")
-            .arg(&target)
-            .arg("pull")
-            .output()
-            .with_context(|| format!("running git pull in {}", target.display()))?;
+        utils::git_command_in_dir_with_output(
+            &target,
+            &["pull"],
+            &format!("running git pull in {}", target.display()),
+        )?;
 
         pb.finish_with_message(format!("Updated {}", self.name));
-
-        if !pull.status.success() {
-            let stderr = String::from_utf8_lossy(&pull.stderr);
-            return Err(anyhow::anyhow!("git pull failed: {}", stderr));
-        }
 
         Ok(())
     }

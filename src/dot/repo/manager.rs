@@ -7,7 +7,6 @@ use crate::dot::db::Database;
 /// RepositoryManager provides centralized iteration and management of repositories
 /// following the existing borrowed references pattern
 pub struct RepositoryManager<'a> {
-    //TODO: should this be a mutable reference?
     config: &'a Config,
     db: &'a Database,
 }
@@ -27,7 +26,6 @@ impl<'a> RepositoryManager<'a> {
 
 
     /// Get active dotfile directories from all enabled repositories
-    // TODO: should this return a Vec<DotfileDir> instead?
     pub fn get_active_dotfile_dirs(&self) -> Result<Vec<std::path::PathBuf>> {
         let mut active_dirs = Vec::new();
 

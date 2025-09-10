@@ -4,6 +4,8 @@ use shellexpand;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+type RepoName = String;
+
 use walkdir::WalkDir;
 
 pub mod config;
@@ -192,7 +194,7 @@ fn get_modified_dotfiles(
 }
 
 /// Helper function to find which repository contains a dotfile
-fn find_repo_for_dotfile(dotfile: &Dotfile, config: &Config) -> Result<Option<String>> {
+fn find_repo_for_dotfile(dotfile: &Dotfile, config: &Config) -> Result<Option<RepoName>> {
     for repo in &config.repos {
         let local_repo = LocalRepo::new(config, repo.name.clone())?;
         if dotfile.source_path.starts_with(local_repo.local_path(config)?) {
@@ -205,8 +207,8 @@ fn find_repo_for_dotfile(dotfile: &Dotfile, config: &Config) -> Result<Option<St
 fn group_dotfiles_by_repo<'a>(
     dotfiles: &'a [Dotfile],
     config: &Config,
-) -> Result<HashMap<String, Vec<&'a Dotfile>>> {
-    let mut grouped_by_repo: HashMap<String, Vec<&Dotfile>> = HashMap::new();
+) -> Result<HashMap<RepoName, Vec<&'a Dotfile>>> {
+    let mut grouped_by_repo: HashMap<RepoName, Vec<&Dotfile>> = HashMap::new();
     
     for dotfile in dotfiles {
         if let Some(repo_name) = find_repo_for_dotfile(dotfile, config)? {
