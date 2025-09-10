@@ -247,7 +247,7 @@ pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> 
     let full_path = resolve_dotfile_path(path)?;
     for dotfile in filemap.values() {
         if dotfile.target_path.starts_with(&full_path) && dotfile.is_modified(&db) {
-            dotfile.apply(&db)?;
+            dotfile.reset(&db)?;
         }
     }
     db.cleanup_hashes(config.hash_cleanup_days)?;

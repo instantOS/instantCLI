@@ -156,6 +156,25 @@ impl Dotfile {
         Ok(())
     }
 
+    /// Reset the target file by forcefully copying from the source file,
+    /// regardless of whether the target is currently modified.
+    /// This updates the database to mark the target as unmodified.
+    pub fn reset(&self, db: &Database) -> Result<(), anyhow::Error> {
+        // Ensure parent directories exist
+        if let Some(parent) = self.target_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Force copy source -> target, overwriting any modifications
+        fs::copy(&self.source_path, &self.target_path)?;
+
+        // After reset, record the target hash as unmodified since we just copied from source
+        let source_hash = self.get_source_hash(db)?;
+        db.add_hash(&source_hash, &self.target_path, true)?;
+
+        Ok(())
+    }
+
     /// Create the source file in the repository by copying from the target (home) file,
     /// and register its hash in the database as an unmodified source.
     pub fn create_source_from_target(&self, db: &Database) -> Result<(), anyhow::Error> {
