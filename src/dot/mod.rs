@@ -4,7 +4,34 @@ use shellexpand;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-type RepoName = String;
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RepoName(String);
+
+impl RepoName {
+    pub fn new(name: String) -> Self {
+        RepoName(name)
+    }
+    
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+    
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl std::fmt::Display for RepoName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for RepoName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
 
 use walkdir::WalkDir;
 
@@ -199,7 +226,7 @@ fn find_repo_for_dotfile(dotfile: &Dotfile, config: &Config) -> Result<Option<Re
     for repo in &config.repos {
         let local_repo = LocalRepo::new(config, repo.name.clone())?;
         if dotfile.source_path.starts_with(local_repo.local_path(config)?) {
-            return Ok(Some(repo.name.clone()));
+            return Ok(Some(RepoName::new(repo.name.clone())));
         }
     }
     Ok(None)
@@ -223,7 +250,7 @@ fn group_dotfiles_by_repo<'a>(
     Ok(grouped_by_repo)
 }
 
-fn print_fetch_plan(grouped_by_repo: &HashMap<String, Vec<&Dotfile>>, dry_run: bool) -> Result<()> {
+fn print_fetch_plan(grouped_by_repo: &HashMap<RepoName, Vec<&Dotfile>>, dry_run: bool) -> Result<()> {
     if dry_run {
         println!(
             "{}",
@@ -235,7 +262,7 @@ fn print_fetch_plan(grouped_by_repo: &HashMap<String, Vec<&Dotfile>>, dry_run: b
 
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
     for (repo_name, dotfiles) in grouped_by_repo {
-        println!("  Repo: {}", repo_name.bold());
+        println!("  Repo: {}", repo_name.as_str().bold());
         for dotfile in dotfiles {
             let relative_path = dotfile.target_path.strip_prefix(&home)
                 .map_err(|e| anyhow::anyhow!("Failed to strip prefix from path {}: {}", dotfile.target_path.display(), e))?;
