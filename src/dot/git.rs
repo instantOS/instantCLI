@@ -165,8 +165,10 @@ pub fn status_all(
             
             // Only show non-clean files by default
             if status != "clean" {
-                println!("~{} -> {} ({})", 
-                    relative_path.display(), 
+                let path_str = relative_path.display().to_string();
+                let tilde_path = format!("~/{}", path_str);
+                println!("{} -> {} ({})", 
+                    tilde_path, 
                     status, 
                     get_repo_name_for_dotfile(&dotfile, cfg)
                 );
