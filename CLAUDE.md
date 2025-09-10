@@ -27,6 +27,7 @@ cargo run -- --debug <command>
 ```bash
 # Run all tests
 cargo test
+just test
 
 # Run specific test
 cargo test test_apply_and_fetch
