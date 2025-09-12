@@ -1,4 +1,5 @@
 use crate::dot::config;
+use crate::dot::db::DotFileType;
 use crate::dot::get_all_dotfiles;
 use crate::dot::localrepo as repo_mod;
 use crate::dot::utils;
@@ -66,7 +67,7 @@ pub fn add_repo(
                     if let Ok(source_hash) =
                         crate::dot::dotfile::Dotfile::compute_hash(&dotfile.source_path)
                     {
-                        db.add_hash(&source_hash, &dotfile.source_path, true)?;  // source_file=true
+                        db.add_hash(&source_hash, &dotfile.source_path, DotFileType::SourceFile)?;  // source_file=true
 
                         // If the target file exists and has the same content,
                         // register it with source_file=false
@@ -75,7 +76,7 @@ pub fn add_repo(
                                 crate::dot::dotfile::Dotfile::compute_hash(&dotfile.target_path)
                             {
                                 if target_hash == source_hash {
-                                    db.add_hash(&target_hash, &dotfile.target_path, false)?;  // source_file=false
+                                    db.add_hash(&target_hash, &dotfile.target_path, DotFileType::TargetFile)?;  // source_file=false
                                 }
                             }
                         }

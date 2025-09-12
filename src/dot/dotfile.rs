@@ -1,4 +1,4 @@
-use super::db::Database;
+use super::db::{Database, DotFileType};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -51,20 +51,30 @@ impl Dotfile {
         false
     }
 
+    /// Determines if the target file can be safely overwritten
+    /// 
+    /// Returns true if the target file can be safely overwritten:
+    /// - File doesn't exist (can be created safely)
+    /// - File was created by instantCLI and hasn't been modified by user
+    /// - File matches the current source content
+    /// 
+    /// Returns false if the target file has been modified by the user and should not be overwritten
     pub fn is_target_unmodified(&self, db: &Database) -> Result<bool, anyhow::Error> {
+        // Non-existent files can always be safely overwritten
         if !self.target_path.exists() {
-            return Ok(false); // Missing files can't be unmodified
+            return Ok(true);
         }
 
         // Step 1: Get target hash
         let target_hash = self.get_file_hash(&self.target_path, false, db)?;
 
         // Step 2: Check if target hash matches any source hash in DB
+        // This means the file was created by instantCLI and hasn't been modified
         if db.source_hash_exists(&target_hash, &self.target_path)? {
-            return Ok(true); // File was created by instantCLI
+            return Ok(true);
         }
 
-        // Step 3: Check if target matches current source
+        // Step 3: Check if target matches current source content
         let source_hash = self.get_file_hash(&self.source_path, true, db)?;
         Ok(target_hash == source_hash)
     }
@@ -90,7 +100,7 @@ impl Dotfile {
 
         // Compute and store new hash
         let hash = Self::compute_hash(path)?;
-        db.add_hash(&hash, path, is_source)?;
+        db.add_hash(&hash, path, if is_source { DotFileType::SourceFile } else { DotFileType::TargetFile })?;
         Ok(hash)
     }
 
@@ -138,8 +148,7 @@ impl Dotfile {
     }
 
     pub fn apply(&self, db: &Database) -> Result<(), anyhow::Error> {
-        // For missing files, we always apply (create them)
-        if self.target_path.exists() && !self.is_target_unmodified(db)? {
+        if !self.is_target_unmodified(db)? {
             // Skip modified files, as they could contain user modifications
             // This project is a dotfile manager which can be run in the background, and should not
             // override files touched by the user or other programs. If an unmodified hash exists,
@@ -163,7 +172,7 @@ impl Dotfile {
 
         // After applying, record the target hash with source_file=false since we just copied from source
         let source_hash = self.get_file_hash(&self.source_path, true, db)?;
-        db.add_hash(&source_hash, &self.target_path, false)?;
+        db.add_hash(&source_hash, &self.target_path, DotFileType::TargetFile)?;
 
         Ok(())
     }
@@ -190,7 +199,7 @@ impl Dotfile {
 
         // After reset, record the target hash with source_file=false since we just copied from source
         let source_hash = self.get_file_hash(&self.source_path, true, db)?;
-        db.add_hash(&source_hash, &self.target_path, false)?;
+        db.add_hash(&source_hash, &self.target_path, DotFileType::TargetFile)?;
 
         Ok(())
     }
@@ -211,8 +220,8 @@ impl Dotfile {
 
         // Register the hash with correct source_file flags
         // This ensures that both files are considered in sync
-        db.add_hash(&hash, &self.source_path, true)?;   // source_file=true for source
-        db.add_hash(&hash, &self.target_path, false)?;  // source_file=false for target
+        db.add_hash(&hash, &self.source_path, DotFileType::SourceFile)?;   // source_file=true for source
+        db.add_hash(&hash, &self.target_path, DotFileType::TargetFile)?;  // source_file=false for target
 
         Ok(())
     }
@@ -221,7 +230,7 @@ impl Dotfile {
 #[cfg(test)]
 mod tests {
     use super::Dotfile;
-    use crate::dot::db::Database;
+    use crate::dot::db::{Database, DotFileType};
     use std::fs;
     use tempfile::tempdir;
 
@@ -242,7 +251,7 @@ mod tests {
 
         // Register the source file hash first
         let source_hash = Dotfile::compute_hash(&dotfile.source_path).unwrap();
-        db.add_hash(&source_hash, &dotfile.source_path, true).unwrap();
+        db.add_hash(&source_hash, &dotfile.source_path, DotFileType::SourceFile).unwrap();
 
         dotfile.apply(&db).unwrap();
         assert!(target_path.join("test.txt").exists());

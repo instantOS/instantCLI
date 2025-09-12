@@ -99,26 +99,34 @@ CREATE TABLE file_hashes (
 )
 ```
 
+**DotFileType Enum**:
+- `SourceFile` (serializes as `true`): Files in the dotfile repository (`~/.local/share/instantos/dots/`)
+- `TargetFile` (serializes as `false`): Files in the home directory (`~/`)
+
 **Key Concepts**:
-- **Source Files**: Files in `~/.local/share/instantos/dots/` (the repository copies)
-- **Target Files**: Files in `~/` (the installed dotfiles in home directory)
+- **Source Files**: Files in the dotfile repository (`~/.local/share/instantos/dots/`)
+- **Target Files**: Files in the home directory (`~/`)
+- **DotFileType Enum**: Explicitly tracks hash origin with clear semantics
 - **Lazy Hash Computation**: Hashes are computed on-demand and cached with timestamp validation
-- **Source File Flag**: Each hash entry explicitly tracks whether it came from source (`source_file=true`) or target (`source_file=false`)
 
 **Modification Detection Logic**:
-A target file is considered **unmodified** (safe to override) if either:
-1. Its hash matches any source file hash in the database (indicating it was created by instantCLI)
-2. Its hash matches the current source file hash (indicating it's in sync with current source)
+The `is_target_unmodified()` function determines if a target file can be safely overwritten:
 
-A target file is considered **modified** (user-touched) only if:
-- Its hash doesn't match any known source file hash
-- AND it doesn't match the current source file hash
+**Returns true (safe to overwrite) if**:
+1. **File doesn't exist** - Can be safely created
+2. **File was created by instantCLI** - Hash matches any source file hash in database
+3. **File matches current source** - Hash matches current source file hash
+
+**Returns false (user modification detected) if**:
+- File exists, has been modified by user, and doesn't match current source
+
+**Purpose**: Protect user modifications while allowing safe updates of unmodified files and creation of new dotfiles.
 
 **Hash Management**:
 - Hashes are computed lazily when needed
 - Database cache is validated against file modification timestamps
-- Target files always stored with `source_file=false`
-- Source files always stored with `source_file=true`
+- Target files always stored with `DotFileType::TargetFile` (serializes as `false`)
+- Source files always stored with `DotFileType::SourceFile` (serializes as `true`)
 
 ### Configuration Structure
 

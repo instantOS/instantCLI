@@ -4,13 +4,59 @@ use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Represents the type of file a hash belongs to
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DotFileType {
+    /// File in the dotfile repository (source)
+    #[serde(rename = "true")]
+    SourceFile,
+    /// File in the home directory (target)
+    #[serde(rename = "false")]
+    TargetFile,
+}
+
+impl From<bool> for DotFileType {
+    fn from(value: bool) -> Self {
+        match value {
+            true => DotFileType::SourceFile,
+            false => DotFileType::TargetFile,
+        }
+    }
+}
+
+impl From<DotFileType> for bool {
+    fn from(file_type: DotFileType) -> Self {
+        match file_type {
+            DotFileType::SourceFile => true,
+            DotFileType::TargetFile => false,
+        }
+    }
+}
+
 /// Represents a hash with its creation timestamp
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileHash {
     pub hash: String,
     pub created: DateTime<Utc>,
     pub path: String,
-    pub source_file: bool,
+    #[serde(serialize_with = "serialize_file_type", deserialize_with = "deserialize_file_type")]
+    pub file_type: DotFileType,
+}
+
+fn serialize_file_type<S>(file_type: &DotFileType, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_bool((*file_type).into())
+}
+
+fn deserialize_file_type<'de, D>(deserializer: D) -> Result<DotFileType, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let bool_val = bool::deserialize(deserializer)?;
+    Ok(DotFileType::from(bool_val))
 }
 
 impl PartialEq for FileHash {
@@ -122,10 +168,10 @@ impl Database {
         Ok(())
     }
 
-    pub fn add_hash(&self, hash: &str, path: &Path, source_file: bool) -> Result<()> {
+    pub fn add_hash(&self, hash: &str, path: &Path, file_type: DotFileType) -> Result<()> {
         self.conn.execute(
             "INSERT OR REPLACE INTO file_hashes (created, hash, path, source_file) VALUES (datetime('now'), ?, ?, ?)",
-            (hash, path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?, source_file),
+            (hash, path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?, bool::from(file_type)),
         )?;
         Ok(())
     }
@@ -186,7 +232,7 @@ impl Database {
             hash: row.get(0)?,
             created,
             path: row.get(2)?,
-            source_file: row.get(3)?,
+            file_type: DotFileType::from(row.get::<_, bool>(3)?),
         })
     }
 
@@ -253,7 +299,7 @@ mod tests {
         assert!(!db.hash_exists("test_hash", &test_path).unwrap());
 
         // Add hash as source file
-        db.add_hash("test_hash", &test_path, true).unwrap();
+        db.add_hash("test_hash", &test_path, DotFileType::SourceFile).unwrap();
 
         // Now hash should exist
         assert!(db.hash_exists("test_hash", &test_path).unwrap());
@@ -272,7 +318,7 @@ mod tests {
         let db = Database::new(db_path).unwrap();
 
         // Add hash as source file
-        db.add_hash("test_hash", &test_path, true).unwrap();
+        db.add_hash("test_hash", &test_path, DotFileType::SourceFile).unwrap();
 
         // Source hash should exist
         assert!(db.source_hash_exists("test_hash", &test_path).unwrap());
@@ -291,7 +337,7 @@ mod tests {
         let db = Database::new(db_path).unwrap();
 
         // Add hash as target file
-        db.add_hash("test_hash", &test_path, false).unwrap();
+        db.add_hash("test_hash", &test_path, DotFileType::TargetFile).unwrap();
 
         // Target hash should exist
         assert!(db.target_hash_exists("test_hash", &test_path).unwrap());
