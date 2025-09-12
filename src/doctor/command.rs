@@ -74,28 +74,14 @@ fn print_results(results: &[CheckResult]) {
     println!("{}", "System Health Check Results:".bold());
     println!();
     
-    // Check if any results need actions (failing checks)
-    let has_actions = results.iter().any(|r| !r.status.is_success());
-    
-    let header = if has_actions {
-        format!(
-            "{: <35} {: <8} {} {}",
-            "Check".bold(),
-            "Status".bold(),
-            "Message".bold(),
-            "Actions".bold()
-        )
-    } else {
-        format!(
-            "{: <35} {: <8} {}",
-            "Check".bold(),
-            "Status".bold(),
-            "Message".bold()
-        )
-    };
+    let header = format!(
+        "{: <35} {: <8} {}",
+        "Check".bold(),
+        "Status".bold(),
+        "Message".bold()
+    );
     println!("{header}");
-    println!("{}", "-".repeat(if has_actions { 90 } else { 55 }));
-
+    println!("{}", "-".repeat(55));
     for result in results {
         let status_str = result.status.color_status();
         let fixable_str = result.status.fixable_indicator();
@@ -107,32 +93,12 @@ fn print_results(results: &[CheckResult]) {
             super::CheckStatus::Warning { .. } => result.name.yellow(),
         };
         
-        let line = if has_actions {
-            // Create action indicators when needed
-            let actions = if result.status.is_success() {
-                "".to_string()
-            } else if result.status.is_fixable() {
-                format!("{} {}", "Fix available".cyan(), format!("(instant doctor fix {})", result.check_id).dimmed())
-            } else {
-                "Manual intervention required".red().to_string()
-            };
-            
-            format!(
-                "{: <35} {: <8} {: <35} {}",
-                check_name,
-                status_str,
-                format!("{}{}", result.status.message(), fixable_str),
-                actions
-            )
-        } else {
-            format!(
-                "{: <35} {: <8} {}",
-                check_name,
-                status_str,
-                format!("{}{}", result.status.message(), fixable_str)
-            )
-        };
-        
+        let line = format!(
+            "{: <35} {: <8} {}",
+            check_name,
+            status_str,
+            format!("{}{}", result.status.message(), fixable_str)
+        );
         println!("{line}");
     }
     
