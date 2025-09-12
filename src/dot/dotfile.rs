@@ -27,9 +27,10 @@ impl Dotfile {
         }
 
         // First, check if both files have the same hash in the database
-        if let (Ok(source_hash), Ok(target_hash)) =
-            (self.get_file_hash(&self.source_path, true, db), self.get_file_hash(&self.target_path, false, db))
-        {
+        if let (Ok(source_hash), Ok(target_hash)) = (
+            self.get_file_hash(&self.source_path, true, db),
+            self.get_file_hash(&self.target_path, false, db),
+        ) {
             if source_hash == target_hash {
                 // Files have the same content, not outdated
                 return false;
@@ -52,12 +53,12 @@ impl Dotfile {
     }
 
     /// Determines if the target file can be safely overwritten
-    /// 
+    ///
     /// Returns true if the target file can be safely overwritten:
     /// - File doesn't exist (can be created safely)
     /// - File was created by instantCLI and hasn't been modified by user
     /// - File matches the current source content
-    /// 
+    ///
     /// Returns false if the target file has been modified by the user and should not be overwritten
     pub fn is_target_unmodified(&self, db: &Database) -> Result<bool, anyhow::Error> {
         // Non-existent files can always be safely overwritten
@@ -79,12 +80,14 @@ impl Dotfile {
         Ok(target_hash == source_hash)
     }
 
-    pub fn get_file_hash(&self, path: &Path, is_source: bool, db: &Database) -> Result<String, anyhow::Error> {
+    pub fn get_file_hash(
+        &self,
+        path: &Path,
+        is_source: bool,
+        db: &Database,
+    ) -> Result<String, anyhow::Error> {
         if !path.exists() {
-            return Err(anyhow::anyhow!(
-                "File does not exist: {}",
-                path.display()
-            ));
+            return Err(anyhow::anyhow!("File does not exist: {}", path.display()));
         }
 
         // Check if cached hash is newer than file modification time
@@ -100,7 +103,15 @@ impl Dotfile {
 
         // Compute and store new hash
         let hash = Self::compute_hash(path)?;
-        db.add_hash(&hash, path, if is_source { DotFileType::SourceFile } else { DotFileType::TargetFile })?;
+        db.add_hash(
+            &hash,
+            path,
+            if is_source {
+                DotFileType::SourceFile
+            } else {
+                DotFileType::TargetFile
+            },
+        )?;
         Ok(hash)
     }
 
@@ -220,8 +231,8 @@ impl Dotfile {
 
         // Register the hash with correct source_file flags
         // This ensures that both files are considered in sync
-        db.add_hash(&hash, &self.source_path, DotFileType::SourceFile)?;   // source_file=true for source
-        db.add_hash(&hash, &self.target_path, DotFileType::TargetFile)?;  // source_file=false for target
+        db.add_hash(&hash, &self.source_path, DotFileType::SourceFile)?; // source_file=true for source
+        db.add_hash(&hash, &self.target_path, DotFileType::TargetFile)?; // source_file=false for target
 
         Ok(())
     }
@@ -251,7 +262,8 @@ mod tests {
 
         // Register the source file hash first
         let source_hash = Dotfile::compute_hash(&dotfile.source_path).unwrap();
-        db.add_hash(&source_hash, &dotfile.source_path, DotFileType::SourceFile).unwrap();
+        db.add_hash(&source_hash, &dotfile.source_path, DotFileType::SourceFile)
+            .unwrap();
 
         dotfile.apply(&db).unwrap();
         assert!(target_path.join("test.txt").exists());

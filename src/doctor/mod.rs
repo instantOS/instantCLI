@@ -1,8 +1,8 @@
 use anyhow::Result;
-use colored::*;
-use comfy_table::{Table, Row, Cell, Color, Attribute, presets::UTF8_FULL, ContentArrangement};
-use std::fmt::Display;
 use clap::Subcommand;
+use colored::*;
+use comfy_table::{Attribute, Cell, Color, ContentArrangement, Row, Table, presets::UTF8_FULL};
+use std::fmt::Display;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DoctorCommands {
@@ -22,9 +22,9 @@ pub enum DoctorCommands {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PrivilegeLevel {
-    User,    // Must run as normal user
-    Root,    // Must run as root
-    Any,     // Can run as either
+    User, // Must run as normal user
+    Root, // Must run as root
+    Any,  // Can run as either
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ impl CheckStatus {
     pub fn is_success(&self) -> bool {
         matches!(self, CheckStatus::Pass(_))
     }
-    
+
     pub fn is_fixable(&self) -> bool {
         match self {
             CheckStatus::Pass(_) => false,
@@ -54,7 +54,7 @@ impl CheckStatus {
             CheckStatus::Warning { fixable, .. } => *fixable,
         }
     }
-    
+
     pub fn needs_fix(&self) -> bool {
         !self.is_success()
     }
@@ -82,7 +82,7 @@ impl CheckStatus {
             CheckStatus::Warning { .. } => "WARN".yellow(),
         }
     }
-    
+
     pub fn fixable_indicator(&self) -> &'static str {
         match self {
             CheckStatus::Pass(_) => "",
@@ -118,21 +118,29 @@ impl Display for CheckResult {
 pub trait DoctorCheck: Send + Sync {
     fn name(&self) -> &'static str;
     fn id(&self) -> &'static str; // Machine-readable identifier
-    
+
     async fn execute(&self) -> CheckStatus;
-    
-    fn fix_message(&self) -> Option<String> { None }
-    async fn fix(&self) -> Result<()> { Ok(()) }
-    
+
+    fn fix_message(&self) -> Option<String> {
+        None
+    }
+    async fn fix(&self) -> Result<()> {
+        Ok(())
+    }
+
     // NEW: Privilege requirements
-    fn check_privilege_level(&self) -> PrivilegeLevel { PrivilegeLevel::Any }
-    fn fix_privilege_level(&self) -> PrivilegeLevel { PrivilegeLevel::Any }
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Any
+    }
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Any
+    }
 }
 
 pub mod checks;
+pub mod command;
 pub mod privileges;
 pub mod registry;
-pub mod command;
 
 pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> Vec<CheckResult> {
     let mut handles = vec![];
@@ -205,14 +213,20 @@ pub fn print_check_list_table(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
         .load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(Row::from(vec![
-            Cell::new("ID").fg(Color::Blue).add_attribute(Attribute::Bold),
+            Cell::new("ID")
+                .fg(Color::Blue)
+                .add_attribute(Attribute::Bold),
             Cell::new("Name").add_attribute(Attribute::Bold),
             Cell::new("Fix Available").add_attribute(Attribute::Bold),
             Cell::new("Privileges").add_attribute(Attribute::Bold),
         ]));
 
     for check in checks {
-        let fix = if check.fix_message().is_some() { "✓" } else { "✗" };
+        let fix = if check.fix_message().is_some() {
+            "✓"
+        } else {
+            "✗"
+        };
         let privileges = match (check.check_privilege_level(), check.fix_privilege_level()) {
             (PrivilegeLevel::Any, PrivilegeLevel::Any) => "Any",
             (PrivilegeLevel::Any, PrivilegeLevel::User) => "User (fix)",
@@ -221,7 +235,7 @@ pub fn print_check_list_table(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
             (PrivilegeLevel::Root, _) => "Root required",
             _ => "Mixed",
         };
-        
+
         table.add_row(Row::from(vec![
             Cell::new(check.id()),
             Cell::new(check.name()),
@@ -229,7 +243,7 @@ pub fn print_check_list_table(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
             Cell::new(privileges),
         ]));
     }
-    
+
     println!("{}", "Available Health Checks:".bold());
     println!("{table}");
     println!();
@@ -254,18 +268,18 @@ pub fn print_results_table(results: &[CheckResult]) {
 
     for result in results {
         let status_cell = Cell::new(result.status.status_text()).fg(result.status.status_color());
-        
+
         let check_cell = Cell::new(&result.name).fg(result.status.status_color());
-        
-        let msg = format!("{}{}", result.status.message(), result.status.fixable_indicator());
-        
-        table.add_row(Row::from(vec![
-            check_cell,
-            status_cell,
-            Cell::new(msg),
-        ]));
+
+        let msg = format!(
+            "{}{}",
+            result.status.message(),
+            result.status.fixable_indicator()
+        );
+
+        table.add_row(Row::from(vec![check_cell, status_cell, Cell::new(msg)]));
     }
-    
+
     println!("{}", "System Health Check Results:".bold());
     println!("{table}");
 }
@@ -292,25 +306,25 @@ pub fn print_single_check_result_table(result: &CheckResult) {
         CheckStatus::Warning { .. } => Color::Yellow,
     };
     let status_cell = Cell::new(status_text).fg(status_color);
-    
+
     let check_color = match &result.status {
         CheckStatus::Pass(_) => Color::Green,
         CheckStatus::Fail { .. } => Color::Red,
         CheckStatus::Warning { .. } => Color::Yellow,
     };
     let check_cell = Cell::new(&result.name).fg(check_color);
-    
-    let msg = format!("{}{}", result.status.message(), result.status.fixable_indicator());
-    
-    table.add_row(Row::from(vec![
-        check_cell,
-        status_cell,
-        Cell::new(msg),
-    ]));
-    
+
+    let msg = format!(
+        "{}{}",
+        result.status.message(),
+        result.status.fixable_indicator()
+    );
+
+    table.add_row(Row::from(vec![check_cell, status_cell, Cell::new(msg)]));
+
     println!("{}", "Health Check Result:".bold());
     println!("{table}");
-    
+
     if result.status.needs_fix() {
         if result.status.is_fixable() {
             if let Some(ref msg) = result.fix_message {
@@ -330,16 +344,19 @@ pub fn print_fix_summary_table(check_name: &str, before_status: &str, after_stat
     table
         .load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(Row::from(vec!["Check", "Before Status", "After Status"].into_iter()
-            .map(|s| Cell::new(s).add_attribute(Attribute::Bold))
-            .collect::<Vec<_>>()));
+        .set_header(Row::from(
+            vec!["Check", "Before Status", "After Status"]
+                .into_iter()
+                .map(|s| Cell::new(s).add_attribute(Attribute::Bold))
+                .collect::<Vec<_>>(),
+        ));
 
     table.add_row(Row::from(vec![
         Cell::new(check_name),
         Cell::new(before_status).fg(Color::Red),
         Cell::new(after_status).fg(Color::Green),
     ]));
-    
+
     println!("{}", "Fix Summary:".bold());
     println!("{table}");
 }

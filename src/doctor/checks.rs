@@ -1,9 +1,9 @@
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::process::Command as TokioCommand;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
+use tokio::process::Command as TokioCommand;
 
 #[derive(Default)]
 pub struct InternetCheck;
@@ -13,7 +13,7 @@ impl DoctorCheck for InternetCheck {
     fn name(&self) -> &'static str {
         "Internet Connectivity"
     }
-    
+
     fn id(&self) -> &'static str {
         "internet"
     }
@@ -21,9 +21,9 @@ impl DoctorCheck for InternetCheck {
     fn check_privilege_level(&self) -> PrivilegeLevel {
         PrivilegeLevel::Any
     }
-    
+
     fn fix_privilege_level(&self) -> PrivilegeLevel {
-        PrivilegeLevel::User  // nmtui should run as user
+        PrivilegeLevel::User // nmtui should run as user
     }
 
     async fn execute(&self) -> CheckStatus {
@@ -42,7 +42,7 @@ impl DoctorCheck for InternetCheck {
             }
             _ => CheckStatus::Fail {
                 message: "No internet connection detected".to_string(),
-                fixable: true,  // nmtui can potentially fix network issues
+                fixable: true, // nmtui can potentially fix network issues
             },
         }
     }
@@ -69,53 +69,55 @@ impl DoctorCheck for InstantRepoCheck {
     fn name(&self) -> &'static str {
         "InstantOS Repository Configuration"
     }
-    
+
     fn id(&self) -> &'static str {
         "instant-repo"
     }
 
     fn check_privilege_level(&self) -> PrivilegeLevel {
-        PrivilegeLevel::Any  // Can read config as any user
+        PrivilegeLevel::Any // Can read config as any user
     }
-    
+
     fn fix_privilege_level(&self) -> PrivilegeLevel {
-        PrivilegeLevel::Root  // Modifying /etc/pacman.conf requires root
+        PrivilegeLevel::Root // Modifying /etc/pacman.conf requires root
     }
 
     async fn execute(&self) -> CheckStatus {
         // Check if /etc/pacman.conf contains [instant] section
         match tokio::fs::read_to_string("/etc/pacman.conf").await {
             Ok(content) => {
-                if content.contains("[instant]") && 
-                   content.contains("/etc/pacman.d/instantmirrorlist") {
+                if content.contains("[instant]")
+                    && content.contains("/etc/pacman.d/instantmirrorlist")
+                {
                     CheckStatus::Pass("InstantOS repository is configured".to_string())
                 } else {
-                    CheckStatus::Fail { 
+                    CheckStatus::Fail {
                         message: "InstantOS repository not found in pacman.conf".to_string(),
-                        fixable: true  // We can add the repository configuration
+                        fixable: true, // We can add the repository configuration
                     }
                 }
             }
-            Err(_) => CheckStatus::Fail { 
+            Err(_) => CheckStatus::Fail {
                 message: "Could not read /etc/pacman.conf".to_string(),
-                fixable: false  // If we can't read the file, we probably can't fix it either
-            }
+                fixable: false, // If we can't read the file, we probably can't fix it either
+            },
         }
     }
-    
+
     fn fix_message(&self) -> Option<String> {
         Some("Add InstantOS repository configuration to /etc/pacman.conf".to_string())
     }
-    
+
     async fn fix(&self) -> Result<()> {
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
             .open("/etc/pacman.conf")
             .await?;
-            
-        file.write_all(b"\n[instant]\nInclude = /etc/pacman.d/instantmirrorlist\n").await?;
-        
+
+        file.write_all(b"\n[instant]\nInclude = /etc/pacman.d/instantmirrorlist\n")
+            .await?;
+
         println!("Added InstantOS repository to /etc/pacman.conf");
         Ok(())
     }

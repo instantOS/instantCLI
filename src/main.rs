@@ -31,10 +31,10 @@ fn execute_with_error_handling<T>(
     }
 }
 
+use crate::doctor::DoctorCommands;
 use crate::dot::config::ConfigManager;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
-use crate::doctor::DoctorCommands;
 
 /// InstantCLI main parser
 #[derive(Parser, Debug)]
@@ -69,8 +69,6 @@ enum Commands {
         command: Option<DoctorCommands>,
     },
 }
-
-
 
 #[derive(Subcommand, Debug)]
 enum DotCommands {

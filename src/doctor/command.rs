@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Result};
+use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_for_fix};
+use super::registry::REGISTRY;
+use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
+use anyhow::{Result, anyhow};
 use colored::*;
 use dialoguer::Confirm;
-use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
-use super::registry::REGISTRY;
-use super::privileges::{check_privilege_requirements, escalate_for_fix, PrivilegeError};
 
 pub async fn handle_doctor_command(command: Option<DoctorCommands>) -> Result<()> {
     match command {
@@ -18,7 +18,7 @@ async fn run_all_checks_cmd() -> Result<()> {
     let checks = REGISTRY.all_checks();
     let results = run_all_checks(checks).await;
     print_results(&results);
-    
+
     // Show available fixes (only for fixable failures)
     show_available_fixes(&results);
     Ok(())
@@ -35,10 +35,11 @@ fn print_results(results: &[CheckResult]) {
 }
 
 fn show_available_fixes(results: &[CheckResult]) {
-    let fixable_failures: Vec<_> = results.iter()
+    let fixable_failures: Vec<_> = results
+        .iter()
         .filter(|result| result.status.needs_fix() && result.status.is_fixable())
         .collect();
-    
+
     if !fixable_failures.is_empty() {
         let fixes_msg = "\nAvailable fixes:".bold().yellow();
         println!("{fixes_msg}");
@@ -49,11 +50,12 @@ fn show_available_fixes(results: &[CheckResult]) {
             }
         }
     }
-    
-    let non_fixable_failures: Vec<_> = results.iter()
+
+    let non_fixable_failures: Vec<_> = results
+        .iter()
         .filter(|result| result.status.needs_fix() && !result.status.is_fixable())
         .collect();
-        
+
     if !non_fixable_failures.is_empty() {
         let manual_msg = "\nRequires manual intervention:".bold().red();
         println!("{manual_msg}");
@@ -64,14 +66,15 @@ fn show_available_fixes(results: &[CheckResult]) {
 }
 
 async fn run_single_check(check_id: &str) -> Result<()> {
-    let check = REGISTRY.create_check(check_id)
+    let check = REGISTRY
+        .create_check(check_id)
         .ok_or_else(|| anyhow!("Unknown check: {}", check_id))?;
-    
+
     // Verify privilege requirements for check
     if let Err(e) = check_privilege_requirements(check.as_ref(), false) {
         return Err(anyhow!("Privilege error: {}", e));
     }
-    
+
     let result = execute_single_check(check).await;
     print_single_result(&result);
     Ok(())
@@ -82,7 +85,7 @@ async fn execute_single_check(check: Box<dyn DoctorCheck + Send + Sync>) -> Chec
     let check_id = check.id().to_string();
     let status = check.execute().await;
     let fix_message = check.fix_message();
-    
+
     CheckResult {
         name,
         check_id,
@@ -96,32 +99,33 @@ fn print_single_result(result: &CheckResult) {
 }
 
 async fn fix_single_check(check_id: &str) -> Result<()> {
-    let check = REGISTRY.create_check(check_id)
+    let check = REGISTRY
+        .create_check(check_id)
         .ok_or_else(|| anyhow!("Unknown check: {}", check_id))?;
-    
+
     // STEP 1: Always run the check first to determine current state
     println!("Checking current state for '{}'...", check.name());
     let check_result = check.execute().await;
-    
+
     // STEP 2: Determine if fix is needed based on check result
     if check_result.is_success() {
         println!("✓ {}: {}", check.name(), check_result.message());
         println!("No fix needed - check already passes.");
         return Ok(());
     }
-    
+
     if !check_result.is_fixable() {
         println!("✗ {}: {}", check.name(), check_result.message());
         return Err(anyhow!(
-            "Check '{}' failed but is not fixable. Manual intervention required.", 
+            "Check '{}' failed but is not fixable. Manual intervention required.",
             check.name()
         ));
     }
-    
+
     // STEP 3: Check is failing and fixable, proceed with fix
     println!("⚠ {}: {}", check.name(), check_result.message());
     println!("Fix is available and will be applied.");
-    
+
     // Check if we have the right privileges for the fix
     match check_privilege_requirements(check.as_ref(), true) {
         Ok(()) => {
@@ -130,8 +134,11 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         }
         Err(PrivilegeError::NeedRoot) => {
             // Need to escalate privileges
-            println!("Fix for '{}' requires administrator privileges.", check.name());
-            
+            println!(
+                "Fix for '{}' requires administrator privileges.",
+                check.name()
+            );
+
             if should_escalate(check.as_ref())? {
                 escalate_for_fix(check_id)?;
                 // This won't return - process will be restarted with sudo
@@ -149,19 +156,19 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
 
 async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
     let check_name = check.name();
-    
+
     // Get the before status
     let before_result = check.execute().await;
     let before_status = before_result.status_text().to_string();
-    
+
     println!("Applying fix for {}...", check_name.green());
-    
+
     match check.fix().await {
         Ok(()) => {
             // Get the after status
-    let after_result = check.execute().await;
-    let after_status = after_result.status_text().to_string();
-            
+            let after_result = check.execute().await;
+            let after_status = after_result.status_text().to_string();
+
             super::print_fix_summary_table(check_name, &before_status, &after_status);
             Ok(())
         }
@@ -182,7 +189,7 @@ fn should_escalate(check: &dyn DoctorCheck) -> Result<bool> {
         check.name(),
         check.fix_message().unwrap_or_default()
     );
-    
+
     Ok(Confirm::new()
         .with_prompt(message)
         .default(false)

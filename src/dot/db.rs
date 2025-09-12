@@ -40,7 +40,10 @@ pub struct FileHash {
     pub hash: String,
     pub created: DateTime<Utc>,
     pub path: String,
-    #[serde(serialize_with = "serialize_file_type", deserialize_with = "deserialize_file_type")]
+    #[serde(
+        serialize_with = "serialize_file_type",
+        deserialize_with = "deserialize_file_type"
+    )]
     pub file_type: DotFileType,
 }
 
@@ -236,7 +239,6 @@ impl Database {
         })
     }
 
-    
     /// Get the newest hash for a file, if any exists
     pub fn get_newest_hash(&self, path: &Path) -> Result<Option<FileHash>> {
         let mut stmt = self
@@ -258,7 +260,7 @@ impl Database {
     pub fn cleanup_hashes(&self, days: u32) -> Result<()> {
         // Keep newest N hashes per target file (source_file = 0), but always keep all
         // source file hashes
-        
+
         // Remove old target file hashes
         self.conn.execute(
             "DELETE FROM file_hashes WHERE source_file = 0 AND created < datetime('now', ?1 || ' days')",
@@ -299,7 +301,8 @@ mod tests {
         assert!(!db.hash_exists("test_hash", &test_path).unwrap());
 
         // Add hash as source file
-        db.add_hash("test_hash", &test_path, DotFileType::SourceFile).unwrap();
+        db.add_hash("test_hash", &test_path, DotFileType::SourceFile)
+            .unwrap();
 
         // Now hash should exist
         assert!(db.hash_exists("test_hash", &test_path).unwrap());
@@ -318,7 +321,8 @@ mod tests {
         let db = Database::new(db_path).unwrap();
 
         // Add hash as source file
-        db.add_hash("test_hash", &test_path, DotFileType::SourceFile).unwrap();
+        db.add_hash("test_hash", &test_path, DotFileType::SourceFile)
+            .unwrap();
 
         // Source hash should exist
         assert!(db.source_hash_exists("test_hash", &test_path).unwrap());
@@ -337,7 +341,8 @@ mod tests {
         let db = Database::new(db_path).unwrap();
 
         // Add hash as target file
-        db.add_hash("test_hash", &test_path, DotFileType::TargetFile).unwrap();
+        db.add_hash("test_hash", &test_path, DotFileType::TargetFile)
+            .unwrap();
 
         // Target hash should exist
         assert!(db.target_hash_exists("test_hash", &test_path).unwrap());
