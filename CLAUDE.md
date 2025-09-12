@@ -80,22 +80,45 @@ cd ~ && instant dot reset .config
 - Later repos override earlier ones for the same file paths
 
 **User Modification Protection**:
-- SHA256 hashes track file states in SQLite database
+- SHA256 hashes track file states in SQLite database with explicit source/target distinction
 - User-modified files are never overwritten automatically
-- Files are only updated if they match known unmodified hashes
+- Files are only updated if they are determined to be unmodified using hash comparison
 
-### Database Schema
+### Hash System Architecture
 
-SQLite database at `~/.local/share/instantos/instant.db`:
+The hash system distinguishes between **source files** (in dotfile repositories) and **target files** (in home directory):
+
+**Database Schema**:
 ```sql
-CREATE TABLE hashes (
+CREATE TABLE file_hashes (
     created TEXT NOT NULL,
     hash TEXT NOT NULL, 
     path TEXT NOT NULL,
-    unmodified INTEGER NOT NULL,
+    source_file INTEGER NOT NULL,  -- true=source file, false=target file
     PRIMARY KEY (hash, path)
 )
 ```
+
+**Key Concepts**:
+- **Source Files**: Files in `~/.local/share/instantos/dots/` (the repository copies)
+- **Target Files**: Files in `~/` (the installed dotfiles in home directory)
+- **Lazy Hash Computation**: Hashes are computed on-demand and cached with timestamp validation
+- **Source File Flag**: Each hash entry explicitly tracks whether it came from source (`source_file=true`) or target (`source_file=false`)
+
+**Modification Detection Logic**:
+A target file is considered **unmodified** (safe to override) if either:
+1. Its hash matches any source file hash in the database (indicating it was created by instantCLI)
+2. Its hash matches the current source file hash (indicating it's in sync with current source)
+
+A target file is considered **modified** (user-touched) only if:
+- Its hash doesn't match any known source file hash
+- AND it doesn't match the current source file hash
+
+**Hash Management**:
+- Hashes are computed lazily when needed
+- Database cache is validated against file modification timestamps
+- Target files always stored with `source_file=false`
+- Source files always stored with `source_file=true`
 
 ### Configuration Structure
 
@@ -113,7 +136,7 @@ branch = "main"
 
 **No Git Commits**: Do NOT create git commits. The repository has strict policies against automated commits. If changes need to be committed, ask the user for explicit permission.
 
-**Hash-Based Safety**: All file operations respect the hash-based modification detection system. Never bypass this system as it protects user modifications.
+**Hash-Based Safety**: All file operations respect the hash-based modification detection system. Never bypass this system as it protects user modifications. The system distinguishes between source files (repository copies) and target files (home directory installations) using the `source_file` database field.
 
 **Config Locations**: 
 - Config: `~/.config/instant/instant.toml`

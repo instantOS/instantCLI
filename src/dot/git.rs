@@ -62,20 +62,20 @@ pub fn add_repo(
             for (_, dotfile) in dotfiles {
                 // Only register hashes for dotfiles from this repository
                 if dotfile.source_path.starts_with(&target) {
-                    // Register the source file hash as unmodified
+                    // Register the source file hash with source_file=true
                     if let Ok(source_hash) =
                         crate::dot::dotfile::Dotfile::compute_hash(&dotfile.source_path)
                     {
-                        db.add_hash(&source_hash, &dotfile.source_path, true)?;
+                        db.add_hash(&source_hash, &dotfile.source_path, true)?;  // source_file=true
 
                         // If the target file exists and has the same content,
-                        // register it as unmodified too
+                        // register it with source_file=false
                         if dotfile.target_path.exists() {
                             if let Ok(target_hash) =
                                 crate::dot::dotfile::Dotfile::compute_hash(&dotfile.target_path)
                             {
                                 if target_hash == source_hash {
-                                    db.add_hash(&target_hash, &dotfile.target_path, true)?;
+                                    db.add_hash(&target_hash, &dotfile.target_path, false)?;  // source_file=false
                                 }
                             }
                         }
@@ -312,7 +312,7 @@ impl std::fmt::Display for DotFileStatus {
 }
 
 fn get_dotfile_status(dotfile: &super::Dotfile, db: &super::db::Database) -> DotFileStatus {
-    if dotfile.is_modified(db) {
+    if !dotfile.is_target_unmodified(db).unwrap_or(false) {
         DotFileStatus::Modified
     } else if dotfile.is_outdated(db) {
         DotFileStatus::Outdated
@@ -450,7 +450,7 @@ pub fn status_all_legacy(
                 let filemap = super::get_all_dotfiles(cfg, db)?;
                 if let Some(dotfile) = filemap.get(&provided) {
                     println!("Source: {}", dotfile.source_path.display());
-                    if dotfile.is_modified(db) {
+                    if !dotfile.is_target_unmodified(db)? {
                         println!("File status: {}", "modified".yellow());
                     } else if dotfile.is_outdated(db) {
                         println!("File status: {}", "outdated".blue());
@@ -489,7 +489,7 @@ pub fn status_all_legacy(
             for (target_path, dotfile) in filemap.iter() {
                 // Only show dotfiles belonging to the current repo
                 if dotfile.source_path.starts_with(&target) {
-                    if dotfile.is_modified(db) {
+                    if !dotfile.is_target_unmodified(db)? {
                         println!(
                             "    {} -> {}",
                             target_path.to_string_lossy().bold(),

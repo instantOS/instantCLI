@@ -6,14 +6,14 @@ use std::path::{Path, PathBuf};
 
 /// Represents a hash with its creation timestamp
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DotfileHash {
+pub struct FileHash {
     pub hash: String,
     pub created: DateTime<Utc>,
     pub path: String,
-    pub unmodified: bool,
+    pub source_file: bool,
 }
 
-impl PartialEq for DotfileHash {
+impl PartialEq for FileHash {
     fn eq(&self, other: &Self) -> bool {
         self.hash == other.hash && self.path == other.path
     }
@@ -23,7 +23,7 @@ pub struct Database {
     conn: Connection,
 }
 
-const CURRENT_SCHEMA_VERSION: i32 = 1;
+const CURRENT_SCHEMA_VERSION: i32 = 2;
 
 impl Database {
     pub fn new(path: PathBuf) -> Result<Self> {
@@ -80,19 +80,39 @@ impl Database {
             0 => {
                 // Initial schema creation
                 conn.execute(
-                    "CREATE TABLE IF NOT EXISTS hashes (
+                    "CREATE TABLE IF NOT EXISTS file_hashes (
                         created TEXT NOT NULL,
                         hash TEXT NOT NULL,
                         path TEXT NOT NULL,
-                        unmodified INTEGER NOT NULL,
+                        source_file INTEGER NOT NULL,
                         PRIMARY KEY (hash, path)
                     )",
                     (),
                 )?;
 
-                // Update to version 1
+                // Update to version 2
                 conn.execute(
-                    "INSERT INTO schema_version (version, updated) VALUES (1, datetime('now'))",
+                    "INSERT INTO schema_version (version, updated) VALUES (2, datetime('now'))",
+                    [],
+                )?;
+            }
+            1 => {
+                // Migration from version 1: drop old table and create new one
+                conn.execute("DROP TABLE IF EXISTS hashes", ())?;
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS file_hashes (
+                        created TEXT NOT NULL,
+                        hash TEXT NOT NULL,
+                        path TEXT NOT NULL,
+                        source_file INTEGER NOT NULL,
+                        PRIMARY KEY (hash, path)
+                    )",
+                    (),
+                )?;
+
+                // Update to version 2
+                conn.execute(
+                    "INSERT INTO schema_version (version, updated) VALUES (2, datetime('now'))",
                     [],
                 )?;
             }
@@ -102,10 +122,10 @@ impl Database {
         Ok(())
     }
 
-    pub fn add_hash(&self, hash: &str, path: &Path, unmodified: bool) -> Result<()> {
+    pub fn add_hash(&self, hash: &str, path: &Path, source_file: bool) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO hashes (created, hash, path, unmodified) VALUES (datetime('now'), ?, ?, ?)",
-            (hash, path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?, unmodified),
+            "INSERT OR REPLACE INTO file_hashes (created, hash, path, source_file) VALUES (datetime('now'), ?, ?, ?)",
+            (hash, path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?, source_file),
         )?;
         Ok(())
     }
@@ -113,7 +133,7 @@ impl Database {
     pub fn hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
         let mut stmt = self
             .conn
-            .prepare("SELECT 1 FROM hashes WHERE hash = ? AND path = ?")?;
+            .prepare("SELECT 1 FROM file_hashes WHERE hash = ? AND path = ?")?;
         let path_str = path
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
@@ -121,10 +141,10 @@ impl Database {
         Ok(result.next().is_some())
     }
 
-    pub fn unmodified_hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
+    pub fn source_hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
         let mut stmt = self
             .conn
-            .prepare("SELECT 1 FROM hashes WHERE hash = ? AND path = ? AND unmodified = 1")?;
+            .prepare("SELECT 1 FROM file_hashes WHERE hash = ? AND path = ? AND source_file = 1")?;
         let path_str = path
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
@@ -132,7 +152,18 @@ impl Database {
         Ok(result.next().is_some())
     }
 
-    fn row_to_dotfile_hash(row: &rusqlite::Row) -> Result<DotfileHash, rusqlite::Error> {
+    pub fn target_hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT 1 FROM file_hashes WHERE hash = ? AND path = ? AND source_file = 0")?;
+        let path_str = path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
+        let mut result = stmt.query_map([hash, path_str], |row| row.get::<_, i32>(0))?;
+        Ok(result.next().is_some())
+    }
+
+    fn row_to_file_hash(row: &rusqlite::Row) -> Result<FileHash, rusqlite::Error> {
         let created_str: String = row.get(1)?;
 
         // Try to parse as SQLite datetime format first (YYYY-MM-DD HH:MM:SS)
@@ -151,43 +182,27 @@ impl Database {
             ));
         };
 
-        Ok(DotfileHash {
+        Ok(FileHash {
             hash: row.get(0)?,
             created,
             path: row.get(2)?,
-            unmodified: row.get(3)?,
+            source_file: row.get(3)?,
         })
     }
 
-    pub fn get_unmodified_hashes(&self, path: &Path) -> Result<Vec<DotfileHash>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT hash, created, path, unmodified FROM hashes WHERE path = ? AND unmodified = 1 ORDER BY created DESC")?;
-
-        let path_str = path
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?;
-        let hashes = stmt.query_map([path_str], Self::row_to_dotfile_hash)?;
-
-        let mut result = Vec::new();
-        for hash in hashes {
-            result.push(hash?);
-        }
-        Ok(result)
-    }
-
+    
     /// Get the newest hash for a file, if any exists
-    pub fn get_newest_hash(&self, path: &Path) -> Result<Option<DotfileHash>> {
+    pub fn get_newest_hash(&self, path: &Path) -> Result<Option<FileHash>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT hash, created, path, unmodified FROM hashes WHERE path = ? ORDER BY created DESC LIMIT 1")?;
+            .prepare("SELECT hash, created, path, source_file FROM file_hashes WHERE path = ? ORDER BY created DESC LIMIT 1")?;
 
-        let result: Option<DotfileHash> = stmt
+        let result: Option<FileHash> = stmt
             .query_row(
                 [path
                     .to_str()
                     .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8 path: {}", path.display()))?],
-                Self::row_to_dotfile_hash,
+                Self::row_to_file_hash,
             )
             .optional()?;
 
@@ -195,22 +210,21 @@ impl Database {
     }
 
     pub fn cleanup_hashes(&self, days: u32) -> Result<()> {
-        // Keep all unmodified hashes, and for modified hashes:
-        // 1. Keep the newest modified hash per file (for rollback capability)
-        // 2. Remove modified hashes older than the configured number of days
-
-        // First, remove modified hashes older than the configured number of days
+        // Keep newest N hashes per target file (source_file = 0), but always keep all
+        // source file hashes
+        
+        // Remove old target file hashes
         self.conn.execute(
-            "DELETE FROM hashes WHERE unmodified = 0 AND created < datetime('now', ?1 || ' days')",
+            "DELETE FROM file_hashes WHERE source_file = 0 AND created < datetime('now', ?1 || ' days')",
             [days.to_string()],
         )?;
 
-        // Then, for each file, keep only the newest modified hash
+        // Keep newest hash per target file for rollback capability
         self.conn.execute(
-            "DELETE FROM hashes WHERE unmodified = 0 AND rowid NOT IN (
+            "DELETE FROM file_hashes WHERE source_file = 0 AND rowid NOT IN (
                 SELECT MAX(rowid)
-                FROM hashes
-                WHERE unmodified = 0
+                FROM file_hashes
+                WHERE source_file = 0
                 GROUP BY path
             )",
             (),
@@ -238,7 +252,7 @@ mod tests {
         // Initially hash should not exist
         assert!(!db.hash_exists("test_hash", &test_path).unwrap());
 
-        // Add hash
+        // Add hash as source file
         db.add_hash("test_hash", &test_path, true).unwrap();
 
         // Now hash should exist
@@ -246,5 +260,43 @@ mod tests {
 
         // Different hash should not exist
         assert!(!db.hash_exists("different_hash", &test_path).unwrap());
+    }
+
+    #[test]
+    fn test_source_hash_exists() {
+        let dir = tempdir().unwrap();
+        let test_path = dir.path().join("test_file");
+        std::fs::write(&test_path, "test content").unwrap();
+
+        let db_path = dir.path().join("test.db");
+        let db = Database::new(db_path).unwrap();
+
+        // Add hash as source file
+        db.add_hash("test_hash", &test_path, true).unwrap();
+
+        // Source hash should exist
+        assert!(db.source_hash_exists("test_hash", &test_path).unwrap());
+
+        // Should not exist as target hash
+        assert!(!db.target_hash_exists("test_hash", &test_path).unwrap());
+    }
+
+    #[test]
+    fn test_target_hash_exists() {
+        let dir = tempdir().unwrap();
+        let test_path = dir.path().join("test_file");
+        std::fs::write(&test_path, "test content").unwrap();
+
+        let db_path = dir.path().join("test.db");
+        let db = Database::new(db_path).unwrap();
+
+        // Add hash as target file
+        db.add_hash("test_hash", &test_path, false).unwrap();
+
+        // Target hash should exist
+        assert!(db.target_hash_exists("test_hash", &test_path).unwrap());
+
+        // Should not exist as source hash
+        assert!(!db.source_hash_exists("test_hash", &test_path).unwrap());
     }
 }

@@ -208,13 +208,13 @@ fn get_modified_dotfiles(
         let full_path = resolve_dotfile_path(p)?;
 
         for (target_path, dotfile) in all_dotfiles {
-            if target_path.starts_with(&full_path) && dotfile.is_modified(db) {
+            if target_path.starts_with(&full_path) && !dotfile.is_target_unmodified(db)? {
                 modified_dotfiles.push(dotfile);
             }
         }
     } else {
         for (_, dotfile) in all_dotfiles {
-            if dotfile.is_modified(db) {
+            if !dotfile.is_target_unmodified(db)? {
                 modified_dotfiles.push(dotfile);
             }
         }
@@ -325,7 +325,7 @@ pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> 
 
     for dotfile in filemap.values() {
         if dotfile.target_path.starts_with(&full_path) {
-            if dotfile.is_modified(db) {
+            if !dotfile.is_target_unmodified(db)? {
                 dotfile.reset(db)?;
                 reset_files.push(dotfile.target_path.clone());
             } else {

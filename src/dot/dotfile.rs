@@ -28,7 +28,7 @@ impl Dotfile {
 
         // First, check if both files have the same hash in the database
         if let (Ok(source_hash), Ok(target_hash)) =
-            (self.get_source_hash(db), self.get_target_hash(db))
+            (self.get_file_hash(&self.source_path, true, db), self.get_file_hash(&self.target_path, false, db))
         {
             if source_hash == target_hash {
                 // Files have the same content, not outdated
@@ -51,74 +51,46 @@ impl Dotfile {
         false
     }
 
-    pub fn is_modified(&self, db: &Database) -> bool {
+    pub fn is_target_unmodified(&self, db: &Database) -> Result<bool, anyhow::Error> {
         if !self.target_path.exists() {
-            return false;
-        }
-        // Recompute the source hash first in case the repository file was
-        // modified; this ensures DB has an up-to-date source hash entry.
-        let _ = self.get_source_hash(db);
-
-        // If the unmodified hashes contain the target_hash, then the file is
-        // unmodified; otherwise return true (modified).
-        if let Ok(target_hash) = self.get_target_hash(db) {
-            if let Ok(unmodified_hashes) = db.get_unmodified_hashes(&self.target_path) {
-                return !unmodified_hashes.iter().any(|h| h.hash == target_hash);
-            }
+            return Ok(false); // Missing files can't be unmodified
         }
 
-        true
+        // Step 1: Get target hash
+        let target_hash = self.get_file_hash(&self.target_path, false, db)?;
+
+        // Step 2: Check if target hash matches any source hash in DB
+        if db.source_hash_exists(&target_hash, &self.target_path)? {
+            return Ok(true); // File was created by instantCLI
+        }
+
+        // Step 3: Check if target matches current source
+        let source_hash = self.get_file_hash(&self.source_path, true, db)?;
+        Ok(target_hash == source_hash)
     }
 
-    pub fn get_target_hash(&self, db: &Database) -> Result<String, anyhow::Error> {
-        if !self.target_path.exists() {
+    pub fn get_file_hash(&self, path: &Path, is_source: bool, db: &Database) -> Result<String, anyhow::Error> {
+        if !path.exists() {
             return Err(anyhow::anyhow!(
-                "Target file does not exist: {}",
-                self.target_path.display()
+                "File does not exist: {}",
+                path.display()
             ));
         }
 
-        // Check if there's a hash in the database newer than the file's modification time
-        let file_metadata = fs::metadata(&self.target_path)?;
+        // Check if cached hash is newer than file modification time
+        let file_metadata = fs::metadata(path)?;
         let file_modified = file_metadata.modified()?;
+        let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
 
-        if let Ok(Some(newest_hash)) = db.get_newest_hash(&self.target_path) {
-            // Compare the database timestamp with file modification time
-            let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
+        if let Ok(Some(newest_hash)) = db.get_newest_hash(path) {
             if newest_hash.created >= file_time {
-                // Database has a hash newer than or equal to file modification time,
-                // so we can return the newest unmodified hash for this file
                 return Ok(newest_hash.hash);
             }
         }
-        // No newer hash found, compute the hash
-        let hash = Self::compute_hash(&self.target_path)?;
-        let is_unmodified = db.unmodified_hash_exists(&hash, &self.target_path)?;
-        db.add_hash(&hash, &self.target_path, is_unmodified)?;
-        Ok(hash)
-    }
 
-    pub fn get_source_hash(&self, db: &Database) -> Result<String, anyhow::Error> {
-        // Check if there's a hash in the database newer than the file's modification time
-        let file_metadata = fs::metadata(&self.source_path)?;
-        let file_modified = file_metadata.modified()?;
-
-        if let Ok(Some(newest_hash)) = db.get_newest_hash(&self.source_path) {
-            // Compare the database timestamp with file modification time
-            let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
-            if newest_hash.created >= file_time {
-                // Database has a hash newer than or equal to file modification time,
-                // so we can return the newest unmodified hash for this file
-                if newest_hash.unmodified {
-                    return Ok(newest_hash.hash);
-                }
-            }
-        }
-
-        // No newer hash found, compute the hash
-        let hash = Self::compute_hash(&self.source_path)?;
-        let is_unmodified = db.unmodified_hash_exists(&hash, &self.source_path)?;
-        db.add_hash(&hash, &self.source_path, is_unmodified)?;
+        // Compute and store new hash
+        let hash = Self::compute_hash(path)?;
+        db.add_hash(&hash, path, is_source)?;
         Ok(hash)
     }
 
@@ -166,7 +138,8 @@ impl Dotfile {
     }
 
     pub fn apply(&self, db: &Database) -> Result<(), anyhow::Error> {
-        if self.is_modified(db) {
+        // For missing files, we always apply (create them)
+        if self.target_path.exists() && !self.is_target_unmodified(db)? {
             // Skip modified files, as they could contain user modifications
             // This project is a dotfile manager which can be run in the background, and should not
             // override files touched by the user or other programs. If an unmodified hash exists,
@@ -176,7 +149,7 @@ impl Dotfile {
         }
 
         if !self.is_outdated(db) {
-            let _ = self.get_source_hash(db);
+            let _ = self.get_file_hash(&self.source_path, true, db);
             return Ok(());
         }
 
@@ -188,17 +161,17 @@ impl Dotfile {
 
         fs::copy(&self.source_path, &self.target_path)?;
 
-        // After applying, record the target hash as unmodified since we just copied from source
-        let source_hash = self.get_source_hash(db)?;
-        db.add_hash(&source_hash, &self.target_path, true)?;
+        // After applying, record the target hash with source_file=false since we just copied from source
+        let source_hash = self.get_file_hash(&self.source_path, true, db)?;
+        db.add_hash(&source_hash, &self.target_path, false)?;
 
         Ok(())
     }
 
     pub fn fetch(&self, db: &Database) -> Result<(), anyhow::Error> {
-        if self.is_modified(db) {
+        if !self.is_target_unmodified(db)? {
             fs::copy(&self.target_path, &self.source_path)?;
-            let _ = self.get_target_hash(db);
+            let _ = self.get_file_hash(&self.target_path, false, db);
         }
         Ok(())
     }
@@ -215,9 +188,9 @@ impl Dotfile {
         // Force copy source -> target, overwriting any modifications
         fs::copy(&self.source_path, &self.target_path)?;
 
-        // After reset, record the target hash as unmodified since we just copied from source
-        let source_hash = self.get_source_hash(db)?;
-        db.add_hash(&source_hash, &self.target_path, true)?;
+        // After reset, record the target hash with source_file=false since we just copied from source
+        let source_hash = self.get_file_hash(&self.source_path, true, db)?;
+        db.add_hash(&source_hash, &self.target_path, false)?;
 
         Ok(())
     }
@@ -236,10 +209,10 @@ impl Dotfile {
         // Compute the hash of the copied content
         let hash = Self::compute_hash(&self.source_path)?;
 
-        // Register the hash as unmodified for both source and target
+        // Register the hash with correct source_file flags
         // This ensures that both files are considered in sync
-        db.add_hash(&hash, &self.source_path, true)?;
-        db.add_hash(&hash, &self.target_path, true)?;
+        db.add_hash(&hash, &self.source_path, true)?;   // source_file=true for source
+        db.add_hash(&hash, &self.target_path, false)?;  // source_file=false for target
 
         Ok(())
     }
@@ -266,6 +239,10 @@ mod tests {
             source_path: repo_path.join("test.txt"),
             target_path: target_path.join("test.txt"),
         };
+
+        // Register the source file hash first
+        let source_hash = Dotfile::compute_hash(&dotfile.source_path).unwrap();
+        db.add_hash(&source_hash, &dotfile.source_path, true).unwrap();
 
         dotfile.apply(&db).unwrap();
         assert!(target_path.join("test.txt").exists());
