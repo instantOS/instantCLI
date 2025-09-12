@@ -26,83 +26,12 @@ async fn run_all_checks_cmd() -> Result<()> {
 
 async fn list_available_checks() -> Result<()> {
     let checks = REGISTRY.all_checks();
-    
-    println!("{}", "Available Health Checks:".bold());
-    println!();
-    
-    let header = format!(
-        "{: <20} {: <35} {}",
-        "ID".bold(),
-        "Name".bold(),
-        "Description".bold()
-    );
-    println!("{header}");
-    println!("{}", "-".repeat(80));
-    
-    for check in checks {
-        let privileges = match (check.check_privilege_level(), check.fix_privilege_level()) {
-            (super::PrivilegeLevel::Any, super::PrivilegeLevel::Any) => "",
-            (super::PrivilegeLevel::Any, super::PrivilegeLevel::User) => " (fix: user)",
-            (super::PrivilegeLevel::Any, super::PrivilegeLevel::Root) => " (fix: root)",
-            (super::PrivilegeLevel::User, super::PrivilegeLevel::User) => " (user only)",
-            (super::PrivilegeLevel::Root, _) => " (root required)",
-            _ => " (mixed privileges)",
-        };
-        
-        let fix_available = if check.fix_message().is_some() { "✓" } else { "✗" };
-        
-        let line = format!(
-            "{: <20} {: <35} {}{}",
-            check.id().cyan(),
-            check.name(),
-            format!("Fix: {}", fix_available),
-            privileges.dimmed()
-        );
-        println!("{line}");
-    }
-    
-    println!();
-    println!("Usage:");
-    println!("  instant doctor run <id>    Run a specific check");
-    println!("  instant doctor fix <id>    Apply fix for a specific check");
-    println!("  instant doctor             Run all checks");
-    
+    super::print_check_list_table(&checks);
     Ok(())
 }
 
 fn print_results(results: &[CheckResult]) {
-    println!("{}", "System Health Check Results:".bold());
-    println!();
-    
-    let header = format!(
-        "{: <35} {: <8} {}",
-        "Check".bold(),
-        "Status".bold(),
-        "Message".bold()
-    );
-    println!("{header}");
-    println!("{}", "-".repeat(55));
-    for result in results {
-        let status_str = result.status.color_status();
-        let fixable_str = result.status.fixable_indicator();
-        
-        // Color-code the check name based on status
-        let check_name = match result.status {
-            super::CheckStatus::Pass(_) => result.name.green(),
-            super::CheckStatus::Fail { .. } => result.name.red(),
-            super::CheckStatus::Warning { .. } => result.name.yellow(),
-        };
-        
-        let line = format!(
-            "{: <35} {: <8} {}",
-            check_name,
-            status_str,
-            format!("{}{}", result.status.message(), fixable_str)
-        );
-        println!("{line}");
-    }
-    
-    println!();
+    super::print_results_table(results);
 }
 
 fn show_available_fixes(results: &[CheckResult]) {
@@ -163,27 +92,7 @@ async fn execute_single_check(check: Box<dyn DoctorCheck + Send + Sync>) -> Chec
 }
 
 fn print_single_result(result: &CheckResult) {
-    let status_str = result.status.color_status();
-    let fixable_str = result.status.fixable_indicator();
-    
-    println!(
-        "{}: [{}] {}{}",
-        result.name.bold(),
-        status_str,
-        result.status.message(),
-        fixable_str
-    );
-    
-    if result.status.needs_fix() {
-        if result.status.is_fixable() {
-            if let Some(ref msg) = result.fix_message {
-                println!("  Fix available: {}", msg);
-                println!("  Run: instant doctor fix {}", result.check_id);
-            }
-        } else {
-            println!("  Manual intervention required.");
-        }
-    }
+    super::print_single_check_result_table(result);
 }
 
 async fn fix_single_check(check_id: &str) -> Result<()> {
@@ -239,11 +148,21 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
 }
 
 async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
-    println!("Applying fix for {}...", check.name().green());
+    let check_name = check.name();
+    
+    // Get the before status
+    let before_result = check.execute().await;
+    let before_status = before_result.status_text().to_string();
+    
+    println!("Applying fix for {}...", check_name.green());
     
     match check.fix().await {
         Ok(()) => {
-            println!("✓ Fix applied successfully for {}", check.name().green());
+            // Get the after status
+    let after_result = check.execute().await;
+    let after_status = after_result.status_text().to_string();
+            
+            super::print_fix_summary_table(check_name, &before_status, &after_status);
             Ok(())
         }
         Err(e) => {

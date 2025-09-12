@@ -1,5 +1,6 @@
 use anyhow::Result;
 use colored::*;
+use comfy_table::{Table, Row, Cell, Color, Attribute, presets::UTF8_FULL, ContentArrangement};
 use std::fmt::Display;
 use clap::Subcommand;
 
@@ -56,6 +57,22 @@ impl CheckStatus {
     
     pub fn needs_fix(&self) -> bool {
         !self.is_success()
+    }
+
+    pub fn status_text(&self) -> &'static str {
+        match self {
+            CheckStatus::Pass(_) => "PASS",
+            CheckStatus::Fail { .. } => "FAIL",
+            CheckStatus::Warning { .. } => "WARN",
+        }
+    }
+
+    pub fn status_color(&self) -> Color {
+        match self {
+            CheckStatus::Pass(_) => Color::Green,
+            CheckStatus::Fail { .. } => Color::Red,
+            CheckStatus::Warning { .. } => Color::Yellow,
+        }
     }
 
     pub fn color_status(&self) -> impl std::fmt::Display {
@@ -179,4 +196,150 @@ pub fn print_results(results: &[CheckResult]) {
         }
         // TODO: Prompt for fixes
     }
+}
+
+// Unified table output functions
+pub fn print_check_list_table(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(Row::from(vec![
+            Cell::new("ID").fg(Color::Blue).add_attribute(Attribute::Bold),
+            Cell::new("Name").add_attribute(Attribute::Bold),
+            Cell::new("Fix Available").add_attribute(Attribute::Bold),
+            Cell::new("Privileges").add_attribute(Attribute::Bold),
+        ]));
+
+    for check in checks {
+        let fix = if check.fix_message().is_some() { "✓" } else { "✗" };
+        let privileges = match (check.check_privilege_level(), check.fix_privilege_level()) {
+            (PrivilegeLevel::Any, PrivilegeLevel::Any) => "Any",
+            (PrivilegeLevel::Any, PrivilegeLevel::User) => "User (fix)",
+            (PrivilegeLevel::Any, PrivilegeLevel::Root) => "Root (fix)",
+            (PrivilegeLevel::User, PrivilegeLevel::User) => "User only",
+            (PrivilegeLevel::Root, _) => "Root required",
+            _ => "Mixed",
+        };
+        
+        table.add_row(Row::from(vec![
+            Cell::new(check.id()),
+            Cell::new(check.name()),
+            Cell::new(fix),
+            Cell::new(privileges),
+        ]));
+    }
+    
+    println!("{}", "Available Health Checks:".bold());
+    println!("{table}");
+    println!();
+    println!("Usage:");
+    println!("  instant doctor run <id>    Run a specific check");
+    println!("  instant doctor fix <id>    Apply fix for a specific check");
+    println!("  instant doctor             Run all checks");
+}
+
+pub fn print_results_table(results: &[CheckResult]) {
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(Row::from(vec![
+            Cell::new("Check").add_attribute(Attribute::Bold),
+            Cell::new("Status").add_attribute(Attribute::Bold),
+            Cell::new("Message").add_attribute(Attribute::Bold),
+        ]));
+
+    // The Dynamic content arrangement will handle wrapping automatically
+
+    for result in results {
+        let status_cell = Cell::new(result.status.status_text()).fg(result.status.status_color());
+        
+        let check_cell = Cell::new(&result.name).fg(result.status.status_color());
+        
+        let msg = format!("{}{}", result.status.message(), result.status.fixable_indicator());
+        
+        table.add_row(Row::from(vec![
+            check_cell,
+            status_cell,
+            Cell::new(msg),
+        ]));
+    }
+    
+    println!("{}", "System Health Check Results:".bold());
+    println!("{table}");
+}
+
+pub fn print_single_check_result_table(result: &CheckResult) {
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(Row::from(vec![
+            Cell::new("Check").add_attribute(Attribute::Bold),
+            Cell::new("Status").add_attribute(Attribute::Bold),
+            Cell::new("Message").add_attribute(Attribute::Bold),
+        ]));
+
+    let status_text = match &result.status {
+        CheckStatus::Pass(_) => "PASS",
+        CheckStatus::Fail { .. } => "FAIL",
+        CheckStatus::Warning { .. } => "WARN",
+    };
+    let status_color = match &result.status {
+        CheckStatus::Pass(_) => Color::Green,
+        CheckStatus::Fail { .. } => Color::Red,
+        CheckStatus::Warning { .. } => Color::Yellow,
+    };
+    let status_cell = Cell::new(status_text).fg(status_color);
+    
+    let check_color = match &result.status {
+        CheckStatus::Pass(_) => Color::Green,
+        CheckStatus::Fail { .. } => Color::Red,
+        CheckStatus::Warning { .. } => Color::Yellow,
+    };
+    let check_cell = Cell::new(&result.name).fg(check_color);
+    
+    let msg = format!("{}{}", result.status.message(), result.status.fixable_indicator());
+    
+    table.add_row(Row::from(vec![
+        check_cell,
+        status_cell,
+        Cell::new(msg),
+    ]));
+    
+    println!("{}", "Health Check Result:".bold());
+    println!("{table}");
+    
+    if result.status.needs_fix() {
+        if result.status.is_fixable() {
+            if let Some(ref msg) = result.fix_message {
+                println!();
+                println!("  Fix available: {}", msg);
+                println!("  Run: instant doctor fix {}", result.check_id);
+            }
+        } else {
+            println!();
+            println!("  Manual intervention required.");
+        }
+    }
+}
+
+pub fn print_fix_summary_table(check_name: &str, before_status: &str, after_status: &str) {
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(Row::from(vec!["Check", "Before Status", "After Status"].into_iter()
+            .map(|s| Cell::new(s).add_attribute(Attribute::Bold))
+            .collect::<Vec<_>>()));
+
+    table.add_row(Row::from(vec![
+        Cell::new(check_name),
+        Cell::new(before_status).fg(Color::Red),
+        Cell::new(after_status).fg(Color::Green),
+    ]));
+    
+    println!("{}", "Fix Summary:".bold());
+    println!("{table}");
 }
