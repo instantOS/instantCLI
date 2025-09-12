@@ -233,6 +233,8 @@ async fn main() -> Result<()> {
 
                     if apply_fix {
                         let mut fix_check: Option<Box<dyn DoctorCheck + Send + Sync>> = None;
+                        // TODO: this should be an enum or another better solution, not checking for strings (duplicated
+                        // across the codebase) and also a separate function
                         if check_name == "Internet Connectivity" {
                             fix_check = Some(Box::new(InternetCheck));
                         }
