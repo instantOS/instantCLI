@@ -34,6 +34,7 @@ fn execute_with_error_handling<T>(
 use crate::dot::config::ConfigManager;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
+use crate::doctor::DoctorCommands;
 
 /// InstantCLI main parser
 #[derive(Parser, Debug)]
@@ -47,6 +48,10 @@ struct Cli {
     #[arg(short = 'c', long = "config", global = true)]
     config: Option<String>,
 
+    /// Internal flag set when restarted with sudo
+    #[arg(long, hide = true)]
+    internal_privileged_mode: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -59,8 +64,13 @@ enum Commands {
         command: DotCommands,
     },
     /// System diagnostics and fixes
-    Doctor,
+    Doctor {
+        #[command(subcommand)]
+        command: Option<DoctorCommands>,
+    },
 }
+
+
 
 #[derive(Subcommand, Debug)]
 enum DotCommands {
@@ -213,48 +223,8 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Some(Commands::Doctor) => {
-            use dialoguer::Confirm;
-            use doctor::{DoctorCheck, InternetCheck, print_results, run_all_checks};
-            let checks: Vec<Box<dyn DoctorCheck + Send + Sync>> = vec![Box::new(InternetCheck)];
-            let results = run_all_checks(checks).await;
-            print_results(&results);
-
-            for result in &results {
-                if !result.status.is_success() && result.fix_message.is_some() {
-                    let check_name = &result.name;
-                    let fix_msg = result.fix_message.as_ref().unwrap();
-                    let prompt = format!("Apply fix for {check_name}? ({fix_msg})");
-                    let apply_fix = Confirm::new()
-                        .with_prompt(&prompt)
-                        .default(true)
-                        .interact()
-                        .unwrap_or(false);
-
-                    if apply_fix {
-                        let mut fix_check: Option<Box<dyn DoctorCheck + Send + Sync>> = None;
-                        // TODO: this should be an enum or another better solution, not checking for strings (duplicated
-                        // across the codebase) and also a separate function
-                        if check_name == "Internet Connectivity" {
-                            fix_check = Some(Box::new(InternetCheck));
-                        }
-                        // Extend for more checks in future
-
-                        if let Some(check) = fix_check {
-                            println!("Applying fix for {}...", check_name.green());
-                            if let Err(e) = check.fix().await {
-                                eprintln!(
-                                    "Failed to apply fix for {}: {}",
-                                    check_name,
-                                    e.to_string().red()
-                                );
-                            } else {
-                                println!("Fix applied for {}", check_name.green());
-                            }
-                        }
-                    }
-                }
-            }
+        Some(Commands::Doctor { command }) => {
+            doctor::command::handle_doctor_command(command.clone()).await?;
         }
         None => {
             println!("instant: run with --help for usage");

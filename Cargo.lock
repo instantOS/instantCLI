@@ -502,13 +502,16 @@ dependencies = [
  "dialoguer",
  "dirs 5.0.1",
  "indicatif",
+ "lazy_static",
  "owo-colors",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2",
  "shellexpand",
+ "sudo",
  "tempfile",
+ "thiserror 1.0.69",
  "tokio",
  "toml",
  "walkdir",
@@ -546,6 +549,12 @@ dependencies = [
  "once_cell",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
@@ -928,6 +937,16 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+
+[[package]]
+name = "sudo"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88bd84d4c082e18e37fef52c0088e4407dabcef19d23a607fb4b5ee03b7d5b83"
+dependencies = [
+ "libc",
+ "log",
+]
 
 [[package]]
 name = "syn"

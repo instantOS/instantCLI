@@ -20,6 +20,9 @@ toml = "0.9.5"
 walkdir = "2.5.0"
 tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1"
+sudo = "0.6"                # Privilege escalation via process restart
+lazy_static = "1.4"         # Global registry instance
+thiserror = "1.0"           # Error handling
 
 [dev-dependencies]
 tempfile = "3.21.0"
