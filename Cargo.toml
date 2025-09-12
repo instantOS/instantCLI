@@ -23,6 +23,7 @@ async-trait = "0.1"
 sudo = "0.6"                # Privilege escalation via process restart
 lazy_static = "1.4"         # Global registry instance
 thiserror = "1.0"           # Error handling
+comfy-table = "7"            # Formatted tables for doctor command output
 
 [dev-dependencies]
 tempfile = "3.21.0"
