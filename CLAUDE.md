@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InstantCLI is a Rust-based command-line tool for managing dotfiles and instantOS configurations. It provides a decentralized approach to dotfile management that respects user modifications while enabling easy theme and configuration switching.
+InstantCLI is a Rust-based command-line tool (v0.1.1) for managing dotfiles and instantOS configurations. It provides a decentralized approach to dotfile management that respects user modifications while enabling easy theme and configuration switching.
 
 ## Common Development Commands
 
@@ -68,6 +68,17 @@ cd ~ && instant dot reset .config
    - `git.rs`: Git repository operations (cloning, updating, status checking)
    - `localrepo.rs`: Local repository representation and management
    - `meta.rs`: Repository initialization and metadata handling
+   - `repo/`: Repository management subdirectory
+     - `cli.rs`: Repository CLI command definitions
+     - `commands.rs`: Repository command handlers
+     - `manager.rs`: Repository management logic
+   - `utils.rs`: Utility functions
+   - `path_serde.rs`: Path serialization/deserialization
+   - `path_tests.rs`: Path-related tests
+
+3. **System Diagnostics** (`src/doctor/`): System health checks and diagnostics
+   - `mod.rs`: Doctor trait definitions and orchestration
+   - `checks.rs`: Individual health check implementations
 
 ### Key Concepts
 
@@ -145,6 +156,8 @@ branch = "main"
 **No Git Commits**: Do NOT create git commits. The repository has strict policies against automated commits. If changes need to be committed, ask the user for explicit permission.
 
 **Hash-Based Safety**: All file operations respect the hash-based modification detection system. Never bypass this system as it protects user modifications. The system distinguishes between source files (repository copies) and target files (home directory installations) using the `source_file` database field.
+You run in an environment where `ast-grep` is available; whenever a search requires syntax-aware or structural matching, default to `ast-grep --lang rust -p '<pattern>'` and avoid falling back to text-only tools like `rg` or `grep` unless I explicitly request a plain-text search.
+
 
 **Config Locations**: 
 - Config: `~/.config/instant/instant.toml`
@@ -153,13 +166,29 @@ branch = "main"
 
 ## Key Commands
 
-- `instant dot clone <url>`: Add a new dotfile repository
+### Dotfile Commands
 - `instant dot apply`: Apply all dotfiles from configured repos
 - `instant dot fetch [<path>]`: Fetch modified files from home directory back to repos
 - `instant dot reset <path>`: Reset modified files to original state
 - `instant dot update`: Update all configured repositories
 - `instant dot status [<path>]`: Check repository status
 - `instant dot init`: Initialize current directory as a dotfile repo
+- `instant dot add <path>`: Add new dotfiles to tracking
+
+### Repository Management Commands
+- `instant dot repo add <url>`: Add a new dotfile repository
+- `instant dot repo list`: List all configured repositories
+- `instant dot repo remove <name>`: Remove a repository
+- `instant dot repo info <name>`: Show detailed repository information
+- `instant dot repo enable <name>`: Enable a disabled repository
+- `instant dot repo disable <name>`: Disable a repository temporarily
+
+### Subdirectory Management Commands
+- `instant dot repo subdirs list <name>`: List available subdirectories
+- `instant dot repo subdirs set <name> <subdirs...>`: Set active subdirectories
+
+### System Diagnostics
+- `instant doctor`: Run system diagnostics and fixes
 
 ## Multiple Subdirectories Support
 
@@ -188,9 +217,8 @@ active_subdirs = ["dots", "themes"]
 
 ### Subdirectory Management Commands
 
-- `instant dot list-subdirs <repo>`: List available subdirectories in a repository
-- `instant dot set-subdirs <repo> <subdirs...>`: Set active subdirectories for a repository
-- `instant dot show-subdirs <repo>`: Show currently active subdirectories for a repository
+- `instant dot repo subdirs list <repo>`: List available subdirectories in a repository
+- `instant dot repo subdirs set <repo> <subdirs...>`: Set active subdirectories for a repository
 
 ### Default Behavior
 
