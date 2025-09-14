@@ -3,7 +3,7 @@ use crate::dev::fuzzy::select_package;
 use crate::dev::package::Package;
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-use std::process::Command;
+use duct::cmd;
 
 pub struct PackageRepo {
     pub path: PathBuf,
@@ -30,44 +30,31 @@ impl PackageRepo {
     pub fn ensure_updated(&self) -> Result<()> {
         if self.path.exists() {
             // Repository exists, pull latest changes
-            std::env::set_current_dir(&self.path)
-                .context("Failed to change directory")?;
-
             // Check if there are local changes
-            let output = Command::new("git")
-                .args(&["status", "--porcelain"])
-                .output()
+            let output = cmd!("git", "status", "--porcelain")
+                .dir(&self.path)
+                .read()
                 .context("Failed to check git status")?;
 
-            let has_local_changes = output.status.success() && !output.stdout.is_empty();
+            let has_local_changes = !output.trim().is_empty();
 
             if has_local_changes {
                 self.handle_local_changes()?;
             }
 
             // Pull latest changes
-            let status = Command::new("git")
-                .args(&["pull", "origin", "main", "--depth=3"])
-                .status()
+            cmd!("git", "pull", "origin", "main", "--depth=3")
+                .dir(&self.path)
+                .run()
                 .context("Failed to pull latest changes")?;
-
-            if !status.success() {
-                return Err(anyhow::anyhow!("Failed to pull latest changes"));
-            }
         } else {
             // Clone repository
             let parent_dir = self.path.parent().unwrap();
-            std::env::set_current_dir(parent_dir)
-                .context("Failed to change directory")?;
 
-            let status = Command::new("git")
-                .args(&["clone", &self.url, "--depth=3"])
-                .status()
+            cmd!("git", "clone", &self.url, "--depth=3")
+                .dir(parent_dir)
+                .run()
                 .context("Failed to clone repository")?;
-
-            if !status.success() {
-                return Err(anyhow::anyhow!("Failed to clone repository"));
-            }
         }
 
         Ok(())
@@ -75,11 +62,10 @@ impl PackageRepo {
 
     fn handle_local_changes(&self) -> Result<()> {
         // Check if instantwm is running
-        let instantwm_running = Command::new("pgrep")
-            .arg("instantwm")
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false);
+        let instantwm_running = cmd!("pgrep", "instantwm")
+            .unchecked()
+            .run()
+            .is_ok();
 
         if instantwm_running {
             eprintln!("⚠️  Local changes detected and instantwm is running");
@@ -89,14 +75,10 @@ impl PackageRepo {
             eprintln!("💾 Stashing local changes...");
         }
 
-        let status = Command::new("git")
-            .arg("stash")
-            .status()
+        cmd!("git", "stash")
+            .dir(&self.path)
+            .run()
             .context("Failed to stash changes")?;
-
-        if !status.success() {
-            return Err(anyhow::anyhow!("Failed to stash changes"));
-        }
 
         Ok(())
     }
@@ -109,19 +91,11 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
 
     let pb = create_spinner(format!("Building and installing {}...", package.name));
 
-    // Change to package directory
-    std::env::set_current_dir(&package.path)
-        .context("Failed to change directory")?;
-
     // Build and install package
-    let status = Command::new("makepkg")
-        .arg("-si")
-        .status()
+    cmd!("makepkg", "-si")
+        .dir(&package.path)
+        .run()
         .context("Failed to build and install package")?;
-
-    if !status.success() {
-        return Err(anyhow::anyhow!("Failed to build and install package"));
-    }
 
     pb.finish_with_message(format!("✅ Successfully installed {}", package.name));
 
