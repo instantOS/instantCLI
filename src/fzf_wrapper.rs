@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
 use std::process::Command;
-use tempfile::{Builder, NamedTempFile, TempPath};
+use tempfile::{NamedTempFile, TempPath};
 
 /// Preview type for fzf items
 #[derive(Debug, Clone)]
@@ -370,51 +370,3 @@ impl FzfSelectable for FileItem {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct GitBranch {
-    pub name: String,
-    pub commit_hash: String,
-    pub last_commit: String,
-}
-
-impl FzfSelectable for GitBranch {
-    fn fzf_display_text(&self) -> String {
-        self.name.clone()
-    }
-
-    fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Command(format!("git log --oneline -n 5 {}", self.name))
-    }
-}
-
-// Usage examples
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn example_usage() {
-        let files = vec![
-            FileItem {
-                path: "src/main.rs".to_string(),
-                size: 1024,
-                modified: "2024-01-01".to_string(),
-            },
-            FileItem {
-                path: "Cargo.toml".to_string(),
-                size: 256,
-                modified: "2024-01-02".to_string(),
-            },
-        ];
-
-        // Single selection with preview
-        let wrapper = FzfWrapper::with_options(FzfOptions {
-            prompt: Some("Select file: ".to_string()),
-            preview_window: Some("right:60%".to_string()),
-            ..Default::default()
-        });
-
-        // This would show fzf with file contents in preview
-        // let result = wrapper.select(files).unwrap();
-    }
-}
