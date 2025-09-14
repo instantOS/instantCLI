@@ -2,9 +2,57 @@ use anyhow::Result;
 use colored::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use crate::fzf_wrapper::{FzfSelectable, FzfWrapper, FzfOptions};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RepoName(String);
+
+/// Helper struct for repository selection
+#[derive(Debug, Clone)]
+pub struct RepoSelectItem {
+    pub repo: config::Repo,
+}
+
+impl FzfSelectable for RepoSelectItem {
+    fn fzf_display_text(&self) -> String {
+        self.repo.name.clone()
+    }
+
+    fn fzf_preview(&self) -> crate::fzf_wrapper::FzfPreview {
+        crate::fzf_wrapper::FzfPreview::Text(format!(
+            "URL: {}\nBranch: {}\nEnabled: {}",
+            self.repo.url,
+            self.repo.branch.as_deref().unwrap_or("default"),
+            if self.repo.enabled { "Yes" } else { "No" }
+        ))
+    }
+}
+
+/// Helper struct for dots directory selection
+#[derive(Debug, Clone)]
+pub struct DotsDirSelectItem {
+    pub dots_dir: DotfileDir,
+    pub repo_name: String,
+}
+
+impl FzfSelectable for DotsDirSelectItem {
+    fn fzf_display_text(&self) -> String {
+        self.dots_dir
+            .path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| self.dots_dir.path.display().to_string())
+    }
+
+    fn fzf_preview(&self) -> crate::fzf_wrapper::FzfPreview {
+        crate::fzf_wrapper::FzfPreview::Text(format!(
+            "Repository: {}\nPath: {}\nActive: {}",
+            self.repo_name,
+            self.dots_dir.path.display(),
+            if self.dots_dir.is_active { "Yes" } else { "No" }
+        ))
+    }
+}
 
 impl RepoName {
     pub fn new(name: String) -> Self {
@@ -354,8 +402,6 @@ pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> 
 
 /// Prompt the user to select one of the configured repositories.
 fn select_repo(config: &Config) -> Result<config::Repo> {
-    use dialoguer::{Select, theme::ColorfulTheme};
-
     if config.repos.is_empty() {
         return Err(anyhow::anyhow!("No repositories configured"));
     }
@@ -364,20 +410,29 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
         return Ok(config.repos[0].clone());
     }
 
-    let items: Vec<String> = config.repos.iter().map(|r| r.name.clone()).collect();
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select repository to add the dotfile to")
-        .default(0)
-        .items(&items)
-        .interact()?;
+    let items: Vec<RepoSelectItem> = config
+        .repos
+        .iter()
+        .cloned()
+        .map(|repo| RepoSelectItem { repo })
+        .collect();
 
-    Ok(config.repos[selection].clone())
+    let wrapper = FzfWrapper::with_options(FzfOptions {
+        prompt: Some("Select repository to add the dotfile to: ".to_string()),
+        preview_window: Some("right:40%".to_string()),
+        ..Default::default()
+    });
+
+    match wrapper.select(items).map_err(|e| anyhow::anyhow!("Selection error: {}", e))? {
+        crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.repo),
+        crate::fzf_wrapper::FzfResult::Cancelled => Err(anyhow::anyhow!("No repository selected")),
+        crate::fzf_wrapper::FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
+        _ => Err(anyhow::anyhow!("Unexpected selection result")),
+    }
 }
 
 /// Prompt the user to select one of the repo's configured `dots_dirs`.
 fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
-    use dialoguer::{Select, theme::ColorfulTheme};
-
     let dirs = &local_repo.dotfile_dirs;
 
     if dirs.is_empty() {
@@ -391,26 +446,30 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
         return Ok(dirs[0].clone());
     }
 
-    let items: Vec<String> = dirs
+    let items: Vec<DotsDirSelectItem> = dirs
         .iter()
-        .map(|d| {
-            d.path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| d.path.display().to_string())
+        .cloned()
+        .map(|dots_dir| DotsDirSelectItem {
+            dots_dir,
+            repo_name: local_repo.name.clone(),
         })
         .collect();
 
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt(format!(
-            "Select target dots_dir in repo '{}'",
+    let wrapper = FzfWrapper::with_options(FzfOptions {
+        prompt: Some(format!(
+            "Select target dots_dir in repo '{}': ",
             local_repo.name
-        ))
-        .default(0)
-        .items(&items)
-        .interact()?;
+        )),
+        preview_window: Some("right:40%".to_string()),
+        ..Default::default()
+    });
 
-    Ok(dirs[selection].clone())
+    match wrapper.select(items).map_err(|e| anyhow::anyhow!("Selection error: {}", e))? {
+        crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.dots_dir),
+        crate::fzf_wrapper::FzfResult::Cancelled => Err(anyhow::anyhow!("No dots directory selected")),
+        crate::fzf_wrapper::FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
+        _ => Err(anyhow::anyhow!("Unexpected selection result")),
+    }
 }
 
 /// Add a new dotfile to tracking

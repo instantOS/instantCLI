@@ -5,6 +5,7 @@ mod common;
 mod dev;
 mod doctor;
 mod dot;
+mod fzf_wrapper;
 
 use clap::{Parser, Subcommand};
 

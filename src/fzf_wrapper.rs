@@ -1,21 +1,7 @@
-
-I want to replace dialoguer, the fzf-wrapped crate and the manual fzf wrapping with my own fzf wrapper. Here are ideas for the code
-and implementation.
-
-Implement this wrapper in a way that it can be used all throughout the codebase
-by different commands. Change the existing commands to use it. 
-You are allowed to create helpers to make things simpler, breaking changes are
-allowed. Not all of this has to go in the same file, come up with your own
-structure which makes sense. 
-
-Make sure all instances of other wrappers and selection things are replaced. 
-
-```rust
-
-use duct::cmd;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
+use std::process::Command;
 use tempfile::NamedTempFile;
 
 /// Preview type for fzf items
@@ -93,11 +79,11 @@ impl FzfWrapper {
             options: FzfOptions::default(),
         }
     }
-    
+
     pub fn with_options(options: FzfOptions) -> Self {
         Self { options }
     }
-    
+
     /// Select from a vector of FzfSelectable items
     pub fn select<T: FzfSelectable + Clone>(
         &self,
@@ -138,45 +124,57 @@ impl FzfWrapper {
         };
 
         // Build fzf command
-        let mut fzf_cmd = cmd!("fzf");
-        
+        let mut cmd = Command::new("fzf");
+
         if self.options.multi_select {
-            fzf_cmd = fzf_cmd.arg("--multi");
+            cmd.arg("--multi");
         }
-        
+
         if let Some(prompt) = &self.options.prompt {
-            fzf_cmd = fzf_cmd.arg("--prompt").arg(prompt);
+            cmd.arg("--prompt").arg(prompt);
         }
-        
+
         if let Some(height) = &self.options.height {
-            fzf_cmd = fzf_cmd.arg("--height").arg(height);
+            cmd.arg("--height").arg(height);
         }
-        
+
         // Add preview if we have a preview script
         if let Some(ref script_path) = preview_script {
-            fzf_cmd = fzf_cmd.arg("--preview");
-            fzf_cmd = fzf_cmd.arg(format!("{} {{}}", script_path.display()));
-            
+            cmd.arg("--preview")
+               .arg(format!("{} {{}}", script_path.path().display()));
+
             if let Some(preview_window) = &self.options.preview_window {
-                fzf_cmd = fzf_cmd.arg("--preview-window").arg(preview_window);
+                cmd.arg("--preview-window").arg(preview_window);
             }
         }
-        
+
         // Add additional arguments
         for arg in &self.options.additional_args {
-            fzf_cmd = fzf_cmd.arg(arg);
+            cmd.arg(arg);
         }
-        
+
         // Execute fzf
         let input_text = display_lines.join("\n");
-        let output = fzf_cmd
-            .stdin_bytes(input_text.as_bytes())
-            .stdout_capture()
-            .stderr_capture()
-            .run();
+        let output = cmd
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                if let Some(stdin) = child.stdin.as_mut() {
+                    use std::io::Write;
+                    stdin.write_all(input_text.as_bytes())?;
+                }
+                child.wait_with_output()
+            });
 
         match output {
             Ok(result) => {
+                // Check if fzf was cancelled (exit code 130)
+                if let Some(130) = result.status.code() {
+                    return Ok(FzfResult::Cancelled);
+                }
+
                 let stdout = String::from_utf8_lossy(&result.stdout);
                 let selected_lines: Vec<&str> = stdout
                     .trim()
@@ -203,16 +201,11 @@ impl FzfWrapper {
                 }
             }
             Err(e) => {
-                if e.kind() == duct::ErrorKind::Status(Some(130)) {
-                    // fzf was cancelled (Ctrl+C)
-                    Ok(FzfResult::Cancelled)
-                } else {
-                    Ok(FzfResult::Error(format!("fzf execution failed: {}", e)))
-                }
+                Ok(FzfResult::Error(format!("fzf execution failed: {}", e)))
             }
         }
     }
-    
+
     /// Create a temporary preview script that can handle our preview data
     fn create_preview_script(
         &self,
@@ -274,7 +267,7 @@ impl FzfWrapper {
             _ => Ok(None),
         }
     }
-    
+
     /// Quick multi-selection with default options
     pub fn select_many<T: FzfSelectable + Clone>(
         items: Vec<T>,
@@ -288,6 +281,45 @@ impl FzfWrapper {
             FzfResult::Selected(item) => Ok(vec![item]),
             _ => Ok(vec![]),
         }
+    }
+
+    /// Confirmation dialog with yes/no options
+    pub fn confirm(message: &str, default: bool) -> Result<bool, Box<dyn std::error::Error>> {
+        let items = vec![
+            ConfirmationItem { value: true, text: "Yes".to_string() },
+            ConfirmationItem { value: false, text: "No".to_string() },
+        ];
+
+        let wrapper = FzfWrapper::with_options(FzfOptions {
+            prompt: Some(format!("{} [Y/n]: ", message)),
+            height: Some("10%".to_string()),
+            preview_window: None,
+            additional_args: vec![],
+            ..Default::default()
+        });
+
+        match wrapper.select(items)? {
+            FzfResult::Selected(item) => Ok(item.value),
+            FzfResult::Cancelled => Ok(default),
+            _ => Ok(default),
+        }
+    }
+}
+
+/// Helper struct for confirmation dialogs
+#[derive(Debug, Clone)]
+pub struct ConfirmationItem {
+    pub value: bool,
+    pub text: String,
+}
+
+impl FzfSelectable for ConfirmationItem {
+    fn fzf_display_text(&self) -> String {
+        self.text.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.text.clone()
     }
 }
 
@@ -342,7 +374,7 @@ impl FzfSelectable for GitBranch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn example_usage() {
         let files = vec![
@@ -357,17 +389,15 @@ mod tests {
                 modified: "2024-01-02".to_string(),
             },
         ];
-        
+
         // Single selection with preview
         let wrapper = FzfWrapper::with_options(FzfOptions {
             prompt: Some("Select file: ".to_string()),
             preview_window: Some("right:60%".to_string()),
             ..Default::default()
         });
-        
+
         // This would show fzf with file contents in preview
         // let result = wrapper.select(files).unwrap();
     }
 }
-
-```

@@ -1,6 +1,7 @@
 use crate::dev::github::GitHubRepo;
 use crate::dev::package::Package;
-use fzf_wrapped::{Border, Fzf, Layout, run_with_output};
+use crate::fzf_wrapper::{FzfSelectable, FzfWrapper, FzfOptions, FzfPreview};
+use anyhow::Result;
 
 #[derive(thiserror::Error, Debug)]
 pub enum FzfError {
@@ -17,39 +18,81 @@ pub enum FzfError {
     NoPackages,
 }
 
+/// Helper struct for GitHub repository selection
+#[derive(Debug, Clone)]
+pub struct GitHubRepoSelectItem {
+    pub repo: GitHubRepo,
+}
+
+impl FzfSelectable for GitHubRepoSelectItem {
+    fn fzf_display_text(&self) -> String {
+        format!(
+            "{} - {}",
+            self.repo.name,
+            self.repo.description.as_deref().unwrap_or("No description")
+        )
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Text(format!(
+            "Name: {}\nDescription: {}\nLanguage: {}\nStars: {}\nForks: {}",
+            self.repo.name,
+            self.repo.description.as_deref().unwrap_or("No description"),
+            self.repo.language.as_deref().unwrap_or("Not specified"),
+            self.repo.stargazers_count.unwrap_or(0),
+            self.repo.forks_count.unwrap_or(0)
+        ))
+    }
+}
+
+/// Helper struct for package selection
+#[derive(Debug, Clone)]
+pub struct PackageSelectItem {
+    pub package: Package,
+}
+
+impl FzfSelectable for PackageSelectItem {
+    fn fzf_display_text(&self) -> String {
+        if let Some(desc) = &self.package.description {
+            format!("{} - {}", self.package.name, desc)
+        } else {
+            self.package.name.clone()
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Text(format!(
+            "Name: {}\nDescription: {}\nPath: {}",
+            self.package.name,
+            self.package.description.as_deref().unwrap_or("No description"),
+            self.package.path.display()
+        ))
+    }
+}
+
 pub fn select_repository(repos: Vec<GitHubRepo>) -> Result<GitHubRepo, FzfError> {
     if repos.is_empty() {
         return Err(FzfError::NoRepositories);
     }
 
-    let mut items = Vec::new();
-    for repo in &repos {
-        let display_line = format!(
-            "{} - {}",
-            repo.name,
-            repo.description.as_deref().unwrap_or("No description")
-        );
-        items.push(display_line);
-    }
+    let items: Vec<GitHubRepoSelectItem> = repos
+        .into_iter()
+        .map(|repo| GitHubRepoSelectItem { repo })
+        .collect();
 
-    let fzf = Fzf::builder()
-        .layout(Layout::Reverse)
-        .border(Border::Rounded)
-        .header("Select instantOS repository to clone:")
-        .custom_args(vec!["--height=40%".to_string()])
-        .build()
-        .map_err(|e| FzfError::FzfError(format!("Failed to build Fzf: {}", e)))?;
+    let wrapper = FzfWrapper::with_options(FzfOptions {
+        prompt: Some("Select instantOS repository to clone: ".to_string()),
+        height: Some("40%".to_string()),
+        preview_window: Some("right:50%".to_string()),
+        additional_args: vec!["--reverse".to_string()],
+        ..Default::default()
+    });
 
-    match run_with_output(fzf, items) {
-        Some(selected) => {
-            for repo in repos {
-                if selected.starts_with(&repo.name) {
-                    return Ok(repo);
-                }
-            }
-            Err(FzfError::FzfError("Invalid selection format".to_string()))
-        }
-        None => Err(FzfError::UserCancelled),
+    match wrapper.select(items).map_err(|e| FzfError::FzfError(format!("Selection error: {}", e)))? {
+        crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.repo),
+        crate::fzf_wrapper::FzfResult::Cancelled => Err(FzfError::UserCancelled),
+        crate::fzf_wrapper::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
+        _ => Err(FzfError::FzfError("Unexpected selection result".to_string())),
     }
 }
 
@@ -58,33 +101,23 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
         return Err(FzfError::NoPackages);
     }
 
-    let mut items = Vec::new();
-    for package in &packages {
-        let display_line = if let Some(desc) = &package.description {
-            format!("{} - {}", package.name, desc)
-        } else {
-            package.name.clone()
-        };
-        items.push(display_line);
-    }
+    let items: Vec<PackageSelectItem> = packages
+        .into_iter()
+        .map(|package| PackageSelectItem { package })
+        .collect();
 
-    let fzf = Fzf::builder()
-        .layout(Layout::Reverse)
-        .border(Border::Rounded)
-        .header("Select instantOS package to install:")
-        .custom_args(vec!["--height=40%".to_string()])
-        .build()
-        .map_err(|e| FzfError::FzfError(format!("Failed to build Fzf: {}", e)))?;
+    let wrapper = FzfWrapper::with_options(FzfOptions {
+        prompt: Some("Select instantOS package to install: ".to_string()),
+        height: Some("40%".to_string()),
+        preview_window: Some("right:50%".to_string()),
+        additional_args: vec!["--reverse".to_string()],
+        ..Default::default()
+    });
 
-    match run_with_output(fzf, items) {
-        Some(selected) => {
-            for package in packages {
-                if selected.starts_with(&package.name) {
-                    return Ok(package);
-                }
-            }
-            Err(FzfError::FzfError("Invalid selection format".to_string()))
-        }
-        None => Err(FzfError::UserCancelled),
+    match wrapper.select(items).map_err(|e| FzfError::FzfError(format!("Selection error: {}", e)))? {
+        crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.package),
+        crate::fzf_wrapper::FzfResult::Cancelled => Err(FzfError::UserCancelled),
+        crate::fzf_wrapper::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
+        _ => Err(FzfError::FzfError("Unexpected selection result".to_string())),
     }
 }

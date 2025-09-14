@@ -3,7 +3,7 @@ use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
 use anyhow::{Result, anyhow};
 use colored::*;
-use dialoguer::Confirm;
+use crate::fzf_wrapper::FzfWrapper;
 
 pub async fn handle_doctor_command(command: Option<DoctorCommands>) -> Result<()> {
     match command {
@@ -190,8 +190,6 @@ fn should_escalate(check: &dyn DoctorCheck) -> Result<bool> {
         check.fix_message().unwrap_or_default()
     );
 
-    Ok(Confirm::new()
-        .with_prompt(message)
-        .default(false)
-        .interact()?)
+    FzfWrapper::confirm(&message, false)
+        .map_err(|e| anyhow::anyhow!("Confirmation failed: {}", e))
 }
