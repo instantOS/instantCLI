@@ -2,8 +2,8 @@ use crate::common::create_spinner;
 use crate::dev::fuzzy::select_package;
 use crate::dev::package::Package;
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 use duct::cmd;
+use std::path::PathBuf;
 
 pub struct PackageRepo {
     pub path: PathBuf,
@@ -61,19 +61,8 @@ impl PackageRepo {
     }
 
     fn handle_local_changes(&self) -> Result<()> {
-        // Check if instantwm is running
-        let instantwm_running = cmd!("pgrep", "instantwm")
-            .unchecked()
-            .run()
-            .is_ok();
-
-        if instantwm_running {
-            eprintln!("⚠️  Local changes detected and instantwm is running");
-            eprintln!("💾 Stashing local changes...");
-        } else {
-            eprintln!("⚠️  Local changes detected in package repository");
-            eprintln!("💾 Stashing local changes...");
-        }
+        eprintln!("⚠️  Local changes detected in package repository");
+        eprintln!("💾 Stashing local changes...");
 
         cmd!("git", "stash")
             .dir(&self.path)
@@ -89,15 +78,18 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
         eprintln!("🔍 Building package: {}", package.name);
     }
 
-    let pb = create_spinner(format!("Building and installing {}...", package.name));
+    eprintln!(
+        "📦 Building and installing {}... (This may be interactive)",
+        package.name
+    );
 
-    // Build and install package
+    // Build and install package (interactive - no spinner)
     cmd!("makepkg", "-si")
         .dir(&package.path)
         .run()
         .context("Failed to build and install package")?;
 
-    pb.finish_with_message(format!("✅ Successfully installed {}", package.name));
+    eprintln!("✅ Successfully installed {}", package.name);
 
     Ok(())
 }
