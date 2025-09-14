@@ -1,6 +1,7 @@
 use anyhow::Result;
 use colored::*;
 
+mod dev;
 mod doctor;
 mod dot;
 
@@ -31,6 +32,7 @@ fn execute_with_error_handling<T>(
     }
 }
 
+use crate::dev::DevCommands;
 use crate::doctor::DoctorCommands;
 use crate::dot::config::ConfigManager;
 use crate::dot::db::Database;
@@ -67,6 +69,11 @@ enum Commands {
     Doctor {
         #[command(subcommand)]
         command: Option<DoctorCommands>,
+    },
+    /// Development utilities
+    Dev {
+        #[command(subcommand)]
+        command: DevCommands,
     },
 }
 
@@ -220,6 +227,13 @@ async fn main() -> Result<()> {
                     )?;
                 }
             }
+        }
+        Some(Commands::Dev { command }) => {
+            execute_with_error_handling(
+                dev::handle_dev_command(command.clone(), cli.debug).await,
+                "Error handling dev command",
+                None,
+            )?;
         }
         Some(Commands::Doctor { command }) => {
             doctor::command::handle_doctor_command(command.clone()).await?;

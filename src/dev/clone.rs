@@ -1,0 +1,70 @@
+use crate::dev::github::GitHubRepo;
+use anyhow::{Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
+use std::path::Path;
+
+#[derive(thiserror::Error, Debug)]
+pub enum CloneError {
+    #[error("Git operation failed: {0}")]
+    GitError(String),
+
+    #[error("File system error: {0}")]
+    FilesystemError(String),
+
+    #[error("Target directory already exists: {0}")]
+    DirectoryExists(String),
+}
+
+pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, debug: bool) -> Result<()> {
+    if target_dir.exists() {
+        return Err(CloneError::DirectoryExists(target_dir.display().to_string()).into());
+    }
+
+    let pb = ProgressBar::new(0);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner} {msg}")
+            .unwrap()
+            .tick_chars("⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠙⠚"),
+    );
+
+    pb.set_message(format!("Cloning {} into {}...", repo.name, target_dir.display()));
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+
+    let result = crate::dot::utils::git_clone(
+        &repo.clone_url,
+        target_dir,
+        Some(&repo.default_branch),
+        1,
+        debug,
+    );
+
+    pb.finish_with_message(format!("Successfully cloned {}", repo.name));
+
+    result
+        .map_err(|e| CloneError::GitError(e.to_string()))?;
+
+    println!("✅ Successfully cloned {} to {}", repo.name, target_dir.display());
+    println!("📍 Repository: {}", repo.html_url);
+
+    if let Some(desc) = &repo.description {
+        println!("📝 {}", desc);
+    }
+
+    Ok(())
+}
+
+pub fn ensure_workspace_dir() -> Result<std::path::PathBuf> {
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| CloneError::FilesystemError("Could not determine home directory".to_string()))?;
+
+    let workspace_dir = home_dir.join("workspace");
+
+    if !workspace_dir.exists() {
+        std::fs::create_dir_all(&workspace_dir)
+            .context("Failed to create workspace directory")?;
+        println!("📁 Created workspace directory: {}", workspace_dir.display());
+    }
+
+    Ok(workspace_dir)
+}
