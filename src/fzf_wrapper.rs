@@ -369,4 +369,3 @@ impl FzfSelectable for FileItem {
             })
     }
 }
-

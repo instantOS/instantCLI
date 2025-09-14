@@ -46,7 +46,7 @@ pub async fn fetch_instantos_repos() -> Result<Vec<GitHubRepo>, GitHubErrorKind>
         .build()
         .map_err(|e| GitHubErrorKind::NetworkError(e.to_string()))?;
 
-    let url = "https://api.github.com/orgs/instantOS/repos";
+    let url = "https://api.github.com/orgs/instantOS/repos?per_page=100";
 
     let response = client
         .get(url)
@@ -70,7 +70,7 @@ pub async fn fetch_instantos_repos() -> Result<Vec<GitHubRepo>, GitHubErrorKind>
             .unwrap_or_else(|_| "Unknown error".to_string());
         let api_error: Result<GitHubError, _> = serde_json::from_str(&error_text);
 
-        match api_error {
+        return match api_error {
             Ok(err) => Err(GitHubErrorKind::ApiError {
                 message: err.message,
                 documentation_url: err.documentation_url,
@@ -79,7 +79,7 @@ pub async fn fetch_instantos_repos() -> Result<Vec<GitHubRepo>, GitHubErrorKind>
                 "HTTP {}: {}",
                 status, error_text
             ))),
-        }
+        };
     } else {
         let repos = response
             .json::<Vec<GitHubRepo>>()

@@ -1,4 +1,4 @@
-use crate::fzf_wrapper::{FzfSelectable, FzfWrapper, FzfOptions};
+use crate::fzf_wrapper::{FzfOptions, FzfSelectable, FzfWrapper};
 use anyhow::Result;
 
 /// Handle menu commands for shell scripts
@@ -15,12 +15,17 @@ pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
                 }
             }
         }
-        MenuCommands::Choice { prompt, items, multi } => {
+        MenuCommands::Choice {
+            prompt,
+            items,
+            multi,
+        } => {
             let item_list: Vec<String> = if items.is_empty() {
                 // Read from stdin if items is empty
                 use std::io::{self, Read};
                 let mut buffer = String::new();
-                io::stdin().read_to_string(&mut buffer)
+                io::stdin()
+                    .read_to_string(&mut buffer)
                     .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
                 buffer.lines().map(|s| s.to_string()).collect()
             } else {
@@ -57,13 +62,13 @@ pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
             match wrapper.select(select_items) {
                 Ok(crate::fzf_wrapper::FzfResult::Selected(item)) => {
                     println!("{}", item.text);
-                    Ok(0)  // Selected
+                    Ok(0) // Selected
                 }
                 Ok(crate::fzf_wrapper::FzfResult::MultiSelected(items)) => {
                     for item in items {
                         println!("{}", item.text);
                     }
-                    Ok(0)  // Selected
+                    Ok(0) // Selected
                 }
                 Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(1), // Cancelled
                 Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {

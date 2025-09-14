@@ -132,7 +132,6 @@ enum DotCommands {
     },
 }
 
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
