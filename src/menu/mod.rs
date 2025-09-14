@@ -15,8 +15,18 @@ pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
                 }
             }
         }
-        MenuCommands::Select { prompt, items, multi } => {
-            let item_list: Vec<String> = items.split(' ').map(|s| s.to_string()).collect();
+        MenuCommands::Choice { prompt, items, multi } => {
+            let item_list: Vec<String> = if items.is_empty() {
+                // Read from stdin if items is empty
+                use std::io::{self, Read};
+                let mut buffer = String::new();
+                io::stdin().read_to_string(&mut buffer)
+                    .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
+                buffer.lines().map(|s| s.to_string()).collect()
+            } else {
+                // Split space-separated items from command line
+                items.split(' ').map(|s| s.to_string()).collect()
+            };
 
             #[derive(Debug, Clone)]
             struct SelectItem {
@@ -30,6 +40,7 @@ pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
             }
 
             let select_items: Vec<SelectItem> = item_list
+                .clone()
                 .into_iter()
                 .map(|text| SelectItem { text })
                 .collect();
@@ -44,8 +55,16 @@ pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
             });
 
             match wrapper.select(select_items) {
-                Ok(crate::fzf_wrapper::FzfResult::Selected(_)) => Ok(0),  // Selected
-                Ok(crate::fzf_wrapper::FzfResult::MultiSelected(_)) => Ok(0),  // Selected
+                Ok(crate::fzf_wrapper::FzfResult::Selected(item)) => {
+                    println!("{}", item.text);
+                    Ok(0)  // Selected
+                }
+                Ok(crate::fzf_wrapper::FzfResult::MultiSelected(items)) => {
+                    for item in items {
+                        println!("{}", item.text);
+                    }
+                    Ok(0)  // Selected
+                }
                 Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(1), // Cancelled
                 Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {
                     eprintln!("Error: {}", e);
@@ -71,13 +90,13 @@ pub enum MenuCommands {
         #[arg(long, default_value = "false")]
         default: String,
     },
-    /// Show selection menu and exit with code 0 for selection, 1 for cancel
-    Select {
+    /// Show selection menu and output choice(s) to stdout
+    Choice {
         /// Selection prompt message
         #[arg(long, default_value = "Select an item:")]
         prompt: String,
-        /// Items to choose from (space-separated)
-        #[arg(long, required = true)]
+        /// Items to choose from (space-separated). If empty, reads from stdin.
+        #[arg(long, default_value = "")]
         items: String,
         /// Allow multiple selections
         #[arg(long)]
