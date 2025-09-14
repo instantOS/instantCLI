@@ -63,6 +63,7 @@ pub enum FzfResult<T> {
 /// Main fzf wrapper struct
 pub struct FzfWrapper {
     options: FzfOptions,
+    preview_scripts: Vec<NamedTempFile>,
 }
 
 /// Internal structure for JSON serialization to the preview script
@@ -77,11 +78,15 @@ impl FzfWrapper {
     pub fn new() -> Self {
         Self {
             options: FzfOptions::default(),
+            preview_scripts: Vec::new(),
         }
     }
 
     pub fn with_options(options: FzfOptions) -> Self {
-        Self { options }
+        Self {
+            options,
+            preview_scripts: Vec::new(),
+        }
     }
 
     /// Select from a vector of FzfSelectable items
@@ -116,12 +121,14 @@ impl FzfWrapper {
             }
         }
 
-        // Create preview script if any items have preview content
-        let preview_script = if !preview_map.is_empty() {
+        // Create preview script if any items have preview content and keep it alive
+        let _preview_script_keeper = if !preview_map.is_empty() {
             Some(self.create_preview_script(preview_map)?)
         } else {
             None
         };
+
+        let preview_script_path = _preview_script_keeper.as_ref().map(|(_, path)| path);
 
         // Build fzf command
         let mut cmd = Command::new("fzf");
@@ -139,9 +146,9 @@ impl FzfWrapper {
         }
 
         // Add preview if we have a preview script
-        if let Some(ref script_path) = preview_script {
+        if let Some(script_path) = preview_script_path {
             cmd.arg("--preview")
-               .arg(format!("{} {{}}", script_path.path().display()));
+               .arg(format!("{} {{}}", script_path.display()));
 
             if let Some(preview_window) = &self.options.preview_window {
                 cmd.arg("--preview-window").arg(preview_window);
@@ -167,6 +174,9 @@ impl FzfWrapper {
                 }
                 child.wait_with_output()
             });
+
+        // The preview script is kept alive by _preview_script_keeper
+        // which will be dropped when this function ends, after fzf has finished
 
         match output {
             Ok(result) => {
@@ -210,8 +220,8 @@ impl FzfWrapper {
     fn create_preview_script(
         &self,
         preview_map: HashMap<String, (String, String)>,
-    ) -> Result<NamedTempFile, Box<dyn std::error::Error>> {
-        let mut script_file = NamedTempFile::new()?;
+    ) -> Result<(NamedTempFile, std::path::PathBuf), Box<dyn std::error::Error>> {
+        let mut temp_file = NamedTempFile::new()?;
 
         // Write a shell script that handles both text and command previews
         let script_content = format!(
@@ -239,19 +249,22 @@ esac
                 .join("\n")
         );
 
-        script_file.write_all(script_content.as_bytes())?;
-        script_file.flush()?;
+        temp_file.write_all(script_content.as_bytes())?;
+        temp_file.flush()?;
 
-        // Make the script executable
+        // Get the path before we do anything else
+        let script_path = temp_file.path().to_path_buf();
+
+        // Make the script executable while it's still open
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(script_file.path())?.permissions();
+            let mut perms = std::fs::metadata(&script_path)?.permissions();
             perms.set_mode(0o755);
-            std::fs::set_permissions(script_file.path(), perms)?;
+            std::fs::set_permissions(&script_path, perms)?;
         }
 
-        Ok(script_file)
+        Ok((temp_file, script_path))
     }
 }
 
