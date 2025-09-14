@@ -56,6 +56,14 @@ pub enum FzfResult<T> {
     Error(String),
 }
 
+/// Result of confirmation dialog
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConfirmResult {
+    Yes,
+    No,
+    Cancelled,
+}
+
 /// Main fzf wrapper struct
 pub struct FzfWrapper {
     options: FzfOptions,
@@ -322,14 +330,14 @@ impl FzfWrapper {
     }
 
     /// Confirmation dialog with yes/no options
-    pub fn confirm(message: &str, default: bool) -> Result<bool, Box<dyn std::error::Error>> {
+    pub fn confirm(message: &str) -> Result<ConfirmResult, Box<dyn std::error::Error>> {
         let items = vec![
             ConfirmationItem {
-                value: true,
+                value: ConfirmResult::Yes,
                 text: "Yes".to_string(),
             },
             ConfirmationItem {
-                value: false,
+                value: ConfirmResult::No,
                 text: "No".to_string(),
             },
         ];
@@ -342,8 +350,14 @@ impl FzfWrapper {
 
         match wrapper.select(items)? {
             FzfResult::Selected(item) => Ok(item.value),
-            FzfResult::Cancelled => Ok(default),
-            _ => Ok(default),
+            FzfResult::Cancelled => {
+                // When user cancels (ESC), we return Cancelled instead of using default
+                Ok(ConfirmResult::Cancelled)
+            }
+            _ => {
+                // For any other error cases, return Cancelled
+                Ok(ConfirmResult::Cancelled)
+            }
         }
     }
 }
@@ -351,7 +365,7 @@ impl FzfWrapper {
 /// Helper struct for confirmation dialogs
 #[derive(Debug, Clone)]
 pub struct ConfirmationItem {
-    pub value: bool,
+    pub value: ConfirmResult,
     pub text: String,
 }
 

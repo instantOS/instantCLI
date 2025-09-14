@@ -1,17 +1,17 @@
-use crate::fzf_wrapper::{FzfOptions, FzfSelectable, FzfWrapper};
+use crate::fzf_wrapper::{ConfirmResult, FzfOptions, FzfSelectable, FzfWrapper};
 use anyhow::Result;
 
 /// Handle menu commands for shell scripts
 pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
     match command {
-        MenuCommands::Confirm { message, default } => {
-            let default_bool = default.parse::<bool>().unwrap_or(false);
-            match FzfWrapper::confirm(&message, default_bool) {
-                Ok(true) => Ok(0),  // Yes
-                Ok(false) => Ok(1), // No
+        MenuCommands::Confirm { message } => {
+            match FzfWrapper::confirm(&message) {
+                Ok(ConfirmResult::Yes) => Ok(0),       // Yes
+                Ok(ConfirmResult::No) => Ok(1),        // No
+                Ok(ConfirmResult::Cancelled) => Ok(2), // Cancelled
                 Err(e) => {
                     eprintln!("Error: {}", e);
-                    Ok(2) // Error
+                    Ok(3) // Error
                 }
             }
         }
@@ -96,14 +96,11 @@ pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
 
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum MenuCommands {
-    /// Show confirmation dialog and exit with code 0 for Yes, 1 for No
+    /// Show confirmation dialog and exit with code 0 for Yes, 1 for No, 2 for Cancelled
     Confirm {
         /// Confirmation message to display
         #[arg(long, default_value = "Are you sure?")]
         message: String,
-        /// Default value if user cancels (true/false)
-        #[arg(long, default_value = "false")]
-        default: String,
     },
     /// Show selection menu and output choice(s) to stdout
     Choice {
