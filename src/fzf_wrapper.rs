@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
 use std::process::Command;
-use tempfile::NamedTempFile;
+use tempfile::{Builder, NamedTempFile, TempPath};
 
 /// Preview type for fzf items
 #[derive(Debug, Clone)]
@@ -63,7 +63,7 @@ pub enum FzfResult<T> {
 /// Main fzf wrapper struct
 pub struct FzfWrapper {
     options: FzfOptions,
-    preview_scripts: Vec<NamedTempFile>,
+    preview_scripts: Vec<TempPath>,
 }
 
 /// Internal structure for JSON serialization to the preview script
@@ -128,7 +128,9 @@ impl FzfWrapper {
             None
         };
 
-        let preview_script_path = _preview_script_keeper.as_ref().map(|(_, path)| path);
+        let preview_script_path = _preview_script_keeper
+            .as_ref()
+            .map(|(temp_path, path)| path);
 
         // Build fzf command
         let mut cmd = Command::new("fzf");
@@ -216,7 +218,7 @@ impl FzfWrapper {
     fn create_preview_script(
         &self,
         preview_map: HashMap<String, (String, String)>,
-    ) -> Result<(NamedTempFile, std::path::PathBuf), Box<dyn std::error::Error>> {
+    ) -> Result<(TempPath, std::path::PathBuf), Box<dyn std::error::Error>> {
         let mut temp_file = NamedTempFile::new()?;
 
         // Write a shell script that handles both text and command previews
@@ -260,7 +262,8 @@ esac
             std::fs::set_permissions(&script_path, perms)?;
         }
 
-        Ok((temp_file, script_path))
+        let temp_path = temp_file.into_temp_path();
+        Ok((temp_path, script_path))
     }
 }
 
