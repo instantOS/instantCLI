@@ -1,7 +1,7 @@
 # Evaluation: Rust `duct` Crate
 
 ## Overview
-The `duct` crate (version 1.1.0, released ~2023) is a synchronous library for running child processes in Rust, inspired by shell piping and redirections. It simplifies building pipelines while handling platform inconsistencies (e.g., Windows vs. Unix quoting, error propagation). Repository: [github.com/oconnor663/duct.rs](https://github.com/oconnor663/duct.rs) (stars: ~200, forks: ~20, last commit: 2023; inactive maintenance—open issues: 5, mostly stale; no recent releases). Crates.io stats: 1.1M total downloads, 15K weekly; 8 versions since 2017; deps: os_pipe (1.0), shared_child (1.1), shared_thread (0.2), libc (0.2); dev-dep: tempfile (3.3). Licensed MIT. Platforms: Linux, macOS, Windows (i686/x86_64).
+The `duct` crate (version 1.1.0) is a synchronous library for running child processes in Rust, inspired by shell piping and redirections. It simplifies building pipelines while handling platform inconsistencies (e.g., Windows vs. Unix quoting, error propagation). Repository: [github.com/oconnor663/duct.rs](https://github.com/oconnor663/duct.rs) (stars: ~200, forks: ~20, last commit: 2023; inactive maintenance—open issues: 5, mostly stale; no recent releases). Crates.io stats: 1.1M total downloads, 15K weekly; 8 versions since 2017; deps: os_pipe (1.0), shared_child (1.1), shared_thread (0.2), libc (0.2); dev-dep: tempfile (3.3). Licensed MIT. Platforms: Linux, macOS, Windows (i686/x86_64).
 
 API verified from [docs.rs/duct/1.1.0](https://docs.rs/duct/1.1.0/duct/): All documented items exist—no discrepancies. Core API:
 - **Macros**: `cmd!(program, args...)` – Builds `Expression` (e.g., `cmd!("echo", "hi")`).
