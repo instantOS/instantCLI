@@ -1,8 +1,8 @@
+use crate::common;
 use crate::dot::config;
 use crate::dot::db::DotFileType;
 use crate::dot::get_all_dotfiles;
 use crate::dot::localrepo as repo_mod;
-use crate::dot::utils;
 use anyhow::{Context, Result};
 use colored::*;
 use std::path::PathBuf;
@@ -27,9 +27,9 @@ pub fn add_repo(
 
     let depth = config_manager.config.clone_depth;
 
-    let pb = utils::create_spinner(format!("Cloning {}...", repo.url));
+    let pb = common::create_spinner(format!("Cloning {}...", repo.url));
 
-    utils::git_clone(
+    common::git_clone(
         &repo.url,
         &target,
         repo.branch.as_deref(),
@@ -439,7 +439,7 @@ pub fn status_all_legacy(
                 println!("Repo: {}", crepo.url);
 
                 // git status for repo
-                let output = utils::git_command_in_dir_with_output(
+                let output = common::git_command_in_dir_with_output(
                     &target,
                     &["status", "--porcelain"],
                     "status",
@@ -469,7 +469,7 @@ pub fn status_all_legacy(
         } else {
             // No specific path: show repo-level and per-file summaries as before
 
-            let output = utils::git_command_in_dir_with_output(
+            let output = common::git_command_in_dir_with_output(
                 &target,
                 &["status", "--porcelain"],
                 "status",

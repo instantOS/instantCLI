@@ -1,11 +1,11 @@
-use crate::dot::utils;
+use crate::common;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
 /// Validate that the given path is a git repository
 fn ensure_git_repo(repo_path: &Path) -> Result<()> {
-    utils::git_command_in_dir_with_output(
+    common::git_command_in_dir_with_output(
         repo_path,
         &["rev-parse", "--is-inside-work-tree"],
         "checking git repository",

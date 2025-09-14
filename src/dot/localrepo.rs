@@ -1,5 +1,5 @@
+use crate::common;
 use crate::dot::config::Config;
-use crate::dot::utils;
 use anyhow::{Context, Result};
 use std::{path::Path, path::PathBuf};
 
@@ -112,7 +112,7 @@ impl LocalRepo {
 
     pub fn get_checked_out_branch(&self, cfg: &Config) -> Result<String> {
         let target = self.local_path(cfg)?;
-        utils::git_command_in_dir(
+        common::git_command_in_dir(
             &target,
             &["rev-parse", "--abbrev-ref", "HEAD"],
             "determining current branch",
@@ -152,9 +152,9 @@ impl LocalRepo {
             }
 
             // fetch the branch and checkout
-            let pb = utils::create_spinner(format!("Fetching branch {branch}..."));
+            let pb = common::create_spinner(format!("Fetching branch {branch}..."));
 
-            utils::git_command_in_dir_with_output(
+            common::git_command_in_dir_with_output(
                 &target,
                 &["fetch", "origin", branch],
                 &format!("fetching branch {} in {}", branch, target.display()),
@@ -162,9 +162,9 @@ impl LocalRepo {
 
             pb.finish_with_message(format!("Fetched branch {branch}"));
 
-            let pb = utils::create_spinner(format!("Checking out {branch}..."));
+            let pb = common::create_spinner(format!("Checking out {branch}..."));
 
-            utils::git_command_in_dir_with_output(
+            common::git_command_in_dir_with_output(
                 &target,
                 &["checkout", branch],
                 &format!("checking out branch {} in {}", branch, target.display()),
@@ -184,9 +184,9 @@ impl LocalRepo {
         }
 
         // pull latest
-        let pb = utils::create_spinner(format!("Updating {}...", self.name));
+        let pb = common::create_spinner(format!("Updating {}...", self.name));
 
-        utils::git_command_in_dir_with_output(
+        common::git_command_in_dir_with_output(
             &target,
             &["pull"],
             &format!("running git pull in {}", target.display()),

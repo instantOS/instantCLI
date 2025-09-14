@@ -42,7 +42,6 @@ pub mod localrepo;
 pub mod meta;
 pub mod path_serde;
 pub mod repo;
-pub mod utils;
 
 #[cfg(test)]
 mod path_tests;

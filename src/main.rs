@@ -1,6 +1,7 @@
 use anyhow::Result;
 use colored::*;
 
+mod common;
 mod dev;
 mod doctor;
 mod dot;

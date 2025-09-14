@@ -1,6 +1,5 @@
 use crate::dev::github::GitHubRepo;
 use anyhow::{Context, Result};
-use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
 
 #[derive(thiserror::Error, Debug)]
@@ -20,18 +19,9 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, debug: bool) -> Re
         return Err(CloneError::DirectoryExists(target_dir.display().to_string()).into());
     }
 
-    let pb = ProgressBar::new(0);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner} {msg}")
-            .unwrap()
-            .tick_chars("⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠙⠚"),
-    );
+    let pb = crate::common::create_spinner(format!("Cloning {} into {}...", repo.name, target_dir.display()));
 
-    pb.set_message(format!("Cloning {} into {}...", repo.name, target_dir.display()));
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
-
-    let result = crate::dot::utils::git_clone(
+    let result = crate::common::git_clone(
         &repo.clone_url,
         target_dir,
         Some(&repo.default_branch),
