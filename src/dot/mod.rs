@@ -419,7 +419,6 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
 
     let wrapper = FzfWrapper::with_options(FzfOptions {
         prompt: Some("Select repository to add the dotfile to: ".to_string()),
-        preview_window: Some("right:40%".to_string()),
         ..Default::default()
     });
 
@@ -463,7 +462,6 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
             "Select target dots_dir in repo '{}': ",
             local_repo.name
         )),
-        preview_window: Some("right:40%".to_string()),
         ..Default::default()
     });
 

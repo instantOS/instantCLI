@@ -54,6 +54,8 @@ cd ~ && instant dot reset .config
 
 **Note**: Using `cd ~ && instant <command>` is the preferred testing method as it simulates how real users will interact with the CLI, avoiding working directory concerns and ensuring the tool behaves correctly in normal usage scenarios.
 
+**Important Note**: Commands involving fzf interactive menus (such as `instant menu` commands and any dotfile operations that require user selection) should be run by the user directly. AI agents are not capable of interacting with fzf's interactive interface, so these commands must be executed manually by a human user.
+
 ## Architecture
 
 ### Core Components
@@ -186,6 +188,11 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 ### Subdirectory Management Commands
 - `instant dot repo subdirs list <name>`: List available subdirectories
 - `instant dot repo subdirs set <name> <subdirs...>`: Set active subdirectories
+
+### Interactive Menu Commands
+- `instant menu confirm --message "Are you sure?" --default "false"`: Show confirmation dialog
+- `instant menu choice --prompt "Select an item:" --multi`: Show selection menu
+- `instant menu input --prompt "Type a value:"`: Show text input dialog
 
 ### System Diagnostics
 - `instant doctor`: Run system diagnostics and fixes

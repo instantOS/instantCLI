@@ -34,8 +34,6 @@ pub trait FzfSelectable {
 pub struct FzfOptions {
     pub multi_select: bool,
     pub prompt: Option<String>,
-    pub height: Option<String>,
-    pub preview_window: Option<String>, // e.g., "right:50%", "down:40%"
     pub additional_args: Vec<String>,
 }
 
@@ -44,9 +42,7 @@ impl Default for FzfOptions {
         Self {
             multi_select: false,
             prompt: None,
-            height: Some("40%".to_string()),
-            preview_window: Some("right:50%".to_string()),
-            additional_args: vec![],
+            additional_args: vec!["--margin".to_string(), "20%".to_string()],
         }
     }
 }
@@ -143,18 +139,10 @@ impl FzfWrapper {
             cmd.arg("--prompt").arg(prompt);
         }
 
-        if let Some(height) = &self.options.height {
-            cmd.arg("--height").arg(height);
-        }
-
         // Add preview if we have a preview script
         if let Some(script_path) = preview_script_path {
             cmd.arg("--preview")
                 .arg(format!("{} {{}}", script_path.display()));
-
-            if let Some(preview_window) = &self.options.preview_window {
-                cmd.arg("--preview-window").arg(preview_window);
-            }
         }
 
         // Add additional arguments
@@ -295,6 +283,44 @@ impl FzfWrapper {
         }
     }
 
+    /// Text input mode for getting user input
+    pub fn input(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let mut cmd = Command::new("fzf");
+        cmd.arg("--print-query")
+            .arg("--no-info")
+            .arg("--prompt")
+            .arg(format!("{} ", prompt))
+            .arg("--margin")
+            .arg("40%");
+
+        let output = cmd
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                if let Some(stdin) = child.stdin.as_mut() {
+                    stdin.write_all(b"")?;
+                }
+                child.wait_with_output()
+            })?;
+
+        // Check if fzf was cancelled (exit code 130)
+        if let Some(130) = output.status.code() {
+            return Ok(String::new());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let lines: Vec<&str> = stdout.trim().split('\n').collect();
+
+        // With --print-query, the first line is the query
+        if let Some(query) = lines.first() {
+            Ok(query.trim().to_string())
+        } else {
+            Ok(String::new())
+        }
+    }
+
     /// Confirmation dialog with yes/no options
     pub fn confirm(message: &str, default: bool) -> Result<bool, Box<dyn std::error::Error>> {
         let items = vec![
@@ -310,9 +336,7 @@ impl FzfWrapper {
 
         let wrapper = FzfWrapper::with_options(FzfOptions {
             prompt: Some(format!("{} [Y/n]: ", message)),
-            height: Some("10%".to_string()),
-            preview_window: None,
-            additional_args: vec![],
+            additional_args: vec!["--margin".to_string(), "40%".to_string()],
             ..Default::default()
         });
 

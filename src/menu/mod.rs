@@ -53,8 +53,6 @@ pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
             let wrapper = FzfWrapper::with_options(FzfOptions {
                 prompt: Some(prompt),
                 multi_select: multi,
-                height: Some("40%".to_string()),
-                preview_window: None,
                 additional_args: vec![],
                 ..Default::default()
             });
@@ -74,6 +72,18 @@ pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
                 Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {
                     eprintln!("Error: {}", e);
                     Ok(2) // Error
+                }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    Ok(2) // Error
+                }
+            }
+        }
+        MenuCommands::Input { prompt } => {
+            match FzfWrapper::input(&prompt) {
+                Ok(input) => {
+                    println!("{}", input);
+                    Ok(0) // Success
                 }
                 Err(e) => {
                     eprintln!("Error: {}", e);
@@ -106,5 +116,11 @@ pub enum MenuCommands {
         /// Allow multiple selections
         #[arg(long)]
         multi: bool,
+    },
+    /// Show text input dialog and output input to stdout
+    Input {
+        /// Input prompt message
+        #[arg(long, default_value = "Type a value:")]
+        prompt: String,
     },
 }

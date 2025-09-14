@@ -85,8 +85,6 @@ pub fn select_repository(repos: Vec<GitHubRepo>) -> Result<GitHubRepo, FzfError>
 
     let wrapper = FzfWrapper::with_options(FzfOptions {
         prompt: Some("Select instantOS repository to clone: ".to_string()),
-        height: Some("40%".to_string()),
-        preview_window: Some("right:50%".to_string()),
         additional_args: vec!["--reverse".to_string()],
         ..Default::default()
     });
@@ -116,8 +114,6 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
 
     let wrapper = FzfWrapper::with_options(FzfOptions {
         prompt: Some("Select instantOS package to install: ".to_string()),
-        height: Some("40%".to_string()),
-        preview_window: Some("right:50%".to_string()),
         additional_args: vec!["--reverse".to_string()],
         ..Default::default()
     });
