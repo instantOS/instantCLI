@@ -30,23 +30,21 @@ impl Dotfile {
         if let (Ok(source_hash), Ok(target_hash)) = (
             self.get_file_hash(&self.source_path, true, db),
             self.get_file_hash(&self.target_path, false, db),
-        ) {
-            if source_hash == target_hash {
-                // Files have the same content, not outdated
-                return false;
-            }
+        ) && source_hash == target_hash
+        {
+            // Files have the same content, not outdated
+            return false;
         }
 
         // Fall back to modification time comparison
         let source_metadata = fs::metadata(&self.source_path).ok();
         let target_metadata = fs::metadata(&self.target_path).ok();
 
-        if let (Some(source_meta), Some(target_meta)) = (source_metadata, target_metadata) {
-            if let (Ok(source_time), Ok(target_time)) =
+        if let (Some(source_meta), Some(target_meta)) = (source_metadata, target_metadata)
+            && let (Ok(source_time), Ok(target_time)) =
                 (source_meta.modified(), target_meta.modified())
-            {
-                return source_time > target_time;
-            }
+        {
+            return source_time > target_time;
         }
 
         false
@@ -95,10 +93,10 @@ impl Dotfile {
         let file_modified = file_metadata.modified()?;
         let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
 
-        if let Ok(Some(newest_hash)) = db.get_newest_hash(path) {
-            if newest_hash.created >= file_time {
-                return Ok(newest_hash.hash);
-            }
+        if let Ok(Some(newest_hash)) = db.get_newest_hash(path)
+            && newest_hash.created >= file_time
+        {
+            return Ok(newest_hash.hash);
         }
 
         // Compute and store new hash
@@ -173,10 +171,10 @@ impl Dotfile {
             return Ok(());
         }
 
-        if !self.target_path.exists() {
-            if let Some(parent) = self.target_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
+        if !self.target_path.exists()
+            && let Some(parent) = self.target_path.parent()
+        {
+            fs::create_dir_all(parent)?;
         }
 
         fs::copy(&self.source_path, &self.target_path)?;

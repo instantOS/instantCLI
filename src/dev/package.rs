@@ -63,12 +63,12 @@ impl Package {
         {
             let entry = entry?;
 
-            if entry.file_type().is_dir() {
-                if let Some(package) = Package::from_directory(entry.path()) {
-                    // Filter out invalid entries (dots, single chars)
-                    if package.name.len() > 1 && !package.name.starts_with('.') {
-                        packages.push(package);
-                    }
+            if entry.file_type().is_dir()
+                && let Some(package) = Package::from_directory(entry.path())
+            {
+                // Filter out invalid entries (dots, single chars)
+                if package.name.len() > 1 && !package.name.starts_with('.') {
+                    packages.push(package);
                 }
             }
         }

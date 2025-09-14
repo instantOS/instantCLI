@@ -1,8 +1,8 @@
+use crate::fzf_wrapper::{FzfOptions, FzfSelectable, FzfWrapper};
 use anyhow::Result;
 use colored::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use crate::fzf_wrapper::{FzfSelectable, FzfWrapper, FzfOptions};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RepoName(String);
@@ -423,7 +423,10 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
         ..Default::default()
     });
 
-    match wrapper.select(items).map_err(|e| anyhow::anyhow!("Selection error: {}", e))? {
+    match wrapper
+        .select(items)
+        .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
+    {
         crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.repo),
         crate::fzf_wrapper::FzfResult::Cancelled => Err(anyhow::anyhow!("No repository selected")),
         crate::fzf_wrapper::FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
@@ -464,9 +467,14 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
         ..Default::default()
     });
 
-    match wrapper.select(items).map_err(|e| anyhow::anyhow!("Selection error: {}", e))? {
+    match wrapper
+        .select(items)
+        .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
+    {
         crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.dots_dir),
-        crate::fzf_wrapper::FzfResult::Cancelled => Err(anyhow::anyhow!("No dots directory selected")),
+        crate::fzf_wrapper::FzfResult::Cancelled => {
+            Err(anyhow::anyhow!("No dots directory selected"))
+        }
         crate::fzf_wrapper::FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
         _ => Err(anyhow::anyhow!("Unexpected selection result")),
     }

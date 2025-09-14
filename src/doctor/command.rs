@@ -1,9 +1,9 @@
 use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_for_fix};
 use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
+use crate::fzf_wrapper::FzfWrapper;
 use anyhow::{Result, anyhow};
 use colored::*;
-use crate::fzf_wrapper::FzfWrapper;
 
 pub async fn handle_doctor_command(command: Option<DoctorCommands>) -> Result<()> {
     match command {
@@ -190,6 +190,5 @@ fn should_escalate(check: &dyn DoctorCheck) -> Result<bool> {
         check.fix_message().unwrap_or_default()
     );
 
-    FzfWrapper::confirm(&message, false)
-        .map_err(|e| anyhow::anyhow!("Confirmation failed: {}", e))
+    FzfWrapper::confirm(&message, false).map_err(|e| anyhow::anyhow!("Confirmation failed: {}", e))
 }

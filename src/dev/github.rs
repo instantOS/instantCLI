@@ -55,12 +55,11 @@ pub async fn fetch_instantos_repos() -> Result<Vec<GitHubRepo>, GitHubErrorKind>
         .await
         .map_err(|e| GitHubErrorKind::NetworkError(e.to_string()))?;
 
-    if response.status() == 403 {
-        if let Some(remaining) = response.headers().get("X-RateLimit-Remaining") {
-            if remaining == "0" {
-                return Err(GitHubErrorKind::RateLimitExceeded);
-            }
-        }
+    if response.status() == 403
+        && let Some(remaining) = response.headers().get("X-RateLimit-Remaining")
+        && remaining == "0"
+    {
+        return Err(GitHubErrorKind::RateLimitExceeded);
     }
 
     if !response.status().is_success() {

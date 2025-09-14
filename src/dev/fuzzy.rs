@@ -1,6 +1,6 @@
 use crate::dev::github::GitHubRepo;
 use crate::dev::package::Package;
-use crate::fzf_wrapper::{FzfSelectable, FzfWrapper, FzfOptions, FzfPreview};
+use crate::fzf_wrapper::{FzfOptions, FzfPreview, FzfSelectable, FzfWrapper};
 use anyhow::Result;
 
 #[derive(thiserror::Error, Debug)]
@@ -64,7 +64,10 @@ impl FzfSelectable for PackageSelectItem {
         FzfPreview::Text(format!(
             "Name: {}\nDescription: {}\nPath: {}",
             self.package.name,
-            self.package.description.as_deref().unwrap_or("No description"),
+            self.package
+                .description
+                .as_deref()
+                .unwrap_or("No description"),
             self.package.path.display()
         ))
     }
@@ -88,11 +91,16 @@ pub fn select_repository(repos: Vec<GitHubRepo>) -> Result<GitHubRepo, FzfError>
         ..Default::default()
     });
 
-    match wrapper.select(items).map_err(|e| FzfError::FzfError(format!("Selection error: {}", e)))? {
+    match wrapper
+        .select(items)
+        .map_err(|e| FzfError::FzfError(format!("Selection error: {}", e)))?
+    {
         crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.repo),
         crate::fzf_wrapper::FzfResult::Cancelled => Err(FzfError::UserCancelled),
         crate::fzf_wrapper::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
-        _ => Err(FzfError::FzfError("Unexpected selection result".to_string())),
+        _ => Err(FzfError::FzfError(
+            "Unexpected selection result".to_string(),
+        )),
     }
 }
 
@@ -114,10 +122,15 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
         ..Default::default()
     });
 
-    match wrapper.select(items).map_err(|e| FzfError::FzfError(format!("Selection error: {}", e)))? {
+    match wrapper
+        .select(items)
+        .map_err(|e| FzfError::FzfError(format!("Selection error: {}", e)))?
+    {
         crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.package),
         crate::fzf_wrapper::FzfResult::Cancelled => Err(FzfError::UserCancelled),
         crate::fzf_wrapper::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
-        _ => Err(FzfError::FzfError("Unexpected selection result".to_string())),
+        _ => Err(FzfError::FzfError(
+            "Unexpected selection result".to_string(),
+        )),
     }
 }

@@ -8,8 +8,8 @@ use tempfile::NamedTempFile;
 #[derive(Debug, Clone)]
 pub enum FzfPreview {
     Text(String),
-    Command(String),  // shell command for preview like for example git branch info
-    None,             // empty preview for this item
+    Command(String), // shell command for preview like for example git branch info
+    None,            // empty preview for this item
 }
 
 /// Core trait that types must implement to be selectable with fzf
@@ -148,7 +148,7 @@ impl FzfWrapper {
         // Add preview if we have a preview script
         if let Some(script_path) = preview_script_path {
             cmd.arg("--preview")
-               .arg(format!("{} {{}}", script_path.display()));
+                .arg(format!("{} {{}}", script_path.display()));
 
             if let Some(preview_window) = &self.options.preview_window {
                 cmd.arg("--preview-window").arg(preview_window);
@@ -202,17 +202,13 @@ impl FzfWrapper {
                         }
                     }
                     Ok(FzfResult::MultiSelected(selected_items))
+                } else if let Some(item) = item_map.get(selected_lines[0]).cloned() {
+                    Ok(FzfResult::Selected(item))
                 } else {
-                    if let Some(item) = item_map.get(selected_lines[0]).cloned() {
-                        Ok(FzfResult::Selected(item))
-                    } else {
-                        Ok(FzfResult::Cancelled)
-                    }
+                    Ok(FzfResult::Cancelled)
                 }
             }
-            Err(e) => {
-                Ok(FzfResult::Error(format!("fzf execution failed: {}", e)))
-            }
+            Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {}", e))),
         }
     }
 
@@ -299,8 +295,14 @@ impl FzfWrapper {
     /// Confirmation dialog with yes/no options
     pub fn confirm(message: &str, default: bool) -> Result<bool, Box<dyn std::error::Error>> {
         let items = vec![
-            ConfirmationItem { value: true, text: "Yes".to_string() },
-            ConfirmationItem { value: false, text: "No".to_string() },
+            ConfirmationItem {
+                value: true,
+                text: "Yes".to_string(),
+            },
+            ConfirmationItem {
+                value: false,
+                text: "No".to_string(),
+            },
         ];
 
         let wrapper = FzfWrapper::with_options(FzfOptions {
@@ -359,7 +361,9 @@ impl FzfSelectable for FileItem {
                     FzfPreview::Text(content)
                 }
             })
-            .unwrap_or_else(|| FzfPreview::Text(format!("Binary file or read error: {}", self.path)))
+            .unwrap_or_else(|| {
+                FzfPreview::Text(format!("Binary file or read error: {}", self.path))
+            })
     }
 }
 
@@ -376,10 +380,7 @@ impl FzfSelectable for GitBranch {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Command(format!(
-            "git log --oneline -n 5 {}",
-            self.name
-        ))
+        FzfPreview::Command(format!("git log --oneline -n 5 {}", self.name))
     }
 }
 

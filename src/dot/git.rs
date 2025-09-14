@@ -58,32 +58,25 @@ pub fn add_repo(
     // when identical files already exist in the home directory
     if let Ok(db) =
         crate::dot::db::Database::new(config_manager.config.database_path().to_path_buf())
+        && let Ok(dotfiles) = get_all_dotfiles(&config_manager.config, &db)
     {
-        if let Ok(dotfiles) = get_all_dotfiles(&config_manager.config, &db) {
-            for (_, dotfile) in dotfiles {
-                // Only register hashes for dotfiles from this repository
-                if dotfile.source_path.starts_with(&target) {
-                    // Register the source file hash with source_file=true
-                    if let Ok(source_hash) =
-                        crate::dot::dotfile::Dotfile::compute_hash(&dotfile.source_path)
-                    {
-                        db.add_hash(&source_hash, &dotfile.source_path, DotFileType::SourceFile)?; // source_file=true
+        for (_, dotfile) in dotfiles {
+            // Only register hashes for dotfiles from this repository
+            if dotfile.source_path.starts_with(&target) {
+                // Register the source file hash with source_file=true
+                if let Ok(source_hash) =
+                    crate::dot::dotfile::Dotfile::compute_hash(&dotfile.source_path)
+                {
+                    db.add_hash(&source_hash, &dotfile.source_path, DotFileType::SourceFile)?; // source_file=true
 
-                        // If the target file exists and has the same content,
-                        // register it with source_file=false
-                        if dotfile.target_path.exists() {
-                            if let Ok(target_hash) =
-                                crate::dot::dotfile::Dotfile::compute_hash(&dotfile.target_path)
-                            {
-                                if target_hash == source_hash {
-                                    db.add_hash(
-                                        &target_hash,
-                                        &dotfile.target_path,
-                                        DotFileType::TargetFile,
-                                    )?; // source_file=false
-                                }
-                            }
-                        }
+                    // If the target file exists and has the same content,
+                    // register it with source_file=false
+                    if dotfile.target_path.exists()
+                        && let Ok(target_hash) =
+                            crate::dot::dotfile::Dotfile::compute_hash(&dotfile.target_path)
+                        && target_hash == source_hash
+                    {
+                        db.add_hash(&target_hash, &dotfile.target_path, DotFileType::TargetFile)?; // source_file=false
                     }
                 }
             }
@@ -334,10 +327,10 @@ fn get_dotfile_dir_name(dotfile: &super::Dotfile, cfg: &config::Config) -> Strin
         if dotfile.source_path.starts_with(&repo_path) {
             // Extract the dotfile directory name from the source path
             // Source path format: {repo_path}/{dotfile_dir}/{relative_path}
-            if let Ok(relative) = dotfile.source_path.strip_prefix(&repo_path) {
-                if let Some(dotfile_dir) = relative.components().next() {
-                    return dotfile_dir.as_os_str().to_string_lossy().to_string();
-                }
+            if let Ok(relative) = dotfile.source_path.strip_prefix(&repo_path)
+                && let Some(dotfile_dir) = relative.components().next()
+            {
+                return dotfile_dir.as_os_str().to_string_lossy().to_string();
             }
             return "dots".to_string(); // default
         }
