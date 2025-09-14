@@ -19,7 +19,11 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, debug: bool) -> Re
         return Err(CloneError::DirectoryExists(target_dir.display().to_string()).into());
     }
 
-    let pb = crate::common::create_spinner(format!("Cloning {} into {}...", repo.name, target_dir.display()));
+    let pb = crate::common::create_spinner(format!(
+        "Cloning {} into {}...",
+        repo.name,
+        target_dir.display()
+    ));
 
     let result = crate::common::git_clone(
         &repo.clone_url,
@@ -31,10 +35,13 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, debug: bool) -> Re
 
     pb.finish_with_message(format!("Successfully cloned {}", repo.name));
 
-    result
-        .map_err(|e| CloneError::GitError(e.to_string()))?;
+    result.map_err(|e| CloneError::GitError(e.to_string()))?;
 
-    println!("✅ Successfully cloned {} to {}", repo.name, target_dir.display());
+    println!(
+        "✅ Successfully cloned {} to {}",
+        repo.name,
+        target_dir.display()
+    );
     println!("📍 Repository: {}", repo.html_url);
 
     if let Some(desc) = &repo.description {
@@ -45,15 +52,18 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, debug: bool) -> Re
 }
 
 pub fn ensure_workspace_dir() -> Result<std::path::PathBuf> {
-    let home_dir = dirs::home_dir()
-        .ok_or_else(|| CloneError::FilesystemError("Could not determine home directory".to_string()))?;
+    let home_dir = dirs::home_dir().ok_or_else(|| {
+        CloneError::FilesystemError("Could not determine home directory".to_string())
+    })?;
 
     let workspace_dir = home_dir.join("workspace");
 
     if !workspace_dir.exists() {
-        std::fs::create_dir_all(&workspace_dir)
-            .context("Failed to create workspace directory")?;
-        println!("📁 Created workspace directory: {}", workspace_dir.display());
+        std::fs::create_dir_all(&workspace_dir).context("Failed to create workspace directory")?;
+        println!(
+            "📁 Created workspace directory: {}",
+            workspace_dir.display()
+        );
     }
 
     Ok(workspace_dir)

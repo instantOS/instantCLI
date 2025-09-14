@@ -4,19 +4,24 @@ use clap::Subcommand;
 mod clone;
 mod fuzzy;
 mod github;
+mod install;
+mod package;
 
 pub use clone::*;
 pub use fuzzy::*;
 pub use github::*;
+pub use install::*;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DevCommands {
     Clone,
+    Install,
 }
 
 pub async fn handle_dev_command(command: DevCommands, debug: bool) -> Result<()> {
     match command {
         DevCommands::Clone => handle_clone(debug).await,
+        DevCommands::Install => handle_install(debug).await,
     }
 }
 
@@ -27,7 +32,8 @@ async fn handle_clone(debug: bool) -> Result<()> {
 
     let pb = crate::common::create_spinner("Fetching repositories from GitHub...".to_string());
 
-    let repos = fetch_instantos_repos().await
+    let repos = fetch_instantos_repos()
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to fetch repositories: {}", e))?;
 
     pb.finish_with_message(format!("Found {} repositories", repos.len()));

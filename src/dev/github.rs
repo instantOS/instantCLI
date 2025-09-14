@@ -25,7 +25,10 @@ pub enum GitHubErrorKind {
     NetworkError(String),
 
     #[error("API error: {message}")]
-    ApiError { message: String, documentation_url: Option<String> },
+    ApiError {
+        message: String,
+        documentation_url: Option<String>,
+    },
 
     #[error("JSON parsing error: {0}")]
     JsonError(String),
@@ -45,7 +48,8 @@ pub async fn fetch_instantos_repos() -> Result<Vec<GitHubRepo>, GitHubErrorKind>
 
     let url = "https://api.github.com/orgs/instantOS/repos";
 
-    let response = client.get(url)
+    let response = client
+        .get(url)
         .header("Accept", "application/vnd.github.v3+json")
         .send()
         .await
@@ -61,7 +65,10 @@ pub async fn fetch_instantos_repos() -> Result<Vec<GitHubRepo>, GitHubErrorKind>
 
     if !response.status().is_success() {
         let status = response.status();
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         let api_error: Result<GitHubError, _> = serde_json::from_str(&error_text);
 
         match api_error {
@@ -69,10 +76,14 @@ pub async fn fetch_instantos_repos() -> Result<Vec<GitHubRepo>, GitHubErrorKind>
                 message: err.message,
                 documentation_url: err.documentation_url,
             }),
-            Err(_) => Err(GitHubErrorKind::HttpError(format!("HTTP {}: {}", status, error_text))),
+            Err(_) => Err(GitHubErrorKind::HttpError(format!(
+                "HTTP {}: {}",
+                status, error_text
+            ))),
         }
     } else {
-        let repos = response.json::<Vec<GitHubRepo>>()
+        let repos = response
+            .json::<Vec<GitHubRepo>>()
             .await
             .map_err(|e| GitHubErrorKind::JsonError(e.to_string()))?;
 
