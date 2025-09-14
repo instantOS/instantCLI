@@ -6,6 +6,7 @@ mod dev;
 mod doctor;
 mod dot;
 mod fzf_wrapper;
+mod menu;
 
 use clap::{Parser, Subcommand};
 
@@ -77,6 +78,11 @@ enum Commands {
         #[command(subcommand)]
         command: DevCommands,
     },
+    /// Interactive menu commands for shell scripts
+    Menu {
+        #[command(subcommand)]
+        command: menu::MenuCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -125,6 +131,7 @@ enum DotCommands {
         non_interactive: bool,
     },
 }
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -239,6 +246,10 @@ async fn main() -> Result<()> {
         }
         Some(Commands::Doctor { command }) => {
             doctor::command::handle_doctor_command(command.clone()).await?;
+        }
+        Some(Commands::Menu { command }) => {
+            let exit_code = menu::handle_menu_command(command.clone(), cli.debug)?;
+            std::process::exit(exit_code);
         }
         None => {
             println!("instant: run with --help for usage");
