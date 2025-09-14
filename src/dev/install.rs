@@ -3,7 +3,7 @@ use crate::dev::fuzzy::select_package;
 use crate::dev::package::Package;
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-use xshell::Shell;
+use std::process::Command;
 
 pub struct PackageRepo {
     pub path: PathBuf,
@@ -28,66 +28,81 @@ impl PackageRepo {
     }
 
     pub fn ensure_updated(&self) -> Result<()> {
-        let sh = Shell::new()?;
-
         if self.path.exists() {
             // Repository exists, pull latest changes
-            sh.change_dir(&self.path);
+            std::env::set_current_dir(&self.path)
+                .context("Failed to change directory")?;
 
             // Check if there are local changes
-            let has_local_changes = sh.cmd("git status --porcelain").read().is_ok()
-                && !sh.cmd("git status --porcelain").read()?.is_empty();
+            let output = Command::new("git")
+                .args(&["status", "--porcelain"])
+                .output()
+                .context("Failed to check git status")?;
+
+            let has_local_changes = output.status.success() && !output.stdout.is_empty();
 
             if has_local_changes {
-                self.handle_local_changes(&sh)?;
+                self.handle_local_changes()?;
             }
 
             // Pull latest changes
-            sh.cmd("git pull")
-                .arg("origin")
-                .arg("main")
-                .arg("--depth=3")
-                .run()
+            let status = Command::new("git")
+                .args(&["pull", "origin", "main", "--depth=3"])
+                .status()
                 .context("Failed to pull latest changes")?;
+
+            if !status.success() {
+                return Err(anyhow::anyhow!("Failed to pull latest changes"));
+            }
         } else {
             // Clone repository
             let parent_dir = self.path.parent().unwrap();
-            sh.change_dir(parent_dir);
+            std::env::set_current_dir(parent_dir)
+                .context("Failed to change directory")?;
 
-            sh.cmd("git clone")
-                .arg(&self.url)
-                .arg("--depth=3")
-                .run()
+            let status = Command::new("git")
+                .args(&["clone", &self.url, "--depth=3"])
+                .status()
                 .context("Failed to clone repository")?;
+
+            if !status.success() {
+                return Err(anyhow::anyhow!("Failed to clone repository"));
+            }
         }
 
         Ok(())
     }
 
-    fn handle_local_changes(&self, sh: &Shell) -> Result<()> {
+    fn handle_local_changes(&self) -> Result<()> {
         // Check if instantwm is running
-        let instantwm_running = sh.cmd("pgrep instantwm").ignore_status().run().is_ok();
+        let instantwm_running = Command::new("pgrep")
+            .arg("instantwm")
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
 
         if instantwm_running {
             eprintln!("⚠️  Local changes detected and instantwm is running");
             eprintln!("💾 Stashing local changes...");
-            sh.cmd("git stash")
-                .run()
-                .context("Failed to stash changes")?;
         } else {
             eprintln!("⚠️  Local changes detected in package repository");
             eprintln!("💾 Stashing local changes...");
-            sh.cmd("git stash")
-                .run()
-                .context("Failed to stash changes")?;
         }
+
+        let status = Command::new("git")
+            .arg("stash")
+            .status()
+            .context("Failed to stash changes")?;
+
+        if !status.success() {
+            return Err(anyhow::anyhow!("Failed to stash changes"));
+        }
+
         Ok(())
     }
 }
 
 pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
-    let sh = Shell::new()?;
-
     if debug {
         eprintln!("🔍 Building package: {}", package.name);
     }
@@ -95,13 +110,18 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
     let pb = create_spinner(format!("Building and installing {}...", package.name));
 
     // Change to package directory
-    sh.change_dir(&package.path);
+    std::env::set_current_dir(&package.path)
+        .context("Failed to change directory")?;
 
     // Build and install package
-    sh.cmd("makepkg")
+    let status = Command::new("makepkg")
         .arg("-si")
-        .run()
+        .status()
         .context("Failed to build and install package")?;
+
+    if !status.success() {
+        return Err(anyhow::anyhow!("Failed to build and install package"));
+    }
 
     pb.finish_with_message(format!("✅ Successfully installed {}", package.name));
 
