@@ -1,131 +1,185 @@
-# Dev Subcommand Implementation Plan
+# instant dev install Implementation Plan
 
 ## Overview
-Add a new `dev` subcommand to InstantCLI that provides development utilities, starting with a `clone` subcommand for interactive repository cloning from the instantOS GitHub organization.
 
-## Implementation Plan
+Reimplement the bash-based `install_old.sh` as a Rust `instant dev install` command. The command will compile and install instantOS packages from the `instantOS/extra` GitHub repository using fzf for package selection.
 
-### Phase 1: Dependencies and Setup
+## Current Bash Implementation Analysis
 
-1. **Add required dependencies to Cargo.toml**
-   - `fzf-wrapped = "0.1.4"` - For fuzzy selection interface
-   - `reqwest = { version = "0.11", features = ["json"] }` - For GitHub API calls
-   - `serde = { version = "1.0", features = ["derive"] }` - Already present, needed for JSON deserialization
-   - `tokio = { version = "1.0", features = ["full"] }` - Already present, needed for async HTTP requests
+### Key Functionality (from install_old.sh)
+1. **Repository Management**:
+   - Clone `instantOS/extra` to `~/.cache/instantos/extra` if not exists
+   - Pull latest changes with depth 3
+   - Handle local changes by stashing
 
-### Phase 2: GitHub API Integration
+2. **Package Discovery**:
+   - Scan all directories in extra repo for `PKGBUILD` files
+   - Extract package names from directory names
+   - Filter out invalid entries (dots, single chars)
 
-2. **Create GitHub API client module** (`src/dev/github.rs`)
-   - Implement function to fetch instantOS organization repositories
-   - Handle API rate limiting and errors
-   - Parse repository list from GitHub API response
+3. **Interactive Selection**:
+   - Use fzf to present package list
+   - Support direct package name argument or interactive selection
 
-```rust
-// src/dev/github.rs
-pub async fn fetch_instantos_repos() -> Result<Vec<GitHubRepo>>;
-#[derive(Debug, serde::Deserialize)]
-pub struct GitHubRepo {
-    pub name: String,
-    pub full_name: String,
-    pub description: Option<String>,
-    pub clone_url: String,
-    pub default_branch: String,
-}
-```
+4. **Package Installation**:
+   - Change to package directory
+   - Run `makepkg -si` to build and install
 
-### Phase 3: Interactive Selection
+## Rust Implementation Architecture
 
-3. **Create fuzzy selection module** (`src/dev/fuzzy.rs`)
-   - Implement repository selection using fzf-wrapped
-   - Configure fzf with appropriate UI settings
-   - Handle user cancellation gracefully
-   - Display repository names with descriptions
+### 1. Dependencies to Add
 
-```rust
-// src/dev/fuzzy.rs
-pub fn select_repository(repos: Vec<GitHubRepo>) -> Result<Option<GitHubRepo>>;
-```
-
-### Phase 4: Clone Implementation
-
-4. **Create clone functionality** (`src/dev/clone.rs`)
-   - Implement repository cloning with depth 1
-   - Create `~/workspace` directory if it doesn't exist
-   - Use existing git utilities from `src/dot/utils.rs`
-   - Handle existing directories gracefully
-   - Show progress indicators
-
-```rust
-// src/dev/clone.rs
-pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path) -> Result<()>;
-```
-
-### Phase 5: CLI Integration
-
-5. **Create dev command module** (`src/dev/mod.rs`)
-   - Define CLI command structure using clap
-   - Orchestrate the clone workflow
-   - Handle errors and user feedback
-   - Support debug mode
-
-```rust
-// src/dev/mod.rs
-#[derive(Subcommand, Debug)]
-pub enum DevCommands {
-    Clone,
-}
-
-pub async fn handle_dev_command(command: DevCommands, debug: bool) -> Result<()>;
-```
-
-6. **Update main CLI parser** (`src/main.rs`)
-   - Add `Dev` variant to `Commands` enum
-   - Add dev command handler in main function
-   - Update module imports
-
-### Phase 6: Error Handling and UX
-
-7. **Implement comprehensive error handling**
-   - Network errors (GitHub API)
-   - Git operation failures
-   - File system errors
-   - User cancellation (fzf)
-   - Permission issues
-
-8. **Enhance user experience**
-   - Progress spinners for long operations
-   - Clear success/error messages
-   - Verbose output in debug mode
-   - Helpful error messages
-
-## Technical Details
-
-### Directory Structure
-```
-src/
-├── dev/
-│   ├── mod.rs          # Main dev module
-│   ├── github.rs       # GitHub API integration
-│   ├── fuzzy.rs        # Fuzzy selection interface
-│   └── clone.rs        # Repository cloning logic
-├── main.rs             # Updated to include dev command
-└── ...
-```
-
-### Dependencies to Add
 ```toml
 [dependencies]
-# Existing dependencies...
-fzf-wrapped = "0.1.4"
-reqwest = { version = "0.11", features = ["json"] }
+# Add to existing Cargo.toml
+xshell = "0.2"  # For shell command execution
 ```
 
-### API Endpoints
-- GitHub Organization Repositories: `https://api.github.com/orgs/instantOS/repos`
-- Rate limit: 60 requests/hour for unauthenticated, 5000/hour for authenticated
 
-### FZF Configuration
-- Border: Rounded
-- Layout: Reverse
-- Header: "Select instantOS repository to clone:"
-- Height: 40% of terminal
+
+### 2. Module Structure
+
+```
+src/dev/
+       mod.rs              # Update to include Install command
+       install.rs          # New: Package installation logic
+       package.rs          # New: Package discovery and management
+       fuzzy.rs            # Existing: fzf wrapper
+       github.rs           # Existing: GitHub API
+       clone.rs            # Existing: Repository cloning
+```
+
+### 3. Implementation Steps
+
+#### Step 1: Add Install Command to DevCommands enum
+**File**: `src/dev/mod.rs`
+- Add `Install` variant to `DevCommands` enum
+- Update `handle_dev_command` to route to install handler
+
+#### Step 2: Create Package Management Module
+**File**: `src/dev/package.rs`
+- Define `Package` struct with name, path, description
+- Implement package discovery logic
+- Handle directory scanning and PKGBUILD detection
+
+#### Step 3: Create Install Module
+**File**: `src/dev/install.rs`
+- Repository management (clone/pull logic)
+- Package selection interface
+- Build and install execution
+- Error handling and user feedback
+
+#### Step 4: Integrate with Existing FZF Wrapper
+**File**: `src/dev/fuzzy.rs`
+- Create `select_package` function similar to `select_repository`  (maybe share
+  code?)
+- Handle package display formatting
+
+#### Step 5: Add xshell Integration
+**File**: `src/dev/install.rs`
+- Use xshell for `git`, `makepkg`
+- Handle command execution with proper error handling
+
+### 4. Key Components
+
+#### Package Discovery Logic
+```rust
+struct Package {
+    name: String,
+    path: PathBuf,
+    description: Option<String>,
+}
+
+impl Package {
+    fn from_directory(dir: &Path) -> Option<Self> {
+        // Check for PKGBUILD, extract name, create Package
+    }
+
+    fn discover_packages(repo_path: &Path) -> Result<Vec<Package>> {
+        // Scan directories, filter valid packages
+    }
+}
+```
+
+#### Repository Management
+```rust
+struct PackageRepo {
+    path: PathBuf,  // ~/.cache/instantos/extra
+    url: String,    // https://github.com/instantOS/extra
+}
+
+impl PackageRepo {
+    fn new() -> Result<Self> {
+        // Create directory structure if needed
+    }
+
+    fn ensure_updated(&self) -> Result<()> {
+        // Clone or pull with proper error handling
+    }
+
+    fn handle_local_changes(&self) -> Result<()> {
+        // Stash changes if instantwm is running
+    }
+}
+```
+
+#### Install Command Handler
+```rust
+pub async fn handle_install(debug: bool) -> Result<()> {
+    let repo = PackageRepo::new()?;
+    repo.ensure_updated()?;
+
+    let packages = Package::discover_packages(&repo.path)?;
+    let selected_package = select_package(packages)?;
+
+    build_and_install_package(&selected_package, debug)?;
+
+    Ok(())
+}
+```
+
+### 5. Error Handling Strategy
+
+- Use existing `anyhow::Result` pattern
+- Define specific error types for package operations
+- Provide user-friendly error messages
+- Handle missing dependencies gracefully
+
+### 6. User Experience Enhancements
+
+- **Progress Indicators**: Use existing `indicatif` spinner
+- **Debug Output**: Respect `--debug` flag
+- **Colored Output**: Use existing `colored` crate
+- **Error Recovery**: Handle git conflicts gracefully
+
+### 7. Integration Points
+
+#### Command Structure
+```bash
+instant dev install          # Interactive package selection
+instant dev install <name>   # Install specific package
+instant dev install --debug  # Verbose output
+```
+
+#### Configuration
+- Use `~/.cache/instantos/extra` directory
+- Maintain compatibility with bash version
+- Respect existing file permissions
+
+
+### 11. Success Criteria
+
+- Interactive package selection with fzf
+- Direct package installation by name
+- Repository auto-update with conflict handling
+- Colored output and progress indicators
+- Proper error handling and user feedback
+- Compatibility with existing bash workflow
+- Debug mode for troubleshooting
+
+## Implementation Notes
+
+- **Simplicity Focus**: Keep implementation concise and maintainable
+- **Leverage Existing Code**: Use existing error handling, progress indicators, and CLI patterns
+- **Shell Commands**: Use xshell for git and makepkg operations instead of Rust Git libraries
+- **Performance**: Cache repository locally, shallow clones for speed
