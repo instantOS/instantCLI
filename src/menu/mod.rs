@@ -6,7 +6,7 @@ pub mod protocol;
 pub mod server;
 
 /// Handle menu commands for shell scripts
-pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
+pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
     match command {
         MenuCommands::Confirm { ref message, gui } => {
             if gui {
@@ -108,16 +108,16 @@ pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
                 }
             }
         }
-        MenuCommands::Server { command } => handle_server_command(command),
+        MenuCommands::Server { command } => handle_server_command(command).await,
     }
 }
 
 /// Handle server commands
-pub fn handle_server_command(command: ServerCommands) -> Result<i32> {
+pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
     match command {
         ServerCommands::Launch { inside } => {
             if inside {
-                server::run_server_inside()
+                server::run_server_inside().await
             } else {
                 server::run_server_launch()
             }

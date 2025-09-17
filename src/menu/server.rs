@@ -4,12 +4,17 @@ use anyhow::{Context, Result};
 use std::io::{self, BufRead, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::Duration;
+use tokio::signal;
 
 /// Menu server for handling GUI menu requests
 pub struct MenuServer {
     socket_path: String,
-    running: bool,
+    running: Arc<AtomicBool>,
 }
 
 impl MenuServer {
@@ -17,7 +22,7 @@ impl MenuServer {
     pub fn new() -> Self {
         Self {
             socket_path: default_socket_path(),
-            running: false,
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -25,12 +30,12 @@ impl MenuServer {
     pub fn with_socket_path(socket_path: String) -> Self {
         Self {
             socket_path,
-            running: false,
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
     /// Start the server
-    pub fn start(&mut self) -> Result<()> {
+    pub async fn start(&mut self) -> Result<()> {
         // Remove existing socket file if it exists
         if Path::new(&self.socket_path).exists() {
             std::fs::remove_file(&self.socket_path)
@@ -42,25 +47,77 @@ impl MenuServer {
             .context(format!("Failed to bind to socket at {}", self.socket_path))?;
 
         println!("Menu server listening on {}", self.socket_path);
-        self.running = true;
+        self.running.store(true, Ordering::SeqCst);
+
+        // Set up signal handling for graceful shutdown
+        let running_clone = self.running.clone();
+        let socket_path_clone = self.socket_path.clone();
+
+        tokio::spawn(async move {
+            let mut sigint = signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                .expect("Failed to setup SIGINT handler");
+            let mut sigterm = signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("Failed to setup SIGTERM handler");
+
+            tokio::select! {
+                _ = sigint.recv() => {
+                    println!("\nReceived SIGINT (Ctrl+C), shutting down gracefully...");
+                }
+                _ = sigterm.recv() => {
+                    println!("\nReceived SIGTERM, shutting down gracefully...");
+                }
+            }
+
+            running_clone.store(false, Ordering::SeqCst);
+
+            // Clean up socket file
+            if Path::new(&socket_path_clone).exists() {
+                if let Err(e) = std::fs::remove_file(&socket_path_clone) {
+                    eprintln!("Failed to remove socket file during shutdown: {}", e);
+                }
+            }
+
+            println!("Server shutdown complete");
+        });
 
         // Main server loop
-        while self.running {
+        while self.running.load(Ordering::SeqCst) {
+            // Set non-blocking mode for the listener to check running flag
+            listener.set_nonblocking(true)?;
+
             match listener.accept() {
                 Ok((stream, addr)) => {
                     if let Err(e) = self.handle_connection(stream) {
                         eprintln!("Error handling connection from {:?}: {}", addr, e);
                     }
                 }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    // No incoming connections, wait a bit before trying again
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    continue;
+                }
                 Err(e) => {
                     eprintln!("Error accepting connection: {}", e);
                     // Brief pause to avoid busy loop on persistent errors
-                    std::thread::sleep(Duration::from_millis(100));
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         }
 
+        // Final cleanup
+        self.cleanup_socket().await;
         Ok(())
+    }
+
+    /// Clean up socket file
+    async fn cleanup_socket(&self) {
+        if Path::new(&self.socket_path).exists() {
+            if let Err(e) = std::fs::remove_file(&self.socket_path) {
+                eprintln!("Failed to remove socket file: {}", e);
+            } else {
+                println!("Socket file cleaned up");
+            }
+        }
     }
 
     /// Handle a client connection
@@ -181,20 +238,14 @@ impl MenuServer {
     }
 
     /// Stop the server
-    pub fn stop(&mut self) {
-        self.running = false;
-
-        // Clean up socket file
-        if Path::new(&self.socket_path).exists() {
-            if let Err(e) = std::fs::remove_file(&self.socket_path) {
-                eprintln!("Failed to remove socket file: {}", e);
-            }
-        }
+    pub async fn stop(&mut self) {
+        self.running.store(false, Ordering::SeqCst);
+        self.cleanup_socket().await;
     }
 
     /// Check if server is running
     pub fn is_running(&self) -> bool {
-        self.running
+        self.running.load(Ordering::SeqCst)
     }
 }
 
@@ -205,22 +256,15 @@ impl Default for MenuServer {
 }
 
 /// Run the menu server in --inside mode
-pub fn run_server_inside() -> Result<i32> {
+pub async fn run_server_inside() -> Result<i32> {
     let mut server = MenuServer::new();
-
-    // Set up signal handling for graceful shutdown
-    ctrlc::set_handler(move || {
-        println!("\nReceived shutdown signal, stopping server...");
-        std::process::exit(0);
-    })
-    .context("Failed to set up Ctrl+C handler")?;
 
     println!("Starting InstantCLI Menu Server in --inside mode");
     println!("Press Ctrl+C to stop the server");
 
     // Clear screen and start server
     print!("\x1B[2J\x1B[H"); // Clear screen and move cursor to top-left
-    if let Err(e) = server.start() {
+    if let Err(e) = server.start().await {
         eprintln!("Server error: {}", e);
         return Ok(1);
     }

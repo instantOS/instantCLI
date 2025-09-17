@@ -247,7 +247,7 @@ async fn main() -> Result<()> {
             doctor::command::handle_doctor_command(command.clone()).await?;
         }
         Some(Commands::Menu { command }) => {
-            let exit_code = menu::handle_menu_command(command.clone(), cli.debug)?;
+            let exit_code = menu::handle_menu_command(command.clone(), cli.debug).await?;
             std::process::exit(exit_code);
         }
         None => {
