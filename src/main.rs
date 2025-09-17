@@ -2,6 +2,7 @@ use anyhow::Result;
 use colored::*;
 
 mod common;
+mod compositor;
 mod dev;
 mod doctor;
 mod dot;

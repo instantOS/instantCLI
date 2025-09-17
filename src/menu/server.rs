@@ -1,4 +1,5 @@
 use super::protocol::*;
+use crate::compositor::CompositorType;
 use crate::fzf_wrapper::{FzfOptions, FzfWrapper};
 use anyhow::{Context, Result};
 use std::io::{self, BufRead, Write};
@@ -17,6 +18,7 @@ pub struct MenuServer {
     running: Arc<AtomicBool>,
     start_time: std::time::SystemTime,
     requests_processed: Arc<AtomicU64>,
+    compositor: CompositorType,
 }
 
 impl MenuServer {
@@ -27,6 +29,7 @@ impl MenuServer {
             running: Arc::new(AtomicBool::new(false)),
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
+            compositor: CompositorType::detect(),
         }
     }
 
@@ -37,6 +40,7 @@ impl MenuServer {
             running: Arc::new(AtomicBool::new(false)),
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
+            compositor: CompositorType::detect(),
         }
     }
 
@@ -243,6 +247,11 @@ impl MenuServer {
         self.running.load(Ordering::SeqCst)
     }
 
+    /// Get the detected compositor type
+    pub fn compositor(&self) -> &CompositorType {
+        &self.compositor
+    }
+
     /// Get server status information
     fn get_status_info(&self) -> MenuResponse {
         let status = if self.running.load(Ordering::SeqCst) {
@@ -271,6 +280,7 @@ impl MenuServer {
             socket_path: self.socket_path.clone(),
             requests_processed: self.requests_processed.load(Ordering::SeqCst),
             start_time: start_time_str,
+            compositor: self.compositor.name(),
         };
 
         MenuResponse::StatusResult(status_info)

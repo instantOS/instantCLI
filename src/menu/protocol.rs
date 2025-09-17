@@ -159,6 +159,8 @@ pub struct StatusInfo {
     pub requests_processed: u64,
     /// Server start time
     pub start_time: String,
+    /// Window compositor type
+    pub compositor: String,
 }
 
 /// Protocol version information

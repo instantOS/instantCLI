@@ -267,6 +267,7 @@ pub fn print_status_info(status: &StatusInfo) {
     println!("Status:           {}", status_text);
     println!("Version:          {}", status.version.blue());
     println!("Protocol:         {}", status.protocol_version.blue());
+    println!("Compositor:       {}", status.compositor.yellow());
     println!("Socket:           {}", status.socket_path);
     println!(
         "Requests:         {}",
