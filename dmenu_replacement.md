@@ -69,11 +69,7 @@ cancellation, hide the terminal and send back the chosen item.
 
 ### Currently open issues
 
-Since fzf can be given custom preview commands, this connection can be used to
-execute arbitrary commands. Nothing which doesn't have the same level of
-privilege as the server should be able to access it. This is a solved problem,
-Hyprland exec does the same thing, I just need to read up on how this is done
-and what sort of IPC is out there, and what Hyprland uses. 
+For secure IPC between client and server, use Unix domain sockets. This ensures only processes with the same privilege level can access it, similar to Hyprland exec. Use the xdg crate to create the socket file in the appropriate runtime directory, such as $XDG_RUNTIME_DIR/instantmenu.sock. 
 
 How can I deal with large inputs? If the menu receives tens of thousands of
 lines of input via stdin, the client also needs to get that to the server. 
