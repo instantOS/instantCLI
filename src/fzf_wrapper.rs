@@ -5,7 +5,7 @@ use std::process::Command;
 use tempfile::{NamedTempFile, TempPath};
 
 /// Preview type for fzf items
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FzfPreview {
     Text(String),
     Command(String), // shell command for preview like for example git branch info
@@ -78,6 +78,82 @@ struct PreviewData {
     preview_content: String,
 }
 
+/// Shared preview generation utilities
+pub struct PreviewUtils;
+
+impl PreviewUtils {
+    /// Create a temporary preview script that can handle preview data
+    pub fn create_preview_script(
+        preview_map: HashMap<String, (String, String)>,
+    ) -> Result<(TempPath, std::path::PathBuf), Box<dyn std::error::Error>> {
+        let mut temp_file = NamedTempFile::new()?;
+
+        // Write a shell script that handles both text and command previews
+        let script_content = format!(
+            r#"#!/bin/bash
+key="$1"
+case "$key" in
+{}
+*)
+    echo "No preview available"
+    ;;
+esac
+"#,
+            preview_map
+                .iter()
+                .map(|(key, (preview_type, preview_content))| {
+                    let escaped_key = key.replace("'", "'\\''");
+                    let escaped_content = preview_content.replace("'", "'\\''");
+                    match preview_type.as_str() {
+                        "text" => format!("'{}') echo '{}' ;;", escaped_key, escaped_content),
+                        "command" => format!("'{}') {} ;;", escaped_key, escaped_content),
+                        _ => format!("'{}') echo 'Invalid preview type' ;;", escaped_key),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+
+        temp_file.write_all(script_content.as_bytes())?;
+        temp_file.flush()?;
+
+        // Get the path before we do anything else
+        let script_path = temp_file.path().to_path_buf();
+
+        // Make the script executable while it's still open
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&script_path)?.permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script_path, perms)?;
+        }
+
+        let temp_path = temp_file.into_temp_path();
+        Ok((temp_path, script_path))
+    }
+
+    /// Build preview map from items that implement FzfSelectable
+    pub fn build_preview_map<T: FzfSelectable>(items: &[T]) -> HashMap<String, (String, String)> {
+        let mut preview_map = HashMap::new();
+
+        for item in items {
+            let key = item.fzf_key();
+            match item.fzf_preview() {
+                FzfPreview::Text(text) => {
+                    preview_map.insert(key, ("text".to_string(), text));
+                }
+                FzfPreview::Command(cmd) => {
+                    preview_map.insert(key, ("command".to_string(), cmd));
+                }
+                FzfPreview::None => {}
+            }
+        }
+
+        preview_map
+    }
+}
+
 impl FzfWrapper {
     pub fn new() -> Self {
         Self {
@@ -104,30 +180,20 @@ impl FzfWrapper {
 
         // Create a mapping from display text to original items
         let mut item_map: HashMap<String, T> = HashMap::new();
-        let mut preview_map: HashMap<String, (String, String)> = HashMap::new();
         let mut display_lines = Vec::new();
 
-        for item in items {
+        for item in &items {
             let key = item.fzf_key();
             let display = item.fzf_display_text();
 
             display_lines.push(display.clone());
             item_map.insert(key.clone(), item.clone());
-
-            match item.fzf_preview() {
-                FzfPreview::Text(text) => {
-                    preview_map.insert(key, ("text".to_string(), text));
-                }
-                FzfPreview::Command(cmd) => {
-                    preview_map.insert(key, ("command".to_string(), cmd));
-                }
-                FzfPreview::None => {}
-            }
         }
 
         // Create preview script if any items have preview content and keep it alive
+        let preview_map = PreviewUtils::build_preview_map(&items);
         let _preview_script_keeper = if !preview_map.is_empty() {
-            Some(self.create_preview_script(preview_map)?)
+            Some(PreviewUtils::create_preview_script(preview_map)?)
         } else {
             None
         };
@@ -208,58 +274,6 @@ impl FzfWrapper {
             }
             Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {}", e))),
         }
-    }
-
-    /// Create a temporary preview script that can handle our preview data
-    fn create_preview_script(
-        &self,
-        preview_map: HashMap<String, (String, String)>,
-    ) -> Result<(TempPath, std::path::PathBuf), Box<dyn std::error::Error>> {
-        let mut temp_file = NamedTempFile::new()?;
-
-        // Write a shell script that handles both text and command previews
-        let script_content = format!(
-            r#"#!/bin/bash
-key="$1"
-case "$key" in
-{}
-*)
-    echo "No preview available"
-    ;;
-esac
-"#,
-            preview_map
-                .iter()
-                .map(|(key, (preview_type, preview_content))| {
-                    let escaped_key = key.replace("'", "'\\''");
-                    let escaped_content = preview_content.replace("'", "'\\''");
-                    match preview_type.as_str() {
-                        "text" => format!("'{}') echo '{}' ;;", escaped_key, escaped_content),
-                        "command" => format!("'{}') {} ;;", escaped_key, escaped_content),
-                        _ => format!("'{}') echo 'Invalid preview type' ;;", escaped_key),
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-
-        temp_file.write_all(script_content.as_bytes())?;
-        temp_file.flush()?;
-
-        // Get the path before we do anything else
-        let script_path = temp_file.path().to_path_buf();
-
-        // Make the script executable while it's still open
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&script_path)?.permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&script_path, perms)?;
-        }
-
-        let temp_path = temp_file.into_temp_path();
-        Ok((temp_path, script_path))
     }
 }
 

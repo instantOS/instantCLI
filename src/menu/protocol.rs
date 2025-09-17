@@ -1,15 +1,78 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::SystemTime;
+
+use crate::fzf_wrapper::FzfSelectable;
+
+/// Serializable menu item with rich preview support
+///
+/// This struct enables rich menu items with preview functionality that can be
+/// serialized and transmitted between client and server. It implements the
+/// FzfSelectable trait for seamless integration with the fzf wrapper.
+///
+/// # Examples
+///
+/// Basic item with text preview:
+/// ```rust
+/// use crate::menu::protocol::{SerializableMenuItem, FzfPreview};
+///
+/// let item = SerializableMenuItem {
+///     display_text: "Edit Configuration".to_string(),
+///     preview: FzfPreview::Text("Opens the configuration file in your editor".to_string()),
+///     metadata: None,
+/// };
+/// ```
+///
+/// Item with command preview:
+/// ```rust
+/// use crate::menu::protocol::{SerializableMenuItem, FzfPreview};
+/// use std::collections::HashMap;
+///
+/// let mut metadata = HashMap::new();
+/// metadata.insert("file".to_string(), "/path/to/config".to_string());
+///
+/// let item = SerializableMenuItem {
+///     display_text: "View Logs".to_string(),
+///     preview: FzfPreview::Command("tail -n 50 /var/log/app.log".to_string()),
+///     metadata: Some(metadata),
+/// };
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerializableMenuItem {
+    /// Text that appears in the fzf selection list
+    pub display_text: String,
+    /// Preview content shown in the preview window
+    pub preview: FzfPreview,
+    /// Optional metadata for the item
+    pub metadata: Option<HashMap<String, String>>,
+}
+
+/// Re-export FzfPreview from fzf_wrapper for use in protocol
+pub use crate::fzf_wrapper::FzfPreview;
+
+impl FzfSelectable for SerializableMenuItem {
+    fn fzf_display_text(&self) -> String {
+        self.display_text.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.display_text.clone()
+    }
+}
 
 /// Menu request types sent from client to server
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MenuRequest {
     /// Show confirmation dialog
     Confirm { message: String },
-    /// Show selection menu
+    /// Show selection menu with rich item support
     Choice {
         prompt: String,
-        items: Vec<String>,
+        items: Vec<SerializableMenuItem>,
         multi: bool,
     },
     /// Show text input dialog
@@ -23,8 +86,8 @@ pub enum MenuRequest {
 pub enum MenuResponse {
     /// Confirmation dialog result
     ConfirmResult(ConfirmResult),
-    /// Selection menu result(s)
-    ChoiceResult(Vec<String>),
+    /// Selection menu result(s) with rich item metadata
+    ChoiceResult(Vec<SerializableMenuItem>),
     /// Text input result
     InputResult(String),
     /// Server status information
@@ -150,6 +213,7 @@ impl From<ConfirmResult> for i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fzf_wrapper::FzfPreview;
 
     #[test]
     fn test_request_serialization() {
@@ -195,5 +259,95 @@ mod tests {
         assert!(
             matches!(deserialized.payload, MenuRequest::Input { prompt } if prompt == "Enter value:")
         );
+    }
+
+    #[test]
+    fn test_serializable_menu_item_creation() {
+        let item = SerializableMenuItem {
+            display_text: "Test Item".to_string(),
+            preview: FzfPreview::Text("Preview content".to_string()),
+            metadata: None,
+        };
+
+        assert_eq!(item.fzf_display_text(), "Test Item");
+        assert_eq!(item.fzf_key(), "Test Item");
+
+        match item.fzf_preview() {
+            FzfPreview::Text(text) => assert_eq!(text, "Preview content"),
+            _ => panic!("Expected text preview"),
+        }
+    }
+
+    #[test]
+    fn test_rich_choice_request_serialization() {
+        let items = vec![
+            SerializableMenuItem {
+                display_text: "Option 1".to_string(),
+                preview: FzfPreview::Text("First option".to_string()),
+                metadata: None,
+            },
+            SerializableMenuItem {
+                display_text: "Option 2".to_string(),
+                preview: FzfPreview::Command("echo 'Second option'".to_string()),
+                metadata: None,
+            },
+        ];
+
+        let request = MenuRequest::Choice {
+            prompt: "Select an option:".to_string(),
+            items,
+            multi: false,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        let deserialized: MenuRequest = serde_json::from_str(&json).unwrap();
+
+        assert!(
+            matches!(deserialized, MenuRequest::Choice { prompt, items, multi: false }
+                if prompt == "Select an option:" && items.len() == 2)
+        );
+    }
+
+    #[test]
+    fn test_choice_response_serialization() {
+        let items = vec![SerializableMenuItem {
+            display_text: "Selected Item".to_string(),
+            preview: FzfPreview::None,
+            metadata: None,
+        }];
+
+        let response = MenuResponse::ChoiceResult(items);
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: MenuResponse = serde_json::from_str(&json).unwrap();
+
+        assert!(matches!(deserialized, MenuResponse::ChoiceResult(items) if items.len() == 1));
+    }
+
+    #[test]
+    fn test_menu_item_with_metadata() {
+        use std::collections::HashMap;
+
+        let mut metadata = HashMap::new();
+        metadata.insert("file".to_string(), "/path/to/file".to_string());
+        metadata.insert("type".to_string(), "config".to_string());
+
+        let item = SerializableMenuItem {
+            display_text: "Config File".to_string(),
+            preview: FzfPreview::Command("cat /path/to/file".to_string()),
+            metadata: Some(metadata),
+        };
+
+        assert_eq!(item.fzf_display_text(), "Config File");
+
+        match item.fzf_preview() {
+            FzfPreview::Command(cmd) => assert_eq!(cmd, "cat /path/to/file"),
+            _ => panic!("Expected command preview"),
+        }
+
+        assert!(item.metadata.is_some());
+        let metadata = item.metadata.unwrap();
+        assert_eq!(metadata.get("file"), Some(&"/path/to/file".to_string()));
+        assert_eq!(metadata.get("type"), Some(&"config".to_string()));
     }
 }

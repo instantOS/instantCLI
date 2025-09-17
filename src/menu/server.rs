@@ -1,5 +1,5 @@
 use super::protocol::*;
-use crate::fzf_wrapper::{FzfOptions, FzfSelectable, FzfWrapper};
+use crate::fzf_wrapper::{FzfOptions, FzfWrapper};
 use anyhow::{Context, Result};
 use std::io::{self, BufRead, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -200,26 +200,12 @@ impl MenuServer {
     fn handle_choice_request(
         &self,
         prompt: String,
-        items: Vec<String>,
+        items: Vec<SerializableMenuItem>,
         multi: bool,
     ) -> Result<MenuResponse> {
         if items.is_empty() {
             return Ok(MenuResponse::Error("No items to choose from".to_string()));
         }
-
-        #[derive(Debug, Clone)]
-        struct SelectItem {
-            text: String,
-        }
-
-        impl FzfSelectable for SelectItem {
-            fn fzf_display_text(&self) -> String {
-                self.text.clone()
-            }
-        }
-
-        let select_items: Vec<SelectItem> =
-            items.into_iter().map(|text| SelectItem { text }).collect();
 
         let wrapper = FzfWrapper::with_options(FzfOptions {
             prompt: Some(prompt),
@@ -228,13 +214,12 @@ impl MenuServer {
             ..Default::default()
         });
 
-        match wrapper.select(select_items) {
+        match wrapper.select(items) {
             Ok(crate::fzf_wrapper::FzfResult::Selected(item)) => {
-                Ok(MenuResponse::ChoiceResult(vec![item.text]))
+                Ok(MenuResponse::ChoiceResult(vec![item]))
             }
             Ok(crate::fzf_wrapper::FzfResult::MultiSelected(items)) => {
-                let selected_texts = items.into_iter().map(|item| item.text).collect();
-                Ok(MenuResponse::ChoiceResult(selected_texts))
+                Ok(MenuResponse::ChoiceResult(items))
             }
             Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
             Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {

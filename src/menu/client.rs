@@ -130,7 +130,12 @@ impl MenuClient {
     }
 
     /// Show choice dialog via server
-    pub fn choice(&self, prompt: String, items: Vec<String>, multi: bool) -> Result<Vec<String>> {
+    pub fn choice(
+        &self,
+        prompt: String,
+        items: Vec<SerializableMenuItem>,
+        multi: bool,
+    ) -> Result<Vec<SerializableMenuItem>> {
         match self.send_request(MenuRequest::Choice {
             prompt,
             items,
@@ -189,16 +194,30 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
             multi,
             gui: true,
         } => {
-            let item_list: Vec<String> = if items.is_empty() {
+            let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
                 // Read from stdin if items is empty
                 let mut buffer = String::new();
                 io::stdin()
                     .read_to_string(&mut buffer)
                     .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
-                buffer.lines().map(|s| s.to_string()).collect()
+                buffer
+                    .lines()
+                    .map(|s| SerializableMenuItem {
+                        display_text: s.to_string(),
+                        preview: FzfPreview::None,
+                        metadata: None,
+                    })
+                    .collect()
             } else {
                 // Split space-separated items from command line
-                items.split(' ').map(|s| s.to_string()).collect()
+                items
+                    .split(' ')
+                    .map(|s| SerializableMenuItem {
+                        display_text: s.to_string(),
+                        preview: FzfPreview::None,
+                        metadata: None,
+                    })
+                    .collect()
             };
 
             match client.choice(prompt.clone(), item_list, *multi) {
@@ -207,7 +226,7 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
                         Ok(1) // Cancelled
                     } else {
                         for item in selected {
-                            println!("{}", item);
+                            println!("{}", item.display_text);
                         }
                         Ok(0) // Success
                     }

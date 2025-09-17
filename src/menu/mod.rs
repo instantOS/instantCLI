@@ -1,5 +1,6 @@
-use crate::fzf_wrapper::{ConfirmResult, FzfOptions, FzfSelectable, FzfWrapper};
+use crate::fzf_wrapper::{ConfirmResult, FzfOptions, FzfPreview, FzfWrapper};
 use anyhow::Result;
+use protocol::SerializableMenuItem;
 
 pub mod client;
 pub mod protocol;
@@ -32,35 +33,32 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             if gui {
                 client::handle_gui_request(&command)
             } else {
-                let item_list: Vec<String> = if items.is_empty() {
+                let item_list: Vec<SerializableMenuItem> = if items.is_empty() {
                     // Read from stdin if items is empty
                     use std::io::{self, Read};
                     let mut buffer = String::new();
                     io::stdin()
                         .read_to_string(&mut buffer)
                         .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
-                    buffer.lines().map(|s| s.to_string()).collect()
+                    buffer
+                        .lines()
+                        .map(|s| SerializableMenuItem {
+                            display_text: s.to_string(),
+                            preview: FzfPreview::None,
+                            metadata: None,
+                        })
+                        .collect()
                 } else {
                     // Split space-separated items from command line
-                    items.split(' ').map(|s| s.to_string()).collect()
+                    items
+                        .split(' ')
+                        .map(|s| SerializableMenuItem {
+                            display_text: s.to_string(),
+                            preview: FzfPreview::None,
+                            metadata: None,
+                        })
+                        .collect()
                 };
-
-                #[derive(Debug, Clone)]
-                struct SelectItem {
-                    text: String,
-                }
-
-                impl FzfSelectable for SelectItem {
-                    fn fzf_display_text(&self) -> String {
-                        self.text.clone()
-                    }
-                }
-
-                let select_items: Vec<SelectItem> = item_list
-                    .clone()
-                    .into_iter()
-                    .map(|text| SelectItem { text })
-                    .collect();
 
                 let wrapper = FzfWrapper::with_options(FzfOptions {
                     prompt: Some(prompt.clone()),
@@ -69,14 +67,14 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                     ..Default::default()
                 });
 
-                match wrapper.select(select_items) {
+                match wrapper.select(item_list) {
                     Ok(crate::fzf_wrapper::FzfResult::Selected(item)) => {
-                        println!("{}", item.text);
+                        println!("{}", item.display_text);
                         Ok(0) // Selected
                     }
                     Ok(crate::fzf_wrapper::FzfResult::MultiSelected(items)) => {
                         for item in items {
-                            println!("{}", item.text);
+                            println!("{}", item.display_text);
                         }
                         Ok(0) // Selected
                     }
