@@ -42,7 +42,7 @@ impl Default for FzfOptions {
         Self {
             multi_select: false,
             prompt: None,
-            additional_args: vec!["--margin".to_string(), "20%".to_string()],
+            additional_args: vec!["--margin".to_string(), "10%".to_string()],
         }
     }
 }
@@ -299,7 +299,7 @@ impl FzfWrapper {
             .arg("--prompt")
             .arg(format!("{} ", prompt))
             .arg("--margin")
-            .arg("40%");
+            .arg("20%");
 
         let output = cmd
             .stdin(std::process::Stdio::piped())
