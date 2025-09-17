@@ -8,6 +8,7 @@ mod doctor;
 mod dot;
 mod fzf_wrapper;
 mod menu;
+mod scratchpad;
 
 use clap::{Parser, Subcommand};
 
@@ -41,6 +42,7 @@ use crate::doctor::DoctorCommands;
 use crate::dot::config::ConfigManager;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
+use crate::scratchpad::ScratchpadCommands;
 
 /// InstantCLI main parser
 #[derive(Parser, Debug)]
@@ -83,6 +85,11 @@ enum Commands {
     Menu {
         #[command(subcommand)]
         command: menu::MenuCommands,
+    },
+    /// Scratchpad terminal management
+    Scratchpad {
+        #[command(subcommand)]
+        command: ScratchpadCommands,
     },
 }
 
@@ -132,6 +139,7 @@ enum DotCommands {
         non_interactive: bool,
     },
 }
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -250,6 +258,13 @@ async fn main() -> Result<()> {
         Some(Commands::Menu { command }) => {
             let exit_code = menu::handle_menu_command(command.clone(), cli.debug).await?;
             std::process::exit(exit_code);
+        }
+        Some(Commands::Scratchpad { command }) => {
+            execute_with_error_handling(
+                scratchpad::handle_scratchpad_command(command.clone(), cli.debug),
+                "Error handling scratchpad command",
+                None,
+            )?;
         }
         None => {
             println!("instant: run with --help for usage");
