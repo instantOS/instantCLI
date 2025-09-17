@@ -4,7 +4,6 @@ use anyhow::Result;
 pub mod client;
 pub mod protocol;
 pub mod server;
-pub use protocol::*;
 
 /// Handle menu commands for shell scripts
 pub fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {

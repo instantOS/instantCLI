@@ -76,7 +76,8 @@ impl MenuServer {
         reader.read_line(&mut request_json)?;
 
         if request_json.is_empty() {
-            anyhow::bail!("Received empty request");
+            // Client disconnected - this is normal, not an error
+            return Ok(());
         }
 
         // Parse request
