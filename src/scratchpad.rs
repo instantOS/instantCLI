@@ -114,19 +114,27 @@ fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
         // Terminal doesn't exist, create and configure it
         println!("Creating new scratchpad terminal...");
 
-        // Launch the terminal
+        // Launch the terminal in background
         let mut term_cmd = config.terminal_command.clone();
         if config.terminal_command == "alacritty" {
             term_cmd = format!("{} --class {}", config.terminal_command, config.window_class);
         }
 
+        // Launch terminal in background using nohup and background operator
+        // This ensures the terminal continues running after our command exits
+        let bg_cmd = if cfg!(unix) {
+            format!("nohup {} >/dev/null 2>&1 &", term_cmd)
+        } else {
+            format!("start /b {}", term_cmd)
+        };
+
         Command::new("sh")
-            .args(["-c", &format!("{} &", term_cmd)])
+            .args(["-c", &bg_cmd])
             .output()
-            .context("Failed to launch terminal")?;
+            .context("Failed to launch terminal in background")?;
 
         // Wait a moment for the window to appear
-        std::thread::sleep(std::time::Duration::from_millis(300));
+        std::thread::sleep(std::time::Duration::from_millis(500));
 
         // Configure the new window
         let config_commands = vec![
@@ -138,12 +146,17 @@ fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
         ];
 
         for cmd in config_commands {
-            swaymsg(&cmd)?;
+            if let Err(e) = swaymsg(&cmd) {
+                eprintln!("Warning: Failed to configure window: {}", e);
+                // Don't fail completely if configuration fails
+            }
         }
 
         // Show it immediately
         let show_message = format!("[app_id=\"{}\"] scratchpad show", config.window_class);
-        swaymsg(&show_message)?;
+        if let Err(e) = swaymsg(&show_message) {
+            eprintln!("Warning: Failed to show scratchpad: {}", e);
+        }
 
         println!("Scratchpad terminal created and configured");
     }
@@ -172,16 +185,23 @@ fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
             term_cmd = format!("{} --class {}", config.terminal_command, config.window_class);
         }
 
-        // First move to special workspace, then launch terminal
+        // First move to special workspace
         hyprctl("dispatch workspace special:scratchpad")?;
 
+        // Launch terminal in background using nohup and background operator
+        let bg_cmd = if cfg!(unix) {
+            format!("nohup {} >/dev/null 2>&1 &", term_cmd)
+        } else {
+            format!("start /b {}", term_cmd)
+        };
+
         Command::new("sh")
-            .args(["-c", &format!("{} &", term_cmd)])
+            .args(["-c", &bg_cmd])
             .output()
-            .context("Failed to launch terminal")?;
+            .context("Failed to launch terminal in background")?;
 
         // Wait for window to appear
-        std::thread::sleep(std::time::Duration::from_millis(300));
+        std::thread::sleep(std::time::Duration::from_millis(500));
 
         // Configure window (hyprctl syntax differs)
         let config_commands = vec![
@@ -191,7 +211,10 @@ fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
         ];
 
         for cmd in config_commands {
-            hyprctl(&cmd)?;
+            if let Err(e) = hyprctl(&cmd) {
+                eprintln!("Warning: Failed to configure window: {}", e);
+                // Don't fail completely if configuration fails
+            }
         }
 
         println!("Scratchpad terminal created on special workspace");
