@@ -108,6 +108,25 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             }
         }
+        MenuCommands::Status => {
+            let client = client::MenuClient::new();
+            if client.is_server_running() {
+                match client.status() {
+                    Ok(status_info) => {
+                        client::print_status_info(&status_info);
+                        Ok(0)
+                    }
+                    Err(e) => {
+                        eprintln!("Error getting server status: {}", e);
+                        Ok(2)
+                    }
+                }
+            } else {
+                println!("✗ Menu server is not running");
+                println!("  Start the server with: instant menu server launch --inside");
+                Ok(1)
+            }
+        }
         MenuCommands::Server { command } => handle_server_command(command).await,
     }
 }
@@ -160,6 +179,8 @@ pub enum MenuCommands {
         #[arg(long)]
         gui: bool,
     },
+    /// Get menu server status information
+    Status,
     /// Menu server management commands
     Server {
         #[command(subcommand)]

@@ -1,6 +1,7 @@
 use super::MenuCommands;
 use super::protocol::*;
 use anyhow::{Context, Result};
+use colored::*;
 use std::io::{self, BufRead, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::process::Command;
@@ -151,6 +152,15 @@ impl MenuClient {
             _ => anyhow::bail!("Unexpected response type for input request"),
         }
     }
+
+    /// Get server status information
+    pub fn status(&self) -> Result<StatusInfo> {
+        match self.send_request(MenuRequest::Status)? {
+            MenuResponse::StatusResult(status_info) => Ok(status_info),
+            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
+            _ => anyhow::bail!("Unexpected response type for status request"),
+        }
+    }
 }
 
 impl Default for MenuClient {
@@ -222,6 +232,35 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
         }
         _ => anyhow::bail!("Not a GUI menu command"),
     }
+}
+
+/// Print formatted status information
+pub fn print_status_info(status: &StatusInfo) {
+    println!("{}", "InstantCLI Menu Server Status".bold().underline());
+    println!("┌─────────────────────────────────────────────────────────────────");
+
+    // Status with color coding
+    let status_text = match status.status {
+        ServerStatus::Ready => "Ready".green(),
+        ServerStatus::Busy => "Busy".yellow(),
+        ServerStatus::ShuttingDown => "Shutting Down".red(),
+    };
+    println!("│ Status:           {}", status_text);
+
+    println!("│ Version:          {}", status.version.blue());
+    println!("│ Protocol:         {}", status.protocol_version.blue());
+    println!("│ Socket:           {}", status.socket_path);
+    println!(
+        "│ Requests:         {}",
+        status.requests_processed.to_string().cyan()
+    );
+    println!(
+        "│ Uptime:           {} seconds",
+        status.uptime_seconds.to_string().cyan()
+    );
+    println!("│ Started:          {}", status.start_time);
+
+    println!("└─────────────────────────────────────────────────────────────────");
 }
 
 #[cfg(test)]

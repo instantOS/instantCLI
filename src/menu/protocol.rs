@@ -14,6 +14,8 @@ pub enum MenuRequest {
     },
     /// Show text input dialog
     Input { prompt: String },
+    /// Get server status information
+    Status,
 }
 
 /// Menu response types sent from server to client
@@ -25,6 +27,8 @@ pub enum MenuResponse {
     ChoiceResult(Vec<String>),
     /// Text input result
     InputResult(String),
+    /// Server status information
+    StatusResult(StatusInfo),
     /// Error occurred
     Error(String),
     /// Operation was cancelled
@@ -73,6 +77,25 @@ pub enum ServerStatus {
     Busy,
     /// Server is shutting down
     ShuttingDown,
+}
+
+/// Detailed server status information
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct StatusInfo {
+    /// Current server status
+    pub status: ServerStatus,
+    /// Server version information
+    pub version: String,
+    /// Protocol version
+    pub protocol_version: String,
+    /// Server uptime in seconds
+    pub uptime_seconds: u64,
+    /// Socket path
+    pub socket_path: String,
+    /// Number of processed requests
+    pub requests_processed: u64,
+    /// Server start time
+    pub start_time: String,
 }
 
 /// Protocol version information

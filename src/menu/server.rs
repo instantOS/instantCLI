@@ -6,7 +6,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::time::Duration;
 use tokio::signal;
@@ -15,6 +15,8 @@ use tokio::signal;
 pub struct MenuServer {
     socket_path: String,
     running: Arc<AtomicBool>,
+    start_time: std::time::SystemTime,
+    requests_processed: Arc<AtomicU64>,
 }
 
 impl MenuServer {
@@ -23,6 +25,8 @@ impl MenuServer {
         Self {
             socket_path: default_socket_path(),
             running: Arc::new(AtomicBool::new(false)),
+            start_time: std::time::SystemTime::now(),
+            requests_processed: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -31,6 +35,8 @@ impl MenuServer {
         Self {
             socket_path,
             running: Arc::new(AtomicBool::new(false)),
+            start_time: std::time::SystemTime::now(),
+            requests_processed: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -122,6 +128,9 @@ impl MenuServer {
 
     /// Handle a client connection
     fn handle_connection(&self, mut stream: UnixStream) -> Result<()> {
+        // Increment request counter
+        self.requests_processed.fetch_add(1, Ordering::SeqCst);
+
         // Set read timeout
         stream.set_read_timeout(Some(Duration::from_secs(30)))?;
         stream.set_write_timeout(Some(Duration::from_secs(5)))?;
@@ -183,6 +192,7 @@ impl MenuServer {
                     e
                 ))),
             },
+            MenuRequest::Status => Ok(self.get_status_info()),
         }
     }
 
@@ -246,6 +256,39 @@ impl MenuServer {
     /// Check if server is running
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+
+    /// Get server status information
+    fn get_status_info(&self) -> MenuResponse {
+        let status = if self.running.load(Ordering::SeqCst) {
+            ServerStatus::Ready
+        } else {
+            ServerStatus::ShuttingDown
+        };
+
+        let uptime = self.start_time.elapsed().unwrap_or_default().as_secs();
+
+        let start_time_str = chrono::DateTime::from_timestamp(
+            self.start_time
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64,
+            0,
+        )
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
+
+        let status_info = StatusInfo {
+            status,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            protocol_version: PROTOCOL_VERSION.to_string(),
+            uptime_seconds: uptime,
+            socket_path: self.socket_path.clone(),
+            requests_processed: self.requests_processed.load(Ordering::SeqCst),
+            start_time: start_time_str,
+        };
+
+        MenuResponse::StatusResult(status_info)
     }
 }
 
