@@ -237,7 +237,6 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
 /// Print formatted status information
 pub fn print_status_info(status: &StatusInfo) {
     println!("{}", "InstantCLI Menu Server Status".bold().underline());
-    println!("┌─────────────────────────────────────────────────────────────────");
 
     // Status with color coding
     let status_text = match status.status {
@@ -245,22 +244,20 @@ pub fn print_status_info(status: &StatusInfo) {
         ServerStatus::Busy => "Busy".yellow(),
         ServerStatus::ShuttingDown => "Shutting Down".red(),
     };
-    println!("│ Status:           {}", status_text);
 
-    println!("│ Version:          {}", status.version.blue());
-    println!("│ Protocol:         {}", status.protocol_version.blue());
-    println!("│ Socket:           {}", status.socket_path);
+    println!("Status:           {}", status_text);
+    println!("Version:          {}", status.version.blue());
+    println!("Protocol:         {}", status.protocol_version.blue());
+    println!("Socket:           {}", status.socket_path);
     println!(
-        "│ Requests:         {}",
+        "Requests:         {}",
         status.requests_processed.to_string().cyan()
     );
     println!(
-        "│ Uptime:           {} seconds",
+        "Uptime:           {} seconds",
         status.uptime_seconds.to_string().cyan()
     );
-    println!("│ Started:          {}", status.start_time);
-
-    println!("└─────────────────────────────────────────────────────────────────");
+    println!("Started:          {}", status.start_time);
 }
 
 #[cfg(test)]
