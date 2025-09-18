@@ -29,9 +29,7 @@ impl CheckRegistry {
         self.checks.get(id).map(|factory| factory())
     }
 
-    pub fn all_check_ids(&self) -> Vec<&'static str> {
-        self.checks.keys().copied().collect()
-    }
+
 
     pub fn all_checks(&self) -> Vec<Box<dyn DoctorCheck + Send + Sync>> {
         self.checks.values().map(|factory| factory()).collect()

@@ -31,7 +31,6 @@ pub enum PrivilegeLevel {
 pub enum CheckStatus {
     Pass(String),
     Fail { message: String, fixable: bool },
-    Warning { message: String, fixable: bool },
 }
 
 impl CheckStatus {
@@ -39,7 +38,6 @@ impl CheckStatus {
         match self {
             CheckStatus::Pass(msg) => msg,
             CheckStatus::Fail { message, .. } => message,
-            CheckStatus::Warning { message, .. } => message,
         }
     }
 
@@ -51,7 +49,6 @@ impl CheckStatus {
         match self {
             CheckStatus::Pass(_) => false,
             CheckStatus::Fail { fixable, .. } => *fixable,
-            CheckStatus::Warning { fixable, .. } => *fixable,
         }
     }
 
@@ -63,7 +60,6 @@ impl CheckStatus {
         match self {
             CheckStatus::Pass(_) => "PASS",
             CheckStatus::Fail { .. } => "FAIL",
-            CheckStatus::Warning { .. } => "WARN",
         }
     }
 
@@ -71,7 +67,6 @@ impl CheckStatus {
         match self {
             CheckStatus::Pass(_) => Color::Green,
             CheckStatus::Fail { .. } => Color::Red,
-            CheckStatus::Warning { .. } => Color::Yellow,
         }
     }
 
@@ -79,7 +74,6 @@ impl CheckStatus {
         match self {
             CheckStatus::Pass(_) => "PASS".green(),
             CheckStatus::Fail { .. } => "FAIL".red(),
-            CheckStatus::Warning { .. } => "WARN".yellow(),
         }
     }
 
@@ -88,8 +82,6 @@ impl CheckStatus {
             CheckStatus::Pass(_) => "",
             CheckStatus::Fail { fixable: true, .. } => " (fixable)",
             CheckStatus::Fail { fixable: false, .. } => " (not fixable)",
-            CheckStatus::Warning { fixable: true, .. } => " (fixable)",
-            CheckStatus::Warning { fixable: false, .. } => " (not fixable)",
         }
     }
 }
@@ -170,41 +162,7 @@ pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> 
     results
 }
 
-pub fn print_results(results: &[CheckResult]) {
-    let header = format!(
-        "{: <30} [{}] {}",
-        "Check".bold(),
-        "Status".bold(),
-        "Message".bold()
-    );
-    println!("{header}");
 
-    let mut failed_checks = vec![];
-    for result in results {
-        let status_str = result.status.color_status();
-        let line = format!(
-            "{: <30} [{}] {}",
-            result.name,
-            status_str,
-            result.status.message()
-        );
-        println!("{line}");
-        if !result.status.is_success() && result.fix_message.is_some() {
-            failed_checks.push(result.clone());
-        }
-    }
-
-    if !failed_checks.is_empty() {
-        let fixes_msg = "\nAvailable fixes:".bold().yellow();
-        println!("{fixes_msg}");
-        for result in &failed_checks {
-            if let Some(ref msg) = result.fix_message {
-                println!("  - {}: {}", result.name, msg);
-            }
-        }
-        // TODO: Prompt for fixes
-    }
-}
 
 // Unified table output functions
 pub fn print_check_list_table(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {

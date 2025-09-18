@@ -2,7 +2,7 @@ use super::db::{Database, DotFileType};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
-use std::io::Read as _;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
