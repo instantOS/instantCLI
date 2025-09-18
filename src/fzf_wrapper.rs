@@ -229,6 +229,7 @@ impl FzfWrapper {
 
         // Build fzf command
         let mut cmd = Command::new("fzf");
+        cmd.arg("--tiebreak=index");
 
         if self.options.multi_select {
             cmd.arg("--multi");
