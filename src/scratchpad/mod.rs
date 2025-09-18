@@ -1,5 +1,6 @@
 use crate::common::compositor::CompositorType;
 use anyhow::Result;
+use colored::*;
 
 pub mod config;
 pub mod operations;
@@ -81,6 +82,14 @@ pub struct ScratchpadIdentifyArgs {
     pub name: String,
 }
 
+/// Arguments for scratchpad status command
+#[derive(clap::Args, Debug, Clone)]
+pub struct ScratchpadStatusArgs {
+    /// Optional specific scratchpad name to check (if not provided, shows all)
+    #[arg(long)]
+    pub name: Option<String>,
+}
+
 /// Scratchpad subcommands
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum ScratchpadCommand {
@@ -91,7 +100,7 @@ pub enum ScratchpadCommand {
     /// Hide scratchpad terminal
     Hide(ScratchpadIdentifyArgs),
     /// Check scratchpad terminal status
-    Status(ScratchpadIdentifyArgs),
+    Status(ScratchpadStatusArgs),
 }
 
 impl ScratchpadCommand {
@@ -166,18 +175,73 @@ impl ScratchpadCommand {
             }
             ScratchpadCommand::Status(args) => {
                 if debug {
-                    eprintln!("Check scratchpad status for: {}", args.name);
+                    eprintln!("Check scratchpad status");
+                    if let Some(ref name) = args.name {
+                        eprintln!("  Specific scratchpad: {}", name);
+                    } else {
+                        eprintln!("  Showing all scratchpads");
+                    }
                 }
 
-                let config = ScratchpadConfig::new(args.name);
-
-                match is_scratchpad_visible(compositor, &config) {
-                    Ok(visible) => {
-                        if visible {
-                            println!("Scratchpad terminal is visible");
-                        } else {
-                            println!("Scratchpad terminal is not visible");
+                match compositor.get_all_scratchpad_windows() {
+                    Ok(windows) => {
+                        if windows.is_empty() {
+                            println!("No scratchpad terminals found.");
+                            return Ok(0);
                         }
+
+                        // If a specific scratchpad name was requested, filter for it
+                        let filtered_windows: Vec<_> = if let Some(ref name) = args.name {
+                            windows.into_iter()
+                                .filter(|w| w.name == *name)
+                                .collect()
+                        } else {
+                            windows
+                        };
+
+                        if filtered_windows.is_empty() {
+                            if args.name.is_some() {
+                                println!("No scratchpad terminal found with name: {}", args.name.unwrap());
+                            } else {
+                                println!("No scratchpad terminals found.");
+                            }
+                            return Ok(0);
+                        }
+
+                        // Display header
+                        println!("{}", "Scratchpad Terminal Status".bold().underline());
+                        println!();
+
+                        for window in &filtered_windows {
+                            let status_indicator = if window.visible {
+                                "●".green()
+                            } else {
+                                "○".bright_black()
+                            };
+
+                            let status_text = if window.visible {
+                                "visible".green()
+                            } else {
+                                "hidden".bright_black()
+                            };
+
+                            println!("  {} {}", status_indicator, window.name.cyan());
+                            println!("     Title: {}", window.title);
+                            println!("     Class: {}", window.window_class);
+                            println!("     Status: {}", status_text);
+                            println!();
+                        }
+
+                        // Summary
+                        let total_count = filtered_windows.len();
+                        let visible_count = filtered_windows.iter().filter(|w| w.visible).count();
+                        let hidden_count = total_count - visible_count;
+
+                        println!("Summary: {} total, {} visible, {} hidden",
+                                 total_count.to_string().bold(),
+                                 visible_count.to_string().green(),
+                                 hidden_count.to_string().bright_black());
+
                         Ok(0)
                     }
                     Err(e) => {

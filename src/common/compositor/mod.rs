@@ -5,6 +5,15 @@ use std::process::Command;
 pub mod hyprland;
 pub mod sway;
 
+/// Information about a scratchpad window
+#[derive(Debug, Clone)]
+pub struct ScratchpadWindowInfo {
+    pub name: String,
+    pub window_class: String,
+    pub title: String,
+    pub visible: bool,
+}
+
 /// Window compositor types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CompositorType {
@@ -99,6 +108,30 @@ impl CompositorType {
         match self {
             CompositorType::Other(name) => name.to_lowercase().contains("x11"),
             _ => false,
+        }
+    }
+
+    /// Get all scratchpad windows for this compositor
+    pub fn get_all_scratchpad_windows(&self) -> anyhow::Result<Vec<ScratchpadWindowInfo>> {
+        match self {
+            CompositorType::Sway => sway::get_all_scratchpad_windows()
+                .map(|windows| windows.into_iter().map(|w| ScratchpadWindowInfo {
+                    name: w.name,
+                    window_class: w.window_class,
+                    title: w.title,
+                    visible: w.visible,
+                }).collect()),
+            CompositorType::Hyprland => hyprland::get_all_scratchpad_windows()
+                .map(|windows| windows.into_iter().map(|w| ScratchpadWindowInfo {
+                    name: w.name,
+                    window_class: w.window_class,
+                    title: w.title,
+                    visible: w.visible,
+                }).collect()),
+            CompositorType::Other(_) => {
+                // For unsupported compositors, return empty list
+                Ok(Vec::new())
+            }
         }
     }
 }

@@ -4,6 +4,15 @@ use hyprland::dispatch::{Dispatch, DispatchType};
 use hyprland::keyword::Keyword;
 use hyprland::prelude::*;
 
+/// Information about a scratchpad window
+#[derive(Debug, Clone)]
+pub struct ScratchpadWindowInfo {
+    pub name: String,
+    pub window_class: String,
+    pub title: String,
+    pub visible: bool,
+}
+
 /// Check if a window with specific class exists in Hyprland using direct IPC
 pub fn window_exists(window_class: &str) -> Result<bool> {
     let clients = Clients::get()
@@ -154,6 +163,34 @@ pub fn dispatch_command(command: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Get all scratchpad windows in Hyprland
+pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
+    let clients = Clients::get()
+        .context("Failed to get clients from Hyprland IPC")?
+        .to_vec();
+
+    let mut scratchpads = Vec::new();
+
+    for client in clients.iter() {
+        // Check if this is a scratchpad window (class starts with "scratchpad_")
+        if let Some(scratchpad_name) = client.class.strip_prefix("scratchpad_") {
+            let workspace_name = format!("scratchpad_{}", scratchpad_name);
+
+            // Use the same logic as is_special_workspace_active for consistency
+            let is_visible = is_special_workspace_active(&workspace_name).unwrap_or(false);
+
+            scratchpads.push(ScratchpadWindowInfo {
+                name: scratchpad_name.to_string(),
+                window_class: client.class.clone(),
+                title: client.title.clone(),
+                visible: is_visible,
+            });
+        }
+    }
+
+    Ok(scratchpads)
 }
 
 #[cfg(test)]
