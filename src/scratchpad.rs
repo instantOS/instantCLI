@@ -86,6 +86,40 @@ fn hyprctl_clients() -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Check if a window with specific class exists in Hyprland
+fn hyprland_window_exists(window_class: &str) -> Result<bool> {
+    let clients = hyprctl_clients()?;
+
+    // Parse clients output to find windows with the specified class
+    // Each client block starts with "Window" and contains "class:" field
+    let lines: Vec<&str> = clients.lines().collect();
+    let _in_target_window = false;
+
+    for line in lines {
+        let line = line.trim();
+        if line.starts_with("Window") && line.contains(&format!("class: {}", window_class)) {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+/// Setup window rules for Hyprland scratchpad
+fn setup_hyprland_window_rules(workspace_name: &str, window_class: &str) -> Result<()> {
+    // Add window rules for the scratchpad terminal
+    let rules = vec![
+        format!("windowrulev2 workspace special:{},class:^({})$", workspace_name, window_class),
+        format!("windowrulev2 center,class:^({})$", window_class),
+    ];
+
+    for rule in rules {
+        hyprctl(&format!("keyword {}", rule))?;
+    }
+
+    Ok(())
+}
+
 /// Toggle scratchpad terminal visibility
 pub fn toggle_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -> Result<()> {
     match compositor {
@@ -167,27 +201,29 @@ fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
 
 /// Toggle scratchpad terminal for Hyprland
 fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
-    // For Hyprland, we'll use special workspaces approach
-    // Check if terminal exists by looking at clients
-    let clients = hyprctl_clients()?;
-    let window_exists = clients.contains(&config.window_class);
+    let workspace_name = "instantscratchpad";
+
+    // Check if terminal with specific class exists
+    let window_exists = hyprland_window_exists(&config.window_class)?;
 
     if window_exists {
-        // Terminal exists, toggle to/from special workspace
-        hyprctl("dispatch togglespecialworkspace scratchpad")?;
+        // Terminal exists, toggle special workspace visibility
+        hyprctl(&format!("dispatch togglespecialworkspace {}", workspace_name))?;
         println!("Toggled scratchpad terminal visibility");
     } else {
-        // Terminal doesn't exist, create it on special workspace
+        // Terminal doesn't exist, create it with proper rules
         println!("Creating new scratchpad terminal...");
 
-        // Launch the terminal with special workspace rules
+        // Setup window rules first
+        setup_hyprland_window_rules(workspace_name, &config.window_class)?;
+
+        // Prepare terminal command with appropriate class
         let mut term_cmd = config.terminal_command.clone();
         if config.terminal_command == "alacritty" {
             term_cmd = format!("{} --class {}", config.terminal_command, config.window_class);
+        } else if config.terminal_command == "kitty" {
+            term_cmd = format!("{} --class {}", config.terminal_command, config.window_class);
         }
-
-        // First move to special workspace
-        hyprctl("dispatch workspace special:scratchpad")?;
 
         // Launch terminal in background using nohup and background operator
         let bg_cmd = if cfg!(unix) {
@@ -204,21 +240,7 @@ fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
         // Wait for window to appear
         std::thread::sleep(std::time::Duration::from_millis(500));
 
-        // Configure window (hyprctl syntax differs)
-        let config_commands = vec![
-            format!("dispatch floating active, class:{}", config.window_class),
-            format!("dispatch resize {}% {}%, class:{}", config.width_pct, config.height_pct, config.window_class),
-            format!("dispatch centerwindow, class:{}", config.window_class),
-        ];
-
-        for cmd in config_commands {
-            if let Err(e) = hyprctl(&cmd) {
-                eprintln!("Warning: Failed to configure window: {}", e);
-                // Don't fail completely if configuration fails
-            }
-        }
-
-        println!("Scratchpad terminal created on special workspace");
+        println!("Scratchpad terminal created with window rules");
     }
 
     Ok(())
@@ -234,14 +256,22 @@ pub fn is_scratchpad_visible(compositor: &CompositorType, config: &ScratchpadCon
                && !tree.contains(&format!("\"app_id\": \"{}\".*scratchpad", config.window_class)))
         }
         CompositorType::Hyprland => {
-            // For Hyprland, check if special workspace is active
+            // For Hyprland, check if special workspace is active AND window exists
+            let workspace_name = "instantscratchpad";
+
+            // Check if special workspace is active
             let activeworkspace = Command::new("hyprctl")
                 .args(["activeworkspace"])
                 .output()
                 .context("Failed to get active workspace")?;
 
-            let output = String::from_utf8_lossy(&activeworkspace.stdout);
-            Ok(output.contains("special:scratchpad"))
+            let workspace_output = String::from_utf8_lossy(&activeworkspace.stdout);
+            let special_workspace_active = workspace_output.contains(&format!("special:{}", workspace_name));
+
+            // Check if window exists
+            let window_exists = hyprland_window_exists(&config.window_class).unwrap_or(false);
+
+            Ok(special_workspace_active && window_exists)
         }
         CompositorType::Other(_) => {
             eprintln!("TODO: Scratchpad visibility check not implemented for this compositor");
