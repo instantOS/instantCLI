@@ -63,7 +63,6 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 let wrapper = FzfWrapper::with_options(FzfOptions {
                     prompt: Some(prompt.clone()),
                     multi_select: multi,
-                    additional_args: vec![],
                     ..Default::default()
                 });
 

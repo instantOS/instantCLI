@@ -259,7 +259,6 @@ impl MenuServer {
         let wrapper = FzfWrapper::with_options(FzfOptions {
             prompt: Some(prompt),
             multi_select: multi,
-            additional_args: vec![],
             ..Default::default()
         });
 

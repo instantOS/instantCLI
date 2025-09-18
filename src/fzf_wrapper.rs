@@ -42,8 +42,40 @@ impl Default for FzfOptions {
         Self {
             multi_select: false,
             prompt: None,
-            additional_args: vec!["--margin".to_string(), "10%".to_string()],
+            additional_args: Self::default_margin_args(),
         }
+    }
+}
+
+impl FzfOptions {
+    /// Default margin arguments used across the application
+    fn default_margin_args() -> Vec<String> {
+        vec![
+            "--margin".to_string(),
+            "10%,2%".to_string(),  // 10% vertical, 2% horizontal
+            "--min-height".to_string(),
+            "10".to_string(),
+        ]
+    }
+
+    /// Margin arguments for input dialogs (larger vertical margin)
+    fn input_margin_args() -> Vec<String> {
+        vec![
+            "--margin".to_string(),
+            "20%,2%".to_string(),  // 20% vertical, 2% horizontal
+            "--min-height".to_string(),
+            "10".to_string(),
+        ]
+    }
+
+    /// Margin arguments for confirmation dialogs (largest vertical margin)
+    fn confirm_margin_args() -> Vec<String> {
+        vec![
+            "--margin".to_string(),
+            "40%,2%".to_string(),  // 40% vertical, 2% horizontal
+            "--min-height".to_string(),
+            "10".to_string(),
+        ]
     }
 }
 
@@ -311,9 +343,12 @@ impl FzfWrapper {
         cmd.arg("--print-query")
             .arg("--no-info")
             .arg("--prompt")
-            .arg(format!("{} ", prompt))
-            .arg("--margin")
-            .arg("20%");
+            .arg(format!("{} ", prompt));
+
+        // Add input-specific margin arguments
+        for arg in FzfOptions::input_margin_args() {
+            cmd.arg(arg);
+        }
 
         let output = cmd
             .stdin(std::process::Stdio::piped())
@@ -358,7 +393,7 @@ impl FzfWrapper {
 
         let wrapper = FzfWrapper::with_options(FzfOptions {
             prompt: Some(format!("{} [Y/n]: ", message)),
-            additional_args: vec!["--margin".to_string(), "40%".to_string()],
+            additional_args: FzfOptions::confirm_margin_args(),
             ..Default::default()
         });
 
