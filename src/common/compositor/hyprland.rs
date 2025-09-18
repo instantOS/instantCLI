@@ -107,34 +107,9 @@ pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
 
 /// Get active workspace information using direct IPC
 pub fn get_active_workspace() -> Result<Workspace> {
-    let workspaces = Workspaces::get()
-        .context("Failed to get workspaces from Hyprland IPC")?
-        .to_vec();
-
-    // Find the active workspace (the one with the focused window)
-    let clients = Clients::get()
-        .context("Failed to get clients from Hyprland IPC")?
-        .to_vec();
-
-    // Find the currently focused client
-    let focused_client = clients.iter().find(|client| client.focus_history_id == 0);
-
-    if let Some(client) = focused_client {
-        // Find the workspace that contains this client
-        let workspace = workspaces
-            .iter()
-            .find(|ws| ws.id == client.workspace.id)
-            .context("Failed to find workspace for focused client")?;
-        return Ok(workspace.clone());
-    }
-
-    // Fallback: find workspace marked as active (though this might not be as reliable)
-    let active_workspace = workspaces
-        .iter()
-        .find(|ws| ws.id > 0) // Regular workspaces have positive IDs
-        .context("No active workspace found")?;
-
-    Ok(active_workspace.clone())
+    let active_workspace =
+        Workspace::get_active().context("Failed to get active workspace from Hyprland IPC")?;
+    Ok(active_workspace)
 }
 
 /// Execute a hyprland dispatcher using direct IPC
