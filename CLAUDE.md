@@ -200,11 +200,30 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 - `instant scratchpad hide`: Hide scratchpad terminal
 - `instant scratchpad status`: Check if scratchpad terminal is currently visible
 
-All scratchpad commands support these options:
-- `--window-class <CLASS>`: Window class/app_id for the scratchpad terminal (default: "scratchpad_term")
+**Named Scratchpads**: You can create multiple scratchpads with different names:
+- `--name <NAME>`: Scratchpad name (default: "instantscratchpad"). Used as prefix for window class.
+
+**Custom Commands**: Run specific applications inside the scratchpad:
+- `--command <COMMAND>`: Command to run inside terminal (e.g., "fish", "ranger", "yazi")
+
+**Configuration Options** (for toggle/show commands):
 - `--terminal <TERMINAL>`: Terminal command to launch (default: "kitty")
 - `--width-pct <WIDTH>`: Terminal width as percentage of screen (default: 50)
 - `--height-pct <HEIGHT>`: Terminal height as percentage of screen (default: 60)
+
+**Examples**:
+```bash
+# Default scratchpad
+instant scratchpad show
+
+# Named scratchpad with file manager
+instant scratchpad show --name files --command ranger
+
+# Multiple scratchpads
+instant scratchpad show --name term1 --command fish
+instant scratchpad show --name term2 --command zsh
+instant scratchpad hide --name term1
+```
 
 ### System Diagnostics
 - `instant doctor`: Run system diagnostics and fixes

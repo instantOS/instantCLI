@@ -6,24 +6,61 @@ use std::process::Command;
 /// Configuration for scratchpad terminal behavior
 #[derive(Debug, Clone)]
 pub struct ScratchpadConfig {
-    /// Window class/app_id for the scratchpad terminal
-    pub window_class: String,
+    /// Scratchpad name (used as prefix for window class)
+    pub name: String,
     /// Terminal command to launch
     pub terminal_command: String,
+    /// Command to run inside the terminal (optional)
+    pub inner_command: Option<String>,
     /// Terminal width as percentage of screen
     pub width_pct: u32,
     /// Terminal height as percentage of screen
     pub height_pct: u32,
 }
 
-impl Default for ScratchpadConfig {
-    fn default() -> Self {
+impl ScratchpadConfig {
+    /// Create a new scratchpad config with the given name
+    pub fn new(name: String) -> Self {
         Self {
-            window_class: "scratchpad_term".to_string(),
+            name,
             terminal_command: "kitty".to_string(),
+            inner_command: None,
             width_pct: 50,
             height_pct: 60,
         }
+    }
+
+    /// Create config with custom parameters
+    pub fn with_params(
+        name: String,
+        terminal: String,
+        inner_command: Option<String>,
+        width_pct: u32,
+        height_pct: u32,
+    ) -> Self {
+        Self {
+            name,
+            terminal_command: terminal,
+            inner_command,
+            width_pct,
+            height_pct,
+        }
+    }
+
+    /// Get the window class/app_id for this scratchpad
+    pub fn window_class(&self) -> String {
+        format!("scratchpad_{}", self.name)
+    }
+
+    /// Get the workspace name for this scratchpad (used by Hyprland)
+    pub fn workspace_name(&self) -> String {
+        format!("scratchpad_{}", self.name)
+    }
+}
+
+impl Default for ScratchpadConfig {
+    fn default() -> Self {
+        Self::new("instantscratchpad".to_string())
     }
 }
 
@@ -76,24 +113,46 @@ pub fn toggle_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig)
 fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
     // Check if scratchpad terminal exists
     let tree = swaymsg_get_tree()?;
-    let window_exists = tree.contains(&format!("\"app_id\": \"{}\"", config.window_class));
+    let window_class = config.window_class();
+    let window_exists = tree.contains(&format!("\"app_id\": \"{}\"", window_class));
 
     if window_exists {
         // Terminal exists, toggle its visibility
-        let message = format!("[app_id=\"{}\"] scratchpad show", config.window_class);
+        let message = format!("[app_id=\"{}\"] scratchpad show", window_class);
         swaymsg(&message)?;
-        println!("Toggled scratchpad terminal visibility");
+        println!("Toggled scratchpad terminal '{}' visibility", config.name);
     } else {
         // Terminal doesn't exist, create and configure it
-        create_and_configure_sway_scratchpad(config)?;
+        println!("Creating new scratchpad terminal '{}'...", config.name);
+
+        // Launch the terminal in background
+        create_terminal_process(config)?;
+
+        // Wait a moment for the window to appear
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Configure the new window
+        let config_commands = vec![
+            format!("[app_id=\"{}\"] floating enable", window_class),
+            format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
+                   window_class, config.width_pct, config.height_pct),
+            format!("[app_id=\"{}\"] move position center", window_class),
+            format!("[app_id=\"{}\"] move to scratchpad", window_class),
+        ];
+
+        for cmd in config_commands {
+            if let Err(e) = swaymsg(&cmd) {
+                eprintln!("Warning: Failed to configure window: {}", e);
+            }
+        }
 
         // Show it immediately
-        let show_message = format!("[app_id=\"{}\"] scratchpad show", config.window_class);
+        let show_message = format!("[app_id=\"{}\"] scratchpad show", window_class);
         if let Err(e) = swaymsg(&show_message) {
             eprintln!("Warning: Failed to show scratchpad: {}", e);
         }
 
-        println!("Scratchpad terminal created and configured");
+        println!("Scratchpad terminal '{}' created and configured", config.name);
     }
 
     Ok(())
@@ -101,37 +160,30 @@ fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
 
 /// Toggle scratchpad terminal for Hyprland
 fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
-    let workspace_name = "instantscratchpad";
+    let workspace_name = config.workspace_name();
+    let window_class = config.window_class();
 
     // Check if terminal with specific class exists using direct IPC
-    let window_exists = hyprland_ipc::window_exists(&config.window_class)?;
+    let window_exists = hyprland_ipc::window_exists(&window_class)?;
 
     if window_exists {
         // Terminal exists, toggle special workspace visibility using direct IPC
-        hyprland_ipc::toggle_special_workspace(workspace_name)?;
-        println!("Toggled scratchpad terminal visibility");
+        hyprland_ipc::toggle_special_workspace(&workspace_name)?;
+        println!("Toggled scratchpad terminal '{}' visibility", config.name);
     } else {
         // Terminal doesn't exist, create it with proper rules
-        println!("Creating new scratchpad terminal...");
+        println!("Creating new scratchpad terminal '{}'...", config.name);
 
         // Setup window rules first using direct IPC
-        hyprland_ipc::setup_window_rules(workspace_name, &config.window_class)?;
+        hyprland_ipc::setup_window_rules(&workspace_name, &window_class)?;
 
-        // Prepare terminal command with appropriate class
-        let term_cmd = get_terminal_command_with_class(config);
-
-        // Launch terminal in background using nohup and background operator
-        let bg_cmd = format!("nohup {} >/dev/null 2>&1 &", term_cmd);
-
-        Command::new("sh")
-            .args(["-c", &bg_cmd])
-            .output()
-            .context("Failed to launch terminal in background")?;
+        // Launch the terminal in background
+        create_terminal_process(config)?;
 
         // Wait for window to appear
         std::thread::sleep(std::time::Duration::from_millis(500));
 
-        println!("Scratchpad terminal created with window rules");
+        println!("Scratchpad terminal '{}' created with window rules", config.name);
     }
 
     Ok(())
@@ -139,22 +191,23 @@ fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
 
 /// Check if scratchpad terminal is currently visible
 pub fn is_scratchpad_visible(compositor: &CompositorType, config: &ScratchpadConfig) -> Result<bool> {
+    let window_class = config.window_class();
     match compositor {
         CompositorType::Sway => {
             let tree = swaymsg_get_tree()?;
             // Look for the window and check if it's visible (not in scratchpad)
-            Ok(tree.contains(&format!("\"app_id\": \"{}\"", config.window_class))
-               && !tree.contains(&format!("\"app_id\": \"{}\".*scratchpad", config.window_class)))
+            Ok(tree.contains(&format!("\"app_id\": \"{}\"", window_class))
+               && !tree.contains(&format!("\"app_id\": \"{}\".*scratchpad", window_class)))
         }
         CompositorType::Hyprland => {
             // For Hyprland, check if special workspace is active AND window exists using direct IPC
-            let workspace_name = "instantscratchpad";
+            let workspace_name = config.workspace_name();
 
             // Check if special workspace is active using direct IPC
-            let special_workspace_active = hyprland_ipc::is_special_workspace_active(workspace_name).unwrap_or(false);
+            let special_workspace_active = hyprland_ipc::is_special_workspace_active(&workspace_name).unwrap_or(false);
 
             // Check if window exists using direct IPC
-            let window_exists = hyprland_ipc::window_exists(&config.window_class).unwrap_or(false);
+            let window_exists = hyprland_ipc::window_exists(&window_class).unwrap_or(false);
 
             Ok(special_workspace_active && window_exists)
         }
@@ -191,28 +244,63 @@ pub fn hide_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -
     }
 }
 
+/// Create and launch terminal in background
+fn create_terminal_process(config: &ScratchpadConfig) -> Result<()> {
+    let term_cmd = get_terminal_command_with_class(config);
+    let bg_cmd = format!("nohup {} >/dev/null 2>&1 &", term_cmd);
+
+    Command::new("sh")
+        .args(["-c", &bg_cmd])
+        .output()
+        .context("Failed to launch terminal in background")?;
+
+    Ok(())
+}
+
 /// Show scratchpad terminal for Sway
 fn show_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
     // Check if scratchpad terminal exists
     let tree = swaymsg_get_tree()?;
-    let window_exists = tree.contains(&format!("\"app_id\": \"{}\"", config.window_class));
+    let window_class = config.window_class();
+    let window_exists = tree.contains(&format!("\"app_id\": \"{}\"", window_class));
 
     if window_exists {
         // Terminal exists, show it
-        let message = format!("[app_id=\"{}\"] scratchpad show", config.window_class);
+        let message = format!("[app_id=\"{}\"] scratchpad show", window_class);
         swaymsg(&message)?;
-        println!("Showed scratchpad terminal");
+        println!("Showed scratchpad terminal '{}'", config.name);
     } else {
         // Terminal doesn't exist, create and configure it
-        create_and_configure_sway_scratchpad(config)?;
+        println!("Creating new scratchpad terminal '{}'...", config.name);
+
+        // Launch the terminal in background
+        create_terminal_process(config)?;
+
+        // Wait a moment for the window to appear
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        // Configure the new window
+        let config_commands = vec![
+            format!("[app_id=\"{}\"] floating enable", window_class),
+            format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
+                   window_class, config.width_pct, config.height_pct),
+            format!("[app_id=\"{}\"] move position center", window_class),
+            format!("[app_id=\"{}\"] move to scratchpad", window_class),
+        ];
+
+        for cmd in config_commands {
+            if let Err(e) = swaymsg(&cmd) {
+                eprintln!("Warning: Failed to configure window: {}", e);
+            }
+        }
 
         // Show it immediately
-        let show_message = format!("[app_id=\"{}\"] scratchpad show", config.window_class);
+        let show_message = format!("[app_id=\"{}\"] scratchpad show", window_class);
         if let Err(e) = swaymsg(&show_message) {
             eprintln!("Warning: Failed to show scratchpad: {}", e);
         }
 
-        println!("Scratchpad terminal created and shown");
+        println!("Scratchpad terminal '{}' created and shown", config.name);
     }
 
     Ok(())
@@ -222,22 +310,23 @@ fn show_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
 fn hide_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
     // Check if scratchpad terminal exists
     let tree = swaymsg_get_tree()?;
-    let window_exists = tree.contains(&format!("\"app_id\": \"{}\"", config.window_class));
+    let window_class = config.window_class();
+    let window_exists = tree.contains(&format!("\"app_id\": \"{}\"", window_class));
 
     if window_exists {
         // Check if it's currently visible (not in scratchpad)
-        let is_visible = !tree.contains(&format!("\"app_id\": \"{}\".*scratchpad", config.window_class));
+        let is_visible = !tree.contains(&format!("\"app_id\": \"{}\".*scratchpad", window_class));
 
         if is_visible {
             // Terminal is visible, move it to scratchpad (hide it)
-            let message = format!("[app_id=\"{}\"] move to scratchpad", config.window_class);
+            let message = format!("[app_id=\"{}\"] move to scratchpad", window_class);
             swaymsg(&message)?;
-            println!("Hid scratchpad terminal");
+            println!("Hid scratchpad terminal '{}'", config.name);
         } else {
-            println!("Scratchpad terminal is already hidden");
+            println!("Scratchpad terminal '{}' is already hidden", config.name);
         }
     } else {
-        println!("Scratchpad terminal does not exist");
+        println!("Scratchpad terminal '{}' does not exist", config.name);
     }
 
     Ok(())
@@ -245,40 +334,33 @@ fn hide_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
 
 /// Show scratchpad terminal for Hyprland
 fn show_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
-    let workspace_name = "instantscratchpad";
+    let workspace_name = config.workspace_name();
+    let window_class = config.window_class();
 
     // Check if terminal with specific class exists using direct IPC
-    let window_exists = hyprland_ipc::window_exists(&config.window_class)?;
+    let window_exists = hyprland_ipc::window_exists(&window_class)?;
 
     if window_exists {
         // Terminal exists, show special workspace using direct IPC
-        hyprland_ipc::show_special_workspace(workspace_name)?;
-        println!("Showed scratchpad terminal");
+        hyprland_ipc::show_special_workspace(&workspace_name)?;
+        println!("Showed scratchpad terminal '{}'", config.name);
     } else {
         // Terminal doesn't exist, create it with proper rules
-        println!("Creating new scratchpad terminal...");
+        println!("Creating new scratchpad terminal '{}'...", config.name);
 
         // Setup window rules first using direct IPC
-        hyprland_ipc::setup_window_rules(workspace_name, &config.window_class)?;
+        hyprland_ipc::setup_window_rules(&workspace_name, &window_class)?;
 
-        // Prepare terminal command with appropriate class
-        let term_cmd = get_terminal_command_with_class(config);
-
-        // Launch terminal in background using nohup and background operator
-        let bg_cmd = format!("nohup {} >/dev/null 2>&1 &", term_cmd);
-
-        Command::new("sh")
-            .args(["-c", &bg_cmd])
-            .output()
-            .context("Failed to launch terminal in background")?;
+        // Launch the terminal in background
+        create_terminal_process(config)?;
 
         // Wait a moment for the window to appear and be configured
         std::thread::sleep(std::time::Duration::from_millis(1000));
 
         // Show the special workspace using direct IPC
-        hyprland_ipc::show_special_workspace(workspace_name)?;
+        hyprland_ipc::show_special_workspace(&workspace_name)?;
 
-        println!("Scratchpad terminal created and shown");
+        println!("Scratchpad terminal '{}' created and shown", config.name);
     }
 
     Ok(())
@@ -286,24 +368,25 @@ fn show_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
 
 /// Hide scratchpad terminal for Hyprland
 fn hide_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
-    let workspace_name = "instantscratchpad";
+    let workspace_name = config.workspace_name();
+    let window_class = config.window_class();
 
     // Check if terminal with specific class exists using direct IPC
-    let window_exists = hyprland_ipc::window_exists(&config.window_class)?;
+    let window_exists = hyprland_ipc::window_exists(&window_class)?;
 
     if window_exists {
         // Check if special workspace is currently active
-        let is_visible = hyprland_ipc::is_special_workspace_active(workspace_name).unwrap_or(false);
+        let is_visible = hyprland_ipc::is_special_workspace_active(&workspace_name).unwrap_or(false);
 
         if is_visible {
             // Terminal is visible, hide special workspace using direct IPC
-            hyprland_ipc::hide_special_workspace(workspace_name)?;
-            println!("Hid scratchpad terminal");
+            hyprland_ipc::hide_special_workspace(&workspace_name)?;
+            println!("Hid scratchpad terminal '{}'", config.name);
         } else {
-            println!("Scratchpad terminal is already hidden");
+            println!("Scratchpad terminal '{}' is already hidden", config.name);
         }
     } else {
-        println!("Scratchpad terminal does not exist");
+        println!("Scratchpad terminal '{}' does not exist", config.name);
     }
 
     Ok(())
@@ -316,55 +399,68 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = ScratchpadConfig::default();
-        assert_eq!(config.window_class, "scratchpad_term");
+        assert_eq!(config.name, "instantscratchpad");
+        assert_eq!(config.window_class(), "scratchpad_instantscratchpad");
+        assert_eq!(config.workspace_name(), "scratchpad_instantscratchpad");
         assert_eq!(config.terminal_command, "kitty");
+        assert_eq!(config.inner_command, None);
         assert_eq!(config.width_pct, 50);
         assert_eq!(config.height_pct, 60);
     }
 
     #[test]
     fn test_custom_config() {
-        let config = ScratchpadConfig {
-            window_class: "my_scratch".to_string(),
-            terminal_command: "kitty".to_string(),
-            width_pct: 70,
-            height_pct: 80,
-        };
+        let config = ScratchpadConfig::with_params(
+            "my_scratch".to_string(),
+            "alacritty".to_string(),
+            Some("fish".to_string()),
+            70,
+            80,
+        );
 
-        assert_eq!(config.window_class, "my_scratch");
-        assert_eq!(config.terminal_command, "kitty");
+        assert_eq!(config.name, "my_scratch");
+        assert_eq!(config.window_class(), "scratchpad_my_scratch");
+        assert_eq!(config.workspace_name(), "scratchpad_my_scratch");
+        assert_eq!(config.terminal_command, "alacritty");
+        assert_eq!(config.inner_command, Some("fish".to_string()));
         assert_eq!(config.width_pct, 70);
         assert_eq!(config.height_pct, 80);
     }
 
     #[test]
     fn test_get_terminal_command_with_class() {
-        let config = ScratchpadConfig {
-            window_class: "test_class".to_string(),
-            terminal_command: "alacritty".to_string(),
-            width_pct: 50,
-            height_pct: 60,
-        };
+        // Test without inner command
+        let config = ScratchpadConfig::with_params(
+            "test".to_string(),
+            "alacritty".to_string(),
+            None,
+            50,
+            60,
+        );
 
         let cmd = get_terminal_command_with_class(&config);
-        assert_eq!(cmd, "alacritty --class test_class");
+        assert_eq!(cmd, "alacritty --class scratchpad_test");
 
-        let config_kitty = ScratchpadConfig {
-            window_class: "test_class".to_string(),
-            terminal_command: "kitty".to_string(),
-            width_pct: 50,
-            height_pct: 60,
-        };
+        // Test with inner command
+        let config_with_cmd = ScratchpadConfig::with_params(
+            "test".to_string(),
+            "kitty".to_string(),
+            Some("fish".to_string()),
+            50,
+            60,
+        );
 
-        let cmd_kitty = get_terminal_command_with_class(&config_kitty);
-        assert_eq!(cmd_kitty, "kitty --class test_class");
+        let cmd_with_inner = get_terminal_command_with_class(&config_with_cmd);
+        assert_eq!(cmd_with_inner, "kitty --class scratchpad_test -e fish");
 
-        let config_other = ScratchpadConfig {
-            window_class: "test_class".to_string(),
-            terminal_command: "wezterm".to_string(),
-            width_pct: 50,
-            height_pct: 60,
-        };
+        // Test unsupported terminal
+        let config_other = ScratchpadConfig::with_params(
+            "test".to_string(),
+            "wezterm".to_string(),
+            None,
+            50,
+            60,
+        );
 
         let cmd_other = get_terminal_command_with_class(&config_other);
         assert_eq!(cmd_other, "wezterm");
@@ -391,51 +487,27 @@ mod tests {
     }
 }
 
-/// Create and configure a new scratchpad terminal for Sway
-fn create_and_configure_sway_scratchpad(config: &ScratchpadConfig) -> Result<()> {
-    println!("Creating new scratchpad terminal...");
 
-    // Launch the terminal in background
-    let term_cmd = get_terminal_command_with_class(config);
 
-    // Launch terminal in background using nohup and background operator
-    // This ensures the terminal continues running after our command exits
-    let bg_cmd = format!("nohup {} >/dev/null 2>&1 &", term_cmd);
-
-    Command::new("sh")
-        .args(["-c", &bg_cmd])
-        .output()
-        .context("Failed to launch terminal in background")?;
-
-    // Wait a moment for the window to appear
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    // Configure the new window
-    let config_commands = vec![
-        format!("[app_id=\"{}\"] floating enable", config.window_class),
-        format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
-               config.window_class, config.width_pct, config.height_pct),
-        format!("[app_id=\"{}\"] move position center", config.window_class),
-        format!("[app_id=\"{}\"] move to scratchpad", config.window_class),
-    ];
-
-    for cmd in config_commands {
-        if let Err(e) = swaymsg(&cmd) {
-            eprintln!("Warning: Failed to configure window: {}", e);
-            // Don't fail completely if configuration fails
-        }
-    }
-
-    Ok(())
-}
-
-/// Get terminal command with appropriate class flag
+/// Get terminal command with appropriate class flag and inner command
 fn get_terminal_command_with_class(config: &ScratchpadConfig) -> String {
-    // Add class flag for supported terminals
-    match config.terminal_command.as_str() {
-        "alacritty" => format!("{} --class {}", config.terminal_command, config.window_class),
-        "kitty" => format!("{} --class {}", config.terminal_command, config.window_class),
+    let window_class = config.window_class();
+    let base_cmd = match config.terminal_command.as_str() {
+        "alacritty" => format!("{} --class {}", config.terminal_command, window_class),
+        "kitty" => format!("{} --class {}", config.terminal_command, window_class),
         _ => config.terminal_command.clone(),
+    };
+
+    // Add inner command if specified
+    if let Some(ref inner_cmd) = config.inner_command {
+        match config.terminal_command.as_str() {
+            "alacritty" => format!("{} -e {}", base_cmd, inner_cmd),
+            "kitty" => format!("{} -e {}", base_cmd, inner_cmd),
+            "wezterm" => format!("{} -e {}", base_cmd, inner_cmd),
+            _ => format!("{} -e {}", base_cmd, inner_cmd),
+        }
+    } else {
+        base_cmd
     }
 }
 
@@ -452,26 +524,23 @@ pub fn handle_scratchpad_command(command: ScratchpadCommands, debug: bool) -> Re
     }
 
     match command {
-        ScratchpadCommands::Toggle {
-            window_class,
-            terminal,
-            width_pct,
-            height_pct,
-        } => {
+        ScratchpadCommands::Toggle { args } => {
             if debug {
                 eprintln!("Toggle scratchpad with config:");
-                eprintln!("  window_class: {}", window_class);
-                eprintln!("  terminal: {}", terminal);
-                eprintln!("  width_pct: {}", width_pct);
-                eprintln!("  height_pct: {}", height_pct);
+                eprintln!("  name: {}", args.name);
+                eprintln!("  terminal: {}", args.terminal);
+                eprintln!("  command: {:?}", args.command);
+                eprintln!("  width_pct: {}", args.width_pct);
+                eprintln!("  height_pct: {}", args.height_pct);
             }
 
-            let config = ScratchpadConfig {
-                window_class,
-                terminal_command: terminal,
-                width_pct,
-                height_pct,
-            };
+            let config = ScratchpadConfig::with_params(
+                args.name,
+                args.terminal,
+                args.command,
+                args.width_pct,
+                args.height_pct,
+            );
 
             match toggle_scratchpad(&compositor, &config) {
                 Ok(()) => Ok(0),
@@ -481,26 +550,23 @@ pub fn handle_scratchpad_command(command: ScratchpadCommands, debug: bool) -> Re
                 }
             }
         }
-        ScratchpadCommands::Show {
-            window_class,
-            terminal,
-            width_pct,
-            height_pct,
-        } => {
+        ScratchpadCommands::Show { args } => {
             if debug {
                 eprintln!("Show scratchpad with config:");
-                eprintln!("  window_class: {}", window_class);
-                eprintln!("  terminal: {}", terminal);
-                eprintln!("  width_pct: {}", width_pct);
-                eprintln!("  height_pct: {}", height_pct);
+                eprintln!("  name: {}", args.name);
+                eprintln!("  terminal: {}", args.terminal);
+                eprintln!("  command: {:?}", args.command);
+                eprintln!("  width_pct: {}", args.width_pct);
+                eprintln!("  height_pct: {}", args.height_pct);
             }
 
-            let config = ScratchpadConfig {
-                window_class,
-                terminal_command: terminal,
-                width_pct,
-                height_pct,
-            };
+            let config = ScratchpadConfig::with_params(
+                args.name,
+                args.terminal,
+                args.command,
+                args.width_pct,
+                args.height_pct,
+            );
 
             match show_scratchpad(&compositor, &config) {
                 Ok(()) => Ok(0),
@@ -510,15 +576,12 @@ pub fn handle_scratchpad_command(command: ScratchpadCommands, debug: bool) -> Re
                 }
             }
         }
-        ScratchpadCommands::Hide { window_class } => {
+        ScratchpadCommands::Hide { args } => {
             if debug {
-                eprintln!("Hide scratchpad for: {}", window_class);
+                eprintln!("Hide scratchpad for: {}", args.name);
             }
 
-            let config = ScratchpadConfig {
-                window_class,
-                ..Default::default()
-            };
+            let config = ScratchpadConfig::new(args.name);
 
             match hide_scratchpad(&compositor, &config) {
                 Ok(()) => Ok(0),
@@ -528,15 +591,12 @@ pub fn handle_scratchpad_command(command: ScratchpadCommands, debug: bool) -> Re
                 }
             }
         }
-        ScratchpadCommands::Status { window_class } => {
+        ScratchpadCommands::Status { args } => {
             if debug {
-                eprintln!("Check scratchpad status for: {}", window_class);
+                eprintln!("Check scratchpad status for: {}", args.name);
             }
 
-            let config = ScratchpadConfig {
-                window_class,
-                ..Default::default()
-            };
+            let config = ScratchpadConfig::new(args.name);
 
             match is_scratchpad_visible(&compositor, &config) {
                 Ok(visible) => {
@@ -557,48 +617,54 @@ pub fn handle_scratchpad_command(command: ScratchpadCommands, debug: bool) -> Re
     }
 }
 
+/// Shared arguments for scratchpad commands that create/configure terminals
+#[derive(clap::Args, Debug, Clone)]
+pub struct ScratchpadCreateArgs {
+    /// Scratchpad name (used as prefix for window class)
+    #[arg(long, default_value = "instantscratchpad")]
+    pub name: String,
+    /// Terminal command to launch
+    #[arg(long, default_value = "kitty")]
+    pub terminal: String,
+    /// Command to run inside the terminal (e.g., "fish", "ranger", "yazi")
+    #[arg(long)]
+    pub command: Option<String>,
+    /// Terminal width as percentage of screen
+    #[arg(long, default_value = "50")]
+    pub width_pct: u32,
+    /// Terminal height as percentage of screen
+    #[arg(long, default_value = "60")]
+    pub height_pct: u32,
+}
+
+/// Shared arguments for scratchpad commands that only need identification
+#[derive(clap::Args, Debug, Clone)]
+pub struct ScratchpadIdentifyArgs {
+    /// Scratchpad name (used as prefix for window class)
+    #[arg(long, default_value = "instantscratchpad")]
+    pub name: String,
+}
+
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum ScratchpadCommands {
     /// Toggle scratchpad terminal visibility
     Toggle {
-        /// Window class/app_id for the scratchpad terminal
-        #[arg(long, default_value = "scratchpad_term")]
-        window_class: String,
-        /// Terminal command to launch
-        #[arg(long, default_value = "kitty")]
-        terminal: String,
-        /// Terminal width as percentage of screen
-        #[arg(long, default_value = "50")]
-        width_pct: u32,
-        /// Terminal height as percentage of screen
-        #[arg(long, default_value = "60")]
-        height_pct: u32,
+        #[command(flatten)]
+        args: ScratchpadCreateArgs,
     },
     /// Show scratchpad terminal (create if it doesn't exist)
     Show {
-        /// Window class/app_id for the scratchpad terminal
-        #[arg(long, default_value = "scratchpad_term")]
-        window_class: String,
-        /// Terminal command to launch
-        #[arg(long, default_value = "kitty")]
-        terminal: String,
-        /// Terminal width as percentage of screen
-        #[arg(long, default_value = "50")]
-        width_pct: u32,
-        /// Terminal height as percentage of screen
-        #[arg(long, default_value = "60")]
-        height_pct: u32,
+        #[command(flatten)]
+        args: ScratchpadCreateArgs,
     },
     /// Hide scratchpad terminal
     Hide {
-        /// Window class/app_id for the scratchpad terminal
-        #[arg(long, default_value = "scratchpad_term")]
-        window_class: String,
+        #[command(flatten)]
+        args: ScratchpadIdentifyArgs,
     },
     /// Check if scratchpad terminal is currently visible
     Status {
-        /// Window class/app_id for the scratchpad terminal
-        #[arg(long, default_value = "scratchpad_term")]
-        window_class: String,
+        #[command(flatten)]
+        args: ScratchpadIdentifyArgs,
     },
 }
