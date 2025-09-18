@@ -123,28 +123,7 @@ fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
         println!("Toggled scratchpad terminal '{}' visibility", config.name);
     } else {
         // Terminal doesn't exist, create and configure it
-        println!("Creating new scratchpad terminal '{}'...", config.name);
-
-        // Launch the terminal in background
-        create_terminal_process(config)?;
-
-        // Wait a moment for the window to appear
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        // Configure the new window
-        let config_commands = vec![
-            format!("[app_id=\"{}\"] floating enable", window_class),
-            format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
-                   window_class, config.width_pct, config.height_pct),
-            format!("[app_id=\"{}\"] move position center", window_class),
-            format!("[app_id=\"{}\"] move to scratchpad", window_class),
-        ];
-
-        for cmd in config_commands {
-            if let Err(e) = swaymsg(&cmd) {
-                eprintln!("Warning: Failed to configure window: {}", e);
-            }
-        }
+        create_and_configure_sway_scratchpad(config)?;
 
         // Show it immediately
         let show_message = format!("[app_id=\"{}\"] scratchpad show", window_class);
@@ -172,17 +151,7 @@ fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
         println!("Toggled scratchpad terminal '{}' visibility", config.name);
     } else {
         // Terminal doesn't exist, create it with proper rules
-        println!("Creating new scratchpad terminal '{}'...", config.name);
-
-        // Setup window rules first using direct IPC
-        hyprland_ipc::setup_window_rules(&workspace_name, &window_class)?;
-
-        // Launch the terminal in background
-        create_terminal_process(config)?;
-
-        // Wait for window to appear
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
+        create_and_configure_hyprland_scratchpad(config)?;
         println!("Scratchpad terminal '{}' created with window rules", config.name);
     }
 
@@ -257,6 +226,54 @@ fn create_terminal_process(config: &ScratchpadConfig) -> Result<()> {
     Ok(())
 }
 
+/// Create and configure a new scratchpad terminal for Sway
+fn create_and_configure_sway_scratchpad(config: &ScratchpadConfig) -> Result<()> {
+    println!("Creating new scratchpad terminal '{}'...", config.name);
+
+    // Launch the terminal in background
+    create_terminal_process(config)?;
+
+    // Wait a moment for the window to appear
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // Configure the new window
+    let window_class = config.window_class();
+    let config_commands = vec![
+        format!("[app_id=\"{}\"] floating enable", window_class),
+        format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
+               window_class, config.width_pct, config.height_pct),
+        format!("[app_id=\"{}\"] move position center", window_class),
+        format!("[app_id=\"{}\"] move to scratchpad", window_class),
+    ];
+
+    for cmd in config_commands {
+        if let Err(e) = swaymsg(&cmd) {
+            eprintln!("Warning: Failed to configure window: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+/// Create and configure a new scratchpad terminal for Hyprland
+fn create_and_configure_hyprland_scratchpad(config: &ScratchpadConfig) -> Result<()> {
+    println!("Creating new scratchpad terminal '{}'...", config.name);
+
+    let workspace_name = config.workspace_name();
+    let window_class = config.window_class();
+
+    // Setup window rules first using direct IPC
+    hyprland_ipc::setup_window_rules(&workspace_name, &window_class)?;
+
+    // Launch the terminal in background
+    create_terminal_process(config)?;
+
+    // Wait for window to appear
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    Ok(())
+}
+
 /// Show scratchpad terminal for Sway
 fn show_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
     // Check if scratchpad terminal exists
@@ -271,28 +288,7 @@ fn show_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
         println!("Showed scratchpad terminal '{}'", config.name);
     } else {
         // Terminal doesn't exist, create and configure it
-        println!("Creating new scratchpad terminal '{}'...", config.name);
-
-        // Launch the terminal in background
-        create_terminal_process(config)?;
-
-        // Wait a moment for the window to appear
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        // Configure the new window
-        let config_commands = vec![
-            format!("[app_id=\"{}\"] floating enable", window_class),
-            format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
-                   window_class, config.width_pct, config.height_pct),
-            format!("[app_id=\"{}\"] move position center", window_class),
-            format!("[app_id=\"{}\"] move to scratchpad", window_class),
-        ];
-
-        for cmd in config_commands {
-            if let Err(e) = swaymsg(&cmd) {
-                eprintln!("Warning: Failed to configure window: {}", e);
-            }
-        }
+        create_and_configure_sway_scratchpad(config)?;
 
         // Show it immediately
         let show_message = format!("[app_id=\"{}\"] scratchpad show", window_class);
@@ -346,16 +342,10 @@ fn show_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
         println!("Showed scratchpad terminal '{}'", config.name);
     } else {
         // Terminal doesn't exist, create it with proper rules
-        println!("Creating new scratchpad terminal '{}'...", config.name);
-
-        // Setup window rules first using direct IPC
-        hyprland_ipc::setup_window_rules(&workspace_name, &window_class)?;
-
-        // Launch the terminal in background
-        create_terminal_process(config)?;
+        create_and_configure_hyprland_scratchpad(config)?;
 
         // Wait a moment for the window to appear and be configured
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        std::thread::sleep(std::time::Duration::from_millis(500));
 
         // Show the special workspace using direct IPC
         hyprland_ipc::show_special_workspace(&workspace_name)?;
