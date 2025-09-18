@@ -19,7 +19,7 @@ impl Default for ScratchpadConfig {
     fn default() -> Self {
         Self {
             window_class: "scratchpad_term".to_string(),
-            terminal_command: "alacritty".to_string(),
+            terminal_command: "kitty".to_string(),
             width_pct: 50,
             height_pct: 60,
         }
@@ -148,20 +148,11 @@ fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
         println!("Creating new scratchpad terminal...");
 
         // Launch the terminal in background
-        let mut term_cmd = config.terminal_command.clone();
-        // TODO: unify, also change default to kitty
-        if config.terminal_command == "alacritty" {
-            term_cmd = format!("{} --class {}", config.terminal_command, config.window_class);
-        }
+        let term_cmd = get_terminal_command_with_class(config);
 
         // Launch terminal in background using nohup and background operator
         // This ensures the terminal continues running after our command exits
-        // TODO: this only needs linux support, remove the other thing
-        let bg_cmd = if cfg!(unix) {
-            format!("nohup {} >/dev/null 2>&1 &", term_cmd)
-        } else {
-            format!("start /b {}", term_cmd)
-        };
+        let bg_cmd = format!("nohup {} >/dev/null 2>&1 &", term_cmd);
 
         Command::new("sh")
             .args(["-c", &bg_cmd])
@@ -218,21 +209,10 @@ fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
         setup_hyprland_window_rules(workspace_name, &config.window_class)?;
 
         // Prepare terminal command with appropriate class
-        // TODO: this is duplicated between sway and hyprland, unify
-        let mut term_cmd = config.terminal_command.clone();
-        if config.terminal_command == "alacritty" {
-            term_cmd = format!("{} --class {}", config.terminal_command, config.window_class);
-        } else if config.terminal_command == "kitty" {
-            term_cmd = format!("{} --class {}", config.terminal_command, config.window_class);
-        }
+        let term_cmd = get_terminal_command_with_class(config);
 
         // Launch terminal in background using nohup and background operator
-        // TODO: only support linux, remove the other thing
-        let bg_cmd = if cfg!(unix) {
-            format!("nohup {} >/dev/null 2>&1 &", term_cmd)
-        } else {
-            format!("start /b {}", term_cmd)
-        };
+        let bg_cmd = format!("nohup {} >/dev/null 2>&1 &", term_cmd);
 
         Command::new("sh")
             .args(["-c", &bg_cmd])
@@ -308,6 +288,16 @@ mod tests {
         assert_eq!(config.terminal_command, "kitty");
         assert_eq!(config.width_pct, 70);
         assert_eq!(config.height_pct, 80);
+    }
+}
+
+/// Get terminal command with appropriate class flag
+fn get_terminal_command_with_class(config: &ScratchpadConfig) -> String {
+    // Add class flag for supported terminals
+    match config.terminal_command.as_str() {
+        "alacritty" => format!("{} --class {}", config.terminal_command, config.window_class),
+        "kitty" => format!("{} --class {}", config.terminal_command, config.window_class),
+        _ => config.terminal_command.clone(),
     }
 }
 
@@ -390,7 +380,7 @@ pub enum ScratchpadCommands {
         #[arg(long, default_value = "scratchpad_term")]
         window_class: String,
         /// Terminal command to launch
-        #[arg(long, default_value = "alacritty")]
+        #[arg(long, default_value = "kitty")]
         terminal: String,
         /// Terminal width as percentage of screen
         #[arg(long, default_value = "50")]
