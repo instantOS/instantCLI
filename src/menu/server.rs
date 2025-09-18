@@ -236,6 +236,15 @@ impl MenuServer {
                 self.running.store(false, Ordering::SeqCst);
                 Ok(MenuResponse::StopResult)
             }
+            MenuRequest::Show => {
+                // Show the scratchpad without any other action
+                match self.show_scratchpad() {
+                    Ok(_) => Ok(MenuResponse::ShowResult),
+                    Err(e) => Ok(MenuResponse::Error(format!(
+                        "Failed to show scratchpad: {e}"
+                    ))),
+                }
+            }
         };
 
         // Hide scratchpad after processing (for interactive requests only)

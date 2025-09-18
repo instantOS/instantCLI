@@ -5,6 +5,7 @@ use protocol::SerializableMenuItem;
 pub mod client;
 pub mod protocol;
 pub mod server;
+use client::MenuClient;
 
 /// Handle menu commands for shell scripts
 pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
@@ -124,6 +125,16 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 Ok(1)
             }
         }
+        MenuCommands::Show => {
+            let client = MenuClient::new();
+            match client.show() {
+                Ok(_) => Ok(0),
+                Err(e) => {
+                    eprintln!("✗ Failed to show scratchpad: {e}");
+                    Ok(1)
+                }
+            }
+        }
         MenuCommands::Server { command } => handle_server_command(command).await,
     }
 }
@@ -199,6 +210,8 @@ pub enum MenuCommands {
         #[arg(long)]
         gui: bool,
     },
+    /// Show the scratchpad without any other action
+    Show,
     /// Get menu server status information
     Status,
     /// Menu server management commands

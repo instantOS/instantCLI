@@ -62,6 +62,9 @@ pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
         // Use GUI menu to select application
         let client = client::MenuClient::new();
 
+        // Show the scratchpad first for immediate feedback
+        client.show()?;
+
         // Ensure server is running
         client.ensure_server_running()?;
 

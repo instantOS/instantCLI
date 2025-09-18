@@ -81,6 +81,8 @@ pub enum MenuRequest {
     Status,
     /// Stop the server
     Stop,
+    /// Show the scratchpad without any other action
+    Show,
 }
 
 /// Menu response types sent from server to client
@@ -100,6 +102,8 @@ pub enum MenuResponse {
     Error(String),
     /// Operation was cancelled
     Cancelled,
+    /// Show operation completed successfully
+    ShowResult,
 }
 
 /// Confirmation dialog result

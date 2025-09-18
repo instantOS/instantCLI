@@ -158,6 +158,15 @@ impl MenuClient {
         }
     }
 
+    /// Show the scratchpad without any other action
+    pub fn show(&self) -> Result<()> {
+        match self.send_request(MenuRequest::Show)? {
+            MenuResponse::ShowResult => Ok(()),
+            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
+            _ => anyhow::bail!("Unexpected response type for show request"),
+        }
+    }
+
     /// Get server status information
     pub fn status(&self) -> Result<StatusInfo> {
         match self.send_request(MenuRequest::Status)? {
