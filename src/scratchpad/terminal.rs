@@ -1,6 +1,5 @@
 /// Supported terminal emulators
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Terminal {
     #[default]
     Kitty,
@@ -57,7 +56,6 @@ impl From<&str> for Terminal {
         Terminal::from(s.to_string())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

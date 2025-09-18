@@ -193,9 +193,7 @@ impl FzfWrapper {
     }
 
     pub fn with_options(options: FzfOptions) -> Self {
-        Self {
-            options,
-        }
+        Self { options }
     }
 
     /// Select from a vector of FzfSelectable items
@@ -227,9 +225,7 @@ impl FzfWrapper {
             None
         };
 
-        let preview_script_path = _preview_script_keeper
-            .as_ref()
-            .map(|(_, path)| path);
+        let preview_script_path = _preview_script_keeper.as_ref().map(|(_, path)| path);
 
         // Build fzf command
         let mut cmd = Command::new("fzf");

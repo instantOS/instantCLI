@@ -158,7 +158,6 @@ pub fn dispatch_command(command: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    
 
     #[test]
     fn test_window_exists_parsing() {

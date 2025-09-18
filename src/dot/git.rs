@@ -372,5 +372,3 @@ fn get_repo_name_for_dotfile(dotfile: &super::Dotfile, cfg: &config::Config) -> 
     }
     super::RepoName::new("unknown".to_string())
 }
-
-

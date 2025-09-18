@@ -137,7 +137,6 @@ pub fn hide_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_show_hide_functions_exist() {

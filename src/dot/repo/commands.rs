@@ -146,8 +146,6 @@ fn remove_repository(
         .position(|r| r.name == name)
         .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", name))?;
 
-
-
     if remove_files {
         // Remove the local files
         let repo_manager = RepositoryManager::new(config, db);

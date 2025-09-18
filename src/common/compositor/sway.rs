@@ -86,7 +86,6 @@ pub fn configure_scratchpad_window(
 
 #[cfg(test)]
 mod tests {
-    
 
     #[test]
     fn test_swaymsg_command_format() {

@@ -47,9 +47,7 @@ pub fn wait_for_window_to_appear(
         }
 
         if attempt < max_attempts {
-            eprintln!(
-                "Waiting for window to appear... (attempt {attempt}/{max_attempts})"
-            );
+            eprintln!("Waiting for window to appear... (attempt {attempt}/{max_attempts})");
         }
     }
 
@@ -166,7 +164,6 @@ pub fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_check_window_exists() {

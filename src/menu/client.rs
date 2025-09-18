@@ -108,8 +108,8 @@ impl MenuClient {
         }
 
         // Deserialize response
-        let response_message: MenuResponseMessage = serde_json::from_str(response_json.trim())
-            .context("Failed to deserialize response")?;
+        let response_message: MenuResponseMessage =
+            serde_json::from_str(response_json.trim()).context("Failed to deserialize response")?;
 
         // Verify request ID matches
         if response_message.request_id != message.request_id {

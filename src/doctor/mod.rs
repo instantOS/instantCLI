@@ -162,8 +162,6 @@ pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> 
     results
 }
 
-
-
 // Unified table output functions
 pub fn print_check_list_table(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
     let mut table = Table::new();
