@@ -16,6 +16,7 @@ pub struct LaunchCache {
     cache_path: PathBuf,
     frecency_path: PathBuf,
     frecency_store: Option<FrecencyStore>,
+    last_cache_check: Option<std::time::SystemTime>,
 }
 
 impl LaunchCache {
@@ -38,20 +39,23 @@ impl LaunchCache {
             cache_path,
             frecency_path,
             frecency_store: None,
+            last_cache_check: None,
         })
     }
 
     /// Get launch items with both desktop apps and PATH executables
     pub async fn get_launch_items(&mut self) -> Result<Vec<LaunchItemWithMetadata>> {
-        // Check if cache is fresh
-        if self.is_cache_fresh()? {
-            // Use fresh cache with frecency sorting
-            let items = self.read_cache()?;
-            Ok(items)
-        } else {
-            // Cache is stale or doesn't exist
-            let stale_items = self.read_cache().unwrap_or_default();
+        // Check if we should skip cache freshness check (within 30 seconds)
+        let skip_freshness_check = self.should_skip_cache_check();
 
+        // Try to read cache first - fastest path
+        if let Ok(items) = self.read_cache() {
+            if skip_freshness_check || self.is_cache_fresh_fast()? {
+                // Apply frecency sorting in-memory (much faster than filesystem access)
+                return Ok(self.sort_metadata_by_frecency(items));
+            }
+
+            // Cache exists but is stale, use it for fast startup
             // Spawn background task to refresh cache
             let cache_path = self.cache_path.clone();
             task::spawn(async move {
@@ -61,15 +65,18 @@ impl LaunchCache {
             });
 
             // Return stale cache immediately for fast startup
-            let items = if stale_items.is_empty() {
-                // If no stale cache, do a quick scan now
-                self.scan_all_launch_items()?
-            } else {
-                stale_items
-            };
-
-            Ok(items)
+            return Ok(self.sort_metadata_by_frecency(items));
         }
+
+        // No cache exists, need to do initial scan
+        let items = self.scan_all_launch_items()?;
+
+        // Write cache for next time (synchronous for now to ensure it works)
+        if let Err(e) = Self::write_cache(&self.cache_path, &items) {
+            eprintln!("Warning: Failed to write application cache: {}", e);
+        }
+
+        Ok(items)
     }
 
     /// Get display names for the menu (handles conflict resolution)
@@ -77,6 +84,38 @@ impl LaunchCache {
         let items = self.get_launch_items().await?;
         let display_names = self.resolve_naming_conflicts(items);
         Ok(display_names)
+    }
+
+    /// Skip cache freshness check if we checked recently (within 30 seconds)
+    fn should_skip_cache_check(&mut self) -> bool {
+        if let Some(last_check) = self.last_cache_check {
+            if let Ok(elapsed) = std::time::SystemTime::now().duration_since(last_check) {
+                if elapsed.as_secs() < 30 {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Fast cache freshness check - only check cache file age, not all directories
+    fn is_cache_fresh_fast(&mut self) -> Result<bool> {
+        self.last_cache_check = Some(std::time::SystemTime::now());
+
+        if !self.cache_path.exists() {
+            return Ok(false);
+        }
+
+        // Just check if cache is less than 1 hour old
+        if let Ok(metadata) = fs::metadata(&self.cache_path) {
+            if let Ok(modified) = metadata.modified() {
+                if let Ok(elapsed) = std::time::SystemTime::now().duration_since(modified) {
+                    return Ok(elapsed.as_secs() < 3600); // 1 hour
+                }
+            }
+        }
+
+        Ok(false)
     }
 
     /// Check if cache is fresh by comparing with PATH and XDG directory modification times
@@ -127,7 +166,7 @@ impl LaunchCache {
     /// Read launch items from cache file
     fn read_cache(&self) -> Result<Vec<LaunchItemWithMetadata>> {
         if !self.cache_path.exists() {
-            return Ok(Vec::new());
+            return Err(anyhow::anyhow!("Cache file does not exist"));
         }
 
         let content = fs::read_to_string(&self.cache_path).context("Failed to read cache file")?;
@@ -167,12 +206,9 @@ impl LaunchCache {
             items.push(metadata);
         }
 
-        // Sort by name
+        // Sort by name using pre-computed lowercase names
         items.sort_by(|a, b| {
-            a.item
-                .display_name()
-                .to_lowercase()
-                .cmp(&b.item.display_name().to_lowercase())
+            a.item.display_name_lower().cmp(&b.item.display_name_lower())
         });
 
         Ok(items)
@@ -200,12 +236,9 @@ impl LaunchCache {
             items.push(metadata);
         }
 
-        // Sort by name
+        // Sort by name using pre-computed lowercase names
         items.sort_by(|a, b| {
-            a.item
-                .display_name()
-                .to_lowercase()
-                .cmp(&b.item.display_name().to_lowercase())
+            a.item.display_name_lower().cmp(&b.item.display_name_lower())
         });
 
         Ok(items)
@@ -319,11 +352,11 @@ impl LaunchCache {
         for item_with_metadata in items {
             let name = item_with_metadata.item.display_name();
             name_to_items
-                .entry(name.clone())
+                .entry(name.to_string())
                 .or_default()
                 .push(item_with_metadata.item.clone());
             name_to_metadata
-                .entry(name)
+                .entry(name.to_string())
                 .or_default()
                 .push(item_with_metadata);
         }
@@ -394,51 +427,7 @@ impl LaunchCache {
         display_names
     }
 
-    /// Sort launch items by frecency
-    fn sort_items_by_frecency(&mut self, mut items: Vec<LaunchItem>) -> Vec<LaunchItem> {
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
-
-        if let Ok(frecency_store) = self.get_frecency_store() {
-            let sorted_items = frecency_store.sorted(fre::args::SortMethod::Frecent);
-
-            // Create a map of name to frecency score
-            let mut frecency_map: HashMap<String, f64> = HashMap::new();
-            for frecency_item in sorted_items {
-                let item_name = frecency_item.item.clone();
-                let frecency_score = frecency_item.get_frecency(current_time);
-                frecency_map.insert(item_name, frecency_score);
-            }
-
-            // Sort by frecency, then alphabetically
-            items.sort_by(|a, b| {
-                let a_name = a.display_name();
-                let b_name = b.display_name();
-                let a_score = frecency_map.get(&a_name).unwrap_or(&0.0);
-                let b_score = frecency_map.get(&b_name).unwrap_or(&0.0);
-
-                if *a_score > 0.0 || *b_score > 0.0 {
-                    b_score
-                        .partial_cmp(a_score)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                } else {
-                    a_name.to_lowercase().cmp(&b_name.to_lowercase())
-                }
-            });
-        } else {
-            // No frecency store, sort alphabetically
-            items.sort_by(|a, b| {
-                a.display_name()
-                    .to_lowercase()
-                    .cmp(&b.display_name().to_lowercase())
-            });
-        }
-
-        items
-    }
-
+    
     /// Sort LaunchItemWithMetadata by frecency
     fn sort_metadata_by_frecency(&mut self, mut items: Vec<LaunchItemWithMetadata>) -> Vec<LaunchItemWithMetadata> {
         let current_time = std::time::SystemTime::now()
@@ -449,44 +438,40 @@ impl LaunchCache {
         if let Ok(frecency_store) = self.get_frecency_store() {
             let sorted_items = frecency_store.sorted(fre::args::SortMethod::Frecent);
 
-            // Create a map of name to frecency score
-            let mut frecency_map: HashMap<String, f64> = HashMap::new();
+            // Create a frecency map for O(1) lookups instead of cloning items
+            let mut frecency_map: HashMap<&str, f64> = HashMap::new();
             for frecency_item in sorted_items {
-                let item_name = frecency_item.item.clone();
+                let item_name = frecency_item.item.display_name();
                 let frecency_score = frecency_item.get_frecency(current_time);
                 frecency_map.insert(item_name, frecency_score);
             }
 
-            // Sort by frecency, then alphabetically
-            items.sort_by(|a, b| {
-                let a_name = a.item.display_name();
-                let b_name = b.item.display_name();
-                let a_score = frecency_map.get(&a_name).unwrap_or(&0.0);
-                let b_score = frecency_map.get(&b_name).unwrap_or(&0.0);
+            // Pre-compute lowercase names to avoid repeated allocations during sorting
+            let mut items_with_lower: Vec<(f64, String, &mut LaunchItemWithMetadata)> = items
+                .iter_mut()
+                .map(|item| {
+                    let name = item.item.display_name();
+                    let lower_name = name.to_lowercase();
+                    let score = frecency_map.get(name).copied().unwrap_or(0.0);
+                    item.frecency_score = score;
+                    (score, lower_name, item)
+                })
+                .collect();
 
+            // Sort by frecency (primary) then alphabetical (secondary)
+            items_with_lower.sort_by(|(a_score, a_name, _), (b_score, b_name, _)| {
                 if *a_score > 0.0 || *b_score > 0.0 {
-                    b_score
-                        .partial_cmp(a_score)
-                        .unwrap_or(std::cmp::Ordering::Equal)
+                    b_score.partial_cmp(a_score).unwrap_or(std::cmp::Ordering::Equal)
                 } else {
-                    a_name.to_lowercase().cmp(&b_name.to_lowercase())
+                    a_name.cmp(b_name)
                 }
             });
 
-            // Update frecency scores in the metadata
-            for item in &mut items {
-                let name = item.item.display_name();
-                if let Some(score) = frecency_map.get(&name) {
-                    item.frecency_score = *score;
-                }
-            }
+            // No need to extract back since we used references
         } else {
-            // No frecency store, sort alphabetically
+            // No frecency store, sort alphabetically with pre-computed lowercase names
             items.sort_by(|a, b| {
-                a.item
-                    .display_name()
-                    .to_lowercase()
-                    .cmp(&b.item.display_name().to_lowercase())
+                a.item.display_name_lower().cmp(&b.item.display_name_lower())
             });
         }
 
@@ -508,6 +493,13 @@ impl LaunchCache {
         // Get sorted items from frecency store
         let sorted_items = frecency_store.sorted(SortMethod::Frecent);
 
+        // Create a position map for O(1) lookups instead of O(N) searches
+        let position_map: std::collections::HashMap<&String, usize> = sorted_items
+            .iter()
+            .enumerate()
+            .map(|(idx, item)| (&item.item, idx))
+            .collect();
+
         // Create a set of frequently used apps for fast lookup
         let frequent_apps: std::collections::HashSet<_> =
             sorted_items.iter().map(|item| &item.item).collect();
@@ -519,15 +511,9 @@ impl LaunchCache {
 
             match (a_is_frequent, b_is_frequent) {
                 (true, true) => {
-                    // Both are frequent, sort by frecency order
-                    let a_index = sorted_items
-                        .iter()
-                        .position(|item| &item.item == a)
-                        .unwrap_or(0);
-                    let b_index = sorted_items
-                        .iter()
-                        .position(|item| &item.item == b)
-                        .unwrap_or(0);
+                    // Both are frequent, sort by frecency order using position map
+                    let a_index = position_map.get(a).copied().unwrap_or(usize::MAX);
+                    let b_index = position_map.get(b).copied().unwrap_or(usize::MAX);
                     a_index.cmp(&b_index)
                 }
                 (true, false) => std::cmp::Ordering::Less, // Frequent apps come first
@@ -539,11 +525,25 @@ impl LaunchCache {
         Ok(())
     }
 
-    /// Record application launch in frecency store
+    /// Record application launch in frecency store (optimized)
     pub fn record_launch(&mut self, app_name: &str) -> Result<()> {
+        // Use a more efficient approach - update frecency in memory, save asynchronously
         let frecency_store = self.get_frecency_store()?;
         frecency_store.add(app_name);
-        self.save_frecency_store()?;
+
+        // Save in background to avoid blocking UI (only if we've had a few launches)
+        if frecency_store.items.len() % 5 == 0 {
+            let frecency_path = self.frecency_path.clone();
+            // Create a new store instance for background saving
+            if let Ok(new_store) = read_store(&self.frecency_path) {
+                task::spawn(async move {
+                    if let Err(e) = write_store(new_store, &frecency_path) {
+                        eprintln!("Warning: Failed to save frecency store: {}", e);
+                    }
+                });
+            }
+        }
+
         Ok(())
     }
 

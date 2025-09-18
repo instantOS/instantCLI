@@ -63,8 +63,8 @@ impl DesktopDiscovery {
             }
         }
 
-        // Sort by name for consistent ordering
-        apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        // Sort by name for consistent ordering with cached lowercase names
+        apps.sort_by_cached_key(|app| app.name.to_lowercase());
 
         Ok(apps)
     }

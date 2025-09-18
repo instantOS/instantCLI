@@ -12,11 +12,16 @@ pub enum LaunchItem {
 
 impl LaunchItem {
     /// Get the display name for the launch item
-    pub fn display_name(&self) -> String {
+    pub fn display_name(&self) -> &str {
         match self {
-            LaunchItem::DesktopApp(app) => app.name.clone(),
-            LaunchItem::PathExecutable(name) => name.clone(),
+            LaunchItem::DesktopApp(app) => &app.name,
+            LaunchItem::PathExecutable(name) => name,
         }
+    }
+
+    /// Get the lowercase display name for efficient sorting
+    pub fn display_name_lower(&self) -> String {
+        self.display_name().to_lowercase()
     }
 
     /// Get the display name with potential path: prefix for conflict resolution
