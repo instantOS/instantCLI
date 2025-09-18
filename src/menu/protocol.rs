@@ -79,6 +79,8 @@ pub enum MenuRequest {
     Input { prompt: String },
     /// Get server status information
     Status,
+    /// Stop the server
+    Stop,
 }
 
 /// Menu response types sent from server to client
@@ -92,6 +94,8 @@ pub enum MenuResponse {
     InputResult(String),
     /// Server status information
     StatusResult(StatusInfo),
+    /// Server stop acknowledgment
+    StopResult,
     /// Error occurred
     Error(String),
     /// Operation was cancelled

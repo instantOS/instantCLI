@@ -233,6 +233,11 @@ impl MenuServer {
                 ))),
             },
             MenuRequest::Status => Ok(self.get_status_info()),
+            MenuRequest::Stop => {
+                // Signal the server to stop
+                self.running.store(false, Ordering::SeqCst);
+                Ok(MenuResponse::StopResult)
+            }
         };
 
         // Hide scratchpad after processing (for interactive requests only)

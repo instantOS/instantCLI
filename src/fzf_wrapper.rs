@@ -52,7 +52,7 @@ impl FzfOptions {
     fn default_margin_args() -> Vec<String> {
         vec![
             "--margin".to_string(),
-            "10%,2%".to_string(),  // 10% vertical, 2% horizontal
+            "10%,2%".to_string(), // 10% vertical, 2% horizontal
             "--min-height".to_string(),
             "10".to_string(),
         ]
@@ -62,7 +62,7 @@ impl FzfOptions {
     fn input_margin_args() -> Vec<String> {
         vec![
             "--margin".to_string(),
-            "20%,2%".to_string(),  // 20% vertical, 2% horizontal
+            "20%,2%".to_string(), // 20% vertical, 2% horizontal
             "--min-height".to_string(),
             "10".to_string(),
         ]
@@ -72,7 +72,7 @@ impl FzfOptions {
     fn confirm_margin_args() -> Vec<String> {
         vec![
             "--margin".to_string(),
-            "40%,2%".to_string(),  // 40% vertical, 2% horizontal
+            "40%,2%".to_string(), // 40% vertical, 2% horizontal
             "--min-height".to_string(),
             "10".to_string(),
         ]

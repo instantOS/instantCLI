@@ -138,6 +138,29 @@ pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
                 server::run_server_launch()
             }
         }
+        ServerCommands::Stop => {
+            let client = client::MenuClient::new();
+            match client.stop() {
+                Ok(_) => {
+                    println!("✓ Menu server stopped successfully");
+                    Ok(0)
+                }
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    if error_msg.contains("Server is not running")
+                        || error_msg.contains("Failed to connect")
+                        || error_msg.contains("No such file or directory")
+                        || error_msg.contains("Received empty response")
+                    {
+                        println!("✗ Menu server is not running");
+                        Ok(1)
+                    } else {
+                        eprintln!("Error stopping server: {}", e);
+                        Ok(1)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -193,4 +216,6 @@ pub enum ServerCommands {
         #[arg(long)]
         inside: bool,
     },
+    /// Stop the running menu server
+    Stop,
 }

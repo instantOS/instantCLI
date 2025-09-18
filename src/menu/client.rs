@@ -166,6 +166,56 @@ impl MenuClient {
             _ => anyhow::bail!("Unexpected response type for status request"),
         }
     }
+
+    /// Stop the server
+    pub fn stop(&self) -> Result<()> {
+        // Check if server is running first
+        if !self.is_server_running() {
+            anyhow::bail!("Server is not running");
+        }
+
+        // Don't use ensure_server_running for stop command since we want to stop it
+        let mut stream = self.connect()?;
+
+        // Create message envelope
+        let message = MenuMessage {
+            request_id: generate_request_id(),
+            payload: MenuRequest::Stop,
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        // Serialize and send request
+        let request_json =
+            serde_json::to_string(&message).context("Failed to serialize stop request")?;
+
+        stream.write_all(request_json.as_bytes())?;
+        stream.write_all(b"\n")?; // Message delimiter
+
+        // Read response
+        let mut response_json = String::new();
+        let mut reader = io::BufReader::new(&stream);
+
+        reader.read_line(&mut response_json)?;
+
+        if response_json.is_empty() {
+            anyhow::bail!("Received empty response from server");
+        }
+
+        // Deserialize response
+        let response_message: MenuResponseMessage = serde_json::from_str(&response_json.trim())
+            .context("Failed to deserialize stop response")?;
+
+        // Verify request ID matches
+        if response_message.request_id != message.request_id {
+            anyhow::bail!("Request ID mismatch in stop response");
+        }
+
+        match response_message.payload {
+            MenuResponse::StopResult => Ok(()),
+            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
+            _ => anyhow::bail!("Unexpected response type for stop request"),
+        }
+    }
 }
 
 impl Default for MenuClient {
