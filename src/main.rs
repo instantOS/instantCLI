@@ -7,6 +7,7 @@ mod dev;
 mod doctor;
 mod dot;
 mod fzf_wrapper;
+mod hyprland_ipc;
 mod menu;
 mod scratchpad;
 
