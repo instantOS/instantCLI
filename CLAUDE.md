@@ -194,6 +194,18 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 - `instant menu choice --prompt "Select an item:" --multi`: Show selection menu
 - `instant menu input --prompt "Type a value:"`: Show text input dialog
 
+### Scratchpad Commands
+- `instant scratchpad toggle`: Toggle scratchpad terminal visibility (create if doesn't exist)
+- `instant scratchpad show`: Show scratchpad terminal (create if doesn't exist)
+- `instant scratchpad hide`: Hide scratchpad terminal
+- `instant scratchpad status`: Check if scratchpad terminal is currently visible
+
+All scratchpad commands support these options:
+- `--window-class <CLASS>`: Window class/app_id for the scratchpad terminal (default: "scratchpad_term")
+- `--terminal <TERMINAL>`: Terminal command to launch (default: "kitty")
+- `--width-pct <WIDTH>`: Terminal width as percentage of screen (default: 50)
+- `--height-pct <HEIGHT>`: Terminal height as percentage of screen (default: 60)
+
 ### System Diagnostics
 - `instant doctor`: Run system diagnostics and fixes
 

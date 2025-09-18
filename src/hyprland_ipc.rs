@@ -43,6 +43,26 @@ pub fn toggle_special_workspace(workspace_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Show special workspace using direct IPC
+pub fn show_special_workspace(workspace_name: &str) -> Result<()> {
+    // Check if the special workspace is already active
+    if !is_special_workspace_active(workspace_name)? {
+        // If not active, toggle it to show it
+        toggle_special_workspace(workspace_name)?;
+    }
+    Ok(())
+}
+
+/// Hide special workspace using direct IPC
+pub fn hide_special_workspace(workspace_name: &str) -> Result<()> {
+    // Check if the special workspace is currently active
+    if is_special_workspace_active(workspace_name)? {
+        // If active, toggle it to hide it
+        toggle_special_workspace(workspace_name)?;
+    }
+    Ok(())
+}
+
 /// Check if special workspace is active using direct IPC
 pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
     let workspaces = Workspaces::get()
