@@ -44,32 +44,32 @@ impl MenuClient {
         self.connect().is_ok()
     }
 
-    /// Spawn server if not running
+    /// Spawn server if not running using scratchpad architecture
     pub fn ensure_server_running(&self) -> Result<()> {
         if self.is_server_running() {
             return Ok(());
         }
 
-        // Server is not running, try to spawn it
+        // Server is not running, spawn it in a scratchpad
         let current_exe =
             std::env::current_exe().context("Failed to get current executable path")?;
 
         let output = Command::new(current_exe)
-            .args(["menu", "server", "launch", "--inside"])
+            .args(["menu", "server", "launch"])
             .output()
-            .context("Failed to spawn menu server")?;
+            .context("Failed to spawn menu server in scratchpad")?;
 
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to spawn menu server: {}", error_msg);
+            anyhow::bail!("Failed to spawn menu server in scratchpad: {}", error_msg);
         }
 
         // Wait a moment for server to start
-        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(Duration::from_millis(1000)); // Slightly longer wait for scratchpad setup
 
         // Check if server is now running
         if !self.is_server_running() {
-            anyhow::bail!("Server failed to start after spawning");
+            anyhow::bail!("Server failed to start after spawning in scratchpad");
         }
 
         Ok(())

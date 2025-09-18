@@ -1,6 +1,7 @@
 use super::protocol::*;
 use crate::common::compositor::CompositorType;
 use crate::fzf_wrapper::{FzfOptions, FzfWrapper};
+use crate::scratchpad::{config::ScratchpadConfig, hide_scratchpad, show_scratchpad};
 use anyhow::{Context, Result};
 use std::io::{self, BufRead, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -19,6 +20,8 @@ pub struct MenuServer {
     start_time: std::time::SystemTime,
     requests_processed: Arc<AtomicU64>,
     compositor: CompositorType,
+    scratchpad_config: Option<ScratchpadConfig>,
+    scratchpad_visible: Arc<AtomicBool>,
 }
 
 impl MenuServer {
@@ -30,6 +33,8 @@ impl MenuServer {
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
             compositor: CompositorType::detect(),
+            scratchpad_config: None,
+            scratchpad_visible: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -41,6 +46,24 @@ impl MenuServer {
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
             compositor: CompositorType::detect(),
+            scratchpad_config: None,
+            scratchpad_visible: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Create a menu server with compositor type and optional scratchpad config
+    pub fn with_compositor_and_scratchpad(
+        compositor: CompositorType,
+        scratchpad_config: Option<ScratchpadConfig>,
+    ) -> Self {
+        Self {
+            socket_path: default_socket_path(),
+            running: Arc::new(AtomicBool::new(false)),
+            start_time: std::time::SystemTime::now(),
+            requests_processed: Arc::new(AtomicU64::new(0)),
+            compositor,
+            scratchpad_config,
+            scratchpad_visible: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -174,9 +197,22 @@ impl MenuServer {
         Ok(())
     }
 
-    /// Process a menu request
+    /// Process a menu request with scratchpad visibility management
     fn process_request(&self, request: MenuRequest) -> Result<MenuResponse> {
-        match request {
+        // Show scratchpad if configured (for interactive requests only)
+        let should_manage_scratchpad = matches!(
+            request,
+            MenuRequest::Confirm { .. } | MenuRequest::Choice { .. } | MenuRequest::Input { .. }
+        );
+
+        if should_manage_scratchpad {
+            if let Err(e) = self.show_scratchpad() {
+                eprintln!("Warning: Failed to show scratchpad: {}", e);
+            }
+        }
+
+        // Process the request
+        let response = match request {
             MenuRequest::Confirm { message } => match FzfWrapper::confirm(&message) {
                 Ok(result) => Ok(MenuResponse::ConfirmResult(result.into())),
                 Err(e) => Ok(MenuResponse::Error(format!(
@@ -197,7 +233,16 @@ impl MenuServer {
                 ))),
             },
             MenuRequest::Status => Ok(self.get_status_info()),
+        };
+
+        // Hide scratchpad after processing (for interactive requests only)
+        if should_manage_scratchpad {
+            if let Err(e) = self.hide_scratchpad() {
+                eprintln!("Warning: Failed to hide scratchpad: {}", e);
+            }
         }
+
+        response
     }
 
     /// Handle choice request with item selection
@@ -252,6 +297,32 @@ impl MenuServer {
         &self.compositor
     }
 
+    /// Show the scratchpad if configured and not already visible
+    fn show_scratchpad(&self) -> Result<()> {
+        if let Some(ref config) = self.scratchpad_config {
+            // Check if already visible to avoid unnecessary operations
+            if !self.scratchpad_visible.load(Ordering::SeqCst) {
+                show_scratchpad(&self.compositor, config)
+                    .context("Failed to show menu server scratchpad")?;
+                self.scratchpad_visible.store(true, Ordering::SeqCst);
+            }
+        }
+        Ok(())
+    }
+
+    /// Hide the scratchpad if configured and currently visible
+    fn hide_scratchpad(&self) -> Result<()> {
+        if let Some(ref config) = self.scratchpad_config {
+            // Check if currently visible to avoid unnecessary operations
+            if self.scratchpad_visible.load(Ordering::SeqCst) {
+                hide_scratchpad(&self.compositor, config)
+                    .context("Failed to hide menu server scratchpad")?;
+                self.scratchpad_visible.store(false, Ordering::SeqCst);
+            }
+        }
+        Ok(())
+    }
+
     /// Get server status information
     fn get_status_info(&self) -> MenuResponse {
         let status = if self.running.load(Ordering::SeqCst) {
@@ -293,9 +364,36 @@ impl Default for MenuServer {
     }
 }
 
+/// Create a scratchpad configuration for the menu server
+pub fn create_menu_server_scratchpad_config() -> ScratchpadConfig {
+    use crate::scratchpad::{config::ScratchpadConfig, terminal::Terminal};
+
+    // Get current executable path for the inner command
+    let current_exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "instant".to_string());
+
+    let inner_command = format!("{} menu server launch --inside", current_exe);
+
+    ScratchpadConfig::with_params(
+        "instantmenu".to_string(),
+        Terminal::default(), // Use default terminal (kitty)
+        Some(inner_command),
+        50, // 50% width
+        60, // 60% height
+    )
+}
+
 /// Run the menu server in --inside mode
 pub async fn run_server_inside() -> Result<i32> {
-    let mut server = MenuServer::new();
+    // Create server with scratchpad config for self-management
+    let scratchpad_config = create_menu_server_scratchpad_config();
+    let compositor = CompositorType::detect();
+    let mut server =
+        MenuServer::with_compositor_and_scratchpad(compositor, Some(scratchpad_config));
+
+    // When running --inside, the scratchpad is initially visible
+    server.scratchpad_visible.store(true, Ordering::SeqCst);
 
     println!("Starting InstantCLI Menu Server in --inside mode");
     println!("Press Ctrl+C to stop the server");
@@ -310,14 +408,24 @@ pub async fn run_server_inside() -> Result<i32> {
     Ok(0)
 }
 
-/// Run the menu server by launching external terminal
+/// Run the menu server by launching external terminal in scratchpad
 pub fn run_server_launch() -> Result<i32> {
-    // For now, just print a message since we need terminal integration
-    println!("Menu server launch mode not implemented yet");
-    println!(
-        "In the future, this will launch a terminal with: instant menu server launch --inside"
-    );
-    Ok(1)
+    let compositor = CompositorType::detect();
+    let scratchpad_config = create_menu_server_scratchpad_config();
+
+    println!("Launching menu server in scratchpad...");
+
+    // Create and show the scratchpad with the menu server running inside
+    match show_scratchpad(&compositor, &scratchpad_config) {
+        Ok(()) => {
+            println!("Menu server scratchpad launched successfully");
+            Ok(0)
+        }
+        Err(e) => {
+            eprintln!("Failed to launch menu server scratchpad: {}", e);
+            Ok(1)
+        }
+    }
 }
 
 #[cfg(test)]

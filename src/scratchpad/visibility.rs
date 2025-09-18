@@ -1,5 +1,11 @@
+use super::{
+    config::ScratchpadConfig,
+    operations::{
+        check_window_exists, create_and_configure_hyprland_scratchpad,
+        create_and_configure_sway_scratchpad,
+    },
+};
 use crate::common::compositor::{CompositorType, hyprland, sway};
-use super::{config::ScratchpadConfig, operations::{check_window_exists, create_and_configure_sway_scratchpad, create_and_configure_hyprland_scratchpad}};
 use anyhow::Result;
 
 /// Check if scratchpad terminal is currently visible
@@ -112,8 +118,7 @@ pub fn hide_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
 
     if window_exists {
         // Check if special workspace is currently active
-        let is_visible =
-            hyprland::is_special_workspace_active(&workspace_name).unwrap_or(false);
+        let is_visible = hyprland::is_special_workspace_active(&workspace_name).unwrap_or(false);
 
         if is_visible {
             // Terminal is visible, hide special workspace using direct IPC
@@ -140,10 +145,10 @@ mod tests {
         // This is a basic smoke test to ensure the functions are properly exposed
         let config = ScratchpadConfig::default();
         let compositor = CompositorType::Other("test".to_string());
-        
+
         // These should not panic and should return Ok(()) for unsupported compositor
         let visible_result = is_scratchpad_visible(&compositor, &config);
-        
+
         assert!(visible_result.is_ok());
         assert_eq!(visible_result.unwrap(), false); // Should return false for unsupported compositor
     }

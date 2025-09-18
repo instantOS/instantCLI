@@ -57,11 +57,20 @@ impl ScratchpadConfig {
     /// Generate the terminal command with appropriate class flag and inner command
     pub fn terminal_command(&self) -> String {
         let window_class = self.window_class();
-        let base_cmd = format!("{} {}", self.terminal.command(), self.terminal.class_flag(&window_class));
+        let base_cmd = format!(
+            "{} {}",
+            self.terminal.command(),
+            self.terminal.class_flag(&window_class)
+        );
 
         // Add inner command if specified
         if let Some(ref inner_cmd) = self.inner_command {
-            format!("{} {} {}", base_cmd, self.terminal.execute_flag(), inner_cmd)
+            format!(
+                "{} {} {}",
+                base_cmd,
+                self.terminal.execute_flag(),
+                inner_cmd
+            )
         } else {
             base_cmd
         }
@@ -111,13 +120,8 @@ mod tests {
     #[test]
     fn test_terminal_command_generation() {
         // Test without inner command
-        let config = ScratchpadConfig::with_params(
-            "test".to_string(),
-            Terminal::Alacritty,
-            None,
-            50,
-            60,
-        );
+        let config =
+            ScratchpadConfig::with_params("test".to_string(), Terminal::Alacritty, None, 50, 60);
 
         let cmd = config.terminal_command();
         assert_eq!(cmd, "alacritty --class scratchpad_test");

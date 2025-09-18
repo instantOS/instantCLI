@@ -79,7 +79,10 @@ mod tests {
         assert_eq!(Terminal::Kitty.class_flag("test"), "--class test");
         assert_eq!(Terminal::Alacritty.class_flag("test"), "--class test");
         assert_eq!(Terminal::Wezterm.class_flag("test"), "--class test");
-        assert_eq!(Terminal::Other("foot".to_string()).class_flag("test"), "--class test");
+        assert_eq!(
+            Terminal::Other("foot".to_string()).class_flag("test"),
+            "--class test"
+        );
     }
 
     #[test]

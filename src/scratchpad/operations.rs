@@ -1,5 +1,5 @@
-use crate::common::compositor::{CompositorType, hyprland, sway};
 use super::config::ScratchpadConfig;
+use crate::common::compositor::{CompositorType, hyprland, sway};
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -69,7 +69,7 @@ pub fn create_and_configure_sway_scratchpad(config: &ScratchpadConfig) -> Result
     let window_appeared = wait_for_window_to_appear(
         &CompositorType::Sway,
         &window_class,
-        20, // max attempts
+        20,  // max attempts
         100, // poll every 100ms
     )?;
 
@@ -102,7 +102,7 @@ pub fn create_and_configure_hyprland_scratchpad(config: &ScratchpadConfig) -> Re
     let window_appeared = wait_for_window_to_appear(
         &CompositorType::Hyprland,
         &window_class,
-        20, // max attempts
+        20,  // max attempts
         100, // poll every 100ms
     )?;
 

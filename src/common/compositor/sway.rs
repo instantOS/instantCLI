@@ -60,11 +60,17 @@ pub fn hide_scratchpad(window_class: &str) -> Result<()> {
 }
 
 /// Configure a window for scratchpad use in Sway
-pub fn configure_scratchpad_window(window_class: &str, width_pct: u32, height_pct: u32) -> Result<()> {
+pub fn configure_scratchpad_window(
+    window_class: &str,
+    width_pct: u32,
+    height_pct: u32,
+) -> Result<()> {
     let config_commands = vec![
         format!("[app_id=\"{}\"] floating enable", window_class),
-        format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
-               window_class, width_pct, height_pct),
+        format!(
+            "[app_id=\"{}\"] resize set width {} ppt height {} ppt",
+            window_class, width_pct, height_pct
+        ),
         format!("[app_id=\"{}\"] move position center", window_class),
         format!("[app_id=\"{}\"] move to scratchpad", window_class),
     ];
@@ -88,7 +94,7 @@ mod tests {
         let window_class = "test_class";
         let show_cmd = format!("[app_id=\"{}\"] scratchpad show", window_class);
         assert_eq!(show_cmd, "[app_id=\"test_class\"] scratchpad show");
-        
+
         let hide_cmd = format!("[app_id=\"{}\"] move to scratchpad", window_class);
         assert_eq!(hide_cmd, "[app_id=\"test_class\"] move to scratchpad");
     }
