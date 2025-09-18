@@ -1,205 +1,221 @@
 use anyhow::{Context, Result};
-use std::collections::HashSet;
-use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
+use freedesktop_file_parser::{EntryType, parse};
+use std::collections::HashMap;
 
-use crate::launch::types::DesktopApp;
+use crate::launch::types::DesktopAppDetails;
 
-/// Desktop file discovery for XDG applications
-pub struct DesktopDiscovery {
-    pub data_dirs: Vec<PathBuf>,
+/// Lazy desktop file loader and parser
+pub struct DesktopLoader {
+    cache: HashMap<String, DesktopAppDetails>,
 }
 
-impl DesktopDiscovery {
-    /// Create a new desktop discovery instance
-    pub fn new() -> Result<Self> {
-        let data_dirs = Self::get_xdg_data_dirs();
-        Ok(Self { data_dirs })
+impl DesktopLoader {
+    pub fn new() -> Self {
+        Self {
+            cache: HashMap::new(),
+        }
     }
 
-    /// Get XDG data directories for desktop file discovery
-    fn get_xdg_data_dirs() -> Vec<PathBuf> {
-        let mut dirs = Vec::new();
-
-        // Add user-specific data directory
-        if let Some(data_home) = dirs::data_dir() {
-            dirs.push(data_home);
+    /// Load desktop app details lazily
+    pub async fn get_desktop_details(&mut self, desktop_id: &str) -> Result<DesktopAppDetails> {
+        // Check if already cached
+        if let Some(cached) = self.cache.get(desktop_id) {
+            return Ok(cached.clone());
         }
 
-        // Add system data directories
-        if let Ok(data_dirs) = env::var("XDG_DATA_DIRS") {
-            for dir in data_dirs.split(':') {
+        // Find and parse the desktop file
+        let details = self.load_and_parse_desktop_file(desktop_id).await?;
+        self.cache.insert(desktop_id.to_string(), details.clone());
+        Ok(details)
+    }
+
+    /// Find and parse desktop file
+    async fn load_and_parse_desktop_file(&self, desktop_id: &str) -> Result<DesktopAppDetails> {
+        let file_path = self.find_desktop_file_path(desktop_id).await?;
+        let content = std::fs::read_to_string(&file_path).context("Failed to read desktop file")?;
+        let desktop_file = parse(&content).context("Failed to parse desktop file")?;
+
+        let (exec, _name, terminal, categories, icon) = match &desktop_file.entry.entry_type {
+            EntryType::Application(app) => {
+                let exec = app.exec.clone().unwrap_or_default();
+                let name = desktop_file.entry.name.default.clone();
+                let terminal = app.terminal.unwrap_or(false);
+                let categories = app.categories.clone().unwrap_or_default();
+                let icon = desktop_file
+                    .entry
+                    .icon
+                    .as_ref()
+                    .map(|icon_str| icon_str.content.clone());
+                (exec, name, terminal, categories, icon)
+            }
+            _ => (
+                String::new(),
+                desktop_id.to_string(),
+                false,
+                Vec::new(),
+                None,
+            ), // Fallback for non-application types
+        };
+
+        Ok(DesktopAppDetails {
+            exec,
+            icon,
+            categories,
+            no_display: desktop_file.entry.no_display.unwrap_or(false),
+            terminal,
+            file_path,
+        })
+    }
+
+    /// Find the path to a desktop file by searching XDG directories
+    async fn find_desktop_file_path(&self, desktop_id: &str) -> Result<std::path::PathBuf> {
+        let data_dirs = self.get_xdg_data_dirs();
+
+        for data_dir in data_dirs {
+            let apps_dir = data_dir.join("applications");
+            if apps_dir.exists() {
+                let desktop_path = apps_dir.join(desktop_id);
+                if desktop_path.exists() {
+                    return Ok(desktop_path);
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!("Desktop file not found: {}", desktop_id))
+    }
+
+    /// Get XDG data directories
+    fn get_xdg_data_dirs(&self) -> Vec<std::path::PathBuf> {
+        let mut dirs = Vec::new();
+
+        if let Some(home_data) = dirs::data_dir() {
+            dirs.push(home_data);
+        }
+
+        if let Ok(system_dirs) = std::env::var("XDG_DATA_DIRS") {
+            for dir in system_dirs.split(':') {
                 if !dir.is_empty() {
-                    dirs.push(PathBuf::from(dir));
+                    dirs.push(std::path::PathBuf::from(dir));
                 }
             }
         } else {
-            // Default XDG data directories
-            dirs.push(PathBuf::from("/usr/local/share"));
-            dirs.push(PathBuf::from("/usr/share"));
+            dirs.push(std::path::PathBuf::from("/usr/local/share"));
+            dirs.push(std::path::PathBuf::from("/usr/share"));
         }
-
-        // Remove duplicates while preserving order
-        let mut seen = HashSet::new();
-        dirs.retain(|dir| {
-            let path_str = dir.to_string_lossy().to_string();
-            seen.insert(path_str)
-        });
 
         dirs
     }
-
-    /// Discover all desktop applications
-    pub fn discover_applications(&self) -> Result<Vec<DesktopApp>> {
-        let mut apps = Vec::new();
-
-        for data_dir in &self.data_dirs {
-            let apps_dir = data_dir.join("applications");
-            if apps_dir.exists() {
-                let dir_apps = self.scan_directory(&apps_dir)?;
-                apps.extend(dir_apps);
-            }
-        }
-
-        // Sort by name for consistent ordering with cached lowercase names
-        apps.sort_by_cached_key(|app| app.name.to_lowercase());
-
-        Ok(apps)
-    }
-
-    /// Scan a directory for desktop files
-    fn scan_directory(&self, dir: &Path) -> Result<Vec<DesktopApp>> {
-        let mut apps = Vec::new();
-
-        for entry in WalkDir::new(dir)
-            .max_depth(10)
-            .into_iter()
-            .filter_entry(|e| {
-                // Skip hidden directories and files
-                !e.file_name().to_string_lossy().starts_with('.')
-            })
-        {
-            let entry = entry.context("Failed to read directory entry")?;
-            let path = entry.path();
-
-            if path.extension().and_then(|s| s.to_str()) == Some("desktop") {
-                if let Ok(app) = self.parse_desktop_file(path) {
-                    if app.should_display() {
-                        apps.push(app);
-                    }
-                }
-            }
-        }
-
-        Ok(apps)
-    }
-
-    /// Parse a desktop file
-    fn parse_desktop_file(&self, path: &Path) -> Result<DesktopApp> {
-        let content = fs::read_to_string(path)
-            .context(format!("Failed to read desktop file: {}", path.display()))?;
-
-        DesktopApp::from_content(&content, path.to_path_buf())
-    }
-
-    /// Get desktop applications by category
-    pub fn get_apps_by_category(&self, category: &str) -> Result<Vec<DesktopApp>> {
-        let apps = self.discover_applications()?;
-        let filtered: Vec<DesktopApp> = apps
-            .into_iter()
-            .filter(|app| {
-                app.categories
-                    .iter()
-                    .any(|c| c.to_lowercase() == category.to_lowercase())
-            })
-            .collect();
-
-        Ok(filtered)
-    }
-
-    /// Search desktop applications by name
-    pub fn search_apps(&self, query: &str) -> Result<Vec<DesktopApp>> {
-        let apps = self.discover_applications()?;
-        let query_lower = query.to_lowercase();
-
-        let filtered: Vec<DesktopApp> = apps
-            .into_iter()
-            .filter(|app| {
-                app.name.to_lowercase().contains(&query_lower)
-                    || app.desktop_id.to_lowercase().contains(&query_lower)
-                    || app
-                        .categories
-                        .iter()
-                        .any(|c| c.to_lowercase().contains(&query_lower))
-            })
-            .collect();
-
-        Ok(filtered)
-    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_xdg_data_dirs() {
-        let dirs = DesktopDiscovery::get_xdg_data_dirs();
-        assert!(!dirs.is_empty());
-
-        // Should contain at least /usr/share/applications
-        let has_usr_share = dirs
-            .iter()
-            .any(|dir| dir.to_string_lossy().contains("/usr/share"));
-        assert!(has_usr_share);
+/// Execute a desktop application
+pub fn execute_desktop_app(details: &DesktopAppDetails) -> Result<()> {
+    if details.no_display {
+        return Err(anyhow::anyhow!("Application is marked as not displayable"));
     }
 
-    #[test]
-    fn test_parse_desktop_file() {
-        let content = r#"[Desktop Entry]
-Type=Application
-Name=Test App
-Exec=test-app %f
-Icon=test-icon
-Categories=Utility;System;
-Terminal=false
-"#;
+    // Parse and expand field codes in Exec string
+    let exec_cmd = expand_exec_field_codes(&details.exec)?;
 
-        let temp_dir = TempDir::new().unwrap();
-        let desktop_path = temp_dir.path().join("test-app.desktop");
-        fs::write(&desktop_path, content).unwrap();
-
-        let discovery = DesktopDiscovery::new().unwrap();
-        let app = discovery.parse_desktop_file(&desktop_path).unwrap();
-
-        assert_eq!(app.name, "Test App");
-        assert_eq!(app.exec, "test-app %f");
-        assert_eq!(app.icon, Some("test-icon".to_string()));
-        assert_eq!(app.categories, vec!["Utility", "System"]);
-        assert!(!app.terminal);
-        assert!(!app.no_display);
+    // Split into command and arguments
+    let parts: Vec<&str> = exec_cmd.split_whitespace().collect();
+    if parts.is_empty() {
+        return Err(anyhow::anyhow!("Empty Exec command"));
     }
 
-    #[test]
-    fn test_exec_field_expansion() {
-        let content = r#"[Desktop Entry]
-Type=Application
-Name=Test App
-Exec=test-app %f %c
-Terminal=false
-"#;
+    let mut cmd = std::process::Command::new(parts[0]);
 
-        let temp_dir = TempDir::new().unwrap();
-        let desktop_path = temp_dir.path().join("test-app.desktop");
-        fs::write(&desktop_path, content).unwrap();
-
-        let discovery = DesktopDiscovery::new().unwrap();
-        let app = discovery.parse_desktop_file(&desktop_path).unwrap();
-
-        let expanded = app.expand_exec(&["file.txt".to_string()]);
-        assert_eq!(expanded, "test-app Test App file.txt");
+    // Add remaining arguments
+    for arg in &parts[1..] {
+        cmd.arg(arg);
     }
+
+    // Handle terminal execution
+    if details.terminal {
+        wrap_with_terminal(&mut cmd)?;
+    }
+
+    // Execute in background
+    cmd.stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .stdin(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("Failed to launch desktop app: {}", e))?;
+
+    Ok(())
+}
+
+/// Expand field codes in Exec string
+fn expand_exec_field_codes(exec: &str) -> Result<String> {
+    let mut expanded = exec.to_string();
+
+    // Handle %% -> %
+    expanded = expanded.replace("%%", "%");
+
+    // Handle %c -> application name (not available in context, so remove)
+    expanded = expanded.replace("%c", "");
+
+    // Handle %f, %F, %u, %U (file arguments - not supported in launcher, remove)
+    expanded = expanded.replace("%f", "");
+    expanded = expanded.replace("%F", "");
+    expanded = expanded.replace("%u", "");
+    expanded = expanded.replace("%U", "");
+
+    // Handle %i (icon name - not supported, remove)
+    expanded = expanded.replace("%i", "");
+
+    // Handle %k (desktop file path - not supported, remove)
+    expanded = expanded.replace("%k", "");
+
+    // Clean up multiple spaces that might result from removing field codes
+    while expanded.contains("  ") {
+        expanded = expanded.replace("  ", " ");
+    }
+    expanded = expanded.trim().to_string();
+
+    Ok(expanded)
+}
+
+/// Wrap command with terminal
+fn wrap_with_terminal(cmd: &mut std::process::Command) -> Result<()> {
+    // Try to find a terminal emulator
+    let terminal = std::env::var("TERMINAL").unwrap_or_else(|_| {
+        // Common terminal emulators in order of preference
+        for term in ["kitty", "alacritty", "gnome-terminal", "xterm"] {
+            if which::which(term).is_ok() {
+                return term.to_string();
+            }
+        }
+        "xterm".to_string() // Fallback
+    });
+
+    // Build the terminal command
+    let mut term_cmd = std::process::Command::new(&terminal);
+
+    // Add terminal-specific arguments
+    match terminal.as_str() {
+        "kitty" | "alacritty" => {
+            term_cmd.arg("--");
+        }
+        "gnome-terminal" => {
+            term_cmd.arg("--");
+        }
+        _ => {}
+    }
+
+    // Add the original command as arguments to the terminal
+    let program = cmd.get_program().to_string_lossy().to_string();
+    let args: Vec<String> = cmd
+        .get_args()
+        .map(|arg| arg.to_string_lossy().to_string())
+        .collect();
+
+    term_cmd.arg(program);
+    for arg in args {
+        term_cmd.arg(arg);
+    }
+
+    // Replace the original command with the terminal-wrapped version
+    *cmd = term_cmd;
+
+    Ok(())
 }

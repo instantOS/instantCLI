@@ -83,8 +83,8 @@ enum Commands {
     },
     /// Application launcher
     Launch {
-        /// List all available items without opening menu
-        #[clap(long)]
+        /// List available applications instead of launching
+        #[arg(long)]
         list: bool,
     },
     /// Interactive menu commands for shell scripts

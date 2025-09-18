@@ -12,18 +12,18 @@ freedesktop-file-parser = "0.3.0"
 # Additional dependencies may be needed for icon support
 ```
 
-### 1.2 Create Core Data Structures
+### 1.2 Create Lightweight Data Structures
 ```rust
-// src/launch/types.rs
+// src/launch/types.rs - Performance-optimized design
+// Lightweight enum containing only display name and identifier
 pub enum LaunchItem {
-    DesktopApp(DesktopApp),
-    PathExecutable(PathExecutable),
+    DesktopApp(String),    // desktop_id (e.g., "firefox.desktop")
+    PathExecutable(String), // executable name
 }
 
-pub struct DesktopApp {
-    pub desktop_id: String,           // e.g., "firefox.desktop"
-    pub name: String,                 // Localized name
-    pub display_name: String,         // Name for UI display
+// Desktop app details loaded lazily when needed for execution
+#[derive(Default)]
+pub struct DesktopAppDetails {
     pub exec: String,                 // Exec command with field codes
     pub icon: Option<String>,         // Icon name
     pub categories: Vec<String>,      // Application categories
@@ -32,91 +32,98 @@ pub struct DesktopApp {
     pub file_path: PathBuf,           // Path to .desktop file
 }
 
-pub struct PathExecutable {
-    pub name: String,                 // Executable name
-    pub display_name: String,         // Name for UI display
+// Path executable details loaded lazily when needed
+#[derive(Default)]
+pub struct PathExecutableDetails {
     pub path: PathBuf,               // Full path to executable
 }
 
 impl LaunchItem {
     pub fn display_name(&self) -> &str {
         match self {
-            LaunchItem::DesktopApp(app) => &app.display_name,
-            LaunchItem::PathExecutable(exe) => &exe.display_name,
+            LaunchItem::DesktopApp(id) => {
+                // Extract name from desktop_id (remove .desktop suffix)
+                id.strip_suffix(".desktop").unwrap_or(id)
+            }
+            PathExecutable(name) => name,
         }
     }
 
     pub fn sort_key(&self) -> String {
-        match self {
-            LaunchItem::DesktopApp(app) => app.name.to_lowercase(),
-            LaunchItem::PathExecutable(exe) => exe.name.to_lowercase(),
-        }
+        self.display_name().to_lowercase()
     }
 }
 ```
 
-### 1.3 Extend Cache System
+### 1.3 Simple High-Performance Cache
 ```rust
-// src/launch/cache.rs - Additions
+// src/launch/cache.rs - Simple and fast cache system
 impl LaunchCache {
-    /// Get all launch items (desktop apps + PATH executables)
+    /// Get launch items - extremely fast path for menu display
     pub async fn get_launch_items(&mut self) -> Result<Vec<LaunchItem>> {
-        // Check cache freshness for both desktop files and PATH
-        if self.is_launch_cache_fresh()? {
-            let mut items = self.read_launch_cache()?;
-            self.sort_by_frecency_launch_items(&mut items)?;
-            Ok(items)
-        } else {
-            // Return stale cache while refreshing in background
-            let stale_items = self.read_launch_cache().unwrap_or_default();
+        // Always return immediately, never wait
+        let cached_items = self.read_launch_cache().unwrap_or_default();
 
-            // Background refresh
-            let cache_path = self.cache_path.clone();
-            task::spawn(async move {
-                if let Err(e) = Self::refresh_launch_cache_background(cache_path).await {
-                    eprintln!("Warning: Failed to refresh launch cache: {}", e);
-                }
-            });
-
-            // Return items or do quick scan if empty
-            let mut items = if stale_items.is_empty() {
-                self.quick_scan_launch_items()?
-            } else {
-                stale_items
-            };
-
-            self.sort_by_frecency_launch_items(&mut items)?;
-            Ok(items)
+        // Background refresh if stale (non-blocking)
+        if !self.is_launch_cache_fresh()? {
+            self.trigger_background_refresh();
         }
+
+        // Apply frecency sorting and return
+        let mut items = cached_items;
+        self.sort_by_frecency_launch_items(&mut items)?;
+        Ok(items)
     }
 
-    /// Discover desktop files from XDG directories
-    fn discover_desktop_files(&self) -> Result<Vec<DesktopApp>> {
-        let mut apps = Vec::new();
+    /// Simple background refresh
+    fn trigger_background_refresh(&self) {
+        let cache_path = self.cache_path.clone();
+        task::spawn(async move {
+            // Simple scan for display names only
+            let items = Self::build_item_list_simple().await;
+            if let Err(e) = Self::save_cache_simple(cache_path, items) {
+                eprintln!("Warning: Failed to refresh cache: {}", e);
+            }
+        });
+    }
 
-        // Get XDG data directories
-        let data_dirs = self.get_xdg_data_dirs();
+    /// Build item list with minimal overhead
+    async fn build_item_list_simple() -> Vec<LaunchItem> {
+        let mut items = Vec::new();
+
+        // Get desktop app names (fast)
+        items.extend(Self::get_desktop_names_fast());
+
+        // Get PATH executables (fast)
+        items.extend(Self::get_path_names_fast());
+
+        // Simple conflict resolution
+        Self::resolve_conflicts_simple(items)
+    }
+
+    /// Fast desktop name scanning - no parsing, just file names
+    fn get_desktop_names_fast() -> Vec<LaunchItem> {
+        let mut names = Vec::new();
+        let data_dirs = Self::get_xdg_data_dirs();
 
         for data_dir in data_dirs {
             let apps_dir = data_dir.join("applications");
             if apps_dir.exists() {
-                self.scan_desktop_directory(&apps_dir, &mut apps)?;
+                Self::scan_desktop_names_simple(&apps_dir, &mut names);
             }
         }
 
-        Ok(apps)
+        names
     }
 
-    /// Get XDG data directories in correct priority order
-    fn get_xdg_data_dirs(&self) -> Vec<PathBuf> {
+    /// Get XDG data directories
+    fn get_xdg_data_dirs() -> Vec<PathBuf> {
         let mut dirs = Vec::new();
 
-        // User-specific directory (highest priority)
         if let Some(home_data) = dirs::data_dir() {
             dirs.push(home_data);
         }
 
-        // System directories
         if let Ok(system_dirs) = env::var("XDG_DATA_DIRS") {
             for dir in system_dirs.split(':') {
                 if !dir.is_empty() {
@@ -124,19 +131,83 @@ impl LaunchCache {
                 }
             }
         } else {
-            // Default system directories
             dirs.push(PathBuf::from("/usr/local/share"));
             dirs.push(PathBuf::from("/usr/share"));
         }
 
         dirs
     }
+
+    /// Simple name scanning - skip parsing entirely
+    fn scan_desktop_names_simple(apps_dir: &Path, names: &mut Vec<LaunchItem>) {
+        if let Ok(entries) = fs::read_dir(apps_dir) {
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("desktop") {
+                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                        // Skip obvious test/debug files by filename
+                        if !file_name.contains("test") && !file_name.contains("debug") {
+                            names.push(LaunchItem::DesktopApp(file_name.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 ```
 
-## Phase 2: Desktop File Discovery and Parsing (2-3 days)
+## Phase 2: Lazy Loading and Execution (2-3 days)
 
-### 2.1 Desktop File Scanner
+### 2.1 Lazy Loading System
+```rust
+// src/launch/lazy.rs - Performance-optimized lazy loading
+impl LaunchCache {
+    /// Load desktop app details only when needed for execution
+    pub async fn get_desktop_details(&self, desktop_id: &str) -> Result<DesktopAppDetails> {
+        // Check if already loaded and cached
+        if let Some(cached) = self.get_cached_desktop_details(desktop_id)? {
+            return Ok(cached);
+        }
+
+        // Find and parse the desktop file on demand
+        let details = self.load_and_parse_desktop_file(desktop_id).await?;
+        self.cache_desktop_details(desktop_id, &details)?;
+        Ok(details)
+    }
+
+    /// Load path executable details only when needed
+    pub async fn get_path_details(&self, name: &str) -> Result<PathExecutableDetails> {
+        if let Some(cached) = self.get_cached_path_details(name)? {
+            return Ok(cached);
+        }
+
+        // Resolve PATH on demand
+        let path = self.resolve_executable_path(name)?;
+        let details = PathExecutableDetails { path };
+        self.cache_path_details(name, &details)?;
+        Ok(details)
+    }
+
+    /// Parse desktop file only when actually needed for execution
+    async fn load_and_parse_desktop_file(&self, desktop_id: &str) -> Result<DesktopAppDetails> {
+        let file_path = self.find_desktop_file_path(desktop_id).await?;
+        let content = fs::read_to_string(&file_path)?;
+        let desktop_file = parse(&content)?;
+
+        Ok(DesktopAppDetails {
+            exec: self.extract_exec_command(&desktop_file),
+            icon: desktop_file.entry.icon.default,
+            categories: desktop_file.entry.categories.unwrap_or_default(),
+            no_display: desktop_file.entry.no_display.unwrap_or(false),
+            terminal: desktop_file.entry.terminal.unwrap_or(false),
+            file_path,
+        })
+    }
+}
+```
+
+### 2.2 Desktop File Discovery
 ```rust
 // src/launch/desktop.rs
 use freedesktop_file_parser::{parse, EntryType};
@@ -352,8 +423,8 @@ impl LaunchCache {
 
     fn get_frecency_key(&self, item: &LaunchItem) -> String {
         match item {
-            LaunchItem::DesktopApp(app) => format!("desktop:{}", app.desktop_id),
-            LaunchItem::PathExecutable(exe) => format!("path:{}", exe.name),
+            LaunchItem::DesktopApp(desktop_id) => desktop_id.clone(),
+            LaunchItem::PathExecutable(name) => name.clone(),
         }
     }
 
@@ -454,10 +525,12 @@ pub async fn handle_launch_command() -> Result<i32> {
 
 ## Performance Considerations
 
-1. **Background Scanning**: Desktop file discovery should happen in background
-2. **Cache Invalidation**: Track modification times of XDG directories
-3. **Memory Usage**: Desktop file parsing should be memory-efficient
-4. **Startup Time**: Fast path for cached data availability
+1. **Immediate Response**: Always return cached data immediately, never block for scanning
+2. **Background Refresh**: Update cache asynchronously without affecting user experience
+3. **Lightweight Data Structures**: Store only strings in cache, parse details on-demand
+4. **Minimal Scanning**: Skip desktop file parsing entirely during menu building
+5. **Simple Architecture**: Single cache system focused on menu performance
+6. **Fast Execution**: Load desktop file details only when actually launching applications
 
 ## Error Handling
 
@@ -474,14 +547,53 @@ pub async fn handle_launch_command() -> Result<i32> {
 4. **Search Enhancement**: Search in multiple fields (name, comment, categories)
 5. **Configuration**: User preferences for desktop file handling
 
+## Execution Flow Architecture
+
+### Optimized Launch Sequence
+```rust
+// src/launch/execute.rs - Performance-optimized execution
+pub async fn execute_selected_item(item_name: &str) -> Result<()> {
+    // 1. Identify item type from lightweight cache
+    let item_type = identify_item_type(item_name)?;
+
+    // 2. Load execution details lazily (only when needed)
+    match item_type {
+        ItemType::DesktopApp(desktop_id) => {
+            let details = cache.get_desktop_details(&desktop_id).await?;
+            execute_desktop_app(&details)?;
+        }
+        ItemType::PathExecutable(name) => {
+            let details = cache.get_path_details(&name).await?;
+            execute_path_executable(&details)?;
+        }
+    }
+
+    // 3. Record frecency (async, non-blocking)
+    task::spawn(async move {
+        if let Err(e) = cache.record_item_launch(item_name).await {
+            eprintln!("Warning: Failed to record launch: {}", e);
+        }
+    });
+
+    Ok(())
+}
+```
+
+### Cache Strategy
+- **Single Cache**: Stores lightweight LaunchItem enums (just strings) for fast menu display
+- **Background Refresh**: Updates cache asynchronously without blocking user experience
+- **On-Demand Loading**: Parse desktop file details only when actually launching applications
+- **Minimal Overhead**: No desktop file parsing during menu building
+
 ## Risk Assessment
 
 ### High Risk
 - Breaking existing PATH-only functionality
-- Performance regression
-- Complex name conflict resolution
+- Performance regression due to desktop file parsing
+- Complex name conflict resolution logic
 
 ### Mitigation
-- Extensive testing of existing functionality
-- Performance benchmarks
-- Clear documentation of behavior changes
+- Performance-first architecture with immediate response guarantees
+- Extensive benchmarking against current implementation
+- Graceful fallback to PATH-only mode on failures
+- Clear separation of concerns between display and execution logic
