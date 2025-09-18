@@ -89,11 +89,4 @@ pub async fn fetch_instantos_repos() -> Result<Vec<GitHubRepo>, GitHubErrorKind>
     }
 }
 
-pub fn format_repo_for_display(repo: &GitHubRepo) -> String {
-    let stars = repo.stargazers_count.unwrap_or(0);
-    let forks = repo.forks_count.unwrap_or(0);
-    let lang = repo.language.as_deref().unwrap_or("Unknown");
-    let desc = repo.description.as_deref().unwrap_or("No description");
 
-    format!("⭐ {stars}  🍴 {forks}  {lang}  - {desc}")
-}
