@@ -31,6 +31,7 @@ rand = "0.8"                    # For request ID generation
 xdg = "2.4"                     # For XDG directory support
 ctrlc = "3.4"                   # For signal handling
 hyprland = "0.4.0-beta.2"
+fre = "0.4.1"
 
 [dev-dependencies]
 tempfile = "3.21.0"

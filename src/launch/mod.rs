@@ -20,10 +20,10 @@ pub enum LaunchCommands {
 pub async fn handle_launch_command() -> Result<i32> {
     // Initialize cache
     let mut cache = LaunchCache::new()?;
-    
+
     // Get applications (uses cache if fresh, refreshes in background if stale)
     let applications = cache.get_applications().await?;
-    
+
     // Convert to menu items
     let menu_items: Vec<SerializableMenuItem> = applications
         .into_iter()
@@ -33,13 +33,13 @@ pub async fn handle_launch_command() -> Result<i32> {
             metadata: None,
         })
         .collect();
-    
+
     // Use GUI menu to select application
     let client = client::MenuClient::new();
-    
+
     // Ensure server is running
     client.ensure_server_running()?;
-    
+
     // Show choice menu
     match client.choice("Launch application:".to_string(), menu_items, false) {
         Ok(selected) => {
@@ -48,6 +48,12 @@ pub async fn handle_launch_command() -> Result<i32> {
             } else {
                 let app_name = &selected[0].display_text;
                 execute_application(app_name)?;
+
+                // Record launch in frecency store
+                if let Err(e) = cache.record_launch(app_name) {
+                    eprintln!("Warning: Failed to record launch: {}", e);
+                }
+
                 Ok(0) // Success
             }
         }
