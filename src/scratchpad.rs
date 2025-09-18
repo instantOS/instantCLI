@@ -94,15 +94,16 @@ fn swaymsg_get_tree() -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-
-
 /// Toggle scratchpad terminal visibility
 pub fn toggle_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -> Result<()> {
     match compositor {
         CompositorType::Sway => toggle_scratchpad_sway(config),
         CompositorType::Hyprland => toggle_scratchpad_hyprland(config),
         CompositorType::Other(name) => {
-            eprintln!("TODO: Scratchpad not yet implemented for compositor: {}", name);
+            eprintln!(
+                "TODO: Scratchpad not yet implemented for compositor: {}",
+                name
+            );
             eprintln!("Currently supported: Sway, Hyprland");
             Ok(())
         }
@@ -112,9 +113,8 @@ pub fn toggle_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig)
 /// Toggle scratchpad terminal for Sway
 fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
     // Check if scratchpad terminal exists
-    let tree = swaymsg_get_tree()?;
     let window_class = config.window_class();
-    let window_exists = tree.contains(&format!("\"app_id\": \"{}\"", window_class));
+    let window_exists = check_window_exists(&CompositorType::Sway, &window_class)?;
 
     if window_exists {
         // Terminal exists, toggle its visibility
@@ -125,13 +125,16 @@ fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
         // Terminal doesn't exist, create and configure it
         create_and_configure_sway_scratchpad(config)?;
 
-        // Show it immediately
+        // Show it immediately (toggle means show when creating)
         let show_message = format!("[app_id=\"{}\"] scratchpad show", window_class);
         if let Err(e) = swaymsg(&show_message) {
             eprintln!("Warning: Failed to show scratchpad: {}", e);
         }
 
-        println!("Scratchpad terminal '{}' created and configured", config.name);
+        println!(
+            "Scratchpad terminal '{}' created and shown",
+            config.name
+        );
     }
 
     Ok(())
@@ -143,7 +146,7 @@ fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
     let window_class = config.window_class();
 
     // Check if terminal with specific class exists using direct IPC
-    let window_exists = hyprland_ipc::window_exists(&window_class)?;
+    let window_exists = check_window_exists(&CompositorType::Hyprland, &window_class)?;
 
     if window_exists {
         // Terminal exists, toggle special workspace visibility using direct IPC
@@ -152,31 +155,42 @@ fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
     } else {
         // Terminal doesn't exist, create it with proper rules
         create_and_configure_hyprland_scratchpad(config)?;
-        println!("Scratchpad terminal '{}' created with window rules", config.name);
+
+        // Show it immediately (toggle means show when creating)
+        hyprland_ipc::show_special_workspace(&workspace_name)?;
+
+        println!(
+            "Scratchpad terminal '{}' created and shown",
+            config.name
+        );
     }
 
     Ok(())
 }
 
 /// Check if scratchpad terminal is currently visible
-pub fn is_scratchpad_visible(compositor: &CompositorType, config: &ScratchpadConfig) -> Result<bool> {
+pub fn is_scratchpad_visible(
+    compositor: &CompositorType,
+    config: &ScratchpadConfig,
+) -> Result<bool> {
     let window_class = config.window_class();
     match compositor {
         CompositorType::Sway => {
             let tree = swaymsg_get_tree()?;
             // Look for the window and check if it's visible (not in scratchpad)
             Ok(tree.contains(&format!("\"app_id\": \"{}\"", window_class))
-               && !tree.contains(&format!("\"app_id\": \"{}\".*scratchpad", window_class)))
+                && !tree.contains(&format!("\"app_id\": \"{}\".*scratchpad", window_class)))
         }
         CompositorType::Hyprland => {
             // For Hyprland, check if special workspace is active AND window exists using direct IPC
             let workspace_name = config.workspace_name();
 
             // Check if special workspace is active using direct IPC
-            let special_workspace_active = hyprland_ipc::is_special_workspace_active(&workspace_name).unwrap_or(false);
+            let special_workspace_active =
+                hyprland_ipc::is_special_workspace_active(&workspace_name).unwrap_or(false);
 
             // Check if window exists using direct IPC
-            let window_exists = hyprland_ipc::window_exists(&window_class).unwrap_or(false);
+            let window_exists = check_window_exists(compositor, &window_class)?;
 
             Ok(special_workspace_active && window_exists)
         }
@@ -193,7 +207,10 @@ pub fn show_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -
         CompositorType::Sway => show_scratchpad_sway(config),
         CompositorType::Hyprland => show_scratchpad_hyprland(config),
         CompositorType::Other(name) => {
-            eprintln!("TODO: Scratchpad show not yet implemented for compositor: {}", name);
+            eprintln!(
+                "TODO: Scratchpad show not yet implemented for compositor: {}",
+                name
+            );
             eprintln!("Currently supported: Sway, Hyprland");
             Ok(())
         }
@@ -206,7 +223,10 @@ pub fn hide_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -
         CompositorType::Sway => hide_scratchpad_sway(config),
         CompositorType::Hyprland => hide_scratchpad_hyprland(config),
         CompositorType::Other(name) => {
-            eprintln!("TODO: Scratchpad hide not yet implemented for compositor: {}", name);
+            eprintln!(
+                "TODO: Scratchpad hide not yet implemented for compositor: {}",
+                name
+            );
             eprintln!("Currently supported: Sway, Hyprland");
             Ok(())
         }
@@ -226,6 +246,52 @@ fn create_terminal_process(config: &ScratchpadConfig) -> Result<()> {
     Ok(())
 }
 
+/// Check if a window exists using the appropriate compositor method
+fn check_window_exists(compositor: &CompositorType, window_class: &str) -> Result<bool> {
+    match compositor {
+        CompositorType::Sway => {
+            let tree = swaymsg_get_tree()?;
+            Ok(tree.contains(&format!("\"app_id\": \"{}\"", window_class)))
+        }
+        CompositorType::Hyprland => {
+            Ok(hyprland_ipc::window_exists(window_class).unwrap_or(false))
+        }
+        CompositorType::Other(_) => {
+            // For unsupported compositors, assume window doesn't exist
+            Ok(false)
+        }
+    }
+}
+
+/// Wait for a window to appear by polling the compositor
+/// Returns true if window appeared, false if timeout reached
+fn wait_for_window_to_appear(
+    compositor: &CompositorType,
+    window_class: &str,
+    max_attempts: u32,
+    poll_interval_ms: u64,
+) -> Result<bool> {
+    for attempt in 1..=max_attempts {
+        // Small delay before checking
+        std::thread::sleep(std::time::Duration::from_millis(poll_interval_ms));
+
+        let window_exists = check_window_exists(compositor, window_class)?;
+
+        if window_exists {
+            return Ok(true);
+        }
+
+        if attempt < max_attempts {
+            eprintln!(
+                "Waiting for window to appear... (attempt {}/{})",
+                attempt, max_attempts
+            );
+        }
+    }
+
+    Ok(false) // Timeout reached
+}
+
 /// Create and configure a new scratchpad terminal for Sway
 fn create_and_configure_sway_scratchpad(config: &ScratchpadConfig) -> Result<()> {
     println!("Creating new scratchpad terminal '{}'...", config.name);
@@ -233,15 +299,28 @@ fn create_and_configure_sway_scratchpad(config: &ScratchpadConfig) -> Result<()>
     // Launch the terminal in background
     create_terminal_process(config)?;
 
-    // Wait a moment for the window to appear
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    // Wait for the window to appear by polling
+    let window_class = config.window_class();
+    let window_appeared = wait_for_window_to_appear(
+        &CompositorType::Sway,
+        &window_class,
+        20,  // max attempts
+        100, // poll every 100ms
+    )?;
+
+    if !window_appeared {
+        return Err(anyhow::anyhow!(
+            "Terminal window did not appear after waiting. The terminal command may have failed to start."
+        ));
+    }
 
     // Configure the new window
-    let window_class = config.window_class();
     let config_commands = vec![
         format!("[app_id=\"{}\"] floating enable", window_class),
-        format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
-               window_class, config.width_pct, config.height_pct),
+        format!(
+            "[app_id=\"{}\"] resize set width {} ppt height {} ppt",
+            window_class, config.width_pct, config.height_pct
+        ),
         format!("[app_id=\"{}\"] move position center", window_class),
         format!("[app_id=\"{}\"] move to scratchpad", window_class),
     ];
@@ -268,8 +347,19 @@ fn create_and_configure_hyprland_scratchpad(config: &ScratchpadConfig) -> Result
     // Launch the terminal in background
     create_terminal_process(config)?;
 
-    // Wait for window to appear
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    // Wait for the window to appear by polling
+    let window_appeared = wait_for_window_to_appear(
+        &CompositorType::Hyprland,
+        &window_class,
+        20,  // max attempts
+        100, // poll every 100ms
+    )?;
+
+    if !window_appeared {
+        return Err(anyhow::anyhow!(
+            "Terminal window did not appear after waiting. The terminal command may have failed to start."
+        ));
+    }
 
     Ok(())
 }
@@ -277,9 +367,8 @@ fn create_and_configure_hyprland_scratchpad(config: &ScratchpadConfig) -> Result
 /// Show scratchpad terminal for Sway
 fn show_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
     // Check if scratchpad terminal exists
-    let tree = swaymsg_get_tree()?;
     let window_class = config.window_class();
-    let window_exists = tree.contains(&format!("\"app_id\": \"{}\"", window_class));
+    let window_exists = check_window_exists(&CompositorType::Sway, &window_class)?;
 
     if window_exists {
         // Terminal exists, show it
@@ -305,12 +394,12 @@ fn show_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
 /// Hide scratchpad terminal for Sway
 fn hide_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
     // Check if scratchpad terminal exists
-    let tree = swaymsg_get_tree()?;
     let window_class = config.window_class();
-    let window_exists = tree.contains(&format!("\"app_id\": \"{}\"", window_class));
+    let window_exists = check_window_exists(&CompositorType::Sway, &window_class)?;
 
     if window_exists {
         // Check if it's currently visible (not in scratchpad)
+        let tree = swaymsg_get_tree()?;
         let is_visible = !tree.contains(&format!("\"app_id\": \"{}\".*scratchpad", window_class));
 
         if is_visible {
@@ -334,7 +423,7 @@ fn show_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
     let window_class = config.window_class();
 
     // Check if terminal with specific class exists using direct IPC
-    let window_exists = hyprland_ipc::window_exists(&window_class)?;
+    let window_exists = check_window_exists(&CompositorType::Hyprland, &window_class)?;
 
     if window_exists {
         // Terminal exists, show special workspace using direct IPC
@@ -343,9 +432,6 @@ fn show_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
     } else {
         // Terminal doesn't exist, create it with proper rules
         create_and_configure_hyprland_scratchpad(config)?;
-
-        // Wait a moment for the window to appear and be configured
-        std::thread::sleep(std::time::Duration::from_millis(500));
 
         // Show the special workspace using direct IPC
         hyprland_ipc::show_special_workspace(&workspace_name)?;
@@ -362,11 +448,12 @@ fn hide_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
     let window_class = config.window_class();
 
     // Check if terminal with specific class exists using direct IPC
-    let window_exists = hyprland_ipc::window_exists(&window_class)?;
+    let window_exists = check_window_exists(&CompositorType::Hyprland, &window_class)?;
 
     if window_exists {
         // Check if special workspace is currently active
-        let is_visible = hyprland_ipc::is_special_workspace_active(&workspace_name).unwrap_or(false);
+        let is_visible =
+            hyprland_ipc::is_special_workspace_active(&workspace_name).unwrap_or(false);
 
         if is_visible {
             // Terminal is visible, hide special workspace using direct IPC
@@ -444,13 +531,8 @@ mod tests {
         assert_eq!(cmd_with_inner, "kitty --class scratchpad_test -e fish");
 
         // Test unsupported terminal
-        let config_other = ScratchpadConfig::with_params(
-            "test".to_string(),
-            "wezterm".to_string(),
-            None,
-            50,
-            60,
-        );
+        let config_other =
+            ScratchpadConfig::with_params("test".to_string(), "wezterm".to_string(), None, 50, 60);
 
         let cmd_other = get_terminal_command_with_class(&config_other);
         assert_eq!(cmd_other, "wezterm");
@@ -475,9 +557,33 @@ mod tests {
         assert!(visible_result.is_ok());
         assert_eq!(visible_result.unwrap(), false); // Should return false for unsupported compositor
     }
+
+    #[test]
+    fn test_wait_for_window_polling() {
+        use crate::compositor::CompositorType;
+
+        // Test with unsupported compositor (should return false after max attempts since window doesn't exist)
+        let result = wait_for_window_to_appear(
+            &CompositorType::Other("test".to_string()),
+            "test_window",
+            2,  // max attempts
+            10, // poll interval (short for test)
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), false); // Should return false for unsupported compositor (window doesn't exist)
+    }
+
+    #[test]
+    fn test_check_window_exists() {
+        use crate::compositor::CompositorType;
+
+        // Test with unsupported compositor
+        let result = check_window_exists(&CompositorType::Other("test".to_string()), "test_window");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), false); // Should return false for unsupported compositor
+    }
 }
-
-
 
 /// Get terminal command with appropriate class flag and inner command
 fn get_terminal_command_with_class(config: &ScratchpadConfig) -> String {
