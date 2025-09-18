@@ -91,13 +91,12 @@ fn hyprland_window_exists(window_class: &str) -> Result<bool> {
     let clients = hyprctl_clients()?;
 
     // Parse clients output to find windows with the specified class
-    // Each client block starts with "Window" and contains "class:" field
+    // Look for lines containing "class: {window_class}"
     let lines: Vec<&str> = clients.lines().collect();
-    let _in_target_window = false;
 
     for line in lines {
         let line = line.trim();
-        if line.starts_with("Window") && line.contains(&format!("class: {}", window_class)) {
+        if line.contains(&format!("class: {}", window_class)) {
             return Ok(true);
         }
     }
