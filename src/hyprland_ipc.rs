@@ -7,7 +7,8 @@ use hyprland::prelude::*;
 /// Check if a window with specific class exists in Hyprland using direct IPC
 pub fn window_exists(window_class: &str) -> Result<bool> {
     let clients = Clients::get()
-        .context("Failed to get clients from Hyprland IPC")?;
+        .context("Failed to get clients from Hyprland IPC")?
+        .to_vec();
 
     for client in clients.iter() {
         if client.class == window_class {
@@ -45,7 +46,8 @@ pub fn toggle_special_workspace(workspace_name: &str) -> Result<()> {
 /// Check if special workspace is active using direct IPC
 pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
     let workspaces = Workspaces::get()
-        .context("Failed to get workspaces from Hyprland IPC")?;
+        .context("Failed to get workspaces from Hyprland IPC")?
+        .to_vec();
 
     // Find the active workspace
     for workspace in workspaces.iter() {
@@ -54,8 +56,9 @@ pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
             // Check if this special workspace is currently active
             // We need to check if any window is currently focused on this workspace
             let clients = Clients::get()
-                .context("Failed to get clients from Hyprland IPC")?;
-            
+                .context("Failed to get clients from Hyprland IPC")?
+                .to_vec();
+
             for client in clients.iter() {
                 if client.workspace.name.contains(workspace_name) && client.focus_history_id == 0 {
                     // focus_history_id == 0 means it's the currently focused window
@@ -71,16 +74,18 @@ pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
 /// Get active workspace information using direct IPC
 pub fn get_active_workspace() -> Result<Workspace> {
     let workspaces = Workspaces::get()
-        .context("Failed to get workspaces from Hyprland IPC")?;
+        .context("Failed to get workspaces from Hyprland IPC")?
+        .to_vec();
 
     // Find the active workspace (the one with the focused window)
     let clients = Clients::get()
-        .context("Failed to get clients from Hyprland IPC")?;
-    
+        .context("Failed to get clients from Hyprland IPC")?
+        .to_vec();
+
     // Find the currently focused client
     let focused_client = clients.iter()
         .find(|client| client.focus_history_id == 0);
-    
+
     if let Some(client) = focused_client {
         // Find the workspace that contains this client
         let workspace = workspaces.iter()
@@ -93,7 +98,7 @@ pub fn get_active_workspace() -> Result<Workspace> {
     let active_workspace = workspaces.iter()
         .find(|ws| ws.id > 0) // Regular workspaces have positive IDs
         .context("No active workspace found")?;
-    
+
     Ok(active_workspace.clone())
 }
 
