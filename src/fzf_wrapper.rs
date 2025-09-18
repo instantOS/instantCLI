@@ -99,7 +99,6 @@ pub enum ConfirmResult {
 /// Main fzf wrapper struct
 pub struct FzfWrapper {
     options: FzfOptions,
-    preview_scripts: Vec<TempPath>,
 }
 
 /// Internal structure for JSON serialization to the preview script
@@ -190,14 +189,12 @@ impl FzfWrapper {
     pub fn new() -> Self {
         Self {
             options: FzfOptions::default(),
-            preview_scripts: Vec::new(),
         }
     }
 
     pub fn with_options(options: FzfOptions) -> Self {
         Self {
             options,
-            preview_scripts: Vec::new(),
         }
     }
 
@@ -232,7 +229,7 @@ impl FzfWrapper {
 
         let preview_script_path = _preview_script_keeper
             .as_ref()
-            .map(|(temp_path, path)| path);
+            .map(|(_, path)| path);
 
         // Build fzf command
         let mut cmd = Command::new("fzf");

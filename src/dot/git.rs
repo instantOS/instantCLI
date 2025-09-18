@@ -114,7 +114,7 @@ pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
 
 pub fn status_all(
     cfg: &config::Config,
-    debug: bool,
+    _debug: bool,
     path: Option<&str>,
     db: &super::db::Database,
     show_all: bool,
@@ -165,8 +165,8 @@ fn show_status_summary(
 ) -> Result<()> {
     let home = dirs::home_dir().context("Failed to get home directory")?;
 
-    // Categorize files by status and collect repo statistics
-    let (files_by_status, repo_stats) = categorize_files_and_collect_stats(all_dotfiles, cfg, db);
+    // Categorize files by status
+    let (files_by_status, _) = categorize_files_and_collect_stats(all_dotfiles, cfg, db);
 
     let total_files = all_dotfiles.len();
     let clean_count = files_by_status
@@ -196,7 +196,7 @@ fn show_status_summary(
 
         if let Some(modified_files) = files_by_status.get(&DotFileStatus::Modified) {
             println!("{}", "Modified files:".yellow().bold());
-            for (target_path, dotfile, repo_name, dotfile_dir) in modified_files {
+            for (target_path, _dotfile, repo_name, dotfile_dir) in modified_files {
                 let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
                 let tilde_path = format!("~/{}", relative_path.display());
                 println!(
@@ -212,7 +212,7 @@ fn show_status_summary(
 
         if let Some(outdated_files) = files_by_status.get(&DotFileStatus::Outdated) {
             println!("{}", "Outdated files:".blue().bold());
-            for (target_path, dotfile, repo_name, dotfile_dir) in outdated_files {
+            for (target_path, _dotfile, repo_name, dotfile_dir) in outdated_files {
                 let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
                 let tilde_path = format!("~/{}", relative_path.display());
                 println!(
@@ -230,7 +230,7 @@ fn show_status_summary(
     // Show all files if requested
     if show_all && clean_count > 0 {
         println!("{}", "Clean files:".green().bold());
-        for (target_path, dotfile, repo_name, dotfile_dir) in files_by_status
+        for (target_path, _dotfile, repo_name, dotfile_dir) in files_by_status
             .get(&DotFileStatus::Clean)
             .unwrap_or(&vec![])
         {

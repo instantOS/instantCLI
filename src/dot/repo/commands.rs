@@ -34,9 +34,8 @@ pub fn handle_repo_command(
 }
 
 /// List all configured repositories
-fn list_repositories(config_manager: &ConfigManager, db: &Database) -> Result<()> {
+fn list_repositories(config_manager: &ConfigManager, _db: &Database) -> Result<()> {
     let config = &config_manager.config;
-    let repo_manager = RepositoryManager::new(config, db);
 
     if config.repos.is_empty() {
         println!("No repositories configured.");
@@ -147,7 +146,7 @@ fn remove_repository(
         .position(|r| r.name == name)
         .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", name))?;
 
-    let repo = &config.repos[repo_index];
+
 
     if remove_files {
         // Remove the local files

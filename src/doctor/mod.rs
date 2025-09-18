@@ -256,19 +256,16 @@ pub fn print_single_check_result_table(result: &CheckResult) {
     let status_text = match &result.status {
         CheckStatus::Pass(_) => "PASS",
         CheckStatus::Fail { .. } => "FAIL",
-        CheckStatus::Warning { .. } => "WARN",
     };
     let status_color = match &result.status {
         CheckStatus::Pass(_) => Color::Green,
         CheckStatus::Fail { .. } => Color::Red,
-        CheckStatus::Warning { .. } => Color::Yellow,
     };
     let status_cell = Cell::new(status_text).fg(status_color);
 
     let check_color = match &result.status {
         CheckStatus::Pass(_) => Color::Green,
         CheckStatus::Fail { .. } => Color::Red,
-        CheckStatus::Warning { .. } => Color::Yellow,
     };
     let check_cell = Cell::new(&result.name).fg(check_color);
 
