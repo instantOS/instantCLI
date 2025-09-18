@@ -122,6 +122,7 @@ fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
 
         // Launch terminal in background using nohup and background operator
         // This ensures the terminal continues running after our command exits
+        // TODO: this only needs linux support, remove the other thing
         let bg_cmd = if cfg!(unix) {
             format!("nohup {} >/dev/null 2>&1 &", term_cmd)
         } else {
