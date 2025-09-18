@@ -23,7 +23,10 @@ pub fn window_exists(window_class: &str) -> Result<bool> {
 pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()> {
     // Add window rules for the scratchpad terminal
     let rules = vec![
-        format!("workspace special:{},class:^({})$", workspace_name, window_class),
+        format!(
+            "workspace special:{},class:^({})$",
+            workspace_name, window_class
+        ),
         format!("center,class:^({})$", window_class),
     ];
 
@@ -37,7 +40,9 @@ pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()
 
 /// Toggle special workspace visibility using direct IPC
 pub fn toggle_special_workspace(workspace_name: &str) -> Result<()> {
-    Dispatch::call(DispatchType::ToggleSpecialWorkspace(Some(workspace_name.to_string())))
+    Dispatch::call(DispatchType::ToggleSpecialWorkspace(Some(
+        workspace_name.to_string(),
+    )))
     .context("Failed to toggle special workspace")?;
 
     Ok(())
@@ -103,19 +108,20 @@ pub fn get_active_workspace() -> Result<Workspace> {
         .to_vec();
 
     // Find the currently focused client
-    let focused_client = clients.iter()
-        .find(|client| client.focus_history_id == 0);
+    let focused_client = clients.iter().find(|client| client.focus_history_id == 0);
 
     if let Some(client) = focused_client {
         // Find the workspace that contains this client
-        let workspace = workspaces.iter()
+        let workspace = workspaces
+            .iter()
             .find(|ws| ws.id == client.workspace.id)
             .context("Failed to find workspace for focused client")?;
         return Ok(workspace.clone());
     }
 
     // Fallback: find workspace marked as active (though this might not be as reliable)
-    let active_workspace = workspaces.iter()
+    let active_workspace = workspaces
+        .iter()
         .find(|ws| ws.id > 0) // Regular workspaces have positive IDs
         .context("No active workspace found")?;
 
@@ -128,15 +134,18 @@ pub fn dispatch_command(command: &str) -> Result<()> {
     // This is a simplified version - you might want to expand this based on your needs
     if command.starts_with("exec") {
         let exec_command = command.strip_prefix("exec ").unwrap_or(command);
-        Dispatch::call(DispatchType::Exec(exec_command))
-            .context("Failed to execute command")?;
+        Dispatch::call(DispatchType::Exec(exec_command)).context("Failed to execute command")?;
     } else if command.starts_with("togglespecialworkspace") {
-        let workspace_name = command.strip_prefix("togglespecialworkspace ").unwrap_or("");
+        let workspace_name = command
+            .strip_prefix("togglespecialworkspace ")
+            .unwrap_or("");
         if workspace_name.is_empty() {
             Dispatch::call(DispatchType::ToggleSpecialWorkspace(None))
                 .context("Failed to toggle special workspace")?;
         } else {
-            Dispatch::call(DispatchType::ToggleSpecialWorkspace(Some(workspace_name.to_string())))
+            Dispatch::call(DispatchType::ToggleSpecialWorkspace(Some(
+                workspace_name.to_string(),
+            )))
             .context("Failed to toggle special workspace")?;
         }
     } else {
