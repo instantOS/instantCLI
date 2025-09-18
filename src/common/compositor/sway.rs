@@ -17,6 +17,7 @@ pub fn swaymsg(command: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+
 /// Execute swaymsg -t get_tree
 pub fn swaymsg_get_tree() -> Result<String> {
     let output = Command::new("swaymsg")
@@ -35,15 +36,47 @@ pub fn swaymsg_get_tree() -> Result<String> {
 /// Check if a window with specific class exists in Sway
 pub fn window_exists(window_class: &str) -> Result<bool> {
     let tree = swaymsg_get_tree()?;
-    Ok(tree.contains(&format!("\"app_id\": \"{window_class}\"")))
+    let parsed: Value = serde_json::from_str(&tree)
+        .context("Failed to parse Sway tree JSON")?;
+    Ok(find_node_by_app_id(&parsed, window_class).is_some())
 }
 
 /// Check if a window is currently visible (not in scratchpad) in Sway
 pub fn is_window_visible(window_class: &str) -> Result<bool> {
     let tree = swaymsg_get_tree()?;
-    // Look for the window and check if it's visible (not in scratchpad)
-    Ok(tree.contains(&format!("\"app_id\": \"{window_class}\""))
-        && !tree.contains(&format!("\"app_id\": \"{window_class}\".*scratchpad")))
+    let parsed: Value = serde_json::from_str(&tree)
+        .context("Failed to parse Sway tree JSON")?;
+    if let Some(node) = find_node_by_app_id(&parsed, window_class) {
+        // A window is visible if it's not on the scratchpad
+        return Ok(node.get("scratchpad_state").is_none()
+            || node.get("scratchpad_state").unwrap() == "none");
+    }
+    Ok(false)
+}
+
+/// Recursively find a node by its app_id
+fn find_node_by_app_id<'a>(node: &'a Value, app_id: &str) -> Option<&'a Value> {
+    if get_window_app_id(node) == Some(app_id.to_string()) {
+        return Some(node);
+    }
+
+    if let Some(nodes) = node.get("nodes").and_then(|n| n.as_array()) {
+        for child in nodes {
+            if let Some(found) = find_node_by_app_id(child, app_id) {
+                return Some(found);
+            }
+        }
+    }
+
+    if let Some(floating_nodes) = node.get("floating_nodes").and_then(|n| n.as_array()) {
+        for child in floating_nodes {
+            if let Some(found) = find_node_by_app_id(child, app_id) {
+                return Some(found);
+            }
+        }
+    }
+
+    None
 }
 
 /// Show a scratchpad window in Sway
@@ -93,14 +126,12 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
 
     let mut scratchpads = Vec::new();
 
-    // Recursively search for scratchpad windows
     if let Some(nodes) = find_scratchpad_nodes(&parsed) {
         for node in nodes {
             if let (Some(name), Some(app_id)) = (
                 get_window_name(&node),
                 get_window_app_id(&node)
             ) {
-                // Check if this is a scratchpad window (app_id starts with "scratchpad_")
                 if let Some(scratchpad_name) = app_id.strip_prefix("scratchpad_") {
                     let is_visible = is_window_visible(&app_id)?;
                     scratchpads.push(ScratchpadWindowInfo {
@@ -124,6 +155,47 @@ pub struct ScratchpadWindowInfo {
     pub window_class: String,
     pub title: String,
     pub visible: bool,
+}
+
+/// Recursively find all scratchpad nodes in the Sway tree
+fn find_scratchpad_nodes(tree: &Value) -> Option<Vec<&Value>> {
+    let mut scratchpad_nodes = Vec::new();
+    find_nodes_recursive(tree, &mut scratchpad_nodes);
+    Some(scratchpad_nodes)
+}
+
+/// Recursive helper to find scratchpad nodes
+fn find_nodes_recursive<'a>(node: &'a Value, scratchpad_nodes: &mut Vec<&'a Value>) {
+    if let Some(nodes) = node.get("nodes").and_then(|n| n.as_array()) {
+        for child in nodes {
+            // Check if this node has scratchpad state
+            if child.get("scratchpad_state").is_some() {
+                scratchpad_nodes.push(child);
+            }
+            // Recursively search children
+            find_nodes_recursive(child, scratchpad_nodes);
+        }
+    }
+
+    // Also check floating nodes
+    if let Some(floating_nodes) = node.get("floating_nodes").and_then(|n| n.as_array()) {
+        for child in floating_nodes {
+            if child.get("scratchpad_state").is_some() {
+                scratchpad_nodes.push(child);
+            }
+            find_nodes_recursive(child, scratchpad_nodes);
+        }
+    }
+}
+
+/// Get window name from node
+fn get_window_name(node: &Value) -> Option<String> {
+    node.get("name").and_then(|n| n.as_str()).map(|s| s.to_string())
+}
+
+/// Get window app_id from node
+fn get_window_app_id(node: &Value) -> Option<String> {
+    node.get("app_id").and_then(|a| a.as_str()).map(|s| s.to_string())
 }
 
 /// Recursively find all scratchpad nodes in the Sway tree
