@@ -271,12 +271,12 @@ impl std::fmt::Display for DotFileStatus {
 }
 
 /// Categorize files by status and collect repository statistics
-fn categorize_files_and_collect_stats(
-    all_dotfiles: &std::collections::HashMap<PathBuf, super::Dotfile>,
-    cfg: &config::Config,
-    db: &super::db::Database,
+fn categorize_files_and_collect_stats<'a>(
+    all_dotfiles: &'a std::collections::HashMap<PathBuf, super::Dotfile>,
+    cfg: &'a config::Config,
+    db: &'a super::db::Database,
 ) -> (
-    std::collections::HashMap<DotFileStatus, Vec<(PathBuf, &super::Dotfile, super::RepoName, String)>>,
+    std::collections::HashMap<DotFileStatus, Vec<(PathBuf, &'a super::Dotfile, super::RepoName, String)>>,
     std::collections::HashMap<super::RepoName, std::collections::HashMap<String, usize>>,
 ) {
     let mut files_by_status = std::collections::HashMap::new();
