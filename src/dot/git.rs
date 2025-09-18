@@ -164,33 +164,9 @@ fn show_status_summary(
     show_all: bool,
 ) -> Result<()> {
     let home = dirs::home_dir().context("Failed to get home directory")?;
-    let mut files_by_status = std::collections::HashMap::new();
-    let mut repo_stats = std::collections::HashMap::new();
 
     // Categorize files by status and collect repo statistics
-    // TODO: extract this into a separate function
-    for (target_path, dotfile) in all_dotfiles {
-        let status = get_dotfile_status(dotfile, db);
-        let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
-        let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
-
-        // Store file info for later display
-        files_by_status
-            .entry(status)
-            .or_insert_with(Vec::new)
-            .push((
-                target_path.clone(),
-                dotfile,
-                repo_name.clone(),
-                dotfile_dir.clone(),
-            ));
-
-        // Update repo statistics
-        let repo_entry = repo_stats
-            .entry(repo_name.clone())
-            .or_insert_with(std::collections::HashMap::new);
-        *repo_entry.entry(dotfile_dir.clone()).or_insert(0) += 1;
-    }
+    let (files_by_status, repo_stats) = categorize_files_and_collect_stats(all_dotfiles, cfg, db);
 
     let total_files = all_dotfiles.len();
     let clean_count = files_by_status
@@ -272,22 +248,7 @@ fn show_status_summary(
     }
 
     // Show action suggestions
-    // TODO: extract this into a separate function
-    if modified_count > 0 || outdated_count > 0 {
-        println!("{}", "Suggested actions:".bold());
-        if modified_count > 0 {
-            println!("  Use 'instant dot apply' to apply changes from repositories");
-            println!("  Use 'instant dot fetch' to save your modifications to repositories");
-        }
-        if outdated_count > 0 {
-            println!("  Use 'instant dot reset <path>' to restore files to their original state");
-        }
-        println!("  Use 'instant dot status --all' to see all tracked files including clean ones");
-    } else if clean_count > 0 {
-        println!("✓ All dotfiles are clean and up to date!");
-    } else {
-        println!("No dotfiles found. Use 'instant dot repo add <url>' to add a repository.");
-    }
+    show_action_suggestions(modified_count, outdated_count, clean_count);
 
     Ok(())
 }
@@ -306,6 +267,63 @@ impl std::fmt::Display for DotFileStatus {
             DotFileStatus::Outdated => write!(f, "{}", "outdated".blue()),
             DotFileStatus::Clean => write!(f, "{}", "clean".green()),
         }
+    }
+}
+
+/// Categorize files by status and collect repository statistics
+fn categorize_files_and_collect_stats(
+    all_dotfiles: &std::collections::HashMap<PathBuf, super::Dotfile>,
+    cfg: &config::Config,
+    db: &super::db::Database,
+) -> (
+    std::collections::HashMap<DotFileStatus, Vec<(PathBuf, &super::Dotfile, super::RepoName, String)>>,
+    std::collections::HashMap<super::RepoName, std::collections::HashMap<String, usize>>,
+) {
+    let mut files_by_status = std::collections::HashMap::new();
+    let mut repo_stats = std::collections::HashMap::new();
+
+    for (target_path, dotfile) in all_dotfiles {
+        let status = get_dotfile_status(dotfile, db);
+        let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
+        let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+
+        // Store file info for later display
+        files_by_status
+            .entry(status)
+            .or_insert_with(Vec::new)
+            .push((
+                target_path.clone(),
+                dotfile,
+                repo_name.clone(),
+                dotfile_dir.clone(),
+            ));
+
+        // Update repo statistics
+        let repo_entry = repo_stats
+            .entry(repo_name.clone())
+            .or_insert_with(std::collections::HashMap::new);
+        *repo_entry.entry(dotfile_dir.clone()).or_insert(0) += 1;
+    }
+
+    (files_by_status, repo_stats)
+}
+
+/// Show action suggestions based on file status counts
+fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_count: usize) {
+    if modified_count > 0 || outdated_count > 0 {
+        println!("{}", "Suggested actions:".bold());
+        if modified_count > 0 {
+            println!("  Use 'instant dot apply' to apply changes from repositories");
+            println!("  Use 'instant dot fetch' to save your modifications to repositories");
+        }
+        if outdated_count > 0 {
+            println!("  Use 'instant dot reset <path>' to restore files to their original state");
+        }
+        println!("  Use 'instant dot status --all' to see all tracked files including clean ones");
+    } else if clean_count > 0 {
+        println!("✓ All dotfiles are clean and up to date!");
+    } else {
+        println!("No dotfiles found. Use 'instant dot repo add <url>' to add a repository.");
     }
 }
 
