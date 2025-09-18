@@ -242,6 +242,7 @@ impl FzfWrapper {
         }
 
         if let Some(prompt) = &self.options.prompt {
+            //TODO: add a "> " to the end of the prompt for spacing
             cmd.arg("--prompt").arg(prompt);
         }
 
