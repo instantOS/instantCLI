@@ -6,6 +6,7 @@ mod dev;
 mod doctor;
 mod dot;
 mod fzf_wrapper;
+mod launch;
 mod menu;
 mod scratchpad;
 
@@ -80,6 +81,8 @@ enum Commands {
         #[command(subcommand)]
         command: DevCommands,
     },
+    /// Application launcher
+    Launch,
     /// Interactive menu commands for shell scripts
     Menu {
         #[command(subcommand)]
@@ -249,6 +252,10 @@ async fn main() -> Result<()> {
                 "Error handling dev command",
                 None,
             )?;
+        }
+        Some(Commands::Launch) => {
+            let exit_code = launch::handle_launch_command().await?;
+            std::process::exit(exit_code);
         }
         Some(Commands::Doctor { command }) => {
             doctor::command::handle_doctor_command(command.clone()).await?;
