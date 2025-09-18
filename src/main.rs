@@ -82,7 +82,11 @@ enum Commands {
         command: DevCommands,
     },
     /// Application launcher
-    Launch,
+    Launch {
+        /// List all available items without opening menu
+        #[clap(long)]
+        list: bool,
+    },
     /// Interactive menu commands for shell scripts
     Menu {
         #[command(subcommand)]
@@ -253,8 +257,8 @@ async fn main() -> Result<()> {
                 None,
             )?;
         }
-        Some(Commands::Launch) => {
-            let exit_code = launch::handle_launch_command().await?;
+        Some(Commands::Launch { list }) => {
+            let exit_code = launch::handle_launch_command(*list).await?;
             std::process::exit(exit_code);
         }
         Some(Commands::Doctor { command }) => {

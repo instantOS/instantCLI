@@ -20,7 +20,7 @@ pub enum LaunchCommands {
 }
 
 /// Handle launch command
-pub async fn handle_launch_command() -> Result<i32> {
+pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
     // Initialize cache
     let mut cache = LaunchCache::new()?;
 
@@ -29,6 +29,14 @@ pub async fn handle_launch_command() -> Result<i32> {
 
     // Get display names with conflict resolution
     let display_names = cache.get_display_names().await?;
+
+    // If list only, just print the items and exit
+    if list_only {
+        for name in display_names {
+            println!("{}", name);
+        }
+        return Ok(0);
+    }
 
     // Convert to menu items
     let menu_items: Vec<SerializableMenuItem> = display_names
