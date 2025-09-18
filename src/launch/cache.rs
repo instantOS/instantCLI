@@ -375,7 +375,7 @@ impl LaunchCache {
         // Create a frecency-based order for names
         let mut name_order: HashMap<String, usize> = HashMap::new();
         for (index, item) in sorted_items.iter().enumerate() {
-            let name = item.item.display_name();
+            let name = item.item.display_name().to_string();
             name_order.insert(name, index);
         }
 
@@ -439,9 +439,9 @@ impl LaunchCache {
             let sorted_items = frecency_store.sorted(fre::args::SortMethod::Frecent);
 
             // Create a frecency map for O(1) lookups instead of cloning items
-            let mut frecency_map: HashMap<&str, f64> = HashMap::new();
+            let mut frecency_map: HashMap<String, f64> = HashMap::new();
             for frecency_item in sorted_items {
-                let item_name = frecency_item.item.display_name();
+                let item_name = frecency_item.item.clone();
                 let frecency_score = frecency_item.get_frecency(current_time);
                 frecency_map.insert(item_name, frecency_score);
             }
