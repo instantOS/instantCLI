@@ -149,6 +149,7 @@ fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
 
         // Launch the terminal in background
         let mut term_cmd = config.terminal_command.clone();
+        // TODO: unify, also change default to kitty
         if config.terminal_command == "alacritty" {
             term_cmd = format!("{} --class {}", config.terminal_command, config.window_class);
         }
@@ -217,6 +218,7 @@ fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
         setup_hyprland_window_rules(workspace_name, &config.window_class)?;
 
         // Prepare terminal command with appropriate class
+        // TODO: this is duplicated between sway and hyprland, unify
         let mut term_cmd = config.terminal_command.clone();
         if config.terminal_command == "alacritty" {
             term_cmd = format!("{} --class {}", config.terminal_command, config.window_class);
@@ -225,6 +227,7 @@ fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
         }
 
         // Launch terminal in background using nohup and background operator
+        // TODO: only support linux, remove the other thing
         let bg_cmd = if cfg!(unix) {
             format!("nohup {} >/dev/null 2>&1 &", term_cmd)
         } else {
