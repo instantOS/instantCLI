@@ -45,7 +45,7 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, debug: bool) -> Re
     println!("📍 Repository: {}", repo.html_url);
 
     if let Some(desc) = &repo.description {
-        println!("📝 {}", desc);
+        println!("📝 {desc}");
     }
 
     Ok(())

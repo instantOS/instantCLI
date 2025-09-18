@@ -6,7 +6,7 @@ use std::process::Command;
 /// Create and launch terminal in background
 fn create_terminal_process(config: &ScratchpadConfig) -> Result<()> {
     let term_cmd = config.terminal_command();
-    let bg_cmd = format!("nohup {} >/dev/null 2>&1 &", term_cmd);
+    let bg_cmd = format!("nohup {term_cmd} >/dev/null 2>&1 &");
 
     Command::new("sh")
         .args(["-c", &bg_cmd])
@@ -48,8 +48,7 @@ pub fn wait_for_window_to_appear(
 
         if attempt < max_attempts {
             eprintln!(
-                "Waiting for window to appear... (attempt {}/{})",
-                attempt, max_attempts
+                "Waiting for window to appear... (attempt {attempt}/{max_attempts})"
             );
         }
     }
@@ -167,14 +166,14 @@ pub fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scratchpad::terminal::Terminal;
+    
 
     #[test]
     fn test_check_window_exists() {
         // Test with unsupported compositor
         let result = check_window_exists(&CompositorType::Other("test".to_string()), "test_window");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false); // Should return false for unsupported compositor
+        assert!(!result.unwrap()); // Should return false for unsupported compositor
     }
 
     #[test]
@@ -188,6 +187,6 @@ mod tests {
         );
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false); // Should return false for unsupported compositor (window doesn't exist)
+        assert!(!result.unwrap()); // Should return false for unsupported compositor (window doesn't exist)
     }
 }

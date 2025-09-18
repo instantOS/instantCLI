@@ -1,6 +1,8 @@
 /// Supported terminal emulators
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub enum Terminal {
+    #[default]
     Kitty,
     Alacritty,
     Wezterm,
@@ -21,10 +23,10 @@ impl Terminal {
     /// Get the class flag for this terminal
     pub fn class_flag(&self, class: &str) -> String {
         match self {
-            Terminal::Kitty => format!("--class {}", class),
-            Terminal::Alacritty => format!("--class {}", class),
-            Terminal::Wezterm => format!("--class {}", class),
-            Terminal::Other(_) => format!("--class {}", class), // Assume standard flag
+            Terminal::Kitty => format!("--class {class}"),
+            Terminal::Alacritty => format!("--class {class}"),
+            Terminal::Wezterm => format!("--class {class}"),
+            Terminal::Other(_) => format!("--class {class}"), // Assume standard flag
         }
     }
 
@@ -56,11 +58,6 @@ impl From<&str> for Terminal {
     }
 }
 
-impl Default for Terminal {
-    fn default() -> Self {
-        Terminal::Kitty
-    }
-}
 
 #[cfg(test)]
 mod tests {

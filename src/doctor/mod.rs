@@ -329,7 +329,7 @@ pub fn print_single_check_result_table(result: &CheckResult) {
         if result.status.is_fixable() {
             if let Some(ref msg) = result.fix_message {
                 println!();
-                println!("  Fix available: {}", msg);
+                println!("  Fix available: {msg}");
                 println!("  Run: instant doctor fix {}", result.check_id);
             }
         } else {

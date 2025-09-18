@@ -32,7 +32,7 @@ pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()
 
     for rule in rules {
         Keyword::set("windowrulev2", rule.clone())
-            .context(format!("Failed to set window rule: {}", rule))?;
+            .context(format!("Failed to set window rule: {rule}"))?;
     }
 
     Ok(())
@@ -158,7 +158,7 @@ pub fn dispatch_command(command: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     #[test]
     fn test_window_exists_parsing() {

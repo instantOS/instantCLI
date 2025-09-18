@@ -108,7 +108,7 @@ impl MenuClient {
         }
 
         // Deserialize response
-        let response_message: MenuResponseMessage = serde_json::from_str(&response_json.trim())
+        let response_message: MenuResponseMessage = serde_json::from_str(response_json.trim())
             .context("Failed to deserialize response")?;
 
         // Verify request ID matches
@@ -202,7 +202,7 @@ impl MenuClient {
         }
 
         // Deserialize response
-        let response_message: MenuResponseMessage = serde_json::from_str(&response_json.trim())
+        let response_message: MenuResponseMessage = serde_json::from_str(response_json.trim())
             .context("Failed to deserialize stop response")?;
 
         // Verify request ID matches
@@ -233,7 +233,7 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
             match client.confirm(message.clone()) {
                 Ok(result) => Ok(result.into()),
                 Err(e) => {
-                    eprintln!("GUI menu error: {}", e);
+                    eprintln!("GUI menu error: {e}");
                     Ok(3) // Error exit code
                 }
             }
@@ -282,7 +282,7 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("GUI menu error: {}", e);
+                    eprintln!("GUI menu error: {e}");
                     Ok(3) // Error exit code
                 }
             }
@@ -290,11 +290,11 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
         MenuCommands::Input { prompt, gui: true } => {
             match client.input(prompt.clone()) {
                 Ok(text) => {
-                    println!("{}", text);
+                    println!("{text}");
                     Ok(0) // Success
                 }
                 Err(e) => {
-                    eprintln!("GUI menu error: {}", e);
+                    eprintln!("GUI menu error: {e}");
                     Ok(3) // Error exit code
                 }
             }
@@ -314,7 +314,7 @@ pub fn print_status_info(status: &StatusInfo) {
         ServerStatus::ShuttingDown => "Shutting Down".red(),
     };
 
-    println!("Status:           {}", status_text);
+    println!("Status:           {status_text}");
     println!("Version:          {}", status.version.blue());
     println!("Protocol:         {}", status.protocol_version.blue());
     println!("Compositor:       {}", status.compositor.yellow());

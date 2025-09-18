@@ -118,7 +118,7 @@ impl ScratchpadCommand {
                 match toggle_scratchpad(compositor, &config) {
                     Ok(()) => Ok(0),
                     Err(e) => {
-                        eprintln!("Error toggling scratchpad: {}", e);
+                        eprintln!("Error toggling scratchpad: {e}");
                         Ok(1)
                     }
                 }
@@ -144,7 +144,7 @@ impl ScratchpadCommand {
                 match show_scratchpad(compositor, &config) {
                     Ok(()) => Ok(0),
                     Err(e) => {
-                        eprintln!("Error showing scratchpad: {}", e);
+                        eprintln!("Error showing scratchpad: {e}");
                         Ok(1)
                     }
                 }
@@ -159,7 +159,7 @@ impl ScratchpadCommand {
                 match hide_scratchpad(compositor, &config) {
                     Ok(()) => Ok(0),
                     Err(e) => {
-                        eprintln!("Error hiding scratchpad: {}", e);
+                        eprintln!("Error hiding scratchpad: {e}");
                         Ok(1)
                     }
                 }
@@ -181,7 +181,7 @@ impl ScratchpadCommand {
                         Ok(0)
                     }
                     Err(e) => {
-                        eprintln!("Error checking scratchpad status: {}", e);
+                        eprintln!("Error checking scratchpad status: {e}");
                         Ok(2)
                     }
                 }

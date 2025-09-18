@@ -13,12 +13,12 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             if gui {
                 client::handle_gui_request(&command)
             } else {
-                match FzfWrapper::confirm(&message) {
+                match FzfWrapper::confirm(message) {
                     Ok(ConfirmResult::Yes) => Ok(0),       // Yes
                     Ok(ConfirmResult::No) => Ok(1),        // No
                     Ok(ConfirmResult::Cancelled) => Ok(2), // Cancelled
                     Err(e) => {
-                        eprintln!("Error: {}", e);
+                        eprintln!("Error: {e}");
                         Ok(3) // Error
                     }
                 }
@@ -79,11 +79,11 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                     }
                     Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(1), // Cancelled
                     Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {
-                        eprintln!("Error: {}", e);
+                        eprintln!("Error: {e}");
                         Ok(2) // Error
                     }
                     Err(e) => {
-                        eprintln!("Error: {}", e);
+                        eprintln!("Error: {e}");
                         Ok(2) // Error
                     }
                 }
@@ -95,11 +95,11 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             } else {
                 match FzfWrapper::input(prompt) {
                     Ok(input) => {
-                        println!("{}", input);
+                        println!("{input}");
                         Ok(0) // Success
                     }
                     Err(e) => {
-                        eprintln!("Error: {}", e);
+                        eprintln!("Error: {e}");
                         Ok(2) // Error
                     }
                 }
@@ -114,7 +114,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                         Ok(0)
                     }
                     Err(e) => {
-                        eprintln!("Error getting server status: {}", e);
+                        eprintln!("Error getting server status: {e}");
                         Ok(2)
                     }
                 }
@@ -155,7 +155,7 @@ pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
                         println!("✗ Menu server is not running");
                         Ok(1)
                     } else {
-                        eprintln!("Error stopping server: {}", e);
+                        eprintln!("Error stopping server: {e}");
                         Ok(1)
                     }
                 }

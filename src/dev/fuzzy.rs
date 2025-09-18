@@ -91,7 +91,7 @@ pub fn select_repository(repos: Vec<GitHubRepo>) -> Result<GitHubRepo, FzfError>
 
     match wrapper
         .select(items)
-        .map_err(|e| FzfError::FzfError(format!("Selection error: {}", e)))?
+        .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
     {
         crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.repo),
         crate::fzf_wrapper::FzfResult::Cancelled => Err(FzfError::UserCancelled),
@@ -120,7 +120,7 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
 
     match wrapper
         .select(items)
-        .map_err(|e| FzfError::FzfError(format!("Selection error: {}", e)))?
+        .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
     {
         crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.package),
         crate::fzf_wrapper::FzfResult::Cancelled => Err(FzfError::UserCancelled),

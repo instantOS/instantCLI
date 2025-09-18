@@ -106,7 +106,7 @@ impl MenuServer {
             // Clean up socket file
             if Path::new(&socket_path_clone).exists() {
                 if let Err(e) = std::fs::remove_file(&socket_path_clone) {
-                    eprintln!("Failed to remove socket file during shutdown: {}", e);
+                    eprintln!("Failed to remove socket file during shutdown: {e}");
                 }
             }
 
@@ -121,7 +121,7 @@ impl MenuServer {
             match listener.accept() {
                 Ok((stream, addr)) => {
                     if let Err(e) = self.handle_connection(stream) {
-                        eprintln!("Error handling connection from {:?}: {}", addr, e);
+                        eprintln!("Error handling connection from {addr:?}: {e}");
                     }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -130,7 +130,7 @@ impl MenuServer {
                     continue;
                 }
                 Err(e) => {
-                    eprintln!("Error accepting connection: {}", e);
+                    eprintln!("Error accepting connection: {e}");
                     // Brief pause to avoid busy loop on persistent errors
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
@@ -146,7 +146,7 @@ impl MenuServer {
     async fn cleanup_socket(&self) {
         if Path::new(&self.socket_path).exists() {
             if let Err(e) = std::fs::remove_file(&self.socket_path) {
-                eprintln!("Failed to remove socket file: {}", e);
+                eprintln!("Failed to remove socket file: {e}");
             } else {
                 println!("Socket file cleaned up");
             }
@@ -175,7 +175,7 @@ impl MenuServer {
 
         // Parse request
         let message: MenuMessage =
-            serde_json::from_str(&request_json.trim()).context("Failed to deserialize request")?;
+            serde_json::from_str(request_json.trim()).context("Failed to deserialize request")?;
 
         // Process request and generate response
         let response = self.process_request(message.payload)?;
@@ -207,7 +207,7 @@ impl MenuServer {
 
         if should_manage_scratchpad {
             if let Err(e) = self.show_scratchpad() {
-                eprintln!("Warning: Failed to show scratchpad: {}", e);
+                eprintln!("Warning: Failed to show scratchpad: {e}");
             }
         }
 
@@ -216,8 +216,7 @@ impl MenuServer {
             MenuRequest::Confirm { message } => match FzfWrapper::confirm(&message) {
                 Ok(result) => Ok(MenuResponse::ConfirmResult(result.into())),
                 Err(e) => Ok(MenuResponse::Error(format!(
-                    "Failed to show confirm dialog: {}",
-                    e
+                    "Failed to show confirm dialog: {e}"
                 ))),
             },
             MenuRequest::Choice {
@@ -228,8 +227,7 @@ impl MenuServer {
             MenuRequest::Input { prompt } => match FzfWrapper::input(&prompt) {
                 Ok(input) => Ok(MenuResponse::InputResult(input)),
                 Err(e) => Ok(MenuResponse::Error(format!(
-                    "Failed to show input dialog: {}",
-                    e
+                    "Failed to show input dialog: {e}"
                 ))),
             },
             MenuRequest::Status => Ok(self.get_status_info()),
@@ -243,7 +241,7 @@ impl MenuServer {
         // Hide scratchpad after processing (for interactive requests only)
         if should_manage_scratchpad {
             if let Err(e) = self.hide_scratchpad() {
-                eprintln!("Warning: Failed to hide scratchpad: {}", e);
+                eprintln!("Warning: Failed to hide scratchpad: {e}");
             }
         }
 
@@ -276,11 +274,10 @@ impl MenuServer {
             }
             Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
             Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {
-                Ok(MenuResponse::Error(format!("Selection error: {}", e)))
+                Ok(MenuResponse::Error(format!("Selection error: {e}")))
             }
             Err(e) => Ok(MenuResponse::Error(format!(
-                "Failed to show selection dialog: {}",
-                e
+                "Failed to show selection dialog: {e}"
             ))),
         }
     }
@@ -377,7 +374,7 @@ pub fn create_menu_server_scratchpad_config() -> ScratchpadConfig {
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| "instant".to_string());
 
-    let inner_command = format!("{} menu server launch --inside", current_exe);
+    let inner_command = format!("{current_exe} menu server launch --inside");
 
     ScratchpadConfig::with_params(
         "instantmenu".to_string(),
@@ -405,7 +402,7 @@ pub async fn run_server_inside() -> Result<i32> {
     // Clear screen and start server
     print!("\x1B[2J\x1B[H"); // Clear screen and move cursor to top-left
     if let Err(e) = server.start().await {
-        eprintln!("Server error: {}", e);
+        eprintln!("Server error: {e}");
         return Ok(1);
     }
 
@@ -426,7 +423,7 @@ pub fn run_server_launch() -> Result<i32> {
             Ok(0)
         }
         Err(e) => {
-            eprintln!("Failed to launch menu server scratchpad: {}", e);
+            eprintln!("Failed to launch menu server scratchpad: {e}");
             Ok(1)
         }
     }

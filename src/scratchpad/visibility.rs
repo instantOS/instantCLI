@@ -137,7 +137,7 @@ pub fn hide_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scratchpad::terminal::Terminal;
+    
 
     #[test]
     fn test_show_hide_functions_exist() {
@@ -150,6 +150,6 @@ mod tests {
         let visible_result = is_scratchpad_visible(&compositor, &config);
 
         assert!(visible_result.is_ok());
-        assert_eq!(visible_result.unwrap(), false); // Should return false for unsupported compositor
+        assert!(!visible_result.unwrap()); // Should return false for unsupported compositor
     }
 }

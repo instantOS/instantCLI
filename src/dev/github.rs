@@ -70,16 +70,15 @@ pub async fn fetch_instantos_repos() -> Result<Vec<GitHubRepo>, GitHubErrorKind>
             .unwrap_or_else(|_| "Unknown error".to_string());
         let api_error: Result<GitHubError, _> = serde_json::from_str(&error_text);
 
-        return match api_error {
+        match api_error {
             Ok(err) => Err(GitHubErrorKind::ApiError {
                 message: err.message,
                 documentation_url: err.documentation_url,
             }),
             Err(_) => Err(GitHubErrorKind::HttpError(format!(
-                "HTTP {}: {}",
-                status, error_text
+                "HTTP {status}: {error_text}"
             ))),
-        };
+        }
     } else {
         let repos = response
             .json::<Vec<GitHubRepo>>()
@@ -96,5 +95,5 @@ pub fn format_repo_for_display(repo: &GitHubRepo) -> String {
     let lang = repo.language.as_deref().unwrap_or("Unknown");
     let desc = repo.description.as_deref().unwrap_or("No description");
 
-    format!("⭐ {}  🍴 {}  {}  - {}", stars, forks, lang, desc)
+    format!("⭐ {stars}  🍴 {forks}  {lang}  - {desc}")
 }

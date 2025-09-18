@@ -173,7 +173,7 @@ pub const PROTOCOL_VERSION: &str = "1.0";
 /// Default socket path
 pub fn default_socket_path() -> String {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        format!("{}/instantmenu.sock", runtime_dir)
+        format!("{runtime_dir}/instantmenu.sock")
     } else {
         // Fallback to /tmp if XDG_RUNTIME_DIR is not set
         "/tmp/instantmenu.sock".to_string()
@@ -191,7 +191,7 @@ pub fn generate_request_id() -> String {
 
     let random: u32 = rand::random();
 
-    format!("req_{}_{}", timestamp, random)
+    format!("req_{timestamp}_{random}")
 }
 
 /// Convert FZF confirmation result to protocol result

@@ -137,9 +137,9 @@ esac
                     let escaped_key = key.replace("'", "'\\''");
                     let escaped_content = preview_content.replace("'", "'\\''");
                     match preview_type.as_str() {
-                        "text" => format!("'{}') echo '{}' ;;", escaped_key, escaped_content),
-                        "command" => format!("'{}') {} ;;", escaped_key, escaped_content),
-                        _ => format!("'{}') echo 'Invalid preview type' ;;", escaped_key),
+                        "text" => format!("'{escaped_key}') echo '{escaped_content}' ;;"),
+                        "command" => format!("'{escaped_key}') {escaped_content} ;;"),
+                        _ => format!("'{escaped_key}') echo 'Invalid preview type' ;;"),
                     }
                 })
                 .collect::<Vec<_>>()
@@ -305,7 +305,7 @@ impl FzfWrapper {
                     Ok(FzfResult::Cancelled)
                 }
             }
-            Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {}", e))),
+            Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {e}"))),
         }
     }
 }
@@ -344,7 +344,7 @@ impl FzfWrapper {
         cmd.arg("--print-query")
             .arg("--no-info")
             .arg("--prompt")
-            .arg(format!("{} ", prompt));
+            .arg(format!("{prompt} "));
 
         // Add input-specific margin arguments
         for arg in FzfOptions::input_margin_args() {
@@ -393,7 +393,7 @@ impl FzfWrapper {
         ];
 
         let wrapper = FzfWrapper::with_options(FzfOptions {
-            prompt: Some(format!("{} [Y/n]: ", message)),
+            prompt: Some(format!("{message} [Y/n]: ")),
             additional_args: FzfOptions::confirm_margin_args(),
             ..Default::default()
         });

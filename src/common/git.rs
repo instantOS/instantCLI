@@ -12,8 +12,7 @@ pub fn git_clone(
 ) -> Result<()> {
     if debug {
         eprintln!(
-            "Running git clone with depth: {}, branch: {:?}, url: {}, target: {:?}",
-            depth, branch, url, target
+            "Running git clone with depth: {depth}, branch: {branch:?}, url: {url}, target: {target:?}"
         );
     }
 
