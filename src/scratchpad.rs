@@ -3,13 +3,61 @@ use crate::hyprland_ipc;
 use anyhow::{Context, Result};
 use std::process::Command;
 
+/// Supported terminal emulators
+#[derive(Debug, Clone, PartialEq)]
+pub enum Terminal {
+    Kitty,
+    Alacritty,
+    Wezterm,
+    Other(String),
+}
+
+impl Terminal {
+    /// Get the command name for this terminal
+    pub fn command(&self) -> &str {
+        match self {
+            Terminal::Kitty => "kitty",
+            Terminal::Alacritty => "alacritty",
+            Terminal::Wezterm => "wezterm",
+            Terminal::Other(cmd) => cmd,
+        }
+    }
+
+    /// Get the class flag for this terminal
+    pub fn class_flag(&self, class: &str) -> String {
+        match self {
+            Terminal::Kitty => format!("--class {}", class),
+            Terminal::Alacritty => format!("--class {}", class),
+            Terminal::Wezterm => format!("--class {}", class),
+            Terminal::Other(_) => format!("--class {}", class), // Assume standard flag
+        }
+    }
+}
+
+impl From<String> for Terminal {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "kitty" => Terminal::Kitty,
+            "alacritty" => Terminal::Alacritty,
+            "wezterm" => Terminal::Wezterm,
+            _ => Terminal::Other(s),
+        }
+    }
+}
+
+impl From<&str> for Terminal {
+    fn from(s: &str) -> Self {
+        Terminal::from(s.to_string())
+    }
+}
+
 /// Configuration for scratchpad terminal behavior
 #[derive(Debug, Clone)]
 pub struct ScratchpadConfig {
     /// Scratchpad name (used as prefix for window class)
     pub name: String,
-    /// Terminal command to launch
-    pub terminal_command: String,
+    /// Terminal emulator to use
+    pub terminal: Terminal,
     /// Command to run inside the terminal (optional)
     pub inner_command: Option<String>,
     /// Terminal width as percentage of screen
@@ -23,7 +71,7 @@ impl ScratchpadConfig {
     pub fn new(name: String) -> Self {
         Self {
             name,
-            terminal_command: "kitty".to_string(),
+            terminal: Terminal::Kitty,
             inner_command: None,
             width_pct: 50,
             height_pct: 60,
@@ -33,14 +81,14 @@ impl ScratchpadConfig {
     /// Create config with custom parameters
     pub fn with_params(
         name: String,
-        terminal: String,
+        terminal: Terminal,
         inner_command: Option<String>,
         width_pct: u32,
         height_pct: u32,
     ) -> Self {
         Self {
             name,
-            terminal_command: terminal,
+            terminal,
             inner_command,
             width_pct,
             height_pct,
@@ -479,7 +527,7 @@ mod tests {
         assert_eq!(config.name, "instantscratchpad");
         assert_eq!(config.window_class(), "scratchpad_instantscratchpad");
         assert_eq!(config.workspace_name(), "scratchpad_instantscratchpad");
-        assert_eq!(config.terminal_command, "kitty");
+        assert_eq!(config.terminal, Terminal::Kitty);
         assert_eq!(config.inner_command, None);
         assert_eq!(config.width_pct, 50);
         assert_eq!(config.height_pct, 60);
@@ -489,7 +537,7 @@ mod tests {
     fn test_custom_config() {
         let config = ScratchpadConfig::with_params(
             "my_scratch".to_string(),
-            "alacritty".to_string(),
+            Terminal::Alacritty,
             Some("fish".to_string()),
             70,
             80,
@@ -498,7 +546,7 @@ mod tests {
         assert_eq!(config.name, "my_scratch");
         assert_eq!(config.window_class(), "scratchpad_my_scratch");
         assert_eq!(config.workspace_name(), "scratchpad_my_scratch");
-        assert_eq!(config.terminal_command, "alacritty");
+        assert_eq!(config.terminal, Terminal::Alacritty);
         assert_eq!(config.inner_command, Some("fish".to_string()));
         assert_eq!(config.width_pct, 70);
         assert_eq!(config.height_pct, 80);
@@ -509,7 +557,7 @@ mod tests {
         // Test without inner command
         let config = ScratchpadConfig::with_params(
             "test".to_string(),
-            "alacritty".to_string(),
+            Terminal::Alacritty,
             None,
             50,
             60,
@@ -521,7 +569,7 @@ mod tests {
         // Test with inner command
         let config_with_cmd = ScratchpadConfig::with_params(
             "test".to_string(),
-            "kitty".to_string(),
+            Terminal::Kitty,
             Some("fish".to_string()),
             50,
             60,
@@ -530,12 +578,24 @@ mod tests {
         let cmd_with_inner = get_terminal_command_with_class(&config_with_cmd);
         assert_eq!(cmd_with_inner, "kitty --class scratchpad_test -e fish");
 
-        // Test unsupported terminal
-        let config_other =
-            ScratchpadConfig::with_params("test".to_string(), "wezterm".to_string(), None, 50, 60);
+        // Test wezterm terminal
+        let config_wezterm =
+            ScratchpadConfig::with_params("test".to_string(), Terminal::Wezterm, None, 50, 60);
+
+        let cmd_wezterm = get_terminal_command_with_class(&config_wezterm);
+        assert_eq!(cmd_wezterm, "wezterm --class scratchpad_test");
+
+        // Test other terminal
+        let config_other = ScratchpadConfig::with_params(
+            "test".to_string(),
+            Terminal::Other("foot".to_string()),
+            None,
+            50,
+            60,
+        );
 
         let cmd_other = get_terminal_command_with_class(&config_other);
-        assert_eq!(cmd_other, "wezterm");
+        assert_eq!(cmd_other, "foot --class scratchpad_test");
     }
 
     #[test]
@@ -588,19 +648,15 @@ mod tests {
 /// Get terminal command with appropriate class flag and inner command
 fn get_terminal_command_with_class(config: &ScratchpadConfig) -> String {
     let window_class = config.window_class();
-    let base_cmd = match config.terminal_command.as_str() {
-        "alacritty" => format!("{} --class {}", config.terminal_command, window_class),
-        "kitty" => format!("{} --class {}", config.terminal_command, window_class),
-        _ => config.terminal_command.clone(),
-    };
+    let base_cmd = format!("{} {}", config.terminal.command(), config.terminal.class_flag(&window_class));
 
     // Add inner command if specified
     if let Some(ref inner_cmd) = config.inner_command {
-        match config.terminal_command.as_str() {
-            "alacritty" => format!("{} -e {}", base_cmd, inner_cmd),
-            "kitty" => format!("{} -e {}", base_cmd, inner_cmd),
-            "wezterm" => format!("{} -e {}", base_cmd, inner_cmd),
-            _ => format!("{} -e {}", base_cmd, inner_cmd),
+        match config.terminal {
+            Terminal::Alacritty => format!("{} -e {}", base_cmd, inner_cmd),
+            Terminal::Kitty => format!("{} -e {}", base_cmd, inner_cmd),
+            Terminal::Wezterm => format!("{} -e {}", base_cmd, inner_cmd),
+            Terminal::Other(_) => format!("{} -e {}", base_cmd, inner_cmd), // Assume standard -e flag
         }
     } else {
         base_cmd
@@ -632,7 +688,7 @@ pub fn handle_scratchpad_command(command: ScratchpadCommands, debug: bool) -> Re
 
             let config = ScratchpadConfig::with_params(
                 args.name,
-                args.terminal,
+                Terminal::from(args.terminal),
                 args.command,
                 args.width_pct,
                 args.height_pct,
@@ -658,7 +714,7 @@ pub fn handle_scratchpad_command(command: ScratchpadCommands, debug: bool) -> Re
 
             let config = ScratchpadConfig::with_params(
                 args.name,
-                args.terminal,
+                Terminal::from(args.terminal),
                 args.command,
                 args.width_pct,
                 args.height_pct,
