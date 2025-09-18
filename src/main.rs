@@ -2,12 +2,10 @@ use anyhow::Result;
 use colored::*;
 
 mod common;
-mod compositor;
 mod dev;
 mod doctor;
 mod dot;
 mod fzf_wrapper;
-mod hyprland_ipc;
 mod menu;
 mod scratchpad;
 
@@ -43,7 +41,7 @@ use crate::doctor::DoctorCommands;
 use crate::dot::config::ConfigManager;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
-use crate::scratchpad::ScratchpadCommands;
+use crate::scratchpad::ScratchpadCommand;
 
 /// InstantCLI main parser
 #[derive(Parser, Debug)]
@@ -90,7 +88,7 @@ enum Commands {
     /// Scratchpad terminal management
     Scratchpad {
         #[command(subcommand)]
-        command: ScratchpadCommands,
+        command: ScratchpadCommand,
     },
 }
 
@@ -260,11 +258,9 @@ async fn main() -> Result<()> {
             std::process::exit(exit_code);
         }
         Some(Commands::Scratchpad { command }) => {
-            execute_with_error_handling(
-                scratchpad::handle_scratchpad_command(command.clone(), cli.debug),
-                "Error handling scratchpad command",
-                None,
-            )?;
+            let compositor = common::compositor::CompositorType::detect();
+            let exit_code = command.clone().run(&compositor, cli.debug)?;
+            std::process::exit(exit_code);
         }
         None => {
             println!("instant: run with --help for usage");

@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::process::Command;
 
+pub mod hyprland;
+pub mod sway;
+
 /// Window compositor types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CompositorType {

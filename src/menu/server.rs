@@ -1,5 +1,5 @@
 use super::protocol::*;
-use crate::compositor::CompositorType;
+use crate::common::compositor::CompositorType;
 use crate::fzf_wrapper::{FzfOptions, FzfWrapper};
 use anyhow::{Context, Result};
 use std::io::{self, BufRead, Write};
