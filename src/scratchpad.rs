@@ -85,38 +85,7 @@ fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
         println!("Toggled scratchpad terminal visibility");
     } else {
         // Terminal doesn't exist, create and configure it
-        println!("Creating new scratchpad terminal...");
-
-        // Launch the terminal in background
-        let term_cmd = get_terminal_command_with_class(config);
-
-        // Launch terminal in background using nohup and background operator
-        // This ensures the terminal continues running after our command exits
-        let bg_cmd = format!("nohup {} >/dev/null 2>&1 &", term_cmd);
-
-        Command::new("sh")
-            .args(["-c", &bg_cmd])
-            .output()
-            .context("Failed to launch terminal in background")?;
-
-        // Wait a moment for the window to appear
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        // Configure the new window
-        let config_commands = vec![
-            format!("[app_id=\"{}\"] floating enable", config.window_class),
-            format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
-                   config.window_class, config.width_pct, config.height_pct),
-            format!("[app_id=\"{}\"] move position center", config.window_class),
-            format!("[app_id=\"{}\"] move to scratchpad", config.window_class),
-        ];
-
-        for cmd in config_commands {
-            if let Err(e) = swaymsg(&cmd) {
-                eprintln!("Warning: Failed to configure window: {}", e);
-                // Don't fail completely if configuration fails
-            }
-        }
+        create_and_configure_sway_scratchpad(config)?;
 
         // Show it immediately
         let show_message = format!("[app_id=\"{}\"] scratchpad show", config.window_class);
@@ -235,37 +204,7 @@ fn show_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
         println!("Showed scratchpad terminal");
     } else {
         // Terminal doesn't exist, create and configure it
-        println!("Creating new scratchpad terminal...");
-
-        // Launch the terminal in background
-        let term_cmd = get_terminal_command_with_class(config);
-
-        // Launch terminal in background using nohup and background operator
-        let bg_cmd = format!("nohup {} >/dev/null 2>&1 &", term_cmd);
-
-        Command::new("sh")
-            .args(["-c", &bg_cmd])
-            .output()
-            .context("Failed to launch terminal in background")?;
-
-        // Wait a moment for the window to appear
-        std::thread::sleep(std::time::Duration::from_millis(500));
-
-        // Configure the new window
-        let config_commands = vec![
-            format!("[app_id=\"{}\"] floating enable", config.window_class),
-            format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
-                   config.window_class, config.width_pct, config.height_pct),
-            format!("[app_id=\"{}\"] move position center", config.window_class),
-            format!("[app_id=\"{}\"] move to scratchpad", config.window_class),
-        ];
-
-        for cmd in config_commands {
-            if let Err(e) = swaymsg(&cmd) {
-                eprintln!("Warning: Failed to configure window: {}", e);
-                // Don't fail completely if configuration fails
-            }
-        }
+        create_and_configure_sway_scratchpad(config)?;
 
         // Show it immediately
         let show_message = format!("[app_id=\"{}\"] scratchpad show", config.window_class);
@@ -450,6 +389,44 @@ mod tests {
         assert!(visible_result.is_ok());
         assert_eq!(visible_result.unwrap(), false); // Should return false for unsupported compositor
     }
+}
+
+/// Create and configure a new scratchpad terminal for Sway
+fn create_and_configure_sway_scratchpad(config: &ScratchpadConfig) -> Result<()> {
+    println!("Creating new scratchpad terminal...");
+
+    // Launch the terminal in background
+    let term_cmd = get_terminal_command_with_class(config);
+
+    // Launch terminal in background using nohup and background operator
+    // This ensures the terminal continues running after our command exits
+    let bg_cmd = format!("nohup {} >/dev/null 2>&1 &", term_cmd);
+
+    Command::new("sh")
+        .args(["-c", &bg_cmd])
+        .output()
+        .context("Failed to launch terminal in background")?;
+
+    // Wait a moment for the window to appear
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // Configure the new window
+    let config_commands = vec![
+        format!("[app_id=\"{}\"] floating enable", config.window_class),
+        format!("[app_id=\"{}\"] resize set width {} ppt height {} ppt",
+               config.window_class, config.width_pct, config.height_pct),
+        format!("[app_id=\"{}\"] move position center", config.window_class),
+        format!("[app_id=\"{}\"] move to scratchpad", config.window_class),
+    ];
+
+    for cmd in config_commands {
+        if let Err(e) = swaymsg(&cmd) {
+            eprintln!("Warning: Failed to configure window: {}", e);
+            // Don't fail completely if configuration fails
+        }
+    }
+
+    Ok(())
 }
 
 /// Get terminal command with appropriate class flag
