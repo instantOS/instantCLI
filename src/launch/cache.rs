@@ -313,20 +313,50 @@ impl LaunchCache {
     /// Resolve naming conflicts between desktop apps and PATH executables
     fn resolve_naming_conflicts(&mut self, items: Vec<LaunchItemWithMetadata>) -> Vec<String> {
         let mut name_to_items: HashMap<String, Vec<LaunchItem>> = HashMap::new();
+        let mut name_to_metadata: HashMap<String, Vec<LaunchItemWithMetadata>> = HashMap::new();
 
         // Group items by name
         for item_with_metadata in items {
             let name = item_with_metadata.item.display_name();
             name_to_items
+                .entry(name.clone())
+                .or_default()
+                .push(item_with_metadata.item.clone());
+            name_to_metadata
                 .entry(name)
                 .or_default()
-                .push(item_with_metadata.item);
+                .push(item_with_metadata);
         }
 
         let mut display_names = Vec::new();
 
-        // Process each group
-        for (name, item_group) in name_to_items {
+        // Apply frecency sorting to the items first
+        let all_items: Vec<LaunchItemWithMetadata> = name_to_metadata
+            .values()
+            .flat_map(|items| items.iter())
+            .cloned()
+            .collect();
+
+        let sorted_items = self.sort_metadata_by_frecency(all_items);
+
+        // Create a frecency-based order for names
+        let mut name_order: HashMap<String, usize> = HashMap::new();
+        for (index, item) in sorted_items.iter().enumerate() {
+            let name = item.item.display_name();
+            name_order.insert(name, index);
+        }
+
+        // Process each group and maintain frecency order
+        let mut name_groups: Vec<(String, Vec<LaunchItem>)> = name_to_items.into_iter().collect();
+
+        // Sort the groups by the highest frecency position of any item in the group
+        name_groups.sort_by(|(name_a, _), (name_b, _)| {
+            let pos_a = name_order.get(name_a).unwrap_or(&usize::MAX);
+            let pos_b = name_order.get(name_b).unwrap_or(&usize::MAX);
+            pos_a.cmp(pos_b)
+        });
+
+        for (name, item_group) in name_groups {
             if item_group.len() == 1 {
                 // No conflict, use the name as-is
                 display_names.push(name);
@@ -403,6 +433,60 @@ impl LaunchCache {
                 a.display_name()
                     .to_lowercase()
                     .cmp(&b.display_name().to_lowercase())
+            });
+        }
+
+        items
+    }
+
+    /// Sort LaunchItemWithMetadata by frecency
+    fn sort_metadata_by_frecency(&mut self, mut items: Vec<LaunchItemWithMetadata>) -> Vec<LaunchItemWithMetadata> {
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+
+        if let Ok(frecency_store) = self.get_frecency_store() {
+            let sorted_items = frecency_store.sorted(fre::args::SortMethod::Frecent);
+
+            // Create a map of name to frecency score
+            let mut frecency_map: HashMap<String, f64> = HashMap::new();
+            for frecency_item in sorted_items {
+                let item_name = frecency_item.item.clone();
+                let frecency_score = frecency_item.get_frecency(current_time);
+                frecency_map.insert(item_name, frecency_score);
+            }
+
+            // Sort by frecency, then alphabetically
+            items.sort_by(|a, b| {
+                let a_name = a.item.display_name();
+                let b_name = b.item.display_name();
+                let a_score = frecency_map.get(&a_name).unwrap_or(&0.0);
+                let b_score = frecency_map.get(&b_name).unwrap_or(&0.0);
+
+                if *a_score > 0.0 || *b_score > 0.0 {
+                    b_score
+                        .partial_cmp(a_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                } else {
+                    a_name.to_lowercase().cmp(&b_name.to_lowercase())
+                }
+            });
+
+            // Update frecency scores in the metadata
+            for item in &mut items {
+                let name = item.item.display_name();
+                if let Some(score) = frecency_map.get(&name) {
+                    item.frecency_score = *score;
+                }
+            }
+        } else {
+            // No frecency store, sort alphabetically
+            items.sort_by(|a, b| {
+                a.item
+                    .display_name()
+                    .to_lowercase()
+                    .cmp(&b.item.display_name().to_lowercase())
             });
         }
 
