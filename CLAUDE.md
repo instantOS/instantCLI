@@ -160,6 +160,7 @@ branch = "main"
 **Hash-Based Safety**: All file operations respect the hash-based modification detection system. Never bypass this system as it protects user modifications. The system distinguishes between source files (repository copies) and target files (home directory installations) using the `source_file` database field.
 You run in an environment where `ast-grep` is available; whenever a search requires syntax-aware or structural matching, default to `ast-grep --lang rust -p '<pattern>'` and avoid falling back to text-only tools like `rg` or `grep` unless I explicitly request a plain-text search.
 
+**Web serach** always use firecrawl or fetch to do research on the web. 
 
 **Config Locations**: 
 - Config: `~/.config/instant/instant.toml`
