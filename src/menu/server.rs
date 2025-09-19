@@ -23,7 +23,8 @@ static ACTIVE_FZF_PROCESSES: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
 /// Register a process ID as an active fzf process
 pub fn register_fzf_process(pid: u32) -> Result<()> {
-    let mut processes = ACTIVE_FZF_PROCESSES.lock()
+    let mut processes = ACTIVE_FZF_PROCESSES
+        .lock()
         .map_err(|e| anyhow::anyhow!("Failed to acquire process lock: {}", e))?;
     processes.push(pid);
     Ok(())
