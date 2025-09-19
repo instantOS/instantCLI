@@ -6,13 +6,10 @@ not visible. The server does not take any new requests until the menu choice is
 made or the menu is cancelled, but because the terminal containing the menu is
 currently hidden, that is impossible. 
 
-Ideas for solution:
+Idea for solution:
 
 Periodically check if the scratchpad is hidden, then kill the menu and report
 'cancelled' to the client if the scratchpad is hidden. IMPORTANT: Hyprctl
 commands are blocking, so do this only while a menu is active, if there is no
 menu active or about to be active, then do not touch hyprctl in the background. 
-
-
-
 
