@@ -6,222 +6,141 @@ Enhance InstantCLI's debugging capabilities with structured logging, improved me
 ## Current State Analysis
 
 ### Existing Debugging Infrastructure
-- **Basic debug flag**: `--debug` / `-d` global CLI option
-- **Simple output**: `eprintln!` with colored error messages
-- **Menu server**: Runs in scratchpad with no debug visibility
-- **Error handling**: `anyhow`-based with context formatting
+- **Basic debug flag**: `--debug` / `-d` global CLI option implemented in `src/main.rs:154`
+- **Simple output**: Extensive use of `eprintln!` with colored error messages (20+ locations)
+- **Menu server**: Runs in scratchpad with debug visibility problems
+- **Error handling**: `anyhow`-based with context formatting in `handle_error()` function
+- **Doctor system**: Existing diagnostic framework in `src/doctor/` with check registry
+
+### Current Debug Usage Patterns
+- Error handling through `handle_error()` function with colored output
+- Debug flag checked in various components for conditional output
+- Menu server runs in isolation with limited debug visibility
+- Doctor system provides structured health checks but no debug logging
 
 ### Limitations
-- No structured logging levels
-- No file output capabilities
-- Menu server runs in isolation, hard to debug
-- No centralized log management
-- Limited debugging for async operations
+- No structured logging levels (all debug output goes to stderr)
+- No file output capabilities or log rotation
+- Menu server debugging difficult due to scratchpad isolation
+- No centralized log management or correlation IDs
+- Limited debugging for async operations and performance monitoring
 
 ## Proposed Enhancements
 
-### 1. Structured Logging System
+### 1. Lightweight Logging Integration
 
-#### Core Components
-```rust
-// New logging infrastructure
-pub mod logging {
-    use tracing::{info, warn, error, debug};
-    use tracing_subscriber::{fmt, util::SubscriberInitExt};
+#### Approach
+- Introduce `tracing` crate as a lightweight replacement for `eprintln!` calls
+- Preserve existing error handling patterns while adding structured capabilities
+- Maintain backwards compatibility with current `--debug` flag behavior
 
-    pub enum LogLevel {
-        Error,
-        Warn,
-        Info,
-        Debug,
-        Trace
-    }
+#### Key Components
+- **LogLevel enum**: Simple levels (Error, Warn, Info, Debug, Trace)
+- **LogConfig struct**: Configuration for output destinations and formatting
+- **Macro replacements**: `debug!()`, `info!()`, `error!()` macros to replace selective `eprintln!` calls
 
-    pub struct LogConfig {
-        level: LogLevel,
-        file_output: Option<PathBuf>,
-        json_format: bool,
-        enable_colors: bool,
-    }
-}
-```
+#### Integration Strategy
+- Gradual migration of existing `eprintln!` calls to structured logging
+- Keep error handling through `handle_error()` for user-facing messages
+- Add structured logging for internal operations and debugging
 
-#### Features
-- **Log levels**: ERROR, WARN, INFO, DEBUG, TRACE
-- **Multiple outputs**: stderr + optional file output
-- **Format options**: Human-readable or JSON
-- **Context preservation**: Request/operation correlation IDs
-- **Performance**: Async logging with minimal overhead
-
-#### Integration Points
-- Replace all `eprintln!` calls with structured logging
-- Add context to all error paths
-- Instrument key operations (file ops, network requests)
-- Add timing metrics for performance analysis
-
-### 2. Menu Server Debugging
+### 2. Menu Server Debugging Enhancements
 
 #### Problem Statement
 Menu server runs in scratchpad terminal, making it impossible to see debug output or diagnose issues.
 
-#### Solution Architecture
-```rust
-// Debug mode for menu server
-pub struct MenuServerConfig {
-    pub debug_mode: bool,
-    pub log_file: Option<PathBuf>,
-    pub parent_process_id: u32,
-}
+#### Solution Approach
+- Add `--inside-debug` flag for menu server to run in visible terminal
+- Implement log file output for persistent debugging
+- Add parent-child process relationship for better cleanup
 
-impl MenuServer {
-    pub fn spawn_with_debug(config: MenuServerConfig) -> Result<Self> {
-        if config.debug_mode {
-            // Launch in visible terminal with log capture
-            let cmd = Self::build_debug_command(&config);
-            // ... spawn with visible output
-        } else {
-            // Current scratchpad behavior
-        }
-    }
-
-    fn build_debug_command(config: &MenuServerConfig) -> Command {
-        let mut cmd = Command::new("kitty");
-        cmd.arg("--title")
-           .arg("instant-menu-debug")
-           .arg("--class")
-           .arg("instant-menu-debug")
-           .arg("-e")
-           .arg("bash");
-
-        if let Some(log_file) = &config.log_file {
-            cmd.arg(format!(
-                "-c 'instant menu --inside --debug 2>&1 | tee {}'",
-                log_file.display()
-            ));
-        } else {
-            cmd.arg("-c 'instant menu --inside --debug'");
-        }
-        cmd
-    }
-}
-```
-
-#### Key Features
-- **Debug flag inheritance**: `--debug` flag propagates to menu server
-- **Log capture**: Optional file output for persistent debugging
-- **Visual debugging**: Server runs in visible terminal when debugging
-- **Process tracking**: Parent-child relationship for cleanup
+#### Debug Mode Concepts
+- **Visible debugging**: Menu server runs in visible terminal when debug flag detected
+- **Log forwarding**: Optional file output for persistent debugging
+- **Process tracking**: Better cleanup and lifecycle management
+- **Flag inheritance**: Debug state propagates from parent to menu server process
 
 ### 3. Enhanced Error Reporting
 
-#### Structured Error Types
-```rust
-#[derive(Debug, thiserror::Error)]
-pub enum InstantError {
-    #[error("IO error: {context}")]
-    Io {
-        context: String,
-        #[source]
-        source: std::io::Error
-    },
+#### Approach
+- Leverage existing `anyhow` integration with additional context
+- Add structured error variants for common failure scenarios
+- Include recovery suggestions and diagnostic information
 
-    #[error("Menu server communication failed: {reason}")]
-    MenuServer {
-        reason: String,
-        suggestion: String,
-        server_pid: Option<u32>,
-    },
+#### Error Enhancement Concepts
+- **Error categorization**: Group common error types with specific handling
+- **Context preservation**: Maintain request/operation correlation
+- **Recovery suggestions**: Common solutions included in error messages
+- **Diagnostic metadata**: Environment state, configuration info
 
-    #[error("Database error: {operation}")]
-    Database {
-        operation: String,
-        #[source]
-        source: rusqlite::Error
-    },
+### 4. Diagnostic System Extension
 
-    #[error("Configuration error: {path}")]
-    Config {
-        path: PathBuf,
-        detail: String
-    }
-}
+#### Current State Analysis
+- Doctor system exists with registry-based checks
+- Basic health checks implemented for various system components
+- Fix system available for some issues
+
+#### Enhancement Concepts
+- **Debug-mode diagnostics**: Additional checks when debug flag enabled
+- **Menu server testing**: Specific diagnostics for IPC communication
+- **Performance metrics**: Basic timing and operation counting
+- **Log management**: Commands to view and manage debug logs
+
+#### Proposed Diagnostic Extensions
+```bash
+# Extend existing doctor commands
+instant doctor debug     # Debug-specific diagnostics
+instant doctor logs       # Log management and viewing
+instant doctor test menu  # Menu server communication test
 ```
-
-#### Error Context Enhancement
-- **Suggestions**: Common solutions included in error messages
-- **Recovery actions**: Next steps for user
-- **Correlation IDs**: Trace errors across components
-- **Metadata**: Environment, version, configuration state
-
-### 4. Diagnostic Commands
-
-#### Health Check System
-```rust
-// New doctor subcommands
-instant doctor diagnostics    # Run comprehensive diagnostics
-instant doctor logs --follow  # View/tail logs
-instant doctor status       # Check system health
-instant doctor test menu     # Test menu server functionality
-```
-
-#### Diagnostic Checks
-- **Menu server connectivity**: Test IPC communication
-- **Database integrity**: Verify SQLite database
-- **Configuration validation**: Check TOML config
-- **Permission verification**: File/system access
-- **Compositor detection**: Verify Hyprland/Sway support
 
 ### 5. Performance Monitoring
 
-#### Metrics Collection
-```rust
-pub struct Metrics {
-    pub menu_response_times: Histogram,
-    pub file_operation_duration: Timer,
-    pub database_query_times: Histogram,
-    pub memory_usage: Gauge,
-    pub active_connections: Counter,
-}
-```
+#### Lightweight Metrics Approach
+- **Operation timing**: Track key operation durations
+- **Error counting**: Monitor error rates by category
+- **Resource usage**: Basic memory and CPU monitoring
+- **Success rates**: Track operation success/failure ratios
 
-#### Integration
-- **Prometheus export**: Optional metrics endpoint
-- **CLI reporting**: `instant --metrics` command
-- **Performance alerts**: Warning thresholds
+#### Integration Points
+- Instrument key operations in dotfile management
+- Monitor menu server response times
+- Track database operation performance
+- Measure file operation durations
 
-## Implementation Plan
+## Implementation Strategy
 
 ### Phase 1: Foundation (Week 1-2)
 1. **Add tracing dependency**
    - Update Cargo.toml with tracing crates
    - Initialize logging system in main()
-   - Replace key debug println! calls
+   - Create log configuration structure
 
-2. **Basic menu server debugging**
-   - Add `--inside-debug` flag
-   - Implement log forwarding to parent
+2. **Basic logging migration**
+   - Replace internal `eprintln!` calls with structured logging
+   - Preserve user-facing error messages
+   - Add debug level filtering
+
+### Phase 2: Menu Server Debugging (Week 3-4)
+1. **Debug mode enhancement**
+   - Add visible terminal debugging option
+   - Implement log file output
    - Add process cleanup handling
 
-### Phase 2: Enhanced Logging (Week 3-4)
-1. **Structured logging implementation**
-   - Create logging configuration
-   - Add file output support
-   - Implement JSON formatting option
+2. **Error reporting improvements**
+   - Add structured error variants
+   - Include recovery suggestions
+   - Enhance error context preservation
 
-2. **Error type improvements**
-   - Define structured error types
-   - Add error context macros
-   - Implement error recovery suggestions
-
-### Phase 3: Diagnostics (Week 5-6)
-1. **Diagnostic commands**
-   - Implement health check system
-   - Create diagnostic test suite
-   - Add log viewing capabilities
+### Phase 3: Diagnostics Enhancement (Week 5-6)
+1. **Diagnostic system extension**
+   - Add debug-specific health checks
+   - Implement menu server testing
+   - Add log management commands
 
 2. **Performance monitoring**
-   - Add basic metrics collection
-   - Implement timing instrumentation
+   - Add basic timing instrumentation
+   - Implement operation counting
    - Create performance reporting
 
 ## Technical Considerations
@@ -230,38 +149,58 @@ pub struct Metrics {
 ```toml
 [dependencies]
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-appender = "0.2"
-thiserror = "1.0"
-tokio = { version = "1.0", features = ["full"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Optional: tracing-appender for file output
 ```
 
 ### Backwards Compatibility
-- Existing `--debug` flag behavior preserved
-- Default logging remains simple (stderr only)
-- Optional features enabled via configuration
+- Preserve existing `--debug` flag behavior
+- Keep current error output format for user-facing messages
+- Maintain existing doctor system functionality
+- Gradual migration path for logging changes
 
 ### Performance Impact
-- Async logging minimizes blocking
-- Conditional compilation for debug features
 - Minimal overhead when logging disabled
+- Conditional compilation for debug features
+- Async logging for non-blocking operations
+- Lazy evaluation of debug information
+
+## Integration with Existing Code
+
+### Error Handling Integration
+- Work with existing `handle_error()` function
+- Enhance `anyhow` context preservation
+- Add structured error types alongside existing ones
+- Maintain colored output for user-facing messages
+
+### Doctor System Integration
+- Extend existing check registry
+- Add debug-specific diagnostic checks
+- Leverage existing fix system
+- Use established reporting patterns
+
+### Menu System Integration
+- Add debug mode to menu server lifecycle
+- Preserve existing IPC communication
+- Enhance error reporting in menu operations
+- Add visibility monitoring for debugging
 
 ## Testing Strategy
 
 ### Unit Tests
-- Logging configuration parsing
-- Error type construction
-- Diagnostic check logic
+- Logging configuration and filtering
+- Error type construction and formatting
+- Diagnostic check logic and validation
 
 ### Integration Tests
-- Menu server debugging workflow
-- Log file rotation and cleanup
-- End-to-end error reporting
+- Menu server debugging workflows
+- Log file output and rotation
+- Error reporting and context preservation
 
 ### Manual Testing
-- Debug menu server interaction
-- Log file verification
-- Performance validation
+- Debug mode interaction and visibility
+- Log file verification and management
+- Performance monitoring validation
 
 ## Success Metrics
 
@@ -276,3 +215,23 @@ tokio = { version = "1.0", features = ["full"] }
 - **Log aggregation**: Centralized log management
 - **Advanced profiling**: Integration with profiling tools
 - **AI-assisted diagnostics**: Pattern recognition in logs
+
+## TODO Notes from Review
+
+### Issues with Current Plan
+- Too much concrete Rust code implementation details
+- Doesn't leverage existing doctor system enough
+- Over-engineered for current needs
+- Should focus more on concepts than specific implementations
+
+### Alignment with Existing Codebase
+- Build on existing `handle_error()` function instead of replacing it
+- Integrate with doctor system registry rather than creating new diagnostic framework
+- Work with current menu server architecture instead of complete rewrite
+- Preserve existing debug flag behavior and error output patterns
+
+### Simplification Approach
+- Focus on gradual enhancement rather than complete overhaul
+- Use existing patterns and structures where possible
+- Prioritize high-impact improvements over comprehensive changes
+- Maintain backwards compatibility throughout
