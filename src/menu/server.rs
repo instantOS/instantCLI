@@ -82,18 +82,6 @@ impl MenuServer {
         }
     }
 
-    /// Create a menu server with custom socket path
-    pub fn with_socket_path(socket_path: String) -> Self {
-        Self {
-            socket_path,
-            running: Arc::new(AtomicBool::new(false)),
-            start_time: std::time::SystemTime::now(),
-            requests_processed: Arc::new(AtomicU64::new(0)),
-            compositor: CompositorType::detect(),
-            scratchpad_manager: None,
-        }
-    }
-
     /// Create a menu server with compositor type and optional scratchpad config
     pub fn with_compositor_and_scratchpad(
         compositor: CompositorType,
@@ -201,7 +189,7 @@ impl MenuServer {
 
     /// Handle a client connection synchronously
     fn handle_connection_sync(&self, mut stream: UnixStream) -> Result<()> {
-        // Increment request counter
+        // Increment request counter for debugging
         self.requests_processed.fetch_add(1, Ordering::SeqCst);
 
         // Set read timeout
@@ -370,11 +358,6 @@ impl MenuServer {
         self.cleanup_socket().await;
     }
 
-    /// Check if server is running
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-
     /// Get the detected compositor type
     pub fn compositor(&self) -> &CompositorType {
         &self.compositor
@@ -495,12 +478,5 @@ mod tests {
     fn test_server_creation() {
         let server = MenuServer::new();
         assert!(!server.socket_path.is_empty());
-        assert!(!server.is_running());
-    }
-
-    #[test]
-    fn test_custom_socket_path() {
-        let server = MenuServer::with_socket_path("/tmp/test.sock".to_string());
-        assert_eq!(server.socket_path, "/tmp/test.sock");
     }
 }
