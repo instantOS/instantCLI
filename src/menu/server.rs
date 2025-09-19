@@ -245,6 +245,16 @@ impl MenuServer {
 
     /// Process a menu request with scratchpad visibility management and timeout
     fn process_request_sync(&self, request: MenuRequest) -> Result<MenuResponse> {
+        // Handle Show request specially for fast response
+        if matches!(request, MenuRequest::Show) {
+            if let Some(ref manager) = self.scratchpad_manager {
+                if let Err(e) = manager.show_fast() {
+                    eprintln!("Warning: Failed to show scratchpad: {e}");
+                }
+            }
+            return Ok(MenuResponse::ShowResult);
+        }
+
         // Show scratchpad if configured (for interactive requests only)
         let should_manage_scratchpad = matches!(
             request,
@@ -288,23 +298,8 @@ impl MenuServer {
 
     /// Process a menu request with timeout and visibility monitoring (synchronous)
     fn process_request_with_monitoring_sync(&self, request: MenuRequest) -> Result<MenuResponse> {
-        // Check initial visibility
-        if let Some(ref manager) = self.scratchpad_manager {
-            let config = manager.config();
-            match is_scratchpad_visible(manager.compositor(), config) {
-                Ok(false) => {
-                    return Ok(MenuResponse::Cancelled);
-                }
-                Err(e) => {
-                    eprintln!("Warning: Failed to check scratchpad visibility: {e}");
-                }
-                Ok(true) => {
-                    // Continue with processing
-                }
-            }
-        }
-
-        // Process the request with visibility monitoring integrated
+        // Skip initial visibility check since we just showed the scratchpad above
+        // Start monitoring immediately and process the request
         self.process_request_with_integrated_monitoring(request)
     }
 
