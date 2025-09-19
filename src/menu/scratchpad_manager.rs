@@ -69,20 +69,10 @@ impl ScratchpadManager {
         Ok(())
     }
 
-    /// Check if the scratchpad is currently marked as visible
-    pub fn is_marked_visible(&self) -> bool {
-        self.visible.load(Ordering::SeqCst)
-    }
-
     /// Mark the scratchpad as visible without actually showing it
     /// (useful when the scratchpad is initially visible)
     pub fn mark_visible(&self) {
         self.visible.store(true, Ordering::SeqCst);
-    }
-
-    /// Mark the scratchpad as hidden without actually hiding it
-    pub fn mark_hidden(&self) {
-        self.visible.store(false, Ordering::SeqCst);
     }
 
     /// Get the scratchpad configuration
@@ -107,22 +97,6 @@ mod tests {
         let config = ScratchpadConfig::new("test".to_string());
         let manager = ScratchpadManager::new(compositor, config);
 
-        assert!(!manager.is_marked_visible());
         assert_eq!(manager.config().name, "test");
-    }
-
-    #[test]
-    fn test_visibility_marking() {
-        let compositor = CompositorType::Other("test".to_string());
-        let config = ScratchpadConfig::new("test".to_string());
-        let manager = ScratchpadManager::new(compositor, config);
-
-        assert!(!manager.is_marked_visible());
-
-        manager.mark_visible();
-        assert!(manager.is_marked_visible());
-
-        manager.mark_hidden();
-        assert!(!manager.is_marked_visible());
     }
 }

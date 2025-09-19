@@ -262,7 +262,7 @@ impl FzfWrapper {
 
         // Register the process for potential killing if scratchpad becomes invisible
         let pid = child.id();
-        crate::menu::server::register_fzf_process(pid);
+        let _ = crate::menu::server::register_fzf_process(pid);
 
         // Write input to stdin
         if let Some(stdin) = child.stdin.as_mut() {
@@ -365,7 +365,7 @@ impl FzfWrapper {
 
         // Register the process for potential killing if scratchpad becomes invisible
         let pid = child.id();
-        crate::menu::server::register_fzf_process(pid);
+        let _ = crate::menu::server::register_fzf_process(pid);
 
         // Write empty input to stdin
         if let Some(stdin) = child.stdin.as_mut() {
