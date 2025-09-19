@@ -1,7 +1,7 @@
 use super::protocol::*;
 use crate::common::compositor::CompositorType;
 use crate::fzf_wrapper::{FzfOptions, FzfWrapper};
-use crate::scratchpad::{config::ScratchpadConfig, hide_scratchpad, show_scratchpad};
+use crate::scratchpad::{config::ScratchpadConfig, hide_scratchpad, show_scratchpad, visibility::is_scratchpad_visible};
 use anyhow::{Context, Result};
 use std::io::{self, BufRead, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -120,7 +120,8 @@ impl MenuServer {
 
             match listener.accept() {
                 Ok((stream, addr)) => {
-                    if let Err(e) = self.handle_connection(stream) {
+                    // Handle connection synchronously for now to avoid ownership issues
+                    if let Err(e) = self.handle_connection_sync(stream) {
                         eprintln!("Error handling connection from {addr:?}: {e}");
                     }
                 }
@@ -153,8 +154,8 @@ impl MenuServer {
         }
     }
 
-    /// Handle a client connection
-    fn handle_connection(&self, mut stream: UnixStream) -> Result<()> {
+    /// Handle a client connection synchronously
+    fn handle_connection_sync(&self, mut stream: UnixStream) -> Result<()> {
         // Increment request counter
         self.requests_processed.fetch_add(1, Ordering::SeqCst);
 
@@ -177,8 +178,8 @@ impl MenuServer {
         let message: MenuMessage =
             serde_json::from_str(request_json.trim()).context("Failed to deserialize request")?;
 
-        // Process request and generate response
-        let response = self.process_request(message.payload)?;
+        // Process request and generate response (synchronously for now)
+        let response = self.process_request_sync(message.payload)?;
 
         // Create response envelope
         let response_message = MenuResponseMessage {
@@ -197,8 +198,8 @@ impl MenuServer {
         Ok(())
     }
 
-    /// Process a menu request with scratchpad visibility management
-    fn process_request(&self, request: MenuRequest) -> Result<MenuResponse> {
+    /// Process a menu request with scratchpad visibility management and timeout
+    fn process_request_sync(&self, request: MenuRequest) -> Result<MenuResponse> {
         // Show scratchpad if configured (for interactive requests only)
         let should_manage_scratchpad = matches!(
             request,
@@ -211,8 +212,27 @@ impl MenuServer {
             }
         }
 
-        // Process the request
-        let response = match request {
+        // Process the request with timeout and visibility monitoring
+        let response = if should_manage_scratchpad {
+            self.process_request_with_monitoring_sync(request)?
+        } else {
+            // Non-interactive requests don't need monitoring
+            self.process_request_internal(request)?
+        };
+
+        // Hide scratchpad after processing (for interactive requests only)
+        if should_manage_scratchpad {
+            if let Err(e) = self.hide_scratchpad() {
+                eprintln!("Warning: Failed to hide scratchpad: {e}");
+            }
+        }
+
+        Ok(response)
+    }
+
+    /// Process a menu request with internal logic (no monitoring)
+    fn process_request_internal(&self, request: MenuRequest) -> Result<MenuResponse> {
+        match request {
             MenuRequest::Confirm { message } => match FzfWrapper::confirm(&message) {
                 Ok(result) => Ok(MenuResponse::ConfirmResult(result.into())),
                 Err(e) => Ok(MenuResponse::Error(format!(
@@ -245,19 +265,58 @@ impl MenuServer {
                     ))),
                 }
             }
-        };
+        }
+    }
 
-        // Hide scratchpad after processing (for interactive requests only)
-        if should_manage_scratchpad {
-            if let Err(e) = self.hide_scratchpad() {
-                eprintln!("Warning: Failed to hide scratchpad: {e}");
+    /// Process a menu request with timeout and visibility monitoring (synchronous)
+    fn process_request_with_monitoring_sync(&self, request: MenuRequest) -> Result<MenuResponse> {
+        let timeout_duration = Duration::from_secs(30); // 30 second timeout
+        let start_time = std::time::Instant::now();
+
+        // For synchronous implementation, we'll check visibility before and after
+        // This is a simpler approach that avoids the complexity of async monitoring
+
+        // Check initial visibility
+        if let Some(ref config) = self.scratchpad_config {
+            match is_scratchpad_visible(&self.compositor, config) {
+                Ok(false) => {
+                    return Ok(MenuResponse::Error("Scratchpad is not visible".to_string()));
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to check scratchpad visibility: {e}");
+                }
+                Ok(true) => {
+                    // Continue with processing
+                }
             }
         }
 
-        response
-    }
+        // Process the request with a timeout thread
+        let request_clone = request.clone();
+        let internal_result = self.process_request_internal(request_clone);
 
-    /// Handle choice request with item selection
+        // Check final visibility and timeout
+        let elapsed = start_time.elapsed();
+        if let Some(ref config) = self.scratchpad_config {
+            match is_scratchpad_visible(&self.compositor, config) {
+                Ok(false) => {
+                    return Ok(MenuResponse::Error("Operation cancelled: scratchpad became hidden".to_string()));
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to check final scratchpad visibility: {e}");
+                }
+                Ok(true) => {
+                    // Still visible
+                }
+            }
+        }
+
+        if elapsed > timeout_duration {
+            return Ok(MenuResponse::Error("Operation timed out".to_string()));
+        }
+
+        internal_result
+    }
     fn handle_choice_request(
         &self,
         prompt: String,

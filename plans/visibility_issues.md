@@ -1,4 +1,4 @@
-# Menu Server Queue Management Plan
+# Menu Visibility Check Plan
 
 ## Overview
 Resolve menu server blocking issues when scratchpad is hidden by implementing simple visibility checks and request timeout mechanisms.
@@ -92,7 +92,7 @@ Instead of complex queue systems, implement simple visibility checks during menu
 // Simple enhancement to existing process_request function
 fn process_request_with_timeout(&self, request: MenuRequest) -> Result<MenuResponse> {
     // Process with timeout monitoring
-    let timeout_duration = Duration::from_secs(30);
+    let timeout_duration = Duration::from_secs(5);
     let start_time = Instant::now();
 
     // Spawn monitoring task
