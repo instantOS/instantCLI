@@ -22,10 +22,11 @@ use tokio::signal;
 static ACTIVE_FZF_PROCESSES: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
 /// Register a process ID as an active fzf process
-pub fn register_fzf_process(pid: u32) {
-    if let Ok(mut processes) = ACTIVE_FZF_PROCESSES.lock() {
-        processes.push(pid);
-    }
+pub fn register_fzf_process(pid: u32) -> Result<()> {
+    let mut processes = ACTIVE_FZF_PROCESSES.lock()
+        .map_err(|e| anyhow::anyhow!("Failed to acquire process lock: {}", e))?;
+    processes.push(pid);
+    Ok(())
 }
 
 /// Unregister a process ID (called when process completes normally)
@@ -317,11 +318,11 @@ impl MenuServer {
         let was_killed = Arc::new(AtomicBool::new(false));
         let was_killed_clone = was_killed.clone();
 
-        if let Some(ref manager) = self.scratchpad_manager {
+        let monitoring_handle = if let Some(ref manager) = self.scratchpad_manager {
             let compositor = manager.compositor().clone();
             let config = manager.config().clone();
 
-            thread::spawn(move || {
+            Some(thread::spawn(move || {
                 let check_interval = Duration::from_millis(100);
 
                 while monitoring_active_clone.load(Ordering::SeqCst) {
@@ -343,14 +344,21 @@ impl MenuServer {
 
                     thread::sleep(check_interval);
                 }
-            });
-        }
+            }))
+        } else {
+            None
+        };
 
         // Process the request normally - if fzf gets killed, it will return cancelled
         let result = self.process_request_internal(request);
 
         // Stop monitoring
         monitoring_active.store(false, Ordering::SeqCst);
+
+        // Wait for monitoring thread to complete
+        if let Some(handle) = monitoring_handle {
+            let _ = handle.join();
+        }
 
         // If the process was killed due to invisibility, return cancelled regardless of what fzf returned
         if was_killed.load(Ordering::SeqCst) {
