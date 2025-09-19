@@ -3,7 +3,10 @@ use anyhow::Result;
 use protocol::SerializableMenuItem;
 
 pub mod client;
+pub mod monitoring;
+pub mod processing;
 pub mod protocol;
+pub mod scratchpad_manager;
 pub mod server;
 use client::MenuClient;
 

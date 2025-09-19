@@ -1,17 +1,61 @@
+use super::processing::RequestProcessor;
 use super::protocol::*;
+use super::scratchpad_manager::ScratchpadManager;
 use crate::common::compositor::CompositorType;
-use crate::fzf_wrapper::{FzfOptions, FzfWrapper};
-use crate::scratchpad::{config::ScratchpadConfig, hide_scratchpad, show_scratchpad, visibility::is_scratchpad_visible};
+use crate::scratchpad::{
+    config::ScratchpadConfig, show_scratchpad, visibility::is_scratchpad_visible,
+};
 use anyhow::{Context, Result};
 use std::io::{self, BufRead, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
+use std::thread;
 use std::time::Duration;
 use tokio::signal;
+
+/// Global registry for tracking active fzf processes that can be killed
+/// when scratchpad becomes invisible
+static ACTIVE_FZF_PROCESSES: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+/// Register a process ID as an active fzf process
+pub fn register_fzf_process(pid: u32) {
+    if let Ok(mut processes) = ACTIVE_FZF_PROCESSES.lock() {
+        processes.push(pid);
+    }
+}
+
+/// Unregister a process ID (called when process completes normally)
+pub fn unregister_fzf_process(pid: u32) {
+    if let Ok(mut processes) = ACTIVE_FZF_PROCESSES.lock() {
+        processes.retain(|&p| p != pid);
+    }
+}
+
+/// Kill all registered fzf processes (called when scratchpad becomes invisible)
+/// Uses SIGINT to simulate the same behavior as pressing ESC
+pub fn kill_active_fzf_processes() -> Result<()> {
+    let processes = if let Ok(mut procs) = ACTIVE_FZF_PROCESSES.lock() {
+        let current = procs.clone();
+        procs.clear(); // Clear the list since we're killing them all
+        current
+    } else {
+        return Ok(()); // If we can't lock, just return
+    };
+
+    for pid in processes {
+        // Use SIGINT (same as Ctrl+C/ESC) instead of SIGTERM to match normal cancellation behavior
+        let _ = std::process::Command::new("kill")
+            .arg("-INT")
+            .arg(pid.to_string())
+            .output();
+    }
+
+    Ok(())
+}
 
 /// Menu server for handling GUI menu requests
 pub struct MenuServer {
@@ -20,8 +64,7 @@ pub struct MenuServer {
     start_time: std::time::SystemTime,
     requests_processed: Arc<AtomicU64>,
     compositor: CompositorType,
-    scratchpad_config: Option<ScratchpadConfig>,
-    scratchpad_visible: Arc<AtomicBool>,
+    scratchpad_manager: Option<ScratchpadManager>,
 }
 
 impl MenuServer {
@@ -33,8 +76,7 @@ impl MenuServer {
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
             compositor: CompositorType::detect(),
-            scratchpad_config: None,
-            scratchpad_visible: Arc::new(AtomicBool::new(false)),
+            scratchpad_manager: None,
         }
     }
 
@@ -46,8 +88,7 @@ impl MenuServer {
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
             compositor: CompositorType::detect(),
-            scratchpad_config: None,
-            scratchpad_visible: Arc::new(AtomicBool::new(false)),
+            scratchpad_manager: None,
         }
     }
 
@@ -56,14 +97,16 @@ impl MenuServer {
         compositor: CompositorType,
         scratchpad_config: Option<ScratchpadConfig>,
     ) -> Self {
+        let scratchpad_manager =
+            scratchpad_config.map(|config| ScratchpadManager::new(compositor.clone(), config));
+
         Self {
             socket_path: default_socket_path(),
             running: Arc::new(AtomicBool::new(false)),
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
             compositor,
-            scratchpad_config,
-            scratchpad_visible: Arc::new(AtomicBool::new(false)),
+            scratchpad_manager,
         }
     }
 
@@ -207,80 +250,48 @@ impl MenuServer {
         );
 
         if should_manage_scratchpad {
-            if let Err(e) = self.show_scratchpad() {
-                eprintln!("Warning: Failed to show scratchpad: {e}");
+            if let Some(ref manager) = self.scratchpad_manager {
+                if let Err(e) = manager.show() {
+                    eprintln!("Warning: Failed to show scratchpad: {e}");
+                }
             }
         }
 
         // Process the request with timeout and visibility monitoring
-        let response = if should_manage_scratchpad {
+        let response = if should_manage_scratchpad && self.scratchpad_manager.is_some() {
             self.process_request_with_monitoring_sync(request)?
         } else {
-            // Non-interactive requests don't need monitoring
+            // Non-interactive requests or no scratchpad don't need monitoring
             self.process_request_internal(request)?
         };
 
         // Hide scratchpad after processing (for interactive requests only)
         if should_manage_scratchpad {
-            if let Err(e) = self.hide_scratchpad() {
-                eprintln!("Warning: Failed to hide scratchpad: {e}");
+            if let Some(ref manager) = self.scratchpad_manager {
+                if let Err(e) = manager.hide() {
+                    eprintln!("Warning: Failed to hide scratchpad: {e}");
+                }
             }
         }
 
         Ok(response)
     }
 
-    /// Process a menu request with internal logic (no monitoring)
+    /// Process a menu request internal logic using the dedicated processor
     fn process_request_internal(&self, request: MenuRequest) -> Result<MenuResponse> {
-        match request {
-            MenuRequest::Confirm { message } => match FzfWrapper::confirm(&message) {
-                Ok(result) => Ok(MenuResponse::ConfirmResult(result.into())),
-                Err(e) => Ok(MenuResponse::Error(format!(
-                    "Failed to show confirm dialog: {e}"
-                ))),
-            },
-            MenuRequest::Choice {
-                prompt,
-                items,
-                multi,
-            } => self.handle_choice_request(prompt, items, multi),
-            MenuRequest::Input { prompt } => match FzfWrapper::input(&prompt) {
-                Ok(input) => Ok(MenuResponse::InputResult(input)),
-                Err(e) => Ok(MenuResponse::Error(format!(
-                    "Failed to show input dialog: {e}"
-                ))),
-            },
-            MenuRequest::Status => Ok(self.get_status_info()),
-            MenuRequest::Stop => {
-                // Signal the server to stop
-                self.running.store(false, Ordering::SeqCst);
-                Ok(MenuResponse::StopResult)
-            }
-            MenuRequest::Show => {
-                // Show the scratchpad without any other action
-                match self.show_scratchpad() {
-                    Ok(_) => Ok(MenuResponse::ShowResult),
-                    Err(e) => Ok(MenuResponse::Error(format!(
-                        "Failed to show scratchpad: {e}"
-                    ))),
-                }
-            }
-        }
+        let processor =
+            RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
+        processor.process_internal(request)
     }
 
     /// Process a menu request with timeout and visibility monitoring (synchronous)
     fn process_request_with_monitoring_sync(&self, request: MenuRequest) -> Result<MenuResponse> {
-        let timeout_duration = Duration::from_secs(30); // 30 second timeout
-        let start_time = std::time::Instant::now();
-
-        // For synchronous implementation, we'll check visibility before and after
-        // This is a simpler approach that avoids the complexity of async monitoring
-
         // Check initial visibility
-        if let Some(ref config) = self.scratchpad_config {
-            match is_scratchpad_visible(&self.compositor, config) {
+        if let Some(ref manager) = self.scratchpad_manager {
+            let config = manager.config();
+            match is_scratchpad_visible(manager.compositor(), config) {
                 Ok(false) => {
-                    return Ok(MenuResponse::Error("Scratchpad is not visible".to_string()));
+                    return Ok(MenuResponse::Cancelled);
                 }
                 Err(e) => {
                     eprintln!("Warning: Failed to check scratchpad visibility: {e}");
@@ -291,62 +302,61 @@ impl MenuServer {
             }
         }
 
-        // Process the request with a timeout thread
-        let request_clone = request.clone();
-        let internal_result = self.process_request_internal(request_clone);
-
-        // Check final visibility and timeout
-        let elapsed = start_time.elapsed();
-        if let Some(ref config) = self.scratchpad_config {
-            match is_scratchpad_visible(&self.compositor, config) {
-                Ok(false) => {
-                    return Ok(MenuResponse::Error("Operation cancelled: scratchpad became hidden".to_string()));
-                }
-                Err(e) => {
-                    eprintln!("Warning: Failed to check final scratchpad visibility: {e}");
-                }
-                Ok(true) => {
-                    // Still visible
-                }
-            }
-        }
-
-        if elapsed > timeout_duration {
-            return Ok(MenuResponse::Error("Operation timed out".to_string()));
-        }
-
-        internal_result
+        // Process the request with visibility monitoring integrated
+        self.process_request_with_integrated_monitoring(request)
     }
-    fn handle_choice_request(
+
+    /// Process request with monitoring integrated directly (much simpler approach)
+    fn process_request_with_integrated_monitoring(
         &self,
-        prompt: String,
-        items: Vec<SerializableMenuItem>,
-        multi: bool,
+        request: MenuRequest,
     ) -> Result<MenuResponse> {
-        if items.is_empty() {
-            return Ok(MenuResponse::Error("No items to choose from".to_string()));
+        // Start a background monitoring thread that will kill fzf processes if scratchpad becomes invisible
+        let monitoring_active = Arc::new(AtomicBool::new(true));
+        let monitoring_active_clone = monitoring_active.clone();
+        let was_killed = Arc::new(AtomicBool::new(false));
+        let was_killed_clone = was_killed.clone();
+
+        if let Some(ref manager) = self.scratchpad_manager {
+            let compositor = manager.compositor().clone();
+            let config = manager.config().clone();
+
+            thread::spawn(move || {
+                let check_interval = Duration::from_millis(100);
+
+                while monitoring_active_clone.load(Ordering::SeqCst) {
+                    match is_scratchpad_visible(&compositor, &config) {
+                        Ok(false) => {
+                            // Scratchpad became invisible, kill all fzf processes
+                            println!("Scratchpad became invisible, cancelling menu operation");
+                            was_killed_clone.store(true, Ordering::SeqCst);
+                            let _ = kill_active_fzf_processes();
+                            break;
+                        }
+                        Ok(true) => {
+                            // Still visible, continue monitoring
+                        }
+                        Err(_) => {
+                            // Continue monitoring despite error
+                        }
+                    }
+
+                    thread::sleep(check_interval);
+                }
+            });
         }
 
-        let wrapper = FzfWrapper::with_options(FzfOptions {
-            prompt: Some(prompt),
-            multi_select: multi,
-            ..Default::default()
-        });
+        // Process the request normally - if fzf gets killed, it will return cancelled
+        let result = self.process_request_internal(request);
 
-        match wrapper.select(items) {
-            Ok(crate::fzf_wrapper::FzfResult::Selected(item)) => {
-                Ok(MenuResponse::ChoiceResult(vec![item]))
-            }
-            Ok(crate::fzf_wrapper::FzfResult::MultiSelected(items)) => {
-                Ok(MenuResponse::ChoiceResult(items))
-            }
-            Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
-            Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {
-                Ok(MenuResponse::Error(format!("Selection error: {e}")))
-            }
-            Err(e) => Ok(MenuResponse::Error(format!(
-                "Failed to show selection dialog: {e}"
-            ))),
+        // Stop monitoring
+        monitoring_active.store(false, Ordering::SeqCst);
+
+        // If the process was killed due to invisibility, return cancelled regardless of what fzf returned
+        if was_killed.load(Ordering::SeqCst) {
+            Ok(MenuResponse::Cancelled)
+        } else {
+            result
         }
     }
 
@@ -364,32 +374,6 @@ impl MenuServer {
     /// Get the detected compositor type
     pub fn compositor(&self) -> &CompositorType {
         &self.compositor
-    }
-
-    /// Show the scratchpad if configured and not already visible
-    fn show_scratchpad(&self) -> Result<()> {
-        if let Some(ref config) = self.scratchpad_config {
-            // Check if already visible to avoid unnecessary operations
-            if !self.scratchpad_visible.load(Ordering::SeqCst) {
-                show_scratchpad(&self.compositor, config)
-                    .context("Failed to show menu server scratchpad")?;
-                self.scratchpad_visible.store(true, Ordering::SeqCst);
-            }
-        }
-        Ok(())
-    }
-
-    /// Hide the scratchpad if configured and currently visible
-    fn hide_scratchpad(&self) -> Result<()> {
-        if let Some(ref config) = self.scratchpad_config {
-            // Check if currently visible to avoid unnecessary operations
-            if self.scratchpad_visible.load(Ordering::SeqCst) {
-                hide_scratchpad(&self.compositor, config)
-                    .context("Failed to hide menu server scratchpad")?;
-                self.scratchpad_visible.store(false, Ordering::SeqCst);
-            }
-        }
-        Ok(())
     }
 
     /// Get server status information
@@ -462,7 +446,9 @@ pub async fn run_server_inside() -> Result<i32> {
         MenuServer::with_compositor_and_scratchpad(compositor, Some(scratchpad_config));
 
     // When running --inside, the scratchpad is initially visible
-    server.scratchpad_visible.store(true, Ordering::SeqCst);
+    if let Some(ref manager) = server.scratchpad_manager {
+        manager.mark_visible();
+    }
 
     println!("Starting InstantCLI Menu Server in --inside mode");
     println!("Press Ctrl+C to stop the server");

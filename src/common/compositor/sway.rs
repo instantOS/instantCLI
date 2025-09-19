@@ -88,18 +88,14 @@ pub fn configure_scratchpad_window(
 /// Get all scratchpad windows in Sway
 pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
     let tree = swaymsg_get_tree()?;
-    let parsed: Value = serde_json::from_str(&tree)
-        .context("Failed to parse Sway tree JSON")?;
+    let parsed: Value = serde_json::from_str(&tree).context("Failed to parse Sway tree JSON")?;
 
     let mut scratchpads = Vec::new();
 
     // Recursively search for scratchpad windows
     if let Some(nodes) = find_scratchpad_nodes(&parsed) {
         for node in nodes {
-            if let (Some(name), Some(app_id)) = (
-                get_window_name(&node),
-                get_window_app_id(&node)
-            ) {
+            if let (Some(name), Some(app_id)) = (get_window_name(&node), get_window_app_id(&node)) {
                 // Check if this is a scratchpad window (app_id starts with "scratchpad_")
                 if let Some(scratchpad_name) = app_id.strip_prefix("scratchpad_") {
                     let is_visible = is_window_visible(&app_id)?;
@@ -159,12 +155,16 @@ fn find_nodes_recursive<'a>(node: &'a Value, scratchpad_nodes: &mut Vec<&'a Valu
 
 /// Get window name from node
 fn get_window_name(node: &Value) -> Option<String> {
-    node.get("name").and_then(|n| n.as_str()).map(|s| s.to_string())
+    node.get("name")
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string())
 }
 
 /// Get window app_id from node
 fn get_window_app_id(node: &Value) -> Option<String> {
-    node.get("app_id").and_then(|a| a.as_str()).map(|s| s.to_string())
+    node.get("app_id")
+        .and_then(|a| a.as_str())
+        .map(|s| s.to_string())
 }
 
 #[cfg(test)]

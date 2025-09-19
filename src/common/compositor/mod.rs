@@ -114,20 +114,28 @@ impl CompositorType {
     /// Get all scratchpad windows for this compositor
     pub fn get_all_scratchpad_windows(&self) -> anyhow::Result<Vec<ScratchpadWindowInfo>> {
         match self {
-            CompositorType::Sway => sway::get_all_scratchpad_windows()
-                .map(|windows| windows.into_iter().map(|w| ScratchpadWindowInfo {
-                    name: w.name,
-                    window_class: w.window_class,
-                    title: w.title,
-                    visible: w.visible,
-                }).collect()),
-            CompositorType::Hyprland => hyprland::get_all_scratchpad_windows()
-                .map(|windows| windows.into_iter().map(|w| ScratchpadWindowInfo {
-                    name: w.name,
-                    window_class: w.window_class,
-                    title: w.title,
-                    visible: w.visible,
-                }).collect()),
+            CompositorType::Sway => sway::get_all_scratchpad_windows().map(|windows| {
+                windows
+                    .into_iter()
+                    .map(|w| ScratchpadWindowInfo {
+                        name: w.name,
+                        window_class: w.window_class,
+                        title: w.title,
+                        visible: w.visible,
+                    })
+                    .collect()
+            }),
+            CompositorType::Hyprland => hyprland::get_all_scratchpad_windows().map(|windows| {
+                windows
+                    .into_iter()
+                    .map(|w| ScratchpadWindowInfo {
+                        name: w.name,
+                        window_class: w.window_class,
+                        title: w.title,
+                        visible: w.visible,
+                    })
+                    .collect()
+            }),
             CompositorType::Other(_) => {
                 // For unsupported compositors, return empty list
                 Ok(Vec::new())

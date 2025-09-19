@@ -192,16 +192,17 @@ impl ScratchpadCommand {
 
                         // If a specific scratchpad name was requested, filter for it
                         let filtered_windows: Vec<_> = if let Some(ref name) = args.name {
-                            windows.into_iter()
-                                .filter(|w| w.name == *name)
-                                .collect()
+                            windows.into_iter().filter(|w| w.name == *name).collect()
                         } else {
                             windows
                         };
 
                         if filtered_windows.is_empty() {
                             if args.name.is_some() {
-                                println!("No scratchpad terminal found with name: {}", args.name.unwrap());
+                                println!(
+                                    "No scratchpad terminal found with name: {}",
+                                    args.name.unwrap()
+                                );
                             } else {
                                 println!("No scratchpad terminals found.");
                             }
@@ -237,10 +238,12 @@ impl ScratchpadCommand {
                         let visible_count = filtered_windows.iter().filter(|w| w.visible).count();
                         let hidden_count = total_count - visible_count;
 
-                        println!("Summary: {} total, {} visible, {} hidden",
-                                 total_count.to_string().bold(),
-                                 visible_count.to_string().green(),
-                                 hidden_count.to_string().bright_black());
+                        println!(
+                            "Summary: {} total, {} visible, {} hidden",
+                            total_count.to_string().bold(),
+                            visible_count.to_string().green(),
+                            hidden_count.to_string().bright_black()
+                        );
 
                         Ok(0)
                     }

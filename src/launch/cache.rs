@@ -464,7 +464,9 @@ impl LaunchCache {
         task::spawn(async move {
             // Refresh the base launch items cache
             let items = Self::build_item_list_simple();
-            if let Err(e) = Self::save_launch_items_cache_simple(launch_cache_path.clone(), items.clone()) {
+            if let Err(e) =
+                Self::save_launch_items_cache_simple(launch_cache_path.clone(), items.clone())
+            {
                 eprintln!("Warning: Failed to refresh launch items cache: {}", e);
                 return;
             }
@@ -504,7 +506,9 @@ impl LaunchCache {
             });
 
             // Save the frecency-sorted cache
-            if let Err(e) = Self::save_frecency_sorted_cache_static(frecency_cache_path, &sorted_launch_items) {
+            if let Err(e) =
+                Self::save_frecency_sorted_cache_static(frecency_cache_path, &sorted_launch_items)
+            {
                 eprintln!("Warning: Failed to refresh frecency sorted cache: {}", e);
             }
         });
@@ -774,7 +778,8 @@ impl LaunchCache {
             .modified()
             .unwrap_or(SystemTime::UNIX_EPOCH);
 
-        let cache_age = SystemTime::now().duration_since(cache_mtime)
+        let cache_age = SystemTime::now()
+            .duration_since(cache_mtime)
             .unwrap_or(std::time::Duration::from_secs(0));
 
         // Cache is fresh for 30 seconds

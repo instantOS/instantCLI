@@ -251,29 +251,41 @@ impl FzfWrapper {
             cmd.arg(arg);
         }
 
-        // Execute fzf
+        // Execute fzf with process tracking
         let input_text = display_lines.join("\n");
-        let output = cmd
+
+        let mut child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut child| {
-                if let Some(stdin) = child.stdin.as_mut() {
-                    use std::io::Write;
-                    stdin.write_all(input_text.as_bytes())?;
-                }
-                child.wait_with_output()
-            });
+            .spawn()?;
+
+        // Register the process for potential killing if scratchpad becomes invisible
+        let pid = child.id();
+        crate::menu::server::register_fzf_process(pid);
+
+        // Write input to stdin
+        if let Some(stdin) = child.stdin.as_mut() {
+            use std::io::Write;
+            stdin.write_all(input_text.as_bytes())?;
+        }
+
+        // Wait for the process to complete
+        let output = child.wait_with_output();
+
+        // Unregister the process since it's done
+        crate::menu::server::unregister_fzf_process(pid);
 
         // The preview script is kept alive by _preview_script_keeper
         // which will be dropped when this function ends, after fzf has finished
 
         match output {
             Ok(result) => {
-                // Check if fzf was cancelled (exit code 130)
-                if let Some(130) = result.status.code() {
-                    return Ok(FzfResult::Cancelled);
+                // Check if fzf was cancelled (exit code 130) or killed (exit code 143)
+                if let Some(code) = result.status.code() {
+                    if code == 130 || code == 143 {
+                        return Ok(FzfResult::Cancelled);
+                    }
                 }
 
                 let stdout = String::from_utf8_lossy(&result.stdout);
@@ -345,21 +357,32 @@ impl FzfWrapper {
             cmd.arg(arg);
         }
 
-        let output = cmd
+        let mut child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut child| {
-                if let Some(stdin) = child.stdin.as_mut() {
-                    stdin.write_all(b"")?;
-                }
-                child.wait_with_output()
-            })?;
+            .spawn()?;
 
-        // Check if fzf was cancelled (exit code 130)
-        if let Some(130) = output.status.code() {
-            return Ok(String::new());
+        // Register the process for potential killing if scratchpad becomes invisible
+        let pid = child.id();
+        crate::menu::server::register_fzf_process(pid);
+
+        // Write empty input to stdin
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(b"")?;
+        }
+
+        // Wait for the process to complete
+        let output = child.wait_with_output()?;
+
+        // Unregister the process since it's done
+        crate::menu::server::unregister_fzf_process(pid);
+
+        // Check if fzf was cancelled (exit code 130) or killed (exit code 143)
+        if let Some(code) = output.status.code() {
+            if code == 130 || code == 143 {
+                return Ok(String::new());
+            }
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
