@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use hyprland::data::{Clients, Workspace};
+use hyprland::data::{Clients, Workspace, Workspaces};
 use hyprland::dispatch::{Dispatch, DispatchType};
 use hyprland::keyword::Keyword;
 use hyprland::prelude::*;
@@ -79,9 +79,37 @@ pub fn hide_special_workspace(workspace_name: &str) -> Result<()> {
 
 /// Check if special workspace is active using direct IPC
 pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
+    let workspaces = Workspaces::get()
+        .context("Failed to get workspaces from Hyprland IPC")?
+        .to_vec();
+
+    // Find the active workspace
+    for workspace in workspaces.iter() {
+        if workspace.id < 0 && workspace.name.contains(workspace_name) {
+            // Special workspaces have negative IDs
+            // Check if this special workspace is currently active
+            // We need to check if any window is currently focused on this workspace
+            let clients = Clients::get()
+                .context("Failed to get clients from Hyprland IPC")?
+                .to_vec();
+
+            for client in clients.iter() {
+                if client.workspace.name.contains(workspace_name) && client.focus_history_id == 0 {
+                    // focus_history_id == 0 means it's the currently focused window
+                    return Ok(true);
+                }
+            }
+        }
+    }
+
+    Ok(false)
+}
+
+/// Get active workspace information using direct IPC
+pub fn get_active_workspace() -> Result<Workspace> {
     let active_workspace =
         Workspace::get_active().context("Failed to get active workspace from Hyprland IPC")?;
-    Ok(active_workspace.id < 0 && active_workspace.name.contains(workspace_name))
+    Ok(active_workspace)
 }
 
 /// Execute a hyprland dispatcher using direct IPC
