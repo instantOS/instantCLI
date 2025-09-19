@@ -151,7 +151,7 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
     for client in clients.iter() {
         // Check if this is a scratchpad window (class starts with "scratchpad_")
         if let Some(scratchpad_name) = client.class.strip_prefix("scratchpad_") {
-            let workspace_name = format!("scratchpad_{}", scratchpad_name);
+            let workspace_name = format!("scratchpad_{scratchpad_name}");
 
             // Use the same logic as is_special_workspace_active for consistency
             let is_visible = is_special_workspace_active(&workspace_name).unwrap_or(false);

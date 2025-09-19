@@ -75,7 +75,7 @@ impl ScratchpadManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scratchpad::terminal::Terminal;
+    
 
     #[test]
     fn test_scratchpad_manager_creation() {

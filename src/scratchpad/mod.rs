@@ -177,7 +177,7 @@ impl ScratchpadCommand {
                 if debug {
                     eprintln!("Check scratchpad status");
                     if let Some(ref name) = args.name {
-                        eprintln!("  Specific scratchpad: {}", name);
+                        eprintln!("  Specific scratchpad: {name}");
                     } else {
                         eprintln!("  Showing all scratchpads");
                     }
@@ -229,7 +229,7 @@ impl ScratchpadCommand {
                             println!("  {} {}", status_indicator, window.name.cyan());
                             println!("     Title: {}", window.title);
                             println!("     Class: {}", window.window_class);
-                            println!("     Status: {}", status_text);
+                            println!("     Status: {status_text}");
                             println!();
                         }
 

@@ -99,7 +99,7 @@ impl LaunchCache {
             let cache_path = self.cache_path.clone();
             task::spawn(async move {
                 if let Err(e) = Self::refresh_cache_background(cache_path).await {
-                    eprintln!("Warning: Failed to refresh application cache: {}", e);
+                    eprintln!("Warning: Failed to refresh application cache: {e}");
                 }
             });
 
@@ -450,7 +450,7 @@ impl LaunchCache {
         task::spawn(async move {
             let items = Self::build_item_list_simple();
             if let Err(e) = Self::save_launch_items_cache_simple(cache_path, items) {
-                eprintln!("Warning: Failed to refresh launch items cache: {}", e);
+                eprintln!("Warning: Failed to refresh launch items cache: {e}");
             }
         });
     }
@@ -467,12 +467,12 @@ impl LaunchCache {
             if let Err(e) =
                 Self::save_launch_items_cache_simple(launch_cache_path.clone(), items.clone())
             {
-                eprintln!("Warning: Failed to refresh launch items cache: {}", e);
+                eprintln!("Warning: Failed to refresh launch items cache: {e}");
                 return;
             }
 
             // Load frecency store and resort the items
-            let mut frecency_store = read_store(&frecency_store_path).unwrap_or_default();
+            let frecency_store = read_store(&frecency_store_path).unwrap_or_default();
             let sorted_items = frecency_store.sorted(fre::args::SortMethod::Frecent);
 
             let frequent_keys: std::collections::HashSet<_> =
@@ -491,11 +491,11 @@ impl LaunchCache {
                     (true, true) => {
                         let a_index = sorted_items
                             .iter()
-                            .position(|item| &item.item == &a_key)
+                            .position(|item| item.item == a_key)
                             .unwrap_or(0);
                         let b_index = sorted_items
                             .iter()
-                            .position(|item| &item.item == &b_key)
+                            .position(|item| item.item == b_key)
                             .unwrap_or(0);
                         a_index.cmp(&b_index)
                     }
@@ -509,7 +509,7 @@ impl LaunchCache {
             if let Err(e) =
                 Self::save_frecency_sorted_cache_static(frecency_cache_path, &sorted_launch_items)
             {
-                eprintln!("Warning: Failed to refresh frecency sorted cache: {}", e);
+                eprintln!("Warning: Failed to refresh frecency sorted cache: {e}");
             }
         });
     }
@@ -652,7 +652,7 @@ impl LaunchCache {
                 LaunchItem::PathExecutable(name) => {
                     if desktop_names.contains(&name.to_lowercase()) {
                         // Add prefix to avoid conflict
-                        result.push(LaunchItem::PathExecutable(format!("path:{}", name)));
+                        result.push(LaunchItem::PathExecutable(format!("path:{name}")));
                     } else {
                         result.push(LaunchItem::PathExecutable(name));
                     }
@@ -668,8 +668,8 @@ impl LaunchCache {
         let content: Vec<String> = items
             .into_iter()
             .map(|item| match item {
-                LaunchItem::DesktopApp(id) => format!("desktop:{}", id),
-                LaunchItem::PathExecutable(name) => format!("path:{}", name),
+                LaunchItem::DesktopApp(id) => format!("desktop:{id}"),
+                LaunchItem::PathExecutable(name) => format!("path:{name}"),
             })
             .collect();
 
@@ -696,11 +696,11 @@ impl LaunchCache {
                 (true, true) => {
                     let a_index = sorted_items
                         .iter()
-                        .position(|item| &item.item == &a_key)
+                        .position(|item| item.item == a_key)
                         .unwrap_or(0);
                     let b_index = sorted_items
                         .iter()
-                        .position(|item| &item.item == &b_key)
+                        .position(|item| item.item == b_key)
                         .unwrap_or(0);
                     a_index.cmp(&b_index)
                 }
@@ -791,8 +791,8 @@ impl LaunchCache {
         let content: Vec<String> = items
             .iter()
             .map(|item| match item {
-                LaunchItem::DesktopApp(id) => format!("desktop:{}", id),
-                LaunchItem::PathExecutable(name) => format!("path:{}", name),
+                LaunchItem::DesktopApp(id) => format!("desktop:{id}"),
+                LaunchItem::PathExecutable(name) => format!("path:{name}"),
             })
             .collect();
 
@@ -826,8 +826,8 @@ impl LaunchCache {
         let content: Vec<String> = items
             .iter()
             .map(|item| match item {
-                LaunchItem::DesktopApp(id) => format!("desktop:{}", id),
-                LaunchItem::PathExecutable(name) => format!("path:{}", name),
+                LaunchItem::DesktopApp(id) => format!("desktop:{id}"),
+                LaunchItem::PathExecutable(name) => format!("path:{name}"),
             })
             .collect();
 

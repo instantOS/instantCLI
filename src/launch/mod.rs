@@ -125,7 +125,7 @@ pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
 
                     // Record launch in frecency store
                     if let Err(e) = cache.record_launch_item(&launch_item) {
-                        eprintln!("Warning: Failed to record launch: {}", e);
+                        eprintln!("Warning: Failed to record launch: {e}");
                     }
 
                     Ok(0) // Success
@@ -152,11 +152,11 @@ fn execute_application(app_name: &str) -> Result<()> {
     // Spawn process in background with detachment
     match cmd.spawn() {
         Ok(_) => {
-            println!("Launched: {}", app_name);
+            println!("Launched: {app_name}");
             Ok(())
         }
         Err(e) => {
-            eprintln!("Failed to launch {}: {}", app_name, e);
+            eprintln!("Failed to launch {app_name}: {e}");
             Err(anyhow::anyhow!("Failed to launch application: {}", e))
         }
     }

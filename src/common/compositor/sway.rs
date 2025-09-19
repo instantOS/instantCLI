@@ -95,7 +95,7 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
     // Recursively search for scratchpad windows
     if let Some(nodes) = find_scratchpad_nodes(&parsed) {
         for node in nodes {
-            if let (Some(name), Some(app_id)) = (get_window_name(&node), get_window_app_id(&node)) {
+            if let (Some(name), Some(app_id)) = (get_window_name(node), get_window_app_id(node)) {
                 // Check if this is a scratchpad window (app_id starts with "scratchpad_")
                 if let Some(scratchpad_name) = app_id.strip_prefix("scratchpad_") {
                     let is_visible = is_window_visible(&app_id)?;
