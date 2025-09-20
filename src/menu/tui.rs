@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
@@ -220,6 +220,9 @@ impl MenuServerTui {
                 match key.code {
                     KeyCode::Char('q') => {
                         return Ok(false); // Signal to quit
+                    }
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        return Ok(false); // Signal to quit on Ctrl+C
                     }
                     KeyCode::Char('h') => {
                         self.toggle_help();
