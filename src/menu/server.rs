@@ -300,7 +300,7 @@ impl MenuServer {
 
         // Process the request with timeout and visibility monitoring
         let response = if should_manage_scratchpad && self.scratchpad_manager.is_some() {
-            self.process_request_with_monitoring_sync(request)?
+            self.process_request_with_integrated_monitoring(request)?
         } else {
             // Non-interactive requests or no scratchpad don't need monitoring
             self.process_request_internal(request)?
@@ -323,13 +323,6 @@ impl MenuServer {
         let processor =
             RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
         processor.process_internal(request)
-    }
-
-    /// Process a menu request with timeout and visibility monitoring (synchronous)
-    fn process_request_with_monitoring_sync(&self, request: MenuRequest) -> Result<MenuResponse> {
-        // Skip initial visibility check since we just showed the scratchpad above
-        // Start monitoring immediately and process the request
-        self.process_request_with_integrated_monitoring(request)
     }
 
     /// Process request with monitoring integrated directly (much simpler approach)

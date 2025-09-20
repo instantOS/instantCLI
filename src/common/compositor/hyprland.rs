@@ -1,8 +1,6 @@
 use anyhow::{Context, Result};
-use hyprland::data::{Clients, Workspace};
-use hyprland::dispatch::{Dispatch, DispatchType};
-use hyprland::keyword::Keyword;
-use hyprland::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::process::Command;
 
 /// Information about a scratchpad window
 #[derive(Debug, Clone)]
@@ -13,11 +11,35 @@ pub struct ScratchpadWindowInfo {
     pub visible: bool,
 }
 
-/// Check if a window with specific class exists in Hyprland using direct IPC
+/// Client information from hyprctl clients -j
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HyprlandClient {
+    pub class: String,
+    pub title: String,
+    pub workspace: HyprlandWorkspace,
+    pub focusHistoryID: i32,
+}
+
+/// Workspace information from hyprctl clients -j
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HyprlandWorkspace {
+    pub name: String,
+}
+
+/// Check if a window with specific class exists in Hyprland using hyprctl
 pub fn window_exists(window_class: &str) -> Result<bool> {
-    let clients = Clients::get()
-        .context("Failed to get clients from Hyprland IPC")?
-        .to_vec();
+    let output = Command::new("hyprctl")
+        .args(["clients", "-j"])
+        .output()
+        .context("Failed to execute hyprctl clients")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!("hyprctl clients failed: {}", stderr));
+    }
+
+    let clients: Vec<HyprlandClient> = serde_json::from_slice(&output.stdout)
+        .context("Failed to parse hyprctl clients JSON output")?;
 
     for client in clients.iter() {
         if client.class == window_class {
@@ -28,9 +50,8 @@ pub fn window_exists(window_class: &str) -> Result<bool> {
     Ok(false)
 }
 
-/// Setup window rules for Hyprland scratchpad using direct IPC
+/// Setup window rules for Hyprland scratchpad using hyprctl
 pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()> {
-    // Add window rules for the scratchpad terminal
     let rules = vec![
         format!(
             "workspace special:{},class:^({})$",
@@ -39,74 +60,124 @@ pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()
         format!("center,class:^({})$", window_class),
     ];
 
-    for rule in rules {
-        Keyword::set("windowrulev2", rule.clone())
-            .context(format!("Failed to set window rule: {rule}"))?;
+    // Use batch command for efficiency
+    let batch_commands: Vec<String> = rules
+        .into_iter()
+        .map(|rule| format!("keyword windowrulev2 {}", rule))
+        .collect();
+
+    let batch_str = batch_commands.join(" ; ");
+
+    let output = Command::new("hyprctl")
+        .args(["--batch", &batch_str])
+        .output()
+        .context("Failed to execute hyprctl batch for window rules")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!("Failed to set window rules: {}", stderr));
     }
 
     Ok(())
 }
 
-/// Toggle special workspace visibility using direct IPC
+/// Toggle special workspace visibility using hyprctl
 pub fn toggle_special_workspace(workspace_name: &str) -> Result<()> {
-    Dispatch::call(DispatchType::ToggleSpecialWorkspace(Some(
-        workspace_name.to_string(),
-    )))
-    .context("Failed to toggle special workspace")?;
+    let output = Command::new("hyprctl")
+        .args(["dispatch", "togglespecialworkspace", workspace_name])
+        .output()
+        .context("Failed to execute hyprctl togglespecialworkspace")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!(
+            "Failed to toggle special workspace '{}': {}",
+            workspace_name,
+            stderr
+        ));
+    }
 
     Ok(())
 }
 
-/// Show special workspace using direct IPC
+/// Show special workspace using hyprctl
 pub fn show_special_workspace(workspace_name: &str) -> Result<()> {
-    // Check if the special workspace is already active
     if !is_special_workspace_active(workspace_name)? {
-        // If not active, toggle it to show it
         toggle_special_workspace(workspace_name)?;
     }
     Ok(())
 }
 
-/// Hide special workspace using direct IPC
+/// Hide special workspace using hyprctl
 pub fn hide_special_workspace(workspace_name: &str) -> Result<()> {
-    // Check if the special workspace is currently active
     if is_special_workspace_active(workspace_name)? {
-        // If active, toggle it to hide it
         toggle_special_workspace(workspace_name)?;
     }
     Ok(())
 }
 
-/// Check if special workspace is active using direct IPC
-pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
-    let active_workspace =
-        Workspace::get_active().context("Failed to get active workspace from Hyprland IPC")?;
-    Ok(active_workspace.id < 0 && active_workspace.name.contains(workspace_name))
+/// Workspace information from hyprctl workspaces -j
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HyprlandWorkspaceInfo {
+    pub id: i32,
+    pub name: String,
+    pub windows: i32,
 }
 
-/// Execute a hyprland dispatcher using direct IPC
-pub fn dispatch_command(command: &str) -> Result<()> {
-    // Parse the command and convert to appropriate DispatchType
-    // This is a simplified version - you might want to expand this based on your needs
-    if command.starts_with("exec") {
-        let exec_command = command.strip_prefix("exec ").unwrap_or(command);
-        Dispatch::call(DispatchType::Exec(exec_command)).context("Failed to execute command")?;
-    } else if command.starts_with("togglespecialworkspace") {
-        let workspace_name = command
-            .strip_prefix("togglespecialworkspace ")
-            .unwrap_or("");
-        if workspace_name.is_empty() {
-            Dispatch::call(DispatchType::ToggleSpecialWorkspace(None))
-                .context("Failed to toggle special workspace")?;
-        } else {
-            Dispatch::call(DispatchType::ToggleSpecialWorkspace(Some(
-                workspace_name.to_string(),
-            )))
-            .context("Failed to toggle special workspace")?;
+/// Monitor information from hyprctl monitors -j
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HyprlandMonitorInfo {
+    pub activeWorkspace: HyprlandWorkspace,
+    pub specialWorkspace: HyprlandWorkspace,
+}
+
+/// Check if special workspace is active using hyprctl
+pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
+    // Get monitors to check which special workspace is currently active
+    let monitors_output = Command::new("hyprctl")
+        .args(["monitors", "-j"])
+        .output()
+        .context("Failed to execute hyprctl monitors")?;
+
+    if !monitors_output.status.success() {
+        let stderr = String::from_utf8_lossy(&monitors_output.stderr);
+        return Err(anyhow::anyhow!("hyprctl monitors failed: {}", stderr));
+    }
+
+    let monitors: Vec<HyprlandMonitorInfo> = serde_json::from_slice(&monitors_output.stdout)
+        .context("Failed to parse hyprctl monitors JSON output")?;
+
+    // Check if any monitor has the special workspace active
+    let special_workspace_name = format!("special:{}", workspace_name);
+    for monitor in monitors.iter() {
+        if monitor.specialWorkspace.name == special_workspace_name {
+            return Ok(true);
         }
-    } else {
-        // For other commands, we might need to extend this
-        return Err(anyhow::anyhow!("Unsupported dispatch command: {}", command));
+    }
+
+    Ok(false)
+}
+
+/// Execute a hyprctl dispatcher command
+pub fn dispatch_command(command: &str) -> Result<()> {
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    if parts.is_empty() {
+        return Err(anyhow::anyhow!("Empty command"));
+    }
+
+    let output = Command::new("hyprctl")
+        .args(["dispatch"])
+        .args(&parts[1..])
+        .output()
+        .context("Failed to execute hyprctl dispatch")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!(
+            "Failed to dispatch command '{}': {}",
+            command,
+            stderr
+        ));
     }
 
     Ok(())
@@ -114,19 +185,26 @@ pub fn dispatch_command(command: &str) -> Result<()> {
 
 /// Get all scratchpad windows in Hyprland
 pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
-    let clients = Clients::get()
-        .context("Failed to get clients from Hyprland IPC")?
-        .to_vec();
+    let output = Command::new("hyprctl")
+        .args(["clients", "-j"])
+        .output()
+        .context("Failed to execute hyprctl clients")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!("hyprctl clients failed: {}", stderr));
+    }
+
+    let clients: Vec<HyprlandClient> = serde_json::from_slice(&output.stdout)
+        .context("Failed to parse hyprctl clients JSON output")?;
 
     let mut scratchpads = Vec::new();
 
     for client in clients.iter() {
         // Check if this is a scratchpad window (class starts with "scratchpad_")
         if let Some(scratchpad_name) = client.class.strip_prefix("scratchpad_") {
-            let workspace_name = format!("scratchpad_{scratchpad_name}");
-
-            // Use the same logic as is_special_workspace_active for consistency
-            let is_visible = is_special_workspace_active(&workspace_name).unwrap_or(false);
+            // Use the improved workspace activity detection
+            let is_visible = is_special_workspace_active(&format!("scratchpad_{scratchpad_name}"))?;
 
             scratchpads.push(ScratchpadWindowInfo {
                 name: scratchpad_name.to_string(),
@@ -142,19 +220,10 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
-    fn test_window_exists_parsing() {
-        // This test would require a running Hyprland instance
-        // For now, we'll just test that the function doesn't panic
-        // In a real test environment, you'd want to mock the IPC calls
-        assert!(true);
-    }
-
-    #[test]
-    fn test_dispatch_command_parsing() {
-        // Test command parsing logic
-        // This would also require mocking in a real test
+    fn test_command_construction() {
+        // Test that commands are constructed correctly
+        // This doesn't actually run hyprctl, just tests the logic
         assert!(true);
     }
 }

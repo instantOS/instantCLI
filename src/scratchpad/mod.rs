@@ -46,14 +46,6 @@ pub fn hide_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -
     }
 }
 
-/// Check if scratchpad terminal is currently visible
-pub fn is_scratchpad_visible(
-    compositor: &CompositorType,
-    config: &ScratchpadConfig,
-) -> Result<bool> {
-    visibility::is_scratchpad_visible(compositor, config)
-}
-
 /// Shared arguments for scratchpad commands that create/configure terminals
 #[derive(clap::Args, Debug, Clone)]
 pub struct ScratchpadCreateArgs {
