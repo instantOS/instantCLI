@@ -292,6 +292,11 @@ impl MenuServer {
 
     /// Process a menu request internal logic using the dedicated processor
     fn process_request_internal(&self, request: MenuRequest) -> Result<MenuResponse> {
+        // Handle status request specially to get server-specific information
+        if matches!(request, MenuRequest::Status) {
+            return Ok(self.get_status_info());
+        }
+
         let processor =
             RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
         processor.process_internal(request)
