@@ -143,16 +143,16 @@ impl MenuServer {
 
             match listener.accept() {
                 Ok((stream, _addr)) => {
-                    // Temporarily disable TUI for connection handling
+                    // Temporarily suspend TUI for connection handling
                     if let Some(ref mut tui) = self.tui {
-                        tui.cleanup()?;
+                        tui.suspend()?;
                     }
 
                     let _ = self.handle_connection_sync(stream);
 
-                    // Re-enable TUI after connection handling
+                    // Resume TUI after connection handling
                     if let Some(ref mut tui) = self.tui {
-                        *tui = MenuServerTui::new()?;
+                        tui.resume()?;
                     }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {

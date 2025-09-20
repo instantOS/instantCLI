@@ -1,4 +1,3 @@
-use crate::common::compositor::CompositorType;
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -13,9 +12,9 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Clear},
 };
-use std::io::{self, stdout};
+use std::io::stdout;
 use std::sync::{
-    Arc, atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, atomic::{AtomicBool, Ordering},
 };
 use std::time::SystemTime;
 
@@ -28,7 +27,7 @@ pub struct MenuServerTui {
 impl MenuServerTui {
     /// Create a new TUI instance
     pub fn new() -> Result<Self> {
-        let mut terminal = {
+        let terminal = {
             enable_raw_mode()?;
             let mut stdout = stdout();
             execute!(stdout, crossterm::terminal::EnterAlternateScreen, EnableMouseCapture)?;
@@ -211,6 +210,34 @@ impl MenuServerTui {
             }
         }
         Ok(true) // Continue running
+    }
+
+    /// Temporarily suspend TUI (for external process handling)
+    pub fn suspend(&mut self) -> Result<()> {
+        if let Some(ref mut terminal) = self.terminal {
+            disable_raw_mode()?;
+            execute!(
+                terminal.backend_mut(),
+                crossterm::terminal::LeaveAlternateScreen,
+                DisableMouseCapture
+            )?;
+            terminal.show_cursor()?;
+        }
+        Ok(())
+    }
+
+    /// Resume TUI after suspension
+    pub fn resume(&mut self) -> Result<()> {
+        if let Some(ref mut terminal) = self.terminal {
+            enable_raw_mode()?;
+            execute!(
+                terminal.backend_mut(),
+                crossterm::terminal::EnterAlternateScreen,
+                EnableMouseCapture
+            )?;
+            terminal.hide_cursor()?;
+        }
+        Ok(())
     }
 
     /// Clean up terminal
