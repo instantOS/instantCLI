@@ -50,32 +50,65 @@ impl Default for FzfOptions {
 impl FzfOptions {
     /// Default margin arguments used across the application
     fn default_margin_args() -> Vec<String> {
-        vec![
+        let mut args = vec![
             "--margin".to_string(),
             "10%,2%".to_string(), // 10% vertical, 2% horizontal
             "--min-height".to_string(),
             "10".to_string(),
+        ];
+
+        // Add catppuccin theme colors
+        args.extend(Self::catppuccin_theme_args());
+        args
+    }
+
+    /// Catppuccin theme colors for fzf
+    fn catppuccin_theme_args() -> Vec<String> {
+        vec![
+            "--color=bg+:#313244".to_string(),
+            "--color=bg:#1E1E2E".to_string(),
+            "--color=spinner:#F5E0DC".to_string(),
+            "--color=hl:#F38BA8".to_string(),
+            "--color=fg:#CDD6F4".to_string(),
+            "--color=header:#F38BA8".to_string(),
+            "--color=info:#CBA6F7".to_string(),
+            "--color=pointer:#F5E0DC".to_string(),
+            "--color=marker:#B4BEFE".to_string(),
+            "--color=fg+:#CDD6F4".to_string(),
+            "--color=prompt:#CBA6F7".to_string(),
+            "--color=hl+:#F38BA8".to_string(),
+            "--color=selected-bg:#45475A".to_string(),
+            "--color=border:#6C7086".to_string(),
+            "--color=label:#CDD6F4".to_string(),
         ]
     }
 
     /// Margin arguments for input dialogs (larger vertical margin)
     fn input_margin_args() -> Vec<String> {
-        vec![
+        let mut args = vec![
             "--margin".to_string(),
             "20%,2%".to_string(), // 20% vertical, 2% horizontal
             "--min-height".to_string(),
             "10".to_string(),
-        ]
+        ];
+
+        // Add catppuccin theme colors
+        args.extend(Self::catppuccin_theme_args());
+        args
     }
 
     /// Margin arguments for confirmation dialogs (largest vertical margin)
     fn confirm_margin_args() -> Vec<String> {
-        vec![
+        let mut args = vec![
             "--margin".to_string(),
             "40%,2%".to_string(), // 40% vertical, 2% horizontal
             "--min-height".to_string(),
             "10".to_string(),
-        ]
+        ];
+
+        // Add catppuccin theme colors
+        args.extend(Self::catppuccin_theme_args());
+        args
     }
 }
 
@@ -237,7 +270,7 @@ impl FzfWrapper {
 
         if let Some(prompt) = &self.options.prompt {
             //TODO: add a " > " to the end of the prompt for spacing
-            cmd.arg("--prompt").arg(prompt);
+            cmd.arg("--prompt").arg(format!("{prompt} > "));
         }
 
         // Add preview if we have a preview script
