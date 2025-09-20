@@ -57,6 +57,9 @@ pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()
             "workspace special:{},class:^({})$",
             workspace_name, window_class
         ),
+        //TODO: figure out which ones of these are actually necessary
+        format!("float,class:^({})$", window_class),
+        format!("size 80% 80%,class:^({})$", window_class),
         format!("center,class:^({})$", window_class),
     ];
 
