@@ -273,10 +273,15 @@ impl MenuServer {
             self.process_request_internal(request)?
         };
 
-        // Hide scratchpad after processing (for interactive requests only)
+        // **PERFORMANCE CRITICAL**: Hide scratchpad IMMEDIATELY after menu interaction
+        // This must be the FIRST thing we do after the user completes their interaction
+        // to return control to the user as fast as possible.
+        //
+        // NOTE: For monitored requests, monitoring is already stopped in process_request_with_integrated_monitoring
+        // before this point to prevent false cancellations when we intentionally hide the scratchpad.
         if should_manage_scratchpad {
             if let Some(ref manager) = self.scratchpad_manager {
-                if let Err(e) = manager.hide() {
+                if let Err(e) = manager.hide_fast() {
                     eprintln!("Warning: Failed to hide scratchpad: {e}");
                 }
             }
@@ -337,10 +342,11 @@ impl MenuServer {
         // Process the request normally - if fzf gets killed, it will return cancelled
         let result = self.process_request_internal(request);
 
-        // Stop monitoring
+        // **CRITICAL**: Stop monitoring BEFORE hiding scratchpad to prevent false cancellations
+        // The monitoring thread would detect the intentional hiding and cancel the operation
         monitoring_active.store(false, Ordering::SeqCst);
 
-        // Wait for monitoring thread to complete
+        // Wait for monitoring thread to complete (must complete before we hide the scratchpad)
         if let Some(handle) = monitoring_handle {
             let _ = handle.join();
         }
