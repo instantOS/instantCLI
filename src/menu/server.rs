@@ -14,8 +14,8 @@ use crossterm::{
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
-    widgets::{Block, Borders, Paragraph},
+    layout::Alignment,
+    widgets::Paragraph,
 };
 use std::io::{self, BufRead, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -123,15 +123,12 @@ impl MenuServer {
 
         self.running.store(true, Ordering::SeqCst);
 
-        let mut terminal = if self.scratchpad_manager.is_some() {
+        let mut terminal = {
             enable_raw_mode()?;
             let mut stdout = io::stdout();
             execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
             let backend = CrosstermBackend::new(stdout);
             Some(Terminal::new(backend)?)
-        } else {
-            println!("Menu server listening on {}", self.socket_path);
-            None
         };
 
         let running_clone = self.running.clone();
@@ -157,43 +154,35 @@ impl MenuServer {
 
             match listener.accept() {
                 Ok((stream, _addr)) => {
-                    if let Some(ref mut term) = terminal {
-                        disable_raw_mode()?;
-                        execute!(
-                            term.backend_mut(),
-                            LeaveAlternateScreen,
-                            DisableMouseCapture
-                        )?;
-                        term.show_cursor()?;
-                    }
+                    let term = terminal.as_mut().unwrap();
+                    disable_raw_mode()?;
+                    execute!(
+                        term.backend_mut(),
+                        LeaveAlternateScreen,
+                        DisableMouseCapture
+                    )?;
+                    term.show_cursor()?;
 
                     let _ = self.handle_connection_sync(stream);
 
-                    if let Some(ref mut term) = terminal {
-                        enable_raw_mode()?;
-                        execute!(term.backend_mut(), EnterAlternateScreen, EnableMouseCapture)?;
-                        term.clear()?;
-                    }
+                    enable_raw_mode()?;
+                    execute!(term.backend_mut(), EnterAlternateScreen, EnableMouseCapture)?;
+                    term.clear()?;
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    if let Some(ref mut term) = terminal {
-                        term.draw(|f| {
-                            let size = f.size();
-                            let block = Block::default().borders(Borders::ALL);
-                            let p = Paragraph::new("waiting for menu requests")
-                                .block(block)
-                                .alignment(Alignment::Center);
-                            f.render_widget(p, size);
-                        })?;
-                        if event::poll(Duration::from_millis(10))? {
-                            if let Event::Key(key) = event::read()? {
-                                if key.code == KeyCode::Char('q') {
-                                    self.running.store(false, Ordering::SeqCst);
-                                }
+                  let term = terminal.as_mut().unwrap();
+                    term.draw(|f| {
+                        let size = f.area();
+                        let p = Paragraph::new("waiting for menu requests")
+                            .alignment(Alignment::Center);
+                        f.render_widget(p, size);
+                    })?;
+                    if event::poll(Duration::from_millis(10))? {
+                        if let Event::Key(key) = event::read()? {
+                            if key.code == KeyCode::Char('q') {
+                                self.running.store(false, Ordering::SeqCst);
                             }
                         }
-                    } else {
-                        tokio::time::sleep(Duration::from_millis(10)).await;
                     }
                     continue;
                 }
@@ -203,15 +192,14 @@ impl MenuServer {
             }
         }
 
-        if let Some(ref mut term) = terminal {
-            disable_raw_mode()?;
-            execute!(
-                term.backend_mut(),
-                LeaveAlternateScreen,
-                DisableMouseCapture
-            )?;
-            term.show_cursor()?;
-        }
+          let term = terminal.as_mut().unwrap();
+        disable_raw_mode()?;
+        execute!(
+            term.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        term.show_cursor()?;
 
         self.cleanup_socket().await;
         Ok(())
