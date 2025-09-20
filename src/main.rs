@@ -144,6 +144,11 @@ enum DotCommands {
         #[arg(long)]
         non_interactive: bool,
     },
+    /// Show differences between modified dotfiles and their source
+    Diff {
+        /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
+        path: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -246,6 +251,18 @@ async fn main() -> Result<()> {
                             "Initialized instantdots.toml in {}",
                             cwd.display()
                         )),
+                    )?;
+                }
+                DotCommands::Diff { path } => {
+                    execute_with_error_handling(
+                        dot::diff_all(
+                            &config_manager.config,
+                            cli.debug,
+                            path.as_deref(),
+                            &db,
+                        ),
+                        "Error showing dotfile differences",
+                        None,
                     )?;
                 }
             }

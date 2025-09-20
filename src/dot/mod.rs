@@ -95,7 +95,7 @@ pub mod repo;
 mod path_tests;
 
 pub use crate::dot::dotfile::Dotfile;
-pub use git::{status_all, update_all};
+pub use git::{diff_all, status_all, update_all};
 
 use crate::dot::config::Config;
 use crate::dot::db::Database;
@@ -108,6 +108,9 @@ use crate::dot::localrepo::{DotfileDir, LocalRepo};
 /// - If path is absolute, validate it's within home directory
 /// - If path is relative, resolve it relative to current working directory,
 ///   then validate it's within home directory
+///
+/// Important: This function does NOT canonicalize symlinks because dotfile tracking
+/// should work with the user-specified path (which may be a symlink), not the resolved target.
 ///
 /// Returns the resolved absolute path if valid, or an error if:
 /// - The path doesn't exist
@@ -128,21 +131,58 @@ pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
         current_dir.join(path)
     };
 
-    // Canonicalize the path to resolve any symlinks or relative components
-    let canonical_path = resolved_path
-        .canonicalize()
-        .map_err(|e| anyhow::anyhow!("Failed to resolve path '{}': {}", path, e))?;
+    // Normalize the path by removing redundant components (like ./, ../) but DON'T resolve symlinks
+    let normalized_path = normalize_path(&resolved_path)?;
+
+    // Validate that the path exists
+    if !normalized_path.exists() {
+        return Err(anyhow::anyhow!(
+            "Path '{}' does not exist",
+            normalized_path.display()
+        ));
+    }
 
     // Validate that the path is within the home directory
-    if !canonical_path.starts_with(&home) {
+    // For this check, we need to resolve any symlinks in the parent directories to ensure safety
+    let real_path = normalized_path
+        .canonicalize()
+        .map_err(|e| anyhow::anyhow!("Failed to validate path '{}': {}", path, e))?;
+
+    if !real_path.starts_with(&home.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize home directory: {}", e))?) {
         return Err(anyhow::anyhow!(
             "Path '{}' is outside the home directory. Only files in {} are allowed.",
-            canonical_path.display(),
+            normalized_path.display(),
             home.display()
         ));
     }
 
-    Ok(canonical_path)
+    Ok(normalized_path)
+}
+
+/// Normalize a path by removing redundant components without resolving symlinks
+fn normalize_path(path: &Path) -> Result<PathBuf> {
+    use std::path::Component;
+
+    let mut result = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            Component::CurDir => {
+                // Skip current directory components
+            }
+            Component::ParentDir => {
+                // Go up one directory if possible
+                if !result.pop() {
+                    return Err(anyhow::anyhow!("Path '{}' attempts to go above root", path.display()));
+                }
+            }
+            Component::Normal(_) | Component::RootDir | Component::Prefix(_) => {
+                result.push(component);
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 /// Get all active dotfile directories from all repositories
