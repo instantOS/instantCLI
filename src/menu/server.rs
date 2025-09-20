@@ -1,22 +1,12 @@
 use super::processing::RequestProcessor;
 use super::protocol::*;
 use super::scratchpad_manager::ScratchpadManager;
+use super::tui::MenuServerTui;
 use crate::common::compositor::CompositorType;
 use crate::scratchpad::{
     config::ScratchpadConfig, show_scratchpad, visibility::is_scratchpad_visible,
 };
 use anyhow::{Context, Result};
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
-use ratatui::{
-    Terminal,
-    backend::CrosstermBackend,
-    layout::Alignment,
-    widgets::Paragraph,
-};
 use std::io::{self, BufRead, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
@@ -78,37 +68,42 @@ pub struct MenuServer {
     requests_processed: Arc<AtomicU64>,
     compositor: CompositorType,
     scratchpad_manager: Option<ScratchpadManager>,
+    tui: Option<MenuServerTui>,
 }
 
 impl MenuServer {
     /// Create a new menu server
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        let tui = MenuServerTui::new()?;
+        Ok(Self {
             socket_path: default_socket_path(),
             running: Arc::new(AtomicBool::new(false)),
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
             compositor: CompositorType::detect(),
             scratchpad_manager: None,
-        }
+            tui: Some(tui),
+        })
     }
 
     /// Create a menu server with compositor type and optional scratchpad config
     pub fn with_compositor_and_scratchpad(
         compositor: CompositorType,
         scratchpad_config: Option<ScratchpadConfig>,
-    ) -> Self {
+    ) -> Result<Self> {
         let scratchpad_manager =
             scratchpad_config.map(|config| ScratchpadManager::new(compositor.clone(), config));
+        let tui = MenuServerTui::new()?;
 
-        Self {
+        Ok(Self {
             socket_path: default_socket_path(),
             running: Arc::new(AtomicBool::new(false)),
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
             compositor,
             scratchpad_manager,
-        }
+            tui: Some(tui),
+        })
     }
 
     /// Start the server
@@ -123,13 +118,7 @@ impl MenuServer {
 
         self.running.store(true, Ordering::SeqCst);
 
-        let mut terminal = {
-            enable_raw_mode()?;
-            let mut stdout = io::stdout();
-            execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-            let backend = CrosstermBackend::new(stdout);
-            Some(Terminal::new(backend)?)
-        };
+        // TUI is already initialized in the struct
 
         let running_clone = self.running.clone();
         let socket_path_clone = self.socket_path.clone();
@@ -154,34 +143,28 @@ impl MenuServer {
 
             match listener.accept() {
                 Ok((stream, _addr)) => {
-                    let term = terminal.as_mut().unwrap();
-                    disable_raw_mode()?;
-                    execute!(
-                        term.backend_mut(),
-                        LeaveAlternateScreen,
-                        DisableMouseCapture
-                    )?;
-                    term.show_cursor()?;
+                    // Temporarily disable TUI for connection handling
+                    if let Some(ref mut tui) = self.tui {
+                        tui.cleanup()?;
+                    }
 
                     let _ = self.handle_connection_sync(stream);
 
-                    enable_raw_mode()?;
-                    execute!(term.backend_mut(), EnterAlternateScreen, EnableMouseCapture)?;
-                    term.clear()?;
+                    // Re-enable TUI after connection handling
+                    if let Some(ref mut tui) = self.tui {
+                        *tui = MenuServerTui::new()?;
+                    }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                  let term = terminal.as_mut().unwrap();
-                    term.draw(|f| {
-                        let size = f.area();
-                        let p = Paragraph::new("waiting for menu requests")
-                            .alignment(Alignment::Center);
-                        f.render_widget(p, size);
-                    })?;
-                    if event::poll(Duration::from_millis(10))? {
-                        if let Event::Key(key) = event::read()? {
-                            if key.code == KeyCode::Char('q') {
-                                self.running.store(false, Ordering::SeqCst);
-                            }
+                    // Draw the status screen using TUI module
+                    if let Some(ref mut tui) = self.tui {
+                        let has_scratchpad = self.scratchpad_manager.is_some();
+                        let requests_processed = self.requests_processed.load(Ordering::SeqCst);
+                        tui.draw_status_screen(has_scratchpad, requests_processed, self.start_time)?;
+
+                        // Handle events
+                        if !tui.handle_events()? {
+                            self.running.store(false, Ordering::SeqCst);
                         }
                     }
                     continue;
@@ -192,14 +175,10 @@ impl MenuServer {
             }
         }
 
-          let term = terminal.as_mut().unwrap();
-        disable_raw_mode()?;
-        execute!(
-            term.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        )?;
-        term.show_cursor()?;
+        // Cleanup TUI
+        if let Some(ref mut tui) = self.tui {
+            tui.cleanup()?;
+        }
 
         self.cleanup_socket().await;
         Ok(())
@@ -422,7 +401,7 @@ impl MenuServer {
 
 impl Default for MenuServer {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("Failed to create default MenuServer")
     }
 }
 
@@ -455,15 +434,12 @@ pub async fn run_server_inside(no_scratchpad: bool) -> Result<i32> {
         Some(create_menu_server_scratchpad_config())
     };
     let compositor = CompositorType::detect();
-    let mut server = MenuServer::with_compositor_and_scratchpad(compositor, scratchpad_config);
+    let mut server = MenuServer::with_compositor_and_scratchpad(compositor, scratchpad_config)?;
 
     // When running --inside, the scratchpad is initially visible
     if let Some(ref manager) = server.scratchpad_manager {
         manager.mark_visible();
     }
-
-    println!("Starting InstantCLI Menu Server in --inside mode");
-    println!("Press Ctrl+C to stop the server");
 
     // Clear screen and start server
     print!("\x1B[2J\x1B[H"); // Clear screen and move cursor to top-left

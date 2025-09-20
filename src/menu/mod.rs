@@ -7,6 +7,7 @@ pub mod processing;
 pub mod protocol;
 pub mod scratchpad_manager;
 pub mod server;
+pub mod tui;
 use client::MenuClient;
 
 /// Handle menu commands for shell scripts
