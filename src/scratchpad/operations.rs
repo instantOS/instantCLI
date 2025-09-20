@@ -121,8 +121,8 @@ pub fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
     let window_exists = check_window_exists(&CompositorType::Sway, &window_class)?;
 
     if window_exists {
-        // Terminal exists, toggle its visibility
-        sway::show_scratchpad(&window_class)?;
+        // Terminal exists, toggle its visibility using the dedicated toggle function
+        sway::toggle_scratchpad(&window_class)?;
         println!("Toggled scratchpad terminal '{}' visibility", config.name);
     } else {
         // Terminal doesn't exist, create and configure it

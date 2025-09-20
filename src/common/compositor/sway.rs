@@ -41,21 +41,46 @@ pub fn window_exists(window_class: &str) -> Result<bool> {
 /// Check if a window is currently visible (not in scratchpad) in Sway
 pub fn is_window_visible(window_class: &str) -> Result<bool> {
     let tree = swaymsg_get_tree()?;
-    // Look for the window and check if it's visible (not in scratchpad)
-    Ok(tree.contains(&format!("\"app_id\": \"{window_class}\""))
-        && !tree.contains(&format!("\"app_id\": \"{window_class}\".*scratchpad")))
+    let parsed: Value = serde_json::from_str(&tree).context("Failed to parse Sway tree JSON")?;
+
+    // Find the window and check its visible status
+    find_window_visibility(&parsed, window_class)
 }
 
-/// Show a scratchpad window in Sway
+
+/// Show a scratchpad window in Sway (idempotent)
+/// Only shows if the window is not already visible
 pub fn show_scratchpad(window_class: &str) -> Result<()> {
+    // Check if window is already visible first
+    if is_window_visible(window_class)? {
+        // Window is already visible, do nothing
+        return Ok(());
+    }
+
+    // Window exists but is hidden, show it
     let message = format!("[app_id=\"{window_class}\"] scratchpad show");
     swaymsg(&message)?;
     Ok(())
 }
 
-/// Hide a scratchpad window in Sway
+/// Hide a scratchpad window in Sway (idempotent)
+/// Only hides if the window is currently visible
 pub fn hide_scratchpad(window_class: &str) -> Result<()> {
+    // Check if window is currently visible
+    if !is_window_visible(window_class)? {
+        // Window is already hidden, do nothing
+        return Ok(());
+    }
+
+    // Window is visible, hide it
     let message = format!("[app_id=\"{window_class}\"] move to scratchpad");
+    swaymsg(&message)?;
+    Ok(())
+}
+
+/// Toggle scratchpad window visibility (maintained for compatibility)
+pub fn toggle_scratchpad(window_class: &str) -> Result<()> {
+    let message = format!("[app_id=\"{window_class}\"] scratchpad show");
     swaymsg(&message)?;
     Ok(())
 }
@@ -98,7 +123,7 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
             if let (Some(name), Some(app_id)) = (get_window_name(node), get_window_app_id(node)) {
                 // Check if this is a scratchpad window (app_id starts with "scratchpad_")
                 if let Some(scratchpad_name) = app_id.strip_prefix("scratchpad_") {
-                    let is_visible = is_window_visible(&app_id)?;
+                    let is_visible = get_node_visible_field(node).unwrap_or(false);
                     scratchpads.push(ScratchpadWindowInfo {
                         name: scratchpad_name.to_string(),
                         window_class: app_id,
@@ -111,6 +136,12 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
     }
 
     Ok(scratchpads)
+}
+
+
+/// Get the visible field from a node directly
+fn get_node_visible_field(node: &Value) -> Option<bool> {
+    node.get("visible").and_then(|v| v.as_bool())
 }
 
 /// Information about a scratchpad window
@@ -165,6 +196,47 @@ fn get_window_app_id(node: &Value) -> Option<String> {
     node.get("app_id")
         .and_then(|a| a.as_str())
         .map(|s| s.to_string())
+}
+
+/// Find window visibility by searching the tree
+fn find_window_visibility(tree: &Value, window_class: &str) -> Result<bool> {
+    if let Some(visible) = find_window_recursive(tree, window_class) {
+        Ok(visible)
+    } else {
+        // Window not found, assume not visible
+        Ok(false)
+    }
+}
+
+/// Recursive helper to find window and check visibility
+fn find_window_recursive(node: &Value, window_class: &str) -> Option<bool> {
+    // Check if this node matches our window class
+    if let Some(app_id) = get_window_app_id(node) {
+        if app_id == window_class {
+            // Return the visible field
+            return node.get("visible").and_then(|v| v.as_bool());
+        }
+    }
+
+    // Search in nodes
+    if let Some(nodes) = node.get("nodes").and_then(|n| n.as_array()) {
+        for child in nodes {
+            if let Some(visible) = find_window_recursive(child, window_class) {
+                return Some(visible);
+            }
+        }
+    }
+
+    // Search in floating nodes
+    if let Some(floating_nodes) = node.get("floating_nodes").and_then(|n| n.as_array()) {
+        for child in floating_nodes {
+            if let Some(visible) = find_window_recursive(child, window_class) {
+                return Some(visible);
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]
