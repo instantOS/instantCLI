@@ -144,11 +144,14 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
 /// Handle server commands
 pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
     match command {
-        ServerCommands::Launch { inside } => {
+        ServerCommands::Launch {
+            inside,
+            no_scratchpad,
+        } => {
             if inside {
-                server::run_server_inside().await
+                server::run_server_inside(no_scratchpad).await
             } else {
-                server::run_server_launch()
+                server::run_server_launch(no_scratchpad).await
             }
         }
         ServerCommands::Stop => {
@@ -230,6 +233,9 @@ pub enum ServerCommands {
         /// Launch terminal server instead of spawning external terminal
         #[arg(long)]
         inside: bool,
+        /// Run without a scratchpad
+        #[arg(long)]
+        no_scratchpad: bool,
     },
     /// Stop the running menu server
     Stop,

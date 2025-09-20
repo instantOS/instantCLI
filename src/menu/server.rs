@@ -6,6 +6,17 @@ use crate::scratchpad::{
     config::ScratchpadConfig, show_scratchpad, visibility::is_scratchpad_visible,
 };
 use anyhow::{Context, Result};
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Alignment, Constraint, Direction, Layout},
+    widgets::{Block, Borders, Paragraph},
+    Terminal,
+};
 use std::io::{self, BufRead, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
@@ -102,23 +113,29 @@ impl MenuServer {
 
     /// Start the server
     pub async fn start(&mut self) -> Result<()> {
-        // Remove existing socket file if it exists
         if Path::new(&self.socket_path).exists() {
             std::fs::remove_file(&self.socket_path)
                 .context("Failed to remove existing socket file")?;
         }
 
-        // Create Unix domain socket listener
         let listener = UnixListener::bind(&self.socket_path)
             .context(format!("Failed to bind to socket at {}", self.socket_path))?;
 
-        println!("Menu server listening on {}", self.socket_path);
         self.running.store(true, Ordering::SeqCst);
 
-        // Set up signal handling for graceful shutdown
+        let mut terminal = if self.scratchpad_manager.is_some() {
+            enable_raw_mode()?;
+            let mut stdout = io::stdout();
+            execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+            let backend = CrosstermBackend::new(stdout);
+            Some(Terminal::new(backend)?)
+        } else {
+            println!("Menu server listening on {}", self.socket_path);
+            None
+        };
+
         let running_clone = self.running.clone();
         let socket_path_clone = self.socket_path.clone();
-
         tokio::spawn(async move {
             let mut sigint = signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
                 .expect("Failed to setup SIGINT handler");
@@ -126,52 +143,68 @@ impl MenuServer {
                 .expect("Failed to setup SIGTERM handler");
 
             tokio::select! {
-                _ = sigint.recv() => {
-                    println!("\nReceived SIGINT (Ctrl+C), shutting down gracefully...");
-                }
-                _ = sigterm.recv() => {
-                    println!("\nReceived SIGTERM, shutting down gracefully...");
-                }
+                _ = sigint.recv() => {}
+                _ = sigterm.recv() => {}
             }
-
             running_clone.store(false, Ordering::SeqCst);
-
-            // Clean up socket file
             if Path::new(&socket_path_clone).exists() {
-                if let Err(e) = std::fs::remove_file(&socket_path_clone) {
-                    eprintln!("Failed to remove socket file during shutdown: {e}");
-                }
+                let _ = std::fs::remove_file(&socket_path_clone);
             }
-
-            println!("Server shutdown complete");
         });
 
-        // Main server loop
         while self.running.load(Ordering::SeqCst) {
-            // Set non-blocking mode for the listener to check running flag
             listener.set_nonblocking(true)?;
 
             match listener.accept() {
-                Ok((stream, addr)) => {
-                    // Handle connection synchronously for now to avoid ownership issues
-                    if let Err(e) = self.handle_connection_sync(stream) {
-                        eprintln!("Error handling connection from {addr:?}: {e}");
+                Ok((stream, _addr)) => {
+                    if let Some(ref mut term) = terminal {
+                        disable_raw_mode()?;
+                        execute!(term.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+                        term.show_cursor()?;
+                    }
+
+                    let _ = self.handle_connection_sync(stream);
+
+                    if let Some(ref mut term) = terminal {
+                        enable_raw_mode()?;
+                        execute!(term.backend_mut(), EnterAlternateScreen, EnableMouseCapture)?;
+                        term.clear()?;
                     }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    // No incoming connections, wait a bit before trying again
-                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    if let Some(ref mut term) = terminal {
+                        term.draw(|f| {
+                            let size = f.size();
+                            let block = Block::default().borders(Borders::ALL);
+                            let p = Paragraph::new("waiting for menu requests")
+                                .block(block)
+                                .alignment(Alignment::Center);
+                            f.render_widget(p, size);
+                        })?;
+                        if event::poll(Duration::from_millis(10))? {
+                            if let Event::Key(key) = event::read()? {
+                                if key.code == KeyCode::Char('q') {
+                                    self.running.store(false, Ordering::SeqCst);
+                                }
+                            }
+                        }
+                    } else {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
                     continue;
                 }
-                Err(e) => {
-                    eprintln!("Error accepting connection: {e}");
-                    // Brief pause to avoid busy loop on persistent errors
+                Err(_e) => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         }
 
-        // Final cleanup
+        if let Some(ref mut term) = terminal {
+            disable_raw_mode()?;
+            execute!(term.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+            term.show_cursor()?;
+        }
+
         self.cleanup_socket().await;
         Ok(())
     }
@@ -425,12 +458,16 @@ pub fn create_menu_server_scratchpad_config() -> ScratchpadConfig {
 }
 
 /// Run the menu server in --inside mode
-pub async fn run_server_inside() -> Result<i32> {
+pub async fn run_server_inside(no_scratchpad: bool) -> Result<i32> {
     // Create server with scratchpad config for self-management
-    let scratchpad_config = create_menu_server_scratchpad_config();
+    let scratchpad_config = if no_scratchpad {
+        None
+    } else {
+        Some(create_menu_server_scratchpad_config())
+    };
     let compositor = CompositorType::detect();
     let mut server =
-        MenuServer::with_compositor_and_scratchpad(compositor, Some(scratchpad_config));
+        MenuServer::with_compositor_and_scratchpad(compositor, scratchpad_config);
 
     // When running --inside, the scratchpad is initially visible
     if let Some(ref manager) = server.scratchpad_manager {
@@ -451,7 +488,13 @@ pub async fn run_server_inside() -> Result<i32> {
 }
 
 /// Run the menu server by launching external terminal in scratchpad
-pub fn run_server_launch() -> Result<i32> {
+pub async fn run_server_launch(no_scratchpad: bool) -> Result<i32> {
+    if no_scratchpad {
+        // If no scratchpad is requested, just run the server in the current terminal.
+        // This is effectively the same as running with --inside, but without a scratchpad manager.
+        return run_server_inside(true).await;
+    }
+
     let compositor = CompositorType::detect();
     let scratchpad_config = create_menu_server_scratchpad_config();
 
