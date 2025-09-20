@@ -22,6 +22,7 @@ use std::time::SystemTime;
 pub struct MenuServerTui {
     terminal: Option<Terminal<CrosstermBackend<std::io::Stdout>>>,
     show_help: Arc<AtomicBool>,
+    force_redraw: bool,
 }
 
 impl MenuServerTui {
@@ -38,6 +39,7 @@ impl MenuServerTui {
         Ok(Self {
             terminal,
             show_help: Arc::new(AtomicBool::new(false)),
+            force_redraw: false,
         })
     }
 
@@ -52,6 +54,11 @@ impl MenuServerTui {
         self.show_help.store(!current, Ordering::SeqCst);
     }
 
+    /// Request a full redraw on next draw
+    pub fn request_redraw(&mut self) {
+        self.force_redraw = true;
+    }
+
     /// Draw the main server status screen
     pub fn draw_status_screen(
         &mut self,
@@ -61,6 +68,18 @@ impl MenuServerTui {
     ) -> Result<()> {
         if let Some(ref mut terminal) = self.terminal {
             let show_help = self.show_help.load(Ordering::SeqCst);
+            let force_redraw = self.force_redraw;
+
+            // Reset the force redraw flag after using it
+            if force_redraw {
+                self.force_redraw = false;
+            }
+
+            // If force redraw is requested, clear the entire terminal first
+            if force_redraw {
+                terminal.clear()?;
+            }
+
             terminal.draw(|f| {
                 let size = f.area();
 
@@ -237,6 +256,8 @@ impl MenuServerTui {
             )?;
             terminal.hide_cursor()?;
         }
+        // Request a full redraw after resume
+        self.request_redraw();
         Ok(())
     }
 
