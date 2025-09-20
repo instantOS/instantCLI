@@ -30,7 +30,6 @@ tempfile = "3.21.0"            # For temporary files
 rand = "0.8"                    # For request ID generation
 xdg = "2.4"                     # For XDG directory support
 ctrlc = "3.4"                   # For signal handling
-hyprland = "0.4.0-beta.2"
 fre = "0.4.1"
 freedesktop-file-parser = "0.3.0"
 which = "7.0"
