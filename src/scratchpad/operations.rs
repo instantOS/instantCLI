@@ -20,11 +20,8 @@ fn create_terminal_process(config: &ScratchpadConfig) -> Result<()> {
 pub fn check_window_exists(compositor: &CompositorType, window_class: &str) -> Result<bool> {
     match compositor {
         CompositorType::Sway => sway::window_exists(window_class),
-        CompositorType::Hyprland => Ok(hyprland::window_exists(window_class).unwrap_or(false)),
-        CompositorType::Other(_) => {
-            // For unsupported compositors, assume window doesn't exist
-            Ok(false)
-        }
+        CompositorType::Hyprland => hyprland::window_exists(window_class),
+        CompositorType::Other(_) => Ok(false),
     }
 }
 
@@ -37,9 +34,7 @@ pub fn wait_for_window_to_appear(
     poll_interval_ms: u64,
 ) -> Result<bool> {
     for attempt in 1..=max_attempts {
-        // Small delay before checking
-        std::thread::sleep(std::time::Duration::from_millis(poll_interval_ms));
-
+        // Check first, then sleep (reversed order for faster detection)
         let window_exists = check_window_exists(compositor, window_class)?;
 
         if window_exists {
@@ -47,7 +42,7 @@ pub fn wait_for_window_to_appear(
         }
 
         if attempt < max_attempts {
-            eprintln!("Waiting for window to appear... (attempt {attempt}/{max_attempts})");
+            std::thread::sleep(std::time::Duration::from_millis(poll_interval_ms));
         }
     }
 
@@ -61,13 +56,16 @@ pub fn create_and_configure_sway_scratchpad(config: &ScratchpadConfig) -> Result
     // Launch the terminal in background
     create_terminal_process(config)?;
 
+    // Give the terminal process a moment to start up
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
     // Wait for the window to appear by polling
     let window_class = config.window_class();
     let window_appeared = wait_for_window_to_appear(
         &CompositorType::Sway,
         &window_class,
-        20,  // max attempts
-        100, // poll every 100ms
+        30,  // max attempts
+        200, // poll every 200ms
     )?;
 
     if !window_appeared {
@@ -96,12 +94,15 @@ pub fn create_and_configure_hyprland_scratchpad(config: &ScratchpadConfig) -> Re
     // Launch the terminal in background
     create_terminal_process(config)?;
 
+    // Give the terminal process a moment to start up
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
     // Wait for the window to appear by polling
     let window_appeared = wait_for_window_to_appear(
         &CompositorType::Hyprland,
         &window_class,
-        20,  // max attempts
-        100, // poll every 100ms
+        30,  // max attempts
+        200, // poll every 200ms
     )?;
 
     if !window_appeared {
