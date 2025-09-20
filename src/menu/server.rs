@@ -1,6 +1,7 @@
 use super::processing::RequestProcessor;
 use super::protocol::*;
 use super::scratchpad_manager::ScratchpadManager;
+use super::tui::MenuServerTui;
 use crate::common::compositor::CompositorType;
 use crate::scratchpad::{
     config::ScratchpadConfig, show_scratchpad, visibility::is_scratchpad_visible,
@@ -67,58 +68,60 @@ pub struct MenuServer {
     requests_processed: Arc<AtomicU64>,
     compositor: CompositorType,
     scratchpad_manager: Option<ScratchpadManager>,
+    tui: Option<MenuServerTui>,
 }
 
 impl MenuServer {
     /// Create a new menu server
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        let tui = MenuServerTui::new()?;
+        Ok(Self {
             socket_path: default_socket_path(),
             running: Arc::new(AtomicBool::new(false)),
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
             compositor: CompositorType::detect(),
             scratchpad_manager: None,
-        }
+            tui: Some(tui),
+        })
     }
 
     /// Create a menu server with compositor type and optional scratchpad config
     pub fn with_compositor_and_scratchpad(
         compositor: CompositorType,
         scratchpad_config: Option<ScratchpadConfig>,
-    ) -> Self {
+    ) -> Result<Self> {
         let scratchpad_manager =
             scratchpad_config.map(|config| ScratchpadManager::new(compositor.clone(), config));
+        let tui = MenuServerTui::new()?;
 
-        Self {
+        Ok(Self {
             socket_path: default_socket_path(),
             running: Arc::new(AtomicBool::new(false)),
             start_time: std::time::SystemTime::now(),
             requests_processed: Arc::new(AtomicU64::new(0)),
             compositor,
             scratchpad_manager,
-        }
+            tui: Some(tui),
+        })
     }
 
     /// Start the server
     pub async fn start(&mut self) -> Result<()> {
-        // Remove existing socket file if it exists
         if Path::new(&self.socket_path).exists() {
             std::fs::remove_file(&self.socket_path)
                 .context("Failed to remove existing socket file")?;
         }
 
-        // Create Unix domain socket listener
         let listener = UnixListener::bind(&self.socket_path)
             .context(format!("Failed to bind to socket at {}", self.socket_path))?;
 
-        println!("Menu server listening on {}", self.socket_path);
         self.running.store(true, Ordering::SeqCst);
 
-        // Set up signal handling for graceful shutdown
+        // TUI is already initialized in the struct
+
         let running_clone = self.running.clone();
         let socket_path_clone = self.socket_path.clone();
-
         tokio::spawn(async move {
             let mut sigint = signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
                 .expect("Failed to setup SIGINT handler");
@@ -126,52 +129,57 @@ impl MenuServer {
                 .expect("Failed to setup SIGTERM handler");
 
             tokio::select! {
-                _ = sigint.recv() => {
-                    println!("\nReceived SIGINT (Ctrl+C), shutting down gracefully...");
-                }
-                _ = sigterm.recv() => {
-                    println!("\nReceived SIGTERM, shutting down gracefully...");
-                }
+                _ = sigint.recv() => {}
+                _ = sigterm.recv() => {}
             }
-
             running_clone.store(false, Ordering::SeqCst);
-
-            // Clean up socket file
             if Path::new(&socket_path_clone).exists() {
-                if let Err(e) = std::fs::remove_file(&socket_path_clone) {
-                    eprintln!("Failed to remove socket file during shutdown: {e}");
-                }
+                let _ = std::fs::remove_file(&socket_path_clone);
             }
-
-            println!("Server shutdown complete");
         });
 
-        // Main server loop
         while self.running.load(Ordering::SeqCst) {
-            // Set non-blocking mode for the listener to check running flag
             listener.set_nonblocking(true)?;
 
             match listener.accept() {
-                Ok((stream, addr)) => {
-                    // Handle connection synchronously for now to avoid ownership issues
-                    if let Err(e) = self.handle_connection_sync(stream) {
-                        eprintln!("Error handling connection from {addr:?}: {e}");
+                Ok((stream, _addr)) => {
+                    // Temporarily suspend TUI for connection handling
+                    if let Some(ref mut tui) = self.tui {
+                        tui.suspend()?;
+                    }
+
+                    let _ = self.handle_connection_sync(stream);
+
+                    // Resume TUI after connection handling
+                    if let Some(ref mut tui) = self.tui {
+                        tui.resume()?;
                     }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    // No incoming connections, wait a bit before trying again
-                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    // Draw the status screen using TUI module
+                    if let Some(ref mut tui) = self.tui {
+                        let has_scratchpad = self.scratchpad_manager.is_some();
+                        let requests_processed = self.requests_processed.load(Ordering::SeqCst);
+                        tui.draw_status_screen(has_scratchpad, requests_processed, self.start_time)?;
+
+                        // Handle events
+                        if !tui.handle_events()? {
+                            self.running.store(false, Ordering::SeqCst);
+                        }
+                    }
                     continue;
                 }
-                Err(e) => {
-                    eprintln!("Error accepting connection: {e}");
-                    // Brief pause to avoid busy loop on persistent errors
+                Err(_e) => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         }
 
-        // Final cleanup
+        // Cleanup TUI
+        if let Some(ref mut tui) = self.tui {
+            tui.cleanup()?;
+        }
+
         self.cleanup_socket().await;
         Ok(())
     }
@@ -259,7 +267,7 @@ impl MenuServer {
 
         // Process the request with timeout and visibility monitoring
         let response = if should_manage_scratchpad && self.scratchpad_manager.is_some() {
-            self.process_request_with_monitoring_sync(request)?
+            self.process_request_with_integrated_monitoring(request)?
         } else {
             // Non-interactive requests or no scratchpad don't need monitoring
             self.process_request_internal(request)?
@@ -282,13 +290,6 @@ impl MenuServer {
         let processor =
             RequestProcessor::new(self.running.clone(), self.requests_processed.clone());
         processor.process_internal(request)
-    }
-
-    /// Process a menu request with timeout and visibility monitoring (synchronous)
-    fn process_request_with_monitoring_sync(&self, request: MenuRequest) -> Result<MenuResponse> {
-        // Skip initial visibility check since we just showed the scratchpad above
-        // Start monitoring immediately and process the request
-        self.process_request_with_integrated_monitoring(request)
     }
 
     /// Process request with monitoring integrated directly (much simpler approach)
@@ -400,7 +401,7 @@ impl MenuServer {
 
 impl Default for MenuServer {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("Failed to create default MenuServer")
     }
 }
 
@@ -425,20 +426,20 @@ pub fn create_menu_server_scratchpad_config() -> ScratchpadConfig {
 }
 
 /// Run the menu server in --inside mode
-pub async fn run_server_inside() -> Result<i32> {
+pub async fn run_server_inside(no_scratchpad: bool) -> Result<i32> {
     // Create server with scratchpad config for self-management
-    let scratchpad_config = create_menu_server_scratchpad_config();
+    let scratchpad_config = if no_scratchpad {
+        None
+    } else {
+        Some(create_menu_server_scratchpad_config())
+    };
     let compositor = CompositorType::detect();
-    let mut server =
-        MenuServer::with_compositor_and_scratchpad(compositor, Some(scratchpad_config));
+    let mut server = MenuServer::with_compositor_and_scratchpad(compositor, scratchpad_config)?;
 
     // When running --inside, the scratchpad is initially visible
     if let Some(ref manager) = server.scratchpad_manager {
         manager.mark_visible();
     }
-
-    println!("Starting InstantCLI Menu Server in --inside mode");
-    println!("Press Ctrl+C to stop the server");
 
     // Clear screen and start server
     print!("\x1B[2J\x1B[H"); // Clear screen and move cursor to top-left
@@ -451,7 +452,13 @@ pub async fn run_server_inside() -> Result<i32> {
 }
 
 /// Run the menu server by launching external terminal in scratchpad
-pub fn run_server_launch() -> Result<i32> {
+pub async fn run_server_launch(no_scratchpad: bool) -> Result<i32> {
+    if no_scratchpad {
+        // If no scratchpad is requested, just run the server in the current terminal.
+        // This is effectively the same as running with --inside, but without a scratchpad manager.
+        return run_server_inside(true).await;
+    }
+
     let compositor = CompositorType::detect();
     let scratchpad_config = create_menu_server_scratchpad_config();
 
