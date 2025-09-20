@@ -20,11 +20,6 @@ impl MenuClient {
         }
     }
 
-    /// Create a menu client with custom socket path
-    pub fn with_socket_path(socket_path: String) -> Self {
-        Self { socket_path }
-    }
-
     /// Try to connect to the server with timeout
     pub fn connect(&self) -> Result<UnixStream> {
         let stream = UnixStream::connect(&self.socket_path).context(format!(
@@ -183,7 +178,6 @@ impl MenuClient {
             anyhow::bail!("Server is not running");
         }
 
-        // Don't use ensure_server_running for stop command since we want to stop it
         let mut stream = self.connect()?;
 
         // Create message envelope
@@ -347,12 +341,6 @@ mod tests {
     fn test_client_creation() {
         let client = MenuClient::new();
         assert!(!client.socket_path.is_empty());
-    }
-
-    #[test]
-    fn test_custom_socket_path() {
-        let client = MenuClient::with_socket_path("/tmp/test.sock".to_string());
-        assert_eq!(client.socket_path, "/tmp/test.sock");
     }
 
     #[test]
