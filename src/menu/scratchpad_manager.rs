@@ -89,7 +89,6 @@ impl ScratchpadManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_scratchpad_manager_creation() {

@@ -9,13 +9,13 @@ use anyhow::{Context, Result};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
     widgets::{Block, Borders, Paragraph},
-    Terminal,
 };
 use std::io::{self, BufRead, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -159,7 +159,11 @@ impl MenuServer {
                 Ok((stream, _addr)) => {
                     if let Some(ref mut term) = terminal {
                         disable_raw_mode()?;
-                        execute!(term.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+                        execute!(
+                            term.backend_mut(),
+                            LeaveAlternateScreen,
+                            DisableMouseCapture
+                        )?;
                         term.show_cursor()?;
                     }
 
@@ -201,7 +205,11 @@ impl MenuServer {
 
         if let Some(ref mut term) = terminal {
             disable_raw_mode()?;
-            execute!(term.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+            execute!(
+                term.backend_mut(),
+                LeaveAlternateScreen,
+                DisableMouseCapture
+            )?;
             term.show_cursor()?;
         }
 
@@ -466,8 +474,7 @@ pub async fn run_server_inside(no_scratchpad: bool) -> Result<i32> {
         Some(create_menu_server_scratchpad_config())
     };
     let compositor = CompositorType::detect();
-    let mut server =
-        MenuServer::with_compositor_and_scratchpad(compositor, scratchpad_config);
+    let mut server = MenuServer::with_compositor_and_scratchpad(compositor, scratchpad_config);
 
     // When running --inside, the scratchpad is initially visible
     if let Some(ref manager) = server.scratchpad_manager {
