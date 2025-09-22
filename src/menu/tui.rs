@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
@@ -213,14 +213,7 @@ impl MenuServerTui {
         }
     }
 
-    /// Handle keyboard events - now disabled to allow input buffering for fzf
-    pub fn handle_events(&self) -> Result<bool> {
-        // DO NOT poll for or read any events - this would consume keystrokes
-        // that should be buffered for fzf. Just sleep to prevent high CPU usage.
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        Ok(true) // Always continue running
-    }
-
+    
     /// Temporarily suspend TUI (for external process handling)
     pub fn suspend(&mut self) -> Result<()> {
         if let Some(ref mut terminal) = self.terminal {

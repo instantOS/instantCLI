@@ -162,10 +162,8 @@ impl MenuServer {
                         let requests_processed = self.requests_processed.load(Ordering::SeqCst);
                         tui.draw_status_screen(has_scratchpad, requests_processed, self.start_time)?;
 
-                        // Handle events
-                        if !tui.handle_events()? {
-                            self.running.store(false, Ordering::SeqCst);
-                        }
+                        // Sleep to prevent high CPU usage - no event handling to allow input buffering
+                        std::thread::sleep(std::time::Duration::from_millis(50));
                     }
                     continue;
                 }
