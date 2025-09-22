@@ -48,10 +48,10 @@ impl MenuServerTui {
         self.show_help.clone()
     }
 
-    /// Toggle help display
+    /// Toggle help display - disabled since keyboard input is not handled
     pub fn toggle_help(&self) {
-        let current = self.show_help.load(Ordering::SeqCst);
-        self.show_help.store(!current, Ordering::SeqCst);
+        // Help toggle is disabled since we don't handle keyboard input
+        // Let the show_help flag remain false always
     }
 
     /// Request a full redraw on next draw
@@ -136,7 +136,7 @@ impl MenuServerTui {
                     .alignment(Alignment::Center);
 
                 // Instructions
-                let instructions = Paragraph::new("Press 'q' or Ctrl+C to quit | 'h' for help")
+                let instructions = Paragraph::new("Menu server running - input is passed to menus")
                     .style(Style::default()
                         .fg(Color::Green)
                         .add_modifier(Modifier::DIM))
@@ -187,12 +187,12 @@ impl MenuServerTui {
                 let help_content_area = horizontal_layout[1];
 
                 let help_text = vec![
-                    Line::from("Help - Hotkeys").style(Style::default()
+                    Line::from("Help - Menu Server").style(Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD)),
                     Line::from(""),
-                    Line::from("q / Ctrl+C  - Quit server"),
-                    Line::from("h            - Toggle this help"),
+                    Line::from("No keyboard input handling").style(Style::default().fg(Color::Yellow)),
+                    Line::from("All input is passed to menus").style(Style::default().fg(Color::Yellow)),
                     Line::from(""),
                     Line::from("The server waits for menu requests and").style(Style::default().fg(Color::Gray)),
                     Line::from("processes them when received.").style(Style::default().fg(Color::Gray)),
@@ -213,25 +213,12 @@ impl MenuServerTui {
         }
     }
 
-    /// Handle keyboard events
+    /// Handle keyboard events - now disabled to allow input buffering for fzf
     pub fn handle_events(&self) -> Result<bool> {
-        if event::poll(std::time::Duration::from_millis(10))? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => {
-                        return Ok(false); // Signal to quit
-                    }
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        return Ok(false); // Signal to quit on Ctrl+C
-                    }
-                    KeyCode::Char('h') => {
-                        self.toggle_help();
-                    }
-                    _ => {}
-                }
-            }
-        }
-        Ok(true) // Continue running
+        // DO NOT poll for or read any events - this would consume keystrokes
+        // that should be buffered for fzf. Just sleep to prevent high CPU usage.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        Ok(true) // Always continue running
     }
 
     /// Temporarily suspend TUI (for external process handling)
