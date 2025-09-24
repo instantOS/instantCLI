@@ -13,7 +13,7 @@ use crate::restic::ResticWrapper;
 
 /// Helper function to select a game interactively
 /// Returns Some(game_name) if a game was selected, None if cancelled
-pub fn select_game_interactive(prompt_message: &str) -> Result<Option<String>> {
+pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<String>> {
     let config = InstantGameConfig::load()
         .context("Failed to load game configuration")?;
 
@@ -25,7 +25,9 @@ pub fn select_game_interactive(prompt_message: &str) -> Result<Option<String>> {
     }
 
     // Show FZF menu to select game
-    FzfWrapper::message(prompt_message).context("Failed to show selection prompt")?;
+    if let Some(message) = prompt_message {
+        FzfWrapper::message(message).context("Failed to show selection prompt")?;
+    }
     let selected = FzfWrapper::select_one(config.games.clone())
         .map_err(|e| anyhow::anyhow!("Failed to select game: {}", e))?;
 
@@ -267,7 +269,7 @@ fn handle_remove(game_name: Option<String>) -> Result<()> {
     let game_name = match game_name {
         Some(name) => name,
         None => {
-            match select_game_interactive("Select a game to remove:")? {
+            match select_game_interactive(Some("Select a game to remove:"))? {
                 Some(name) => name,
                 None => return Ok(()),
             }
@@ -390,7 +392,7 @@ fn handle_show(game_name: Option<String>) -> Result<()> {
     let game_name = match game_name {
         Some(name) => name,
         None => {
-            match select_game_interactive("Select a game to view:")? {
+            match select_game_interactive(None)? {
                 Some(name) => name,
                 None => return Ok(()),
             }
@@ -406,10 +408,7 @@ fn handle_show(game_name: Option<String>) -> Result<()> {
     let game = match config.games.iter().find(|g| g.name.0 == game_name) {
         Some(game) => game,
         None => {
-            FzfWrapper::message(&format!(
-                "Game '{}' not found in configuration.",
-                game_name
-            )).context("Failed to show game not found message")?;
+            eprintln!("Error: Game '{}' not found in configuration.", game_name.red());
             return Ok(());
         }
     };
@@ -418,51 +417,54 @@ fn handle_show(game_name: Option<String>) -> Result<()> {
     let installation = installations.installations.iter()
         .find(|inst| inst.game_name.0 == game_name);
 
-    // Display game information using the new enhanced message builder
-    let mut info = format!("🎮 {}\n", game.name.0.bold());
+    // Display header
+    println!("{}", "Game Information".bold().underline());
+    println!();
 
+    // Game name with emoji
+    println!("🎮 {}", game.name.0.cyan().bold());
+    println!();
+
+    // Description if available
     if let Some(desc) = &game.description {
-        info.push_str(&format!("📝 {}\n\n", desc));
-    } else {
-        info.push('\n');
+        println!("📝 {}", desc);
+        println!();
     }
 
-    info.push_str("📋 Configuration:\n");
+    // Configuration section
+    println!("{}", "Configuration:".bold());
 
     if let Some(cmd) = &game.launch_command {
-        info.push_str(&format!("  🚀 Launch Command: {}\n", cmd.blue()));
+        println!("  🚀 Launch Command: {}", cmd.blue());
     }
 
-    info.push_str(&format!("  📁 Save Paths: {}\n", game.save_paths.len().to_string().green()));
+    println!("  📁 Save Paths: {}", game.save_paths.len().to_string().green());
+    println!();
 
     // List save paths from configuration
     if !game.save_paths.is_empty() {
-        info.push_str("\n📂 Configured Save Paths:\n");
+        println!("{}", "Configured Save Paths:".bold());
         for save_path in &game.save_paths {
-            info.push_str(&format!("  • {}: {}\n", save_path.id.0.cyan(), save_path.description));
+            println!("  • {}: {}", save_path.id.0.cyan(), save_path.description);
         }
+        println!();
     }
 
     // Show actual installation paths if available
     if let Some(install) = installation {
         if !install.saves.is_empty() {
-            info.push_str("\n💾 Installation Paths:\n");
+            println!("{}", "Installation Paths:".bold());
             for (path_id, path) in &install.saves {
                 let path_display = path.to_tilde_string()
                     .unwrap_or_else(|_| path.as_path().to_string_lossy().to_string());
-                info.push_str(&format!("  • {}: {}\n", path_id.0.cyan(), path_display.green()));
+                println!("  • {}: {}", path_id.0.cyan(), path_display.green());
             }
+            println!();
         }
     } else {
-        info.push_str("\n⚠️  No installation data found for this game.\n");
+        println!("⚠️  No installation data found for this game.");
+        println!();
     }
-
-    // Display the information using the enhanced message dialog
-    FzfWrapper::message_builder()
-        .message(info)
-        .title(&format!("Game Information: {}", game.name.0))
-        .show()
-        .context("Failed to show game information")?;
 
     Ok(())
 }
