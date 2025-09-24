@@ -5,7 +5,7 @@ use super::repository::RepositoryManager;
 use super::games::GameManager;
 use super::games::{display, selection};
 use super::operations::{sync_game_saves, launch_game};
-use super::restic::backup_game_saves;
+use super::restic::{backup_game_saves, handle_restic_command};
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
@@ -17,6 +17,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Show { game_name } => handle_show(game_name),
         GameCommands::Remove { game_name } => handle_remove(game_name),
         GameCommands::Backup { game_name } => handle_backup(game_name),
+        GameCommands::Restic { args } => handle_restic_command(args),
     }
 }
 

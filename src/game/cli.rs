@@ -34,4 +34,9 @@ pub enum GameCommands {
         /// Game name to backup (optional, will prompt if not specified)
         game_name: Option<String>,
     },
+    /// Run restic commands with instant games repository configuration
+    Restic {
+        /// Restic command and arguments to execute
+        args: Vec<String>,
+    },
 }
