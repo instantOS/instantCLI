@@ -35,6 +35,7 @@ fn handle_init(debug: bool) -> Result<()> {
     }
 
     // Prompt for restic repository using fzf
+    //TODO: see if the error handling can be improved
     let repo = FzfWrapper::input("Enter restic repository path or URL")
         .map_err(|e| anyhow::anyhow!("Failed to get repository input: {}", e))?
         .trim()
@@ -78,7 +79,80 @@ fn handle_init(debug: bool) -> Result<()> {
 }
 
 fn handle_add() -> Result<()> {
-    FzfWrapper::message("Add game command not yet implemented").context("Failed to show not implemented message")?;
+    let mut config = InstantGameConfig::load()
+        .context("Failed to load game configuration")?;
+
+    let mut installations = InstallationsConfig::load()
+        .context("Failed to load installations configuration")?;
+
+    // Check if game manager is initialized
+    if !config.is_initialized() {
+        FzfWrapper::message(
+            "Game save manager is not initialized!\n\nPlease run 'instant game init' first."
+        ).context("Failed to show initialization required message")?;
+        return Ok(());
+    }
+
+    // Prompt for game name
+    let game_name = FzfWrapper::input("Enter game name")
+        .map_err(|e| anyhow::anyhow!("Failed to get game name input: {}", e))?
+        .trim()
+        .to_string();
+
+    if game_name.is_empty() {
+        FzfWrapper::message("Game name cannot be empty.").context("Failed to show validation error")?;
+        return Ok(());
+    }
+
+    // Check if game already exists
+    if config.games.iter().any(|g| g.name.0 == game_name) {
+        FzfWrapper::message(&format!(
+            "Game '{}' already exists!",
+            game_name
+        )).context("Failed to show duplicate game error")?;
+        return Ok(());
+    }
+
+    // Prompt for optional description
+    let description = FzfWrapper::input("Enter game description (optional)")
+        .map_err(|e| anyhow::anyhow!("Failed to get description input: {}", e))?
+        .trim()
+        .to_string();
+
+    // Prompt for optional launch command
+    let launch_command = FzfWrapper::input("Enter launch command (optional)")
+        .map_err(|e| anyhow::anyhow!("Failed to get launch command input: {}", e))?
+        .trim()
+        .to_string();
+
+    // Create the game configuration
+    let mut game = Game::new(game_name.clone());
+
+    if !description.is_empty() {
+        game.description = Some(description);
+    }
+
+    if !launch_command.is_empty() {
+        game.launch_command = Some(launch_command);
+    }
+
+    // For now, use the default save path structure
+    // In the future, this could be expanded to prompt for multiple save paths
+
+    // Add the game to the configuration
+    config.games.push(game);
+    config.save()?;
+
+    // Create the installation entry
+    let installation = GameInstallation::new(game_name.clone());
+    installations.installations.push(installation);
+    installations.save()?;
+
+    FzfWrapper::message(&format!(
+        "✓ Game '{}' added successfully!\n\nYou can now configure save paths manually or use 'instant game edit' when implemented.",
+        game_name
+    )).context("Failed to show success message")?;
+
     Ok(())
 }
 
