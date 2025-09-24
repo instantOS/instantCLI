@@ -29,4 +29,9 @@ pub enum GameCommands {
         /// Game name to remove (optional, will prompt if not specified)
         game_name: Option<String>,
     },
+    /// Create a restic backup of game saves
+    Backup {
+        /// Game name to backup (optional, will prompt if not specified)
+        game_name: Option<String>,
+    },
 }

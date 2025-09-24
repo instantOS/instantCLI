@@ -42,21 +42,20 @@ impl GameManager {
         }
 
         // Get save path
-        let (save_path_input, save_path) = Self::get_save_path()?;
+        let save_path = Self::get_save_path()?;
 
         // Add the game to the configuration
         config.games.push(game);
         config.save()?;
 
         // Create the installation entry with the save path
-        let installation = GameInstallation::new(game_name.clone())
-            .add_save_path("saves", save_path);
+        let installation = GameInstallation::new(game_name.clone(), save_path.clone());
         installations.installations.push(installation);
         installations.save()?;
 
         FzfWrapper::message(&format!(
-            "✓ Game '{}' added successfully!\n\nGame configuration saved with save path: {}",
-            game_name, save_path_input
+            "✓ Game '{}' added successfully!\n\nGame configuration saved with save path: {:?}",
+            game_name, save_path
         )).context("Failed to show success message")?;
 
         Ok(())
@@ -100,13 +99,11 @@ impl GameManager {
                 "Are you sure you want to remove the following game?\n\n\
                  Game: {}\n\
                  Description: {}\n\
-                 Launch command: {}\n\
-                 Save paths: {}\n\n\
-                 This will remove the game from your configuration and all save path mappings.",
+                 Launch command: {}\n\n\
+                 This will remove the game from your configuration and save path mapping.",
                 game.name.0,
                 game.description.as_deref().unwrap_or("None"),
-                game.launch_command.as_deref().unwrap_or("None"),
-                game.save_paths.len()
+                game.launch_command.as_deref().unwrap_or("None")
             ))
             .yes_text("Remove Game")
             .no_text("Keep Game")
@@ -182,7 +179,7 @@ impl GameManager {
     }
 
     /// Get save path from user input with validation
-    fn get_save_path() -> Result<(String, TildePath)> {
+    fn get_save_path() -> Result<TildePath> {
         let save_path_input = FzfWrapper::input("Enter path where save files are located (e.g., ~/.local/share/game-name/saves)")
             .map_err(|e| anyhow::anyhow!("Failed to get save path input: {}", e))?
             .trim()
@@ -216,6 +213,6 @@ impl GameManager {
             }
         }
 
-        Ok((save_path_input, save_path))
+        Ok(save_path)
     }
 }

@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -30,50 +29,12 @@ impl From<&str> for GameName {
     }
 }
 
-/// Wrapper type for path IDs
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct PathId(pub String);
-
-impl std::fmt::Display for PathId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for PathId {
-    fn from(s: String) -> Self {
-        PathId(s)
-    }
-}
-
-impl From<&str> for PathId {
-    fn from(s: &str) -> Self {
-        PathId(s.to_string())
-    }
-}
-
-/// A save path configuration for a game
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SavePath {
-    pub id: PathId,
-    pub description: String,
-}
-
-impl SavePath {
-    pub fn new(id: impl Into<PathId>, description: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            description: description.into(),
-        }
-    }
-}
 
 /// Game configuration - shared across devices
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Game {
     pub name: GameName,
     pub description: Option<String>,
-    pub save_paths: Vec<SavePath>,
     pub launch_command: Option<String>,
 }
 
@@ -82,18 +43,12 @@ impl Game {
         Self {
             name: name.into(),
             description: None,
-            save_paths: vec![SavePath::new("saves", "Game save files")],
             launch_command: None,
         }
     }
 
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
-        self
-    }
-
-    pub fn with_save_paths(mut self, save_paths: Vec<SavePath>) -> Self {
-        self.save_paths = save_paths;
         self
     }
 
@@ -107,20 +62,15 @@ impl Game {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameInstallation {
     pub game_name: GameName,
-    pub saves: HashMap<PathId, TildePath>,
+    pub save_path: TildePath,
 }
 
 impl GameInstallation {
-    pub fn new(game_name: impl Into<GameName>) -> Self {
+    pub fn new(game_name: impl Into<GameName>, save_path: impl Into<TildePath>) -> Self {
         Self {
             game_name: game_name.into(),
-            saves: HashMap::new(),
+            save_path: save_path.into(),
         }
-    }
-
-    pub fn add_save_path(mut self, path_id: impl Into<PathId>, path: impl Into<TildePath>) -> Self {
-        self.saves.insert(path_id.into(), path.into());
-        self
     }
 }
 

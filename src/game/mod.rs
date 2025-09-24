@@ -4,6 +4,7 @@ pub mod config;
 pub mod repository;
 pub mod games;
 pub mod operations;
+pub mod restic;
 pub mod utils;
 
 pub use cli::GameCommands;
