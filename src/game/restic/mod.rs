@@ -86,9 +86,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
 
     match backup_handler.backup_game(installation) {
         Ok(output) => {
-            println!(
-                "✅ Backup completed successfully for game '{game_name}'!\n\n{output}"
-            );
+            println!("✅ Backup completed successfully for game '{game_name}'!\n\n{output}");
         }
         Err(e) => {
             eprintln!("❌ Backup failed for game '{game_name}': {e}");

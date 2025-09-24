@@ -38,28 +38,26 @@ pub fn initialize_restic_repo(repo: &Path, password: &str, debug: bool) -> Resul
     }
 
     // Repository doesn't exist, initialize it
-    if repo.is_absolute()
-        && !repo.exists() {
-            FzfWrapper::message("Repository path does not exist.")
-                .context("Failed to show path error message")?;
+    if repo.is_absolute() && !repo.exists() {
+        FzfWrapper::message("Repository path does not exist.")
+            .context("Failed to show path error message")?;
 
-            match FzfWrapper::confirm("Would you like to create it?")
-                .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
-            {
-                ConfirmResult::Yes => {
-                    // Create parent directories
-                    std::fs::create_dir_all(repo)
-                        .context("Failed to create repository directory")?;
-                    FzfWrapper::message("✓ Created repository directory")
-                        .context("Failed to show directory created message")?;
-                }
-                ConfirmResult::No | ConfirmResult::Cancelled => {
-                    FzfWrapper::message("Repository initialization cancelled.")
-                        .context("Failed to show cancellation message")?;
-                    return Ok(false);
-                }
+        match FzfWrapper::confirm("Would you like to create it?")
+            .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
+        {
+            ConfirmResult::Yes => {
+                // Create parent directories
+                std::fs::create_dir_all(repo).context("Failed to create repository directory")?;
+                FzfWrapper::message("✓ Created repository directory")
+                    .context("Failed to show directory created message")?;
+            }
+            ConfirmResult::No | ConfirmResult::Cancelled => {
+                FzfWrapper::message("Repository initialization cancelled.")
+                    .context("Failed to show cancellation message")?;
+                return Ok(false);
             }
         }
+    }
 
     // Initialize the repository
     if debug {
