@@ -19,14 +19,13 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
 }
 
 fn handle_init(debug: bool) -> Result<()> {
-    println!("{}", "Initializing game save manager...".bold());
+    FzfWrapper::message("Initializing game save manager...").context("Failed to show initialization message")?;
 
     let mut config = InstantGameConfig::load()
         .context("Failed to load game configuration")?;
 
     if config.is_initialized() {
-        println!("{}", "Game save manager is already initialized!".yellow());
-        println!("Current repository: {}", config.repo.blue());
+        FzfWrapper::message("Game save manager is already initialized!\n\nCurrent repository:").context("Failed to show already initialized message")?;
         return Ok(());
     }
 
@@ -58,7 +57,6 @@ fn handle_init(debug: bool) -> Result<()> {
         }
     };
 
-    // Use default password as specified in TODO
     let password = "instantgamepassword".to_string();
 
     // Update config
@@ -68,8 +66,10 @@ fn handle_init(debug: bool) -> Result<()> {
     // Initialize the repository
     if initialize_restic_repo(&repo, &password, debug)? {
         config.save()?;
-        println!("{}", "✓ Game save manager initialized successfully!".green());
-        println!("Repository: {}", repo.blue());
+        FzfWrapper::message(&format!(
+            "✓ Game save manager initialized successfully!\n\nRepository: {}",
+            repo
+        )).context("Failed to show success message")?;
     } else {
         return Err(anyhow::anyhow!("Failed to connect to restic repository"));
     }
@@ -78,12 +78,12 @@ fn handle_init(debug: bool) -> Result<()> {
 }
 
 fn handle_add() -> Result<()> {
-    println!("{}", "Add game command not yet implemented".yellow());
+    FzfWrapper::message("Add game command not yet implemented").context("Failed to show not implemented message")?;
     Ok(())
 }
 
 fn handle_sync(game_name: Option<String>) -> Result<()> {
-    println!("{}", "Sync command not yet implemented".yellow());
+    FzfWrapper::message("Sync command not yet implemented").context("Failed to show not implemented message")?;
     if let Some(name) = game_name {
         println!("Would sync game: {}", name.cyan());
     } else {
@@ -93,8 +93,10 @@ fn handle_sync(game_name: Option<String>) -> Result<()> {
 }
 
 fn handle_launch(game_name: String) -> Result<()> {
-    println!("{}", "Launch command not yet implemented".yellow());
-    println!("Would launch game: {}", game_name.cyan());
+    FzfWrapper::message(&format!(
+        "Launch command not yet implemented\n\nWould launch game: {}",
+        game_name
+    )).context("Failed to show not implemented message")?;
     Ok(())
 }
 
@@ -103,8 +105,9 @@ fn handle_list() -> Result<()> {
         .context("Failed to load game configuration")?;
 
     if config.games.is_empty() {
-        println!("{}", "No games configured yet.".yellow());
-        println!("Use 'instant game add' to add a game.");
+        FzfWrapper::message(
+            "No games configured yet.\n\nUse 'instant game add' to add a game."
+        ).context("Failed to show empty games message")?;
         return Ok(());
     }
 
@@ -174,16 +177,16 @@ fn initialize_restic_repo(repo: &str, password: &str, debug: bool) -> Result<boo
     if repo.starts_with('/') {
         let path = std::path::Path::new(repo);
         if !path.exists() {
-            println!("{}", "Repository path does not exist.".yellow());
+            FzfWrapper::message("Repository path does not exist.").context("Failed to show path error message")?;
 
             match FzfWrapper::confirm("Would you like to create it?").map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))? {
                 ConfirmResult::Yes => {
                     // Create parent directories
                     std::fs::create_dir_all(path).context("Failed to create repository directory")?;
-                    println!("{}", "✓ Created repository directory".green());
+                    FzfWrapper::message("✓ Created repository directory").context("Failed to show directory created message")?;
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {
-                    println!("{}", "Repository initialization cancelled.".yellow());
+                    FzfWrapper::message("Repository initialization cancelled.").context("Failed to show cancellation message")?;
                     return Ok(false);
                 }
             }
