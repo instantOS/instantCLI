@@ -150,7 +150,7 @@ impl PreviewUtils {
     /// Create a temporary preview script that can handle preview data
     pub fn create_preview_script(
         preview_map: HashMap<String, (String, String)>,
-    ) -> Result<(TempPath, std::path::PathBuf), Box<dyn std::error::Error>> {
+    ) -> Result<(TempPath, std::path::PathBuf)> {
         let mut temp_file = NamedTempFile::new()?;
 
         // Write a shell script that handles both text and command previews
@@ -234,7 +234,7 @@ impl FzfWrapper {
     pub fn select<T: FzfSelectable + Clone>(
         &self,
         items: Vec<T>,
-    ) -> Result<FzfResult<T>, Box<dyn std::error::Error>> {
+    ) -> Result<FzfResult<T>> {
         if items.is_empty() {
             return Ok(FzfResult::Cancelled);
         }
@@ -355,7 +355,7 @@ impl FzfWrapper {
     /// Quick single selection with default options
     pub fn select_one<T: FzfSelectable + Clone>(
         items: Vec<T>,
-    ) -> Result<Option<T>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<T>> {
         let wrapper = FzfWrapper::new();
         match wrapper.select(items)? {
             FzfResult::Selected(item) => Ok(Some(item)),
@@ -366,7 +366,7 @@ impl FzfWrapper {
     /// Quick multi-selection with default options
     pub fn select_many<T: FzfSelectable + Clone>(
         items: Vec<T>,
-    ) -> Result<Vec<T>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<T>> {
         let wrapper = FzfWrapper::with_options(FzfOptions {
             multi_select: true,
             ..Default::default()
@@ -379,7 +379,7 @@ impl FzfWrapper {
     }
 
     /// Text input mode for getting user input
-    pub fn input(prompt: &str) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn input(prompt: &str) -> Result<String> {
         let mut cmd = Command::new("fzf");
         cmd.arg("--print-query")
             .arg("--no-info")
@@ -478,7 +478,7 @@ impl FzfWrapper {
     }
 
     /// Confirmation dialog with yes/no options
-    pub fn confirm(message: &str) -> Result<ConfirmResult, Box<dyn std::error::Error>> {
+    pub fn confirm(message: &str) -> Result<ConfirmResult> {
         let items = vec![
             ConfirmationItem {
                 value: ConfirmResult::Yes,

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use colored::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use crate::dot::path_serde::TildePath;
 
 use super::cli::GameCommands;
 use super::config::*;
@@ -25,7 +26,11 @@ fn handle_init(debug: bool) -> Result<()> {
         .context("Failed to load game configuration")?;
 
     if config.is_initialized() {
-        FzfWrapper::message("Game save manager is already initialized!\n\nCurrent repository:").context("Failed to show already initialized message")?;
+        FzfWrapper::message(&format!(
+            "Game save manager is already initialized!\n\nCurrent repository: {}",
+            config.repo.to_tilde_string()
+                .unwrap_or_else(|_| config.repo.as_path().to_string_lossy().to_string())
+        )).context("Failed to show already initialized message")?;
         return Ok(());
     }
 
@@ -39,22 +44,16 @@ fn handle_init(debug: bool) -> Result<()> {
     let repo = if repo.is_empty() {
         let default_path = dirs::data_dir()
             .unwrap_or_else(|| {
-                // Expand tilde to home directory
                 let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
                 home.join(".local/share")
             })
             .join("instantos")
             .join("games")
             .join("repo");
-        default_path.to_string_lossy().to_string()
+        TildePath::new(default_path)
     } else {
-        // Expand tilde in user-provided path if present
-        if repo.starts_with("~/") {
-            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
-            home.join(&repo[2..]).to_string_lossy().to_string()
-        } else {
-            repo
-        }
+        // Use TildePath to handle tilde expansion automatically
+        TildePath::from_str(&repo)?
     };
 
     let password = "instantgamepassword".to_string();
@@ -64,11 +63,12 @@ fn handle_init(debug: bool) -> Result<()> {
     config.repo_password = password.clone();
 
     // Initialize the repository
-    if initialize_restic_repo(&repo, &password, debug)? {
+    if initialize_restic_repo(repo.as_path(), &password, debug)? {
         config.save()?;
         FzfWrapper::message(&format!(
             "✓ Game save manager initialized successfully!\n\nRepository: {}",
-            repo
+            repo.to_tilde_string()
+                .unwrap_or_else(|_| repo.as_path().to_string_lossy().to_string())
         )).context("Failed to show success message")?;
     } else {
         return Err(anyhow::anyhow!("Failed to connect to restic repository"));
@@ -151,12 +151,12 @@ fn handle_list() -> Result<()> {
 }
 
 
-fn initialize_restic_repo(repo: &str, password: &str, debug: bool) -> Result<bool> {
+fn initialize_restic_repo(repo: &Path, password: &str, debug: bool) -> Result<bool> {
     if debug {
-        println!("Initializing restic repository: {}", repo.blue());
+        println!("Initializing restic repository: {}", repo.to_string_lossy().blue());
     }
 
-    let restic = ResticWrapper::new(repo.to_string(), password.to_string());
+    let restic = ResticWrapper::new(repo.to_string_lossy().to_string(), password.to_string());
 
     // Check if repository already exists
     match restic.repository_exists() {
@@ -174,15 +174,14 @@ fn initialize_restic_repo(repo: &str, password: &str, debug: bool) -> Result<boo
     }
 
     // Repository doesn't exist, initialize it
-    if repo.starts_with('/') {
-        let path = std::path::Path::new(repo);
-        if !path.exists() {
+    if repo.is_absolute() {
+        if !repo.exists() {
             FzfWrapper::message("Repository path does not exist.").context("Failed to show path error message")?;
 
             match FzfWrapper::confirm("Would you like to create it?").map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))? {
                 ConfirmResult::Yes => {
                     // Create parent directories
-                    std::fs::create_dir_all(path).context("Failed to create repository directory")?;
+                    std::fs::create_dir_all(repo).context("Failed to create repository directory")?;
                     FzfWrapper::message("✓ Created repository directory").context("Failed to show directory created message")?;
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {

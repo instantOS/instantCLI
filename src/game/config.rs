@@ -127,7 +127,7 @@ impl GameInstallation {
 /// Main game configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstantGameConfig {
-    pub repo: String,
+    pub repo: TildePath,
     pub repo_password: String,
     pub games: Vec<Game>,
 }
@@ -135,7 +135,7 @@ pub struct InstantGameConfig {
 impl Default for InstantGameConfig {
     fn default() -> Self {
         Self {
-            repo: String::new(),
+            repo: TildePath::new(PathBuf::new()),
             repo_password: "instantgamepassword".to_string(),
             games: Vec::new(),
         }
@@ -204,7 +204,7 @@ impl InstantGameConfig {
     }
 
     pub fn is_initialized(&self) -> bool {
-        !self.repo.is_empty()
+        !self.repo.as_path().as_os_str().is_empty()
     }
 }
 
