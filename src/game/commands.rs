@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
 use colored::*;
 use std::io::{self, Write};
+use std::path::PathBuf;
 
 use super::cli::GameCommands;
 use super::config::*;
+use crate::fzf_wrapper::FzfWrapper;
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
@@ -16,22 +18,37 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
 }
 
 fn handle_init(debug: bool) -> Result<()> {
-    println!("Initializing game save manager...");
+    println!("{}", "Initializing game save manager...".bold());
 
     let mut config = InstantGameConfig::load()
         .context("Failed to load game configuration")?;
 
     if config.is_initialized() {
         println!("{}", "Game save manager is already initialized!".yellow());
-        println!("Current repository: {}", config.repo);
+        println!("Current repository: {}", config.repo.blue());
         return Ok(());
     }
 
-    // Prompt for restic repository
-    let repo = prompt_for_input("Enter restic repository path or URL:", Some("/path/to/restic/repo"))?;
+    // Prompt for restic repository using fzf
+    let repo = FzfWrapper::input("Enter restic repository path or URL")
+        .map_err(|e| anyhow::anyhow!("Failed to get repository input: {}", e))?
+        .trim()
+        .to_string();
 
-    // Prompt for optional password
-    let password = prompt_for_password("Enter restic repository password (leave empty for no password):");
+    // Use default if empty
+    let repo = if repo.is_empty() {
+        let default_path = dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+            .join("instantos")
+            .join("games")
+            .join("repo");
+        default_path.to_string_lossy().to_string()
+    } else {
+        repo
+    };
+
+    // Use default password as specified in TODO
+    let password = Some("instantgamepassword".to_string());
 
     // Update config
     config.repo = repo.clone();
@@ -41,7 +58,7 @@ fn handle_init(debug: bool) -> Result<()> {
     if test_restic_repo(&repo, config.repo_password.as_deref(), debug)? {
         config.save()?;
         println!("{}", "✓ Game save manager initialized successfully!".green());
-        println!("Repository: {}", repo);
+        println!("Repository: {}", repo.blue());
     } else {
         return Err(anyhow::anyhow!("Failed to connect to restic repository"));
     }
@@ -50,14 +67,14 @@ fn handle_init(debug: bool) -> Result<()> {
 }
 
 fn handle_add() -> Result<()> {
-    println!("Add game command not yet implemented");
+    println!("{}", "Add game command not yet implemented".yellow());
     Ok(())
 }
 
 fn handle_sync(game_name: Option<String>) -> Result<()> {
-    println!("Sync command not yet implemented");
+    println!("{}", "Sync command not yet implemented".yellow());
     if let Some(name) = game_name {
-        println!("Would sync game: {}", name);
+        println!("Would sync game: {}", name.cyan());
     } else {
         println!("Would sync all games");
     }
@@ -65,8 +82,8 @@ fn handle_sync(game_name: Option<String>) -> Result<()> {
 }
 
 fn handle_launch(game_name: String) -> Result<()> {
-    println!("Launch command not yet implemented");
-    println!("Would launch game: {}", game_name);
+    println!("{}", "Launch command not yet implemented".yellow());
+    println!("Would launch game: {}", game_name.cyan());
     Ok(())
 }
 
@@ -75,36 +92,64 @@ fn handle_list() -> Result<()> {
         .context("Failed to load game configuration")?;
 
     if config.games.is_empty() {
-        println!("No games configured yet. Use 'instant game add' to add a game.");
+        println!("{}", "No games configured yet.".yellow());
+        println!("Use 'instant game add' to add a game.");
         return Ok(());
     }
 
-    println!("Configured games:");
+    // Display header
+    println!("{}", "Configured Games".bold().underline());
+    println!();
+
     for game in &config.games {
-        println!("  - {}", game.name);
+        // Game name with status indicator
+        println!("  {} {}", "🎮".bright_blue(), game.name.0.cyan().bold());
+
         if let Some(desc) = &game.description {
             println!("    Description: {}", desc);
         }
-        println!("    Save paths: {}", game.save_paths.len());
+
+        println!("    Save paths: {}", game.save_paths.len().to_string().green());
+
         if let Some(cmd) = &game.launch_command {
-            println!("    Launch command: {}", cmd);
+            println!("    Launch command: {}", cmd.blue());
         }
+
+        // List save paths
+        if !game.save_paths.is_empty() {
+            println!("    Save paths:");
+            for save_path in &game.save_paths {
+                println!("      • {}: {}", save_path.id.0.cyan(), save_path.description);
+            }
+        }
+
         println!();
     }
+
+    // Summary
+    println!(
+        "Total: {} game{} configured",
+        config.games.len().to_string().bold(),
+        if config.games.len() == 1 { "" } else { "s" }
+    );
 
     Ok(())
 }
 
+//TODO: this function should be gone entirely, just use fzf wrapper input in places where is currently
+//used
 fn prompt_for_input(prompt: &str, default: Option<&str>) -> Result<String> {
-    print!("{}", prompt);
     if let Some(default) = default {
-        print!(" [{}]", default);
+        print!("{} [{}]: ", prompt, default);
+    } else {
+        print!("{}: ", prompt);
     }
-    print!(": ");
     io::stdout().flush()?;
 
     let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
+    io::stdin()
+        .read_line(&mut input)
+        .context("reading input from stdin")?;
 
     let input = input.trim();
     if input.is_empty() {
@@ -114,8 +159,9 @@ fn prompt_for_input(prompt: &str, default: Option<&str>) -> Result<String> {
     }
 }
 
+//TODO: for now, do not prompt for a password at all, just default to `instantgamepassword`
 fn prompt_for_password(prompt: &str) -> Option<String> {
-    print!("{}", prompt);
+    print!("{}: ", prompt);
     io::stdout().flush().ok();
 
     // Simple password input (not hidden for now)
@@ -132,7 +178,7 @@ fn prompt_for_password(prompt: &str) -> Option<String> {
 
 fn test_restic_repo(repo: &str, _password: Option<&str>, debug: bool) -> Result<bool> {
     if debug {
-        println!("Testing restic repository: {}", repo);
+        println!("Testing restic repository: {}", repo.blue());
     }
 
     // For now, just check if the path exists for local repos
@@ -140,20 +186,32 @@ fn test_restic_repo(repo: &str, _password: Option<&str>, debug: bool) -> Result<
     if repo.starts_with('/') {
         let path = std::path::Path::new(repo);
         if path.exists() {
+            if debug {
+                println!("{}", "✓ Repository path exists".green());
+            }
             return Ok(true);
         } else {
-            println!("Repository path does not exist. Would you like to create it? (y/N)");
+            println!("{}", "Repository path does not exist.".yellow());
+            print!("Would you like to create it? (y/N): ");
+            io::stdout().flush()?;
             let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
+            io::stdin()
+                .read_line(&mut input)
+                .context("reading user response")?;
 
             if input.trim().to_lowercase() == "y" {
                 std::fs::create_dir_all(path).context("Failed to create repository directory")?;
-                println!("Created repository directory");
+                println!("{}", "✓ Created repository directory".green());
                 return Ok(true);
+            } else {
+                println!("{}", "Repository initialization cancelled.".yellow());
             }
         }
     } else {
         // For remote repos, assume they're valid for now
+        if debug {
+            println!("{}", "✓ Remote repository URL accepted".green());
+        }
         return Ok(true);
     }
 
