@@ -17,7 +17,8 @@ impl ResticWrapper {
     fn base_command(&self) -> Command {
         let mut cmd = Command::new("restic");
         cmd.arg("-r").arg(&self.repository)
-            .env("RESTIC_PASSWORD", &self.password)
+            .env("RESTIC_PASSWORD", &self.password);
+        cmd
     }
 
     pub fn repository_exists(&self) -> Result<bool, ResticError> {
@@ -55,19 +56,19 @@ impl ResticWrapper {
         paths: &[P],
         tags: Option<Vec<String>>,
     ) -> Result<BackupProgress, ResticError> {
-        let mut args = vec!["backup", "--json"];
+        let mut args: Vec<String> = vec!["backup".to_string(), "--json".to_string()];
 
         if let Some(tags) = tags {
             for tag in tags {
-                args.push("--tag");
-                args.push(&tag);
+                args.push("--tag".to_string());
+                args.push(tag);
             }
         }
 
         for path in paths {
             args.push(path.as_ref().to_str().ok_or_else(||
                 ResticError::CommandFailed(format!("Invalid path: {:?}", path.as_ref()))
-            )?);
+            )?.to_string());
         }
 
         let output = self.base_command()
@@ -115,9 +116,7 @@ impl ResticWrapper {
                 )?,
                 "--json",
             ])
-            .stderr_capture()
-            .stdout_capture()
-            .run()?;
+            .output()?;
 
         if !output.status.success() {
             let code = output.status.code().unwrap_or(1);
