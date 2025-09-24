@@ -3,7 +3,6 @@ use crate::game::restic::backup;
 use anyhow::Result;
 
 /// Common validation utilities for game manager operations
-
 /// Check if restic is available and show error message if not
 pub fn check_restic_availability() -> Result<()> {
     if !backup::GameBackup::check_restic_availability()? {

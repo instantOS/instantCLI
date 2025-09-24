@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_server_creation() {
-        let server = MenuServer::new();
+        let server = MenuServer::new().unwrap();
         assert!(!server.socket_path.is_empty());
     }
 }

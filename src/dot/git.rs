@@ -6,7 +6,7 @@ use crate::dot::localrepo as repo_mod;
 use anyhow::{Context, Result};
 use colored::*;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 pub fn add_repo(
     config_manager: &mut config::ConfigManager,
