@@ -8,18 +8,23 @@ use super::config::*;
 use crate::fzf_wrapper::FzfWrapper;
 use crate::fzf_wrapper::ConfirmResult;
 use crate::fzf_wrapper::FzfSelectable;
+use crate::menu::protocol::FzfPreview;
 use crate::restic::ResticWrapper;
 
 impl FzfSelectable for Game {
     fn fzf_display_text(&self) -> String {
-        match &self.description {
-            Some(desc) => format!("{} - {}", self.name.0, desc),
-            None => self.name.0.clone(),
-        }
+        self.name.0.clone()
     }
 
     fn fzf_key(&self) -> String {
         self.name.0.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match &self.description {
+            Some(desc) => FzfPreview::Text(desc.clone()),
+            None => FzfPreview::None,
+        }
     }
 }
 

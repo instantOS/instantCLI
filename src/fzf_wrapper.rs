@@ -35,6 +35,9 @@ pub trait FzfSelectable {
 pub struct FzfOptions {
     pub multi_select: bool,
     pub prompt: Option<String>,
+    //TODO: add header which corresponds to the '--header' argument for fzf
+    //and use this where appropriate. Keep in mind prompt does not support multi line text, so
+    //header will have to be used for that. Breaking changes are allowed
     pub additional_args: Vec<String>,
 }
 
