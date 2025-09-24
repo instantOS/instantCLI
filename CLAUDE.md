@@ -56,6 +56,33 @@ cd ~ && instant dot reset .config
 
 **Important Note**: Commands involving fzf interactive menus (such as `instant menu` commands and any dotfile operations that require user selection) should be run by the user directly. AI agents are not capable of interacting with fzf's interactive interface, so these commands must be executed manually by a human user.
 
+**FZF Wrapper Enhancement**: The FzfWrapper has been enhanced to support multi-line messages via the `--header` argument and includes builder patterns for more ergonomic usage. Key improvements:
+
+- **Multi-line support**: Added `header` field to `FzfOptions` struct, enabling multi-line text in dialogs
+- **Builder patterns**: Added `FzfWrapperBuilder`, `ConfirmationDialogBuilder`, and `MessageDialogBuilder` for fluent configuration
+- **Enhanced APIs**:
+  - `FzfWrapper::confirm_builder()` - Create customizable confirmation dialogs with multi-line messages
+  - `FzfWrapper::message_builder()` - Create message dialogs with titles and multi-line content
+  - `FzfWrapper::builder()` - Build custom FZF configurations with fluent API
+- **Backward compatibility**: All existing APIs continue to work unchanged
+- **Ergonomic improvements**: Chain methods for configuration, custom button text, titles, and multi-line content
+
+Example usage:
+```rust
+// Multi-line confirmation with custom styling
+FzfWrapper::confirm_builder()
+    .message("Are you sure you want to remove this game?\n\nThis action cannot be undone.")
+    .yes_text("Remove Game")
+    .no_text("Keep Game")
+    .show()?
+
+// Message with title
+FzfWrapper::message_builder()
+    .message("Operation completed successfully!")
+    .title("Success")
+    .show()?
+```
+
 ## Architecture
 
 ### Core Components

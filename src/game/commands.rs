@@ -276,21 +276,23 @@ fn handle_remove(game_name: Option<String>) -> Result<()> {
     let game_index = game_index.unwrap();
     let game = &config.games[game_index];
 
-    // Show game details and ask for confirmation
-    let confirmation_message = format!(
-        "Are you sure you want to remove the following game?\n\n\
-         Game: {}\n\
-         Description: {}\n\
-         Launch command: {}\n\
-         Save paths: {}\n\n\
-         This will remove the game from your configuration and all save path mappings.",
-        game.name.0.cyan(),
-        game.description.as_deref().unwrap_or("None"),
-        game.launch_command.as_deref().unwrap_or("None"),
-        game.save_paths.len()
-    );
-
-    match FzfWrapper::confirm(&confirmation_message)
+    // Show game details and ask for confirmation with improved formatting
+    match FzfWrapper::confirm_builder()
+        .message(format!(
+            "Are you sure you want to remove the following game?\n\n\
+             Game: {}\n\
+             Description: {}\n\
+             Launch command: {}\n\
+             Save paths: {}\n\n\
+             This will remove the game from your configuration and all save path mappings.",
+            game.name.0,
+            game.description.as_deref().unwrap_or("None"),
+            game.launch_command.as_deref().unwrap_or("None"),
+            game.save_paths.len()
+        ))
+        .yes_text("Remove Game")
+        .no_text("Keep Game")
+        .show()
         .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))? {
         ConfirmResult::Yes => {
             // Remove the game from the configuration
@@ -301,13 +303,20 @@ fn handle_remove(game_name: Option<String>) -> Result<()> {
             installations.installations.retain(|inst| inst.game_name.0 != game_name);
             installations.save()?;
 
-            FzfWrapper::message(&format!(
-                "✓ Game '{}' removed successfully!",
-                game_name
-            )).context("Failed to show success message")?;
+            FzfWrapper::message_builder()
+                .message(format!(
+                    "✓ Game '{}' removed successfully!",
+                    game_name
+                ))
+                .title("Success")
+                .show()
+                .context("Failed to show success message")?;
         }
         ConfirmResult::No | ConfirmResult::Cancelled => {
-            FzfWrapper::message("Game removal cancelled.")
+            FzfWrapper::message_builder()
+                .message("Game removal cancelled.")
+                .title("Cancelled")
+                .show()
                 .context("Failed to show cancellation message")?;
         }
     }

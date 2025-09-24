@@ -35,9 +35,7 @@ pub trait FzfSelectable {
 pub struct FzfOptions {
     pub multi_select: bool,
     pub prompt: Option<String>,
-    //TODO: add header which corresponds to the '--header' argument for fzf
-    //and use this where appropriate. Keep in mind prompt does not support multi line text, so
-    //header will have to be used for that. Breaking changes are allowed
+    pub header: Option<String>,
     pub additional_args: Vec<String>,
 }
 
@@ -46,12 +44,46 @@ impl Default for FzfOptions {
         Self {
             multi_select: false,
             prompt: None,
+            header: None,
             additional_args: Self::default_margin_args(),
         }
     }
 }
 
 impl FzfOptions {
+    /// Create a new FzfOptions with default settings
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set multi-select mode
+    pub fn multi_select(mut self, multi: bool) -> Self {
+        self.multi_select = multi;
+        self
+    }
+
+    /// Set the prompt text
+    pub fn prompt<S: Into<String>>(mut self, prompt: S) -> Self {
+        self.prompt = Some(prompt.into());
+        self
+    }
+
+    /// Set the header text (supports multi-line)
+    pub fn header<S: Into<String>>(mut self, header: S) -> Self {
+        self.header = Some(header.into());
+        self
+    }
+
+    /// Add additional arguments
+    pub fn args<I, S>(mut self, args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.additional_args.extend(args.into_iter().map(Into::into));
+        self
+    }
+
     /// Default margin arguments used across the application
     fn default_margin_args() -> Vec<String> {
         let mut args = vec![
@@ -131,6 +163,84 @@ pub enum ConfirmResult {
     Yes,
     No,
     Cancelled,
+}
+
+/// Builder for creating FzfWrapper instances with ergonomic configuration
+#[derive(Debug, Clone)]
+pub struct FzfWrapperBuilder {
+    options: FzfOptions,
+}
+
+impl FzfWrapperBuilder {
+    /// Create a new builder with default options
+    pub fn new() -> Self {
+        Self {
+            options: FzfOptions::default(),
+        }
+    }
+
+    /// Enable multi-select mode
+    pub fn multi_select(mut self) -> Self {
+        self.options.multi_select = true;
+        self
+    }
+
+    /// Set the prompt text
+    pub fn prompt<S: Into<String>>(mut self, prompt: S) -> Self {
+        self.options.prompt = Some(prompt.into());
+        self
+    }
+
+    /// Set the header text (supports multi-line)
+    pub fn header<S: Into<String>>(mut self, header: S) -> Self {
+        self.options.header = Some(header.into());
+        self
+    }
+
+    /// Add additional fzf arguments
+    pub fn args<I, S>(mut self, args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.options.additional_args.extend(args.into_iter().map(Into::into));
+        self
+    }
+
+    /// Use default margin styling
+    pub fn default_margin(self) -> Self {
+        self.args(FzfOptions::default_margin_args())
+    }
+
+    /// Use input dialog margin styling
+    pub fn input_margin(self) -> Self {
+        self.args(FzfOptions::input_margin_args())
+    }
+
+    /// Use confirmation dialog margin styling
+    pub fn confirm_margin(self) -> Self {
+        self.args(FzfOptions::confirm_margin_args())
+    }
+
+    /// Build the FzfWrapper instance
+    pub fn build(self) -> FzfWrapper {
+        FzfWrapper::with_options(self.options)
+    }
+
+    /// Convenience method to select items directly
+    pub fn select<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
+        self.build().select(items)
+    }
+
+    /// Convenience method to select one item
+    pub fn select_one<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<Option<T>> {
+        FzfWrapper::select_one(items)
+    }
+
+    /// Convenience method to select multiple items
+    pub fn select_many<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<Vec<T>> {
+        FzfWrapper::select_many(items)
+    }
 }
 
 /// Main fzf wrapper struct
@@ -233,6 +343,11 @@ impl FzfWrapper {
         Self { options }
     }
 
+    /// Create a builder for configuring FzfWrapper
+    pub fn builder() -> FzfWrapperBuilder {
+        FzfWrapperBuilder::new()
+    }
+
     /// Select from a vector of FzfSelectable items
     pub fn select<T: FzfSelectable + Clone>(
         &self,
@@ -273,8 +388,11 @@ impl FzfWrapper {
         }
 
         if let Some(prompt) = &self.options.prompt {
-            //TODO: add a " > " to the end of the prompt for spacing
             cmd.arg("--prompt").arg(format!("{prompt} > "));
+        }
+
+        if let Some(header) = &self.options.header {
+            cmd.arg("--header").arg(header);
         }
 
         // Add preview if we have a preview script
@@ -435,13 +553,176 @@ impl FzfWrapper {
 
     /// Display a popup message with OK button
     pub fn message(message: &str) -> Result<()> {
+        Self::message_builder()
+            .message(message)
+            .show()
+    }
+
+    /// Create a new message dialog builder
+    pub fn message_builder() -> MessageDialogBuilder {
+        MessageDialogBuilder::new()
+    }
+
+    /// Confirmation dialog with yes/no options
+    pub fn confirm(message: &str) -> Result<ConfirmResult> {
+        Self::confirm_builder()
+            .message(message)
+            .show()
+    }
+
+    /// Create a new confirmation dialog builder
+    pub fn confirm_builder() -> ConfirmationDialogBuilder {
+        ConfirmationDialogBuilder::new()
+    }
+}
+
+/// Builder for creating confirmation dialogs with multi-line support
+#[derive(Debug, Clone)]
+pub struct ConfirmationDialogBuilder {
+    message: String,
+    yes_text: String,
+    no_text: String,
+    default_yes: bool,
+    custom_options: Vec<ConfirmationItem>,
+}
+
+impl ConfirmationDialogBuilder {
+    /// Create a new confirmation dialog builder
+    pub fn new() -> Self {
+        Self {
+            message: String::new(),
+            yes_text: "Yes".to_string(),
+            no_text: "No".to_string(),
+            default_yes: true,
+            custom_options: Vec::new(),
+        }
+    }
+
+    /// Set the confirmation message (supports multi-line text)
+    pub fn message<S: Into<String>>(mut self, message: S) -> Self {
+        self.message = message.into();
+        self
+    }
+
+    /// Set custom Yes button text
+    pub fn yes_text<S: Into<String>>(mut self, text: S) -> Self {
+        self.yes_text = text.into();
+        self
+    }
+
+    /// Set custom No button text
+    pub fn no_text<S: Into<String>>(mut self, text: S) -> Self {
+        self.no_text = text.into();
+        self
+    }
+
+    /// Set default selection (true = Yes, false = No)
+    pub fn default_yes(mut self, default: bool) -> Self {
+        self.default_yes = default;
+        self
+    }
+
+    /// Add custom confirmation options
+    pub fn custom_options(mut self, options: Vec<ConfirmationItem>) -> Self {
+        self.custom_options = options;
+        self
+    }
+
+    /// Show the confirmation dialog
+    pub fn show(self) -> Result<ConfirmResult> {
+        let yes_text = self.yes_text.clone();
+        let no_text = self.no_text.clone();
+
+        let items = if self.custom_options.is_empty() {
+            vec![
+                ConfirmationItem {
+                    value: ConfirmResult::Yes,
+                    text: yes_text.clone(),
+                },
+                ConfirmationItem {
+                    value: ConfirmResult::No,
+                    text: no_text.clone(),
+                },
+            ]
+        } else {
+            self.custom_options
+        };
+
+        let wrapper = FzfWrapper::with_options(FzfOptions {
+            header: Some(self.message),
+            prompt: Some(if self.default_yes {
+                format!("> ({}) ", yes_text)
+            } else {
+                format!("> ({}) ", no_text)
+            }),
+            additional_args: FzfOptions::confirm_margin_args(),
+            ..Default::default()
+        });
+
+        match wrapper.select(items)? {
+            FzfResult::Selected(item) => Ok(item.value),
+            FzfResult::Cancelled => {
+                // When user cancels (ESC), we return Cancelled instead of using default
+                Ok(ConfirmResult::Cancelled)
+            }
+            _ => {
+                // For any other error cases, return Cancelled
+                Ok(ConfirmResult::Cancelled)
+            }
+        }
+    }
+}
+
+/// Builder for creating message dialogs with multi-line support
+#[derive(Debug, Clone)]
+pub struct MessageDialogBuilder {
+    message: String,
+    ok_text: String,
+    title: Option<String>,
+}
+
+impl MessageDialogBuilder {
+    /// Create a new message dialog builder
+    pub fn new() -> Self {
+        Self {
+            message: String::new(),
+            ok_text: "OK".to_string(),
+            title: None,
+        }
+    }
+
+    /// Set the message content (supports multi-line text)
+    pub fn message<S: Into<String>>(mut self, message: S) -> Self {
+        self.message = message.into();
+        self
+    }
+
+    /// Set custom OK button text
+    pub fn ok_text<S: Into<String>>(mut self, text: S) -> Self {
+        self.ok_text = text.into();
+        self
+    }
+
+    /// Set a title for the message dialog
+    pub fn title<S: Into<String>>(mut self, title: S) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    /// Show the message dialog
+    pub fn show(self) -> Result<()> {
         let mut cmd = Command::new("fzf");
         cmd.arg("--layout")
-            .arg("reverse")
-            .arg("--header")
-            .arg(message)
-            .arg("--prompt")
-            .arg("- ");
+            .arg("reverse");
+
+        // Add header if we have a title, otherwise use message as header
+        if let Some(title) = &self.title {
+            cmd.arg("--header").arg(format!("{}\n\n{}", title, self.message));
+        } else {
+            cmd.arg("--header").arg(&self.message);
+        }
+
+        cmd.arg("--prompt").arg("- ");
 
         // Add confirmation margin arguments for better popup appearance
         for arg in FzfOptions::confirm_margin_args() {
@@ -458,9 +739,9 @@ impl FzfWrapper {
         let pid = child.id();
         let _ = crate::menu::server::register_fzf_process(pid);
 
-        // Write "OK" to stdin as the selectable item
+        // Write OK text to stdin as the selectable item
         if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(b"OK")?;
+            stdin.write_all(self.ok_text.as_bytes())?;
         }
 
         // Wait for the process to complete
@@ -478,38 +759,6 @@ impl FzfWrapper {
 
         // For message dialog, we don't care about the selection, just display it
         Ok(())
-    }
-
-    /// Confirmation dialog with yes/no options
-    pub fn confirm(message: &str) -> Result<ConfirmResult> {
-        let items = vec![
-            ConfirmationItem {
-                value: ConfirmResult::Yes,
-                text: "Yes".to_string(),
-            },
-            ConfirmationItem {
-                value: ConfirmResult::No,
-                text: "No".to_string(),
-            },
-        ];
-
-        let wrapper = FzfWrapper::with_options(FzfOptions {
-            prompt: Some(format!("{message} [Y/n]: ")),
-            additional_args: FzfOptions::confirm_margin_args(),
-            ..Default::default()
-        });
-
-        match wrapper.select(items)? {
-            FzfResult::Selected(item) => Ok(item.value),
-            FzfResult::Cancelled => {
-                // When user cancels (ESC), we return Cancelled instead of using default
-                Ok(ConfirmResult::Cancelled)
-            }
-            _ => {
-                // For any other error cases, return Cancelled
-                Ok(ConfirmResult::Cancelled)
-            }
-        }
     }
 }
 
