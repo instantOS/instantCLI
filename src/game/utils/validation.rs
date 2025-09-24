@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use crate::fzf_wrapper::FzfWrapper;
-use super::config::InstantGameConfig;
-use super::restic::backup;
+use crate::game::config::InstantGameConfig;
+use crate::game::restic::backup;
 
 /// Common validation utilities for game manager operations
 

@@ -78,9 +78,8 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
     super::utils::validation::check_restic_and_game_manager(&game_config)?;
 
     // If no arguments provided, show help
-    // TODO: this should be a print not a message popup
     if args.is_empty() {
-        FzfWrapper::message(
+        eprintln!(
             "❌ Error: No restic command provided.\n\n\
              Usage: instant game restic <restic-command> [args...]\n\n\
              Examples:\n\
@@ -89,7 +88,7 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
              • instant game restic stats\n\
              • instant game restic find .config\n\
              • instant game restic restore latest --target /tmp/restore-test"
-        ).context("Failed to show restic help message")?;
+        );
         return Err(anyhow::anyhow!("no restic command provided"));
     }
 
