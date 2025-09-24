@@ -1,11 +1,12 @@
 use anyhow::{Context, Result};
 use colored::*;
-use std::io::{self, Write};
 use std::path::PathBuf;
 
 use super::cli::GameCommands;
 use super::config::*;
 use crate::fzf_wrapper::FzfWrapper;
+use crate::fzf_wrapper::ConfirmResult;
+use crate::restic::ResticWrapper;
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
@@ -54,8 +55,8 @@ fn handle_init(debug: bool) -> Result<()> {
     config.repo = repo.clone();
     config.repo_password = password;
 
-    // Test the repository
-    if test_restic_repo(&repo, config.repo_password.as_deref(), debug)? {
+    // Initialize the repository
+    if initialize_restic_repo(&repo, config.repo_password.as_deref().unwrap_or("instantgamepassword"), debug)? {
         config.save()?;
         println!("{}", "✓ Game save manager initialized successfully!".green());
         println!("Repository: {}", repo.blue());
@@ -137,45 +138,62 @@ fn handle_list() -> Result<()> {
 }
 
 
-fn test_restic_repo(repo: &str, _password: Option<&str>, debug: bool) -> Result<bool> {
+fn initialize_restic_repo(repo: &str, password: &str, debug: bool) -> Result<bool> {
     if debug {
-        println!("Testing restic repository: {}", repo.blue());
+        println!("Initializing restic repository: {}", repo.blue());
     }
 
-    // For now, just check if the path exists for local repos
-    // In a full implementation, we would use rustic_core to actually test the repository
+    let restic = ResticWrapper::new(repo.to_string(), password.to_string());
+
+    // Check if repository already exists
+    match restic.repository_exists() {
+        Ok(exists) => {
+            if exists {
+                if debug {
+                    println!("{}", "✓ Repository already exists and is accessible".green());
+                }
+                return Ok(true);
+            }
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("Failed to check repository existence: {}", e));
+        }
+    }
+
+    // Repository doesn't exist, initialize it
     if repo.starts_with('/') {
         let path = std::path::Path::new(repo);
-        if path.exists() {
-            if debug {
-                println!("{}", "✓ Repository path exists".green());
-            }
-            return Ok(true);
-        } else {
+        if !path.exists() {
             println!("{}", "Repository path does not exist.".yellow());
-            //TODO: use fzf wrapper confirm  instead of raw input
-            print!("Would you like to create it? (y/N): ");
-            io::stdout().flush()?;
-            let mut input = String::new();
-            io::stdin()
-                .read_line(&mut input)
-                .context("reading user response")?;
 
-            if input.trim().to_lowercase() == "y" {
-                std::fs::create_dir_all(path).context("Failed to create repository directory")?;
-                println!("{}", "✓ Created repository directory".green());
-                return Ok(true);
-            } else {
-                println!("{}", "Repository initialization cancelled.".yellow());
+            match FzfWrapper::confirm("Would you like to create it?").map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))? {
+                ConfirmResult::Yes => {
+                    // Create parent directories
+                    std::fs::create_dir_all(path).context("Failed to create repository directory")?;
+                    println!("{}", "✓ Created repository directory".green());
+                }
+                ConfirmResult::No | ConfirmResult::Cancelled => {
+                    println!("{}", "Repository initialization cancelled.".yellow());
+                    return Ok(false);
+                }
             }
         }
-    } else {
-        // For remote repos, assume they're valid for now
-        if debug {
-            println!("{}", "✓ Remote repository URL accepted".green());
-        }
-        return Ok(true);
     }
 
-    Ok(false)
+    // Initialize the repository
+    if debug {
+        println!("{}", "Creating new restic repository...".blue());
+    }
+
+    match restic.init_repository() {
+        Ok(()) => {
+            if debug {
+                println!("{}", "✓ Repository initialized successfully".green());
+            }
+            Ok(true)
+        }
+        Err(e) => {
+            Err(anyhow::anyhow!("Failed to initialize repository: {}", e))
+        }
+    }
 }

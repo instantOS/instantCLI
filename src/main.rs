@@ -9,6 +9,7 @@ mod fzf_wrapper;
 mod game;
 mod launch;
 mod menu;
+mod restic;
 mod scratchpad;
 
 use clap::{Parser, Subcommand};

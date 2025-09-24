@@ -35,7 +35,6 @@ freedesktop-file-parser = "0.3.0"
 which = "7.0"
 ratatui = "0.29.0"
 crossterm = "0.29.0"
-rustic_core = "0.4"
 
 [dev-dependencies]
 tempfile = "3.21.0"
