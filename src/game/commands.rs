@@ -11,6 +11,34 @@ use crate::fzf_wrapper::FzfSelectable;
 use crate::menu::protocol::FzfPreview;
 use crate::restic::ResticWrapper;
 
+/// Helper function to select a game interactively
+/// Returns Some(game_name) if a game was selected, None if cancelled
+pub fn select_game_interactive(prompt_message: &str) -> Result<Option<String>> {
+    let config = InstantGameConfig::load()
+        .context("Failed to load game configuration")?;
+
+    if config.games.is_empty() {
+        FzfWrapper::message(
+            "No games configured yet.\n\nUse 'instant game add' to add a game."
+        ).context("Failed to show empty games message")?;
+        return Ok(None);
+    }
+
+    // Show FZF menu to select game
+    FzfWrapper::message(prompt_message).context("Failed to show selection prompt")?;
+    let selected = FzfWrapper::select_one(config.games.clone())
+        .map_err(|e| anyhow::anyhow!("Failed to select game: {}", e))?;
+
+    match selected {
+        Some(game) => Ok(Some(game.name.0)),
+        None => {
+            FzfWrapper::message("No game selected.")
+                .context("Failed to show no selection message")?;
+            Ok(None)
+        }
+    }
+}
+
 impl FzfSelectable for Game {
     fn fzf_display_text(&self) -> String {
         self.name.0.clone()
@@ -35,6 +63,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Sync { game_name } => handle_sync(game_name),
         GameCommands::Launch { game_name } => handle_launch(game_name),
         GameCommands::List => handle_list(),
+        GameCommands::Show { game_name } => handle_show(game_name),
         GameCommands::Remove { game_name } => handle_remove(game_name),
     }
 }
@@ -235,29 +264,12 @@ fn handle_remove(game_name: Option<String>) -> Result<()> {
     let mut installations = InstallationsConfig::load()
         .context("Failed to load installations configuration")?;
 
-    if config.games.is_empty() {
-        FzfWrapper::message(
-            "No games configured yet.\n\nUse 'instant game add' to add a game."
-        ).context("Failed to show empty games message")?;
-        return Ok(());
-    }
-
-    // Determine which game to remove
     let game_name = match game_name {
         Some(name) => name,
         None => {
-            // Show FZF menu to select game
-            FzfWrapper::message("Select a game to remove:").context("Failed to show selection prompt")?;
-            let selected = FzfWrapper::select_one(config.games.clone())
-                .map_err(|e| anyhow::anyhow!("Failed to select game: {}", e))?;
-
-            match selected {
-                Some(game) => game.name.0,
-                None => {
-                    FzfWrapper::message("No game selected.")
-                        .context("Failed to show no selection message")?;
-                    return Ok(());
-                }
+            match select_game_interactive("Select a game to remove:")? {
+                Some(name) => name,
+                None => return Ok(()),
             }
         }
     };
@@ -370,6 +382,87 @@ fn handle_list() -> Result<()> {
         config.games.len().to_string().bold(),
         if config.games.len() == 1 { "" } else { "s" }
     );
+
+    Ok(())
+}
+
+fn handle_show(game_name: Option<String>) -> Result<()> {
+    let game_name = match game_name {
+        Some(name) => name,
+        None => {
+            match select_game_interactive("Select a game to view:")? {
+                Some(name) => name,
+                None => return Ok(()),
+            }
+        }
+    };
+
+    let config = InstantGameConfig::load()
+        .context("Failed to load game configuration")?;
+    let installations = InstallationsConfig::load()
+        .context("Failed to load installations configuration")?;
+
+    // Find the game in the configuration
+    let game = match config.games.iter().find(|g| g.name.0 == game_name) {
+        Some(game) => game,
+        None => {
+            FzfWrapper::message(&format!(
+                "Game '{}' not found in configuration.",
+                game_name
+            )).context("Failed to show game not found message")?;
+            return Ok(());
+        }
+    };
+
+    // Find the installation for this game
+    let installation = installations.installations.iter()
+        .find(|inst| inst.game_name.0 == game_name);
+
+    // Display game information using the new enhanced message builder
+    let mut info = format!("🎮 {}\n", game.name.0.bold());
+
+    if let Some(desc) = &game.description {
+        info.push_str(&format!("📝 {}\n\n", desc));
+    } else {
+        info.push('\n');
+    }
+
+    info.push_str("📋 Configuration:\n");
+
+    if let Some(cmd) = &game.launch_command {
+        info.push_str(&format!("  🚀 Launch Command: {}\n", cmd.blue()));
+    }
+
+    info.push_str(&format!("  📁 Save Paths: {}\n", game.save_paths.len().to_string().green()));
+
+    // List save paths from configuration
+    if !game.save_paths.is_empty() {
+        info.push_str("\n📂 Configured Save Paths:\n");
+        for save_path in &game.save_paths {
+            info.push_str(&format!("  • {}: {}\n", save_path.id.0.cyan(), save_path.description));
+        }
+    }
+
+    // Show actual installation paths if available
+    if let Some(install) = installation {
+        if !install.saves.is_empty() {
+            info.push_str("\n💾 Installation Paths:\n");
+            for (path_id, path) in &install.saves {
+                let path_display = path.to_tilde_string()
+                    .unwrap_or_else(|_| path.as_path().to_string_lossy().to_string());
+                info.push_str(&format!("  • {}: {}\n", path_id.0.cyan(), path_display.green()));
+            }
+        }
+    } else {
+        info.push_str("\n⚠️  No installation data found for this game.\n");
+    }
+
+    // Display the information using the enhanced message dialog
+    FzfWrapper::message_builder()
+        .message(info)
+        .title(&format!("Game Information: {}", game.name.0))
+        .show()
+        .context("Failed to show game information")?;
 
     Ok(())
 }

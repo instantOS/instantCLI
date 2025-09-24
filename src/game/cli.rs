@@ -19,6 +19,11 @@ pub enum GameCommands {
     },
     /// List all configured games
     List,
+    /// Show detailed information about a game
+    Show {
+        /// Game name to show (optional, will prompt if not specified)
+        game_name: Option<String>,
+    },
     /// Remove a game from tracking
     Remove {
         /// Game name to remove (optional, will prompt if not specified)
