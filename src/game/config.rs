@@ -128,8 +128,7 @@ impl GameInstallation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstantGameConfig {
     pub repo: String,
-    //TODO: this should not be optional, each repo needs a password
-    pub repo_password: Option<String>,
+    pub repo_password: String,
     pub games: Vec<Game>,
 }
 
@@ -137,8 +136,7 @@ impl Default for InstantGameConfig {
     fn default() -> Self {
         Self {
             repo: String::new(),
-            //TODO: `instantgamepassword` should be the default
-            repo_password: None,
+            repo_password: "instantgamepassword".to_string(),
             games: Vec::new(),
         }
     }

@@ -39,24 +39,34 @@ fn handle_init(debug: bool) -> Result<()> {
     // Use default if empty
     let repo = if repo.is_empty() {
         let default_path = dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+            .unwrap_or_else(|| {
+                // Expand tilde to home directory
+                let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
+                home.join(".local/share")
+            })
             .join("instantos")
             .join("games")
             .join("repo");
         default_path.to_string_lossy().to_string()
     } else {
-        repo
+        // Expand tilde in user-provided path if present
+        if repo.starts_with("~/") {
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
+            home.join(&repo[2..]).to_string_lossy().to_string()
+        } else {
+            repo
+        }
     };
 
     // Use default password as specified in TODO
-    let password = Some("instantgamepassword".to_string());
+    let password = "instantgamepassword".to_string();
 
     // Update config
     config.repo = repo.clone();
-    config.repo_password = password;
+    config.repo_password = password.clone();
 
     // Initialize the repository
-    if initialize_restic_repo(&repo, config.repo_password.as_deref().unwrap_or("instantgamepassword"), debug)? {
+    if initialize_restic_repo(&repo, &password, debug)? {
         config.save()?;
         println!("{}", "✓ Game save manager initialized successfully!".green());
         println!("Repository: {}", repo.blue());
