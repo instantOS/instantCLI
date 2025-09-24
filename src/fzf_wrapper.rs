@@ -429,6 +429,53 @@ impl FzfWrapper {
         }
     }
 
+    /// Display a popup message with OK button
+    pub fn message(message: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let mut cmd = Command::new("fzf");
+        cmd.arg("--layout")
+            .arg("reverse")
+            .arg("--header")
+            .arg(message)
+            .arg("--prompt")
+            .arg("- ");
+
+        // Add confirmation margin arguments for better popup appearance
+        for arg in FzfOptions::confirm_margin_args() {
+            cmd.arg(arg);
+        }
+
+        let mut child = cmd
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+
+        // Register the process for potential killing if scratchpad becomes invisible
+        let pid = child.id();
+        let _ = crate::menu::server::register_fzf_process(pid);
+
+        // Write "OK" to stdin as the selectable item
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(b"OK")?;
+        }
+
+        // Wait for the process to complete
+        let output = child.wait_with_output()?;
+
+        // Unregister the process since it's done
+        crate::menu::server::unregister_fzf_process(pid);
+
+        // Check if fzf was cancelled (exit code 130) or killed (exit code 143)
+        if let Some(code) = output.status.code() {
+            if code == 130 || code == 143 {
+                return Ok(()); // User cancelled, that's fine for a message
+            }
+        }
+
+        // For message dialog, we don't care about the selection, just display it
+        Ok(())
+    }
+
     /// Confirmation dialog with yes/no options
     pub fn confirm(message: &str) -> Result<ConfirmResult, Box<dyn std::error::Error>> {
         let items = vec![

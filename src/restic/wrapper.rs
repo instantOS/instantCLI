@@ -54,6 +54,7 @@ impl ResticWrapper {
     pub fn backup<P: AsRef<std::path::Path>>(
         &self,
         paths: &[P],
+        //TODO: tags should not be optional, we will only be using tagged backups
         tags: Option<Vec<String>>,
     ) -> Result<BackupProgress, ResticError> {
         let mut args: Vec<String> = vec!["backup".to_string(), "--json".to_string()];
