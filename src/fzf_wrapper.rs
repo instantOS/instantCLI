@@ -1,3 +1,4 @@
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
@@ -430,7 +431,7 @@ impl FzfWrapper {
     }
 
     /// Display a popup message with OK button
-    pub fn message(message: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn message(message: &str) -> Result<()> {
         let mut cmd = Command::new("fzf");
         cmd.arg("--layout")
             .arg("reverse")
