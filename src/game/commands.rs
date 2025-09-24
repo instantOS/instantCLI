@@ -7,7 +7,21 @@ use super::cli::GameCommands;
 use super::config::*;
 use crate::fzf_wrapper::FzfWrapper;
 use crate::fzf_wrapper::ConfirmResult;
+use crate::fzf_wrapper::FzfSelectable;
 use crate::restic::ResticWrapper;
+
+impl FzfSelectable for Game {
+    fn fzf_display_text(&self) -> String {
+        match &self.description {
+            Some(desc) => format!("{} - {}", self.name.0, desc),
+            None => self.name.0.clone(),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        self.name.0.clone()
+    }
+}
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
@@ -16,6 +30,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Sync { game_name } => handle_sync(game_name),
         GameCommands::Launch { game_name } => handle_launch(game_name),
         GameCommands::List => handle_list(),
+        GameCommands::Remove { game_name } => handle_remove(game_name),
     }
 }
 
@@ -44,6 +59,7 @@ fn handle_init(debug: bool) -> Result<()> {
     // Use default if empty
     let repo = if repo.is_empty() {
         let default_path = dirs::data_dir()
+            //TODO: unwrap is fine
             .unwrap_or_else(|| {
                 let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
                 home.join(".local/share")
@@ -136,21 +152,54 @@ fn handle_add() -> Result<()> {
         game.launch_command = Some(launch_command);
     }
 
-    // For now, use the default save path structure
-    // In the future, this could be expanded to prompt for multiple save paths
+    // Prompt for save path location
+    let save_path_input = FzfWrapper::input("Enter path where save files are located (e.g., ~/.local/share/game-name/saves)")
+        .map_err(|e| anyhow::anyhow!("Failed to get save path input: {}", e))?
+        .trim()
+        .to_string();
+
+    if save_path_input.is_empty() {
+        FzfWrapper::message("Save path cannot be empty.").context("Failed to show validation error")?;
+        return Ok(());
+    }
+
+    // Convert the input path to a TildePath
+    let save_path = TildePath::from_str(&save_path_input)
+        .map_err(|e| anyhow::anyhow!("Invalid save path: {}", e))?;
+
+    // Check if the save path exists
+    if !save_path.as_path().exists() {
+        match FzfWrapper::confirm(&format!(
+            "Save path '{}' does not exist. Would you like to create it?",
+            save_path_input
+        )).map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))? {
+            ConfirmResult::Yes => {
+                std::fs::create_dir_all(save_path.as_path())
+                    .context("Failed to create save directory")?;
+                FzfWrapper::message(&format!("✓ Created save directory: {}", save_path_input))
+                    .context("Failed to show directory created message")?;
+            }
+            ConfirmResult::No | ConfirmResult::Cancelled => {
+                FzfWrapper::message("Game addition cancelled: save path does not exist.")
+                    .context("Failed to show cancellation message")?;
+                return Ok(());
+            }
+        }
+    }
 
     // Add the game to the configuration
     config.games.push(game);
     config.save()?;
 
-    // Create the installation entry
-    let installation = GameInstallation::new(game_name.clone());
+    // Create the installation entry with the save path
+    let installation = GameInstallation::new(game_name.clone())
+        .add_save_path("saves", save_path);
     installations.installations.push(installation);
     installations.save()?;
 
     FzfWrapper::message(&format!(
-        "✓ Game '{}' added successfully!\n\nYou can now configure save paths manually or use 'instant game edit' when implemented.",
-        game_name
+        "✓ Game '{}' added successfully!\n\nGame configuration saved with save path: {}",
+        game_name, save_path_input
     )).context("Failed to show success message")?;
 
     Ok(())
@@ -171,6 +220,93 @@ fn handle_launch(game_name: String) -> Result<()> {
         "Launch command not yet implemented\n\nWould launch game: {}",
         game_name
     )).context("Failed to show not implemented message")?;
+    Ok(())
+}
+
+fn handle_remove(game_name: Option<String>) -> Result<()> {
+    let mut config = InstantGameConfig::load()
+        .context("Failed to load game configuration")?;
+
+    let mut installations = InstallationsConfig::load()
+        .context("Failed to load installations configuration")?;
+
+    if config.games.is_empty() {
+        FzfWrapper::message(
+            "No games configured yet.\n\nUse 'instant game add' to add a game."
+        ).context("Failed to show empty games message")?;
+        return Ok(());
+    }
+
+    // Determine which game to remove
+    let game_name = match game_name {
+        Some(name) => name,
+        None => {
+            // Show FZF menu to select game
+            FzfWrapper::message("Select a game to remove:").context("Failed to show selection prompt")?;
+            let selected = FzfWrapper::select_one(config.games.clone())
+                .map_err(|e| anyhow::anyhow!("Failed to select game: {}", e))?;
+
+            match selected {
+                Some(game) => game.name.0,
+                None => {
+                    FzfWrapper::message("No game selected.")
+                        .context("Failed to show no selection message")?;
+                    return Ok(());
+                }
+            }
+        }
+    };
+
+    // Find the game in the configuration
+    let game_index = config.games.iter().position(|g| g.name.0 == game_name);
+
+    if game_index.is_none() {
+        FzfWrapper::message(&format!(
+            "Game '{}' not found in configuration.",
+            game_name
+        )).context("Failed to show game not found message")?;
+        return Ok(());
+    }
+
+    let game_index = game_index.unwrap();
+    let game = &config.games[game_index];
+
+    // Show game details and ask for confirmation
+    let confirmation_message = format!(
+        "Are you sure you want to remove the following game?\n\n\
+         Game: {}\n\
+         Description: {}\n\
+         Launch command: {}\n\
+         Save paths: {}\n\n\
+         This will remove the game from your configuration and all save path mappings.",
+        game.name.0.cyan(),
+        game.description.as_deref().unwrap_or("None"),
+        game.launch_command.as_deref().unwrap_or("None"),
+        game.save_paths.len()
+    );
+
+    match FzfWrapper::confirm(&confirmation_message)
+        .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))? {
+        ConfirmResult::Yes => {
+            // Remove the game from the configuration
+            config.games.remove(game_index);
+            config.save()?;
+
+            // Remove any installations for this game
+            installations.installations.retain(|inst| inst.game_name.0 != game_name);
+            installations.save()?;
+
+            FzfWrapper::message(&format!(
+                "✓ Game '{}' removed successfully!",
+                game_name
+            )).context("Failed to show success message")?;
+        }
+        ConfirmResult::No | ConfirmResult::Cancelled => {
+            FzfWrapper::message("Game removal cancelled.")
+                .context("Failed to show cancellation message")?;
+        }
+    }
+
     Ok(())
 }
 
