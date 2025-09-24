@@ -153,6 +153,7 @@ fn test_restic_repo(repo: &str, _password: Option<&str>, debug: bool) -> Result<
             return Ok(true);
         } else {
             println!("{}", "Repository path does not exist.".yellow());
+            //TODO: use fzf wrapper confirm  instead of raw input
             print!("Would you like to create it? (y/N): ");
             io::stdout().flush()?;
             let mut input = String::new();
