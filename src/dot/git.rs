@@ -452,7 +452,11 @@ fn show_all_diffs(
                 let home = dirs::home_dir().context("Failed to get home directory")?;
                 let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
                 let tilde_path = format!("~/{}", relative_path.display());
-                println!("  {} ({})", tilde_path, format!("{}: {}", repo_name, dotfile_dir).dimmed());
+                println!(
+                    "  {} ({})",
+                    tilde_path,
+                    format!("{}: {}", repo_name, dotfile_dir).dimmed()
+                );
                 show_dotfile_diff(dotfile, repo_name, dotfile_dir)?;
                 println!();
             }
@@ -467,7 +471,11 @@ fn show_all_diffs(
                 let home = dirs::home_dir().context("Failed to get home directory")?;
                 let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
                 let tilde_path = format!("~/{}", relative_path.display());
-                println!("  {} ({})", tilde_path, format!("{}: {}", repo_name, dotfile_dir).dimmed());
+                println!(
+                    "  {} ({})",
+                    tilde_path,
+                    format!("{}: {}", repo_name, dotfile_dir).dimmed()
+                );
                 show_dotfile_diff(dotfile, repo_name, dotfile_dir)?;
                 println!();
             }
@@ -503,12 +511,18 @@ fn show_delta_diff(dotfile: &super::Dotfile) -> Result<()> {
     }
 
     if !dotfile.source_path.exists() {
-        println!("  {} was removed from repository", dotfile.target_path.display().to_string().red());
+        println!(
+            "  {} was removed from repository",
+            dotfile.target_path.display().to_string().red()
+        );
         return Ok(());
     }
 
     if !dotfile.target_path.exists() {
-        println!("  {} has not been applied yet", dotfile.target_path.display().to_string().blue());
+        println!(
+            "  {} has not been applied yet",
+            dotfile.target_path.display().to_string().blue()
+        );
         return Ok(());
     }
 

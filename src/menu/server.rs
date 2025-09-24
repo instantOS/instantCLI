@@ -160,7 +160,11 @@ impl MenuServer {
                     if let Some(ref mut tui) = self.tui {
                         let has_scratchpad = self.scratchpad_manager.is_some();
                         let requests_processed = self.requests_processed.load(Ordering::SeqCst);
-                        tui.draw_status_screen(has_scratchpad, requests_processed, self.start_time)?;
+                        tui.draw_status_screen(
+                            has_scratchpad,
+                            requests_processed,
+                            self.start_time,
+                        )?;
 
                         // Sleep to prevent high CPU usage - no event handling to allow input buffering
                         std::thread::sleep(std::time::Duration::from_millis(50));

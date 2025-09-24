@@ -1,9 +1,9 @@
-use anyhow::{Context, Result};
-use std::path::PathBuf;
+use super::init::initialize_restic_repo;
 use crate::dot::path_serde::TildePath;
 use crate::fzf_wrapper::FzfWrapper;
-use super::init::initialize_restic_repo;
 use crate::game::config::InstantGameConfig;
+use anyhow::{Context, Result};
+use std::path::PathBuf;
 
 /// Manage restic repository initialization and configuration
 pub struct RepositoryManager;
@@ -11,17 +11,21 @@ pub struct RepositoryManager;
 impl RepositoryManager {
     /// Initialize the game save backup system
     pub fn initialize_game_manager(debug: bool) -> Result<()> {
-        FzfWrapper::message("Initializing game save manager...").context("Failed to show initialization message")?;
+        FzfWrapper::message("Initializing game save manager...")
+            .context("Failed to show initialization message")?;
 
-        let mut config = InstantGameConfig::load()
-            .context("Failed to load game configuration")?;
+        let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
         if config.is_initialized() {
             FzfWrapper::message(&format!(
                 "Game save manager is already initialized!\n\nCurrent repository: {}",
-                config.repo.to_tilde_string()
-                    .unwrap_or_else(|_| config.repo.as_path().to_string_lossy().to_string())
-            )).context("Failed to show already initialized message")?;
+                config.repo.to_tilde_string().unwrap_or_else(|_| config
+                    .repo
+                    .as_path()
+                    .to_string_lossy()
+                    .to_string())
+            ))
+            .context("Failed to show already initialized message")?;
             return Ok(());
         }
 
@@ -40,7 +44,8 @@ impl RepositoryManager {
                 "✓ Game save manager initialized successfully!\n\nRepository: {}",
                 repo.to_tilde_string()
                     .unwrap_or_else(|_| repo.as_path().to_string_lossy().to_string())
-            )).context("Failed to show success message")?;
+            ))
+            .context("Failed to show success message")?;
         } else {
             return Err(anyhow::anyhow!("Failed to connect to restic repository"));
         }

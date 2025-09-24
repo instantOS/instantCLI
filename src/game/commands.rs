@@ -1,10 +1,10 @@
 use anyhow::Result;
 
 use super::cli::GameCommands;
-use super::repository::RepositoryManager;
 use super::games::GameManager;
 use super::games::{display, selection};
-use super::operations::{sync_game_saves, launch_game};
+use super::operations::{launch_game, sync_game_saves};
+use super::repository::RepositoryManager;
 use super::restic::{backup_game_saves, handle_restic_command};
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
@@ -48,12 +48,10 @@ fn handle_list() -> Result<()> {
 fn handle_show(game_name: Option<String>) -> Result<()> {
     let game_name = match game_name {
         Some(name) => name,
-        None => {
-            match selection::select_game_interactive(None)? {
-                Some(name) => name,
-                None => return Ok(()),
-            }
-        }
+        None => match selection::select_game_interactive(None)? {
+            Some(name) => name,
+            None => return Ok(()),
+        },
     };
 
     display::show_game_details(&game_name)

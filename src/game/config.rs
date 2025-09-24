@@ -29,7 +29,6 @@ impl From<&str> for GameName {
     }
 }
 
-
 /// Game configuration - shared across devices
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Game {

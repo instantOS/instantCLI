@@ -1,7 +1,7 @@
-use anyhow::{Context, Result};
-use crate::fzf_wrapper::{FzfWrapper, FzfSelectable};
+use crate::fzf_wrapper::{FzfSelectable, FzfWrapper};
+use crate::game::config::{Game, InstantGameConfig};
 use crate::menu::protocol::FzfPreview;
-use crate::game::config::{InstantGameConfig, Game};
+use anyhow::{Context, Result};
 
 impl FzfSelectable for Game {
     fn fzf_display_text(&self) -> String {
@@ -23,13 +23,11 @@ impl FzfSelectable for Game {
 /// Helper function to select a game interactively
 /// Returns Some(game_name) if a game was selected, None if cancelled
 pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<String>> {
-    let config = InstantGameConfig::load()
-        .context("Failed to load game configuration")?;
+    let config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
     if config.games.is_empty() {
-        FzfWrapper::message(
-            "No games configured yet.\n\nUse 'instant game add' to add a game."
-        ).context("Failed to show empty games message")?;
+        FzfWrapper::message("No games configured yet.\n\nUse 'instant game add' to add a game.")
+            .context("Failed to show empty games message")?;
         return Ok(None);
     }
 

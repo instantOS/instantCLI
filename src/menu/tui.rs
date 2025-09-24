@@ -7,14 +7,15 @@ use crossterm::{
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Flex, Layout, Alignment},
+    layout::{Alignment, Constraint, Flex, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Clear},
+    widgets::{Block, Borders, Clear, Paragraph},
 };
 use std::io::stdout;
 use std::sync::{
-    Arc, atomic::{AtomicBool, Ordering},
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::SystemTime;
 
@@ -31,7 +32,11 @@ impl MenuServerTui {
         let terminal = {
             enable_raw_mode()?;
             let mut stdout = stdout();
-            execute!(stdout, crossterm::terminal::EnterAlternateScreen, EnableMouseCapture)?;
+            execute!(
+                stdout,
+                crossterm::terminal::EnterAlternateScreen,
+                EnableMouseCapture
+            )?;
             let backend = CrosstermBackend::new(stdout);
             Some(Terminal::new(backend)?)
         };
@@ -85,10 +90,10 @@ impl MenuServerTui {
 
                 // Create a centered layout for the main content
                 let main_area = Layout::vertical([
-                    Constraint::Length(3),  // Title
-                    Constraint::Length(1),  // Spacer
-                    Constraint::Length(3),  // Main message
-                    Constraint::Length(1),  // Status
+                    Constraint::Length(3), // Title
+                    Constraint::Length(1), // Spacer
+                    Constraint::Length(3), // Main message
+                    Constraint::Length(1), // Status
                 ])
                 .flex(Flex::Center)
                 .split(size);
@@ -106,23 +111,29 @@ impl MenuServerTui {
                     "Menu Server (No Scratchpad)"
                 };
                 let title = Paragraph::new(Line::from(vec![
-                    Span::styled("InstantCLI", Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD)),
-                    Span::styled(format!(" {}", mode_text), Style::default()
-                        .fg(Color::Gray)),
+                    Span::styled(
+                        "InstantCLI",
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!(" {}", mode_text), Style::default().fg(Color::Gray)),
                 ]))
                 .alignment(Alignment::Center);
 
                 // Main message with blue styling as specified
                 let main_message = Paragraph::new("waiting for menu requests")
-                    .style(Style::default()
-                        .fg(Color::Blue)
-                        .add_modifier(Modifier::BOLD))
-                    .block(Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Blue))
-                        .title(" Status "))
+                    .style(
+                        Style::default()
+                            .fg(Color::Blue)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Blue))
+                            .title(" Status "),
+                    )
                     .alignment(Alignment::Center);
 
                 // Status info
@@ -137,9 +148,11 @@ impl MenuServerTui {
 
                 // Instructions
                 let instructions = Paragraph::new("Menu server running - input is passed to menus")
-                    .style(Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::DIM))
+                    .style(
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::DIM),
+                    )
                     .alignment(Alignment::Center);
 
                 // Render everything
@@ -147,9 +160,12 @@ impl MenuServerTui {
                 f.render_widget(title, main_area[0]);
                 f.render_widget(main_message, content_area);
                 f.render_widget(status, main_area[3]);
-                f.render_widget(instructions, Layout::vertical([Constraint::Length(1)])
-                    .flex(Flex::End)
-                    .split(size)[0]);
+                f.render_widget(
+                    instructions,
+                    Layout::vertical([Constraint::Length(1)])
+                        .flex(Flex::End)
+                        .split(size)[0],
+                );
 
                 // Show help popup if requested
                 if show_help {
@@ -187,23 +203,35 @@ impl MenuServerTui {
                 let help_content_area = horizontal_layout[1];
 
                 let help_text = vec![
-                    Line::from("Help - Menu Server").style(Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD)),
+                    Line::from("Help - Menu Server").style(
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Line::from(""),
-                    Line::from("No keyboard input handling").style(Style::default().fg(Color::Yellow)),
-                    Line::from("All input is passed to menus").style(Style::default().fg(Color::Yellow)),
+                    Line::from("No keyboard input handling")
+                        .style(Style::default().fg(Color::Yellow)),
+                    Line::from("All input is passed to menus")
+                        .style(Style::default().fg(Color::Yellow)),
                     Line::from(""),
-                    Line::from("The server waits for menu requests and").style(Style::default().fg(Color::Gray)),
-                    Line::from("processes them when received.").style(Style::default().fg(Color::Gray)),
+                    Line::from("The server waits for menu requests and")
+                        .style(Style::default().fg(Color::Gray)),
+                    Line::from("processes them when received.")
+                        .style(Style::default().fg(Color::Gray)),
                 ];
 
                 let help_popup = Paragraph::new(help_text)
-                    .block(Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Cyan))
-                        .title(" Help ")
-                        .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Cyan))
+                            .title(" Help ")
+                            .title_style(
+                                Style::default()
+                                    .fg(Color::Cyan)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                    )
                     .style(Style::default().fg(Color::White))
                     .alignment(Alignment::Left);
 
@@ -213,7 +241,6 @@ impl MenuServerTui {
         }
     }
 
-    
     /// Temporarily suspend TUI (for external process handling)
     pub fn suspend(&mut self) -> Result<()> {
         if let Some(ref mut terminal) = self.terminal {

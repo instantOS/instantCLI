@@ -80,7 +80,8 @@ impl FzfOptions {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.additional_args.extend(args.into_iter().map(Into::into));
+        self.additional_args
+            .extend(args.into_iter().map(Into::into));
         self
     }
 
@@ -203,7 +204,9 @@ impl FzfWrapperBuilder {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.options.additional_args.extend(args.into_iter().map(Into::into));
+        self.options
+            .additional_args
+            .extend(args.into_iter().map(Into::into));
         self
     }
 
@@ -349,10 +352,7 @@ impl FzfWrapper {
     }
 
     /// Select from a vector of FzfSelectable items
-    pub fn select<T: FzfSelectable + Clone>(
-        &self,
-        items: Vec<T>,
-    ) -> Result<FzfResult<T>> {
+    pub fn select<T: FzfSelectable + Clone>(&self, items: Vec<T>) -> Result<FzfResult<T>> {
         if items.is_empty() {
             return Ok(FzfResult::Cancelled);
         }
@@ -474,9 +474,7 @@ impl FzfWrapper {
 // Convenience methods
 impl FzfWrapper {
     /// Quick single selection with default options
-    pub fn select_one<T: FzfSelectable + Clone>(
-        items: Vec<T>,
-    ) -> Result<Option<T>> {
+    pub fn select_one<T: FzfSelectable + Clone>(items: Vec<T>) -> Result<Option<T>> {
         let wrapper = FzfWrapper::new();
         match wrapper.select(items)? {
             FzfResult::Selected(item) => Ok(Some(item)),
@@ -485,9 +483,7 @@ impl FzfWrapper {
     }
 
     /// Quick multi-selection with default options
-    pub fn select_many<T: FzfSelectable + Clone>(
-        items: Vec<T>,
-    ) -> Result<Vec<T>> {
+    pub fn select_many<T: FzfSelectable + Clone>(items: Vec<T>) -> Result<Vec<T>> {
         let wrapper = FzfWrapper::with_options(FzfOptions {
             multi_select: true,
             ..Default::default()
@@ -553,9 +549,7 @@ impl FzfWrapper {
 
     /// Display a popup message with OK button
     pub fn message(message: &str) -> Result<()> {
-        Self::message_builder()
-            .message(message)
-            .show()
+        Self::message_builder().message(message).show()
     }
 
     /// Create a new message dialog builder
@@ -565,9 +559,7 @@ impl FzfWrapper {
 
     /// Confirmation dialog with yes/no options
     pub fn confirm(message: &str) -> Result<ConfirmResult> {
-        Self::confirm_builder()
-            .message(message)
-            .show()
+        Self::confirm_builder().message(message).show()
     }
 
     /// Create a new confirmation dialog builder
@@ -712,12 +704,12 @@ impl MessageDialogBuilder {
     /// Show the message dialog
     pub fn show(self) -> Result<()> {
         let mut cmd = Command::new("fzf");
-        cmd.arg("--layout")
-            .arg("reverse");
+        cmd.arg("--layout").arg("reverse");
 
         // Add header if we have a title, otherwise use message as header
         if let Some(title) = &self.title {
-            cmd.arg("--header").arg(format!("{}\n\n{}", title, self.message));
+            cmd.arg("--header")
+                .arg(format!("{}\n\n{}", title, self.message));
         } else {
             cmd.arg("--header").arg(&self.message);
         }

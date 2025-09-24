@@ -148,7 +148,11 @@ pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
         .canonicalize()
         .map_err(|e| anyhow::anyhow!("Failed to validate path '{}': {}", path, e))?;
 
-    if !real_path.starts_with(&home.canonicalize().map_err(|e| anyhow::anyhow!("Failed to canonicalize home directory: {}", e))?) {
+    if !real_path.starts_with(
+        &home
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("Failed to canonicalize home directory: {}", e))?,
+    ) {
         return Err(anyhow::anyhow!(
             "Path '{}' is outside the home directory. Only files in {} are allowed.",
             normalized_path.display(),
@@ -173,7 +177,10 @@ fn normalize_path(path: &Path) -> Result<PathBuf> {
             Component::ParentDir => {
                 // Go up one directory if possible
                 if !result.pop() {
-                    return Err(anyhow::anyhow!("Path '{}' attempts to go above root", path.display()));
+                    return Err(anyhow::anyhow!(
+                        "Path '{}' attempts to go above root",
+                        path.display()
+                    ));
                 }
             }
             Component::Normal(_) | Component::RootDir | Component::Prefix(_) => {

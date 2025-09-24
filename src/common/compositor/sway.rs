@@ -47,7 +47,6 @@ pub fn is_window_visible(window_class: &str) -> Result<bool> {
     find_window_visibility(&parsed, window_class)
 }
 
-
 /// Show a scratchpad window in Sway (idempotent)
 /// Only shows if the window is not already visible
 pub fn show_scratchpad(window_class: &str) -> Result<()> {
@@ -137,7 +136,6 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
 
     Ok(scratchpads)
 }
-
 
 /// Get the visible field from a node directly
 fn get_node_visible_field(node: &Value) -> Option<bool> {

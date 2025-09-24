@@ -1,4 +1,4 @@
-pub mod manager;
 pub mod init;
+pub mod manager;
 
 pub use manager::*;

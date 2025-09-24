@@ -18,8 +18,7 @@ impl ResticCommand {
         let mut cmd = Command::new("restic");
 
         // Set repository
-        cmd.arg("-r")
-           .arg(self.config.repo.as_path());
+        cmd.arg("-r").arg(self.config.repo.as_path());
 
         // Set password via environment variable
         cmd.env("RESTIC_PASSWORD", &self.config.repo_password);
@@ -32,8 +31,7 @@ impl ResticCommand {
         let mut cmd = self.base_command()?;
         cmd.arg("init");
 
-        let output = cmd.output()
-            .context("Failed to execute restic init")?;
+        let output = cmd.output().context("Failed to execute restic init")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -49,8 +47,7 @@ impl ResticCommand {
         cmd.arg("snapshots");
         cmd.arg("--json");
 
-        let output = cmd.output()
-            .context("Failed to execute restic snapshots")?;
+        let output = cmd.output().context("Failed to execute restic snapshots")?;
 
         Ok(output.status.success())
     }
@@ -61,8 +58,7 @@ impl ResticCommand {
         cmd.arg("stats");
         cmd.arg("--json");
 
-        let output = cmd.output()
-            .context("Failed to execute restic stats")?;
+        let output = cmd.output().context("Failed to execute restic stats")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -85,8 +81,7 @@ impl ResticCommand {
             }
         }
 
-        let output = cmd.output()
-            .context("Failed to execute restic snapshots")?;
+        let output = cmd.output().context("Failed to execute restic snapshots")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

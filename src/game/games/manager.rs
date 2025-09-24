@@ -1,8 +1,8 @@
-use anyhow::{Context, Result};
-use crate::dot::path_serde::TildePath;
-use crate::fzf_wrapper::{FzfWrapper, ConfirmResult};
-use crate::game::config::{InstantGameConfig, InstallationsConfig, Game, GameInstallation};
 use super::{selection::select_game_interactive, validation::*};
+use crate::dot::path_serde::TildePath;
+use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
+use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
+use anyhow::{Context, Result};
 
 /// Manage game CRUD operations
 pub struct GameManager;
@@ -10,11 +10,10 @@ pub struct GameManager;
 impl GameManager {
     /// Add a new game to the configuration
     pub fn add_game() -> Result<()> {
-        let mut config = InstantGameConfig::load()
-            .context("Failed to load game configuration")?;
+        let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
-        let mut installations = InstallationsConfig::load()
-            .context("Failed to load installations configuration")?;
+        let mut installations =
+            InstallationsConfig::load().context("Failed to load installations configuration")?;
 
         // Check if game manager is initialized
         if !validate_game_manager_initialized()? {
@@ -56,37 +55,33 @@ impl GameManager {
         FzfWrapper::message(&format!(
             "✓ Game '{}' added successfully!\n\nGame configuration saved with save path: {:?}",
             game_name, save_path
-        )).context("Failed to show success message")?;
+        ))
+        .context("Failed to show success message")?;
 
         Ok(())
     }
 
     /// Remove a game from the configuration
     pub fn remove_game(game_name: Option<String>) -> Result<()> {
-        let mut config = InstantGameConfig::load()
-            .context("Failed to load game configuration")?;
+        let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
-        let mut installations = InstallationsConfig::load()
-            .context("Failed to load installations configuration")?;
+        let mut installations =
+            InstallationsConfig::load().context("Failed to load installations configuration")?;
 
         let game_name = match game_name {
             Some(name) => name,
-            None => {
-                match select_game_interactive(Some("Select a game to remove:"))? {
-                    Some(name) => name,
-                    None => return Ok(()),
-                }
-            }
+            None => match select_game_interactive(Some("Select a game to remove:"))? {
+                Some(name) => name,
+                None => return Ok(()),
+            },
         };
 
         // Find the game in the configuration
         let game_index = config.games.iter().position(|g| g.name.0 == game_name);
 
         if game_index.is_none() {
-            FzfWrapper::message(&format!(
-                "Game '{}' not found in configuration.",
-                game_name
-            )).context("Failed to show game not found message")?;
+            FzfWrapper::message(&format!("Game '{}' not found in configuration.", game_name))
+                .context("Failed to show game not found message")?;
             return Ok(());
         }
 
@@ -108,21 +103,21 @@ impl GameManager {
             .yes_text("Remove Game")
             .no_text("Keep Game")
             .show()
-            .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))? {
+            .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))?
+        {
             ConfirmResult::Yes => {
                 // Remove the game from the configuration
                 config.games.remove(game_index);
                 config.save()?;
 
                 // Remove any installations for this game
-                installations.installations.retain(|inst| inst.game_name.0 != game_name);
+                installations
+                    .installations
+                    .retain(|inst| inst.game_name.0 != game_name);
                 installations.save()?;
 
                 FzfWrapper::message_builder()
-                    .message(format!(
-                        "✓ Game '{}' removed successfully!",
-                        game_name
-                    ))
+                    .message(format!("✓ Game '{}' removed successfully!", game_name))
                     .title("Success")
                     .show()
                     .context("Failed to show success message")?;
@@ -152,10 +147,8 @@ impl GameManager {
 
         // Check if game already exists
         if config.games.iter().any(|g| g.name.0 == game_name) {
-            FzfWrapper::message(&format!(
-                "Game '{}' already exists!",
-                game_name
-            )).context("Failed to show duplicate game error")?;
+            FzfWrapper::message(&format!("Game '{}' already exists!", game_name))
+                .context("Failed to show duplicate game error")?;
             return Err(anyhow::anyhow!("Game already exists"));
         }
 
@@ -180,10 +173,12 @@ impl GameManager {
 
     /// Get save path from user input with validation
     fn get_save_path() -> Result<TildePath> {
-        let save_path_input = FzfWrapper::input("Enter path where save files are located (e.g., ~/.local/share/game-name/saves)")
-            .map_err(|e| anyhow::anyhow!("Failed to get save path input: {}", e))?
-            .trim()
-            .to_string();
+        let save_path_input = FzfWrapper::input(
+            "Enter path where save files are located (e.g., ~/.local/share/game-name/saves)",
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to get save path input: {}", e))?
+        .trim()
+        .to_string();
 
         if !validate_non_empty(&save_path_input, "Save path")? {
             return Err(anyhow::anyhow!("Save path cannot be empty"));
@@ -198,7 +193,9 @@ impl GameManager {
             match FzfWrapper::confirm(&format!(
                 "Save path '{}' does not exist. Would you like to create it?",
                 save_path_input
-            )).map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))? {
+            ))
+            .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))?
+            {
                 ConfirmResult::Yes => {
                     std::fs::create_dir_all(save_path.as_path())
                         .context("Failed to create save directory")?;

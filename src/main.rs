@@ -269,12 +269,7 @@ async fn main() -> Result<()> {
                 }
                 DotCommands::Diff { path } => {
                     execute_with_error_handling(
-                        dot::diff_all(
-                            &config_manager.config,
-                            cli.debug,
-                            path.as_deref(),
-                            &db,
-                        ),
+                        dot::diff_all(&config_manager.config, cli.debug, path.as_deref(), &db),
                         "Error showing dotfile differences",
                         None,
                     )?;

@@ -11,20 +11,22 @@ pub struct ResticWrapper {
 
 impl ResticWrapper {
     pub fn new(repository: String, password: String) -> Self {
-        Self { repository, password }
+        Self {
+            repository,
+            password,
+        }
     }
 
     fn base_command(&self) -> Command {
         let mut cmd = Command::new("restic");
-        cmd.arg("-r").arg(&self.repository)
+        cmd.arg("-r")
+            .arg(&self.repository)
             .env("RESTIC_PASSWORD", &self.password);
         cmd
     }
 
     pub fn repository_exists(&self) -> Result<bool, ResticError> {
-        let output = self.base_command()
-            .args(["cat", "config"])
-            .output()?;
+        let output = self.base_command().args(["cat", "config"]).output()?;
 
         match output.status.code() {
             Some(0) => Ok(true),
@@ -33,14 +35,20 @@ impl ResticWrapper {
                 let stderr = String::from_utf8(output.stderr)?;
                 Err(ResticError::from_exit_code(code, &stderr))
             }
-            None => Err(ResticError::CommandFailed("Process terminated by signal".to_string())),
+            None => Err(ResticError::CommandFailed(
+                "Process terminated by signal".to_string(),
+            )),
         }
     }
 
+    pub fn check_version(&self) -> Result<bool, ResticError> {
+        let output = self.base_command().arg("version").output()?;
+
+        Ok(output.status.success())
+    }
+
     pub fn init_repository(&self) -> Result<(), ResticError> {
-        let output = self.base_command()
-            .args(["init"])
-            .output()?;
+        let output = self.base_command().args(["init"]).output()?;
 
         if output.status.success() {
             Ok(())
@@ -72,14 +80,17 @@ impl ResticWrapper {
         }
 
         for path in paths {
-            args.push(path.as_ref().to_str().ok_or_else(||
-                ResticError::CommandFailed(format!("Invalid path: {:?}", path.as_ref()))
-            )?.to_string());
+            args.push(
+                path.as_ref()
+                    .to_str()
+                    .ok_or_else(|| {
+                        ResticError::CommandFailed(format!("Invalid path: {:?}", path.as_ref()))
+                    })?
+                    .to_string(),
+            );
         }
 
-        let output = self.base_command()
-            .args(&args)
-            .output()?;
+        let output = self.base_command().args(&args).output()?;
 
         if !output.status.success() {
             let code = output.status.code().unwrap_or(1);
@@ -107,7 +118,10 @@ impl ResticWrapper {
     }
 
     /// List snapshots with optional tag filtering. Returns raw JSON output.
-    pub fn list_snapshots_filtered(&self, tags: Option<Vec<String>>) -> Result<String, ResticError> {
+    pub fn list_snapshots_filtered(
+        &self,
+        tags: Option<Vec<String>>,
+    ) -> Result<String, ResticError> {
         let mut args: Vec<String> = vec!["snapshots".to_string(), "--json".to_string()];
 
         if let Some(tags) = tags {
@@ -134,14 +148,15 @@ impl ResticWrapper {
         snapshot_id: &str,
         target_path: &std::path::Path,
     ) -> Result<RestoreProgress, ResticError> {
-        let output = self.base_command()
+        let output = self
+            .base_command()
             .args([
                 "restore",
                 snapshot_id,
                 "--target",
-                target_path.to_str().ok_or_else(||
+                target_path.to_str().ok_or_else(|| {
                     ResticError::CommandFailed(format!("Invalid target path: {:?}", target_path))
-                )?,
+                })?,
                 "--json",
             ])
             .output()?;

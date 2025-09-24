@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use crate::game::config::{InstantGameConfig, GameInstallation};
+use crate::game::config::{GameInstallation, InstantGameConfig};
 use crate::restic::ResticWrapper;
 
 /// Backup game saves to restic repository with proper tagging
@@ -31,7 +31,10 @@ impl GameBackup {
 
         // Use the centralized restic wrapper which already includes
         // --skip-if-unchanged for backups.
-        let tags = Some(vec!["instantgame".to_string(), game_installation.game_name.0.clone()]);
+        let tags = Some(vec![
+            "instantgame".to_string(),
+            game_installation.game_name.0.clone(),
+        ]);
 
         let progress = restic
             .backup(&[game_installation.save_path.as_path()], tags)
@@ -61,7 +64,12 @@ impl GameBackup {
     }
 
     /// Restore a game backup
-    pub fn restore_game_backup(&self, _game_name: &str, snapshot_id: &str, target_path: &Path) -> Result<String> {
+    pub fn restore_game_backup(
+        &self,
+        _game_name: &str,
+        snapshot_id: &str,
+        target_path: &Path,
+    ) -> Result<String> {
         let restic = ResticWrapper::new(
             self.config.repo.as_path().to_string_lossy().to_string(),
             self.config.repo_password.clone(),
@@ -80,12 +88,10 @@ impl GameBackup {
 
     /// Check if restic is available on the system
     pub fn check_restic_availability() -> Result<bool> {
-        // Use the wrapper to query version via base command
+        // Use the wrapper to query version
         let restic = ResticWrapper::new("".to_string(), "".to_string());
-        let output = restic.base_command().arg("version").output();
-
-        match output {
-            Ok(output) => Ok(output.status.success()),
+        match restic.check_version() {
+            Ok(success) => Ok(success),
             Err(_) => Ok(false),
         }
     }

@@ -1,18 +1,17 @@
 pub mod backup;
 pub mod commands;
 
-use anyhow::{Context, Result};
 use crate::fzf_wrapper::FzfWrapper;
-use crate::game::config::{InstantGameConfig, InstallationsConfig};
+use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection;
+use anyhow::{Context, Result};
 
 /// Handle game save backup with optional game selection
 pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Load configurations
-    let game_config = InstantGameConfig::load()
-        .context("Failed to load game configuration")?;
-    let installations = InstallationsConfig::load()
-        .context("Failed to load installations configuration")?;
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
 
     // Check restic availability and game manager initialization
     super::utils::validation::check_restic_and_game_manager(&game_config)?;
@@ -20,17 +19,18 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Get game name
     let game_name = match game_name {
         Some(name) => name,
-        None => {
-            match selection::select_game_interactive(None)? {
-                Some(name) => name,
-                None => return Ok(()),
-            }
-        }
+        None => match selection::select_game_interactive(None)? {
+            Some(name) => name,
+            None => return Ok(()),
+        },
     };
 
     // Find the game installation
-    let installation = match installations.installations.iter()
-        .find(|inst| inst.game_name.0 == game_name) {
+    let installation = match installations
+        .installations
+        .iter()
+        .find(|inst| inst.game_name.0 == game_name)
+    {
         Some(installation) => installation,
         None => {
             FzfWrapper::message(&format!(
@@ -73,7 +73,9 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             game_name,
             save_path.display()
         )).context("Failed to show empty directory warning")?;
-        return Err(anyhow::anyhow!("save directory is empty - security precaution"));
+        return Err(anyhow::anyhow!(
+            "save directory is empty - security precaution"
+        ));
     }
 
     // Create backup
@@ -92,10 +94,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             );
         }
         Err(e) => {
-            eprintln!(
-                "❌ Backup failed for game '{}': {}",
-                game_name, e
-            );
+            eprintln!("❌ Backup failed for game '{}': {}", game_name, e);
             return Err(e);
         }
     }
@@ -106,8 +105,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
 /// Handle restic command passthrough with instant games repository configuration
 pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
     // Load configuration
-    let game_config = InstantGameConfig::load()
-        .context("Failed to load game configuration")?;
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
     // Check restic availability and game manager initialization
     super::utils::validation::check_restic_and_game_manager(&game_config)?;
@@ -131,8 +129,7 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
     let mut cmd = std::process::Command::new("restic");
 
     // Set repository
-    cmd.arg("-r")
-       .arg(game_config.repo.as_path());
+    cmd.arg("-r").arg(game_config.repo.as_path());
 
     // Set password via environment variable
     cmd.env("RESTIC_PASSWORD", &game_config.repo_password);
@@ -141,8 +138,7 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
     cmd.args(&args);
 
     // Execute the command
-    let output = cmd.output()
-        .context("Failed to execute restic command")?;
+    let output = cmd.output().context("Failed to execute restic command")?;
 
     // Print stdout to the user
     if !output.stdout.is_empty() {

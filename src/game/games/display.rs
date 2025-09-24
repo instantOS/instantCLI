@@ -1,17 +1,15 @@
+use crate::fzf_wrapper::FzfWrapper;
+use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use anyhow::{Context, Result};
 use colored::*;
-use crate::fzf_wrapper::FzfWrapper;
-use crate::game::config::{InstantGameConfig, InstallationsConfig};
 
 /// Display list of all configured games
 pub fn list_games() -> Result<()> {
-    let config = InstantGameConfig::load()
-        .context("Failed to load game configuration")?;
+    let config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
     if config.games.is_empty() {
-        FzfWrapper::message(
-            "No games configured yet.\n\nUse 'instant game add' to add a game."
-        ).context("Failed to show empty games message")?;
+        FzfWrapper::message("No games configured yet.\n\nUse 'instant game add' to add a game.")
+            .context("Failed to show empty games message")?;
         return Ok(());
     }
 
@@ -46,22 +44,26 @@ pub fn list_games() -> Result<()> {
 
 /// Display detailed information about a specific game
 pub fn show_game_details(game_name: &str) -> Result<()> {
-    let config = InstantGameConfig::load()
-        .context("Failed to load game configuration")?;
-    let installations = InstallationsConfig::load()
-        .context("Failed to load installations configuration")?;
+    let config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
 
     // Find the game in the configuration
     let game = match config.games.iter().find(|g| g.name.0 == game_name) {
         Some(game) => game,
         None => {
-            eprintln!("Error: Game '{}' not found in configuration.", game_name.red());
+            eprintln!(
+                "Error: Game '{}' not found in configuration.",
+                game_name.red()
+            );
             return Ok(());
         }
     };
 
     // Find the installation for this game
-    let installation = installations.installations.iter()
+    let installation = installations
+        .installations
+        .iter()
         .find(|inst| inst.game_name.0 == game_name);
 
     // Display header
@@ -89,7 +91,9 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
     // Show actual installation path if available
     if let Some(install) = installation {
         println!("{}", "Installation:".bold());
-        let path_display = install.save_path.to_tilde_string()
+        let path_display = install
+            .save_path
+            .to_tilde_string()
             .unwrap_or_else(|_| install.save_path.as_path().to_string_lossy().to_string());
         println!("  📁 Save Path: {}", path_display.green());
         println!();

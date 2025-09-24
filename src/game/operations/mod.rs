@@ -1,5 +1,5 @@
-pub mod sync;
 pub mod launch;
+pub mod sync;
 
-pub use sync::*;
 pub use launch::*;
+pub use sync::*;

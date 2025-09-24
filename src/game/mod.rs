@@ -1,9 +1,9 @@
 pub mod cli;
 pub mod commands;
 pub mod config;
-pub mod repository;
 pub mod games;
 pub mod operations;
+pub mod repository;
 pub mod restic;
 pub mod utils;
 
