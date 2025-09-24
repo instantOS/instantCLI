@@ -36,6 +36,9 @@ impl GameBackup {
         // Backup command
         cmd.arg("backup");
 
+        // Skip if files haven't changed since last backup
+        cmd.arg("--skip-if-unchanged");
+
         // Add tags: instantgame + game name
         cmd.arg("--tag");
         cmd.arg("instantgame");
