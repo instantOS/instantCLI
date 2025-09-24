@@ -79,11 +79,10 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Create backup
     let backup_handler = backup::GameBackup::new(game_config);
 
-    //TODO: this should be a print
-    FzfWrapper::message(&format!(
+    println!(
         "🔄 Creating backup for '{}'...\nThis may take a while depending on save file size.",
         game_name
-    )).context("Failed to show backup started message")?;
+    );
 
     match backup_handler.backup_game(installation) {
         Ok(output) => {
@@ -93,11 +92,10 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             );
         }
         Err(e) => {
-            //TODO: this should be a print
-            FzfWrapper::message(&format!(
+            eprintln!(
                 "❌ Backup failed for game '{}': {}",
                 game_name, e
-            )).context("Failed to show backup failure message")?;
+            );
             return Err(e);
         }
     }
