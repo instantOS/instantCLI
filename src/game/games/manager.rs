@@ -53,8 +53,7 @@ impl GameManager {
         installations.save()?;
 
         FzfWrapper::message(&format!(
-            "✓ Game '{}' added successfully!\n\nGame configuration saved with save path: {:?}",
-            game_name, save_path
+            "✓ Game '{game_name}' added successfully!\n\nGame configuration saved with save path: {save_path:?}"
         ))
         .context("Failed to show success message")?;
 
@@ -80,7 +79,7 @@ impl GameManager {
         let game_index = config.games.iter().position(|g| g.name.0 == game_name);
 
         if game_index.is_none() {
-            FzfWrapper::message(&format!("Game '{}' not found in configuration.", game_name))
+            FzfWrapper::message(&format!("Game '{game_name}' not found in configuration."))
                 .context("Failed to show game not found message")?;
             return Ok(());
         }
@@ -117,7 +116,7 @@ impl GameManager {
                 installations.save()?;
 
                 FzfWrapper::message_builder()
-                    .message(format!("✓ Game '{}' removed successfully!", game_name))
+                    .message(format!("✓ Game '{game_name}' removed successfully!"))
                     .title("Success")
                     .show()
                     .context("Failed to show success message")?;
@@ -147,7 +146,7 @@ impl GameManager {
 
         // Check if game already exists
         if config.games.iter().any(|g| g.name.0 == game_name) {
-            FzfWrapper::message(&format!("Game '{}' already exists!", game_name))
+            FzfWrapper::message(&format!("Game '{game_name}' already exists!"))
                 .context("Failed to show duplicate game error")?;
             return Err(anyhow::anyhow!("Game already exists"));
         }
@@ -191,15 +190,14 @@ impl GameManager {
         // Check if the save path exists
         if !save_path.as_path().exists() {
             match FzfWrapper::confirm(&format!(
-                "Save path '{}' does not exist. Would you like to create it?",
-                save_path_input
+                "Save path '{save_path_input}' does not exist. Would you like to create it?"
             ))
             .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))?
             {
                 ConfirmResult::Yes => {
                     std::fs::create_dir_all(save_path.as_path())
                         .context("Failed to create save directory")?;
-                    FzfWrapper::message(&format!("✓ Created save directory: {}", save_path_input))
+                    FzfWrapper::message(&format!("✓ Created save directory: {save_path_input}"))
                         .context("Failed to show directory created message")?;
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {

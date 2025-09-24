@@ -643,9 +643,9 @@ impl ConfirmationDialogBuilder {
         let wrapper = FzfWrapper::with_options(FzfOptions {
             header: Some(self.message),
             prompt: Some(if self.default_yes {
-                format!("> ({}) ", yes_text)
+                format!("> ({yes_text}) ")
             } else {
-                format!("> ({}) ", no_text)
+                format!("> ({no_text}) ")
             }),
             additional_args: FzfOptions::confirm_margin_args(),
             ..Default::default()

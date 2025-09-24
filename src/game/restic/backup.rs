@@ -42,7 +42,7 @@ impl GameBackup {
 
         if let Some(summary) = progress.summary {
             if let Some(snap) = summary.snapshot_id {
-                return Ok(format!("snapshot: {}", snap));
+                return Ok(format!("snapshot: {snap}"));
             }
         }
 

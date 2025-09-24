@@ -34,8 +34,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         Some(installation) => installation,
         None => {
             FzfWrapper::message(&format!(
-                "❌ Error: No installation found for game '{}'.\n\nPlease add the game first using 'instant game add'.",
-                game_name
+                "❌ Error: No installation found for game '{game_name}'.\n\nPlease add the game first using 'instant game add'."
             )).context("Failed to show game not found message")?;
             return Err(anyhow::anyhow!("game installation not found"));
         }
@@ -82,19 +81,17 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     let backup_handler = backup::GameBackup::new(game_config);
 
     println!(
-        "🔄 Creating backup for '{}'...\nThis may take a while depending on save file size.",
-        game_name
+        "🔄 Creating backup for '{game_name}'...\nThis may take a while depending on save file size."
     );
 
     match backup_handler.backup_game(installation) {
         Ok(output) => {
             println!(
-                "✅ Backup completed successfully for game '{}'!\n\n{}",
-                game_name, output
+                "✅ Backup completed successfully for game '{game_name}'!\n\n{output}"
             );
         }
         Err(e) => {
-            eprintln!("❌ Backup failed for game '{}': {}", game_name, e);
+            eprintln!("❌ Backup failed for game '{game_name}': {e}");
             return Err(e);
         }
     }

@@ -22,7 +22,7 @@ pub fn list_games() -> Result<()> {
         println!("  {} {}", "🎮".bright_blue(), game.name.0.cyan().bold());
 
         if let Some(desc) = &game.description {
-            println!("    Description: {}", desc);
+            println!("    Description: {desc}");
         }
 
         if let Some(cmd) = &game.launch_command {
@@ -76,7 +76,7 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
 
     // Description if available
     if let Some(desc) = &game.description {
-        println!("📝 {}", desc);
+        println!("📝 {desc}");
         println!();
     }
 

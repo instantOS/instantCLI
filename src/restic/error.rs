@@ -30,7 +30,7 @@ impl ResticError {
             10 => ResticError::RepositoryNotFound,
             11 => ResticError::RepositoryLocked,
             12 => ResticError::InvalidPassword,
-            _ => ResticError::CommandFailed(format!("Exit code {}: {}", code, stderr)),
+            _ => ResticError::CommandFailed(format!("Exit code {code}: {stderr}")),
         }
     }
 }

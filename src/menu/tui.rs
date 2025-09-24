@@ -117,7 +117,7 @@ impl MenuServerTui {
                             .fg(Color::Cyan)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    Span::styled(format!(" {}", mode_text), Style::default().fg(Color::Gray)),
+                    Span::styled(format!(" {mode_text}"), Style::default().fg(Color::Gray)),
                 ]))
                 .alignment(Alignment::Center);
 

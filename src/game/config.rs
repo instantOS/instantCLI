@@ -93,17 +93,11 @@ impl Default for InstantGameConfig {
 
 /// Device-specific installations configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct InstallationsConfig {
     pub installations: Vec<GameInstallation>,
 }
 
-impl Default for InstallationsConfig {
-    fn default() -> Self {
-        Self {
-            installations: Vec::new(),
-        }
-    }
-}
 
 pub fn games_config_dir() -> Result<PathBuf> {
     let config_dir = dirs::config_dir()

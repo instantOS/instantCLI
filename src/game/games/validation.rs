@@ -16,7 +16,7 @@ pub fn validate_game_exists(name: &str) -> Result<bool> {
     let exists = config.games.iter().any(|g| g.name.0 == name);
 
     if !exists {
-        FzfWrapper::message(&format!("Game '{}' not found in configuration.", name))
+        FzfWrapper::message(&format!("Game '{name}' not found in configuration."))
             .context("Failed to show game not found message")?;
     }
 
@@ -41,7 +41,7 @@ pub fn validate_game_manager_initialized() -> Result<bool> {
 /// Validate non-empty input with custom error message
 pub fn validate_non_empty(input: &str, field_name: &str) -> Result<bool> {
     if input.is_empty() {
-        FzfWrapper::message(&format!("{} cannot be empty.", field_name))
+        FzfWrapper::message(&format!("{field_name} cannot be empty."))
             .context("Failed to show validation error")?;
         Ok(false)
     } else {

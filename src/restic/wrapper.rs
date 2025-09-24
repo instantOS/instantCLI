@@ -155,7 +155,7 @@ impl ResticWrapper {
                 snapshot_id,
                 "--target",
                 target_path.to_str().ok_or_else(|| {
-                    ResticError::CommandFailed(format!("Invalid target path: {:?}", target_path))
+                    ResticError::CommandFailed(format!("Invalid target path: {target_path:?}"))
                 })?,
                 "--json",
             ])

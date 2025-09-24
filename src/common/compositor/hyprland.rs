@@ -66,7 +66,7 @@ pub fn setup_window_rules(workspace_name: &str, window_class: &str) -> Result<()
     // Use batch command for efficiency
     let batch_commands: Vec<String> = rules
         .into_iter()
-        .map(|rule| format!("keyword windowrulev2 {}", rule))
+        .map(|rule| format!("keyword windowrulev2 {rule}"))
         .collect();
 
     let batch_str = batch_commands.join(" ; ");
@@ -151,7 +151,7 @@ pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
         .context("Failed to parse hyprctl monitors JSON output")?;
 
     // Check if any monitor has the special workspace active
-    let special_workspace_name = format!("special:{}", workspace_name);
+    let special_workspace_name = format!("special:{workspace_name}");
     for monitor in monitors.iter() {
         if monitor.specialWorkspace.name == special_workspace_name {
             return Ok(true);

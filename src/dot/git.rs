@@ -455,7 +455,7 @@ fn show_all_diffs(
                 println!(
                     "  {} ({})",
                     tilde_path,
-                    format!("{}: {}", repo_name, dotfile_dir).dimmed()
+                    format!("{repo_name}: {dotfile_dir}").dimmed()
                 );
                 show_dotfile_diff(dotfile, repo_name, dotfile_dir)?;
                 println!();
@@ -474,7 +474,7 @@ fn show_all_diffs(
                 println!(
                     "  {} ({})",
                     tilde_path,
-                    format!("{}: {}", repo_name, dotfile_dir).dimmed()
+                    format!("{repo_name}: {dotfile_dir}").dimmed()
                 );
                 show_dotfile_diff(dotfile, repo_name, dotfile_dir)?;
                 println!();
@@ -546,8 +546,8 @@ fn show_delta_diff(dotfile: &super::Dotfile) -> Result<()> {
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
             match line {
-                Ok(line) => println!("  {}", line),
-                Err(e) => eprintln!("  Error reading delta output: {}", e),
+                Ok(line) => println!("  {line}"),
+                Err(e) => eprintln!("  Error reading delta output: {e}"),
             }
         }
     }
@@ -557,7 +557,7 @@ fn show_delta_diff(dotfile: &super::Dotfile) -> Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !stderr.trim().is_empty() {
-            eprintln!("  Delta error: {}", stderr);
+            eprintln!("  Delta error: {stderr}");
         }
     }
 

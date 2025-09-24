@@ -38,8 +38,8 @@ pub fn initialize_restic_repo(repo: &Path, password: &str, debug: bool) -> Resul
     }
 
     // Repository doesn't exist, initialize it
-    if repo.is_absolute() {
-        if !repo.exists() {
+    if repo.is_absolute()
+        && !repo.exists() {
             FzfWrapper::message("Repository path does not exist.")
                 .context("Failed to show path error message")?;
 
@@ -60,7 +60,6 @@ pub fn initialize_restic_repo(repo: &Path, password: &str, debug: bool) -> Resul
                 }
             }
         }
-    }
 
     // Initialize the repository
     if debug {
