@@ -6,6 +6,7 @@ mod dev;
 mod doctor;
 mod dot;
 mod fzf_wrapper;
+mod game;
 mod launch;
 mod menu;
 mod scratchpad;
@@ -70,6 +71,11 @@ enum Commands {
     Dot {
         #[command(subcommand)]
         command: DotCommands,
+    },
+    /// Game save management commands
+    Game {
+        #[command(subcommand)]
+        command: game::GameCommands,
     },
     /// System diagnostics and fixes
     Doctor {
@@ -160,6 +166,13 @@ async fn main() -> Result<()> {
     }
 
     match &cli.command {
+        Some(Commands::Game { command }) => {
+            execute_with_error_handling(
+                game::handle_game_command(command.clone(), cli.debug),
+                "Error handling game command",
+                None,
+            )?;
+        }
         Some(Commands::Dot { command }) => {
             // Load configuration once at startup
             let mut config_manager = execute_with_error_handling(
