@@ -41,9 +41,45 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         }
     };
 
+    // Security check: ensure save directory is not empty
+    let save_path = installation.save_path.as_path();
+    if !save_path.exists() {
+        FzfWrapper::message(&format!(
+            "❌ Error: Save path does not exist for game '{}': {}\n\nPlease check the game installation configuration.",
+            game_name,
+            save_path.display()
+        )).context("Failed to show save path not found message")?;
+        return Err(anyhow::anyhow!("save path does not exist"));
+    }
+
+    // Check if save directory is empty
+    let mut is_empty = true;
+    if let Ok(mut entries) = std::fs::read_dir(save_path) {
+        if let Some(entry) = entries.next() {
+            // Only consider non-hidden files/directories
+            if let Ok(entry) = entry {
+                let file_name = entry.file_name();
+                let file_name_str = file_name.to_string_lossy();
+                if !file_name_str.starts_with('.') {
+                    is_empty = false;
+                }
+            }
+        }
+    }
+
+    if is_empty {
+        FzfWrapper::message(&format!(
+            "❌ Security: Refusing to backup empty save directory for game '{}': {}\n\nThe save directory appears to be empty or contains only hidden files. This could indicate:\n• The game has not created any saves yet\n• The save path is configured incorrectly\n• The saves are stored in a different location\n\nPlease verify the save path configuration and ensure the game has created save files.",
+            game_name,
+            save_path.display()
+        )).context("Failed to show empty directory warning")?;
+        return Err(anyhow::anyhow!("save directory is empty - security precaution"));
+    }
+
     // Create backup
     let backup_handler = backup::GameBackup::new(game_config);
 
+    //TODO: this should be a print
     FzfWrapper::message(&format!(
         "🔄 Creating backup for '{}'...\nThis may take a while depending on save file size.",
         game_name
@@ -57,6 +93,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             );
         }
         Err(e) => {
+            //TODO: this should be a print
             FzfWrapper::message(&format!(
                 "❌ Backup failed for game '{}': {}",
                 game_name, e
