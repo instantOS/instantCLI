@@ -136,45 +136,6 @@ fn handle_list() -> Result<()> {
     Ok(())
 }
 
-//TODO: this function should be gone entirely, just use fzf wrapper input in places where is currently
-//used
-fn prompt_for_input(prompt: &str, default: Option<&str>) -> Result<String> {
-    if let Some(default) = default {
-        print!("{} [{}]: ", prompt, default);
-    } else {
-        print!("{}: ", prompt);
-    }
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .context("reading input from stdin")?;
-
-    let input = input.trim();
-    if input.is_empty() {
-        Ok(default.unwrap_or("").to_string())
-    } else {
-        Ok(input.to_string())
-    }
-}
-
-//TODO: for now, do not prompt for a password at all, just default to `instantgamepassword`
-fn prompt_for_password(prompt: &str) -> Option<String> {
-    print!("{}: ", prompt);
-    io::stdout().flush().ok();
-
-    // Simple password input (not hidden for now)
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).ok()?;
-
-    let input = input.trim();
-    if input.is_empty() {
-        None
-    } else {
-        Some(input.to_string())
-    }
-}
 
 fn test_restic_repo(repo: &str, _password: Option<&str>, debug: bool) -> Result<bool> {
     if debug {
