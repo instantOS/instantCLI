@@ -14,23 +14,8 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     let installations = InstallationsConfig::load()
         .context("Failed to load installations configuration")?;
 
-    // Check if restic is available
-    // TODO: Other parts of the codebase will also use restic, so this error check and message
-    // should be moved to a more general location
-    if !backup::GameBackup::check_restic_availability()? {
-        FzfWrapper::message("❌ Error: restic is not installed or not found in PATH.\n\nPlease install restic to use backup functionality.")
-            .context("Failed to show restic not available message")?;
-        return Err(anyhow::anyhow!("restic not available"));
-    }
-
-    // Check if game manager is initialized
-    // TODO: Other parts of the codebase will also use the game manager, so this error check and message
-    // should be moved to a more general location
-    if !game_config.is_initialized() {
-        FzfWrapper::message("❌ Error: Game manager is not initialized.\n\nPlease run 'instant game init' first.")
-            .context("Failed to show uninitialized message")?;
-        return Err(anyhow::anyhow!("game manager not initialized"));
-    }
+    // Check restic availability and game manager initialization
+    super::utils::validation::check_restic_and_game_manager(&game_config)?;
 
     // Get game name
     let game_name = match game_name {
@@ -66,15 +51,10 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
 
     match backup_handler.backup_game(installation) {
         Ok(output) => {
-            //TODO: change this to be a print instead of a popup. 
-            FzfWrapper::message_builder()
-                .message(format!(
-                    "✅ Backup completed successfully for game '{}'!\n\n{}",
-                    game_name, output
-                ))
-                .title("Backup Complete")
-                .show()
-                .context("Failed to show backup success message")?;
+            println!(
+                "✅ Backup completed successfully for game '{}'!\n\n{}",
+                game_name, output
+            );
         }
         Err(e) => {
             FzfWrapper::message(&format!(
@@ -94,21 +74,11 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
     let game_config = InstantGameConfig::load()
         .context("Failed to load game configuration")?;
 
-    // Check if restic is available
-    if !backup::GameBackup::check_restic_availability()? {
-        FzfWrapper::message("❌ Error: restic is not installed or not found in PATH.\n\nPlease install restic to use restic commands.")
-            .context("Failed to show restic not available message")?;
-        return Err(anyhow::anyhow!("restic not available"));
-    }
-
-    // Check if game manager is initialized
-    if !game_config.is_initialized() {
-        FzfWrapper::message("❌ Error: Game manager is not initialized.\n\nPlease run 'instant game init' first.")
-            .context("Failed to show uninitialized message")?;
-        return Err(anyhow::anyhow!("game manager not initialized"));
-    }
+    // Check restic availability and game manager initialization
+    super::utils::validation::check_restic_and_game_manager(&game_config)?;
 
     // If no arguments provided, show help
+    // TODO: this should be a print not a message popup
     if args.is_empty() {
         FzfWrapper::message(
             "❌ Error: No restic command provided.\n\n\
