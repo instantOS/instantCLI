@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use crate::game::config::{InstantGameConfig, GameInstallation};
+use crate::restic::ResticWrapper;
 
 /// Backup game saves to restic repository with proper tagging
 pub struct GameBackup {
@@ -23,108 +24,65 @@ impl GameBackup {
             ));
         }
 
-        // Build restic backup command
-        let mut cmd = std::process::Command::new("restic");
+        let restic = ResticWrapper::new(
+            self.config.repo.as_path().to_string_lossy().to_string(),
+            self.config.repo_password.clone(),
+        );
 
-        // Set repository
-        cmd.arg("-r")
-           .arg(self.config.repo.as_path());
+        // Use the centralized restic wrapper which already includes
+        // --skip-if-unchanged for backups.
+        let tags = Some(vec!["instantgame".to_string(), game_installation.game_name.0.clone()]);
 
-        // Set password via environment variable
-        cmd.env("RESTIC_PASSWORD", &self.config.repo_password);
+        let progress = restic
+            .backup(&[game_installation.save_path.as_path()], tags)
+            .context("Failed to perform restic backup")?;
 
-        // Backup command
-        cmd.arg("backup");
-
-        // Skip if files haven't changed since last backup
-        cmd.arg("--skip-if-unchanged");
-
-        // Add tags: instantgame + game name
-        cmd.arg("--tag");
-        cmd.arg("instantgame");
-        cmd.arg("--tag");
-        cmd.arg(&game_installation.game_name.0);
-
-        // Add the save path
-        cmd.arg(game_installation.save_path.as_path());
-
-        // Execute the command
-        let output = cmd.output()
-            .context("Failed to execute restic backup")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Restic backup failed: {}", stderr));
+        if let Some(summary) = progress.summary {
+            if let Some(snap) = summary.snapshot_id {
+                return Ok(format!("snapshot: {}", snap));
+            }
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout.to_string())
+        Ok("backup completed (no snapshot created)".to_string())
     }
 
     /// List backups for a specific game
     pub fn list_game_backups(&self, game_name: &str) -> Result<String> {
-        let mut cmd = std::process::Command::new("restic");
+        let restic = ResticWrapper::new(
+            self.config.repo.as_path().to_string_lossy().to_string(),
+            self.config.repo_password.clone(),
+        );
 
-        // Set repository
-        cmd.arg("-r")
-           .arg(self.config.repo.as_path());
+        let json = restic
+            .list_snapshots_filtered(Some(vec!["instantgame".to_string(), game_name.to_string()]))
+            .context("Failed to list restic snapshots")?;
 
-        // Set password via environment variable
-        cmd.env("RESTIC_PASSWORD", &self.config.repo_password);
-
-        // List snapshots with game-specific tags
-        cmd.arg("snapshots");
-        cmd.arg("--json");
-        cmd.arg("--tag");
-        cmd.arg("instantgame");
-        cmd.arg("--tag");
-        cmd.arg(game_name);
-
-        let output = cmd.output()
-            .context("Failed to execute restic snapshots")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Restic snapshots failed: {}", stderr));
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(json)
     }
 
     /// Restore a game backup
     pub fn restore_game_backup(&self, _game_name: &str, snapshot_id: &str, target_path: &Path) -> Result<String> {
-        let mut cmd = std::process::Command::new("restic");
+        let restic = ResticWrapper::new(
+            self.config.repo.as_path().to_string_lossy().to_string(),
+            self.config.repo_password.clone(),
+        );
 
-        // Set repository
-        cmd.arg("-r")
-           .arg(self.config.repo.as_path());
+        let progress = restic
+            .restore(snapshot_id, target_path)
+            .context("Failed to restore restic snapshot")?;
 
-        // Set password via environment variable
-        cmd.env("RESTIC_PASSWORD", &self.config.repo_password);
-
-        // Restore command
-        cmd.arg("restore");
-        cmd.arg(snapshot_id);
-        cmd.arg("--target");
-        cmd.arg(target_path);
-
-        let output = cmd.output()
-            .context("Failed to execute restic restore")?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Restic restore failed: {}", stderr));
+        if let Some(summary) = progress.summary {
+            return Ok(format!("restored {} files", summary.files_restored));
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout.to_string())
+        Ok("restore completed".to_string())
     }
 
     /// Check if restic is available on the system
     pub fn check_restic_availability() -> Result<bool> {
-        let output = std::process::Command::new("restic")
-            .arg("version")
-            .output();
+        // Use the wrapper to query version via base command
+        let restic = ResticWrapper::new("".to_string(), "".to_string());
+        let output = restic.base_command().arg("version").output();
 
         match output {
             Ok(output) => Ok(output.status.success()),

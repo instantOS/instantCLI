@@ -57,7 +57,12 @@ impl ResticWrapper {
         //TODO: tags should not be optional, we will only be using tagged backups
         tags: Option<Vec<String>>,
     ) -> Result<BackupProgress, ResticError> {
-        let mut args: Vec<String> = vec!["backup".to_string(), "--json".to_string()];
+        // Ensure restic will skip creating a snapshot when nothing changed
+        let mut args: Vec<String> = vec![
+            "backup".to_string(),
+            "--skip-if-unchanged".to_string(),
+            "--json".to_string(),
+        ];
 
         if let Some(tags) = tags {
             for tag in tags {
@@ -87,9 +92,8 @@ impl ResticWrapper {
     }
 
     pub fn list_snapshots(&self) -> Result<Vec<Snapshot>, ResticError> {
-        let output = self.base_command()
-            .args(["snapshots", "--json"])
-            .output()?;
+        // Deprecated simple listing: delegate to the filtered listing with no tags
+        let output = self.base_command().args(["snapshots", "--json"]).output()?;
 
         if !output.status.success() {
             let code = output.status.code().unwrap_or(1);
@@ -100,6 +104,29 @@ impl ResticWrapper {
         let stdout = String::from_utf8(output.stdout)?;
         let snapshots: Vec<Snapshot> = serde_json::from_str(&stdout)?;
         Ok(snapshots)
+    }
+
+    /// List snapshots with optional tag filtering. Returns raw JSON output.
+    pub fn list_snapshots_filtered(&self, tags: Option<Vec<String>>) -> Result<String, ResticError> {
+        let mut args: Vec<String> = vec!["snapshots".to_string(), "--json".to_string()];
+
+        if let Some(tags) = tags {
+            for tag in tags {
+                args.push("--tag".to_string());
+                args.push(tag);
+            }
+        }
+
+        let output = self.base_command().args(&args).output()?;
+
+        if !output.status.success() {
+            let code = output.status.code().unwrap_or(1);
+            let stderr = String::from_utf8(output.stderr)?;
+            return Err(ResticError::from_exit_code(code, &stderr));
+        }
+
+        let stdout = String::from_utf8(output.stdout)?;
+        Ok(stdout)
     }
 
     pub fn restore(
