@@ -1,9 +1,9 @@
+use crate::game::config::InstantGameConfig;
+use crate::restic::wrapper::Snapshot;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::SystemTime;
-use crate::restic::wrapper::Snapshot;
-use crate::game::config::InstantGameConfig;
 
 /// Cache duration in seconds (5 minutes)
 const CACHE_DURATION: u64 = 300;
@@ -63,11 +63,14 @@ pub fn get_snapshots_for_game(
         new_cache.clone_from(old_cache);
     }
 
-    new_cache.insert(cache_key, CachedSnapshots {
-        snapshots: snapshots.clone(),
-        timestamp: SystemTime::now(),
-        repository_path,
-    });
+    new_cache.insert(
+        cache_key,
+        CachedSnapshots {
+            snapshots: snapshots.clone(),
+            timestamp: SystemTime::now(),
+            repository_path,
+        },
+    );
 
     // This is safe because we're in a single-threaded context or the first call
     let _ = SNAPSHOT_CACHE.set(new_cache);
@@ -86,14 +89,11 @@ fn fetch_snapshots_from_restic(
     );
 
     let snapshots_json = restic
-        .list_snapshots_filtered(Some(vec![
-            "instantgame".to_string(),
-            game_name.to_string(),
-        ]))
+        .list_snapshots_filtered(Some(vec!["instantgame".to_string(), game_name.to_string()]))
         .context("Failed to list snapshots for game")?;
 
-    let mut parsed_snapshots: Vec<Snapshot> = serde_json::from_str(&snapshots_json)
-        .context("Failed to parse snapshot data")?;
+    let mut parsed_snapshots: Vec<Snapshot> =
+        serde_json::from_str(&snapshots_json).context("Failed to parse snapshot data")?;
 
     // Sort by date (newest first)
     parsed_snapshots.sort_by(|a, b| b.time.cmp(&a.time));

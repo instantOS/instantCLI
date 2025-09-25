@@ -1,6 +1,8 @@
 use crate::fzf_wrapper::FzfWrapper;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
-use crate::game::utils::save_files::{get_save_directory_info, format_system_time_for_display, format_file_size};
+use crate::game::utils::save_files::{
+    format_file_size, format_system_time_for_display, get_save_directory_info,
+};
 use anyhow::{Context, Result};
 use colored::*;
 
@@ -103,15 +105,24 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
             Ok(save_info) => {
                 if save_info.file_count > 0 {
                     println!("  💾 Local Saves:");
-                    println!("     • Last modified: {}", format_system_time_for_display(save_info.last_modified));
+                    println!(
+                        "     • Last modified: {}",
+                        format_system_time_for_display(save_info.last_modified)
+                    );
                     println!("     • Files: {}", save_info.file_count);
-                    println!("     • Total size: {}", format_file_size(save_info.total_size));
+                    println!(
+                        "     • Total size: {}",
+                        format_file_size(save_info.total_size)
+                    );
                 } else {
                     println!("  💾 Local Saves: No save files found");
                 }
             }
             Err(e) => {
-                println!("  💾 Local Saves: Unable to analyze save directory ({})", e.to_string().to_lowercase());
+                println!(
+                    "  💾 Local Saves: Unable to analyze save directory ({})",
+                    e.to_string().to_lowercase()
+                );
             }
         }
         println!();

@@ -1,8 +1,11 @@
-use crate::fzf_wrapper::{FzfWrapper, ConfirmResult};
-use crate::game::config::{GameInstallation, InstantGameConfig, InstallationsConfig};
-use crate::game::utils::save_files::{get_save_directory_info, compare_snapshot_vs_local, TimeComparison, format_system_time_for_display, format_file_size};
-use crate::game::utils::validation;
+use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
+use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection;
+use crate::game::utils::save_files::{
+    TimeComparison, compare_snapshot_vs_local, format_file_size, format_system_time_for_display,
+    get_save_directory_info,
+};
+use crate::game::utils::validation;
 use crate::restic::wrapper::Snapshot;
 use anyhow::{Context, Result};
 
@@ -24,10 +27,9 @@ pub struct SecurityValidationResult {
 /// Select a game and get its installation with proper error handling
 pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionResult> {
     // Load configurations
-    let game_config = InstantGameConfig::load()
-        .context("Failed to load game configuration")?;
-    let installations = InstallationsConfig::load()
-        .context("Failed to load installations configuration")?;
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
 
     // Check restic availability and game manager initialization
     validation::check_restic_and_game_manager(&game_config)?;
@@ -35,9 +37,7 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
     // Get game name
     let game_name = match game_name {
         Some(name) => name,
-        None => match selection::select_game_interactive(
-            None
-        )? {
+        None => match selection::select_game_interactive(None)? {
             Some(name) => name,
             None => {
                 return Ok(GameSelectionResult {
@@ -73,12 +73,14 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
 }
 
 /// Validate the restore environment and check security constraints
-pub fn validate_restore_environment(installation: &GameInstallation) -> Result<SecurityValidationResult> {
+pub fn validate_restore_environment(
+    installation: &GameInstallation,
+) -> Result<SecurityValidationResult> {
     let save_path = installation.save_path.as_path();
 
     // Get save directory information
-    let save_info = get_save_directory_info(save_path)
-        .context("Failed to analyze save directory")?;
+    let save_info =
+        get_save_directory_info(save_path).context("Failed to analyze save directory")?;
 
     let has_local_saves = save_info.file_count > 0;
 
@@ -213,10 +215,17 @@ pub fn create_restore_confirmation(
     if security_result.has_local_saves {
         message.push_str("📁 Current local saves:\n");
         if let Some(_modified_time) = save_path {
-            message.push_str(&format!("  • Last modified: {}\n", format_system_time_for_display(*save_path)));
+            message.push_str(&format!(
+                "  • Last modified: {}\n",
+                format_system_time_for_display(*save_path)
+            ));
         }
         if let Some(info) = &security_result.save_info {
-            message.push_str(&format!("  • Files: {} ({})\n", info.file_count, format_file_size(info.total_size)));
+            message.push_str(&format!(
+                "  • Files: {} ({})\n",
+                info.file_count,
+                format_file_size(info.total_size)
+            ));
         }
         message.push('\n');
     } else {
@@ -247,7 +256,11 @@ pub fn create_restore_confirmation(
 }
 
 /// Validate snapshot ID exists for the given game
-pub fn validate_snapshot_id(snapshot_id: &str, game_name: &str, config: &InstantGameConfig) -> Result<bool> {
+pub fn validate_snapshot_id(
+    snapshot_id: &str,
+    game_name: &str,
+    config: &InstantGameConfig,
+) -> Result<bool> {
     match super::cache::get_snapshot_by_id(snapshot_id, game_name, config)? {
         Some(_) => Ok(true),
         None => {

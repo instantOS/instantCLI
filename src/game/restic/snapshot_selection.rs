@@ -1,7 +1,10 @@
 use crate::fzf_wrapper::{FzfSelectable, FzfWrapper};
-use crate::restic::wrapper::Snapshot;
 use crate::game::config::InstantGameConfig;
-use crate::game::utils::save_files::{get_save_directory_info, compare_snapshot_vs_local, TimeComparison, format_system_time_for_display};
+use crate::game::utils::save_files::{
+    TimeComparison, compare_snapshot_vs_local, format_system_time_for_display,
+    get_save_directory_info,
+};
+use crate::restic::wrapper::Snapshot;
 use anyhow::{Context, Result};
 
 impl FzfSelectable for Snapshot {
@@ -10,7 +13,8 @@ impl FzfSelectable for Snapshot {
         let host = &self.hostname;
 
         // Extract game name from tags if available
-        let game_name = self.tags
+        let game_name = self
+            .tags
             .iter()
             .find(|tag| tag != &"instantgame")
             .map(|s| s.as_str())
@@ -25,7 +29,8 @@ impl FzfSelectable for Snapshot {
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         // Extract game name from tags
-        let game_name = self.tags
+        let game_name = self
+            .tags
             .iter()
             .find(|tag| tag != &"instantgame")
             .map(|s| s.as_str())
@@ -102,7 +107,10 @@ fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) 
         stats.push_str(&format!("  • Changed files: {}\n", summary.files_changed));
     }
     if summary.files_unmodified > 0 {
-        stats.push_str(&format!("  • Unmodified files: {}\n", summary.files_unmodified));
+        stats.push_str(&format!(
+            "  • Unmodified files: {}\n",
+            summary.files_unmodified
+        ));
     }
 
     // Data size
@@ -151,7 +159,8 @@ fn create_preview_local_comparison(
                 match compare_snapshot_vs_local(snapshot_time, local_time) {
                     Ok(TimeComparison::LocalNewer) => {
                         comparison.push_str("  • Status: ⚠️  LOCAL SAVES ARE NEWER\n");
-                        comparison.push_str("  • ⚠️  Restoring would overwrite newer local saves\n");
+                        comparison
+                            .push_str("  • ⚠️  Restoring would overwrite newer local saves\n");
                     }
                     Ok(TimeComparison::SnapshotNewer) => {
                         comparison.push_str("  • Status: ✓ SNAPSHOT IS NEWER\n");
@@ -162,7 +171,8 @@ fn create_preview_local_comparison(
                         comparison.push_str("  • ✓ Local saves match backup timestamp\n");
                     }
                     Ok(TimeComparison::Error(msg)) => {
-                        comparison.push_str(&format!("  • Status: ⚠️  COMPARISON ERROR: {}\n", msg));
+                        comparison
+                            .push_str(&format!("  • Status: ⚠️  COMPARISON ERROR: {}\n", msg));
                     }
                     Err(_) => {
                         comparison.push_str("  • Status: ⚠️  COULDN'T COMPARE TIMES\n");
@@ -237,7 +247,10 @@ fn create_enhanced_snapshot_preview(
     preview.push_str(&create_preview_header(snapshot, game_name));
 
     // Local save comparison section
-    preview.push_str(&create_preview_local_comparison(local_save_info, &snapshot.time));
+    preview.push_str(&create_preview_local_comparison(
+        local_save_info,
+        &snapshot.time,
+    ));
 
     // File statistics
     if let Some(summary) = &snapshot.summary {

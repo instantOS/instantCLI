@@ -1,9 +1,9 @@
+use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::fs::{create_dir_all, OpenOptions};
+use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::PathBuf;
-use chrono::{DateTime, Utc};
-use anyhow::{Context, Result};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResticCommandLog {
@@ -25,8 +25,7 @@ pub struct ResticCommandLogger {
 impl ResticCommandLogger {
     pub fn new() -> Result<Self> {
         let log_dir = Self::get_log_dir()?;
-        create_dir_all(&log_dir)
-            .context("Failed to create restic log directory")?;
+        create_dir_all(&log_dir).context("Failed to create restic log directory")?;
 
         Ok(Self { log_dir })
     }
@@ -64,11 +63,10 @@ impl ResticCommandLogger {
             .open(&log_file)
             .context("Failed to open restic log file")?;
 
-        let json_line = serde_json::to_string(&log_entry)
-            .context("Failed to serialize restic command log")?;
+        let json_line =
+            serde_json::to_string(&log_entry).context("Failed to serialize restic command log")?;
 
-        writeln!(file, "{}", json_line)
-            .context("Failed to write to restic log file")?;
+        writeln!(file, "{}", json_line).context("Failed to write to restic log file")?;
 
         Ok(())
     }
@@ -85,16 +83,16 @@ impl ResticCommandLogger {
             return Ok(Vec::new());
         }
 
-        let content = std::fs::read_to_string(&log_file)
-            .context("Failed to read restic log file")?;
+        let content =
+            std::fs::read_to_string(&log_file).context("Failed to read restic log file")?;
 
         let mut logs = Vec::new();
         for line in content.lines() {
             if line.trim().is_empty() {
                 continue;
             }
-            let log: ResticCommandLog = serde_json::from_str(line)
-                .context("Failed to parse restic log entry")?;
+            let log: ResticCommandLog =
+                serde_json::from_str(line).context("Failed to parse restic log entry")?;
             logs.push(log);
         }
 
@@ -106,8 +104,7 @@ impl ResticCommandLogger {
     pub fn clear_logs(&self) -> Result<()> {
         let log_file = self.get_log_file_path();
         if log_file.exists() {
-            std::fs::remove_file(&log_file)
-                .context("Failed to remove restic log file")?;
+            std::fs::remove_file(&log_file).context("Failed to remove restic log file")?;
         }
         Ok(())
     }
@@ -122,7 +119,10 @@ impl ResticCommandLogger {
 
         for (i, log) in recent_logs.enumerate() {
             println!("Log Entry #{}", i + 1);
-            println!("  🕒 Time: {}", log.timestamp.format("%Y-%m-%d %H:%M:%S UTC"));
+            println!(
+                "  🕒 Time: {}",
+                log.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+            );
             println!("  📝 Command: {} {}", log.command, log.args.join(" "));
             println!("  📁 Repository: {}", log.repository);
             println!("  ✅ Success: {}", if log.success { "Yes" } else { "No" });

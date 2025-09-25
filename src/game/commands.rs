@@ -18,7 +18,10 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Remove { game_name } => handle_remove(game_name),
         GameCommands::Backup { game_name } => handle_backup(game_name),
         GameCommands::Restic { args } => handle_restic_command(args),
-        GameCommands::Restore { game_name, snapshot_id } => handle_restore(game_name, snapshot_id),
+        GameCommands::Restore {
+            game_name,
+            snapshot_id,
+        } => handle_restore(game_name, snapshot_id),
     }
 }
 

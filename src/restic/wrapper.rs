@@ -16,14 +16,18 @@ impl ResticWrapper {
         Self {
             repository,
             password,
-            logger: ResticCommandLogger::new()
-                .expect("Failed to create restic command logger"),
+            logger: ResticCommandLogger::new().expect("Failed to create restic command logger"),
         }
     }
 
-    fn execute_and_log_command(&self, mut command: Command, args: &[String]) -> Result<std::process::Output, ResticError> {
-        let output = command.output()
-            .map_err(|e| ResticError::CommandFailed(format!("Failed to execute restic command: {}", e)))?;
+    fn execute_and_log_command(
+        &self,
+        mut command: Command,
+        args: &[String],
+    ) -> Result<std::process::Output, ResticError> {
+        let output = command.output().map_err(|e| {
+            ResticError::CommandFailed(format!("Failed to execute restic command: {}", e))
+        })?;
 
         // Log the command execution
         if let Err(e) = self.logger.log_command(
@@ -191,9 +195,12 @@ impl ResticWrapper {
             "restore".to_string(),
             snapshot_id.to_string(),
             "--target".to_string(),
-            target_path.to_str().ok_or_else(|| {
-                ResticError::CommandFailed(format!("Invalid target path: {target_path:?}"))
-            })?.to_string(),
+            target_path
+                .to_str()
+                .ok_or_else(|| {
+                    ResticError::CommandFailed(format!("Invalid target path: {target_path:?}"))
+                })?
+                .to_string(),
             "--json".to_string(),
         ];
 
@@ -238,11 +245,13 @@ impl BackupProgress {
                     Some("error") => {
                         // Error messages have nested structure according to docs
                         if let Some(error_msg) = value.get("error").and_then(|e| e.get("message")) {
-                            let during = value.get("during")
+                            let during = value
+                                .get("during")
                                 .and_then(|d| d.as_str())
                                 .unwrap_or("backup")
                                 .to_string();
-                            let item = value.get("item")
+                            let item = value
+                                .get("item")
                                 .and_then(|i| i.as_str())
                                 .map(|s| s.to_string());
 
@@ -253,15 +262,18 @@ impl BackupProgress {
                             });
                         } else {
                             // Fallback for different error structure
-                            let message = value.get("message")
+                            let message = value
+                                .get("message")
                                 .and_then(|m| m.as_str())
                                 .unwrap_or("Unknown error")
                                 .to_string();
-                            let during = value.get("during")
+                            let during = value
+                                .get("during")
                                 .and_then(|d| d.as_str())
                                 .unwrap_or("backup")
                                 .to_string();
-                            let item = value.get("item")
+                            let item = value
+                                .get("item")
                                 .and_then(|i| i.as_str())
                                 .map(|s| s.to_string());
 
@@ -372,11 +384,13 @@ impl RestoreProgress {
                     Some("error") => {
                         // Error messages have nested structure according to docs
                         if let Some(error_msg) = value.get("error").and_then(|e| e.get("message")) {
-                            let during = value.get("during")
+                            let during = value
+                                .get("during")
                                 .and_then(|d| d.as_str())
                                 .unwrap_or("restore")
                                 .to_string();
-                            let item = value.get("item")
+                            let item = value
+                                .get("item")
                                 .and_then(|i| i.as_str())
                                 .map(|s| s.to_string());
 
@@ -387,15 +401,18 @@ impl RestoreProgress {
                             });
                         } else {
                             // Fallback for different error structure
-                            let message = value.get("message")
+                            let message = value
+                                .get("message")
                                 .and_then(|m| m.as_str())
                                 .unwrap_or("Unknown error")
                                 .to_string();
-                            let during = value.get("during")
+                            let during = value
+                                .get("during")
                                 .and_then(|d| d.as_str())
                                 .unwrap_or("restore")
                                 .to_string();
-                            let item = value.get("item")
+                            let item = value
+                                .get("item")
                                 .and_then(|i| i.as_str())
                                 .map(|s| s.to_string());
 

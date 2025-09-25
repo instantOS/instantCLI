@@ -1,9 +1,9 @@
 use anyhow::Result;
+use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
 use std::process::Command;
-use base64::{engine::general_purpose, Engine as _};
 
 /// Preview type for fzf items
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -264,9 +264,7 @@ pub struct PreviewUtils;
 
 impl PreviewUtils {
     /// Build a simple preview mapping using display text directly with better escaping
-    pub fn build_preview_mapping<T: FzfSelectable>(
-        items: &[T],
-    ) -> Result<HashMap<String, String>> {
+    pub fn build_preview_mapping<T: FzfSelectable>(items: &[T]) -> Result<HashMap<String, String>> {
         let mut preview_map = HashMap::new();
 
         for item in items {
@@ -422,7 +420,10 @@ impl FzfWrapper {
                     Ok(FzfResult::MultiSelected(selected_items))
                 } else {
                     // Parse tab-separated format: display_text\tencoded_preview
-                    let display_text = selected_lines[0].split('\t').next().unwrap_or(&selected_lines[0]);
+                    let display_text = selected_lines[0]
+                        .split('\t')
+                        .next()
+                        .unwrap_or(&selected_lines[0]);
                     if let Some(item) = item_map.get(display_text).cloned() {
                         Ok(FzfResult::Selected(item))
                     } else {
@@ -533,11 +534,7 @@ impl FzfWrapper {
 }
 
 /// Simple confirmation dialog implementation
-fn confirm_dialog(
-    prompt: &str,
-    yes_text: &str,
-    no_text: &str,
-) -> Result<ConfirmResult> {
+fn confirm_dialog(prompt: &str, yes_text: &str, no_text: &str) -> Result<ConfirmResult> {
     // Build fzf command with project styling
     let mut cmd = Command::new("fzf");
     cmd.arg("--header")
@@ -564,7 +561,10 @@ fn confirm_dialog(
     let _ = crate::menu::server::register_fzf_process(pid);
 
     // Write options to stdin (newline-separated)
-    let mut stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("Failed to open stdin"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to open stdin"))?;
     use std::io::Write;
     writeln!(stdin, "{}", yes_text)?;
     writeln!(stdin, "{}", no_text)?;
@@ -726,7 +726,6 @@ impl MessageDialogBuilder {
         Ok(())
     }
 }
-
 
 // Example implementations
 #[derive(Debug, Clone)]

@@ -143,9 +143,13 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
     };
 
     // Step 4: Get snapshot details for security checks
-    let game_config = InstantGameConfig::load()
-        .context("Failed to load game configuration for restore")?;
-    let snapshot = match cache::get_snapshot_by_id(&snapshot_id, &game_selection.game_name, &game_config)? {
+    let game_config =
+        InstantGameConfig::load().context("Failed to load game configuration for restore")?;
+    let snapshot = match cache::get_snapshot_by_id(
+        &snapshot_id,
+        &game_selection.game_name,
+        &game_config,
+    )? {
         Some(snapshot) => snapshot,
         None => {
             FzfWrapper::message(&format!(
@@ -158,7 +162,11 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
 
     // Step 5: Perform security check for snapshot vs local saves
     if let Some(ref save_info) = security_result.save_info {
-        if !security::check_snapshot_vs_local_saves(&snapshot, save_info, &game_selection.game_name)? {
+        if !security::check_snapshot_vs_local_saves(
+            &snapshot,
+            save_info,
+            &game_selection.game_name,
+        )? {
             // User cancelled due to security warning
             //TODO: replace with print
             FzfWrapper::message("Restore cancelled due to security warning.")
@@ -184,18 +192,32 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
     let save_path = game_selection.installation.save_path.as_path();
     let backup_handler = GameBackup::new(game_config);
 
-    println!("🔄 Restoring game saves for '{}'...", game_selection.game_name);
+    println!(
+        "🔄 Restoring game saves for '{}'...",
+        game_selection.game_name
+    );
 
     match backup_handler.restore_game_backup(&game_selection.game_name, &snapshot_id, save_path) {
         Ok(output) => {
-            println!("✅ Restore completed successfully for game '{}'!\n\n{}", game_selection.game_name, output);
+            println!(
+                "✅ Restore completed successfully for game '{}'!\n\n{}",
+                game_selection.game_name, output
+            );
 
             // Invalidate cache for this game after successful restore
-            let repo_path = backup_handler.config.repo.as_path().to_string_lossy().to_string();
+            let repo_path = backup_handler
+                .config
+                .repo
+                .as_path()
+                .to_string_lossy()
+                .to_string();
             cache::invalidate_game_cache(&game_selection.game_name, &repo_path);
         }
         Err(e) => {
-            eprintln!("❌ Restore failed for game '{}': {}", game_selection.game_name, e);
+            eprintln!(
+                "❌ Restore failed for game '{}': {}",
+                game_selection.game_name, e
+            );
             return Err(e);
         }
     }
