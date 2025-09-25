@@ -85,14 +85,12 @@ fn create_preview_header(snapshot: &Snapshot, game_name: &str) -> String {
     let formatted_time = format_date_with_time_ago(&snapshot.time);
     
     format!(
-        "┌─ SNAPSHOT INFORMATION ─────────────────────────────────────────┐\n\
-         │                                                                │\n\
-         │  🎮 Game:     {:<48} │\n\
-         │  🖥️  Host:     {:<48} │\n\
-         │  📅 Created:  {:<48} │\n\
-         │  🏷️  Short ID: {:<48} │\n\
-         │                                                                │\n\
-         └────────────────────────────────────────────────────────────────┘\n\n",
+        "🎮 SNAPSHOT INFORMATION\n\
+         \n\
+         Game:      {}\n\
+         Host:      {}\n\
+         Created:   {}\n\
+         Short ID:  {}\n\n",
         game_name,
         snapshot.hostname,
         formatted_time.lines().next().unwrap_or(""),
@@ -105,25 +103,23 @@ fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) 
     let mut stats = String::new();
     let total_files = summary.files_new + summary.files_changed + summary.files_unmodified;
 
-    stats.push_str("┌─ BACKUP STATISTICS ────────────────────────────────────────────┐\n");
-    stats.push_str("│                                                                │\n");
-    stats.push_str(&format!("│  📊 Total Files:      {:<39} │\n", format_number(total_files)));
+    stats.push_str("📊 BACKUP STATISTICS\n\n");
+    stats.push_str(&format!("Total Files:      {}\n", format_number(total_files)));
 
     if summary.files_new > 0 {
-        stats.push_str(&format!("│      ├─ New:         {:<39} │\n", format_number(summary.files_new)));
+        stats.push_str(&format!("  ├─ New:         {}\n", format_number(summary.files_new)));
     }
     if summary.files_changed > 0 {
-        stats.push_str(&format!("│      ├─ Changed:     {:<39} │\n", format_number(summary.files_changed)));
+        stats.push_str(&format!("  ├─ Changed:     {}\n", format_number(summary.files_changed)));
     }
     if summary.files_unmodified > 0 {
-        stats.push_str(&format!("│      └─ Unmodified:  {:<39} │\n", format_number(summary.files_unmodified)));
+        stats.push_str(&format!("  └─ Unmodified:  {}\n", format_number(summary.files_unmodified)));
     }
 
     // Data size
     if summary.data_added > 0 {
         let size_str = format_file_size(summary.data_added);
-        stats.push_str(&format!("│                                                                │\n"));
-        stats.push_str(&format!("│  💾 Data Added:       {:<39} │\n", size_str));
+        stats.push_str(&format!("\nData Added:       {}\n", size_str));
     }
 
     // Duration
@@ -135,12 +131,11 @@ fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) 
         let duration_secs = duration.num_seconds();
         if duration_secs > 0 {
             let duration_str = format_duration(duration_secs);
-            stats.push_str(&format!("│  ⏱️  Duration:        {:<39} │\n", duration_str));
+            stats.push_str(&format!("Duration:         {}\n", duration_str));
         }
     }
 
-    stats.push_str("│                                                                │\n");
-    stats.push_str("└────────────────────────────────────────────────────────────────┘\n\n");
+    stats.push('\n');
 
     stats
 }
@@ -152,48 +147,45 @@ fn create_preview_local_comparison(
 ) -> String {
     let mut comparison = String::new();
 
-    comparison.push_str("┌─ LOCAL SAVE COMPARISON ────────────────────────────────────────┐\n");
-    comparison.push_str("│                                                                │\n");
+    comparison.push_str("💾 LOCAL SAVE COMPARISON\n\n");
 
     if let Some(local_info) = local_save_info {
         if local_info.file_count > 0 {
             let file_count_str = format_number(local_info.file_count as u64);
             let size_str = format_file_size(local_info.total_size);
-            comparison.push_str(&format!("│  📁 Local Files:      {} files ({})         │\n", file_count_str, size_str));
+            comparison.push_str(&format!("Local Files:      {} files ({})\n", file_count_str, size_str));
 
             if let Some(local_time) = local_info.last_modified {
                 let local_time_str = format_system_time_for_display(Some(local_time));
-                comparison.push_str(&format!("│  📅 Last Modified:    {:<39} │\n", local_time_str));
-                comparison.push_str("│                                                                │\n");
+                comparison.push_str(&format!("Last Modified:    {}\n", local_time_str));
 
                 // Add comparison result with clear status indication
                 match compare_snapshot_vs_local(snapshot_time, local_time) {
                     Ok(TimeComparison::LocalNewer) => {
-                        comparison.push_str("│  🔴 STATUS: LOCAL SAVES ARE NEWER                             │\n");
-                        comparison.push_str("│      ⚠️  Restoring would overwrite newer local saves         │\n");
+                        comparison.push_str("\n🔴 STATUS: LOCAL SAVES ARE NEWER\n");
+                        comparison.push_str("    ⚠️  Restoring would overwrite newer local saves\n");
                     }
                     Ok(TimeComparison::SnapshotNewer) => {
-                        comparison.push_str("│  🟢 STATUS: SNAPSHOT IS NEWER                                 │\n");
-                        comparison.push_str("│      ✅ Safe to restore (backup contains newer data)         │\n");
+                        comparison.push_str("\n🟢 STATUS: SNAPSHOT IS NEWER\n");
+                        comparison.push_str("    ✅ Safe to restore (backup contains newer data)\n");
                     }
                     Ok(TimeComparison::Same) => {
-                        comparison.push_str("│  🟡 STATUS: TIMESTAMPS MATCH                                  │\n");
-                        comparison.push_str("│      📊 Local saves match backup timestamp                    │\n");
+                        comparison.push_str("\n🟡 STATUS: TIMESTAMPS MATCH\n");
+                        comparison.push_str("    📊 Local saves match backup timestamp\n");
                     }
                     Ok(TimeComparison::Error(msg)) => {
-                        comparison.push_str(&format!("│  🔴 STATUS: COMPARISON ERROR                                   │\n"));
-                        comparison.push_str(&format!("│      Error: {:<47} │\n", truncate_string(&msg, 47)));
+                        comparison.push_str("\n🔴 STATUS: COMPARISON ERROR\n");
+                        comparison.push_str(&format!("    Error: {}\n", truncate_string(&msg, 60)));
                     }
                     Err(_) => {
-                        comparison.push_str("│  🔴 STATUS: COMPARISON FAILED                                  │\n");
-                        comparison.push_str("│      Unable to compare timestamps                              │\n");
+                        comparison.push_str("\n🔴 STATUS: COMPARISON FAILED\n");
+                        comparison.push_str("    Unable to compare timestamps\n");
                     }
                 }
             } else {
-                comparison.push_str("│  📅 Last Modified:    Unknown                                 │\n");
-                comparison.push_str("│                                                                │\n");
-                comparison.push_str("│  🔴 STATUS: MODIFICATION TIME UNKNOWN                          │\n");
-                comparison.push_str("│      Cannot determine if local saves are newer                │\n");
+                comparison.push_str("Last Modified:    Unknown\n");
+                comparison.push_str("\n🔴 STATUS: MODIFICATION TIME UNKNOWN\n");
+                comparison.push_str("    Cannot determine if local saves are newer\n");
             }
         } else {
             comparison.push_str("│  📁 Local Files:      None found                              │\n");
@@ -202,14 +194,12 @@ fn create_preview_local_comparison(
             comparison.push_str("│      ✅ Safe to restore (no files to overwrite)              │\n");
         }
     } else {
-        comparison.push_str("│  📁 Local Files:      Information unavailable                 │\n");
-        comparison.push_str("│                                                                │\n");
-        comparison.push_str("│  🔴 STATUS: LOCAL SAVE INFO UNKNOWN                            │\n");
-        comparison.push_str("│      Cannot determine local save status                        │\n");
+        comparison.push_str("Local Files:      Information unavailable\n");
+        comparison.push_str("\n🔴 STATUS: LOCAL SAVE INFO UNKNOWN\n");
+        comparison.push_str("    Cannot determine local save status\n");
     }
 
-    comparison.push_str("│                                                                │\n");
-    comparison.push_str("└────────────────────────────────────────────────────────────────┘\n\n");
+    comparison.push('\n');
     comparison
 }
 
@@ -217,48 +207,42 @@ fn create_preview_local_comparison(
 fn create_preview_metadata(snapshot: &Snapshot) -> String {
     let mut metadata = String::new();
 
-    metadata.push_str("┌─ SNAPSHOT METADATA ────────────────────────────────────────────┐\n");
-    metadata.push_str("│                                                                │\n");
+    metadata.push_str("🏷️  SNAPSHOT METADATA\n\n");
 
     // Tags
     if !snapshot.tags.is_empty() {
         let tags_str = snapshot.tags.join(", ");
-        let truncated_tags = truncate_string(&tags_str, 45);
-        metadata.push_str(&format!("│  🏷️  Tags:           {:<39} │\n", truncated_tags));
+        let truncated_tags = truncate_string(&tags_str, 60);
+        metadata.push_str(&format!("Tags:             {}\n", truncated_tags));
     } else {
-        metadata.push_str("│  🏷️  Tags:           None                                 │\n");
+        metadata.push_str("Tags:             None\n");
     }
 
     // Full ID for reference
-    metadata.push_str(&format!("│  🆔 Full ID:         {:<39} │\n", truncate_string(&snapshot.id, 39)));
+    metadata.push_str(&format!("Full ID:          {}\n", truncate_string(&snapshot.id, 50)));
     
     // Paths
     if !snapshot.paths.is_empty() {
-        metadata.push_str("│                                                                │\n");
-        metadata.push_str("│  📁 Backup Paths:                                             │\n");
+        metadata.push_str("\nBackup Paths:\n");
         for (i, path) in snapshot.paths.iter().take(5).enumerate() { // Limit to 5 paths to prevent overflow
-            let truncated_path = truncate_string(path, 50);
+            let truncated_path = truncate_string(path, 70);
             if i == 0 {
-                metadata.push_str(&format!("│      ├─ {:<48} │\n", truncated_path));
+                metadata.push_str(&format!("  ├─ {}\n", truncated_path));
             } else if i == snapshot.paths.len() - 1 || i == 4 {
-                metadata.push_str(&format!("│      └─ {:<48} │\n", truncated_path));
+                metadata.push_str(&format!("  └─ {}\n", truncated_path));
             } else {
-                metadata.push_str(&format!("│      ├─ {:<48} │\n", truncated_path));
+                metadata.push_str(&format!("  ├─ {}\n", truncated_path));
             }
         }
         
         // Show count if there are more paths than displayed
         if snapshot.paths.len() > 5 {
             let remaining = snapshot.paths.len() - 5;
-            metadata.push_str(&format!("│      └─ ... and {} more paths                           │\n", remaining));
+            metadata.push_str(&format!("  └─ ... and {} more paths\n", remaining));
         }
     } else {
-        metadata.push_str("│                                                                │\n");
-        metadata.push_str("│  📁 Backup Paths:    None specified                           │\n");
+        metadata.push_str("\nBackup Paths:     None specified\n");
     }
-
-    metadata.push_str("│                                                                │\n");
-    metadata.push_str("└────────────────────────────────────────────────────────────────┘\n");
 
     metadata
 }
