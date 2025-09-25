@@ -220,10 +220,9 @@ impl RepositoryManager {
             );
         }
 
-        let restic = crate::restic::ResticWrapper::with_debug(
+        let restic = crate::restic::ResticWrapper::new(
             repo.as_path().to_string_lossy().to_string(),
             password.to_string(),
-            debug,
         );
 
         // Try to check if repository exists - this will test the actual connection

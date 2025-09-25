@@ -4,6 +4,18 @@ use serde::{Deserialize, Serialize};
 use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+// Global debug state
+static DEBUG_MODE: OnceLock<bool> = OnceLock::new();
+
+pub fn set_debug_mode(enabled: bool) {
+    DEBUG_MODE.set(enabled).ok();
+}
+
+pub fn is_debug_enabled() -> bool {
+    DEBUG_MODE.get().copied().unwrap_or(false)
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResticCommandLog {
@@ -20,23 +32,24 @@ pub struct ResticCommandLog {
 #[derive(Debug, Clone)]
 pub struct ResticCommandLogger {
     log_dir: PathBuf,
-    enabled: bool,
 }
 
 impl ResticCommandLogger {
     pub fn new() -> Result<Self> {
-        Self::with_enabled(true)
-    }
-
-    pub fn with_enabled(enabled: bool) -> Result<Self> {
         let log_dir = Self::get_log_dir()?;
         
-        // Only create directory if logging is enabled
-        if enabled {
+        // Only create directory if debug is enabled
+        if is_debug_enabled() {
             create_dir_all(&log_dir).context("Failed to create restic log directory")?;
         }
 
-        Ok(Self { log_dir, enabled })
+        Ok(Self { log_dir })
+    }
+
+    pub fn with_enabled(enabled: bool) -> Result<Self> {
+        // Set global debug state and create logger
+        set_debug_mode(enabled);
+        Self::new()
     }
 
     fn get_log_dir() -> Result<PathBuf> {
@@ -54,8 +67,8 @@ impl ResticCommandLogger {
         output: &std::process::Output,
         repository: &str,
     ) -> Result<()> {
-        // Skip logging if disabled
-        if !self.enabled {
+        // Skip logging if debug is not enabled
+        if !is_debug_enabled() {
             return Ok(());
         }
 
@@ -173,6 +186,6 @@ impl ResticCommandLogger {
 
 impl Default for ResticCommandLogger {
     fn default() -> Self {
-        Self::with_enabled(false).expect("Failed to create ResticCommandLogger")
+        Self::new().expect("Failed to create ResticCommandLogger")
     }
 }

@@ -201,6 +201,8 @@ async fn main() -> Result<()> {
 
     if cli.debug {
         eprintln!("Debug mode is on");
+        // Set global debug mode for restic logging
+        crate::restic::logging::set_debug_mode(true);
     }
 
     match &cli.command {

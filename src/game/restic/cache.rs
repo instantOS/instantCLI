@@ -42,7 +42,6 @@ fn is_cache_valid(cached_data: &CachedSnapshots) -> bool {
 pub fn get_snapshots_for_game(
     game_name: &str,
     config: &InstantGameConfig,
-    debug: bool,
 ) -> Result<Vec<Snapshot>> {
     let repository_path = config.repo.as_path().to_string_lossy().to_string();
     let cache_key = generate_cache_key(&repository_path, game_name);
@@ -56,7 +55,7 @@ pub fn get_snapshots_for_game(
     }
 
     // Cache miss or invalid, fetch fresh data
-    let snapshots = fetch_snapshots_from_restic(game_name, config, debug)?;
+    let snapshots = fetch_snapshots_from_restic(game_name, config)?;
 
     // Update cache
     let mut new_cache = HashMap::new();
@@ -83,12 +82,10 @@ pub fn get_snapshots_for_game(
 fn fetch_snapshots_from_restic(
     game_name: &str,
     config: &InstantGameConfig,
-    debug: bool,
 ) -> Result<Vec<Snapshot>> {
-    let restic = crate::restic::wrapper::ResticWrapper::with_debug(
+    let restic = crate::restic::wrapper::ResticWrapper::new(
         config.repo.as_path().to_string_lossy().to_string(),
         config.repo_password.clone(),
-        debug,
     );
 
     let snapshots_json = restic

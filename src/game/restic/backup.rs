@@ -15,7 +15,7 @@ impl GameBackup {
     }
 
     /// Create a backup of a specific game's save directory
-    pub fn backup_game(&self, game_installation: &GameInstallation, debug: bool) -> Result<String> {
+    pub fn backup_game(&self, game_installation: &GameInstallation) -> Result<String> {
         // Validate that save path exists
         if !game_installation.save_path.as_path().exists() {
             return Err(anyhow::anyhow!(
@@ -24,10 +24,9 @@ impl GameBackup {
             ));
         }
 
-        let restic = ResticWrapper::with_debug(
+        let restic = ResticWrapper::new(
             self.config.repo.as_path().to_string_lossy().to_string(),
             self.config.repo_password.clone(),
-            debug,
         );
 
         // Use the centralized restic wrapper which already includes
@@ -51,11 +50,10 @@ impl GameBackup {
     }
 
     /// List backups for a specific game
-    pub fn list_game_backups(&self, game_name: &str, debug: bool) -> Result<String> {
-        let restic = ResticWrapper::with_debug(
+    pub fn list_game_backups(&self, game_name: &str) -> Result<String> {
+        let restic = ResticWrapper::new(
             self.config.repo.as_path().to_string_lossy().to_string(),
             self.config.repo_password.clone(),
-            debug,
         );
 
         let json = restic
@@ -71,12 +69,10 @@ impl GameBackup {
         _game_name: &str,
         snapshot_id: &str,
         target_path: &Path,
-        debug: bool,
     ) -> Result<String> {
-        let restic = ResticWrapper::with_debug(
+        let restic = ResticWrapper::new(
             self.config.repo.as_path().to_string_lossy().to_string(),
             self.config.repo_password.clone(),
-            debug,
         );
 
         let progress = restic
@@ -92,8 +88,8 @@ impl GameBackup {
 
     /// Check if restic is available on the system
     pub fn check_restic_availability() -> Result<bool> {
-        // Use the wrapper to query version (no debug logging needed for availability check)
-        let restic = ResticWrapper::with_debug("".to_string(), "".to_string(), false);
+        // Use the wrapper to query version
+        let restic = ResticWrapper::new("".to_string(), "".to_string());
         match restic.check_version() {
             Ok(success) => Ok(success),
             Err(_) => Ok(false),
