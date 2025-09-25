@@ -203,20 +203,27 @@ impl BackupProgress {
 
 #[derive(Debug, Deserialize)]
 pub struct BackupSummary {
+    pub dry_run: bool,
     pub files_new: u64,
     pub files_changed: u64,
     pub files_unmodified: u64,
+    pub dirs_new: u64,
+    pub dirs_changed: u64,
+    pub dirs_unmodified: u64,
+    pub data_blobs: i64,
+    pub tree_blobs: i64,
     pub data_added: u64,
+    pub data_added_packed: u64,
+    pub total_files_processed: u64,
+    pub total_bytes_processed: u64,
+    pub backup_start: String,
+    pub backup_end: String,
+    pub total_duration: f64,
     pub snapshot_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct BackupError {
-    pub error: BackupErrorDetails,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BackupErrorDetails {
     pub message: String,
     pub during: String,
     pub item: Option<String>,
@@ -225,13 +232,19 @@ pub struct BackupErrorDetails {
 #[derive(Debug, Deserialize, Clone)]
 pub struct Snapshot {
     pub time: String,
-    pub id: String,
-    pub short_id: String,
+    pub parent: Option<String>,
+    pub tree: String,
     pub paths: Vec<String>,
     pub hostname: String,
     pub username: String,
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
+    pub excludes: Option<Vec<String>>,
     pub tags: Vec<String>,
+    pub program_version: Option<String>,
     pub summary: Option<SnapshotSummary>,
+    pub id: String,
+    pub short_id: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -241,7 +254,15 @@ pub struct SnapshotSummary {
     pub files_new: u64,
     pub files_changed: u64,
     pub files_unmodified: u64,
+    pub dirs_new: u64,
+    pub dirs_changed: u64,
+    pub dirs_unmodified: u64,
+    pub data_blobs: i64,
+    pub tree_blobs: i64,
     pub data_added: u64,
+    pub data_added_packed: u64,
+    pub total_files_processed: u64,
+    pub total_bytes_processed: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -277,20 +298,20 @@ impl RestoreProgress {
 
 #[derive(Debug, Deserialize)]
 pub struct RestoreSummary {
+    pub seconds_elapsed: u64,
     pub total_files: u64,
     pub files_restored: u64,
+    #[serde(default)]
     pub files_skipped: u64,
+    pub files_deleted: u64,
     pub total_bytes: u64,
     pub bytes_restored: u64,
+    pub bytes_skipped: u64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RestoreError {
-    pub error: RestoreErrorDetails,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RestoreErrorDetails {
     pub message: String,
+    pub during: String,
     pub item: Option<String>,
 }
