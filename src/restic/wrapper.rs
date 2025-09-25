@@ -416,15 +416,21 @@ impl RestoreProgress {
 
 #[derive(Debug, Deserialize)]
 pub struct RestoreSummary {
+    #[serde(default)]
     pub seconds_elapsed: u64,
+    #[serde(default)]
     pub total_files: u64,
+    #[serde(default)]
     pub files_restored: u64,
     #[serde(default)]
     pub files_skipped: u64,
+    #[serde(default)]
     pub files_deleted: u64,
     #[serde(default)]
     pub total_bytes: u64,
+    #[serde(default)]
     pub bytes_restored: u64,
+    #[serde(default)]
     pub bytes_skipped: u64,
 }
 
