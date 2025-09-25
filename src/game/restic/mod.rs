@@ -36,9 +36,8 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     {
         Some(installation) => installation,
         None => {
-            FzfWrapper::message(&format!(
-                "❌ Error: No installation found for game '{game_name}'.\n\nPlease add the game first using 'instant game add'."
-            )).context("Failed to show game not found message")?;
+            eprintln!("❌ Error: No installation found for game '{game_name}'.");
+            eprintln!("Please add the game first using 'instant game add'.");
             return Err(anyhow::anyhow!("game installation not found"));
         }
     };
@@ -46,11 +45,8 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Security check: ensure save directory is not empty
     let save_path = installation.save_path.as_path();
     if !save_path.exists() {
-        FzfWrapper::message(&format!(
-            "❌ Error: Save path does not exist for game '{}': {}\n\nPlease check the game installation configuration.",
-            game_name,
-            save_path.display()
-        )).context("Failed to show save path not found message")?;
+        eprintln!("❌ Error: Save path does not exist for game '{}': {}", game_name, save_path.display());
+        eprintln!("Please check the game installation configuration.");
         return Err(anyhow::anyhow!("save path does not exist"));
     }
 
@@ -70,11 +66,12 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     }
 
     if is_empty {
-        FzfWrapper::message(&format!(
-            "❌ Security: Refusing to backup empty save directory for game '{}': {}\n\nThe save directory appears to be empty or contains only hidden files. This could indicate:\n• The game has not created any saves yet\n• The save path is configured incorrectly\n• The saves are stored in a different location\n\nPlease verify the save path configuration and ensure the game has created save files.",
-            game_name,
-            save_path.display()
-        )).context("Failed to show empty directory warning")?;
+        eprintln!("❌ Security: Refusing to backup empty save directory for game '{}': {}", game_name, save_path.display());
+        eprintln!("The save directory appears to be empty or contains only hidden files. This could indicate:");
+        eprintln!("• The game has not created any saves yet");
+        eprintln!("• The save path is configured incorrectly");
+        eprintln!("• The saves are stored in a different location");
+        eprintln!("Please verify the save path configuration and ensure the game has created save files.");
         return Err(anyhow::anyhow!(
             "save directory is empty - security precaution"
         ));
@@ -152,10 +149,8 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
     )? {
         Some(snapshot) => snapshot,
         None => {
-            FzfWrapper::message(&format!(
-                "❌ Error: Snapshot '{}' not found for game '{}'.\n\nPlease select a valid snapshot.",
-                snapshot_id, game_selection.game_name
-            )).context("Failed to show snapshot not found message")?;
+            eprintln!("❌ Error: Snapshot '{}' not found for game '{}'.", snapshot_id, game_selection.game_name);
+            eprintln!("Please select a valid snapshot.");
             return Err(anyhow::anyhow!("snapshot not found"));
         }
     };
@@ -168,9 +163,7 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
             &game_selection.game_name,
         )? {
             // User cancelled due to security warning
-            //TODO: replace with print
-            FzfWrapper::message("Restore cancelled due to security warning.")
-                .context("Failed to show security cancellation message")?;
+            println!("Restore cancelled due to security warning.");
             return Ok(());
         }
     }
@@ -183,8 +176,7 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
         false, // Not forced
     )? {
         // User cancelled confirmation
-        FzfWrapper::message("Restore cancelled by user.")
-            .context("Failed to show cancellation message")?;
+        println!("Restore cancelled by user.");
         return Ok(());
     }
 
