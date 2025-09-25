@@ -20,7 +20,7 @@ impl FzfSelectable for Snapshot {
             .map(|s| s.as_str())
             .unwrap_or("unknown");
 
-        format!("{} - {} ({})", game_name, date, host)
+        format!("{game_name} - {date} ({host})")
     }
 
     fn fzf_key(&self) -> String {
@@ -74,7 +74,7 @@ fn format_date_with_time_ago(iso_date: &str) -> String {
             format!("{} months ago", duration.num_days().abs() / 30)
         };
 
-        format!("{}\n({})", formatted_date, time_ago)
+        format!("{formatted_date}\n({time_ago})")
     } else {
         iso_date.to_string()
     }
@@ -98,7 +98,7 @@ fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) 
     let total_files = summary.files_new + summary.files_changed + summary.files_unmodified;
 
     stats.push_str("📊 File Statistics:\n");
-    stats.push_str(&format!("  • Total files: {}\n", total_files));
+    stats.push_str(&format!("  • Total files: {total_files}\n"));
 
     if summary.files_new > 0 {
         stats.push_str(&format!("  • New files: {}\n", summary.files_new));
@@ -116,7 +116,7 @@ fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) 
     // Data size
     if summary.data_added > 0 {
         let size_mb = summary.data_added as f64 / 1_048_576.0;
-        stats.push_str(&format!("  • Data added: {:.2} MB\n", size_mb));
+        stats.push_str(&format!("  • Data added: {size_mb:.2} MB\n"));
     }
 
     // Duration
@@ -127,7 +127,7 @@ fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) 
         let duration = end.signed_duration_since(start);
         let duration_secs = duration.num_seconds();
         if duration_secs > 0 {
-            stats.push_str(&format!("  • Backup duration: {} seconds\n", duration_secs));
+            stats.push_str(&format!("  • Backup duration: {duration_secs} seconds\n"));
         }
     }
 
@@ -153,7 +153,7 @@ fn create_preview_local_comparison(
 
             if let Some(local_time) = local_info.last_modified {
                 let local_time_str = format_system_time_for_display(Some(local_time));
-                comparison.push_str(&format!("  • Last modified: {}\n", local_time_str));
+                comparison.push_str(&format!("  • Last modified: {local_time_str}\n"));
 
                 // Add comparison result
                 match compare_snapshot_vs_local(snapshot_time, local_time) {
@@ -172,7 +172,7 @@ fn create_preview_local_comparison(
                     }
                     Ok(TimeComparison::Error(msg)) => {
                         comparison
-                            .push_str(&format!("  • Status: ⚠️  COMPARISON ERROR: {}\n", msg));
+                            .push_str(&format!("  • Status: ⚠️  COMPARISON ERROR: {msg}\n"));
                     }
                     Err(_) => {
                         comparison.push_str("  • Status: ⚠️  COULDN'T COMPARE TIMES\n");
@@ -208,7 +208,7 @@ fn create_preview_metadata(snapshot: &Snapshot) -> String {
     if !snapshot.paths.is_empty() {
         metadata.push_str("\n📁 Backup Paths:\n");
         for path in &snapshot.paths {
-            metadata.push_str(&format!("  • {}\n", path));
+            metadata.push_str(&format!("  • {path}\n"));
         }
     }
 
@@ -302,8 +302,7 @@ pub fn select_snapshot_interactive_with_local_comparison(
 
     if snapshots.is_empty() {
         println!(
-            "❌ No snapshots found for game '{}'.\n\nMake sure backups have been created for this game.",
-            game_name
+            "❌ No snapshots found for game '{game_name}'.\n\nMake sure backups have been created for this game."
         );
         return Ok(None);
     }
@@ -374,7 +373,7 @@ impl FzfSelectable for EnhancedSnapshot {
             ""
         };
 
-        format!("{} ({}){}", date, host, comparison_indicator)
+        format!("{date} ({host}){comparison_indicator}")
     }
 
     fn fzf_key(&self) -> String {

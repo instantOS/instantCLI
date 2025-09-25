@@ -66,7 +66,7 @@ impl ResticCommandLogger {
         let json_line =
             serde_json::to_string(&log_entry).context("Failed to serialize restic command log")?;
 
-        writeln!(file, "{}", json_line).context("Failed to write to restic log file")?;
+        writeln!(file, "{json_line}").context("Failed to write to restic log file")?;
 
         Ok(())
     }
@@ -127,7 +127,7 @@ impl ResticCommandLogger {
             println!("  📁 Repository: {}", log.repository);
             println!("  ✅ Success: {}", if log.success { "Yes" } else { "No" });
             if let Some(code) = log.exit_code {
-                println!("  🏁 Exit Code: {}", code);
+                println!("  🏁 Exit Code: {code}");
             }
 
             if !log.stdout.trim().is_empty() {
@@ -151,7 +151,7 @@ impl ResticCommandLogger {
     fn indent_text(text: &str, indent: usize) -> String {
         let indent_str = " ".repeat(indent);
         text.lines()
-            .map(|line| format!("{}{}", indent_str, line))
+            .map(|line| format!("{indent_str}{line}"))
             .collect::<Vec<_>>()
             .join("\n")
     }

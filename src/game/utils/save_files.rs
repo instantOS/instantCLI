@@ -50,7 +50,7 @@ pub fn get_save_directory_info(save_path: &Path) -> Result<SaveDirectoryInfo> {
 
                 if let Ok(modified_time) = metadata.modified() {
                     // Update the most recent modification time
-                    if last_modified.map_or(true, |current| modified_time > current) {
+                    if last_modified.is_none_or(|current| modified_time > current) {
                         last_modified = Some(modified_time);
                     }
                 }

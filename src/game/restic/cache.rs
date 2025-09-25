@@ -26,7 +26,7 @@ fn get_cache() -> &'static HashMap<String, CachedSnapshots> {
 
 /// Generate cache key for a game and repository
 fn generate_cache_key(repository_path: &str, game_name: &str) -> String {
-    format!("{}:{}", repository_path, game_name)
+    format!("{repository_path}:{game_name}")
 }
 
 /// Check if cached data is still valid (not expired)

@@ -111,9 +111,8 @@ pub fn check_snapshot_vs_local_saves(
         None => {
             // Show warning but allow proceed
             let confirmed = FzfWrapper::confirm_builder()
-                .message(&format!(
-                    "⚠️  Security Warning for '{}':\n\nLocal save files exist but modification time cannot be determined.\n\nRestoring from snapshot might overwrite existing saves.\n\nDo you want to continue?",
-                    game_name
+                .message(format!(
+                    "⚠️  Security Warning for '{game_name}':\n\nLocal save files exist but modification time cannot be determined.\n\nRestoring from snapshot might overwrite existing saves.\n\nDo you want to continue?"
                 ))
                 .yes_text("Continue Restore")
                 .no_text("Cancel")
@@ -135,9 +134,8 @@ pub fn check_snapshot_vs_local_saves(
             let snapshot_time_str = format_snapshot_time_for_display(&snapshot.time);
 
             let confirmed = FzfWrapper::confirm_builder()
-                .message(&format!(
-                    "⚠️  CRITICAL Security Warning for '{}':\n\nLocal saves are NEWER than the selected snapshot!\n\n📅 Local saves modified: {}\n📅 Snapshot created:   {}\n\nRestoring will OVERWRITE newer local saves with older data.\n\nThis action cannot be undone. Are you absolutely sure?",
-                    game_name, local_time_str, snapshot_time_str
+                .message(format!(
+                    "⚠️  CRITICAL Security Warning for '{game_name}':\n\nLocal saves are NEWER than the selected snapshot!\n\n📅 Local saves modified: {local_time_str}\n📅 Snapshot created:   {snapshot_time_str}\n\nRestoring will OVERWRITE newer local saves with older data.\n\nThis action cannot be undone. Are you absolutely sure?"
                 ))
                 .yes_text("Overwrite Local Saves")
                 .no_text("Cancel Restore")
@@ -152,7 +150,7 @@ pub fn check_snapshot_vs_local_saves(
             let snapshot_time_str = format_snapshot_time_for_display(&snapshot.time);
 
             let confirmed = FzfWrapper::confirm_builder()
-                .message(&format!(
+                .message(format!(
                     "📋 Restore Summary for '{}':\n\nSnapshot is newer than local saves.\n\n📅 Local saves modified: {}\n📅 Snapshot created:   {}\n📁 Local save files:   {} ({})\n\nDo you want to continue with the restore?",
                     game_name, local_time_str, snapshot_time_str, save_info.file_count, format_file_size(save_info.total_size)
                 ))
@@ -170,9 +168,8 @@ pub fn check_snapshot_vs_local_saves(
         TimeComparison::Error(msg) => {
             // Error in comparison - warn but allow
             let confirmed = FzfWrapper::confirm_builder()
-                .message(&format!(
-                    "⚠️  Warning for '{}':\n\nCould not compare snapshot and local save times: {}\n\nRestoring might overwrite existing saves.\n\nDo you want to continue?",
-                    game_name, msg
+                .message(format!(
+                    "⚠️  Warning for '{game_name}':\n\nCould not compare snapshot and local save times: {msg}\n\nRestoring might overwrite existing saves.\n\nDo you want to continue?"
                 ))
                 .yes_text("Continue Restore")
                 .no_text("Cancel")
@@ -240,7 +237,7 @@ pub fn create_restore_confirmation(
 
     if let Some(summary) = &snapshot.summary {
         let total_files = summary.files_new + summary.files_changed + summary.files_unmodified;
-        message.push_str(&format!("📊 Snapshot contains {} files\n", total_files));
+        message.push_str(&format!("📊 Snapshot contains {total_files} files\n"));
     }
 
     message.push_str("\n⚠️  This will overwrite existing save files.\nThis action cannot be undone.\n\nAre you sure you want to continue?");
@@ -265,8 +262,7 @@ pub fn validate_snapshot_id(
         Some(_) => Ok(true),
         None => {
             FzfWrapper::message(&format!(
-                "❌ Error: Snapshot '{}' not found for game '{}'.\n\nPlease select a valid snapshot.",
-                snapshot_id, game_name
+                "❌ Error: Snapshot '{snapshot_id}' not found for game '{game_name}'.\n\nPlease select a valid snapshot."
             )).context("Failed to show invalid snapshot message")?;
             Ok(false)
         }

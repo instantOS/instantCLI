@@ -358,7 +358,7 @@ impl FzfWrapper {
                 .map(|display| {
                     let preview = preview_map.get(display).cloned().unwrap_or_default();
                     let encoded_preview = general_purpose::STANDARD.encode(preview.as_bytes());
-                    format!("{}\t{}", display, encoded_preview)
+                    format!("{display}\t{encoded_preview}")
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -423,7 +423,7 @@ impl FzfWrapper {
                     let display_text = selected_lines[0]
                         .split('\t')
                         .next()
-                        .unwrap_or(&selected_lines[0]);
+                        .unwrap_or(selected_lines[0]);
                     if let Some(item) = item_map.get(display_text).cloned() {
                         Ok(FzfResult::Selected(item))
                     } else {
@@ -538,7 +538,7 @@ fn confirm_dialog(prompt: &str, yes_text: &str, no_text: &str) -> Result<Confirm
     // Build fzf command with project styling
     let mut cmd = Command::new("fzf");
     cmd.arg("--header")
-        .arg(format!("{}\n", prompt)) // Add empty line to separate description from options
+        .arg(format!("{prompt}\n")) // Add empty line to separate description from options
         .arg("--prompt")
         .arg("> ") // Simple prompt
         .arg("--layout")
@@ -566,8 +566,8 @@ fn confirm_dialog(prompt: &str, yes_text: &str, no_text: &str) -> Result<Confirm
         .take()
         .ok_or_else(|| anyhow::anyhow!("Failed to open stdin"))?;
     use std::io::Write;
-    writeln!(stdin, "{}", yes_text)?;
-    writeln!(stdin, "{}", no_text)?;
+    writeln!(stdin, "{yes_text}")?;
+    writeln!(stdin, "{no_text}")?;
     stdin.flush()?;
 
     // Wait and capture output

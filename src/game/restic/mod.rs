@@ -87,7 +87,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         "🔄 Creating backup for '{game_name}'...\nThis may take a while depending on save file size."
     );
 
-    match backup_handler.backup_game(&installation) {
+    match backup_handler.backup_game(installation) {
         Ok(output) => {
             println!("✅ Backup completed successfully for game '{game_name}'!\n\n{output}");
 

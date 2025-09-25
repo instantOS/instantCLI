@@ -26,7 +26,7 @@ impl ResticWrapper {
         args: &[String],
     ) -> Result<std::process::Output, ResticError> {
         let output = command.output().map_err(|e| {
-            ResticError::CommandFailed(format!("Failed to execute restic command: {}", e))
+            ResticError::CommandFailed(format!("Failed to execute restic command: {e}"))
         })?;
 
         // Log the command execution
@@ -36,7 +36,7 @@ impl ResticWrapper {
             &output,
             &self.repository,
         ) {
-            eprintln!("Warning: Failed to log restic command: {}", e);
+            eprintln!("Warning: Failed to log restic command: {e}");
         }
 
         Ok(output)
