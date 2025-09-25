@@ -95,7 +95,7 @@ impl RepositoryManager {
         println!("💡 The remote works, but no restic repository exists there yet.");
 
         // Use message dialog before the interactive prompt
-        let message = "🎯 Repository Creation Options:\n\nYour rclone remote is working, but there's no restic repository there yet.\nWould you like to create a restic repository in the existing remote?";
+        let message = "🎯 Repository Creation Options:\n\nYour rclone remote is working, but there's no restic repository there yet.";
 
         FzfWrapper::message(message)?;
         match FzfWrapper::confirm("Create restic repository in existing remote?")
