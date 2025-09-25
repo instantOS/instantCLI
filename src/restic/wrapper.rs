@@ -13,10 +13,15 @@ pub struct ResticWrapper {
 
 impl ResticWrapper {
     pub fn new(repository: String, password: String) -> Self {
+        Self::with_debug(repository, password, false)
+    }
+
+    pub fn with_debug(repository: String, password: String, debug: bool) -> Self {
         Self {
             repository,
             password,
-            logger: ResticCommandLogger::new().expect("Failed to create restic command logger"),
+            logger: ResticCommandLogger::with_enabled(debug)
+                .expect("Failed to create restic command logger"),
         }
     }
 

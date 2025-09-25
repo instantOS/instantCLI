@@ -20,14 +20,23 @@ pub struct ResticCommandLog {
 #[derive(Debug, Clone)]
 pub struct ResticCommandLogger {
     log_dir: PathBuf,
+    enabled: bool,
 }
 
 impl ResticCommandLogger {
     pub fn new() -> Result<Self> {
-        let log_dir = Self::get_log_dir()?;
-        create_dir_all(&log_dir).context("Failed to create restic log directory")?;
+        Self::with_enabled(true)
+    }
 
-        Ok(Self { log_dir })
+    pub fn with_enabled(enabled: bool) -> Result<Self> {
+        let log_dir = Self::get_log_dir()?;
+        
+        // Only create directory if logging is enabled
+        if enabled {
+            create_dir_all(&log_dir).context("Failed to create restic log directory")?;
+        }
+
+        Ok(Self { log_dir, enabled })
     }
 
     fn get_log_dir() -> Result<PathBuf> {
@@ -45,6 +54,11 @@ impl ResticCommandLogger {
         output: &std::process::Output,
         repository: &str,
     ) -> Result<()> {
+        // Skip logging if disabled
+        if !self.enabled {
+            return Ok(());
+        }
+
         let log_entry = ResticCommandLog {
             timestamp: Utc::now(),
             command: command.to_string(),
@@ -159,6 +173,6 @@ impl ResticCommandLogger {
 
 impl Default for ResticCommandLogger {
     fn default() -> Self {
-        Self::new().expect("Failed to create ResticCommandLogger")
+        Self::with_enabled(false).expect("Failed to create ResticCommandLogger")
     }
 }
