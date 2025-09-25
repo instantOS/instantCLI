@@ -109,6 +109,9 @@ pub fn format_system_time_for_display(system_time: Option<SystemTime>) -> String
 }
 
 /// Compare snapshot time with local save directory time
+///
+/// If local saves are within 5 minutes of the snapshot, considers them the same
+/// (losing 5 minutes of progress is acceptable)
 pub fn compare_snapshot_vs_local(
     snapshot_time_str: &str,
     local_time: SystemTime,
@@ -116,7 +119,16 @@ pub fn compare_snapshot_vs_local(
     let snapshot_dt = parse_snapshot_time(snapshot_time_str)?;
     let local_dt = system_time_to_datetime(local_time);
 
-    if snapshot_dt == local_dt {
+    // Calculate the time difference
+    let duration = if local_dt > snapshot_dt {
+        local_dt.signed_duration_since(snapshot_dt)
+    } else {
+        snapshot_dt.signed_duration_since(local_dt)
+    };
+
+    // If the difference is less than 5 minutes, consider them the same
+    // (losing 5 minutes of progress is acceptable)
+    if duration.num_seconds() <= 300 {
         return Ok(TimeComparison::Same);
     }
 

@@ -283,6 +283,7 @@ impl BackupProgress {
 
 #[derive(Debug, Deserialize)]
 pub struct BackupSummary {
+    #[serde(default)]
     pub dry_run: bool,
     pub files_new: u64,
     pub files_changed: u64,
@@ -415,6 +416,7 @@ impl RestoreProgress {
 }
 
 #[derive(Debug, Deserialize)]
+//TODO: should all of these have a default value? Is this even necessary?
 pub struct RestoreSummary {
     #[serde(default)]
     pub seconds_elapsed: u64,
