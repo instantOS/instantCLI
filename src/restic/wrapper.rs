@@ -62,8 +62,7 @@ impl ResticWrapper {
     pub fn backup<P: AsRef<std::path::Path>>(
         &self,
         paths: &[P],
-        //TODO: tags should not be optional, we will only be using tagged backups
-        tags: Option<Vec<String>>,
+        tags: Vec<String>,
     ) -> Result<BackupProgress, ResticError> {
         // Ensure restic will skip creating a snapshot when nothing changed
         let mut args: Vec<String> = vec![
@@ -72,11 +71,10 @@ impl ResticWrapper {
             "--json".to_string(),
         ];
 
-        if let Some(tags) = tags {
-            for tag in tags {
-                args.push("--tag".to_string());
-                args.push(tag);
-            }
+        // Add required tags
+        for tag in tags {
+            args.push("--tag".to_string());
+            args.push(tag);
         }
 
         for path in paths {

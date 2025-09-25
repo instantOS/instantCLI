@@ -31,10 +31,10 @@ impl GameBackup {
 
         // Use the centralized restic wrapper which already includes
         // --skip-if-unchanged for backups.
-        let tags = Some(vec![
+        let tags = vec![
             "instantgame".to_string(),
             game_installation.game_name.0.clone(),
-        ]);
+        ];
 
         let progress = restic
             .backup(&[game_installation.save_path.as_path()], tags)
