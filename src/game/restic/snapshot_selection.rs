@@ -319,6 +319,7 @@ pub fn select_snapshot_interactive_with_local_comparison(
     match selected {
         Some(enhanced) => Ok(Some(enhanced.snapshot.id)),
         None => {
+            //TODO: replace with print
             FzfWrapper::message("No snapshot selected.")
                 .context("Failed to show no selection message")?;
             Ok(None)
