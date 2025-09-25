@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod commands;
+pub mod snapshot_selection;
 
 use crate::fzf_wrapper::FzfWrapper;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
@@ -90,6 +91,102 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         }
         Err(e) => {
             eprintln!("❌ Backup failed for game '{game_name}': {e}");
+            return Err(e);
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle game save restore with optional game and snapshot selection
+pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>) -> Result<()> {
+    use crate::game::config::InstallationsConfig;
+    use crate::game::restic::backup::GameBackup;
+    use crate::game::restic::snapshot_selection::select_snapshot_interactive;
+
+    // Load configurations
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
+
+    // Check restic availability and game manager initialization
+    super::utils::validation::check_restic_and_game_manager(&game_config)?;
+
+    // Get game name
+    let game_name = match game_name {
+        Some(name) => name,
+        None => match selection::select_game_interactive(None)? {
+            Some(name) => name,
+            None => return Ok(()),
+        },
+    };
+
+    // Find the game installation
+    let installation = match installations
+        .installations
+        .iter()
+        .find(|inst| inst.game_name.0 == game_name)
+    {
+        Some(installation) => installation,
+        None => {
+            FzfWrapper::message(&format!(
+                "❌ Error: No installation found for game '{game_name}'.\n\nPlease add the game first using 'instant game add'."
+            )).context("Failed to show game not found message")?;
+            return Err(anyhow::anyhow!("game installation not found"));
+        }
+    };
+
+    // Get snapshot ID
+    let snapshot_id = match snapshot_id {
+        Some(id) => id,
+        None => match select_snapshot_interactive(&game_name)? {
+            Some(id) => id,
+            None => return Ok(()),
+        },
+    };
+
+    // Validate save path exists
+    let save_path = installation.save_path.as_path();
+    if !save_path.exists() {
+        FzfWrapper::message(&format!(
+            "❌ Error: Save path does not exist for game '{}': {}\n\nThe save directory will be created during restore.",
+            game_name,
+            save_path.display()
+        )).context("Failed to show save path not found message")?;
+        // Continue with restore - the directory will be created
+    }
+
+    // Create backup handler
+    let backup_handler = GameBackup::new(game_config);
+
+    // Show restore confirmation
+    let confirmed = FzfWrapper::confirm_builder()
+        .message(&format!(
+            "🔄 Restore game saves for '{}' from snapshot {}\n\n⚠️  This will overwrite existing save files in:\n   {}\n\nThis action cannot be undone. Are you sure you want to continue?",
+            game_name,
+            &snapshot_id[..8.min(snapshot_id.len())], // Show first 8 characters of snapshot ID
+            save_path.display()
+        ))
+        .yes_text("Restore")
+        .no_text("Cancel")
+        .show()
+        .context("Failed to show restore confirmation dialog")?;
+
+    if confirmed != crate::fzf_wrapper::ConfirmResult::Yes {
+        FzfWrapper::message("Restore cancelled by user.")
+            .context("Failed to show cancellation message")?;
+        return Ok(());
+    }
+
+    // Perform the restore
+    println!("🔄 Restoring game saves for '{}'...", game_name);
+
+    match backup_handler.restore_game_backup(&game_name, &snapshot_id, save_path) {
+        Ok(output) => {
+            println!("✅ Restore completed successfully for game '{}'!\n\n{}", game_name, output);
+        }
+        Err(e) => {
+            eprintln!("❌ Restore failed for game '{}': {}", game_name, e);
             return Err(e);
         }
     }

@@ -224,7 +224,7 @@ pub struct BackupErrorDetails {
     pub item: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Snapshot {
     pub time: String,
     pub id: String,
@@ -236,7 +236,7 @@ pub struct Snapshot {
     pub summary: Option<SnapshotSummary>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct SnapshotSummary {
     pub backup_start: String,
     pub backup_end: String,

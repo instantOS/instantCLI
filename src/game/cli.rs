@@ -39,4 +39,11 @@ pub enum GameCommands {
         /// Restic command and arguments to execute
         args: Vec<String>,
     },
+    /// Restore game saves from a backup snapshot
+    Restore {
+        /// Game name to restore (optional, will prompt if not specified)
+        game_name: Option<String>,
+        /// Snapshot ID to restore from (optional, will prompt if not specified)
+        snapshot_id: Option<String>,
+    },
 }

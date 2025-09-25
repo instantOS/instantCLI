@@ -5,7 +5,7 @@ use super::games::GameManager;
 use super::games::{display, selection};
 use super::operations::{launch_game, sync_game_saves};
 use super::repository::RepositoryManager;
-use super::restic::{backup_game_saves, handle_restic_command};
+use super::restic::{backup_game_saves, handle_restic_command, restore_game_saves};
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
@@ -18,6 +18,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Remove { game_name } => handle_remove(game_name),
         GameCommands::Backup { game_name } => handle_backup(game_name),
         GameCommands::Restic { args } => handle_restic_command(args),
+        GameCommands::Restore { game_name, snapshot_id } => handle_restore(game_name, snapshot_id),
     }
 }
 
@@ -59,4 +60,8 @@ fn handle_show(game_name: Option<String>) -> Result<()> {
 
 fn handle_backup(game_name: Option<String>) -> Result<()> {
     backup_game_saves(game_name)
+}
+
+fn handle_restore(game_name: Option<String>, snapshot_id: Option<String>) -> Result<()> {
+    restore_game_saves(game_name, snapshot_id)
 }
