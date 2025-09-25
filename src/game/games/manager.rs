@@ -52,10 +52,8 @@ impl GameManager {
         installations.installations.push(installation);
         installations.save()?;
 
-        FzfWrapper::message(&format!(
-            "✓ Game '{game_name}' added successfully!\n\nGame configuration saved with save path: {save_path:?}"
-        ))
-        .context("Failed to show success message")?;
+        println!("✓ Game '{game_name}' added successfully!");
+        println!("Game configuration saved with save path: {save_path:?}");
 
         Ok(())
     }
@@ -79,8 +77,7 @@ impl GameManager {
         let game_index = config.games.iter().position(|g| g.name.0 == game_name);
 
         if game_index.is_none() {
-            FzfWrapper::message(&format!("Game '{game_name}' not found in configuration."))
-                .context("Failed to show game not found message")?;
+            eprintln!("Game '{game_name}' not found in configuration.");
             return Ok(());
         }
 
@@ -115,18 +112,10 @@ impl GameManager {
                     .retain(|inst| inst.game_name.0 != game_name);
                 installations.save()?;
 
-                FzfWrapper::message_builder()
-                    .message(format!("✓ Game '{game_name}' removed successfully!"))
-                    .title("Success")
-                    .show()
-                    .context("Failed to show success message")?;
+                println!("✓ Game '{game_name}' removed successfully!");
             }
             ConfirmResult::No | ConfirmResult::Cancelled => {
-                FzfWrapper::message_builder()
-                    .message("Game removal cancelled.")
-                    .title("Cancelled")
-                    .show()
-                    .context("Failed to show cancellation message")?;
+                println!("Game removal cancelled.");
             }
         }
 
@@ -146,8 +135,7 @@ impl GameManager {
 
         // Check if game already exists
         if config.games.iter().any(|g| g.name.0 == game_name) {
-            FzfWrapper::message(&format!("Game '{game_name}' already exists!"))
-                .context("Failed to show duplicate game error")?;
+            eprintln!("Game '{game_name}' already exists!");
             return Err(anyhow::anyhow!("Game already exists"));
         }
 
@@ -197,12 +185,10 @@ impl GameManager {
                 ConfirmResult::Yes => {
                     std::fs::create_dir_all(save_path.as_path())
                         .context("Failed to create save directory")?;
-                    FzfWrapper::message(&format!("✓ Created save directory: {save_path_input}"))
-                        .context("Failed to show directory created message")?;
+                    println!("✓ Created save directory: {save_path_input}");
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {
-                    FzfWrapper::message("Game addition cancelled: save path does not exist.")
-                        .context("Failed to show cancellation message")?;
+                    println!("Game addition cancelled: save path does not exist.");
                     return Err(anyhow::anyhow!("Save path does not exist"));
                 }
             }
