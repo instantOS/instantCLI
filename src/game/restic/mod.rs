@@ -44,7 +44,11 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Security check: ensure save directory is not empty
     let save_path = installation.save_path.as_path();
     if !save_path.exists() {
-        eprintln!("❌ Error: Save path does not exist for game '{}': {}", game_name, save_path.display());
+        eprintln!(
+            "❌ Error: Save path does not exist for game '{}': {}",
+            game_name,
+            save_path.display()
+        );
         eprintln!("Please check the game installation configuration.");
         return Err(anyhow::anyhow!("save path does not exist"));
     }
@@ -65,12 +69,20 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     }
 
     if is_empty {
-        eprintln!("❌ Security: Refusing to backup empty save directory for game '{}': {}", game_name, save_path.display());
-        eprintln!("The save directory appears to be empty or contains only hidden files. This could indicate:");
+        eprintln!(
+            "❌ Security: Refusing to backup empty save directory for game '{}': {}",
+            game_name,
+            save_path.display()
+        );
+        eprintln!(
+            "The save directory appears to be empty or contains only hidden files. This could indicate:"
+        );
         eprintln!("• The game has not created any saves yet");
         eprintln!("• The save path is configured incorrectly");
         eprintln!("• The saves are stored in a different location");
-        eprintln!("Please verify the save path configuration and ensure the game has created save files.");
+        eprintln!(
+            "Please verify the save path configuration and ensure the game has created save files."
+        );
         return Err(anyhow::anyhow!(
             "save directory is empty - security precaution"
         ));
@@ -141,18 +153,18 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
     // Step 4: Get snapshot details for security checks
     let game_config =
         InstantGameConfig::load().context("Failed to load game configuration for restore")?;
-    let snapshot = match cache::get_snapshot_by_id(
-        &snapshot_id,
-        &game_selection.game_name,
-        &game_config,
-    )? {
-        Some(snapshot) => snapshot,
-        None => {
-            eprintln!("❌ Error: Snapshot '{}' not found for game '{}'.", snapshot_id, game_selection.game_name);
-            eprintln!("Please select a valid snapshot.");
-            return Err(anyhow::anyhow!("snapshot not found"));
-        }
-    };
+    let snapshot =
+        match cache::get_snapshot_by_id(&snapshot_id, &game_selection.game_name, &game_config)? {
+            Some(snapshot) => snapshot,
+            None => {
+                eprintln!(
+                    "❌ Error: Snapshot '{}' not found for game '{}'.",
+                    snapshot_id, game_selection.game_name
+                );
+                eprintln!("Please select a valid snapshot.");
+                return Err(anyhow::anyhow!("snapshot not found"));
+            }
+        };
 
     // Step 5: Perform security check for snapshot vs local saves
     if let Some(ref save_info) = security_result.save_info {

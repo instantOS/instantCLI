@@ -171,8 +171,7 @@ fn create_preview_local_comparison(
                         comparison.push_str("  • ✓ Local saves match backup timestamp\n");
                     }
                     Ok(TimeComparison::Error(msg)) => {
-                        comparison
-                            .push_str(&format!("  • Status: ⚠️  COMPARISON ERROR: {msg}\n"));
+                        comparison.push_str(&format!("  • Status: ⚠️  COMPARISON ERROR: {msg}\n"));
                     }
                     Err(_) => {
                         comparison.push_str("  • Status: ⚠️  COULDN'T COMPARE TIMES\n");

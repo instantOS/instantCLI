@@ -17,11 +17,14 @@ impl RepositoryManager {
 
         if config.is_initialized() {
             println!("Game save manager is already initialized!");
-            println!("Current repository: {}", config.repo.to_tilde_string().unwrap_or_else(|_| config
-                .repo
-                .as_path()
-                .to_string_lossy()
-                .to_string()));
+            println!(
+                "Current repository: {}",
+                config.repo.to_tilde_string().unwrap_or_else(|_| config
+                    .repo
+                    .as_path()
+                    .to_string_lossy()
+                    .to_string())
+            );
             return Ok(());
         }
 
@@ -37,8 +40,11 @@ impl RepositoryManager {
         if initialize_restic_repo(repo.as_path(), &password, debug)? {
             config.save()?;
             println!("✓ Game save manager initialized successfully!");
-            println!("Repository: {}", repo.to_tilde_string()
-                    .unwrap_or_else(|_| repo.as_path().to_string_lossy().to_string()));
+            println!(
+                "Repository: {}",
+                repo.to_tilde_string()
+                    .unwrap_or_else(|_| repo.as_path().to_string_lossy().to_string())
+            );
         } else {
             return Err(anyhow::anyhow!("Failed to connect to restic repository"));
         }
