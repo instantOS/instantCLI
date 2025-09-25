@@ -1,5 +1,7 @@
 pub mod backup;
+pub mod cache;
 pub mod commands;
+pub mod security;
 pub mod snapshot_selection;
 
 use crate::fzf_wrapper::FzfWrapper;
@@ -79,15 +81,19 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     }
 
     // Create backup
-    let backup_handler = backup::GameBackup::new(game_config);
+    let backup_handler = backup::GameBackup::new(game_config.clone());
 
     println!(
         "🔄 Creating backup for '{game_name}'...\nThis may take a while depending on save file size."
     );
 
-    match backup_handler.backup_game(installation) {
+    match backup_handler.backup_game(&installation) {
         Ok(output) => {
             println!("✅ Backup completed successfully for game '{game_name}'!\n\n{output}");
+
+            // Invalidate cache for this game after successful backup
+            let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
+            cache::invalidate_game_cache(&game_name, &repo_path);
         }
         Err(e) => {
             eprintln!("❌ Backup failed for game '{game_name}': {e}");
@@ -100,93 +106,95 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
 
 /// Handle game save restore with optional game and snapshot selection
 pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>) -> Result<()> {
-    use crate::game::config::InstallationsConfig;
     use crate::game::restic::backup::GameBackup;
-    use crate::game::restic::snapshot_selection::select_snapshot_interactive;
+    use crate::game::restic::snapshot_selection::select_snapshot_interactive_with_local_comparison;
 
-    // Load configurations
-    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let installations =
-        InstallationsConfig::load().context("Failed to load installations configuration")?;
+    // Step 1: Game selection using security module
+    let game_selection = security::get_game_installation(game_name)?;
+    if game_selection.game_name.is_empty() {
+        // User cancelled selection
+        return Ok(());
+    }
 
-    // Check restic availability and game manager initialization
-    super::utils::validation::check_restic_and_game_manager(&game_config)?;
+    // Step 2: Validate restore environment
+    let security_result = security::validate_restore_environment(&game_selection.installation)?;
 
-    // Get game name
-    let game_name = match game_name {
-        Some(name) => name,
-        None => match selection::select_game_interactive(None)? {
-            Some(name) => name,
-            None => return Ok(()),
-        },
-    };
-
-    // Find the game installation
-    let installation = match installations
-        .installations
-        .iter()
-        .find(|inst| inst.game_name.0 == game_name)
-    {
-        Some(installation) => installation,
+    // Step 3: Get snapshot ID with enhanced selection (includes local save comparison)
+    let snapshot_id = match snapshot_id {
+        Some(id) => {
+            // Validate the provided snapshot ID exists
+            let game_config = InstantGameConfig::load()
+                .context("Failed to load game configuration for snapshot validation")?;
+            if !security::validate_snapshot_id(&id, &game_selection.game_name, &game_config)? {
+                return Ok(());
+            }
+            id
+        }
         None => {
-            FzfWrapper::message(&format!(
-                "❌ Error: No installation found for game '{game_name}'.\n\nPlease add the game first using 'instant game add'."
-            )).context("Failed to show game not found message")?;
-            return Err(anyhow::anyhow!("game installation not found"));
+            // Use enhanced snapshot selection with local save comparison
+            match select_snapshot_interactive_with_local_comparison(
+                &game_selection.game_name,
+                Some(&game_selection.installation),
+            )? {
+                Some(id) => id,
+                None => return Ok(()),
+            }
         }
     };
 
-    // Get snapshot ID
-    let snapshot_id = match snapshot_id {
-        Some(id) => id,
-        None => match select_snapshot_interactive(&game_name)? {
-            Some(id) => id,
-            None => return Ok(()),
-        },
+    // Step 4: Get snapshot details for security checks
+    let game_config = InstantGameConfig::load()
+        .context("Failed to load game configuration for restore")?;
+    let snapshot = match cache::get_snapshot_by_id(&snapshot_id, &game_selection.game_name, &game_config)? {
+        Some(snapshot) => snapshot,
+        None => {
+            FzfWrapper::message(&format!(
+                "❌ Error: Snapshot '{}' not found for game '{}'.\n\nPlease select a valid snapshot.",
+                snapshot_id, game_selection.game_name
+            )).context("Failed to show snapshot not found message")?;
+            return Err(anyhow::anyhow!("snapshot not found"));
+        }
     };
 
-    // Validate save path exists
-    let save_path = installation.save_path.as_path();
-    if !save_path.exists() {
-        FzfWrapper::message(&format!(
-            "❌ Error: Save path does not exist for game '{}': {}\n\nThe save directory will be created during restore.",
-            game_name,
-            save_path.display()
-        )).context("Failed to show save path not found message")?;
-        // Continue with restore - the directory will be created
+    // Step 5: Perform security check for snapshot vs local saves
+    if let Some(ref save_info) = security_result.save_info {
+        if !security::check_snapshot_vs_local_saves(&snapshot, save_info, &game_selection.game_name)? {
+            // User cancelled due to security warning
+            FzfWrapper::message("Restore cancelled due to security warning.")
+                .context("Failed to show security cancellation message")?;
+            return Ok(());
+        }
     }
 
-    // Create backup handler
-    let backup_handler = GameBackup::new(game_config);
-
-    // Show restore confirmation
-    let confirmed = FzfWrapper::confirm_builder()
-        .message(&format!(
-            "🔄 Restore game saves for '{}' from snapshot {}\n\n⚠️  This will overwrite existing save files in:\n   {}\n\nThis action cannot be undone. Are you sure you want to continue?",
-            game_name,
-            &snapshot_id[..8.min(snapshot_id.len())], // Show first 8 characters of snapshot ID
-            save_path.display()
-        ))
-        .yes_text("Restore")
-        .no_text("Cancel")
-        .show()
-        .context("Failed to show restore confirmation dialog")?;
-
-    if confirmed != crate::fzf_wrapper::ConfirmResult::Yes {
+    // Step 6: Show enhanced restore confirmation with security information
+    if !security::create_restore_confirmation(
+        &game_selection.game_name,
+        &snapshot,
+        &security_result,
+        false, // Not forced
+    )? {
+        // User cancelled confirmation
         FzfWrapper::message("Restore cancelled by user.")
             .context("Failed to show cancellation message")?;
         return Ok(());
     }
 
-    // Perform the restore
-    println!("🔄 Restoring game saves for '{}'...", game_name);
+    // Step 7: Perform the restore
+    let save_path = game_selection.installation.save_path.as_path();
+    let backup_handler = GameBackup::new(game_config);
 
-    match backup_handler.restore_game_backup(&game_name, &snapshot_id, save_path) {
+    println!("🔄 Restoring game saves for '{}'...", game_selection.game_name);
+
+    match backup_handler.restore_game_backup(&game_selection.game_name, &snapshot_id, save_path) {
         Ok(output) => {
-            println!("✅ Restore completed successfully for game '{}'!\n\n{}", game_name, output);
+            println!("✅ Restore completed successfully for game '{}'!\n\n{}", game_selection.game_name, output);
+
+            // Invalidate cache for this game after successful restore
+            let repo_path = backup_handler.config.repo.as_path().to_string_lossy().to_string();
+            cache::invalidate_game_cache(&game_selection.game_name, &repo_path);
         }
         Err(e) => {
-            eprintln!("❌ Restore failed for game '{}': {}", game_name, e);
+            eprintln!("❌ Restore failed for game '{}': {}", game_selection.game_name, e);
             return Err(e);
         }
     }

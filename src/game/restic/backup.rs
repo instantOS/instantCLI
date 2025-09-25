@@ -6,7 +6,7 @@ use crate::restic::ResticWrapper;
 
 /// Backup game saves to restic repository with proper tagging
 pub struct GameBackup {
-    config: InstantGameConfig,
+    pub config: InstantGameConfig,
 }
 
 impl GameBackup {
