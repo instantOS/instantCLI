@@ -543,7 +543,9 @@ fn confirm_dialog(
     cmd.arg("--header")
         .arg(prompt) // fzf handles \n correctly in header
         .arg("--prompt")
-        .arg("> "); // Simple prompt
+        .arg("> ") // Simple prompt
+        .arg("--layout")
+        .arg("reverse"); // Put items below header like other dialogs
 
     // Add confirmation dialog styling
     for arg in FzfOptions::confirm_margin_args() {
