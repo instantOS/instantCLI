@@ -4,7 +4,6 @@ pub mod commands;
 pub mod security;
 pub mod snapshot_selection;
 
-use crate::fzf_wrapper::FzfWrapper;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection;
 use anyhow::{Context, Result};

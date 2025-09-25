@@ -1,4 +1,3 @@
-use crate::fzf_wrapper::FzfWrapper;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,

@@ -1,4 +1,3 @@
-use crate::fzf_wrapper::FzfWrapper;
 use crate::game::config::InstantGameConfig;
 use anyhow::{Context, Result};
 
