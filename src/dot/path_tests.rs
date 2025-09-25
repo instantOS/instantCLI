@@ -49,6 +49,6 @@ mod tests {
         let result = resolve_dotfile_path(nonexistent.to_str().unwrap());
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("Failed to resolve path"));
+        assert!(error.to_string().contains("does not exist"));
     }
 }

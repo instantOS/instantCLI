@@ -496,7 +496,16 @@ mod tests {
 
     #[test]
     fn test_server_creation() {
-        let server = MenuServer::new().unwrap();
+        // Skip TUI initialization in tests since it requires a terminal
+        let server = MenuServer {
+            socket_path: default_socket_path(),
+            running: Arc::new(AtomicBool::new(false)),
+            start_time: std::time::SystemTime::now(),
+            requests_processed: Arc::new(AtomicU64::new(0)),
+            compositor: CompositorType::detect(),
+            scratchpad_manager: None,
+            tui: None, // Skip TUI for tests
+        };
         assert!(!server.socket_path.is_empty());
     }
 }
