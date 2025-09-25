@@ -138,7 +138,7 @@ impl FzfOptions {
     fn confirm_margin_args() -> Vec<String> {
         let mut args = vec![
             "--margin".to_string(),
-            "40%,2%".to_string(), // 40% vertical, 2% horizontal
+            "20%,2%".to_string(), // 40% vertical, 2% horizontal
             "--min-height".to_string(),
             "10".to_string(),
         ];
@@ -523,12 +523,74 @@ impl FzfWrapper {
 
     /// Confirmation dialog with yes/no options
     pub fn confirm(message: &str) -> Result<ConfirmResult> {
-        Self::confirm_builder().message(message).show()
+        confirm_dialog(message, "Yes", "No")
     }
 
     /// Create a new confirmation dialog builder
     pub fn confirm_builder() -> ConfirmationDialogBuilder {
         ConfirmationDialogBuilder::new()
+    }
+}
+
+/// Simple confirmation dialog implementation
+fn confirm_dialog(
+    prompt: &str,
+    yes_text: &str,
+    no_text: &str,
+) -> Result<ConfirmResult> {
+    // Build fzf command with project styling
+    let mut cmd = Command::new("fzf");
+    cmd.arg("--header")
+        .arg(prompt) // fzf handles \n correctly in header
+        .arg("--prompt")
+        .arg("> "); // Simple prompt
+
+    // Add confirmation dialog styling
+    for arg in FzfOptions::confirm_margin_args() {
+        cmd.arg(arg);
+    }
+
+    let mut child = cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("Failed to spawn fzf: {}", e))?;
+
+    // Register the process for potential killing if scratchpad becomes invisible
+    let pid = child.id();
+    let _ = crate::menu::server::register_fzf_process(pid);
+
+    // Write options to stdin (newline-separated)
+    let mut stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("Failed to open stdin"))?;
+    use std::io::Write;
+    writeln!(stdin, "{}", yes_text)?;
+    writeln!(stdin, "{}", no_text)?;
+    stdin.flush()?;
+
+    // Wait and capture output
+    let output = child.wait_with_output()?;
+
+    // Unregister the process since it's done
+    crate::menu::server::unregister_fzf_process(pid);
+
+    if !output.status.success() {
+        return Ok(ConfirmResult::Cancelled); // Esc, Ctrl+C, etc.
+    }
+
+    let selected_line = std::str::from_utf8(&output.stdout)?.trim();
+    if selected_line.is_empty() {
+        return Ok(ConfirmResult::Cancelled);
+    }
+
+    // Match selected text
+    if selected_line == yes_text {
+        Ok(ConfirmResult::Yes)
+    } else if selected_line == no_text {
+        Ok(ConfirmResult::No)
+    } else {
+        // Fallback (shouldn't happen)
+        Ok(ConfirmResult::Cancelled)
     }
 }
 
@@ -538,8 +600,6 @@ pub struct ConfirmationDialogBuilder {
     message: String,
     yes_text: String,
     no_text: String,
-    default_yes: bool,
-    custom_options: Vec<ConfirmationItem>,
 }
 
 impl ConfirmationDialogBuilder {
@@ -549,8 +609,6 @@ impl ConfirmationDialogBuilder {
             message: String::new(),
             yes_text: "Yes".to_string(),
             no_text: "No".to_string(),
-            default_yes: true,
-            custom_options: Vec::new(),
         }
     }
 
@@ -572,60 +630,9 @@ impl ConfirmationDialogBuilder {
         self
     }
 
-    /// Set default selection (true = Yes, false = No)
-    pub fn default_yes(mut self, default: bool) -> Self {
-        self.default_yes = default;
-        self
-    }
-
-    /// Add custom confirmation options
-    pub fn custom_options(mut self, options: Vec<ConfirmationItem>) -> Self {
-        self.custom_options = options;
-        self
-    }
-
     /// Show the confirmation dialog
     pub fn show(self) -> Result<ConfirmResult> {
-        let yes_text = self.yes_text.clone();
-        let no_text = self.no_text.clone();
-
-        let items = if self.custom_options.is_empty() {
-            vec![
-                ConfirmationItem {
-                    value: ConfirmResult::Yes,
-                    text: yes_text.clone(),
-                },
-                ConfirmationItem {
-                    value: ConfirmResult::No,
-                    text: no_text.clone(),
-                },
-            ]
-        } else {
-            self.custom_options
-        };
-
-        let wrapper = FzfWrapper::with_options(FzfOptions {
-            header: Some(self.message),
-            prompt: Some(if self.default_yes {
-                format!("> ({yes_text}) ")
-            } else {
-                format!("> ({no_text}) ")
-            }),
-            additional_args: FzfOptions::confirm_margin_args(),
-            ..Default::default()
-        });
-
-        match wrapper.select(items)? {
-            FzfResult::Selected(item) => Ok(item.value),
-            FzfResult::Cancelled => {
-                // When user cancels (ESC), we return Cancelled instead of using default
-                Ok(ConfirmResult::Cancelled)
-            }
-            _ => {
-                // For any other error cases, return Cancelled
-                Ok(ConfirmResult::Cancelled)
-            }
-        }
+        confirm_dialog(&self.message, &self.yes_text, &self.no_text)
     }
 }
 
@@ -718,22 +725,6 @@ impl MessageDialogBuilder {
     }
 }
 
-/// Helper struct for confirmation dialogs
-#[derive(Debug, Clone)]
-pub struct ConfirmationItem {
-    pub value: ConfirmResult,
-    pub text: String,
-}
-
-impl FzfSelectable for ConfirmationItem {
-    fn fzf_display_text(&self) -> String {
-        self.text.clone()
-    }
-
-    fn fzf_key(&self) -> String {
-        self.text.clone()
-    }
-}
 
 // Example implementations
 #[derive(Debug, Clone)]

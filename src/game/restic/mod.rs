@@ -160,6 +160,7 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
     if let Some(ref save_info) = security_result.save_info {
         if !security::check_snapshot_vs_local_saves(&snapshot, save_info, &game_selection.game_name)? {
             // User cancelled due to security warning
+            //TODO: replace with print
             FzfWrapper::message("Restore cancelled due to security warning.")
                 .context("Failed to show security cancellation message")?;
             return Ok(());

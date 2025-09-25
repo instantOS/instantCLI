@@ -36,7 +36,7 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
     let game_name = match game_name {
         Some(name) => name,
         None => match selection::select_game_interactive(
-            Some("Select a game to restore:")
+            None
         )? {
             Some(name) => name,
             None => {
