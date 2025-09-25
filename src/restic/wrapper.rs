@@ -2,11 +2,13 @@ use serde::Deserialize;
 use std::process::Command;
 
 use crate::restic::error::ResticError;
+use crate::restic::logging::ResticCommandLogger;
 
 #[derive(Debug, Clone)]
 pub struct ResticWrapper {
     repository: String,
     password: String,
+    logger: ResticCommandLogger,
 }
 
 impl ResticWrapper {
@@ -14,7 +16,26 @@ impl ResticWrapper {
         Self {
             repository,
             password,
+            logger: ResticCommandLogger::new()
+                .expect("Failed to create restic command logger"),
         }
+    }
+
+    fn execute_and_log_command(&self, mut command: Command, args: &[String]) -> Result<std::process::Output, ResticError> {
+        let output = command.output()
+            .map_err(|e| ResticError::CommandFailed(format!("Failed to execute restic command: {}", e)))?;
+
+        // Log the command execution
+        if let Err(e) = self.logger.log_command(
+            &command.get_program().to_string_lossy(),
+            args,
+            &output,
+            &self.repository,
+        ) {
+            eprintln!("Warning: Failed to log restic command: {}", e);
+        }
+
+        Ok(output)
     }
 
     fn base_command(&self) -> Command {
@@ -26,7 +47,11 @@ impl ResticWrapper {
     }
 
     pub fn repository_exists(&self) -> Result<bool, ResticError> {
-        let output = self.base_command().args(["cat", "config"]).output()?;
+        let mut cmd = self.base_command();
+        cmd.args(["cat", "config"]);
+        let args = vec!["cat".to_string(), "config".to_string()];
+
+        let output = self.execute_and_log_command(cmd, &args)?;
 
         match output.status.code() {
             Some(0) => Ok(true),
@@ -42,13 +67,21 @@ impl ResticWrapper {
     }
 
     pub fn check_version(&self) -> Result<bool, ResticError> {
-        let output = self.base_command().arg("version").output()?;
+        let mut cmd = self.base_command();
+        cmd.arg("version");
+        let args = vec!["version".to_string()];
+
+        let output = self.execute_and_log_command(cmd, &args)?;
 
         Ok(output.status.success())
     }
 
     pub fn init_repository(&self) -> Result<(), ResticError> {
-        let output = self.base_command().args(["init"]).output()?;
+        let mut cmd = self.base_command();
+        cmd.args(["init"]);
+        let args = vec!["init".to_string()];
+
+        let output = self.execute_and_log_command(cmd, &args)?;
 
         if output.status.success() {
             Ok(())
@@ -88,7 +121,9 @@ impl ResticWrapper {
             );
         }
 
-        let output = self.base_command().args(&args).output()?;
+        let mut cmd = self.base_command();
+        cmd.args(&args);
+        let output = self.execute_and_log_command(cmd, &args)?;
 
         if !output.status.success() {
             let code = output.status.code().unwrap_or(1);
@@ -102,7 +137,11 @@ impl ResticWrapper {
 
     pub fn list_snapshots(&self) -> Result<Vec<Snapshot>, ResticError> {
         // Deprecated simple listing: delegate to the filtered listing with no tags
-        let output = self.base_command().args(["snapshots", "--json"]).output()?;
+        let mut cmd = self.base_command();
+        cmd.args(["snapshots", "--json"]);
+        let args = vec!["snapshots".to_string(), "--json".to_string()];
+
+        let output = self.execute_and_log_command(cmd, &args)?;
 
         if !output.status.success() {
             let code = output.status.code().unwrap_or(1);
@@ -129,7 +168,9 @@ impl ResticWrapper {
             }
         }
 
-        let output = self.base_command().args(&args).output()?;
+        let mut cmd = self.base_command();
+        cmd.args(&args);
+        let output = self.execute_and_log_command(cmd, &args)?;
 
         if !output.status.success() {
             let code = output.status.code().unwrap_or(1);
@@ -146,18 +187,19 @@ impl ResticWrapper {
         snapshot_id: &str,
         target_path: &std::path::Path,
     ) -> Result<RestoreProgress, ResticError> {
-        let output = self
-            .base_command()
-            .args([
-                "restore",
-                snapshot_id,
-                "--target",
-                target_path.to_str().ok_or_else(|| {
-                    ResticError::CommandFailed(format!("Invalid target path: {target_path:?}"))
-                })?,
-                "--json",
-            ])
-            .output()?;
+        let args = vec![
+            "restore".to_string(),
+            snapshot_id.to_string(),
+            "--target".to_string(),
+            target_path.to_str().ok_or_else(|| {
+                ResticError::CommandFailed(format!("Invalid target path: {target_path:?}"))
+            })?.to_string(),
+            "--json".to_string(),
+        ];
+
+        let mut cmd = self.base_command();
+        cmd.args(&args);
+        let output = self.execute_and_log_command(cmd, &args)?;
 
         if !output.status.success() {
             let code = output.status.code().unwrap_or(1);
@@ -182,6 +224,10 @@ impl BackupProgress {
         let mut errors = Vec::new();
 
         for line in output.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+
             let value: serde_json::Value = serde_json::from_str(line)?;
 
             if let Some(msg_type) = value.get("message_type") {
@@ -190,7 +236,41 @@ impl BackupProgress {
                         summary = Some(serde_json::from_value(value)?);
                     }
                     Some("error") => {
-                        errors.push(serde_json::from_value(value)?);
+                        // Error messages have nested structure according to docs
+                        if let Some(error_msg) = value.get("error").and_then(|e| e.get("message")) {
+                            let during = value.get("during")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("backup")
+                                .to_string();
+                            let item = value.get("item")
+                                .and_then(|i| i.as_str())
+                                .map(|s| s.to_string());
+
+                            errors.push(BackupError {
+                                message: error_msg.as_str().unwrap_or("Unknown error").to_string(),
+                                during,
+                                item,
+                            });
+                        } else {
+                            // Fallback for different error structure
+                            let message = value.get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("Unknown error")
+                                .to_string();
+                            let during = value.get("during")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("backup")
+                                .to_string();
+                            let item = value.get("item")
+                                .and_then(|i| i.as_str())
+                                .map(|s| s.to_string());
+
+                            errors.push(BackupError {
+                                message,
+                                during,
+                                item,
+                            });
+                        }
                     }
                     _ => {}
                 }
@@ -277,6 +357,10 @@ impl RestoreProgress {
         let mut errors = Vec::new();
 
         for line in output.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+
             let value: serde_json::Value = serde_json::from_str(line)?;
 
             if let Some(msg_type) = value.get("message_type") {
@@ -285,7 +369,41 @@ impl RestoreProgress {
                         summary = Some(serde_json::from_value(value)?);
                     }
                     Some("error") => {
-                        errors.push(serde_json::from_value(value)?);
+                        // Error messages have nested structure according to docs
+                        if let Some(error_msg) = value.get("error").and_then(|e| e.get("message")) {
+                            let during = value.get("during")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("restore")
+                                .to_string();
+                            let item = value.get("item")
+                                .and_then(|i| i.as_str())
+                                .map(|s| s.to_string());
+
+                            errors.push(RestoreError {
+                                message: error_msg.as_str().unwrap_or("Unknown error").to_string(),
+                                during,
+                                item,
+                            });
+                        } else {
+                            // Fallback for different error structure
+                            let message = value.get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("Unknown error")
+                                .to_string();
+                            let during = value.get("during")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("restore")
+                                .to_string();
+                            let item = value.get("item")
+                                .and_then(|i| i.as_str())
+                                .map(|s| s.to_string());
+
+                            errors.push(RestoreError {
+                                message,
+                                during,
+                                item,
+                            });
+                        }
                     }
                     _ => {}
                 }
@@ -304,6 +422,7 @@ pub struct RestoreSummary {
     #[serde(default)]
     pub files_skipped: u64,
     pub files_deleted: u64,
+    #[serde(default)]
     pub total_bytes: u64,
     pub bytes_restored: u64,
     pub bytes_skipped: u64,

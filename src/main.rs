@@ -104,6 +104,24 @@ enum Commands {
         #[command(subcommand)]
         command: ScratchpadCommand,
     },
+    /// Debugging and diagnostic utilities
+    Debug {
+        #[command(subcommand)]
+        command: DebugCommands,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum DebugCommands {
+    /// View restic command logs
+    ResticLogs {
+        /// Number of recent logs to show (default: 10)
+        #[arg(short, long)]
+        limit: Option<usize>,
+        /// Clear all logs
+        #[arg(long)]
+        clear: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -156,6 +174,25 @@ enum DotCommands {
         /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
         path: Option<String>,
     },
+}
+
+fn handle_debug_command(command: DebugCommands) -> Result<()> {
+    use crate::restic::logging::ResticCommandLogger;
+
+    match command {
+        DebugCommands::ResticLogs { limit, clear } => {
+            let logger = ResticCommandLogger::new()?;
+
+            if clear {
+                logger.clear_logs()?;
+                println!("🗑️  Cleared all restic command logs.");
+            } else {
+                logger.print_recent_logs(limit)?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -298,6 +335,13 @@ async fn main() -> Result<()> {
             let compositor = common::compositor::CompositorType::detect();
             let exit_code = command.clone().run(&compositor, cli.debug)?;
             std::process::exit(exit_code);
+        }
+        Some(Commands::Debug { command }) => {
+            execute_with_error_handling(
+                handle_debug_command(command.clone()),
+                "Error handling debug command",
+                None,
+            )?;
         }
         None => {
             println!("instant: run with --help for usage");
