@@ -26,8 +26,8 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
     let config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
     if config.games.is_empty() {
-        FzfWrapper::message("No games configured yet.\n\nUse 'instant game add' to add a game.")
-            .context("Failed to show empty games message")?;
+        println!("No games configured yet.");
+        println!("Use 'instant game add' to add a game.");
         return Ok(None);
     }
 
@@ -41,8 +41,7 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
     match selected {
         Some(game) => Ok(Some(game.name.0)),
         None => {
-            FzfWrapper::message("No game selected.")
-                .context("Failed to show no selection message")?;
+            println!("No game selected.");
             Ok(None)
         }
     }

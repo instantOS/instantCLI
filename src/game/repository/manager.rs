@@ -11,21 +11,17 @@ pub struct RepositoryManager;
 impl RepositoryManager {
     /// Initialize the game save backup system
     pub fn initialize_game_manager(debug: bool) -> Result<()> {
-        FzfWrapper::message("Initializing game save manager...")
-            .context("Failed to show initialization message")?;
+        println!("Initializing game save manager...");
 
         let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
         if config.is_initialized() {
-            FzfWrapper::message(&format!(
-                "Game save manager is already initialized!\n\nCurrent repository: {}",
-                config.repo.to_tilde_string().unwrap_or_else(|_| config
-                    .repo
-                    .as_path()
-                    .to_string_lossy()
-                    .to_string())
-            ))
-            .context("Failed to show already initialized message")?;
+            println!("Game save manager is already initialized!");
+            println!("Current repository: {}", config.repo.to_tilde_string().unwrap_or_else(|_| config
+                .repo
+                .as_path()
+                .to_string_lossy()
+                .to_string()));
             return Ok(());
         }
 
@@ -40,12 +36,9 @@ impl RepositoryManager {
         // Initialize the repository
         if initialize_restic_repo(repo.as_path(), &password, debug)? {
             config.save()?;
-            FzfWrapper::message(&format!(
-                "✓ Game save manager initialized successfully!\n\nRepository: {}",
-                repo.to_tilde_string()
-                    .unwrap_or_else(|_| repo.as_path().to_string_lossy().to_string())
-            ))
-            .context("Failed to show success message")?;
+            println!("✓ Game save manager initialized successfully!");
+            println!("Repository: {}", repo.to_tilde_string()
+                    .unwrap_or_else(|_| repo.as_path().to_string_lossy().to_string()));
         } else {
             return Err(anyhow::anyhow!("Failed to connect to restic repository"));
         }

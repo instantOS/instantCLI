@@ -11,8 +11,8 @@ pub fn list_games() -> Result<()> {
     let config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
     if config.games.is_empty() {
-        FzfWrapper::message("No games configured yet.\n\nUse 'instant game add' to add a game.")
-            .context("Failed to show empty games message")?;
+        println!("No games configured yet.");
+        println!("Use 'instant game add' to add a game.");
         return Ok(());
     }
 

@@ -59,9 +59,8 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
     {
         Some(installation) => installation.clone(),
         None => {
-            FzfWrapper::message(&format!(
-                "❌ Error: No installation found for game '{game_name}'.\n\nPlease add the game first using 'instant game add'."
-            )).context("Failed to show game not found message")?;
+            eprintln!("❌ Error: No installation found for game '{game_name}'.");
+            eprintln!("Please add the game first using 'instant game add'.");
             return Err(anyhow::anyhow!("game installation not found"));
         }
     };
@@ -261,9 +260,8 @@ pub fn validate_snapshot_id(
     match super::cache::get_snapshot_by_id(snapshot_id, game_name, config)? {
         Some(_) => Ok(true),
         None => {
-            FzfWrapper::message(&format!(
-                "❌ Error: Snapshot '{snapshot_id}' not found for game '{game_name}'.\n\nPlease select a valid snapshot."
-            )).context("Failed to show invalid snapshot message")?;
+            eprintln!("❌ Error: Snapshot '{snapshot_id}' not found for game '{game_name}'.");
+            eprintln!("Please select a valid snapshot.");
             Ok(false)
         }
     }

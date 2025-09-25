@@ -1,11 +1,9 @@
-use crate::fzf_wrapper::FzfWrapper;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::*;
 
 /// Handle game save synchronization
 pub fn sync_game_saves(game_name: Option<String>) -> Result<()> {
-    FzfWrapper::message("Sync command not yet implemented")
-        .context("Failed to show not implemented message")?;
+    println!("Sync command not yet implemented");
 
     if let Some(name) = game_name {
         println!("Would sync game: {}", name.cyan());
