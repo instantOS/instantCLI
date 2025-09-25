@@ -541,7 +541,7 @@ fn confirm_dialog(
     // Build fzf command with project styling
     let mut cmd = Command::new("fzf");
     cmd.arg("--header")
-        .arg(prompt) // fzf handles \n correctly in header
+        .arg(format!("{}\n", prompt)) // Add empty line to separate description from options
         .arg("--prompt")
         .arg("> ") // Simple prompt
         .arg("--layout")
