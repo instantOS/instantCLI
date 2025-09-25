@@ -150,10 +150,8 @@ impl RepositoryManager {
             remote_error
         );
 
-        match FzfWrapper::message(&message)
-            .and_then(|_| {
-                FzfWrapper::confirm("Would you like to reconfigure the repository settings?")
-            })
+        FzfWrapper::message(&message)?;
+        match FzfWrapper::confirm("Would you like to reconfigure the repository settings?")
             .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
         {
             crate::fzf_wrapper::ConfirmResult::Yes => {
@@ -172,10 +170,8 @@ impl RepositoryManager {
         // Use message dialog before the interactive prompt
         let message = "❌ Repository Connection Failed:\n\nThe repository connection failed.\nWould you like to reconfigure the repository settings?";
 
-        match FzfWrapper::message(message)
-            .and_then(|_| {
-                FzfWrapper::confirm("Would you like to reconfigure the repository settings?")
-            })
+        FzfWrapper::message(message)?;
+        match FzfWrapper::confirm("Would you like to reconfigure the repository settings?")
             .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
         {
             crate::fzf_wrapper::ConfirmResult::Yes => {
