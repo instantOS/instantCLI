@@ -364,7 +364,8 @@ impl FzfSelectable for EnhancedSnapshot {
     }
 
     fn fzf_key(&self) -> String {
-        self.snapshot.id.clone()
+        // Use the display text as the key since that's what fzf passes to the preview script
+        self.fzf_display_text()
     }
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {

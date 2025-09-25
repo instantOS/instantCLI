@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Write;
 use std::process::Command;
-use tempfile::{NamedTempFile, TempPath};
+use base64::{engine::general_purpose, Engine as _};
 
 /// Preview type for fzf items
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,75 +263,26 @@ struct PreviewData {
 pub struct PreviewUtils;
 
 impl PreviewUtils {
-    /// Create a temporary preview script that can handle preview data
-    pub fn create_preview_script(
-        preview_map: HashMap<String, (String, String)>,
-    ) -> Result<(TempPath, std::path::PathBuf)> {
-        let mut temp_file = NamedTempFile::new()?;
-
-        // Write a shell script that handles both text and command previews
-        let script_content = format!(
-            r#"#!/bin/bash
-key="$1"
-case "$key" in
-{}
-*)
-    echo "No preview available"
-    ;;
-esac
-"#,
-            preview_map
-                .iter()
-                .map(|(key, (preview_type, preview_content))| {
-                    let escaped_key = key.replace("'", "'\\''");
-                    let escaped_content = preview_content.replace("'", "'\\''");
-                    match preview_type.as_str() {
-                        "text" => format!("'{escaped_key}') echo '{escaped_content}' ;;"),
-                        "command" => format!("'{escaped_key}') {escaped_content} ;;"),
-                        _ => format!("'{escaped_key}') echo 'Invalid preview type' ;;"),
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-
-        temp_file.write_all(script_content.as_bytes())?;
-        temp_file.flush()?;
-
-        // Get the path before we do anything else
-        let script_path = temp_file.path().to_path_buf();
-
-        // Make the script executable while it's still open
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&script_path)?.permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&script_path, perms)?;
-        }
-
-        let temp_path = temp_file.into_temp_path();
-        Ok((temp_path, script_path))
-    }
-
-    /// Build preview map from items that implement FzfSelectable
-    pub fn build_preview_map<T: FzfSelectable>(items: &[T]) -> HashMap<String, (String, String)> {
+    /// Build a simple preview mapping using display text directly with better escaping
+    pub fn build_preview_mapping<T: FzfSelectable>(
+        items: &[T],
+    ) -> Result<HashMap<String, String>> {
         let mut preview_map = HashMap::new();
 
         for item in items {
-            let key = item.fzf_key();
+            let display_text = item.fzf_display_text();
             match item.fzf_preview() {
                 FzfPreview::Text(text) => {
-                    preview_map.insert(key, ("text".to_string(), text));
+                    preview_map.insert(display_text, text);
                 }
                 FzfPreview::Command(cmd) => {
-                    preview_map.insert(key, ("command".to_string(), cmd));
+                    preview_map.insert(display_text, cmd);
                 }
                 FzfPreview::None => {}
             }
         }
 
-        preview_map
+        Ok(preview_map)
     }
 }
 
@@ -362,22 +313,15 @@ impl FzfWrapper {
         let mut display_lines = Vec::new();
 
         for item in &items {
-            let key = item.fzf_key();
             let display = item.fzf_display_text();
 
             display_lines.push(display.clone());
-            item_map.insert(key.clone(), item.clone());
+            item_map.insert(display.clone(), item.clone());
         }
 
-        // Create preview script if any items have preview content and keep it alive
-        let preview_map = PreviewUtils::build_preview_map(&items);
-        let _preview_script_keeper = if !preview_map.is_empty() {
-            Some(PreviewUtils::create_preview_script(preview_map)?)
-        } else {
-            None
-        };
-
-        let preview_script_path = _preview_script_keeper.as_ref().map(|(_, path)| path);
+        // Create preview mapping using display text directly
+        let preview_map = PreviewUtils::build_preview_mapping(&items)?;
+        let has_previews = !preview_map.is_empty();
 
         // Build fzf command
         let mut cmd = Command::new("fzf");
@@ -395,10 +339,12 @@ impl FzfWrapper {
             cmd.arg("--header").arg(header);
         }
 
-        // Add preview if we have a preview script
-        if let Some(script_path) = preview_script_path {
-            cmd.arg("--preview")
-                .arg(format!("{} {{}}", script_path.display()));
+        // Add preview using base64 encoding if we have previews
+        if has_previews {
+            cmd.arg("--delimiter=\t")
+                .arg("--with-nth=1")
+                .arg("--preview")
+                .arg("echo {} | cut -f2 | base64 -d");
         }
 
         // Add additional arguments
@@ -407,7 +353,20 @@ impl FzfWrapper {
         }
 
         // Execute fzf with process tracking
-        let input_text = display_lines.join("\n");
+        let input_text = if has_previews {
+            // Format: display_text\tencoded_preview\n
+            display_lines
+                .iter()
+                .map(|display| {
+                    let preview = preview_map.get(display).cloned().unwrap_or_default();
+                    let encoded_preview = general_purpose::STANDARD.encode(preview.as_bytes());
+                    format!("{}\t{}", display, encoded_preview)
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            display_lines.join("\n")
+        };
 
         let mut child = cmd
             .stdin(std::process::Stdio::piped())
@@ -431,8 +390,7 @@ impl FzfWrapper {
         // Unregister the process since it's done
         crate::menu::server::unregister_fzf_process(pid);
 
-        // The preview script is kept alive by _preview_script_keeper
-        // which will be dropped when this function ends, after fzf has finished
+        // The preview script is not needed anymore with base64 approach
 
         match output {
             Ok(result) => {
@@ -455,15 +413,21 @@ impl FzfWrapper {
                 } else if self.options.multi_select {
                     let mut selected_items = Vec::new();
                     for line in selected_lines {
-                        if let Some(item) = item_map.get(line).cloned() {
+                        // Parse tab-separated format: display_text\tencoded_preview
+                        let display_text = line.split('\t').next().unwrap_or(line);
+                        if let Some(item) = item_map.get(display_text).cloned() {
                             selected_items.push(item);
                         }
                     }
                     Ok(FzfResult::MultiSelected(selected_items))
-                } else if let Some(item) = item_map.get(selected_lines[0]).cloned() {
-                    Ok(FzfResult::Selected(item))
                 } else {
-                    Ok(FzfResult::Cancelled)
+                    // Parse tab-separated format: display_text\tencoded_preview
+                    let display_text = selected_lines[0].split('\t').next().unwrap_or(&selected_lines[0]);
+                    if let Some(item) = item_map.get(display_text).cloned() {
+                        Ok(FzfResult::Selected(item))
+                    } else {
+                        Ok(FzfResult::Cancelled)
+                    }
                 }
             }
             Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {e}"))),
