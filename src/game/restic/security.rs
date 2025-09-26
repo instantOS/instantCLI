@@ -110,7 +110,7 @@ pub fn check_snapshot_vs_local_saves(
         Some(time) => time,
         None => {
             // Show warning but allow proceed
-            let confirmed = FzfWrapper::confirm_builder()
+            let confirmed = FzfWrapper::builder()
                 .message(format!(
                     "⚠️  Security Warning for '{game_name}':\n\nLocal save files exist but modification time cannot be determined.\n\nRestoring from snapshot might overwrite existing saves.\n\nDo you want to continue?"
                 ))
@@ -133,7 +133,7 @@ pub fn check_snapshot_vs_local_saves(
             let local_time_str = format_system_time_for_display(Some(local_modified_time));
             let snapshot_time_str = format_snapshot_time_for_display(&snapshot.time);
 
-            let confirmed = FzfWrapper::confirm_builder()
+            let confirmed = FzfWrapper::builder()
                 .message(format!(
                     "⚠️  CRITICAL Security Warning for '{game_name}':\n\nLocal saves are NEWER than the selected snapshot!\n\n📅 Local saves modified: {local_time_str}\n📅 Snapshot created:   {snapshot_time_str}\n\nRestoring will OVERWRITE newer local saves with older data.\n\nThis action cannot be undone. Are you absolutely sure?"
                 ))
@@ -149,7 +149,7 @@ pub fn check_snapshot_vs_local_saves(
             let local_time_str = format_system_time_for_display(Some(local_modified_time));
             let snapshot_time_str = format_snapshot_time_for_display(&snapshot.time);
 
-            let confirmed = FzfWrapper::confirm_builder()
+            let confirmed = FzfWrapper::builder()
                 .message(format!(
                     "📋 Restore Summary for '{}':\n\nSnapshot is newer than local saves.\n\n📅 Local saves modified: {}\n📅 Snapshot created:   {}\n📁 Local save files:   {} ({})\n\nDo you want to continue with the restore?",
                     game_name, local_time_str, snapshot_time_str, save_info.file_count, format_file_size(save_info.total_size)
@@ -167,7 +167,7 @@ pub fn check_snapshot_vs_local_saves(
         }
         TimeComparison::Error(msg) => {
             // Error in comparison - warn but allow
-            let confirmed = FzfWrapper::confirm_builder()
+            let confirmed = FzfWrapper::builder()
                 .message(format!(
                     "⚠️  Warning for '{game_name}':\n\nCould not compare snapshot and local save times: {msg}\n\nRestoring might overwrite existing saves.\n\nDo you want to continue?"
                 ))
@@ -242,7 +242,7 @@ pub fn create_restore_confirmation(
 
     message.push_str("\n⚠️  This will overwrite existing save files.\nThis action cannot be undone.\n\nAre you sure you want to continue?");
 
-    let confirmed = FzfWrapper::confirm_builder()
+    let confirmed = FzfWrapper::builder()
         .message(&message)
         .yes_text("Restore")
         .no_text("Cancel")

@@ -1,5 +1,5 @@
 use super::protocol::*;
-use crate::fzf_wrapper::{FzfOptions, FzfWrapper};
+use crate::fzf_wrapper::FzfWrapper;
 use anyhow::Result;
 use std::sync::{
     Arc,
@@ -61,26 +61,21 @@ impl RequestProcessor {
             return Ok(MenuResponse::Error("No items to choose from".to_string()));
         }
 
-        let wrapper = FzfWrapper::with_options(FzfOptions {
-            prompt: Some(prompt),
-            multi_select: multi,
-            ..Default::default()
-        });
-
-        match wrapper.select(items) {
-            Ok(crate::fzf_wrapper::FzfResult::Selected(item)) => {
+        match FzfWrapper::builder()
+            .prompt(prompt)
+            .multi_select(multi)
+            .select(items)?
+        {
+            crate::fzf_wrapper::FzfResult::Selected(item) => {
                 Ok(MenuResponse::ChoiceResult(vec![item]))
             }
-            Ok(crate::fzf_wrapper::FzfResult::MultiSelected(items)) => {
+            crate::fzf_wrapper::FzfResult::MultiSelected(items) => {
                 Ok(MenuResponse::ChoiceResult(items))
             }
-            Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
-            Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {
+            crate::fzf_wrapper::FzfResult::Cancelled => Ok(MenuResponse::Cancelled),
+            crate::fzf_wrapper::FzfResult::Error(e) => {
                 Ok(MenuResponse::Error(format!("Selection error: {e}")))
             }
-            Err(e) => Ok(MenuResponse::Error(format!(
-                "Failed to show selection dialog: {e}"
-            ))),
         }
     }
 

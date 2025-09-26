@@ -30,122 +30,18 @@ pub trait FzfSelectable {
     }
 }
 
-/// Configuration for fzf behavior
-#[derive(Debug, Clone)]
-pub struct FzfOptions {
-    pub multi_select: bool,
-    pub prompt: Option<String>,
-    pub header: Option<String>,
-    pub additional_args: Vec<String>,
+/// Simplified FZF wrapper with unified builder pattern
+pub struct FzfWrapper {
+    multi_select: bool,
+    prompt: Option<String>,
+    header: Option<String>,
+    additional_args: Vec<String>,
 }
 
-impl Default for FzfOptions {
-    fn default() -> Self {
-        Self {
-            multi_select: false,
-            prompt: None,
-            header: None,
-            additional_args: Self::default_margin_args(),
-        }
-    }
-}
-
-impl FzfOptions {
-    /// Create a new FzfOptions with default settings
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set multi-select mode
-    pub fn multi_select(mut self, multi: bool) -> Self {
-        self.multi_select = multi;
-        self
-    }
-
-    /// Set the prompt text
-    pub fn prompt<S: Into<String>>(mut self, prompt: S) -> Self {
-        self.prompt = Some(prompt.into());
-        self
-    }
-
-    /// Set the header text (supports multi-line)
-    pub fn header<S: Into<String>>(mut self, header: S) -> Self {
-        self.header = Some(header.into());
-        self
-    }
-
-    /// Add additional arguments
-    pub fn args<I, S>(mut self, args: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: Into<String>,
-    {
-        self.additional_args
-            .extend(args.into_iter().map(Into::into));
-        self
-    }
-
-    /// Default margin arguments used across the application
-    fn default_margin_args() -> Vec<String> {
-        let mut args = vec![
-            "--margin".to_string(),
-            "10%,2%".to_string(), // 10% vertical, 2% horizontal
-            "--min-height".to_string(),
-            "10".to_string(),
-        ];
-
-        // Add catppuccin theme colors
-        args.extend(Self::catppuccin_theme_args());
-        args
-    }
-
-    /// Catppuccin theme colors for fzf
-    fn catppuccin_theme_args() -> Vec<String> {
-        vec![
-            "--color=bg+:#313244".to_string(),
-            "--color=bg:#1E1E2E".to_string(),
-            "--color=spinner:#F5E0DC".to_string(),
-            "--color=hl:#F38BA8".to_string(),
-            "--color=fg:#CDD6F4".to_string(),
-            "--color=header:#F38BA8".to_string(),
-            "--color=info:#CBA6F7".to_string(),
-            "--color=pointer:#F5E0DC".to_string(),
-            "--color=marker:#B4BEFE".to_string(),
-            "--color=fg+:#CDD6F4".to_string(),
-            "--color=prompt:#CBA6F7".to_string(),
-            "--color=hl+:#F38BA8".to_string(),
-            "--color=selected-bg:#45475A".to_string(),
-            "--color=border:#6C7086".to_string(),
-            "--color=label:#CDD6F4".to_string(),
-        ]
-    }
-
-    /// Margin arguments for input dialogs (larger vertical margin)
-    fn input_margin_args() -> Vec<String> {
-        let mut args = vec![
-            "--margin".to_string(),
-            "20%,2%".to_string(), // 20% vertical, 2% horizontal
-            "--min-height".to_string(),
-            "10".to_string(),
-        ];
-
-        // Add catppuccin theme colors
-        args.extend(Self::catppuccin_theme_args());
-        args
-    }
-
-    /// Margin arguments for confirmation dialogs (largest vertical margin)
-    fn confirm_margin_args() -> Vec<String> {
-        let mut args = vec![
-            "--margin".to_string(),
-            "20%,2%".to_string(), // 40% vertical, 2% horizontal
-            "--min-height".to_string(),
-            "10".to_string(),
-        ];
-
-        // Add catppuccin theme colors
-        args.extend(Self::catppuccin_theme_args());
-        args
+impl FzfWrapper {
+    /// Create a new builder for configuring FZF
+    pub fn builder() -> FzfBuilder {
+        FzfBuilder::new()
     }
 }
 
@@ -166,35 +62,57 @@ pub enum ConfirmResult {
     Cancelled,
 }
 
-/// Builder for creating FzfWrapper instances with ergonomic configuration
+/// Unified builder for all FZF operations
 #[derive(Debug, Clone)]
-pub struct FzfWrapperBuilder {
-    options: FzfOptions,
+pub struct FzfBuilder {
+    multi_select: bool,
+    prompt: Option<String>,
+    header: Option<String>,
+    additional_args: Vec<String>,
+    dialog_type: DialogType,
 }
 
-impl FzfWrapperBuilder {
-    /// Create a new builder with default options
+#[derive(Debug, Clone)]
+enum DialogType {
+    Selection,
+    Input,
+    Confirmation {
+        yes_text: String,
+        no_text: String,
+    },
+    Message {
+        ok_text: String,
+        title: Option<String>,
+    },
+}
+
+impl FzfBuilder {
+    /// Create a new builder with default selection options
     pub fn new() -> Self {
         Self {
-            options: FzfOptions::default(),
+            multi_select: false,
+            prompt: None,
+            header: None,
+            additional_args: Self::default_args(),
+            dialog_type: DialogType::Selection,
         }
     }
 
     /// Enable multi-select mode
-    pub fn multi_select(mut self) -> Self {
-        self.options.multi_select = true;
+    pub fn multi_select(mut self, multi: bool) -> Self {
+        self.multi_select = multi;
         self
     }
 
     /// Set the prompt text
     pub fn prompt<S: Into<String>>(mut self, prompt: S) -> Self {
-        self.options.prompt = Some(prompt.into());
+        self.prompt = Some(prompt.into());
         self
     }
 
     /// Set the header text (supports multi-line)
     pub fn header<S: Into<String>>(mut self, header: S) -> Self {
-        self.options.header = Some(header.into());
+        self.header = Some(header.into());
         self
     }
 
@@ -204,51 +122,335 @@ impl FzfWrapperBuilder {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.options
-            .additional_args
+        self.additional_args
             .extend(args.into_iter().map(Into::into));
         self
     }
 
-    /// Use default margin styling
-    pub fn default_margin(self) -> Self {
-        self.args(FzfOptions::default_margin_args())
+    /// Configure for text input mode
+    pub fn input(mut self) -> Self {
+        self.dialog_type = DialogType::Input;
+        self.additional_args = Self::input_args();
+        self
     }
 
-    /// Use input dialog margin styling
-    pub fn input_margin(self) -> Self {
-        self.args(FzfOptions::input_margin_args())
+    /// Configure for confirmation dialog
+    pub fn confirm<S: Into<String>>(mut self, message: S) -> Self {
+        self.dialog_type = DialogType::Confirmation {
+            yes_text: "Yes".to_string(),
+            no_text: "No".to_string(),
+        };
+        self.header = Some(message.into());
+        self.additional_args = Self::confirm_args();
+        self
     }
 
-    /// Use confirmation dialog margin styling
-    pub fn confirm_margin(self) -> Self {
-        self.args(FzfOptions::confirm_margin_args())
+    /// Set custom yes/no text for confirmation
+    pub fn yes_text<S: Into<String>>(mut self, text: S) -> Self {
+        if let DialogType::Confirmation {
+            yes_text,
+            no_text: _,
+        } = &mut self.dialog_type
+        {
+            *yes_text = text.into();
+        }
+        self
     }
 
-    /// Build the FzfWrapper instance
-    pub fn build(self) -> FzfWrapper {
-        FzfWrapper::with_options(self.options)
+    /// Set custom no text for confirmation
+    pub fn no_text<S: Into<String>>(mut self, text: S) -> Self {
+        if let DialogType::Confirmation {
+            yes_text: _,
+            no_text,
+        } = &mut self.dialog_type
+        {
+            *no_text = text.into();
+        }
+        self
     }
 
-    /// Convenience method to select items directly
+    /// Configure for message dialog
+    pub fn message<S: Into<String>>(mut self, message: S) -> Self {
+        self.dialog_type = DialogType::Message {
+            ok_text: "OK".to_string(),
+            title: None,
+        };
+        self.header = Some(message.into());
+        self.additional_args = Self::confirm_args();
+        self
+    }
+
+    /// Set custom OK text for message
+    pub fn ok_text<S: Into<String>>(mut self, text: S) -> Self {
+        if let DialogType::Message { ok_text, title: _ } = &mut self.dialog_type {
+            *ok_text = text.into();
+        }
+        self
+    }
+
+    /// Set title for message dialog
+    pub fn title<S: Into<String>>(mut self, title: S) -> Self {
+        if let DialogType::Message {
+            ok_text: _,
+            title: existing_title,
+        } = &mut self.dialog_type
+        {
+            *existing_title = Some(title.into());
+        }
+        self
+    }
+
+    /// Execute selection dialog
     pub fn select<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
-        self.build().select(items)
+        let wrapper = FzfWrapper {
+            multi_select: self.multi_select,
+            prompt: self.prompt,
+            header: self.header,
+            additional_args: self.additional_args,
+        };
+        wrapper.select(items)
     }
 
-    /// Convenience method to select one item
-    pub fn select_one<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<Option<T>> {
-        FzfWrapper::select_one(items)
+    /// Execute input dialog
+    pub fn input_dialog(self) -> Result<String> {
+        if !matches!(self.dialog_type, DialogType::Input) {
+            return Err(anyhow::anyhow!("Builder not configured for input"));
+        }
+        self.execute_input()
     }
 
-    /// Convenience method to select multiple items
-    pub fn select_many<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<Vec<T>> {
-        FzfWrapper::select_many(items)
+    /// Execute confirmation dialog
+    pub fn confirm_dialog(self) -> Result<ConfirmResult> {
+        if !matches!(self.dialog_type, DialogType::Confirmation { .. }) {
+            return Err(anyhow::anyhow!("Builder not configured for confirmation"));
+        }
+        self.execute_confirm()
+    }
+
+    /// Execute confirmation dialog
+    pub fn show(self) -> Result<ConfirmResult> {
+        self.confirm_dialog()
+    }
+
+    /// Execute message dialog
+    pub fn message_dialog(self) -> Result<()> {
+        if !matches!(self.dialog_type, DialogType::Message { .. }) {
+            return Err(anyhow::anyhow!("Builder not configured for message"));
+        }
+        self.execute_message()
+    }
+
+    /// Default arguments for selection
+    fn default_args() -> Vec<String> {
+        let mut args = vec![
+            "--margin".to_string(),
+            "10%,2%".to_string(),
+            "--min-height".to_string(),
+            "10".to_string(),
+        ];
+        args.extend(Self::theme_args());
+        args
+    }
+
+    /// Arguments for input dialogs
+    fn input_args() -> Vec<String> {
+        let mut args = vec![
+            "--margin".to_string(),
+            "20%,2%".to_string(),
+            "--min-height".to_string(),
+            "10".to_string(),
+        ];
+        args.extend(Self::theme_args());
+        args
+    }
+
+    /// Arguments for confirmation/message dialogs
+    fn confirm_args() -> Vec<String> {
+        let mut args = vec![
+            "--margin".to_string(),
+            "20%,2%".to_string(),
+            "--min-height".to_string(),
+            "10".to_string(),
+        ];
+        args.extend(Self::theme_args());
+        args
+    }
+
+    /// Catppuccin theme colors
+    fn theme_args() -> Vec<String> {
+        vec![
+            "--color=bg+:#313244".to_string(),
+            "--color=bg:#1E1E2E".to_string(),
+            "--color=spinner:#F5E0DC".to_string(),
+            "--color=hl:#F38BA8".to_string(),
+            "--color=fg:#CDD6F4".to_string(),
+            "--color=header:#F38BA8".to_string(),
+            "--color=info:#CBA6F7".to_string(),
+            "--color=pointer:#F5E0DC".to_string(),
+            "--color=marker:#B4BEFE".to_string(),
+            "--color=fg+:#CDD6F4".to_string(),
+            "--color=prompt:#CBA6F7".to_string(),
+            "--color=hl+:#F38BA8".to_string(),
+            "--color=selected-bg:#45475A".to_string(),
+            "--color=border:#6C7086".to_string(),
+            "--color=label:#CDD6F4".to_string(),
+        ]
     }
 }
 
-/// Main fzf wrapper struct
-pub struct FzfWrapper {
-    options: FzfOptions,
+// Internal execution methods for FzfBuilder
+impl FzfBuilder {
+    fn execute_input(self) -> Result<String> {
+        let mut cmd = Command::new("fzf");
+        cmd.arg("--print-query").arg("--no-info");
+
+        if let Some(prompt) = &self.prompt {
+            cmd.arg("--prompt").arg(format!("{prompt} "));
+        }
+
+        for arg in self.additional_args {
+            cmd.arg(arg);
+        }
+
+        let mut child = cmd
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+
+        let pid = child.id();
+        let _ = crate::menu::server::register_fzf_process(pid);
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(b"")?;
+        }
+
+        let output = child.wait_with_output()?;
+        crate::menu::server::unregister_fzf_process(pid);
+
+        if let Some(code) = output.status.code() {
+            if code == 130 || code == 143 {
+                return Ok(String::new());
+            }
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let lines: Vec<&str> = stdout.trim().split('\n').collect();
+
+        if let Some(query) = lines.first() {
+            Ok(query.trim().to_string())
+        } else {
+            Ok(String::new())
+        }
+    }
+
+    fn execute_confirm(self) -> Result<ConfirmResult> {
+        let (yes_text, no_text) =
+            if let DialogType::Confirmation { yes_text, no_text } = self.dialog_type {
+                (yes_text, no_text)
+            } else {
+                return Ok(ConfirmResult::Cancelled);
+            };
+
+        let mut cmd = Command::new("fzf");
+        cmd.arg("--layout").arg("reverse");
+
+        if let Some(header) = &self.header {
+            cmd.arg("--header").arg(format!("{header}\n"));
+        }
+
+        cmd.arg("--prompt").arg("> ");
+
+        for arg in self.additional_args {
+            cmd.arg(arg);
+        }
+
+        let mut child = cmd
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+
+        let pid = child.id();
+        let _ = crate::menu::server::register_fzf_process(pid);
+
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to open stdin"))?;
+        writeln!(stdin, "{yes_text}")?;
+        writeln!(stdin, "{no_text}")?;
+        stdin.flush()?;
+
+        let output = child.wait_with_output()?;
+        crate::menu::server::unregister_fzf_process(pid);
+
+        if !output.status.success() {
+            return Ok(ConfirmResult::Cancelled);
+        }
+
+        let selected_line = std::str::from_utf8(&output.stdout)?.trim();
+        if selected_line.is_empty() {
+            return Ok(ConfirmResult::Cancelled);
+        }
+
+        if selected_line == yes_text {
+            Ok(ConfirmResult::Yes)
+        } else if selected_line == no_text {
+            Ok(ConfirmResult::No)
+        } else {
+            Ok(ConfirmResult::Cancelled)
+        }
+    }
+
+    fn execute_message(self) -> Result<()> {
+        let (ok_text, title) = if let DialogType::Message { ok_text, title } = self.dialog_type {
+            (ok_text, title)
+        } else {
+            return Ok(());
+        };
+
+        let mut cmd = Command::new("fzf");
+        cmd.arg("--layout").arg("reverse");
+
+        if let Some(title) = &title {
+            if let Some(header) = &self.header {
+                cmd.arg("--header").arg(format!("{}\n\n{}", title, header));
+            }
+        } else if let Some(header) = &self.header {
+            cmd.arg("--header").arg(header);
+        }
+
+        cmd.arg("--prompt").arg("- ");
+
+        for arg in self.additional_args {
+            cmd.arg(arg);
+        }
+
+        let mut child = cmd
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+
+        let pid = child.id();
+        let _ = crate::menu::server::register_fzf_process(pid);
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(ok_text.as_bytes())?;
+        }
+
+        let output = child.wait_with_output()?;
+        crate::menu::server::unregister_fzf_process(pid);
+
+        if let Some(code) = output.status.code() {
+            if code == 130 || code == 143 {
+                return Ok(());
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Internal structure for JSON serialization to the preview script
@@ -285,19 +487,18 @@ impl PreviewUtils {
 }
 
 impl FzfWrapper {
-    pub fn new() -> Self {
+    fn new(
+        multi_select: bool,
+        prompt: Option<String>,
+        header: Option<String>,
+        additional_args: Vec<String>,
+    ) -> Self {
         Self {
-            options: FzfOptions::default(),
+            multi_select,
+            prompt,
+            header,
+            additional_args,
         }
-    }
-
-    pub fn with_options(options: FzfOptions) -> Self {
-        Self { options }
-    }
-
-    /// Create a builder for configuring FzfWrapper
-    pub fn builder() -> FzfWrapperBuilder {
-        FzfWrapperBuilder::new()
     }
 
     /// Select from a vector of FzfSelectable items
@@ -306,38 +507,33 @@ impl FzfWrapper {
             return Ok(FzfResult::Cancelled);
         }
 
-        // Create a mapping from display text to original items
         let mut item_map: HashMap<String, T> = HashMap::new();
         let mut display_lines = Vec::new();
 
         for item in &items {
             let display = item.fzf_display_text();
-
             display_lines.push(display.clone());
             item_map.insert(display.clone(), item.clone());
         }
 
-        // Create preview mapping using display text directly
         let preview_map = PreviewUtils::build_preview_mapping(&items)?;
         let has_previews = !preview_map.is_empty();
 
-        // Build fzf command
         let mut cmd = Command::new("fzf");
         cmd.arg("--tiebreak=index");
 
-        if self.options.multi_select {
+        if self.multi_select {
             cmd.arg("--multi");
         }
 
-        if let Some(prompt) = &self.options.prompt {
+        if let Some(prompt) = &self.prompt {
             cmd.arg("--prompt").arg(format!("{prompt} > "));
         }
 
-        if let Some(header) = &self.options.header {
+        if let Some(header) = &self.header {
             cmd.arg("--header").arg(header);
         }
 
-        // Add preview using base64 encoding if we have previews
         if has_previews {
             cmd.arg("--delimiter=\t")
                 .arg("--with-nth=1")
@@ -345,14 +541,11 @@ impl FzfWrapper {
                 .arg("echo {} | cut -f2 | base64 -d");
         }
 
-        // Add additional arguments
-        for arg in &self.options.additional_args {
+        for arg in &self.additional_args {
             cmd.arg(arg);
         }
 
-        // Execute fzf with process tracking
         let input_text = if has_previews {
-            // Format: display_text\tencoded_preview\n
             display_lines
                 .iter()
                 .map(|display| {
@@ -372,27 +565,18 @@ impl FzfWrapper {
             .stderr(std::process::Stdio::piped())
             .spawn()?;
 
-        // Register the process for potential killing if scratchpad becomes invisible
         let pid = child.id();
         let _ = crate::menu::server::register_fzf_process(pid);
 
-        // Write input to stdin
         if let Some(stdin) = child.stdin.as_mut() {
-            use std::io::Write;
             stdin.write_all(input_text.as_bytes())?;
         }
 
-        // Wait for the process to complete
         let output = child.wait_with_output();
-
-        // Unregister the process since it's done
         crate::menu::server::unregister_fzf_process(pid);
-
-        // The preview script is not needed anymore with base64 approach
 
         match output {
             Ok(result) => {
-                // Check if fzf was cancelled (exit code 130) or killed (exit code 143)
                 if let Some(code) = result.status.code() {
                     if code == 130 || code == 143 {
                         return Ok(FzfResult::Cancelled);
@@ -408,10 +592,9 @@ impl FzfWrapper {
 
                 if selected_lines.is_empty() {
                     Ok(FzfResult::Cancelled)
-                } else if self.options.multi_select {
+                } else if self.multi_select {
                     let mut selected_items = Vec::new();
                     for line in selected_lines {
-                        // Parse tab-separated format: display_text\tencoded_preview
                         let display_text = line.split('\t').next().unwrap_or(line);
                         if let Some(item) = item_map.get(display_text).cloned() {
                             selected_items.push(item);
@@ -419,7 +602,6 @@ impl FzfWrapper {
                     }
                     Ok(FzfResult::MultiSelected(selected_items))
                 } else {
-                    // Parse tab-separated format: display_text\tencoded_preview
                     let display_text = selected_lines[0]
                         .split('\t')
                         .next()
@@ -436,12 +618,11 @@ impl FzfWrapper {
     }
 }
 
-// Convenience methods
+// Convenience static methods
 impl FzfWrapper {
     /// Quick single selection with default options
     pub fn select_one<T: FzfSelectable + Clone>(items: Vec<T>) -> Result<Option<T>> {
-        let wrapper = FzfWrapper::new();
-        match wrapper.select(items)? {
+        match Self::builder().select(items)? {
             FzfResult::Selected(item) => Ok(Some(item)),
             _ => Ok(None),
         }
@@ -449,11 +630,7 @@ impl FzfWrapper {
 
     /// Quick multi-selection with default options
     pub fn select_many<T: FzfSelectable + Clone>(items: Vec<T>) -> Result<Vec<T>> {
-        let wrapper = FzfWrapper::with_options(FzfOptions {
-            multi_select: true,
-            ..Default::default()
-        });
-        match wrapper.select(items)? {
+        match Self::builder().multi_select(true).select(items)? {
             FzfResult::MultiSelected(items) => Ok(items),
             FzfResult::Selected(item) => Ok(vec![item]),
             _ => Ok(vec![]),
@@ -462,268 +639,32 @@ impl FzfWrapper {
 
     /// Text input mode for getting user input
     pub fn input(prompt: &str) -> Result<String> {
-        let mut cmd = Command::new("fzf");
-        cmd.arg("--print-query")
-            .arg("--no-info")
-            .arg("--prompt")
-            .arg(format!("{prompt} "));
-
-        // Add input-specific margin arguments
-        for arg in FzfOptions::input_margin_args() {
-            cmd.arg(arg);
-        }
-
-        let mut child = cmd
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
-
-        // Register the process for potential killing if scratchpad becomes invisible
-        let pid = child.id();
-        let _ = crate::menu::server::register_fzf_process(pid);
-
-        // Write empty input to stdin
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(b"")?;
-        }
-
-        // Wait for the process to complete
-        let output = child.wait_with_output()?;
-
-        // Unregister the process since it's done
-        crate::menu::server::unregister_fzf_process(pid);
-
-        // Check if fzf was cancelled (exit code 130) or killed (exit code 143)
-        if let Some(code) = output.status.code() {
-            if code == 130 || code == 143 {
-                return Ok(String::new());
-            }
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let lines: Vec<&str> = stdout.trim().split('\n').collect();
-
-        // With --print-query, the first line is the query
-        if let Some(query) = lines.first() {
-            Ok(query.trim().to_string())
-        } else {
-            Ok(String::new())
-        }
+        Self::builder().prompt(prompt).input().input_dialog()
     }
 
     /// Display a popup message with OK button
     pub fn message(message: &str) -> Result<()> {
-        Self::message_builder().message(message).show()
-    }
-
-    /// Create a new message dialog builder
-    pub fn message_builder() -> MessageDialogBuilder {
-        MessageDialogBuilder::new()
+        Self::builder().message(message).message_dialog()
     }
 
     /// Confirmation dialog with yes/no options
     pub fn confirm(message: &str) -> Result<ConfirmResult> {
-        confirm_dialog(message, "Yes", "No")
+        Self::builder().confirm(message).confirm_dialog()
     }
 
-    /// Create a new confirmation dialog builder
-    pub fn confirm_builder() -> ConfirmationDialogBuilder {
-        ConfirmationDialogBuilder::new()
-    }
-}
-
-/// Simple confirmation dialog implementation
-fn confirm_dialog(prompt: &str, yes_text: &str, no_text: &str) -> Result<ConfirmResult> {
-    // Build fzf command with project styling
-    let mut cmd = Command::new("fzf");
-    cmd.arg("--header")
-        .arg(format!("{prompt}\n")) // Add empty line to separate description from options
-        .arg("--prompt")
-        .arg("> ") // Simple prompt
-        .arg("--layout")
-        .arg("reverse"); // Put items below header like other dialogs
-
-    // Add confirmation dialog styling
-    for arg in FzfOptions::confirm_margin_args() {
-        cmd.arg(arg);
+    /// Input dialog with custom prompt
+    pub fn input_dialog(prompt: &str) -> Result<String> {
+        Self::builder().prompt(prompt).input().input_dialog()
     }
 
-    let mut child = cmd
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn fzf: {}", e))?;
-
-    // Register the process for potential killing if scratchpad becomes invisible
-    let pid = child.id();
-    let _ = crate::menu::server::register_fzf_process(pid);
-
-    // Write options to stdin (newline-separated)
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("Failed to open stdin"))?;
-    use std::io::Write;
-    writeln!(stdin, "{yes_text}")?;
-    writeln!(stdin, "{no_text}")?;
-    stdin.flush()?;
-
-    // Wait and capture output
-    let output = child.wait_with_output()?;
-
-    // Unregister the process since it's done
-    crate::menu::server::unregister_fzf_process(pid);
-
-    if !output.status.success() {
-        return Ok(ConfirmResult::Cancelled); // Esc, Ctrl+C, etc.
+    /// Message dialog with custom text
+    pub fn message_dialog(message: &str) -> Result<()> {
+        Self::builder().message(message).message_dialog()
     }
 
-    let selected_line = std::str::from_utf8(&output.stdout)?.trim();
-    if selected_line.is_empty() {
-        return Ok(ConfirmResult::Cancelled);
-    }
-
-    // Match selected text
-    if selected_line == yes_text {
-        Ok(ConfirmResult::Yes)
-    } else if selected_line == no_text {
-        Ok(ConfirmResult::No)
-    } else {
-        // Fallback (shouldn't happen)
-        Ok(ConfirmResult::Cancelled)
-    }
-}
-
-/// Builder for creating confirmation dialogs with multi-line support
-#[derive(Debug, Clone)]
-pub struct ConfirmationDialogBuilder {
-    message: String,
-    yes_text: String,
-    no_text: String,
-}
-
-impl ConfirmationDialogBuilder {
-    /// Create a new confirmation dialog builder
-    pub fn new() -> Self {
-        Self {
-            message: String::new(),
-            yes_text: "Yes".to_string(),
-            no_text: "No".to_string(),
-        }
-    }
-
-    /// Set the confirmation message (supports multi-line text)
-    pub fn message<S: Into<String>>(mut self, message: S) -> Self {
-        self.message = message.into();
-        self
-    }
-
-    /// Set custom Yes button text
-    pub fn yes_text<S: Into<String>>(mut self, text: S) -> Self {
-        self.yes_text = text.into();
-        self
-    }
-
-    /// Set custom No button text
-    pub fn no_text<S: Into<String>>(mut self, text: S) -> Self {
-        self.no_text = text.into();
-        self
-    }
-
-    /// Show the confirmation dialog
-    pub fn show(self) -> Result<ConfirmResult> {
-        confirm_dialog(&self.message, &self.yes_text, &self.no_text)
-    }
-}
-
-/// Builder for creating message dialogs with multi-line support
-#[derive(Debug, Clone)]
-pub struct MessageDialogBuilder {
-    message: String,
-    ok_text: String,
-    title: Option<String>,
-}
-
-impl MessageDialogBuilder {
-    /// Create a new message dialog builder
-    pub fn new() -> Self {
-        Self {
-            message: String::new(),
-            ok_text: "OK".to_string(),
-            title: None,
-        }
-    }
-
-    /// Set the message content (supports multi-line text)
-    pub fn message<S: Into<String>>(mut self, message: S) -> Self {
-        self.message = message.into();
-        self
-    }
-
-    /// Set custom OK button text
-    pub fn ok_text<S: Into<String>>(mut self, text: S) -> Self {
-        self.ok_text = text.into();
-        self
-    }
-
-    /// Set a title for the message dialog
-    pub fn title<S: Into<String>>(mut self, title: S) -> Self {
-        self.title = Some(title.into());
-        self
-    }
-
-    /// Show the message dialog
-    pub fn show(self) -> Result<()> {
-        let mut cmd = Command::new("fzf");
-        cmd.arg("--layout").arg("reverse");
-
-        // Add header if we have a title, otherwise use message as header
-        if let Some(title) = &self.title {
-            cmd.arg("--header")
-                .arg(format!("{}\n\n{}", title, self.message));
-        } else {
-            cmd.arg("--header").arg(&self.message);
-        }
-
-        cmd.arg("--prompt").arg("- ");
-
-        // Add confirmation margin arguments for better popup appearance
-        for arg in FzfOptions::confirm_margin_args() {
-            cmd.arg(arg);
-        }
-
-        let mut child = cmd
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
-
-        // Register the process for potential killing if scratchpad becomes invisible
-        let pid = child.id();
-        let _ = crate::menu::server::register_fzf_process(pid);
-
-        // Write OK text to stdin as the selectable item
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(self.ok_text.as_bytes())?;
-        }
-
-        // Wait for the process to complete
-        let output = child.wait_with_output()?;
-
-        // Unregister the process since it's done
-        crate::menu::server::unregister_fzf_process(pid);
-
-        // Check if fzf was cancelled (exit code 130) or killed (exit code 143)
-        if let Some(code) = output.status.code() {
-            if code == 130 || code == 143 {
-                return Ok(()); // User cancelled, that's fine for a message
-            }
-        }
-
-        // For message dialog, we don't care about the selection, just display it
-        Ok(())
+    /// Confirmation dialog with custom message
+    pub fn confirm_dialog(message: &str) -> Result<ConfirmResult> {
+        Self::builder().confirm(message).confirm_dialog()
     }
 }
 

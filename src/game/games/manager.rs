@@ -85,8 +85,8 @@ impl GameManager {
         let game = &config.games[game_index];
 
         // Show game details and ask for confirmation with improved formatting
-        match FzfWrapper::confirm_builder()
-            .message(format!(
+        match FzfWrapper::builder()
+            .confirm(format!(
                 "Are you sure you want to remove the following game?\n\n\
                  Game: {}\n\
                  Description: {}\n\

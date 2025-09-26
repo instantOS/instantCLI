@@ -1,6 +1,6 @@
 use crate::dev::github::GitHubRepo;
 use crate::dev::package::Package;
-use crate::fzf_wrapper::{FzfOptions, FzfPreview, FzfSelectable, FzfWrapper};
+use crate::fzf_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
 use anyhow::Result;
 
 #[derive(thiserror::Error, Debug)]
@@ -83,13 +83,9 @@ pub fn select_repository(repos: Vec<GitHubRepo>) -> Result<GitHubRepo, FzfError>
         .map(|repo| GitHubRepoSelectItem { repo })
         .collect();
 
-    let wrapper = FzfWrapper::with_options(FzfOptions {
-        prompt: Some("Select instantOS repository to clone: ".to_string()),
-        additional_args: vec!["--reverse".to_string()],
-        ..Default::default()
-    });
-
-    match wrapper
+    match FzfWrapper::builder()
+        .prompt("Select instantOS repository to clone: ")
+        .args(["--reverse"])
         .select(items)
         .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
     {
@@ -112,13 +108,9 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
         .map(|package| PackageSelectItem { package })
         .collect();
 
-    let wrapper = FzfWrapper::with_options(FzfOptions {
-        prompt: Some("Select instantOS package to install: ".to_string()),
-        additional_args: vec!["--reverse".to_string()],
-        ..Default::default()
-    });
-
-    match wrapper
+    match FzfWrapper::builder()
+        .prompt("Select instantOS package to install: ")
+        .args(["--reverse"])
         .select(items)
         .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
     {
