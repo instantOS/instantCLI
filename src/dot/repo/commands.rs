@@ -35,7 +35,7 @@ pub fn handle_repo_command(
 
 /// List all configured repositories
 fn list_repositories(config_manager: &ConfigManager, _db: &Database) -> Result<()> {
-    let config = &config_manager.config;
+    let config = config_manager.config();
 
     if config.repos.is_empty() {
         println!("No repositories configured.");
@@ -98,7 +98,7 @@ fn add_repository(
     };
 
     // Add the repo to config
-    config_manager.config.add_repo(repo_config.clone())?;
+    config_manager.add_repo(repo_config.clone())?;
 
     println!(
         "{} repository '{}' from {}",
@@ -121,8 +121,7 @@ fn add_repository(
         Err(e) => {
             eprintln!("Warning: Failed to clone repository: {e}");
             // Remove from config since clone failed
-            config_manager.config.repos.retain(|r| r.name != repo_name);
-            config_manager.save()?;
+            config_manager.remove_repo(&repo_name)?;
             return Err(e);
         }
     }
@@ -137,10 +136,10 @@ fn remove_repository(
     name: &str,
     remove_files: bool,
 ) -> Result<()> {
-    let config = &config_manager.config;
+    let config = config_manager.config();
 
     // Find the repository
-    let repo_index = config
+    let _repo_index = config
         .repos
         .iter()
         .position(|r| r.name == name)
@@ -164,10 +163,7 @@ fn remove_repository(
     }
 
     // Remove from config
-    let mut config_mut = config_manager.config.clone();
-    config_mut.repos.remove(repo_index);
-    config_manager.config = config_mut;
-    config_manager.save()?;
+    config_manager.remove_repo(name)?;
 
     println!("{} repository '{}'", "Removed".green(), name);
 
@@ -176,7 +172,7 @@ fn remove_repository(
 
 /// Show detailed repository information
 fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &str) -> Result<()> {
-    let config = &config_manager.config;
+    let config = config_manager.config();
     let repo_manager = RepositoryManager::new(config, db);
 
     let local_repo = repo_manager.get_repository_info(name)?;
@@ -229,14 +225,14 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
 
 /// Enable a repository
 fn enable_repository(config_manager: &mut ConfigManager, name: &str) -> Result<()> {
-    config_manager.config.enable_repo(name)?;
+    config_manager.enable_repo(name)?;
     println!("{} repository '{}'", "Enabled".green(), name);
     Ok(())
 }
 
 /// Disable a repository
 fn disable_repository(config_manager: &mut ConfigManager, name: &str) -> Result<()> {
-    config_manager.config.disable_repo(name)?;
+    config_manager.disable_repo(name)?;
     println!("{} repository '{}'", "Disabled".yellow(), name);
     Ok(())
 }
@@ -262,7 +258,7 @@ fn list_subdirectories(
     name: &str,
     active_only: bool,
 ) -> Result<()> {
-    let config = &config_manager.config;
+    let config = config_manager.config();
     let repo_manager = RepositoryManager::new(config, db);
 
     let local_repo = repo_manager.get_repository_info(name)?;
@@ -311,9 +307,7 @@ fn set_subdirectories(
     name: &str,
     subdirs: &[String],
 ) -> Result<()> {
-    config_manager
-        .config
-        .set_active_subdirs(name, subdirs.to_vec())?;
+    config_manager.set_active_subdirs(name, subdirs.to_vec())?;
     println!(
         "{} active subdirectories for repository '{}': {}",
         "Set".green(),

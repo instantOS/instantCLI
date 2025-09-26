@@ -222,9 +222,9 @@ async fn main() -> Result<()> {
             )?;
 
             // Ensure directories exist and create database instance once at startup
-            config_manager.config.ensure_directories()?;
+            config_manager.config().ensure_directories()?;
             let db = execute_with_error_handling(
-                Database::new(config_manager.config.database_path().to_path_buf()),
+                Database::new(config_manager.config().database_path().to_path_buf()),
                 "Error opening database",
                 None,
             )?;

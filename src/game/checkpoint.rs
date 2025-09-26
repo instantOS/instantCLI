@@ -48,9 +48,7 @@ pub fn extract_snapshot_id_from_backup_result(
                 }
             }
             Err(e) => {
-                eprintln!(
-                    "Warning: Could not fetch snapshots for checkpoint update: {e}"
-                );
+                eprintln!("Warning: Could not fetch snapshots for checkpoint update: {e}");
                 Ok(None)
             }
         }

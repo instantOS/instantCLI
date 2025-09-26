@@ -13,7 +13,7 @@ pub fn add_repo(
     repo: config::Repo,
     debug: bool,
 ) -> Result<PathBuf> {
-    let base = config_manager.config.repos_path();
+    let base = config_manager.config().repos_path();
 
     let repo_dir_name = repo.name.clone();
 
@@ -26,7 +26,7 @@ pub fn add_repo(
         ));
     }
 
-    let depth = config_manager.config.clone_depth;
+    let depth = config_manager.config().clone_depth;
 
     let pb = common::create_spinner(format!("Cloning {}...", repo.url));
 
@@ -58,8 +58,8 @@ pub fn add_repo(
     // Initialize database with source file hashes to prevent false "modified" status
     // when identical files already exist in the home directory
     if let Ok(db) =
-        crate::dot::db::Database::new(config_manager.config.database_path().to_path_buf())
-        && let Ok(dotfiles) = get_all_dotfiles(&config_manager.config, &db)
+        crate::dot::db::Database::new(config_manager.config().database_path().to_path_buf())
+        && let Ok(dotfiles) = get_all_dotfiles(config_manager.config(), &db)
     {
         for (_, dotfile) in dotfiles {
             // Only register hashes for dotfiles from this repository
