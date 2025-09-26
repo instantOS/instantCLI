@@ -98,7 +98,7 @@ impl GameManager {
             ))
             .yes_text("Remove Game")
             .no_text("Keep Game")
-            .show()
+            .show_confirmation()
             .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))?
         {
             ConfirmResult::Yes => {

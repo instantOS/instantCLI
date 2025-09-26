@@ -228,8 +228,23 @@ impl FzfBuilder {
     }
 
     /// Execute confirmation dialog
-    pub fn show(self) -> Result<ConfirmResult> {
+    pub fn show_confirmation(self) -> Result<ConfirmResult> {
         self.confirm_dialog()
+    }
+
+    /// Execute message dialog
+    pub fn show_message(self) -> Result<()> {
+        self.message_dialog()
+    }
+
+    /// Execute selection dialog
+    pub fn show_selection<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
+        self.select(items)
+    }
+
+    /// Execute input dialog
+    pub fn show_input(self) -> Result<String> {
+        self.input_dialog()
     }
 
     /// Execute message dialog

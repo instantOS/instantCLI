@@ -116,7 +116,7 @@ pub fn check_snapshot_vs_local_saves(
                 ))
                 .yes_text("Continue Restore")
                 .no_text("Cancel")
-                .show()
+                .show_confirmation()
                 .context("Failed to show security warning dialog")?;
 
             return Ok(confirmed == ConfirmResult::Yes);
@@ -139,7 +139,7 @@ pub fn check_snapshot_vs_local_saves(
                 ))
                 .yes_text("Overwrite Local Saves")
                 .no_text("Cancel Restore")
-                .show()
+                .show_confirmation()
                 .context("Failed to show critical security warning dialog")?;
 
             Ok(confirmed == ConfirmResult::Yes)
@@ -156,7 +156,7 @@ pub fn check_snapshot_vs_local_saves(
                 ))
                 .yes_text("Continue Restore")
                 .no_text("Cancel")
-                .show()
+                .show_confirmation()
                 .context("Failed to show restore summary dialog")?;
 
             Ok(confirmed == ConfirmResult::Yes)
@@ -173,7 +173,7 @@ pub fn check_snapshot_vs_local_saves(
                 ))
                 .yes_text("Continue Restore")
                 .no_text("Cancel")
-                .show()
+                .show_confirmation()
                 .context("Failed to show comparison error warning")?;
 
             Ok(confirmed == ConfirmResult::Yes)
@@ -246,7 +246,7 @@ pub fn create_restore_confirmation(
         .message(&message)
         .yes_text("Restore")
         .no_text("Cancel")
-        .show()
+        .show_confirmation()
         .context("Failed to show restore confirmation dialog")?;
 
     Ok(confirmed == ConfirmResult::Yes)
