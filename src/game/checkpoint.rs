@@ -49,8 +49,7 @@ pub fn extract_snapshot_id_from_backup_result(
             }
             Err(e) => {
                 eprintln!(
-                    "Warning: Could not fetch snapshots for checkpoint update: {}",
-                    e
+                    "Warning: Could not fetch snapshots for checkpoint update: {e}"
                 );
                 Ok(None)
             }
@@ -68,7 +67,7 @@ pub fn update_checkpoint_after_backup(
         extract_snapshot_id_from_backup_result(backup_result, game_name, game_config)?
     {
         if let Err(e) = update_installation_checkpoint(game_name, &snapshot_id) {
-            eprintln!("Warning: Could not update checkpoint: {}", e);
+            eprintln!("Warning: Could not update checkpoint: {e}");
         }
     }
     Ok(())

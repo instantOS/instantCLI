@@ -209,7 +209,7 @@ fn normalize_path_for_cross_device(path: &str) -> String {
         if let Some(slash_pos) = rest.find('/') {
             // Extract the part after /home/<username>
             let after_user = &rest[slash_pos..];
-            return format!("~{}", after_user);
+            return format!("~{after_user}");
         } else {
             // The path is just /home/<username>, convert to ~
             return "~".to_string();

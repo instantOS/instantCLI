@@ -104,7 +104,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             if let Err(e) =
                 checkpoint::update_checkpoint_after_backup(&output, &game_name, &game_config)
             {
-                eprintln!("Warning: Could not update checkpoint: {}", e);
+                eprintln!("Warning: Could not update checkpoint: {e}");
             }
 
             // Invalidate cache for this game after successful backup
