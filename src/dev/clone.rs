@@ -1,3 +1,4 @@
+use crate::common::git;
 use crate::dev::github::GitHubRepo;
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -14,23 +15,22 @@ pub enum CloneError {
     DirectoryExists(String),
 }
 
-pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, debug: bool) -> Result<()> {
+pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> Result<()> {
     if target_dir.exists() {
         return Err(CloneError::DirectoryExists(target_dir.display().to_string()).into());
     }
 
-    let pb = crate::common::create_spinner(format!(
+    let pb = crate::common::progress::create_spinner(format!(
         "Cloning {} into {}...",
         repo.name,
         target_dir.display()
     ));
 
-    let result = crate::common::git_clone(
+    let result = git::clone_repo(
         &repo.clone_url,
         target_dir,
         Some(&repo.default_branch),
-        1,
-        debug,
+        Some(1),
     );
 
     pb.finish_with_message(format!("Successfully cloned {}", repo.name));

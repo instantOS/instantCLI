@@ -1,8 +1,10 @@
-use crate::common::create_spinner;
+use crate::common::git;
+use crate::common::progress::create_spinner;
 use crate::dev::fuzzy::select_package;
 use crate::dev::package::Package;
 use anyhow::{Context, Result};
 use duct::cmd;
+use git2::Repository;
 use std::path::PathBuf;
 
 pub struct PackageRepo {
@@ -30,43 +32,47 @@ impl PackageRepo {
     pub fn ensure_updated(&self) -> Result<()> {
         if self.path.exists() {
             // Repository exists, pull latest changes
-            // Check if there are local changes
-            let output = cmd!("git", "status", "--porcelain")
-                .dir(&self.path)
-                .read()
-                .context("Failed to check git status")?;
+            let mut repo =
+                git::open_repo(&self.path).context("Failed to open package repository")?;
 
-            let has_local_changes = !output.trim().is_empty();
+            // Check if there are local changes by examining the repository status
+            let has_local_changes = self.has_local_changes(&repo)?;
 
             if has_local_changes {
                 self.handle_local_changes()?;
             }
 
             // Pull latest changes
-            cmd!("git", "pull", "origin", "main", "--depth=3")
-                .dir(&self.path)
-                .run()
-                .context("Failed to pull latest changes")?;
+            git::pull(&mut repo).context("Failed to pull latest changes")?;
         } else {
             // Clone repository
-            let parent_dir = self.path.parent().unwrap();
-
-            cmd!("git", "clone", &self.url, "--depth=3")
-                .dir(parent_dir)
-                .run()
+            git::clone_repo(&self.url, &self.path, Some("main"), Some(3))
                 .context("Failed to clone repository")?;
         }
 
         Ok(())
     }
 
+    fn has_local_changes(&self, repo: &Repository) -> Result<bool> {
+        // Check if there are uncommitted changes
+        let statuses = repo
+            .statuses(None)
+            .context("Failed to get repository status")?;
+
+        Ok(!statuses.is_empty())
+    }
+
     fn handle_local_changes(&self) -> Result<()> {
         eprintln!("⚠️  Local changes detected in package repository");
         eprintln!("💾 Stashing local changes...");
 
-        cmd!("git", "stash")
-            .dir(&self.path)
-            .run()
+        let mut repo =
+            git::open_repo(&self.path).context("Failed to open repository for stashing")?;
+
+        // Use git2 to stash changes
+        let signature = repo.signature().context("Failed to get git signature")?;
+
+        repo.stash_save(&signature, "Auto-stash by instantCLI", None)
             .context("Failed to stash changes")?;
 
         Ok(())

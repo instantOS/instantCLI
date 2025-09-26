@@ -1,4 +1,5 @@
 use crate::common;
+use crate::common::git;
 use crate::dot::config::Config;
 use anyhow::{Context, Result};
 use std::{path::Path, path::PathBuf};
@@ -112,11 +113,8 @@ impl LocalRepo {
 
     pub fn get_checked_out_branch(&self, cfg: &Config) -> Result<String> {
         let target = self.local_path(cfg)?;
-        common::git_command_in_dir(
-            &target,
-            &["rev-parse", "--abbrev-ref", "HEAD"],
-            "determining current branch",
-        )
+        let repo = git::open_repo(&target).context("Failed to open git repository")?;
+        git::current_branch(&repo).context("Failed to get current branch")
     }
 
     /// Convert a target path (in home directory) to source path (in repo)
@@ -152,23 +150,17 @@ impl LocalRepo {
             }
 
             // fetch the branch and checkout
-            let pb = common::create_spinner(format!("Fetching branch {branch}..."));
+            let pb = common::progress::create_spinner(format!("Fetching branch {branch}..."));
 
-            common::git_command_in_dir_with_output(
-                &target,
-                &["fetch", "origin", branch],
-                &format!("fetching branch {} in {}", branch, target.display()),
-            )?;
+            let mut repo =
+                git::open_repo(&target).context("Failed to open git repository for fetch")?;
+            git::fetch_branch(&mut repo, branch).context("Failed to fetch branch")?;
 
             pb.finish_with_message(format!("Fetched branch {branch}"));
 
-            let pb = common::create_spinner(format!("Checking out {branch}..."));
+            let pb = common::progress::create_spinner(format!("Checking out {branch}..."));
 
-            common::git_command_in_dir_with_output(
-                &target,
-                &["checkout", branch],
-                &format!("checking out branch {} in {}", branch, target.display()),
-            )?;
+            git::checkout_branch(&mut repo, branch).context("Failed to checkout branch")?;
 
             pb.finish_with_message(format!("Checked out {branch}"));
         }
@@ -184,13 +176,10 @@ impl LocalRepo {
         }
 
         // pull latest
-        let pb = common::create_spinner(format!("Updating {}...", self.name));
+        let pb = common::progress::create_spinner(format!("Updating {}...", self.name));
 
-        common::git_command_in_dir_with_output(
-            &target,
-            &["pull"],
-            &format!("running git pull in {}", target.display()),
-        )?;
+        let mut repo = git::open_repo(&target).context("Failed to open git repository for pull")?;
+        git::pull(&mut repo).context("Failed to pull latest changes")?;
 
         pb.finish_with_message(format!("Updated {}", self.name));
 

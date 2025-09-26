@@ -1,4 +1,5 @@
 use crate::common;
+use crate::common::git;
 use crate::dot::config;
 use crate::dot::db::DotFileType;
 use crate::dot::get_all_dotfiles;
@@ -28,15 +29,15 @@ pub fn add_repo(
 
     let depth = config_manager.config().clone_depth;
 
-    let pb = common::create_spinner(format!("Cloning {}...", repo.url));
+    let pb = common::progress::create_spinner(format!("Cloning {}...", repo.url));
 
-    common::git_clone(
+    git::clone_repo(
         &repo.url,
         &target,
         repo.branch.as_deref(),
-        depth as i32,
-        debug,
-    )?;
+        Some(depth as i32),
+    )
+    .context("Failed to clone repository")?;
 
     pb.finish_with_message(format!("Cloned {}", repo.url));
 

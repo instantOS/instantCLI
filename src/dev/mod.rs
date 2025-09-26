@@ -30,7 +30,8 @@ async fn handle_clone(debug: bool) -> Result<()> {
         eprintln!("🔍 Fetching instantOS repositories...");
     }
 
-    let pb = crate::common::create_spinner("Fetching repositories from GitHub...".to_string());
+    let pb =
+        crate::common::progress::create_spinner("Fetching repositories from GitHub...".to_string());
 
     let repos = fetch_instantos_repos()
         .await
