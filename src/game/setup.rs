@@ -42,12 +42,10 @@ pub fn setup_uninstalled_games() -> Result<()> {
     // Process each uninstalled game
     for game_name in uninstalled_games {
         if let Err(e) = setup_single_game(&game_name, &game_config, &mut installations) {
-            eprintln!("❌ Failed to set up game '{}': {}", game_name, e);
+            eprintln!("❌ Failed to set up game '{game_name}': {e}");
 
             // Ask if user wants to continue with other games
-            match FzfWrapper::confirm(&format!(
-                "Would you like to continue setting up the remaining games?"
-            ))
+            match FzfWrapper::confirm("Would you like to continue setting up the remaining games?")
             .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))?
             {
                 ConfirmResult::Yes => continue,
@@ -232,7 +230,7 @@ impl FzfSelectable for PathInfo {
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
         let mut preview = String::new();
-        preview.push_str(&format!("📁 SAVE PATH DETAILS\n\n"));
+        preview.push_str("📁 SAVE PATH DETAILS\n\n");
         preview.push_str(&format!("Path:           {}\n", self.path));
         preview.push_str(&format!("Usage Count:    {} snapshots\n", self.frequency));
         preview.push_str(&format!(
@@ -240,9 +238,9 @@ impl FzfSelectable for PathInfo {
             self.devices.len()
         ));
 
-        preview.push_str(&format!("\n🖥️  DEVICES USING THIS PATH:\n"));
+        preview.push_str("\n🖥️  DEVICES USING THIS PATH:\n");
         for device in &self.devices {
-            preview.push_str(&format!("  • {}\n", device));
+            preview.push_str(&format!("  • {device}\n"));
         }
 
         // Format dates
@@ -253,9 +251,9 @@ impl FzfSelectable for PathInfo {
             let first_str = first.format("%Y-%m-%d %H:%M:%S").to_string();
             let last_str = last.format("%Y-%m-%d %H:%M:%S").to_string();
 
-            preview.push_str(&format!("\n📅 USAGE TIMELINE:\n"));
-            preview.push_str(&format!("First Seen:     {}\n", first_str));
-            preview.push_str(&format!("Last Seen:      {}\n", last_str));
+            preview.push_str("\n📅 USAGE TIMELINE:\n");
+            preview.push_str(&format!("First Seen:     {first_str}\n"));
+            preview.push_str(&format!("Last Seen:      {last_str}\n"));
         }
 
         protocol::FzfPreview::Text(preview)
@@ -287,7 +285,7 @@ impl FzfSelectable for StringOption {
 
 /// Let user choose from available paths or enter a custom one
 fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Option<String>> {
-    println!("\nChoose how to set up the save path for '{}':", game_name);
+    println!("\nChoose how to set up the save path for '{game_name}':");
 
     // Create options including the paths and a custom option
     let mut options = vec![StringOption::new(

@@ -131,7 +131,7 @@ fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) 
     // Data size
     if summary.data_added > 0 {
         let size_str = format_file_size(summary.data_added);
-        stats.push_str(&format!("\nData Added:       {}\n", size_str));
+        stats.push_str(&format!("\nData Added:       {size_str}\n"));
     }
 
     // Duration
@@ -143,7 +143,7 @@ fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) 
         let duration_secs = duration.num_seconds();
         if duration_secs > 0 {
             let duration_str = format_duration(duration_secs);
-            stats.push_str(&format!("Duration:         {}\n", duration_str));
+            stats.push_str(&format!("Duration:         {duration_str}\n"));
         }
     }
 
@@ -163,16 +163,15 @@ fn create_preview_local_comparison(
 
     if let Some(local_info) = local_save_info {
         if local_info.file_count > 0 {
-            let file_count_str = format_number(local_info.file_count as u64);
+            let file_count_str = format_number(local_info.file_count);
             let size_str = format_file_size(local_info.total_size);
             comparison.push_str(&format!(
-                "Local Files:      {} files ({})\n",
-                file_count_str, size_str
+                "Local Files:      {file_count_str} files ({size_str})\n"
             ));
 
             if let Some(local_time) = local_info.last_modified {
                 let local_time_str = format_system_time_for_display(Some(local_time));
-                comparison.push_str(&format!("Last Modified:    {}\n", local_time_str));
+                comparison.push_str(&format!("Last Modified:    {local_time_str}\n"));
 
                 // Add comparison result with clear status indication
                 match compare_snapshot_vs_local(snapshot_time, local_time) {
@@ -234,7 +233,7 @@ fn create_preview_metadata(snapshot: &Snapshot) -> String {
     if !snapshot.tags.is_empty() {
         let tags_str = snapshot.tags.join(", ");
         let truncated_tags = truncate_string(&tags_str, 60);
-        metadata.push_str(&format!("Tags:             {}\n", truncated_tags));
+        metadata.push_str(&format!("Tags:             {truncated_tags}\n"));
     } else {
         metadata.push_str("Tags:             None\n");
     }
@@ -252,18 +251,18 @@ fn create_preview_metadata(snapshot: &Snapshot) -> String {
             // Limit to 5 paths to prevent overflow
             let truncated_path = truncate_string(path, 70);
             if i == 0 {
-                metadata.push_str(&format!("  ├─ {}\n", truncated_path));
+                metadata.push_str(&format!("  ├─ {truncated_path}\n"));
             } else if i == snapshot.paths.len() - 1 || i == 4 {
-                metadata.push_str(&format!("  └─ {}\n", truncated_path));
+                metadata.push_str(&format!("  └─ {truncated_path}\n"));
             } else {
-                metadata.push_str(&format!("  ├─ {}\n", truncated_path));
+                metadata.push_str(&format!("  ├─ {truncated_path}\n"));
             }
         }
 
         // Show count if there are more paths than displayed
         if snapshot.paths.len() > 5 {
             let remaining = snapshot.paths.len() - 5;
-            metadata.push_str(&format!("  └─ ... and {} more paths\n", remaining));
+            metadata.push_str(&format!("  └─ ... and {remaining} more paths\n"));
         }
     } else {
         metadata.push_str("\nBackup Paths:     None specified\n");

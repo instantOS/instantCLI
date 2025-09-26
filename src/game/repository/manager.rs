@@ -55,7 +55,7 @@ impl RepositoryManager {
                 Ok(())
             }
             Err(e) => {
-                println!("❌ Repository connection test failed: {}", e);
+                println!("❌ Repository connection test failed: {e}");
                 Self::handle_connection_failure(config, debug)
             }
         }
@@ -146,8 +146,7 @@ impl RepositoryManager {
     fn handle_inaccessible_remote(remote_error: anyhow::Error) -> Result<()> {
         // Use message dialog before the interactive prompt
         let message = format!(
-            "❌ Rclone Remote Issue:\n\nRclone remote test failed: {}\n💡 The remote configuration may be incorrect or inaccessible.\n\nWould you like to reconfigure the repository settings?",
-            remote_error
+            "❌ Rclone Remote Issue:\n\nRclone remote test failed: {remote_error}\n💡 The remote configuration may be incorrect or inaccessible.\n\nWould you like to reconfigure the repository settings?"
         );
 
         FzfWrapper::message(&message)?;
@@ -257,7 +256,7 @@ impl RepositoryManager {
     /// Test if an rclone remote is accessible
     fn test_rclone_remote(repo_str: &str, debug: bool) -> Result<()> {
         if debug {
-            println!("Testing rclone remote accessibility: {}", repo_str);
+            println!("Testing rclone remote accessibility: {repo_str}");
         }
 
         // Extract the remote path for rclone lsd command
@@ -326,9 +325,9 @@ impl RepositoryManager {
 
             // Provide guidance for rclone remotes (after interaction, so println is fine)
             if repo_input.starts_with("rclone:") {
-                println!("🔧 Configuring rclone remote: {}", repo_input);
+                println!("🔧 Configuring rclone remote: {repo_input}");
                 println!("💡 Make sure your rclone is configured and the remote exists");
-                println!("💡 Test with: rclone lsd {}", repo_input);
+                println!("💡 Test with: rclone lsd {repo_input}");
             }
 
             Ok(path)

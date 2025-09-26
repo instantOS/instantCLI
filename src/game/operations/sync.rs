@@ -216,11 +216,10 @@ fn sync_single_game(
                 }
                 Ok(TimeComparison::Same) => Ok(SyncAction::NoActionNeeded),
                 Ok(TimeComparison::Error(e)) => {
-                    Ok(SyncAction::Error(format!("Time comparison error: {}", e)))
+                    Ok(SyncAction::Error(format!("Time comparison error: {e}")))
                 }
                 Err(e) => Ok(SyncAction::Error(format!(
-                    "Failed to compare timestamps: {}",
-                    e
+                    "Failed to compare timestamps: {e}"
                 ))),
             }
         }
