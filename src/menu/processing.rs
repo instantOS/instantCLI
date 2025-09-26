@@ -64,18 +64,19 @@ impl RequestProcessor {
         match FzfWrapper::builder()
             .prompt(prompt)
             .multi_select(multi)
-            .select(items)?
+            .select(items)
         {
-            crate::fzf_wrapper::FzfResult::Selected(item) => {
+            Ok(crate::fzf_wrapper::FzfResult::Selected(item)) => {
                 Ok(MenuResponse::ChoiceResult(vec![item]))
             }
-            crate::fzf_wrapper::FzfResult::MultiSelected(items) => {
+            Ok(crate::fzf_wrapper::FzfResult::MultiSelected(items)) => {
                 Ok(MenuResponse::ChoiceResult(items))
             }
-            crate::fzf_wrapper::FzfResult::Cancelled => Ok(MenuResponse::Cancelled),
-            crate::fzf_wrapper::FzfResult::Error(e) => {
-                Ok(MenuResponse::Error(format!("Selection error: {e}")))
+            Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
+            Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {
+                Ok(MenuResponse::Error(format!("Selection error: {}", e)))
             }
+            Err(e) => Ok(MenuResponse::Error(format!("Selection error: {}", e))),
         }
     }
 
