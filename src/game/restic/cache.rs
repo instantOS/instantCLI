@@ -1,4 +1,5 @@
 use crate::game::config::InstantGameConfig;
+use crate::game::restic::tags;
 use crate::restic::wrapper::Snapshot;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
@@ -89,7 +90,7 @@ fn fetch_snapshots_from_restic(
     );
 
     let snapshots_json = restic
-        .list_snapshots_filtered(Some(vec!["instantgame".to_string(), game_name.to_string()]))
+        .list_snapshots_filtered(Some(tags::create_game_tags(game_name)))
         .context("Failed to list snapshots for game")?;
 
     let mut parsed_snapshots: Vec<Snapshot> =

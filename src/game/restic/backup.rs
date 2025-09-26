@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use crate::game::config::{GameInstallation, InstantGameConfig};
+use crate::game::restic::tags;
 use crate::restic::ResticWrapper;
 
 /// Backup game saves to restic repository with proper tagging
@@ -31,10 +32,7 @@ impl GameBackup {
 
         // Use the centralized restic wrapper which already includes
         // --skip-if-unchanged for backups.
-        let tags = vec![
-            "instantgame".to_string(),
-            game_installation.game_name.0.clone(),
-        ];
+        let tags = tags::create_game_tags(&game_installation.game_name.0);
 
         let progress = restic
             .backup(&[game_installation.save_path.as_path()], tags)
@@ -57,7 +55,7 @@ impl GameBackup {
         );
 
         let json = restic
-            .list_snapshots_filtered(Some(vec!["instantgame".to_string(), game_name.to_string()]))
+            .list_snapshots_filtered(Some(tags::create_game_tags(game_name)))
             .context("Failed to list restic snapshots")?;
 
         Ok(json)

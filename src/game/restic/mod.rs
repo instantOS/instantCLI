@@ -3,6 +3,7 @@ pub mod cache;
 pub mod commands;
 pub mod security;
 pub mod snapshot_selection;
+pub mod tags;
 
 use crate::game::checkpoint;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
