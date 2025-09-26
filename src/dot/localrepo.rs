@@ -179,7 +179,8 @@ impl LocalRepo {
         // pull latest
         let pb = common::progress::create_spinner(format!("Updating {}...", self.name));
 
-        let mut repo = Repository::open(&target).context("Failed to open git repository for pull")?;
+        let mut repo =
+            Repository::open(&target).context("Failed to open git repository for pull")?;
         git::clean_and_pull(&mut repo).context("Failed to pull latest changes")?;
 
         pb.finish_with_message(format!("Updated {}", self.name));

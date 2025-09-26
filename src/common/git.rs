@@ -143,5 +143,3 @@ pub fn clean_and_pull(repo: &mut Repository) -> Result<()> {
 
     Ok(())
 }
-
-
