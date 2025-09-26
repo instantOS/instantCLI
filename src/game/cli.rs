@@ -46,4 +46,6 @@ pub enum GameCommands {
         /// Snapshot ID to restore from (optional, will prompt if not specified)
         snapshot_id: Option<String>,
     },
+    /// Set up games that have been added but are not configured on this device
+    Setup,
 }

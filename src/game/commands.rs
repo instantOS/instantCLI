@@ -6,6 +6,7 @@ use super::games::{display, selection};
 use super::operations::{launch_game, sync_game_saves};
 use super::repository::RepositoryManager;
 use super::restic::{backup_game_saves, handle_restic_command, restore_game_saves};
+use super::{setup};
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
@@ -22,6 +23,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             game_name,
             snapshot_id,
         } => handle_restore(game_name, snapshot_id),
+        GameCommands::Setup => handle_setup(),
     }
 }
 
@@ -67,4 +69,8 @@ fn handle_backup(game_name: Option<String>) -> Result<()> {
 
 fn handle_restore(game_name: Option<String>, snapshot_id: Option<String>) -> Result<()> {
     restore_game_saves(game_name, snapshot_id)
+}
+
+fn handle_setup() -> Result<()> {
+    setup::setup_uninstalled_games()
 }
