@@ -166,9 +166,9 @@ impl ResticWrapper {
         let mut args: Vec<String> = vec!["snapshots".to_string(), "--json".to_string()];
 
         if let Some(tags) = tags {
-            for tag in tags {
+            if !tags.is_empty() {
                 args.push("--tag".to_string());
-                args.push(tag);
+                args.push(tags.join(","));
             }
         }
 
