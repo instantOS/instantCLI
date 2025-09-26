@@ -62,6 +62,7 @@ impl Game {
 pub struct GameInstallation {
     pub game_name: GameName,
     pub save_path: TildePath,
+    pub nearest_checkpoint: Option<String>,
 }
 
 impl GameInstallation {
@@ -69,7 +70,21 @@ impl GameInstallation {
         Self {
             game_name: game_name.into(),
             save_path: save_path.into(),
+            nearest_checkpoint: None,
         }
+    }
+
+    pub fn with_checkpoint(mut self, checkpoint_id: impl Into<String>) -> Self {
+        self.nearest_checkpoint = Some(checkpoint_id.into());
+        self
+    }
+
+    pub fn update_checkpoint(&mut self, checkpoint_id: impl Into<String>) {
+        self.nearest_checkpoint = Some(checkpoint_id.into());
+    }
+
+    pub fn clear_checkpoint(&mut self) {
+        self.nearest_checkpoint = None;
     }
 }
 
@@ -176,5 +191,50 @@ impl InstallationsConfig {
         let content = toml::to_string_pretty(self).context("serializing installations config")?;
         fs::write(path, content).context("writing installations config")?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_game_installation_new() {
+        let installation = GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")));
+        
+        assert_eq!(installation.game_name.0, "test_game");
+        assert_eq!(installation.nearest_checkpoint, None);
+    }
+
+    #[test]
+    fn test_game_installation_with_checkpoint() {
+        let installation = GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")))
+            .with_checkpoint("checkpoint123");
+        
+        assert_eq!(installation.game_name.0, "test_game");
+        assert_eq!(installation.nearest_checkpoint, Some("checkpoint123".to_string()));
+    }
+
+    #[test]
+    fn test_game_installation_update_checkpoint() {
+        let mut installation = GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")));
+        
+        installation.update_checkpoint("checkpoint456");
+        assert_eq!(installation.nearest_checkpoint, Some("checkpoint456".to_string()));
+        
+        installation.update_checkpoint("checkpoint789");
+        assert_eq!(installation.nearest_checkpoint, Some("checkpoint789".to_string()));
+    }
+
+    #[test]
+    fn test_game_installation_clear_checkpoint() {
+        let mut installation = GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")))
+            .with_checkpoint("checkpoint123");
+        
+        assert_eq!(installation.nearest_checkpoint, Some("checkpoint123".to_string()));
+        
+        installation.clear_checkpoint();
+        assert_eq!(installation.nearest_checkpoint, None);
     }
 }

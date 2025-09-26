@@ -11,7 +11,7 @@ being used is the same as the one in the installation toml. If it is, then skip
 the actual restore, as likely nothing would change. 
 
 Also keep in mind the output of the `instant game restore` and `instant game
-sync` commands, which should reflect a skipped restore. Also add a --force flag
+sync` commands, which should reflect a skipped restore in their output. Also add a --force flag
 which restores from the checkpoint even if the installation toml claims it is
 the nearest checkpoint. 
 

@@ -7,6 +7,23 @@ use crate::game::restic::cache;
 use crate::game::utils::save_files::{TimeComparison, compare_snapshot_vs_local};
 use crate::game::utils::validation;
 
+/// Helper function to update installation checkpoint
+fn update_installation_checkpoint(game_name: &str, checkpoint_id: &str) -> Result<()> {
+    let mut installations = InstallationsConfig::load()
+        .context("Failed to load installations configuration")?;
+    
+    // Find and update the installation
+    for installation in &mut installations.installations {
+        if installation.game_name.0 == game_name {
+            installation.update_checkpoint(checkpoint_id);
+            break;
+        }
+    }
+    
+    installations.save()
+        .context("Failed to save updated installations configuration")
+}
+
 /// Sync decision result
 #[derive(Debug, PartialEq)]
 enum SyncAction {
@@ -20,12 +37,14 @@ enum SyncAction {
     RestoreFromLatest(String),
     /// No snapshots, create initial backup
     CreateInitialBackup,
+    /// Restore skipped due to matching checkpoint
+    RestoreSkipped(String),
     /// Error condition
     Error(String),
 }
 
 /// Handle game save synchronization
-pub fn sync_game_saves(game_name: Option<String>) -> Result<()> {
+pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     // Load configurations
     let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let installations =
@@ -66,9 +85,14 @@ pub fn sync_game_saves(game_name: Option<String>) -> Result<()> {
 
     // Sync each game
     for installation in games_to_sync {
-        match sync_single_game(&installation, &game_config) {
+        match sync_single_game(&installation, &game_config, force) {
             Ok(SyncAction::NoActionNeeded) => {
                 println!("✅ {}: Already in sync", installation.game_name.0.green());
+                total_skipped += 1;
+            }
+            Ok(SyncAction::RestoreSkipped(snapshot_id)) => {
+                println!("⏭️  {}: Skipped restore from {} (checkpoint matches, use --force to override)", 
+                    installation.game_name.0.yellow(), snapshot_id);
                 total_skipped += 1;
             }
             Ok(SyncAction::CreateBackup) => {
@@ -179,6 +203,7 @@ pub fn sync_game_saves(game_name: Option<String>) -> Result<()> {
 fn sync_single_game(
     installation: &crate::game::config::GameInstallation,
     game_config: &InstantGameConfig,
+    force: bool,
 ) -> Result<SyncAction> {
     let game_name = &installation.game_name.0;
     let save_path = installation.save_path.as_path();
@@ -208,6 +233,15 @@ fn sync_single_game(
     // Determine sync action based on local saves and snapshots
     match (local_save_info.last_modified, latest_snapshot) {
         (Some(local_time), Some(snapshot)) => {
+            // Check if restore should be skipped due to matching checkpoint
+            if !force {
+                if let Some(ref nearest_checkpoint) = installation.nearest_checkpoint {
+                    if nearest_checkpoint == &snapshot.id {
+                        return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
+                    }
+                }
+            }
+            
             // Both local saves and snapshots exist - compare timestamps
             match compare_snapshot_vs_local(&snapshot.time, local_time) {
                 Ok(TimeComparison::LocalNewer) => Ok(SyncAction::CreateBackup),
@@ -228,6 +262,15 @@ fn sync_single_game(
             Ok(SyncAction::CreateInitialBackup)
         }
         (None, Some(snapshot)) => {
+            // Check if restore should be skipped due to matching checkpoint
+            if !force {
+                if let Some(ref nearest_checkpoint) = installation.nearest_checkpoint {
+                    if nearest_checkpoint == &snapshot.id {
+                        return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
+                    }
+                }
+            }
+            
             // No local saves but snapshots exist - restore from latest
             Ok(SyncAction::RestoreFromLatest(snapshot.id.clone()))
         }
@@ -240,16 +283,34 @@ fn sync_single_game(
     }
 }
 
-/// Create backup for a game
+    /// Create backup for a game
 fn create_backup_for_game(
     installation: &crate::game::config::GameInstallation,
     game_config: &InstantGameConfig,
 ) -> Result<()> {
     let backup_handler = GameBackup::new(game_config.clone());
 
-    backup_handler
+    let backup_result = backup_handler
         .backup_game(installation)
         .context("Failed to create backup")?;
+
+    // Extract snapshot ID from backup result (format: "snapshot: {id}" or other)
+    let snapshot_id = if backup_result.starts_with("snapshot: ") {
+        backup_result.strip_prefix("snapshot: ").unwrap_or(&backup_result).to_string()
+    } else {
+        // Try to get the latest snapshot for this game as fallback
+        let snapshots = cache::get_snapshots_for_game(&installation.game_name.0, game_config)?;
+        if let Some(latest) = snapshots.first() {
+            latest.id.clone()
+        } else {
+            // Cannot determine snapshot ID, skip checkpoint update
+            eprintln!("Warning: Could not determine snapshot ID for checkpoint update");
+            return Ok(());
+        }
+    };
+
+    // Update the installation with the new checkpoint
+    update_installation_checkpoint(&installation.game_name.0, &snapshot_id)?;
 
     // Invalidate cache for this game after successful backup
     let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
@@ -270,6 +331,9 @@ fn restore_game_from_snapshot(
     backup_handler
         .restore_game_backup(&installation.game_name.0, snapshot_id, save_path)
         .context("Failed to restore from snapshot")?;
+
+    // Update the installation with the checkpoint
+    update_installation_checkpoint(&installation.game_name.0, snapshot_id)?;
 
     // Invalidate cache for this game after successful restore
     let repo_path = game_config.repo.as_path().to_string_lossy().to_string();

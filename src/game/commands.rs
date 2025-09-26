@@ -12,7 +12,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
         GameCommands::Init => handle_init(debug),
         GameCommands::Add => handle_add(),
-        GameCommands::Sync { game_name } => handle_sync(game_name),
+        GameCommands::Sync { game_name, force } => handle_sync(game_name, force),
         GameCommands::Launch { game_name } => handle_launch(game_name),
         GameCommands::List => handle_list(),
         GameCommands::Show { game_name } => handle_show(game_name),
@@ -22,7 +22,8 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Restore {
             game_name,
             snapshot_id,
-        } => handle_restore(game_name, snapshot_id),
+            force,
+        } => handle_restore(game_name, snapshot_id, force),
         GameCommands::Setup => handle_setup(),
     }
 }
@@ -35,8 +36,8 @@ fn handle_add() -> Result<()> {
     GameManager::add_game()
 }
 
-fn handle_sync(game_name: Option<String>) -> Result<()> {
-    sync_game_saves(game_name)
+fn handle_sync(game_name: Option<String>, force: bool) -> Result<()> {
+    sync_game_saves(game_name, force)
 }
 
 fn handle_launch(game_name: String) -> Result<()> {
@@ -67,8 +68,8 @@ fn handle_backup(game_name: Option<String>) -> Result<()> {
     backup_game_saves(game_name)
 }
 
-fn handle_restore(game_name: Option<String>, snapshot_id: Option<String>) -> Result<()> {
-    restore_game_saves(game_name, snapshot_id)
+fn handle_restore(game_name: Option<String>, snapshot_id: Option<String>, force: bool) -> Result<()> {
+    restore_game_saves(game_name, snapshot_id, force)
 }
 
 fn handle_setup() -> Result<()> {

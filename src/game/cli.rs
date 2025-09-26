@@ -11,6 +11,9 @@ pub enum GameCommands {
     Sync {
         /// Game name to sync (optional, syncs all if not specified)
         game_name: Option<String>,
+        /// Force sync even if checkpoint matches
+        #[arg(long)]
+        force: bool,
     },
     /// Launch a game with automatic save sync
     Launch {
@@ -45,6 +48,9 @@ pub enum GameCommands {
         game_name: Option<String>,
         /// Snapshot ID to restore from (optional, will prompt if not specified)
         snapshot_id: Option<String>,
+        /// Force restore even if checkpoint matches
+        #[arg(long)]
+        force: bool,
     },
     /// Set up games that have been added but are not configured on this device
     Setup,

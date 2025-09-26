@@ -99,6 +99,33 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         Ok(output) => {
             println!("✅ Backup completed successfully for game '{game_name}'!\n\n{output}");
 
+            // Extract snapshot ID from backup result and update checkpoint
+            let snapshot_id = if output.starts_with("snapshot: ") {
+                output.strip_prefix("snapshot: ").unwrap_or(&output).to_string()
+            } else {
+                // Try to get the latest snapshot for this game as fallback
+                match cache::get_snapshots_for_game(&game_name, &game_config) {
+                    Ok(snapshots) => {
+                        if let Some(latest) = snapshots.first() {
+                            latest.id.clone()
+                        } else {
+                            eprintln!("Warning: Could not determine snapshot ID for checkpoint update");
+                            String::new()
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Could not fetch snapshots for checkpoint update: {}", e);
+                        String::new()
+                    }
+                }
+            };
+
+            if !snapshot_id.is_empty() {
+                if let Err(e) = update_installation_checkpoint(&game_name, &snapshot_id) {
+                    eprintln!("Warning: Could not update checkpoint: {}", e);
+                }
+            }
+
             // Invalidate cache for this game after successful backup
             let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
             cache::invalidate_game_cache(&game_name, &repo_path);
@@ -113,7 +140,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
 }
 
 /// Handle game save restore with optional game and snapshot selection
-pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>) -> Result<()> {
+pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>, force: bool) -> Result<()> {
     use crate::game::restic::backup::GameBackup;
     use crate::game::restic::snapshot_selection::select_snapshot_interactive_with_local_comparison;
 
@@ -150,7 +177,18 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
         }
     };
 
-    // Step 4: Get snapshot details for security checks
+    // Step 4: Check if restore should be skipped due to matching checkpoint
+    if !force {
+        if let Some(ref nearest_checkpoint) = game_selection.installation.nearest_checkpoint {
+            if nearest_checkpoint == &snapshot_id {
+                println!("⏭️  Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)", 
+                    game_selection.game_name, snapshot_id);
+                return Ok(());
+            }
+        }
+    }
+
+    // Step 5: Get snapshot details for security checks
     let game_config =
         InstantGameConfig::load().context("Failed to load game configuration for restore")?;
     let snapshot =
@@ -166,7 +204,7 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
             }
         };
 
-    // Step 5: Perform security check for snapshot vs local saves
+    // Step 6: Perform security check for snapshot vs local saves
     if let Some(ref save_info) = security_result.save_info {
         if !security::check_snapshot_vs_local_saves(
             &snapshot,
@@ -179,7 +217,7 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
         }
     }
 
-    // Step 6: Show enhanced restore confirmation with security information
+    // Step 7: Show enhanced restore confirmation with security information
     if !security::create_restore_confirmation(
         &game_selection.game_name,
         &snapshot,
@@ -191,7 +229,7 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
         return Ok(());
     }
 
-    // Step 7: Perform the restore
+    // Step 8: Perform the restore
     let save_path = game_selection.installation.save_path.as_path();
     let backup_handler = GameBackup::new(game_config);
 
@@ -206,6 +244,9 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
                 "✅ Restore completed successfully for game '{}'!\n\n{}",
                 game_selection.game_name, output
             );
+
+            // Update the installation with the checkpoint
+            update_installation_checkpoint(&game_selection.game_name, &snapshot_id)?;
 
             // Invalidate cache for this game after successful restore
             let repo_path = backup_handler
@@ -285,4 +326,21 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
             output.status.code().unwrap_or(-1)
         ))
     }
+}
+
+/// Helper function to update installation checkpoint
+fn update_installation_checkpoint(game_name: &str, checkpoint_id: &str) -> Result<()> {
+    let mut installations = InstallationsConfig::load()
+        .context("Failed to load installations configuration")?;
+    
+    // Find and update the installation
+    for installation in &mut installations.installations {
+        if installation.game_name.0 == game_name {
+            installation.update_checkpoint(checkpoint_id);
+            break;
+        }
+    }
+    
+    installations.save()
+        .context("Failed to save updated installations configuration")
 }
