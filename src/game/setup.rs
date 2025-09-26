@@ -46,7 +46,7 @@ pub fn setup_uninstalled_games() -> Result<()> {
 
             // Ask if user wants to continue with other games
             match FzfWrapper::confirm("Would you like to continue setting up the remaining games?")
-            .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))?
+                .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))?
             {
                 ConfirmResult::Yes => continue,
                 ConfirmResult::No | ConfirmResult::Cancelled => {
@@ -163,13 +163,18 @@ fn extract_unique_paths_from_snapshots(
 
     for snapshot in snapshots {
         for path in &snapshot.paths {
-            let entry = path_frequency.entry(path.clone()).or_insert(PathInfo {
-                path: path.clone(),
-                frequency: 0,
-                devices: HashSet::new(),
-                first_seen: snapshot.time.clone(),
-                last_seen: snapshot.time.clone(),
-            });
+            // Normalize the path to use tilde notation for cross-device compatibility
+            let normalized_path = normalize_path_for_cross_device(path);
+
+            let entry = path_frequency
+                .entry(normalized_path.clone())
+                .or_insert(PathInfo {
+                    path: normalized_path,
+                    frequency: 0,
+                    devices: HashSet::new(),
+                    first_seen: snapshot.time.clone(),
+                    last_seen: snapshot.time.clone(),
+                });
 
             entry.frequency += 1;
             entry.devices.insert(snapshot.hostname.clone());
@@ -194,6 +199,25 @@ fn extract_unique_paths_from_snapshots(
     });
 
     Ok(paths)
+}
+
+/// Normalize a path for cross-device compatibility by converting /home/<user> to ~
+fn normalize_path_for_cross_device(path: &str) -> String {
+    // Check if the path starts with /home/
+    if let Some(rest) = path.strip_prefix("/home/") {
+        // Find the first slash after the username
+        if let Some(slash_pos) = rest.find('/') {
+            // Extract the part after /home/<username>
+            let after_user = &rest[slash_pos..];
+            return format!("~{}", after_user);
+        } else {
+            // The path is just /home/<username>, convert to ~
+            return "~".to_string();
+        }
+    }
+
+    // If the path doesn't start with /home/, return it as-is
+    path.to_string()
 }
 
 /// Information about a path found in snapshots
@@ -285,6 +309,7 @@ impl FzfSelectable for StringOption {
 
 /// Let user choose from available paths or enter a custom one
 fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Option<String>> {
+    //TODO: this should be an fzf wrapper message, as it is followed by a choice
     println!("\nChoose how to set up the save path for '{game_name}':");
 
     // Create options including the paths and a custom option
@@ -332,5 +357,47 @@ fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Optio
             println!("No path selected. Setup cancelled.");
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_path_for_cross_device() {
+        // Test /home/<user>/<path> -> ~/<path>
+        assert_eq!(
+            normalize_path_for_cross_device("/home/alice/.config/game/saves"),
+            "~/.config/game/saves"
+        );
+
+        assert_eq!(
+            normalize_path_for_cross_device("/home/bob/Documents/GameSaves"),
+            "~/Documents/GameSaves"
+        );
+
+        // Test /home/<user> -> ~
+        assert_eq!(normalize_path_for_cross_device("/home/alice"), "~");
+
+        // Test paths that don't start with /home/
+        assert_eq!(
+            normalize_path_for_cross_device("/opt/game/saves"),
+            "/opt/game/saves"
+        );
+
+        assert_eq!(
+            normalize_path_for_cross_device("~/.local/share/game"),
+            "~/.local/share/game"
+        );
+
+        // Test root path
+        assert_eq!(normalize_path_for_cross_device("/"), "/");
+
+        // Test complex paths with usernames that might contain slashes conceptually
+        assert_eq!(
+            normalize_path_for_cross_device("/home/user.name/.local/share/Steam/steamapps"),
+            "~/.local/share/Steam/steamapps"
+        );
     }
 }

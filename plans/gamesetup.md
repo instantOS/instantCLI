@@ -34,6 +34,7 @@ This command helps users set up games that have been added to the shared configu
 ### Key Features
 
 - **Multi-Device Awareness**: Leverages snapshot data from different devices to suggest appropriate paths
+- **Cross-Device Path Normalization**: Automatically converts `/home/<username>` paths to `~` notation for cross-device compatibility, so paths like `/home/alice/.config/game/saves` and `/home/bob/.config/game/saves` are both recognized as the same logical path `~/.config/game/saves`
 - **Statistical Insights**: Shows usage patterns to help users make informed decisions
 - **Path Validation**: Offers to create directories that don't exist
 - **Graceful Handling**: Continues setup for remaining games even if one fails
@@ -44,6 +45,14 @@ This command helps users set up games that have been added to the shared configu
 - **File**: `src/game/setup.rs`
 - **CLI Integration**: Added to `GameCommands::Setup` in `src/game/cli.rs`
 - **Command Handler**: Integrated in `src/game/commands.rs`
+- **Core Functions**:
+   - `setup_uninstalled_games()` - Main entry point
+   - `find_uninstalled_games()` - Game detection logic
+   - `setup_single_game()` - Individual game setup
+   - `extract_unique_paths_from_snapshots()` - Path extraction and analysis with cross-device normalization
+   - `normalize_path_for_cross_device()` - Converts `/home/<user>` paths to `~` notation for device independence
+   - `choose_installation_path()` - Interactive path selection
+   - Rich data structures for path information and user interaction
 
 ### Usage Scenarios
 
