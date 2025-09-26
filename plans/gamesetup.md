@@ -1,18 +1,62 @@
-# New command idea
+# Game Setup Command Implementation
 
-`instant game setup` command, choose game which has been added, but which does
-not have an entry in the installations file
+## Completed Features
 
-list potential folders where the game saves should be installed, with list of
-other, then create entry in installations md
+The `instant game setup` command has been successfully implemented with the following functionality:
 
-Different snapshots from different devices contain different paths where the
-game is located on that device. Sort and make unique, this is the list of
-possible locations. 
+### Command Description
+```bash
+instant game setup
+```
 
+This command helps users set up games that have been added to the shared configuration but don't have installation paths configured on the current device.
 
-# TODO research
+### How It Works
 
-Is this actually how restic snapshots work? Check that!
+1. **Detection**: The command identifies games that exist in the global `games.toml` configuration but are missing from the device-specific `installations.toml` file.
 
+2. **Path Collection**: For each uninstalled game, it:
+   - Retrieves all snapshots from the restic repository for that game
+   - Extracts all unique save paths from different devices/snapshots
+   - Groups paths by frequency and usage statistics
+
+3. **Interactive Selection**: Users can choose from:
+   - Existing paths found in snapshots (with usage statistics)
+   - A custom path option for manual entry
+
+4. **Path Information**: For each existing path, the interface shows:
+   - Usage frequency (number of snapshots)
+   - Device count and names
+   - Timeline information (first/last seen)
+
+5. **Installation Setup**: Creates the installation entry in `installations.toml` and optionally creates the directory if it doesn't exist.
+
+### Key Features
+
+- **Multi-Device Awareness**: Leverages snapshot data from different devices to suggest appropriate paths
+- **Statistical Insights**: Shows usage patterns to help users make informed decisions
+- **Path Validation**: Offers to create directories that don't exist
+- **Graceful Handling**: Continues setup for remaining games even if one fails
+- **Rich UI**: Provides detailed previews and formatted information
+
+### Implementation Details
+
+- **File**: `src/game/setup.rs`
+- **CLI Integration**: Added to `GameCommands::Setup` in `src/game/cli.rs`
+- **Command Handler**: Integrated in `src/game/commands.rs`
+
+### Usage Scenarios
+
+1. **Multi-Device Setup**: When setting up InstantCLI on a new device where games are already configured in the shared repository
+2. **Path Migration**: When a game's save location changes and you want to update the local configuration
+3. **New User Onboarding**: When joining a shared game save repository
+
+### Architecture Benefits
+
+- **Decentralized**: Each device maintains its own installation paths while sharing game definitions
+- **Data-Driven**: Uses actual backup history to suggest the most appropriate paths
+- **User-Friendly**: Interactive interface with rich preview information
+- **Robust**: Handles edge cases like missing snapshots or empty paths gracefully
+
+The implementation fully addresses the original plan requirements and provides a comprehensive solution for cross-device game save path management.
 

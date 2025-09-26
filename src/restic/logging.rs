@@ -37,7 +37,7 @@ pub struct ResticCommandLogger {
 impl ResticCommandLogger {
     pub fn new() -> Result<Self> {
         let log_dir = Self::get_log_dir()?;
-        
+
         // Only create directory if debug is enabled
         if is_debug_enabled() {
             create_dir_all(&log_dir).context("Failed to create restic log directory")?;

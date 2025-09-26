@@ -6,7 +6,7 @@ use super::games::{display, selection};
 use super::operations::{launch_game, sync_game_saves};
 use super::repository::RepositoryManager;
 use super::restic::{backup_game_saves, handle_restic_command, restore_game_saves};
-use super::{setup};
+use super::setup;
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {

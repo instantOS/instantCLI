@@ -43,7 +43,7 @@ pub fn setup_uninstalled_games() -> Result<()> {
     for game_name in uninstalled_games {
         if let Err(e) = setup_single_game(&game_name, &game_config, &mut installations) {
             eprintln!("❌ Failed to set up game '{}': {}", game_name, e);
-            
+
             // Ask if user wants to continue with other games
             match FzfWrapper::confirm(&format!(
                 "Would you like to continue setting up the remaining games?"
@@ -97,7 +97,9 @@ fn setup_single_game(
 
     if snapshots.is_empty() {
         println!("❌ No snapshots found for game '{game_name}'.");
-        println!("This game has no backups yet. You'll need to add an installation manually using 'instant game add'.");
+        println!(
+            "This game has no backups yet. You'll need to add an installation manually using 'instant game add'."
+        );
         return Ok(());
     }
 
@@ -129,7 +131,7 @@ fn setup_single_game(
         installations.save()?;
 
         println!("✅ Game '{game_name}' set up successfully with save path: {path_str}");
-        
+
         // Ask if user wants to create the directory if it doesn't exist
         if !save_path.as_path().exists() {
             match FzfWrapper::confirm(&format!(
@@ -173,7 +175,7 @@ fn extract_unique_paths_from_snapshots(
 
             entry.frequency += 1;
             entry.devices.insert(snapshot.hostname.clone());
-            
+
             // Update first/last seen (simple string comparison should work for ISO dates)
             if snapshot.time < entry.first_seen {
                 entry.first_seen = snapshot.time.clone();
@@ -185,7 +187,7 @@ fn extract_unique_paths_from_snapshots(
     }
 
     let mut paths: Vec<PathInfo> = path_frequency.into_values().collect();
-    
+
     // Sort by frequency (most common first) and then by number of devices
     paths.sort_by(|a, b| {
         b.frequency
@@ -211,11 +213,17 @@ impl FzfSelectable for PathInfo {
         let devices_str = if self.devices.len() == 1 {
             format!("1 device: {}", self.devices.iter().next().unwrap())
         } else {
-            format!("{} devices: {}", self.devices.len(), 
-                    self.devices.iter().cloned().collect::<Vec<_>>().join(", "))
+            format!(
+                "{} devices: {}",
+                self.devices.len(),
+                self.devices.iter().cloned().collect::<Vec<_>>().join(", ")
+            )
         };
-        
-        format!("{} (used {} times on {})", self.path, self.frequency, devices_str)
+
+        format!(
+            "{} (used {} times on {})",
+            self.path, self.frequency, devices_str
+        )
     }
 
     fn fzf_key(&self) -> String {
@@ -227,13 +235,16 @@ impl FzfSelectable for PathInfo {
         preview.push_str(&format!("📁 SAVE PATH DETAILS\n\n"));
         preview.push_str(&format!("Path:           {}\n", self.path));
         preview.push_str(&format!("Usage Count:    {} snapshots\n", self.frequency));
-        preview.push_str(&format!("Device Count:   {} unique devices\n", self.devices.len()));
-        
+        preview.push_str(&format!(
+            "Device Count:   {} unique devices\n",
+            self.devices.len()
+        ));
+
         preview.push_str(&format!("\n🖥️  DEVICES USING THIS PATH:\n"));
         for device in &self.devices {
             preview.push_str(&format!("  • {}\n", device));
         }
-        
+
         // Format dates
         if let (Ok(first), Ok(last)) = (
             chrono::DateTime::parse_from_rfc3339(&self.first_seen),
@@ -241,12 +252,12 @@ impl FzfSelectable for PathInfo {
         ) {
             let first_str = first.format("%Y-%m-%d %H:%M:%S").to_string();
             let last_str = last.format("%Y-%m-%d %H:%M:%S").to_string();
-            
+
             preview.push_str(&format!("\n📅 USAGE TIMELINE:\n"));
             preview.push_str(&format!("First Seen:     {}\n", first_str));
             preview.push_str(&format!("Last Seen:      {}\n", last_str));
         }
-        
+
         protocol::FzfPreview::Text(preview)
     }
 }
@@ -275,18 +286,15 @@ impl FzfSelectable for StringOption {
 }
 
 /// Let user choose from available paths or enter a custom one
-fn choose_installation_path(
-    game_name: &str,
-    paths: &[PathInfo],
-) -> Result<Option<String>> {
+fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Option<String>> {
     println!("\nChoose how to set up the save path for '{}':", game_name);
-    
+
     // Create options including the paths and a custom option
     let mut options = vec![StringOption::new(
-        "[Enter custom path]".to_string(), 
-        "CUSTOM".to_string()
+        "[Enter custom path]".to_string(),
+        "CUSTOM".to_string(),
     )];
-    
+
     // Add existing paths
     for path_info in paths {
         options.push(StringOption::new(
@@ -294,27 +302,28 @@ fn choose_installation_path(
             path_info.path.clone(),
         ));
     }
-    
+
     let selected = FzfWrapper::select_one(options)
         .map_err(|e| anyhow::anyhow!("Failed to select path option: {}", e))?;
-    
+
     match selected {
         Some(selection) => {
             if selection.value == "CUSTOM" {
                 // User wants to enter a custom path
                 let custom_path = FzfWrapper::input(&format!(
                     "Enter custom save path for '{}' (e.g., ~/.local/share/{}/saves):",
-                    game_name, game_name.to_lowercase().replace(' ', "-")
+                    game_name,
+                    game_name.to_lowercase().replace(' ', "-")
                 ))
                 .map_err(|e| anyhow::anyhow!("Failed to get custom path input: {}", e))?
                 .trim()
                 .to_string();
-                
+
                 if custom_path.is_empty() {
                     println!("Empty path provided. Setup cancelled.");
                     return Ok(None);
                 }
-                
+
                 Ok(Some(custom_path))
             } else {
                 // User selected one of the existing paths
