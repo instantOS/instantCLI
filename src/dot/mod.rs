@@ -90,13 +90,12 @@ pub mod localrepo;
 pub mod meta;
 pub mod path_serde;
 pub mod repo;
-pub mod repository;
 
 #[cfg(test)]
 mod path_tests;
 
 pub use crate::dot::dotfile::Dotfile;
-pub use git::{diff_all, status_all};
+pub use git::{diff_all, status_all, update_all};
 
 use crate::dot::config::Config;
 use crate::dot::db::Database;
@@ -194,11 +193,10 @@ fn normalize_path(path: &Path) -> Result<PathBuf> {
 }
 
 /// Get all active dotfile directories from all repositories
-pub fn get_active_dotfile_dirs(config: &Config, _db: &Database) -> Result<Vec<PathBuf>> {
-    // For now, fall back to the old implementation until we can properly handle Database ownership
+pub fn get_active_dotfile_dirs(config: &Config, db: &Database) -> Result<Vec<PathBuf>> {
     use crate::dot::repo::RepositoryManager;
 
-    let repo_manager = RepositoryManager::new(config, _db);
+    let repo_manager = RepositoryManager::new(config, db);
     repo_manager.get_active_dotfile_dirs()
 }
 
@@ -321,7 +319,6 @@ fn get_modified_dotfiles(
 
 /// Helper function to find which repository contains a dotfile
 fn find_repo_for_dotfile(dotfile: &Dotfile, config: &Config, _db: &Database) -> Result<Option<RepoName>> {
-    // For now, fall back to the old implementation until we can properly handle Database ownership
     for repo in &config.repos {
         let local_repo = LocalRepo::new(config, repo.name.clone())?;
         if dotfile

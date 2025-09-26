@@ -44,7 +44,6 @@ use crate::doctor::DoctorCommands;
 use crate::dot::config::ConfigManager;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
-use crate::dot::repository::create_repository_service;
 use crate::scratchpad::ScratchpadCommand;
 
 /// InstantCLI main parser
@@ -232,10 +231,10 @@ async fn main() -> Result<()> {
 
             match command {
                 DotCommands::Repo { command } => {
-                    let repository_service = create_repository_service(config_manager.clone(), db);
                     execute_with_error_handling(
                         dot::repo::commands::handle_repo_command(
-                            repository_service,
+                            &mut config_manager,
+                            &db,
                             command,
                             cli.debug,
                         ),
@@ -272,9 +271,8 @@ async fn main() -> Result<()> {
                     )?;
                 }
                 DotCommands::Update => {
-                    let repository_service = create_repository_service(config_manager.clone(), db);
                     execute_with_error_handling(
-                        repository_service.update_all_repositories().map_err(|e| anyhow::anyhow!(e)),
+                        dot::update_all(&config_manager.config, cli.debug),
                         "Error updating repos",
                         Some("All repos updated"),
                     )?;
