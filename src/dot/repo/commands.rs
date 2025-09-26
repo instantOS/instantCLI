@@ -77,7 +77,7 @@ fn list_repositories(config_manager: &ConfigManager, _db: &Database) -> Result<(
 /// Add a new repository
 fn add_repository(
     config_manager: &mut ConfigManager,
-    db: &Database,
+    _db: &Database,
     url: &str,
     name: Option<&str>,
     branch: Option<&str>,
