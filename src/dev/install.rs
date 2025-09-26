@@ -33,7 +33,7 @@ impl PackageRepo {
         if self.path.exists() {
             // Repository exists, pull latest changes
             let mut repo =
-                git::open_repo(&self.path).context("Failed to open package repository")?;
+                Repository::open(&self.path).context("Failed to open package repository")?;
 
             // Check if there are local changes by examining the repository status
             let has_local_changes = self.has_local_changes(&repo)?;
@@ -43,7 +43,7 @@ impl PackageRepo {
             }
 
             // Pull latest changes
-            git::pull(&mut repo).context("Failed to pull latest changes")?;
+            git::clean_and_pull(&mut repo).context("Failed to pull latest changes")?;
         } else {
             // Clone repository
             git::clone_repo(&self.url, &self.path, Some("main"), Some(3))
@@ -67,7 +67,7 @@ impl PackageRepo {
         eprintln!("💾 Stashing local changes...");
 
         let mut repo =
-            git::open_repo(&self.path).context("Failed to open repository for stashing")?;
+            Repository::open(&self.path).context("Failed to open repository for stashing")?;
 
         // Use git2 to stash changes
         let signature = repo.signature().context("Failed to get git signature")?;

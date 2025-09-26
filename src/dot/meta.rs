@@ -1,14 +1,13 @@
-use crate::common::git;
 use anyhow::{Context, Result};
+use git2::Repository;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 
 /// Validate that the given path is a git repository
-//TODO:this function is redundant, it could be replaced with using git2 directly
 fn ensure_git_repo(repo_path: &Path) -> Result<()> {
-    git::is_git_repo(repo_path)
-        .then_some(())
-        .ok_or_else(|| anyhow::anyhow!("Not a git repository: {}", repo_path.display()))
+    Repository::open(repo_path)
+        .map(|_| ())
+        .with_context(|| format!("Not a git repository: {}", repo_path.display()))
 }
 
 #[derive(Deserialize, Debug, Clone)]

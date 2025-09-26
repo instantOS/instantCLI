@@ -2,6 +2,7 @@ use crate::common;
 use crate::common::git;
 use crate::dot::config::Config;
 use anyhow::{Context, Result};
+use git2::Repository;
 use std::{path::Path, path::PathBuf};
 
 /// Represents a single dotfile directory within a repository
@@ -113,7 +114,7 @@ impl LocalRepo {
 
     pub fn get_checked_out_branch(&self, cfg: &Config) -> Result<String> {
         let target = self.local_path(cfg)?;
-        let repo = git::open_repo(&target).context("Failed to open git repository")?;
+        let repo = Repository::open(&target).context("Failed to open git repository")?;
         git::current_branch(&repo).context("Failed to get current branch")
     }
 
@@ -153,7 +154,7 @@ impl LocalRepo {
             let pb = common::progress::create_spinner(format!("Fetching branch {branch}..."));
 
             let mut repo =
-                git::open_repo(&target).context("Failed to open git repository for fetch")?;
+                Repository::open(&target).context("Failed to open git repository for fetch")?;
             git::fetch_branch(&mut repo, branch).context("Failed to fetch branch")?;
 
             pb.finish_with_message(format!("Fetched branch {branch}"));
@@ -178,8 +179,8 @@ impl LocalRepo {
         // pull latest
         let pb = common::progress::create_spinner(format!("Updating {}...", self.name));
 
-        let mut repo = git::open_repo(&target).context("Failed to open git repository for pull")?;
-        git::pull(&mut repo).context("Failed to pull latest changes")?;
+        let mut repo = Repository::open(&target).context("Failed to open git repository for pull")?;
+        git::clean_and_pull(&mut repo).context("Failed to pull latest changes")?;
 
         pb.finish_with_message(format!("Updated {}", self.name));
 

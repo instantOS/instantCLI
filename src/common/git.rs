@@ -68,7 +68,7 @@ pub fn checkout_branch(repo: &mut Repository, branch: &str) -> Result<()> {
     let remote_branch_name = format!("origin/{}", branch);
     let remote_branch = repo.find_branch(&remote_branch_name, git2::BranchType::Remote);
 
-    let commit_id = match remote_branch {
+    let _commit_id = match remote_branch {
         Ok(branch) => branch
             .get()
             .target()
@@ -85,11 +85,6 @@ pub fn checkout_branch(repo: &mut Repository, branch: &str) -> Result<()> {
         }
     };
 
-    // TODO: is this needed? Maybe remove
-    let _commit = repo
-        .find_commit(commit_id)
-        .context("Failed to find commit")?;
-
     // Checkout the commit
     repo.set_head(&format!("refs/heads/{}", branch))
         .context("Failed to set HEAD")?;
@@ -104,15 +99,30 @@ pub fn checkout_branch(repo: &mut Repository, branch: &str) -> Result<()> {
     Ok(())
 }
 
-/// Pull latest changes (fetch + merge)
-// TODO: this should be simplified as well as renamed. If the working directory is dirty, clean it
-// and then pull. No merging
-pub fn pull(repo: &mut Repository) -> Result<()> {
+/// Clean working directory and pull latest changes (fetch + reset)
+pub fn clean_and_pull(repo: &mut Repository) -> Result<()> {
     // Get current branch
     let branch_name = current_branch(repo)?;
 
-    // Fetch from origin
-    fetch_branch(repo, &branch_name)?;
+    // Check if working directory is dirty
+    if repo.statuses(None)?.is_empty() {
+        // Working directory is clean, just fetch
+        fetch_branch(repo, &branch_name)?;
+    } else {
+        // Working directory is dirty, clean it
+        repo.reset_default(None, None::<&str>)?;
+
+        // Discard all changes
+        repo.checkout_head(Some(
+            &mut CheckoutBuilder::new()
+                .force()
+                .remove_ignored(true)
+                .remove_untracked(true),
+        ))?;
+
+        // Now fetch
+        fetch_branch(repo, &branch_name)?;
+    }
 
     // Get the reference for the remote branch
     let remote_branch_name = format!("origin/{}", branch_name);
@@ -124,60 +134,14 @@ pub fn pull(repo: &mut Repository) -> Result<()> {
         .peel_to_commit()
         .context("Failed to peel remote branch to commit")?;
 
-    // Get the reference for the local branch
-    let local_branch_ref = repo
-        .find_branch(&branch_name, git2::BranchType::Local)
-        .context("Failed to find local branch")?;
+    // Reset local branch to match remote (hard reset)
+    repo.set_head(&format!("refs/heads/{}", branch_name))
+        .context("Failed to set HEAD")?;
 
-    let local_branch_ref = local_branch_ref.into_reference();
-    let annotated_commit = repo.reference_to_annotated_commit(&local_branch_ref)?;
-
-    // Perform the merge
-    let mut merge_options = git2::MergeOptions::new();
-    merge_options.fail_on_conflict(true);
-
-    repo.merge(&[&annotated_commit], Some(&mut merge_options), None)
-        .context("Failed to perform merge")?;
-
-    // Check if there are conflicts
-    if repo.index().unwrap().has_conflicts() {
-        return Err(anyhow::anyhow!("Merge conflicts detected"));
-    }
-
-    // Create commit for the merge
-    let signature = repo.signature().context("Failed to get git signature")?;
-
-    let mut index = repo.index()?;
-    let tree_id = index.write_tree().context("Failed to write tree")?;
-
-    let tree = repo.find_tree(tree_id).context("Failed to find tree")?;
-
-    let parent_commit = repo.head()?.peel_to_commit()?;
-
-    repo.commit(
-        Some("HEAD"),
-        &signature,
-        &signature,
-        &format!("Merge branch '{}' of origin", branch_name),
-        &tree,
-        &[&parent_commit, &remote_commit],
-    )
-    .context("Failed to create merge commit")?;
-
-    // Clean up the merge state
-    repo.cleanup_state()?;
+    repo.reset(&remote_commit.into_object(), git2::ResetType::Hard, None)
+        .context("Failed to reset to remote commit")?;
 
     Ok(())
 }
 
-/// Check if the path is a git repository
-// TODO: this function is redundant, it could be replaced with using git2 directly
-pub fn is_git_repo(path: &Path) -> bool {
-    Repository::open(path).is_ok()
-}
 
-/// Open an existing git repository
-// TODO: this function is redundant, it could be replaced with using git2 directly
-pub fn open_repo(path: &Path) -> Result<Repository> {
-    Repository::open(path).context("Failed to open git repository")
-}
