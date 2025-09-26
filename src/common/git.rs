@@ -85,6 +85,7 @@ pub fn checkout_branch(repo: &mut Repository, branch: &str) -> Result<()> {
         }
     };
 
+    // TODO: is this needed? Maybe remove
     let _commit = repo
         .find_commit(commit_id)
         .context("Failed to find commit")?;
@@ -104,6 +105,8 @@ pub fn checkout_branch(repo: &mut Repository, branch: &str) -> Result<()> {
 }
 
 /// Pull latest changes (fetch + merge)
+// TODO: this should be simplified as well as renamed. If the working directory is dirty, clean it
+// and then pull. No merging
 pub fn pull(repo: &mut Repository) -> Result<()> {
     // Get current branch
     let branch_name = current_branch(repo)?;
@@ -168,11 +171,13 @@ pub fn pull(repo: &mut Repository) -> Result<()> {
 }
 
 /// Check if the path is a git repository
+// TODO: this function is redundant, it could be replaced with using git2 directly
 pub fn is_git_repo(path: &Path) -> bool {
     Repository::open(path).is_ok()
 }
 
 /// Open an existing git repository
+// TODO: this function is redundant, it could be replaced with using git2 directly
 pub fn open_repo(path: &Path) -> Result<Repository> {
     Repository::open(path).context("Failed to open git repository")
 }
