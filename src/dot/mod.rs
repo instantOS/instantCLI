@@ -1,4 +1,4 @@
-use crate::fzf_wrapper::{FzfOptions, FzfSelectable, FzfWrapper};
+use crate::fzf_wrapper::{FzfSelectable, FzfWrapper};
 use anyhow::Result;
 use colored::*;
 use std::collections::HashMap;
@@ -464,12 +464,8 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
         .map(|repo| RepoSelectItem { repo })
         .collect();
 
-    let wrapper = FzfWrapper::with_options(FzfOptions {
-        prompt: Some("Select repository to add the dotfile to: ".to_string()),
-        ..Default::default()
-    });
-
-    match wrapper
+    match FzfWrapper::builder()
+        .prompt("Select repository to add the dotfile to: ")
         .select(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {
@@ -504,15 +500,11 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
         })
         .collect();
 
-    let wrapper = FzfWrapper::with_options(FzfOptions {
-        prompt: Some(format!(
+    match FzfWrapper::builder()
+        .prompt(format!(
             "Select target dots_dir in repo '{}': ",
             local_repo.name
-        )),
-        ..Default::default()
-    });
-
-    match wrapper
+        ))
         .select(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {

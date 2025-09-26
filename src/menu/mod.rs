@@ -1,4 +1,4 @@
-use crate::fzf_wrapper::{ConfirmResult, FzfOptions, FzfPreview, FzfWrapper};
+use crate::fzf_wrapper::{ConfirmResult, FzfPreview, FzfWrapper};
 use anyhow::Result;
 use protocol::SerializableMenuItem;
 
@@ -64,29 +64,23 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                         .collect()
                 };
 
-                let wrapper = FzfWrapper::with_options(FzfOptions {
-                    prompt: Some(prompt.clone()),
-                    multi_select: multi,
-                    ..Default::default()
-                });
-
-                match wrapper.select(item_list) {
-                    Ok(crate::fzf_wrapper::FzfResult::Selected(item)) => {
+                match FzfWrapper::builder()
+                    .prompt(prompt.clone())
+                    .multi_select(multi)
+                    .select(item_list)?
+                {
+                    crate::fzf_wrapper::FzfResult::Selected(item) => {
                         println!("{}", item.display_text);
                         Ok(0) // Selected
                     }
-                    Ok(crate::fzf_wrapper::FzfResult::MultiSelected(items)) => {
+                    crate::fzf_wrapper::FzfResult::MultiSelected(items) => {
                         for item in items {
                             println!("{}", item.display_text);
                         }
                         Ok(0) // Selected
                     }
-                    Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(1), // Cancelled
-                    Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {
-                        eprintln!("Error: {e}");
-                        Ok(2) // Error
-                    }
-                    Err(e) => {
+                    crate::fzf_wrapper::FzfResult::Cancelled => Ok(1), // Cancelled
+                    crate::fzf_wrapper::FzfResult::Error(e) => {
                         eprintln!("Error: {e}");
                         Ok(2) // Error
                     }
