@@ -5,9 +5,9 @@ use super::restic::cache;
 
 /// Helper function to update installation checkpoint
 pub fn update_installation_checkpoint(game_name: &str, checkpoint_id: &str) -> Result<()> {
-    let mut installations = InstallationsConfig::load()
-        .context("Failed to load installations configuration")?;
-    
+    let mut installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
+
     // Find and update the installation
     for installation in &mut installations.installations {
         if installation.game_name.0 == game_name {
@@ -15,8 +15,9 @@ pub fn update_installation_checkpoint(game_name: &str, checkpoint_id: &str) -> R
             break;
         }
     }
-    
-    installations.save()
+
+    installations
+        .save()
         .context("Failed to save updated installations configuration")
 }
 
@@ -29,7 +30,12 @@ pub fn extract_snapshot_id_from_backup_result(
 ) -> Result<Option<String>> {
     if backup_result.starts_with("snapshot: ") {
         // Extract ID from "snapshot: {id}" format
-        Ok(Some(backup_result.strip_prefix("snapshot: ").unwrap_or(backup_result).to_string()))
+        Ok(Some(
+            backup_result
+                .strip_prefix("snapshot: ")
+                .unwrap_or(backup_result)
+                .to_string(),
+        ))
     } else {
         // Try to get the latest snapshot for this game as fallback
         match cache::get_snapshots_for_game(game_name, game_config) {
@@ -42,7 +48,10 @@ pub fn extract_snapshot_id_from_backup_result(
                 }
             }
             Err(e) => {
-                eprintln!("Warning: Could not fetch snapshots for checkpoint update: {}", e);
+                eprintln!(
+                    "Warning: Could not fetch snapshots for checkpoint update: {}",
+                    e
+                );
                 Ok(None)
             }
         }
@@ -55,7 +64,9 @@ pub fn update_checkpoint_after_backup(
     game_name: &str,
     game_config: &super::config::InstantGameConfig,
 ) -> Result<()> {
-    if let Some(snapshot_id) = extract_snapshot_id_from_backup_result(backup_result, game_name, game_config)? {
+    if let Some(snapshot_id) =
+        extract_snapshot_id_from_backup_result(backup_result, game_name, game_config)?
+    {
         if let Err(e) = update_installation_checkpoint(game_name, &snapshot_id) {
             eprintln!("Warning: Could not update checkpoint: {}", e);
         }

@@ -68,7 +68,11 @@ fn handle_backup(game_name: Option<String>) -> Result<()> {
     backup_game_saves(game_name)
 }
 
-fn handle_restore(game_name: Option<String>, snapshot_id: Option<String>, force: bool) -> Result<()> {
+fn handle_restore(
+    game_name: Option<String>,
+    snapshot_id: Option<String>,
+    force: bool,
+) -> Result<()> {
     restore_game_saves(game_name, snapshot_id, force)
 }
 

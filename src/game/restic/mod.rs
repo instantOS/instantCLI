@@ -4,9 +4,9 @@ pub mod commands;
 pub mod security;
 pub mod snapshot_selection;
 
+use crate::game::checkpoint;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection;
-use crate::game::checkpoint;
 use anyhow::{Context, Result};
 
 /// Handle game save backup with optional game selection
@@ -101,7 +101,9 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             println!("✅ Backup completed successfully for game '{game_name}'!\n\n{output}");
 
             // Update checkpoint after successful backup
-            if let Err(e) = checkpoint::update_checkpoint_after_backup(&output, &game_name, &game_config) {
+            if let Err(e) =
+                checkpoint::update_checkpoint_after_backup(&output, &game_name, &game_config)
+            {
                 eprintln!("Warning: Could not update checkpoint: {}", e);
             }
 
@@ -119,7 +121,11 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
 }
 
 /// Handle game save restore with optional game and snapshot selection
-pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>, force: bool) -> Result<()> {
+pub fn restore_game_saves(
+    game_name: Option<String>,
+    snapshot_id: Option<String>,
+    force: bool,
+) -> Result<()> {
     use crate::game::restic::backup::GameBackup;
     use crate::game::restic::snapshot_selection::select_snapshot_interactive_with_local_comparison;
 
@@ -160,8 +166,10 @@ pub fn restore_game_saves(game_name: Option<String>, snapshot_id: Option<String>
     if !force {
         if let Some(ref nearest_checkpoint) = game_selection.installation.nearest_checkpoint {
             if nearest_checkpoint == &snapshot_id {
-                println!("⏭️  Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)", 
-                    game_selection.game_name, snapshot_id);
+                println!(
+                    "⏭️  Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
+                    game_selection.game_name, snapshot_id
+                );
                 return Ok(());
             }
         }

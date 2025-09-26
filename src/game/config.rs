@@ -201,39 +201,55 @@ mod tests {
 
     #[test]
     fn test_game_installation_new() {
-        let installation = GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")));
-        
+        let installation =
+            GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")));
+
         assert_eq!(installation.game_name.0, "test_game");
         assert_eq!(installation.nearest_checkpoint, None);
     }
 
     #[test]
     fn test_game_installation_with_checkpoint() {
-        let installation = GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")))
-            .with_checkpoint("checkpoint123");
-        
+        let installation =
+            GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")))
+                .with_checkpoint("checkpoint123");
+
         assert_eq!(installation.game_name.0, "test_game");
-        assert_eq!(installation.nearest_checkpoint, Some("checkpoint123".to_string()));
+        assert_eq!(
+            installation.nearest_checkpoint,
+            Some("checkpoint123".to_string())
+        );
     }
 
     #[test]
     fn test_game_installation_update_checkpoint() {
-        let mut installation = GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")));
-        
+        let mut installation =
+            GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")));
+
         installation.update_checkpoint("checkpoint456");
-        assert_eq!(installation.nearest_checkpoint, Some("checkpoint456".to_string()));
-        
+        assert_eq!(
+            installation.nearest_checkpoint,
+            Some("checkpoint456".to_string())
+        );
+
         installation.update_checkpoint("checkpoint789");
-        assert_eq!(installation.nearest_checkpoint, Some("checkpoint789".to_string()));
+        assert_eq!(
+            installation.nearest_checkpoint,
+            Some("checkpoint789".to_string())
+        );
     }
 
     #[test]
     fn test_game_installation_clear_checkpoint() {
-        let mut installation = GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")))
-            .with_checkpoint("checkpoint123");
-        
-        assert_eq!(installation.nearest_checkpoint, Some("checkpoint123".to_string()));
-        
+        let mut installation =
+            GameInstallation::new("test_game", TildePath::new(PathBuf::from("~/.test/saves")))
+                .with_checkpoint("checkpoint123");
+
+        assert_eq!(
+            installation.nearest_checkpoint,
+            Some("checkpoint123".to_string())
+        );
+
         installation.clear_checkpoint();
         assert_eq!(installation.nearest_checkpoint, None);
     }

@@ -1,12 +1,12 @@
 use anyhow::{Context, Result};
 use colored::*;
 
+use crate::game::checkpoint;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
 use crate::game::utils::save_files::{TimeComparison, compare_snapshot_vs_local};
 use crate::game::utils::validation;
-use crate::game::checkpoint;
 
 /// Sync decision result
 #[derive(Debug, PartialEq)]
@@ -75,8 +75,11 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 total_skipped += 1;
             }
             Ok(SyncAction::RestoreSkipped(snapshot_id)) => {
-                println!("⏭️  {}: Skipped restore from {} (checkpoint matches, use --force to override)", 
-                    installation.game_name.0.yellow(), snapshot_id);
+                println!(
+                    "⏭️  {}: Skipped restore from {} (checkpoint matches, use --force to override)",
+                    installation.game_name.0.yellow(),
+                    snapshot_id
+                );
                 total_skipped += 1;
             }
             Ok(SyncAction::CreateBackup) => {
@@ -225,7 +228,7 @@ fn sync_single_game(
                     }
                 }
             }
-            
+
             // Both local saves and snapshots exist - compare timestamps
             match compare_snapshot_vs_local(&snapshot.time, local_time) {
                 Ok(TimeComparison::LocalNewer) => Ok(SyncAction::CreateBackup),
@@ -254,7 +257,7 @@ fn sync_single_game(
                     }
                 }
             }
-            
+
             // No local saves but snapshots exist - restore from latest
             Ok(SyncAction::RestoreFromLatest(snapshot.id.clone()))
         }
@@ -267,7 +270,7 @@ fn sync_single_game(
     }
 }
 
-    /// Create backup for a game
+/// Create backup for a game
 fn create_backup_for_game(
     installation: &crate::game::config::GameInstallation,
     game_config: &InstantGameConfig,
@@ -279,7 +282,11 @@ fn create_backup_for_game(
         .context("Failed to create backup")?;
 
     // Update checkpoint after successful backup
-    checkpoint::update_checkpoint_after_backup(&backup_result, &installation.game_name.0, game_config)?;
+    checkpoint::update_checkpoint_after_backup(
+        &backup_result,
+        &installation.game_name.0,
+        game_config,
+    )?;
 
     // Invalidate cache for this game after successful backup
     let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
