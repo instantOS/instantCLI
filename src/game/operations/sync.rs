@@ -6,23 +6,7 @@ use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
 use crate::game::utils::save_files::{TimeComparison, compare_snapshot_vs_local};
 use crate::game::utils::validation;
-
-/// Helper function to update installation checkpoint
-fn update_installation_checkpoint(game_name: &str, checkpoint_id: &str) -> Result<()> {
-    let mut installations = InstallationsConfig::load()
-        .context("Failed to load installations configuration")?;
-    
-    // Find and update the installation
-    for installation in &mut installations.installations {
-        if installation.game_name.0 == game_name {
-            installation.update_checkpoint(checkpoint_id);
-            break;
-        }
-    }
-    
-    installations.save()
-        .context("Failed to save updated installations configuration")
-}
+use crate::game::checkpoint;
 
 /// Sync decision result
 #[derive(Debug, PartialEq)]
@@ -294,23 +278,8 @@ fn create_backup_for_game(
         .backup_game(installation)
         .context("Failed to create backup")?;
 
-    // Extract snapshot ID from backup result (format: "snapshot: {id}" or other)
-    let snapshot_id = if backup_result.starts_with("snapshot: ") {
-        backup_result.strip_prefix("snapshot: ").unwrap_or(&backup_result).to_string()
-    } else {
-        // Try to get the latest snapshot for this game as fallback
-        let snapshots = cache::get_snapshots_for_game(&installation.game_name.0, game_config)?;
-        if let Some(latest) = snapshots.first() {
-            latest.id.clone()
-        } else {
-            // Cannot determine snapshot ID, skip checkpoint update
-            eprintln!("Warning: Could not determine snapshot ID for checkpoint update");
-            return Ok(());
-        }
-    };
-
-    // Update the installation with the new checkpoint
-    update_installation_checkpoint(&installation.game_name.0, &snapshot_id)?;
+    // Update checkpoint after successful backup
+    checkpoint::update_checkpoint_after_backup(&backup_result, &installation.game_name.0, game_config)?;
 
     // Invalidate cache for this game after successful backup
     let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
@@ -333,7 +302,7 @@ fn restore_game_from_snapshot(
         .context("Failed to restore from snapshot")?;
 
     // Update the installation with the checkpoint
-    update_installation_checkpoint(&installation.game_name.0, snapshot_id)?;
+    checkpoint::update_checkpoint_after_restore(&installation.game_name.0, snapshot_id)?;
 
     // Invalidate cache for this game after successful restore
     let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
