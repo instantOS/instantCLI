@@ -62,10 +62,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
 
     if games_to_sync.is_empty() {
         eprintln!("❌ No games configured for syncing.");
-        eprintln!(
-            "Add games using '{} game add'.",
-            env!("CARGO_BIN_NAME")
-        );
+        eprintln!("Add games using '{} game add'.", env!("CARGO_BIN_NAME"));
         return Ok(());
     }
 

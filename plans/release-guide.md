@@ -35,7 +35,7 @@ This guide covers the end-to-end process for publishing a new InstantCLI release
 ## 5. Verify the published assets
 
 1. Open the GitHub release page for the new tag.
-2. Download the attached binary (`instant-<version>-x86_64-unknown-linux-gnu`) and pacman package (`instant-<version>-1-x86_64.pkg.tar.zst`) to confirm they install and run as expected.
+2. Download the attached binary (`ins-<version>-x86_64-unknown-linux-gnu`) and pacman package (`ins-<version>-1-x86_64.pkg.tar.zst`) to confirm they install and run as expected.
 
 ## Useful GitHub Actions
 

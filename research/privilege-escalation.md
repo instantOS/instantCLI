@@ -441,4 +441,4 @@ mod tests {
 ### Debug Tips:
 - Enable `RUST_BACKTRACE=1` for better error traces
 - Use `RUST_LOG=debug` for detailed logging
-- Test privilege escalation manually first: `sudo instant doctor fix <check>`
+- Test privilege escalation manually first: `sudo ins doctor fix <check>`

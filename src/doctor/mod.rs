@@ -284,7 +284,11 @@ pub fn print_single_check_result_table(result: &CheckResult) {
             if let Some(ref msg) = result.fix_message {
                 println!();
                 println!("  Fix available: {msg}");
-                println!("  Run: {} doctor fix {}", env!("CARGO_BIN_NAME"), result.check_id);
+                println!(
+                    "  Run: {} doctor fix {}",
+                    env!("CARGO_BIN_NAME"),
+                    result.check_id
+                );
             }
         } else {
             println!();

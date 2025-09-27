@@ -44,7 +44,7 @@ pub struct ItemStats {
 ## Integration Strategy for InstantCLI
 
 ### 1. Data Storage
-- Store frecency data in `~/.cache/instant/frecency_store.json`
+- Store frecency data in `~/.cache/ins/frecency_store.json`
 - Use JSON serialization for persistence
 - Separate from the application cache for different refresh cycles
 
@@ -71,7 +71,7 @@ use fre::store::{FrecencyStore, read_store, write_store};
 use std::path::PathBuf;
 
 // Initialize or load existing store
-let store_path = PathBuf::from("~/.cache/instant/frecency_store.json");
+let store_path = PathBuf::from("~/.cache/ins/frecency_store.json");
 let mut store = read_store(&store_path).unwrap_or_default();
 
 // Record application usage
