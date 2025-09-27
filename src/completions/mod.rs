@@ -1,8 +1,4 @@
-use std::{
-    ffi::OsStr,
-    fmt, fs,
-    path::{Path, PathBuf},
-};
+use std::{ffi::OsStr, fmt, path::Path};
 
 use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
@@ -67,10 +63,9 @@ pub enum CompletionCommands {
     Install {
         #[arg(value_enum)]
         shell: SupportedShell,
+        /// Print only the source snippet without additional text
         #[arg(long)]
-        output: Option<PathBuf>,
-        #[arg(long)]
-        force: bool,
+        snippet_only: bool,
     },
 }
 
@@ -94,31 +89,22 @@ pub fn generate(shell: SupportedShell) -> Result<String> {
     String::from_utf8(buffer).context("rendering completions")
 }
 
-pub fn install(shell: SupportedShell, output: Option<PathBuf>, force: bool) -> Result<PathBuf> {
-    let default_dir = dirs::data_dir()
-        .or_else(|| dirs::home_dir().map(|home| home.join(".local/share")))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("instantos")
-        .join("completions");
-    let target_path = output.unwrap_or_else(|| default_dir.join(shell.file_name()));
+pub fn install(shell: SupportedShell, snippet_only: bool) -> Result<String> {
+    let snippet = match shell {
+        SupportedShell::Bash => {
+            "# Add to ~/.bashrc or ~/.bash_profile\nsource <(COMPLETE=bash instant)".to_string()
+        }
+        SupportedShell::Zsh => "# Add to ~/.zshrc\nsource <(COMPLETE=zsh instant)".to_string(),
+    };
 
-    if let Some(parent) = target_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("creating completions directory {}", parent.display()))?;
+    if snippet_only {
+        Ok(snippet)
+    } else {
+        Ok(format!(
+            "To enable {} completions, add the following to your shell config:\n\n{}\n\nThis keeps dynamic completions in sync with the instant binary.",
+            shell, snippet
+        ))
     }
-
-    if target_path.exists() && !force {
-        return Err(anyhow!(
-            "{} already exists, pass --force to overwrite",
-            target_path.display()
-        ));
-    }
-
-    let script = generate(shell)?;
-    fs::write(&target_path, script)
-        .with_context(|| format!("writing completion script to {}", target_path.display()))?;
-
-    Ok(target_path)
 }
 
 pub fn instructions(shell: SupportedShell, install_path: &Path) -> String {
