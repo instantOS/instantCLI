@@ -198,6 +198,7 @@ pub fn restore_game_saves(
             &snapshot,
             save_info,
             &game_selection.game_name,
+            force,
         )? {
             // User cancelled due to security warning
             println!("Restore cancelled due to security warning.");
