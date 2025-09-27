@@ -54,4 +54,22 @@ pub enum GameCommands {
     },
     /// Set up games that have been added but are not configured on this device
     Setup,
+    /// Debug command: Show snapshot tag information (for developers)
+    #[cfg(debug_assertions)]
+    Debug {
+        /// Debug subcommands
+        #[command(subcommand)]
+        debug_command: DebugCommands,
+    },
+}
+
+/// Debug commands for developers
+#[cfg(debug_assertions)]
+#[derive(Subcommand, Debug, Clone)]
+pub enum DebugCommands {
+    /// Show detailed snapshot tag information
+    Tags {
+        /// Show tags for specific game (optional, shows all if not specified)
+        game_name: Option<String>,
+    },
 }

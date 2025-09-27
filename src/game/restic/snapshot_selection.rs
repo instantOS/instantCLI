@@ -1,5 +1,6 @@
 use crate::fzf_wrapper::{FzfSelectable, FzfWrapper};
 use crate::game::config::InstantGameConfig;
+use crate::game::restic::tags;
 use crate::game::utils::save_files::{
     TimeComparison, compare_snapshot_vs_local, format_system_time_for_display,
     get_save_directory_info,
@@ -13,14 +14,10 @@ impl FzfSelectable for Snapshot {
         let host = &self.hostname;
 
         // Extract game name from tags if available
-        let game_name = self
-            .tags
-            .iter()
-            .find(|tag| tag != &"instantgame")
-            .map(|s| s.as_str())
-            .unwrap_or("unknown");
+        let game_name = tags::extract_game_name_from_tags(&self.tags)
+            .unwrap_or_else(|| "unknown".to_string());
 
-        format!("{game_name} - {date} ({host})")
+        format!("{} - {} ({})", game_name, date, host)
     }
 
     fn fzf_key(&self) -> String {
@@ -29,14 +26,10 @@ impl FzfSelectable for Snapshot {
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         // Extract game name from tags
-        let game_name = self
-            .tags
-            .iter()
-            .find(|tag| tag != &"instantgame")
-            .map(|s| s.as_str())
-            .unwrap_or("unknown");
+        let game_name = tags::extract_game_name_from_tags(&self.tags)
+            .unwrap_or_else(|| "unknown".to_string());
 
-        let preview_text = create_snapshot_preview(self, game_name);
+        let preview_text = create_snapshot_preview(self, &game_name);
         crate::menu::protocol::FzfPreview::Text(preview_text)
     }
 }
