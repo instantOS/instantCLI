@@ -8,5 +8,5 @@ rootinstall:
     sudo install ./target/debug/instant /usr/local/bin/
 
 test:
-    DEBUG=1 ./tests/scripts/run_all.sh
+    ./tests/run_all.sh
 
