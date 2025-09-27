@@ -28,23 +28,31 @@ cleanup_test_env() {
     fi
 }
 
-ensure_instant_binary() {
-    if [[ -z "${INSTANT_BIN:-}" ]]; then
-        (
-            export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-Awarnings"
-            cd "${REPO_ROOT}" && cargo build --quiet
-        )
-        INSTANT_BIN="${REPO_ROOT}/target/debug/instant"
+prepare_instant_binary() {
+    if [[ -n "${INSTANT_PREPARED:-}" && -n "${INSTANT_BIN:-}" && -x "${INSTANT_BIN}" ]]; then
+        return
     fi
+
+    (
+        export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-Awarnings"
+        cd "${REPO_ROOT}" && cargo build --quiet
+    )
+
+    export INSTANT_BIN="${REPO_ROOT}/target/debug/instant"
+    export INSTANT_PREPARED=1
 }
 
 instant() {
-    ensure_instant_binary
+    if [[ -z "${INSTANT_BIN:-}" || ! -x "${INSTANT_BIN}" ]]; then
+        prepare_instant_binary
+    fi
     "${INSTANT_BIN}" "$@"
 }
 
 instant_output() {
-    ensure_instant_binary
+    if [[ -z "${INSTANT_BIN:-}" || ! -x "${INSTANT_BIN}" ]]; then
+        prepare_instant_binary
+    fi
     "${INSTANT_BIN}" "$@"
 }
 

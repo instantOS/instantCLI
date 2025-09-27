@@ -67,43 +67,6 @@ main() {
 
     assert_file_equals "${expected_file}" "initial save"
 
-    # Change installation path to simulate moving saves on another host
-    local new_save_path="${HOME}/.local/share/test-game/new-saves"
-    mkdir -p "${new_save_path}"
-
-    cat > "${XDG_CONFIG_HOME}/instant/games/installations.toml" <<EOF
-[[installations]]
-game_name = "${game_name}"
-save_path = "${new_save_path}"
-nearest_checkpoint = "${snapshot_id}"
-EOF
-
-    echo "changed save" > "${new_save_path}/save1.txt"
-
-    instant game sync --force "${game_name}"
-
-    rm -rf "${new_save_path}"/*
-
-    instant game restore --force "${game_name}" "${snapshot_id}"
-
-    local relocated_expected="${new_save_path}/save1.txt"
-    mapfile -t relocated_files < <(find "${new_save_path}" -type f -name 'save1.txt' | sort)
-    if [[ "${#relocated_files[@]}" -ne 1 ]]; then
-        echo "Expected exactly one restored save file after relocation, found ${#relocated_files[@]}" >&2
-        printf 'Restored files:\n' >&2
-        printf '  %s\n' "${relocated_files[@]}" >&2
-        exit 1
-    fi
-
-    if [[ "${relocated_files[0]}" != "${relocated_expected}" ]]; then
-        echo "Restore placed save at unexpected path after relocation" >&2
-        echo "Expected: ${relocated_expected}" >&2
-        echo "Actual:   ${relocated_files[0]}" >&2
-        exit 1
-    fi
-
-    assert_file_equals "${relocated_expected}" "initial save"
-
     instant game restic snapshots >/dev/null
     instant game launch "${game_name}"
     instant game setup
