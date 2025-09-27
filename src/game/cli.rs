@@ -4,9 +4,32 @@ use clap::Subcommand;
 #[derive(Subcommand, Debug, Clone)]
 pub enum GameCommands {
     /// Initialize restic repository for game saves
-    Init,
+    Init {
+        /// Restic repository path to use (non-interactive)
+        #[arg(long)]
+        repo: Option<String>,
+        /// Restic repository password (defaults to built-in password)
+        #[arg(long)]
+        password: Option<String>,
+    },
     /// Add a new game to track
-    Add,
+    Add {
+        /// Game name (non-interactive)
+        #[arg(long)]
+        name: Option<String>,
+        /// Optional description
+        #[arg(long)]
+        description: Option<String>,
+        /// Optional launch command
+        #[arg(long)]
+        launch_command: Option<String>,
+        /// Save path for the game (non-interactive)
+        #[arg(long)]
+        save_path: Option<String>,
+        /// Create save path automatically when using --save-path
+        #[arg(long)]
+        create_save_path: bool,
+    },
     /// Sync game saves with restic repository
     Sync {
         /// Game name to sync (optional, syncs all if not specified)
@@ -31,6 +54,9 @@ pub enum GameCommands {
     Remove {
         /// Game name to remove (optional, will prompt if not specified)
         game_name: Option<String>,
+        /// Remove game without interactive confirmation
+        #[arg(long)]
+        force: bool,
     },
     /// Create a restic backup of game saves
     Backup {

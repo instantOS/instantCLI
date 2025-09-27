@@ -8,9 +8,16 @@ use std::process::Command;
 /// Manage restic repository initialization and configuration
 pub struct RepositoryManager;
 
+/// Options for initializing the game repository non-interactively
+#[derive(Debug, Default)]
+pub struct InitOptions {
+    pub repo: Option<String>,
+    pub password: Option<String>,
+}
+
 impl RepositoryManager {
     /// Initialize the game save backup system
-    pub fn initialize_game_manager(debug: bool) -> Result<()> {
+    pub fn initialize_game_manager(debug: bool, options: InitOptions) -> Result<()> {
         println!("Initializing game save manager...");
 
         let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
@@ -33,7 +40,7 @@ impl RepositoryManager {
             }
         }
 
-        Self::setup_new_repository(&mut config, debug)
+        Self::setup_new_repository(&mut config, debug, &options)
     }
 
     /// Handle existing configuration by validating connection and offering recovery options
@@ -185,10 +192,30 @@ impl RepositoryManager {
     }
 
     /// Setup a new repository configuration from scratch
-    fn setup_new_repository(config: &mut InstantGameConfig, debug: bool) -> Result<()> {
-        // Prompt for restic repository using fzf
-        let repo = Self::get_repository_path()?;
-        let password = "instantgamepassword".to_string();
+    fn setup_new_repository(
+        config: &mut InstantGameConfig,
+        debug: bool,
+        options: &InitOptions,
+    ) -> Result<()> {
+        // Prompt for restic repository using fzf unless provided
+        let repo = if let Some(repo_str) = &options.repo {
+            let tilde_path = TildePath::from_str(repo_str)
+                .map_err(|e| anyhow::anyhow!("Invalid repository path: {}", e))?;
+
+            if tilde_path.as_path().is_absolute() && !tilde_path.as_path().exists() {
+                std::fs::create_dir_all(tilde_path.as_path())
+                    .context("Failed to create repository directory")?;
+            }
+
+            tilde_path
+        } else {
+            Self::get_repository_path()?
+        };
+
+        let password = options
+            .password
+            .clone()
+            .unwrap_or_else(|| "instantgamepassword".to_string());
 
         // Update config
         config.repo = repo.clone();

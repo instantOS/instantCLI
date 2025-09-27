@@ -4,12 +4,22 @@ use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
 use anyhow::{Context, Result};
 
+/// Options for adding a game non-interactively
+#[derive(Debug, Default)]
+pub struct AddGameOptions {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub launch_command: Option<String>,
+    pub save_path: Option<String>,
+    pub create_save_path: bool,
+}
+
 /// Manage game CRUD operations
 pub struct GameManager;
 
 impl GameManager {
     /// Add a new game to the configuration
-    pub fn add_game() -> Result<()> {
+    pub fn add_game(options: AddGameOptions) -> Result<()> {
         let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
         let mut installations =
@@ -20,14 +30,43 @@ impl GameManager {
             return Ok(());
         }
 
+        let AddGameOptions {
+            name,
+            description,
+            launch_command,
+            save_path,
+            create_save_path,
+        } = options;
+
         // Get and validate game name
-        let game_name = Self::get_game_name(&config)?;
+        let game_name = match name {
+            Some(name) => {
+                let trimmed = name.trim().to_string();
+                if !validate_non_empty(&trimmed, "Game name")? {
+                    return Err(anyhow::anyhow!("Game name cannot be empty"));
+                }
+
+                if config.games.iter().any(|g| g.name.0 == trimmed) {
+                    eprintln!("Game '{trimmed}' already exists!");
+                    return Err(anyhow::anyhow!("Game already exists"));
+                }
+
+                trimmed
+            }
+            None => Self::get_game_name(&config)?,
+        };
 
         // Get optional description
-        let description = Self::get_game_description()?;
+        let description = match description {
+            Some(description) => description.trim().to_string(),
+            None => Self::get_game_description()?,
+        };
 
         // Get optional launch command
-        let launch_command = Self::get_launch_command()?;
+        let launch_command = match launch_command {
+            Some(command) => command.trim().to_string(),
+            None => Self::get_launch_command()?,
+        };
 
         // Create the game configuration
         let mut game = Game::new(game_name.clone());
@@ -41,7 +80,33 @@ impl GameManager {
         }
 
         // Get save path
-        let save_path = Self::get_save_path()?;
+        let save_path = match save_path {
+            Some(path) => {
+                let trimmed = path.trim().to_string();
+                if !validate_non_empty(&trimmed, "Save path")? {
+                    return Err(anyhow::anyhow!("Save path cannot be empty"));
+                }
+
+                let tilde_path = TildePath::from_str(&trimmed)
+                    .map_err(|e| anyhow::anyhow!("Invalid save path: {}", e))?;
+
+                if !tilde_path.as_path().exists() {
+                    if create_save_path {
+                        std::fs::create_dir_all(tilde_path.as_path())
+                            .context("Failed to create save directory")?;
+                        println!("✓ Created save directory: {}", trimmed);
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "Save path '{}' does not exist. Use --create-save-path to create it automatically or run 'instant game add' without --save-path for interactive setup.",
+                            tilde_path.as_path().display()
+                        ));
+                    }
+                }
+
+                tilde_path
+            }
+            None => Self::get_save_path()?,
+        };
 
         // Add the game to the configuration
         config.games.push(game);
@@ -59,7 +124,7 @@ impl GameManager {
     }
 
     /// Remove a game from the configuration
-    pub fn remove_game(game_name: Option<String>) -> Result<()> {
+    pub fn remove_game(game_name: Option<String>, force: bool) -> Result<()> {
         let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
         let mut installations =
@@ -82,6 +147,20 @@ impl GameManager {
         }
 
         let game_index = game_index.unwrap();
+
+        if force {
+            config.games.remove(game_index);
+            config.save()?;
+
+            installations
+                .installations
+                .retain(|inst| inst.game_name.0 != game_name);
+            installations.save()?;
+
+            println!("✓ Game '{game_name}' removed successfully!");
+            return Ok(());
+        }
+
         let game = &config.games[game_index];
 
         // Show game details and ask for confirmation with improved formatting

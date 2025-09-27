@@ -1,9 +1,11 @@
 use anyhow::Result;
 
 use super::cli::GameCommands;
+use super::games::manager::AddGameOptions;
 use super::games::GameManager;
 use super::games::{display, selection};
 use super::operations::{launch_game, sync_game_saves};
+use super::repository::manager::InitOptions;
 use super::repository::RepositoryManager;
 use super::restic::{backup_game_saves, handle_restic_command, restore_game_saves};
 use super::setup;
@@ -13,13 +15,25 @@ use super::cli::DebugCommands;
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
-        GameCommands::Init => handle_init(debug),
-        GameCommands::Add => handle_add(),
+        GameCommands::Init { repo, password } => handle_init(debug, repo, password),
+        GameCommands::Add {
+            name,
+            description,
+            launch_command,
+            save_path,
+            create_save_path,
+        } => handle_add(AddGameOptions {
+            name,
+            description,
+            launch_command,
+            save_path,
+            create_save_path,
+        }),
         GameCommands::Sync { game_name, force } => handle_sync(game_name, force),
         GameCommands::Launch { game_name } => handle_launch(game_name),
         GameCommands::List => handle_list(),
         GameCommands::Show { game_name } => handle_show(game_name),
-        GameCommands::Remove { game_name } => handle_remove(game_name),
+        GameCommands::Remove { game_name, force } => handle_remove(game_name, force),
         GameCommands::Backup { game_name } => handle_backup(game_name),
         GameCommands::Restic { args } => handle_restic_command(args),
         GameCommands::Restore {
@@ -33,12 +47,15 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     }
 }
 
-fn handle_init(debug: bool) -> Result<()> {
-    RepositoryManager::initialize_game_manager(debug)
+fn handle_init(debug: bool, repo: Option<String>, password: Option<String>) -> Result<()> {
+    RepositoryManager::initialize_game_manager(
+        debug,
+        InitOptions { repo, password },
+    )
 }
 
-fn handle_add() -> Result<()> {
-    GameManager::add_game()
+fn handle_add(options: AddGameOptions) -> Result<()> {
+    GameManager::add_game(options)
 }
 
 fn handle_sync(game_name: Option<String>, force: bool) -> Result<()> {
@@ -49,8 +66,8 @@ fn handle_launch(game_name: String) -> Result<()> {
     launch_game(game_name)
 }
 
-fn handle_remove(game_name: Option<String>) -> Result<()> {
-    GameManager::remove_game(game_name)
+fn handle_remove(game_name: Option<String>, force: bool) -> Result<()> {
+    GameManager::remove_game(game_name, force)
 }
 
 fn handle_list() -> Result<()> {
