@@ -207,6 +207,8 @@ fn handle_debug_command(command: DebugCommands) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    clap_complete::CompleteEnv::with_factory(cli_command).complete();
+
     let cli = Cli::parse();
 
     if cli.debug {

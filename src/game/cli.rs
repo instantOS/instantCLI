@@ -1,4 +1,5 @@
 use clap::Subcommand;
+use clap_complete::engine::ArgValueCompleter;
 
 /// Game save management commands
 #[derive(Subcommand, Debug, Clone)]
@@ -33,6 +34,7 @@ pub enum GameCommands {
     /// Sync game saves with restic repository
     Sync {
         /// Game name to sync (optional, syncs all if not specified)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
         /// Force sync even if checkpoint matches
         #[arg(long)]
@@ -41,6 +43,7 @@ pub enum GameCommands {
     /// Launch a game with automatic save sync
     Launch {
         /// Game name to launch
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: String,
     },
     /// List all configured games
@@ -48,11 +51,13 @@ pub enum GameCommands {
     /// Show detailed information about a game
     Show {
         /// Game name to show (optional, will prompt if not specified)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
     },
     /// Remove a game from tracking
     Remove {
         /// Game name to remove (optional, will prompt if not specified)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
         /// Remove game without interactive confirmation
         #[arg(long)]
@@ -61,6 +66,7 @@ pub enum GameCommands {
     /// Create a restic backup of game saves
     Backup {
         /// Game name to backup (optional, will prompt if not specified)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
     },
     /// Run restic commands with instant games repository configuration
@@ -71,6 +77,7 @@ pub enum GameCommands {
     /// Restore game saves from a backup snapshot
     Restore {
         /// Game name to restore (optional, will prompt if not specified)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
         /// Snapshot ID to restore from (optional, will prompt if not specified)
         snapshot_id: Option<String>,
@@ -96,6 +103,7 @@ pub enum DebugCommands {
     /// Show detailed snapshot tag information
     Tags {
         /// Show tags for specific game (optional, shows all if not specified)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
     },
 }

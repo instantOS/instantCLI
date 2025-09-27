@@ -1,11 +1,16 @@
 use std::{
+    ffi::OsStr,
     fmt, fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
-use clap_complete::Shell;
+use clap_complete::env::Shells;
+use clap_complete::{Shell, engine::CompletionCandidate};
+
+use crate::dot::config::ConfigManager;
+use crate::game::config::InstantGameConfig;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum SupportedShell {
@@ -14,10 +19,10 @@ pub enum SupportedShell {
 }
 
 impl SupportedShell {
-    fn as_complete_shell(self) -> Shell {
+    fn env_key(self) -> &'static str {
         match self {
-            SupportedShell::Bash => Shell::Bash,
-            SupportedShell::Zsh => Shell::Zsh,
+            SupportedShell::Bash => "bash",
+            SupportedShell::Zsh => "zsh",
         }
     }
 
@@ -73,13 +78,21 @@ pub enum CompletionCommands {
 
 pub fn generate(shell: SupportedShell) -> Result<String> {
     let mut command = crate::cli_command();
+    command.build();
+
+    let shells = Shells::builtins();
+    let completer = shells
+        .completer(shell.env_key())
+        .ok_or_else(|| anyhow!("unsupported shell"))?;
+
+    let name = command.get_name();
+    let bin = command.get_bin_name().unwrap_or(name);
+
     let mut buffer = Vec::new();
-    clap_complete::generate(
-        shell.as_complete_shell(),
-        &mut command,
-        "instant",
-        &mut buffer,
-    );
+    completer
+        .write_registration("COMPLETE", name, bin, bin, &mut buffer)
+        .context("writing dynamic completion stub")?;
+
     String::from_utf8(buffer).context("rendering completions")
 }
 
@@ -112,4 +125,49 @@ pub fn install(shell: SupportedShell, output: Option<PathBuf>, force: bool) -> R
 
 pub fn instructions(shell: SupportedShell, install_path: &Path) -> String {
     shell.install_instructions(install_path)
+}
+
+fn matches_prefix<'a>(value: &'a str, prefix: &str) -> bool {
+    prefix.is_empty() || value.starts_with(prefix)
+}
+
+fn sort_and_filter(mut values: Vec<String>, prefix: &str) -> Vec<CompletionCandidate> {
+    values.sort();
+    values.dedup();
+    values
+        .into_iter()
+        .filter(|value| matches_prefix(value, prefix))
+        .map(CompletionCandidate::new)
+        .collect()
+}
+
+fn lossy_prefix(input: &OsStr) -> String {
+    input.to_string_lossy().to_string()
+}
+
+pub fn game_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
+    let prefix = lossy_prefix(current);
+    let Ok(config) = InstantGameConfig::load() else {
+        return Vec::new();
+    };
+
+    let names = config.games.into_iter().map(|game| game.name.0).collect();
+
+    sort_and_filter(names, &prefix)
+}
+
+pub fn repo_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
+    let prefix = lossy_prefix(current);
+    let Ok(manager) = ConfigManager::load() else {
+        return Vec::new();
+    };
+
+    let names = manager
+        .config
+        .repos
+        .into_iter()
+        .map(|repo| repo.name)
+        .collect();
+
+    sort_and_filter(names, &prefix)
 }
