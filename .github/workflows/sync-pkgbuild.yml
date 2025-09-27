@@ -1,0 +1,53 @@
+name: Sync PKGBUILD version
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+  sync:
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-plz-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release PR branch
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Sync PKGBUILD version
+        run: |
+          set -euo pipefail
+          version="$(python3 - <<'PY'
+import sys
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # pragma: no cover - fallback for older interpreters
+    import tomli as tomllib
+
+with open("Cargo.toml", "rb") as f:
+    data = tomllib.load(f)
+
+print(data["package"]["version"])
+PY
+)"
+          file_version="$(awk -F '=' '/^pkgver=/ {print $2; exit}' PKGBUILD)"
+          pkgrel="$(awk -F '=' '/^pkgrel=/ {print $2; exit}' PKGBUILD)"
+          if [[ "$file_version" != "$version" ]]; then
+            sed -i "s/^pkgver=.*/pkgver=$version/" PKGBUILD
+            sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          fi
+          if ! git diff --quiet PKGBUILD; then
+            git add PKGBUILD
+            git commit -m "chore: sync PKGBUILD version"
+            git push
+          fi
