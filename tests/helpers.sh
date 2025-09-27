@@ -28,8 +28,8 @@ cleanup_test_env() {
     fi
 }
 
-prepare_instant_binary() {
-    if [[ -n "${INSTANT_PREPARED:-}" && -n "${INSTANT_BIN:-}" && -x "${INSTANT_BIN}" ]]; then
+prepare_ins_binary() {
+    if [[ -n "${INS_PREPARED:-}" && -n "${INS_BIN:-}" && -x "${INS_BIN}" ]]; then
         return
     fi
 
@@ -38,22 +38,22 @@ prepare_instant_binary() {
         cd "${REPO_ROOT}" && cargo build --quiet
     )
 
-    export INSTANT_BIN="${REPO_ROOT}/target/debug/instant"
-    export INSTANT_PREPARED=1
+    export INS_BIN="${REPO_ROOT}/target/debug/ins"
+    export INS_PREPARED=1
 }
 
-instant() {
-    if [[ -z "${INSTANT_BIN:-}" || ! -x "${INSTANT_BIN}" ]]; then
-        prepare_instant_binary
+ins() {
+    if [[ -z "${INS_BIN:-}" || ! -x "${INS_BIN}" ]]; then
+        prepare_ins_binary
     fi
-    "${INSTANT_BIN}" "$@"
+    "${INS_BIN}" "$@"
 }
 
-instant_output() {
-    if [[ -z "${INSTANT_BIN:-}" || ! -x "${INSTANT_BIN}" ]]; then
-        prepare_instant_binary
+ins_output() {
+    if [[ -z "${INS_BIN:-}" || ! -x "${INS_BIN}" ]]; then
+        prepare_ins_binary
     fi
-    "${INSTANT_BIN}" "$@"
+    "${INS_BIN}" "$@"
 }
 
 create_sample_dot_repo() {

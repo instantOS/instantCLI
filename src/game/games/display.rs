@@ -11,7 +11,7 @@ pub fn list_games() -> Result<()> {
 
     if config.games.is_empty() {
         println!("No games configured yet.");
-        println!("Use 'instant game add' to add a game.");
+        println!("Use '{} game add' to add a game.", env!("CARGO_BIN_NAME"));
         return Ok(());
     }
 

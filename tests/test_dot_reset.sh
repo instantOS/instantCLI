@@ -13,13 +13,13 @@ main() {
 
     local repo_url="file://${repo_dir}"
 
-    instant dot repo add "${repo_url}" --name reset-test
-    instant dot apply
+    ins dot repo add "${repo_url}" --name reset-test
+    ins dot apply
 
     local target_file="${HOME}/.config/instanttest/config.txt"
     echo "user change" > "${target_file}"
 
-    instant dot reset "${target_file}"
+    ins dot reset "${target_file}"
 
     assert_file_equals "${target_file}" "test configuration content"
     echo "Dot reset restored the original content"

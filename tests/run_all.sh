@@ -4,10 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "${SCRIPT_DIR}/helpers.sh"
-prepare_instant_binary
+prepare_ins_binary
 
-export INSTANT_BIN
-export INSTANT_PREPARED
+export INS_BIN
+export INS_PREPARED
 
 
 status=0

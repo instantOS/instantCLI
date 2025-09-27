@@ -96,7 +96,8 @@ fn setup_single_game(
     if snapshots.is_empty() {
         println!("❌ No snapshots found for game '{game_name}'.");
         println!(
-            "This game has no backups yet. You'll need to add an installation manually using 'instant game add'."
+            "This game has no backups yet. You'll need to add an installation manually using '{} game add'.",
+            env!("CARGO_BIN_NAME")
         );
         return Ok(());
     }

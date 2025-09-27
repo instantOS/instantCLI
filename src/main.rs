@@ -371,7 +371,7 @@ async fn main() -> Result<()> {
             }
         },
         None => {
-            println!("instant: run with --help for usage");
+            println!("{}: run with --help for usage", env!("CARGO_BIN_NAME"));
         }
     }
     Ok(())

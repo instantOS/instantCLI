@@ -13,9 +13,9 @@ main() {
 
     local repo_url="file://${repo_dir}"
 
-    instant dot repo add "${repo_url}" --name basic-test
-    instant dot status
-    instant dot apply
+    ins dot repo add "${repo_url}" --name basic-test
+    ins dot status
+    ins dot apply
 
     assert_file_equals "${HOME}/.config/instanttest/config.txt" "test configuration content"
     assert_file_equals "${HOME}/.config/instanttest/settings.conf" "another config file"

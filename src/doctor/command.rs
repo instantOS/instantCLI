@@ -46,7 +46,7 @@ fn show_available_fixes(results: &[CheckResult]) {
         for result in &fixable_failures {
             if let Some(ref msg) = result.fix_message {
                 println!("  - {}: {}", result.name, msg);
-                println!("    Run: instant doctor fix {}", result.check_id);
+                println!("    Run: {} doctor fix {}", env!("CARGO_BIN_NAME"), result.check_id);
             }
         }
     }

@@ -27,7 +27,10 @@ pub fn validate_game_manager_initialized() -> Result<bool> {
 
     if !config.is_initialized() {
         eprintln!("Game save manager is not initialized!");
-        eprintln!("Please run 'instant game init' first.");
+        eprintln!(
+            "Please run '{} game init' first.",
+            env!("CARGO_BIN_NAME")
+        );
         Ok(false)
     } else {
         Ok(true)

@@ -425,12 +425,12 @@ pub fn create_menu_server_scratchpad_config() -> ScratchpadConfig {
     // Get current executable path for the inner command
     let current_exe = std::env::current_exe()
         .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "instant".to_string());
+        .unwrap_or_else(|_| env!("CARGO_BIN_NAME").to_string());
 
     let inner_command = format!("{current_exe} menu server launch --inside");
 
     ScratchpadConfig::with_params(
-        "instantmenu".to_string(),
+        "insmenu".to_string(),
         Terminal::default(), // Use default terminal (kitty)
         Some(inner_command),
         50, // 50% width

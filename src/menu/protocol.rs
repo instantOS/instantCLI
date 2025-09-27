@@ -177,10 +177,10 @@ pub const PROTOCOL_VERSION: &str = "1.0";
 /// Default socket path
 pub fn default_socket_path() -> String {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        format!("{runtime_dir}/instantmenu.sock")
+        format!("{runtime_dir}/insmenu.sock")
     } else {
         // Fallback to /tmp if XDG_RUNTIME_DIR is not set
-        "/tmp/instantmenu.sock".to_string()
+        "/tmp/insmenu.sock".to_string()
     }
 }
 

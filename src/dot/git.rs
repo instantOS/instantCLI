@@ -315,20 +315,21 @@ fn categorize_files_and_collect_stats<'a>(
 
 /// Show action suggestions based on file status counts
 fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_count: usize) {
+    let bin = env!("CARGO_BIN_NAME");
     if modified_count > 0 || outdated_count > 0 {
         println!("{}", "Suggested actions:".bold());
         if modified_count > 0 {
-            println!("  Use 'instant dot apply' to apply changes from repositories");
-            println!("  Use 'instant dot fetch' to save your modifications to repositories");
+            println!("  Use '{bin} dot apply' to apply changes from repositories");
+            println!("  Use '{bin} dot fetch' to save your modifications to repositories");
         }
         if outdated_count > 0 {
-            println!("  Use 'instant dot reset <path>' to restore files to their original state");
+            println!("  Use '{bin} dot reset <path>' to restore files to their original state");
         }
-        println!("  Use 'instant dot status --all' to see all tracked files including clean ones");
+        println!("  Use '{bin} dot status --all' to see all tracked files including clean ones");
     } else if clean_count > 0 {
         println!("✓ All dotfiles are clean and up to date!");
     } else {
-        println!("No dotfiles found. Use 'instant dot repo add <url>' to add a repository.");
+        println!("No dotfiles found. Use '{bin} dot repo add <url>' to add a repository.");
     }
 }
 

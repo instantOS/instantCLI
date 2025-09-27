@@ -18,7 +18,8 @@ pub fn check_restic_availability() -> Result<()> {
 pub fn check_game_manager_initialized(game_config: &InstantGameConfig) -> Result<()> {
     if !game_config.is_initialized() {
         eprintln!(
-            "❌ Error: Game manager is not initialized.\n\nPlease run 'instant game init' first."
+            "❌ Error: Game manager is not initialized.\n\nPlease run '{} game init' first.",
+            env!("CARGO_BIN_NAME")
         );
         return Err(anyhow::anyhow!("game manager not initialized"));
     }

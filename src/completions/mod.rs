@@ -24,8 +24,8 @@ impl SupportedShell {
 
     fn file_name(self) -> &'static str {
         match self {
-            SupportedShell::Bash => "instant.bash",
-            SupportedShell::Zsh => "_instant",
+            SupportedShell::Bash => "ins.bash",
+            SupportedShell::Zsh => "_ins",
         }
     }
 
@@ -92,16 +92,23 @@ pub fn generate(shell: SupportedShell) -> Result<String> {
 pub fn install(shell: SupportedShell, snippet_only: bool) -> Result<String> {
     let snippet = match shell {
         SupportedShell::Bash => {
-            "# Add to ~/.bashrc or ~/.bash_profile\nsource <(COMPLETE=bash instant)".to_string()
+            format!(
+                "# Add to ~/.bashrc or ~/.bash_profile\nsource <(COMPLETE=bash {})",
+                env!("CARGO_BIN_NAME")
+            )
         }
-        SupportedShell::Zsh => "# Add to ~/.zshrc\nsource <(COMPLETE=zsh instant)".to_string(),
+        SupportedShell::Zsh => format!(
+            "# Add to ~/.zshrc\nsource <(COMPLETE=zsh {})",
+            env!("CARGO_BIN_NAME")
+        ),
     };
 
     if snippet_only {
         Ok(snippet)
     } else {
         Ok(format!(
-            "To enable {shell} completions, add the following to your shell config:\n\n{snippet}\n\nThis keeps dynamic completions in sync with the instant binary."
+            "To enable {shell} completions, add the following to your shell config:\n\n{snippet}\n\nThis keeps dynamic completions in sync with the {} binary.",
+            env!("CARGO_BIN_NAME")
         ))
     }
 }

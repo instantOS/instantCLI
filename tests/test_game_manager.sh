@@ -19,21 +19,21 @@ main() {
     mkdir -p "${restic_repo}" "${save_path}"
     echo "initial save" > "${save_path}/save1.txt"
 
-    instant game init --repo "${restic_repo}" --password testpass
+    ins game init --repo "${restic_repo}" --password testpass
 
-    instant game add \
+    ins game add \
         --name "${game_name}" \
         --description "Integration test game" \
         --launch-command "echo Launching ${game_name}" \
         --save-path "${save_path}" \
         --create-save-path
 
-    instant game list
-    instant game show "${game_name}"
-    instant game sync --force "${game_name}"
+    ins game list
+    ins game show "${game_name}"
+    ins game sync --force "${game_name}"
 
     local backup_output
-    backup_output="$(instant_output game backup "${game_name}")"
+    backup_output="$(ins_output game backup "${game_name}")"
     echo "${backup_output}"
 
     local snapshot_id
@@ -47,7 +47,7 @@ main() {
     rm -rf "${save_path}"
     mkdir -p "${save_path}"
 
-    instant game restore --force "${game_name}" "${snapshot_id}"
+    ins game restore --force "${game_name}" "${snapshot_id}"
 
     local expected_file="${save_path}/save1.txt"
     mapfile -t restored_files < <(find "${save_path}" -type f -name 'save1.txt' | sort)
@@ -67,11 +67,11 @@ main() {
 
     assert_file_equals "${expected_file}" "initial save"
 
-    instant game restic snapshots >/dev/null
-    instant game launch "${game_name}"
-    instant game setup
-    instant game remove "${game_name}" --force
-    instant game list
+    ins game restic snapshots >/dev/null
+    ins game launch "${game_name}"
+    ins game setup
+    ins game remove "${game_name}" --force
+    ins game list
 
     echo "Game manager end-to-end flow succeeded"
 }

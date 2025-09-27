@@ -27,7 +27,7 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
 
     if config.games.is_empty() {
         println!("No games configured yet.");
-        println!("Use 'instant game add' to add a game.");
+        println!("Use '{} game add' to add a game.", env!("CARGO_BIN_NAME"));
         return Ok(None);
     }
 

@@ -23,10 +23,10 @@ impl LaunchCache {
     /// Create a new launch cache instance
     pub fn new() -> Result<Self> {
         let cache_dir = if let Some(cache_dir) = dirs::cache_dir() {
-            cache_dir.join("instant")
+            cache_dir.join(env!("CARGO_BIN_NAME"))
         } else {
             PathBuf::from(env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()))
-                .join(".cache/instant")
+                .join(format!(".cache/{}", env!("CARGO_BIN_NAME")))
         };
 
         // Ensure cache directory exists

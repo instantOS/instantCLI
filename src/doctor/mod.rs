@@ -203,10 +203,11 @@ pub fn print_check_list_table(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
     println!("{}", "Available Health Checks:".bold());
     println!("{table}");
     println!();
+    let bin = env!("CARGO_BIN_NAME");
     println!("Usage:");
-    println!("  instant doctor run <id>    Run a specific check");
-    println!("  instant doctor fix <id>    Apply fix for a specific check");
-    println!("  instant doctor             Run all checks");
+    println!("  {bin} doctor run <id>    Run a specific check");
+    println!("  {bin} doctor fix <id>    Apply fix for a specific check");
+    println!("  {bin} doctor             Run all checks");
 }
 
 pub fn print_results_table(results: &[CheckResult]) {
@@ -283,7 +284,7 @@ pub fn print_single_check_result_table(result: &CheckResult) {
             if let Some(ref msg) = result.fix_message {
                 println!();
                 println!("  Fix available: {msg}");
-                println!("  Run: instant doctor fix {}", result.check_id);
+                println!("  Run: {} doctor fix {}", env!("CARGO_BIN_NAME"), result.check_id);
             }
         } else {
             println!();

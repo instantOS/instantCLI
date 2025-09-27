@@ -118,7 +118,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             } else {
                 println!("✗ Menu server is not running");
-                println!("  Start the server with: instant menu server launch --inside");
+                println!("  Start the server with: {} menu server launch --inside", env!("CARGO_BIN_NAME"));
                 Ok(1)
             }
         }

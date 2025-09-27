@@ -1136,7 +1136,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "instant"
+name = "ins"
 version = "0.1.1"
 dependencies = [
  "anyhow",

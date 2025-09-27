@@ -101,8 +101,9 @@ impl GameManager {
                         println!("✓ Created save directory: {trimmed}");
                     } else {
                         return Err(anyhow::anyhow!(
-                            "Save path '{}' does not exist. Use --create-save-path to create it automatically or run 'instant game add' without --save-path for interactive setup.",
-                            tilde_path.as_path().display()
+                            "Save path '{}' does not exist. Use --create-save-path to create it automatically or run '{} game add' without --save-path for interactive setup.",
+                            tilde_path.as_path().display(),
+                            env!("CARGO_BIN_NAME")
                         ));
                     }
                 }

@@ -21,17 +21,17 @@ main() {
     mkdir -p "${restic_repo}" "${original_save_path}"
     echo "initial save" > "${original_save_path}/save1.txt"
 
-    instant game init --repo "${restic_repo}" --password testpass
+    ins game init --repo "${restic_repo}" --password testpass
 
-    instant game add \
+    ins game add \
         --name "${game_name}" \
         --save-path "${original_save_path}" \
         --create-save-path
 
-    instant game sync --force "${game_name}"
+    ins game sync --force "${game_name}"
 
     local backup_output
-    backup_output="$(instant_output game backup "${game_name}")"
+    backup_output="$(ins_output game backup "${game_name}")"
     local snapshot_id
     snapshot_id="$(printf '%s\n' "${backup_output}" | sed -n 's/.*snapshot: \([0-9a-f]\{8,\}\).*/\1/p' | head -n1)"
 
@@ -56,7 +56,7 @@ EOF
     fi
     rm -rf -- "${new_save_path}"/*
 
-    instant game restore --force "${game_name}" "${snapshot_id}"
+    ins game restore --force "${game_name}" "${snapshot_id}"
 
     local relocated_expected="${new_save_path}/save1.txt"
     mapfile -t relocated_files < <(find "${new_save_path}" -type f -name 'save1.txt' | sort)

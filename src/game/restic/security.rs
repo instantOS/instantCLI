@@ -61,7 +61,10 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
         Some(installation) => installation.clone(),
         None => {
             eprintln!("❌ Error: No installation found for game '{game_name}'.");
-            eprintln!("Please add the game first using 'instant game add'.");
+            eprintln!(
+                "Please add the game first using '{} game add'.",
+                env!("CARGO_BIN_NAME")
+            );
             return Err(anyhow::anyhow!("game installation not found"));
         }
     };

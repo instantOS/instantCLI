@@ -39,7 +39,10 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         Some(installation) => installation,
         None => {
             eprintln!("❌ Error: No installation found for game '{game_name}'.");
-            eprintln!("Please add the game first using 'instant game add'.");
+            eprintln!(
+                "Please add the game first using '{} game add'.",
+                env!("CARGO_BIN_NAME")
+            );
             return Err(anyhow::anyhow!("game installation not found"));
         }
     };
@@ -269,15 +272,16 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
 
     // If no arguments provided, show help
     if args.is_empty() {
+        let bin = env!("CARGO_BIN_NAME");
         eprintln!(
             "❌ Error: No restic command provided.\n\n\
-             Usage: instant game restic <restic-command> [args...]\n\n\
+             Usage: {bin} game restic <restic-command> [args...]\n\n\
              Examples:\n\
-             • instant game restic snapshots\n\
-             • instant game restic backup --tag instantgame\n\
-             • instant game restic stats\n\
-             • instant game restic find .config\n\
-             • instant game restic restore latest --target /tmp/restore-test"
+             • {bin} game restic snapshots\n\
+             • {bin} game restic backup --tag instantgame\n\
+             • {bin} game restic stats\n\
+             • {bin} game restic find .config\n\
+             • {bin} game restic restore latest --target /tmp/restore-test"
         );
         return Err(anyhow::anyhow!("no restic command provided"));
     }

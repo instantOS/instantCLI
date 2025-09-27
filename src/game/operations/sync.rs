@@ -48,7 +48,10 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
             Some(installation) => vec![installation.clone()],
             None => {
                 eprintln!("❌ Error: No installation found for game '{name}'.");
-                eprintln!("Please add the game first using 'instant game add'.");
+                eprintln!(
+                    "Please add the game first using '{} game add'.",
+                    env!("CARGO_BIN_NAME")
+                );
                 return Err(anyhow::anyhow!("game installation not found"));
             }
         }
@@ -59,7 +62,10 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
 
     if games_to_sync.is_empty() {
         eprintln!("❌ No games configured for syncing.");
-        eprintln!("Add games using 'instant game add'.");
+        eprintln!(
+            "Add games using '{} game add'.",
+            env!("CARGO_BIN_NAME")
+        );
         return Ok(());
     }
 
