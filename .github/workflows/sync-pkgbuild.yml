@@ -27,19 +27,19 @@ jobs:
         run: |
           set -euo pipefail
           version="$(python3 - <<'PY'
-import sys
-
-try:
-    import tomllib  # Python 3.11+
-except ModuleNotFoundError:  # pragma: no cover - fallback for older interpreters
-    import tomli as tomllib
-
-with open("Cargo.toml", "rb") as f:
-    data = tomllib.load(f)
-
-print(data["package"]["version"])
-PY
-)"
+          import sys
+          
+          try:
+              import tomllib  # Python 3.11+
+          except ModuleNotFoundError:  # pragma: no cover - fallback for older interpreters
+              import tomli as tomllib
+          
+          with open("Cargo.toml", "rb") as f:
+              data = tomllib.load(f)
+          
+          print(data["package"]["version"])
+          PY
+          )"
           file_version="$(awk -F '=' '/^pkgver=/ {print $2; exit}' PKGBUILD)"
           pkgrel="$(awk -F '=' '/^pkgrel=/ {print $2; exit}' PKGBUILD)"
           if [[ "$file_version" != "$version" ]]; then
