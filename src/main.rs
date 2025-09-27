@@ -2,6 +2,7 @@ use anyhow::Result;
 use colored::*;
 
 mod common;
+mod completions;
 mod dev;
 mod doctor;
 mod dot;
@@ -12,7 +13,7 @@ mod menu;
 mod restic;
 mod scratchpad;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 /// Helper function to format and print errors consistently
 fn handle_error(context: &str, error: &anyhow::Error) -> String {
@@ -66,6 +67,10 @@ struct Cli {
     command: Option<Commands>,
 }
 
+pub(crate) fn cli_command() -> clap::Command {
+    Cli::command()
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Dotfile management commands
@@ -108,6 +113,11 @@ enum Commands {
     Debug {
         #[command(subcommand)]
         command: DebugCommands,
+    },
+    /// Shell completion helpers
+    Completions {
+        #[command(subcommand)]
+        command: completions::CompletionCommands,
     },
 }
 
@@ -345,6 +355,21 @@ async fn main() -> Result<()> {
                 None,
             )?;
         }
+        Some(Commands::Completions { command }) => match command {
+            completions::CompletionCommands::Generate { shell } => {
+                let script = completions::generate(*shell)?;
+                print!("{}", script);
+            }
+            completions::CompletionCommands::Install {
+                shell,
+                output,
+                force,
+            } => {
+                let path = completions::install(*shell, output.clone(), *force)?;
+                println!("Installed {} completions to {}", shell, path.display());
+                println!("{}", completions::instructions(*shell, &path));
+            }
+        },
         None => {
             println!("instant: run with --help for usage");
         }
