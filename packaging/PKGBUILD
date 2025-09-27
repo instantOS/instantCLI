@@ -1,0 +1,42 @@
+#!/bin/bash
+
+_pkgname=instant
+: "${VERSION:=$(awk -F '"' '/^version =/ {print $2; exit}' ../Cargo.toml 2>/dev/null)}"
+pkgname=${_pkgname}
+pkgver=${VERSION}
+if [[ -z ${pkgver} ]]; then
+    echo "Failed to determine version from Cargo.toml; set VERSION explicitly." >&2
+    exit 1
+fi
+pkgrel=1
+pkgdesc="InstantCLI manages instantOS dotfiles and configuration overlays"
+arch=('x86_64')
+url="https://github.com/instantOS/instantCLI"
+license=('GPL2')
+depends=('glibc' 'gcc-libs')
+makedepends=('cargo')
+source=("instantCLI-${pkgver}.tar.gz::https://github.com/instantOS/instantCLI/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
+makedepends=('cargo' 'rust' 'git')
+
+prepare() {
+    cd "${srcdir}/instantCLI-${pkgver}"
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "${srcdir}/instantCLI-${pkgver}"
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release --locked
+}
+
+check() {
+    cd "${srcdir}/instantCLI-${pkgver}"
+    cargo test --frozen --locked
+}
+
+package() {
+    cd "${srcdir}/instantCLI-${pkgver}"
+    install -Dm0755 "target/release/${_pkgname}" "${pkgdir}/usr/bin/${_pkgname}"
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
