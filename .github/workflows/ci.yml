@@ -31,6 +31,13 @@ jobs:
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # Cache key includes target architecture and important env vars
+          key: arch-cargo-${{ hashFiles('**/Cargo.lock') }}
+          # Use prefix to distinguish from other jobs/environments
+          prefix-key: arch-test
+          # Cache validation ensures correctness across Rust versions
+          cache-all-crates: true
 
       - name: Check code formatting
         run: cargo fmt -- --check
@@ -39,7 +46,7 @@ jobs:
         run: cargo clippy --all-targets --all-features
 
       - name: Run unit tests
-        run: cargo test --locked
+        run: cargo test --locked --verbose
 
       - name: Build debug binary for integration tests
         run: cargo build --locked
@@ -48,12 +55,7 @@ jobs:
         run: |
           # Make test scripts executable
           chmod +x tests/*.sh
-          # Run integration tests (these use the debug binary via cargo run)
-          if [[ -f tests/run_all.sh ]]; then
-            ./tests/run_all.sh
-          else
-            echo "No integration test runner found, skipping integration tests"
-          fi
+          ./tests/run_all.sh
 
       - name: Build release binary
         run: cargo build --release --locked
@@ -61,5 +63,7 @@ jobs:
       - name: Check binary functionality
         run: |
           # Test basic CLI functionality
-          ./target/release/instant --help
+          ./target/release/instant --help > /dev/null
           ./target/release/instant --version
+          echo "✓ CLI binary basic functionality works"
+
