@@ -186,6 +186,34 @@ impl ResticWrapper {
         Ok(stdout)
     }
 
+    pub fn forget_snapshots(
+        &self,
+        snapshot_ids: &[String],
+        prune: bool,
+    ) -> Result<(), ResticError> {
+        if snapshot_ids.is_empty() {
+            return Ok(());
+        }
+
+        let mut args: Vec<String> = vec!["forget".to_string()];
+        if prune {
+            args.push("--prune".to_string());
+        }
+        args.extend(snapshot_ids.iter().cloned());
+
+        let mut cmd = self.base_command();
+        cmd.args(&args);
+        let output = self.execute_and_log_command(cmd, &args)?;
+
+        if !output.status.success() {
+            let code = output.status.code().unwrap_or(1);
+            let stderr = String::from_utf8(output.stderr)?;
+            return Err(ResticError::from_exit_code(code, &stderr));
+        }
+
+        Ok(())
+    }
+
     pub fn restore(
         &self,
         snapshot_id: &str,

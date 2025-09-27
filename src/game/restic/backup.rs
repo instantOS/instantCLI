@@ -39,8 +39,20 @@ impl GameBackup {
             .context("Failed to perform restic backup")?;
 
         if let Some(summary) = progress.summary {
-            if let Some(snap) = summary.snapshot_id {
+            let snapshot_id = summary.snapshot_id.clone();
+            let no_file_changes = summary.files_new == 0 && summary.files_changed == 0;
+
+            if let Some(snap) = snapshot_id {
+                if no_file_changes {
+                    return Ok(format!("snapshot: {snap} (no file changes)"));
+                }
                 return Ok(format!("snapshot: {snap}"));
+            }
+
+            if no_file_changes {
+                return Ok(
+                    "backup completed (no snapshot created; no file changes detected)".to_string(),
+                );
             }
         }
 

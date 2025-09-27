@@ -1,6 +1,7 @@
 pub mod backup;
 pub mod cache;
 pub mod commands;
+pub mod prune;
 pub mod security;
 pub mod snapshot_selection;
 pub mod tags;
@@ -315,4 +316,9 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
             output.status.code().unwrap_or(-1)
         ))
     }
+}
+
+/// Remove redundant zero-change snapshots while keeping the newest per game
+pub fn prune_zero_change_snapshots() -> Result<()> {
+    prune::prune_zero_change_snapshots()
 }
