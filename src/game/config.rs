@@ -7,6 +7,76 @@ use std::{
 
 use crate::dot::path_serde::TildePath;
 
+/// Configurable restic retention policy values stored in games.toml
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RetentionPolicyConfig {
+    pub keep_last: Option<u32>,
+    pub keep_daily: Option<u32>,
+    pub keep_weekly: Option<u32>,
+    pub keep_monthly: Option<u32>,
+    pub keep_yearly: Option<u32>,
+}
+
+impl RetentionPolicyConfig {
+    pub const DEFAULT_KEEP_LAST: u32 = 30;
+    pub const DEFAULT_KEEP_DAILY: u32 = 90;
+    pub const DEFAULT_KEEP_WEEKLY: u32 = 52;
+    pub const DEFAULT_KEEP_MONTHLY: u32 = 36;
+    pub const DEFAULT_KEEP_YEARLY: u32 = 10;
+
+    pub fn is_default(value: &Self) -> bool {
+        value.keep_last.is_none()
+            && value.keep_daily.is_none()
+            && value.keep_weekly.is_none()
+            && value.keep_monthly.is_none()
+            && value.keep_yearly.is_none()
+    }
+
+    pub fn effective(&self) -> RetentionPolicyValues {
+        RetentionPolicyValues {
+            keep_last: self.keep_last.unwrap_or(Self::DEFAULT_KEEP_LAST),
+            keep_daily: self.keep_daily.unwrap_or(Self::DEFAULT_KEEP_DAILY),
+            keep_weekly: self.keep_weekly.unwrap_or(Self::DEFAULT_KEEP_WEEKLY),
+            keep_monthly: self.keep_monthly.unwrap_or(Self::DEFAULT_KEEP_MONTHLY),
+            keep_yearly: self.keep_yearly.unwrap_or(Self::DEFAULT_KEEP_YEARLY),
+        }
+    }
+}
+
+impl Default for RetentionPolicyConfig {
+    fn default() -> Self {
+        Self {
+            keep_last: None,
+            keep_daily: None,
+            keep_weekly: None,
+            keep_monthly: None,
+            keep_yearly: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RetentionPolicyValues {
+    pub keep_last: u32,
+    pub keep_daily: u32,
+    pub keep_weekly: u32,
+    pub keep_monthly: u32,
+    pub keep_yearly: u32,
+}
+
+impl RetentionPolicyValues {
+    pub fn to_rules(&self) -> Vec<(String, String)> {
+        vec![
+            ("keep-last".to_string(), self.keep_last.to_string()),
+            ("keep-daily".to_string(), self.keep_daily.to_string()),
+            ("keep-weekly".to_string(), self.keep_weekly.to_string()),
+            ("keep-monthly".to_string(), self.keep_monthly.to_string()),
+            ("keep-yearly".to_string(), self.keep_yearly.to_string()),
+        ]
+    }
+}
+
 /// Wrapper type for game names
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GameName(pub String);
@@ -94,6 +164,8 @@ pub struct InstantGameConfig {
     pub repo: TildePath,
     pub repo_password: String,
     pub games: Vec<Game>,
+    #[serde(default, skip_serializing_if = "RetentionPolicyConfig::is_default")]
+    pub retention_policy: RetentionPolicyConfig,
 }
 
 impl Default for InstantGameConfig {
@@ -102,6 +174,7 @@ impl Default for InstantGameConfig {
             repo: TildePath::new(PathBuf::new()),
             repo_password: "instantgamepassword".to_string(),
             games: Vec::new(),
+            retention_policy: RetentionPolicyConfig::default(),
         }
     }
 }
@@ -252,5 +325,56 @@ mod tests {
 
         installation.clear_checkpoint();
         assert_eq!(installation.nearest_checkpoint, None);
+    }
+
+    #[test]
+    fn test_retention_policy_defaults() {
+        let policy = RetentionPolicyConfig::default();
+        let effective = policy.effective();
+
+        assert_eq!(
+            effective.keep_last,
+            RetentionPolicyConfig::DEFAULT_KEEP_LAST
+        );
+        assert_eq!(
+            effective.keep_daily,
+            RetentionPolicyConfig::DEFAULT_KEEP_DAILY
+        );
+        assert_eq!(
+            effective.keep_weekly,
+            RetentionPolicyConfig::DEFAULT_KEEP_WEEKLY
+        );
+        assert_eq!(
+            effective.keep_monthly,
+            RetentionPolicyConfig::DEFAULT_KEEP_MONTHLY
+        );
+        assert_eq!(
+            effective.keep_yearly,
+            RetentionPolicyConfig::DEFAULT_KEEP_YEARLY
+        );
+    }
+
+    #[test]
+    fn test_retention_policy_overrides() {
+        let policy = RetentionPolicyConfig {
+            keep_last: Some(5),
+            keep_daily: Some(7),
+            keep_weekly: Some(9),
+            keep_monthly: Some(11),
+            keep_yearly: Some(13),
+        };
+
+        let effective = policy.effective();
+
+        assert_eq!(effective.keep_last, 5);
+        assert_eq!(effective.keep_daily, 7);
+        assert_eq!(effective.keep_weekly, 9);
+        assert_eq!(effective.keep_monthly, 11);
+        assert_eq!(effective.keep_yearly, 13);
+
+        let rules = effective.to_rules();
+        assert_eq!(rules.len(), 5);
+        assert!(rules.contains(&("keep-last".to_string(), "5".to_string())));
+        assert!(rules.contains(&("keep-yearly".to_string(), "13".to_string())));
     }
 }

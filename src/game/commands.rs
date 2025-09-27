@@ -37,7 +37,10 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Show { game_name } => handle_show(game_name),
         GameCommands::Remove { game_name, force } => handle_remove(game_name, force),
         GameCommands::Backup { game_name } => handle_backup(game_name),
-        GameCommands::Prune { zero_changes } => handle_prune(zero_changes),
+        GameCommands::Prune {
+            game_name,
+            zero_changes,
+        } => handle_prune(game_name, zero_changes),
         GameCommands::Restic { args } => handle_restic_command(args),
         GameCommands::Restore {
             game_name,
@@ -90,8 +93,8 @@ fn handle_backup(game_name: Option<String>) -> Result<()> {
     backup_game_saves(game_name)
 }
 
-fn handle_prune(zero_changes: bool) -> Result<()> {
-    prune_snapshots(zero_changes)
+fn handle_prune(game_name: Option<String>, zero_changes: bool) -> Result<()> {
+    prune_snapshots(game_name, zero_changes)
 }
 
 fn handle_restore(

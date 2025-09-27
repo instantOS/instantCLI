@@ -71,6 +71,9 @@ pub enum GameCommands {
     },
     /// Prune game snapshots using a retention policy
     Prune {
+        /// Game name to prune (optional, prunes all if not specified)
+        #[arg(long, add = ArgValueCompleter::new(crate::completions::game_name_completion))]
+        game_name: Option<String>,
         /// Use legacy zero-change pruning behavior
         #[arg(long = "zero-changes")]
         zero_changes: bool,

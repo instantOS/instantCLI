@@ -218,7 +218,7 @@ impl ResticWrapper {
         &self,
         tags: Option<Vec<String>>,
         group_by: Option<Vec<String>>,
-        retention_rules: &[(&str, &str)],
+        retention_rules: &[(String, String)],
         prune: bool,
     ) -> Result<(), ResticError> {
         let mut args: Vec<String> = vec!["forget".to_string()];
@@ -243,7 +243,7 @@ impl ResticWrapper {
 
         for (flag, value) in retention_rules {
             args.push(format!("--{flag}"));
-            args.push((*value).to_string());
+            args.push(value.clone());
         }
 
         let mut cmd = self.base_command();
