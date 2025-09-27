@@ -76,7 +76,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
             }
             Ok(SyncAction::RestoreSkipped(snapshot_id)) => {
                 println!(
-                    "⏭️  {}: Skipped restore from {} (checkpoint matches, use --force to override)",
+                    "⏭️  {}: Cloud checkpoint {} already matches your local saves (use --force to override)",
                     installation.game_name.0.yellow(),
                     snapshot_id
                 );
