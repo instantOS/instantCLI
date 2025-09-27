@@ -34,9 +34,14 @@ fn prune_with_retention(game_name: Option<String>) -> Result<()> {
     let retention_rules = retention_policy.to_rules();
     let retention_rules_slice = retention_rules.as_slice();
 
+    let keep_last_display = retention_policy
+        .keep_last
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "unlimited".to_string());
+
     println!(
         "Retention policy (per game): keep-last {keep_last}, keep-daily {keep_daily}, keep-weekly {keep_weekly}, keep-monthly {keep_monthly}, keep-yearly {keep_yearly}.",
-        keep_last = retention_policy.keep_last,
+        keep_last = keep_last_display,
         keep_daily = retention_policy.keep_daily,
         keep_weekly = retention_policy.keep_weekly,
         keep_monthly = retention_policy.keep_monthly,

@@ -19,7 +19,6 @@ pub struct RetentionPolicyConfig {
 }
 
 impl RetentionPolicyConfig {
-    pub const DEFAULT_KEEP_LAST: u32 = 30;
     pub const DEFAULT_KEEP_DAILY: u32 = 90;
     pub const DEFAULT_KEEP_WEEKLY: u32 = 52;
     pub const DEFAULT_KEEP_MONTHLY: u32 = 36;
@@ -35,7 +34,7 @@ impl RetentionPolicyConfig {
 
     pub fn effective(&self) -> RetentionPolicyValues {
         RetentionPolicyValues {
-            keep_last: self.keep_last.unwrap_or(Self::DEFAULT_KEEP_LAST),
+            keep_last: self.keep_last,
             keep_daily: self.keep_daily.unwrap_or(Self::DEFAULT_KEEP_DAILY),
             keep_weekly: self.keep_weekly.unwrap_or(Self::DEFAULT_KEEP_WEEKLY),
             keep_monthly: self.keep_monthly.unwrap_or(Self::DEFAULT_KEEP_MONTHLY),
@@ -58,7 +57,7 @@ impl Default for RetentionPolicyConfig {
 
 #[derive(Debug, Clone, Copy)]
 pub struct RetentionPolicyValues {
-    pub keep_last: u32,
+    pub keep_last: Option<u32>,
     pub keep_daily: u32,
     pub keep_weekly: u32,
     pub keep_monthly: u32,
@@ -67,13 +66,18 @@ pub struct RetentionPolicyValues {
 
 impl RetentionPolicyValues {
     pub fn to_rules(&self) -> Vec<(String, String)> {
-        vec![
-            ("keep-last".to_string(), self.keep_last.to_string()),
-            ("keep-daily".to_string(), self.keep_daily.to_string()),
-            ("keep-weekly".to_string(), self.keep_weekly.to_string()),
-            ("keep-monthly".to_string(), self.keep_monthly.to_string()),
-            ("keep-yearly".to_string(), self.keep_yearly.to_string()),
-        ]
+        let mut rules = Vec::with_capacity(5);
+
+        if let Some(keep_last) = self.keep_last {
+            rules.push(("keep-last".to_string(), keep_last.to_string()));
+        }
+
+        rules.push(("keep-daily".to_string(), self.keep_daily.to_string()));
+        rules.push(("keep-weekly".to_string(), self.keep_weekly.to_string()));
+        rules.push(("keep-monthly".to_string(), self.keep_monthly.to_string()));
+        rules.push(("keep-yearly".to_string(), self.keep_yearly.to_string()));
+
+        rules
     }
 }
 
@@ -332,10 +336,7 @@ mod tests {
         let policy = RetentionPolicyConfig::default();
         let effective = policy.effective();
 
-        assert_eq!(
-            effective.keep_last,
-            RetentionPolicyConfig::DEFAULT_KEEP_LAST
-        );
+        assert!(effective.keep_last.is_none());
         assert_eq!(
             effective.keep_daily,
             RetentionPolicyConfig::DEFAULT_KEEP_DAILY
@@ -352,6 +353,11 @@ mod tests {
             effective.keep_yearly,
             RetentionPolicyConfig::DEFAULT_KEEP_YEARLY
         );
+
+        let rules = effective.to_rules();
+        assert_eq!(rules.len(), 4);
+        assert!(rules.contains(&("keep-daily".to_string(), "90".to_string())));
+        assert!(rules.contains(&("keep-yearly".to_string(), "10".to_string())));
     }
 
     #[test]
@@ -366,7 +372,7 @@ mod tests {
 
         let effective = policy.effective();
 
-        assert_eq!(effective.keep_last, 5);
+        assert_eq!(effective.keep_last, Some(5));
         assert_eq!(effective.keep_daily, 7);
         assert_eq!(effective.keep_weekly, 9);
         assert_eq!(effective.keep_monthly, 11);
