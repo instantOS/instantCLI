@@ -101,8 +101,7 @@ pub fn install(shell: SupportedShell, snippet_only: bool) -> Result<String> {
         Ok(snippet)
     } else {
         Ok(format!(
-            "To enable {} completions, add the following to your shell config:\n\n{}\n\nThis keeps dynamic completions in sync with the instant binary.",
-            shell, snippet
+            "To enable {shell} completions, add the following to your shell config:\n\n{snippet}\n\nThis keeps dynamic completions in sync with the instant binary."
         ))
     }
 }
@@ -111,7 +110,7 @@ pub fn instructions(shell: SupportedShell, install_path: &Path) -> String {
     shell.install_instructions(install_path)
 }
 
-fn matches_prefix<'a>(value: &'a str, prefix: &str) -> bool {
+fn matches_prefix(value: &str, prefix: &str) -> bool {
     prefix.is_empty() || value.starts_with(prefix)
 }
 

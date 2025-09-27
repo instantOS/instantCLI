@@ -65,7 +65,7 @@ pub fn fetch_branch(repo: &mut Repository, branch: &str) -> Result<()> {
 /// Checkout a specific branch
 pub fn checkout_branch(repo: &mut Repository, branch: &str) -> Result<()> {
     // First, try to find the remote branch
-    let remote_branch_name = format!("origin/{}", branch);
+    let remote_branch_name = format!("origin/{branch}");
     let remote_branch = repo.find_branch(&remote_branch_name, git2::BranchType::Remote);
 
     let _commit_id = match remote_branch {
@@ -86,7 +86,7 @@ pub fn checkout_branch(repo: &mut Repository, branch: &str) -> Result<()> {
     };
 
     // Checkout the commit
-    repo.set_head(&format!("refs/heads/{}", branch))
+    repo.set_head(&format!("refs/heads/{branch}"))
         .context("Failed to set HEAD")?;
 
     repo.checkout_head(Some(
@@ -125,7 +125,7 @@ pub fn clean_and_pull(repo: &mut Repository) -> Result<()> {
     }
 
     // Get the reference for the remote branch
-    let remote_branch_name = format!("origin/{}", branch_name);
+    let remote_branch_name = format!("origin/{branch_name}");
     let remote_branch_ref = repo
         .find_reference(&remote_branch_name)
         .context("Failed to find remote branch reference")?;
@@ -135,7 +135,7 @@ pub fn clean_and_pull(repo: &mut Repository) -> Result<()> {
         .context("Failed to peel remote branch to commit")?;
 
     // Reset local branch to match remote (hard reset)
-    repo.set_head(&format!("refs/heads/{}", branch_name))
+    repo.set_head(&format!("refs/heads/{branch_name}"))
         .context("Failed to set HEAD")?;
 
     repo.reset(&remote_commit.into_object(), git2::ResetType::Hard, None)

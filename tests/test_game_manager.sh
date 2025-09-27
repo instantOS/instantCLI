@@ -49,14 +49,23 @@ main() {
 
     instant game restore --force "${game_name}" "${snapshot_id}"
 
-    local restored_file
-    restored_file="$(find "${save_path}" -type f -name 'save1.txt' | head -n1)"
-    if [[ -z "${restored_file}" ]]; then
-        echo "Restore did not recreate expected save file" >&2
+    local expected_file="${save_path}/save1.txt"
+    mapfile -t restored_files < <(find "${save_path}" -type f -name 'save1.txt' | sort)
+    if [[ "${#restored_files[@]}" -ne 1 ]]; then
+        echo "Expected exactly one restored save file, found ${#restored_files[@]}" >&2
+        printf 'Restored files:\n' >&2
+        printf '  %s\n' "${restored_files[@]}" >&2
         exit 1
     fi
 
-    assert_file_equals "${restored_file}" "initial save"
+    if [[ "${restored_files[0]}" != "${expected_file}" ]]; then
+        echo "Restore placed save at unexpected path" >&2
+        echo "Expected: ${expected_file}" >&2
+        echo "Actual:   ${restored_files[0]}" >&2
+        exit 1
+    fi
+
+    assert_file_equals "${expected_file}" "initial save"
 
     instant game restic snapshots >/dev/null
     instant game launch "${game_name}"

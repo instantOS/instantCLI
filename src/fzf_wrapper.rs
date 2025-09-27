@@ -430,7 +430,7 @@ impl FzfBuilder {
 
         if let Some(title) = &title {
             if let Some(header) = &self.header {
-                cmd.arg("--header").arg(format!("{}\n\n{}", title, header));
+                cmd.arg("--header").arg(format!("{title}\n\n{header}"));
             }
         } else if let Some(header) = &self.header {
             cmd.arg("--header").arg(header);

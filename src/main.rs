@@ -360,14 +360,14 @@ async fn main() -> Result<()> {
         Some(Commands::Completions { command }) => match command {
             completions::CompletionCommands::Generate { shell } => {
                 let script = completions::generate(*shell)?;
-                print!("{}", script);
+                print!("{script}");
             }
             completions::CompletionCommands::Install {
                 shell,
                 snippet_only,
             } => {
                 let instructions = completions::install(*shell, *snippet_only)?;
-                println!("{}", instructions);
+                println!("{instructions}");
             }
         },
         None => {

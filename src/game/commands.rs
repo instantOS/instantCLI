@@ -141,7 +141,7 @@ fn handle_debug_tags(game_name: Option<String>) -> Result<()> {
     }
 
     let debug_output = tags::debug_snapshot_tags(&snapshots);
-    print!("{}", debug_output);
+    print!("{debug_output}");
 
     Ok(())
 }

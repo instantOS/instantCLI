@@ -28,12 +28,32 @@ cleanup_test_env() {
     fi
 }
 
+prepare_instant_binary() {
+    if [[ -n "${INSTANT_PREPARED:-}" && -n "${INSTANT_BIN:-}" && -x "${INSTANT_BIN}" ]]; then
+        return
+    fi
+
+    (
+        export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-Awarnings"
+        cd "${REPO_ROOT}" && cargo build --quiet
+    )
+
+    export INSTANT_BIN="${REPO_ROOT}/target/debug/instant"
+    export INSTANT_PREPARED=1
+}
+
 instant() {
-    (cd "${REPO_ROOT}" && cargo run --quiet -- "$@")
+    if [[ -z "${INSTANT_BIN:-}" || ! -x "${INSTANT_BIN}" ]]; then
+        prepare_instant_binary
+    fi
+    "${INSTANT_BIN}" "$@"
 }
 
 instant_output() {
-    (cd "${REPO_ROOT}" && cargo run --quiet -- "$@")
+    if [[ -z "${INSTANT_BIN:-}" || ! -x "${INSTANT_BIN}" ]]; then
+        prepare_instant_binary
+    fi
+    "${INSTANT_BIN}" "$@"
 }
 
 create_sample_dot_repo() {

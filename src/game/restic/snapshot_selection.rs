@@ -17,7 +17,7 @@ impl FzfSelectable for Snapshot {
         let game_name =
             tags::extract_game_name_from_tags(&self.tags).unwrap_or_else(|| "unknown".to_string());
 
-        format!("{} - {} ({})", game_name, date, host)
+        format!("{game_name} - {date} ({host})")
     }
 
     fn fzf_key(&self) -> String {

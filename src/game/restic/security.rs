@@ -99,7 +99,12 @@ pub fn check_snapshot_vs_local_saves(
     snapshot: &Snapshot,
     save_info: &crate::game::utils::save_files::SaveDirectoryInfo,
     game_name: &str,
+    force: bool,
 ) -> Result<bool> {
+    if force {
+        return Ok(true);
+    }
+
     // If no local saves, no warning needed
     if save_info.file_count == 0 {
         return Ok(true); // Safe to proceed
