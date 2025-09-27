@@ -207,6 +207,8 @@ fn handle_debug_command(command: DebugCommands) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    clap_complete::CompleteEnv::with_factory(cli_command).complete();
+
     let cli = Cli::parse();
 
     if cli.debug {
@@ -362,12 +364,10 @@ async fn main() -> Result<()> {
             }
             completions::CompletionCommands::Install {
                 shell,
-                output,
-                force,
+                snippet_only,
             } => {
-                let path = completions::install(*shell, output.clone(), *force)?;
-                println!("Installed {} completions to {}", shell, path.display());
-                println!("{}", completions::instructions(*shell, &path));
+                let instructions = completions::install(*shell, *snippet_only)?;
+                println!("{}", instructions);
             }
         },
         None => {

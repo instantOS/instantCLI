@@ -1,4 +1,5 @@
 use clap::Subcommand;
+use clap_complete::engine::ArgValueCompleter;
 
 #[derive(Subcommand, Debug)]
 pub enum RepoCommands {
@@ -14,16 +15,26 @@ pub enum RepoCommands {
     },
     /// Remove a repository
     Remove {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
         name: String,
         #[arg(long)]
         keep_files: bool,
     },
     /// Show detailed repository information
-    Info { name: String },
+    Info {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: String,
+    },
     /// Enable a disabled repository
-    Enable { name: String },
+    Enable {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: String,
+    },
     /// Disable a repository temporarily
-    Disable { name: String },
+    Disable {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: String,
+    },
     /// Subdirectory management
     Subdirs {
         #[command(subcommand)]
@@ -35,10 +46,15 @@ pub enum RepoCommands {
 pub enum SubdirCommands {
     /// List available subdirectories
     List {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
         name: String,
         #[arg(long)]
         active: bool,
     },
     /// Set active subdirectories
-    Set { name: String, subdirs: Vec<String> },
+    Set {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: String,
+        subdirs: Vec<String>,
+    },
 }
