@@ -318,7 +318,7 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
     }
 }
 
-/// Remove redundant zero-change snapshots while keeping the newest per game
-pub fn prune_zero_change_snapshots() -> Result<()> {
-    prune::prune_zero_change_snapshots()
+/// Prune game snapshots using the configured strategy
+pub fn prune_snapshots(zero_changes: bool) -> Result<()> {
+    prune::prune_snapshots(zero_changes)
 }

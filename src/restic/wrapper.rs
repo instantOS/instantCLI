@@ -214,6 +214,51 @@ impl ResticWrapper {
         Ok(())
     }
 
+    pub fn forget_with_policy(
+        &self,
+        tags: Option<Vec<String>>,
+        group_by: Option<Vec<String>>,
+        retention_rules: &[(&str, &str)],
+        prune: bool,
+    ) -> Result<(), ResticError> {
+        let mut args: Vec<String> = vec!["forget".to_string()];
+
+        if prune {
+            args.push("--prune".to_string());
+        }
+
+        if let Some(tags) = tags {
+            for tag in tags {
+                args.push("--tag".to_string());
+                args.push(tag);
+            }
+        }
+
+        if let Some(group_by) = group_by {
+            if !group_by.is_empty() {
+                args.push("--group-by".to_string());
+                args.push(group_by.join(","));
+            }
+        }
+
+        for (flag, value) in retention_rules {
+            args.push(format!("--{flag}"));
+            args.push((*value).to_string());
+        }
+
+        let mut cmd = self.base_command();
+        cmd.args(&args);
+        let output = self.execute_and_log_command(cmd, &args)?;
+
+        if !output.status.success() {
+            let code = output.status.code().unwrap_or(1);
+            let stderr = String::from_utf8(output.stderr)?;
+            return Err(ResticError::from_exit_code(code, &stderr));
+        }
+
+        Ok(())
+    }
+
     pub fn restore(
         &self,
         snapshot_id: &str,

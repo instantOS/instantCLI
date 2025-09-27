@@ -8,7 +8,7 @@ use super::operations::{launch_game, sync_game_saves};
 use super::repository::RepositoryManager;
 use super::repository::manager::InitOptions;
 use super::restic::{
-    backup_game_saves, handle_restic_command, prune_zero_change_snapshots, restore_game_saves,
+    backup_game_saves, handle_restic_command, prune_snapshots, restore_game_saves,
 };
 use super::setup;
 
@@ -37,7 +37,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Show { game_name } => handle_show(game_name),
         GameCommands::Remove { game_name, force } => handle_remove(game_name, force),
         GameCommands::Backup { game_name } => handle_backup(game_name),
-        GameCommands::Prune => handle_prune(),
+        GameCommands::Prune { zero_changes } => handle_prune(zero_changes),
         GameCommands::Restic { args } => handle_restic_command(args),
         GameCommands::Restore {
             game_name,
@@ -90,8 +90,8 @@ fn handle_backup(game_name: Option<String>) -> Result<()> {
     backup_game_saves(game_name)
 }
 
-fn handle_prune() -> Result<()> {
-    prune_zero_change_snapshots()
+fn handle_prune(zero_changes: bool) -> Result<()> {
+    prune_snapshots(zero_changes)
 }
 
 fn handle_restore(

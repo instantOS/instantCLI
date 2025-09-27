@@ -69,8 +69,12 @@ pub enum GameCommands {
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
     },
-    /// Prune redundant zero-change snapshots, keeping only the newest per game
-    Prune,
+    /// Prune game snapshots using a retention policy
+    Prune {
+        /// Use legacy zero-change pruning behavior
+        #[arg(long = "zero-changes")]
+        zero_changes: bool,
+    },
     /// Run restic commands with instant games repository configuration
     Restic {
         /// Restic command and arguments to execute

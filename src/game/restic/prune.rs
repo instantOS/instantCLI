@@ -9,7 +9,58 @@ use std::time::SystemTime;
 
 const REPO_MISSING_CONTEXT: &str = "Failed to load game configuration";
 
-pub fn prune_zero_change_snapshots() -> Result<()> {
+const RETENTION_POLICY_RULES: [(&str, &str); 5] = [
+    ("keep-last", "30"),
+    ("keep-daily", "90"),
+    ("keep-weekly", "52"),
+    ("keep-monthly", "36"),
+    ("keep-yearly", "10"),
+];
+
+pub fn prune_snapshots(zero_changes: bool) -> Result<()> {
+    if zero_changes {
+        return prune_zero_change_snapshots();
+    }
+
+    prune_with_retention()
+}
+
+fn prune_with_retention() -> Result<()> {
+    let game_config = InstantGameConfig::load().context(REPO_MISSING_CONTEXT)?;
+    validation::check_restic_and_game_manager(&game_config)?;
+
+    let restic = ResticWrapper::new(
+        game_config.repo.as_path().to_string_lossy().to_string(),
+        game_config.repo_password.clone(),
+    );
+
+    println!("Applying retention policy using restic forget...");
+
+    restic
+        .forget_with_policy(
+            Some(vec![tags::INSTANT_GAME_TAG.to_string()]),
+            Some(vec!["host".to_string(), "tags".to_string()]),
+            &RETENTION_POLICY_RULES,
+            true,
+        )
+        .context("Failed to apply retention policy with restic forget")?;
+
+    cache::invalidate_snapshot_cache();
+
+    println!(
+        "Retention policy applied per game: keep last {0}, daily {1}, weekly {2}, monthly {3}, yearly {4} snapshots.",
+        RETENTION_POLICY_RULES[0].1,
+        RETENTION_POLICY_RULES[1].1,
+        RETENTION_POLICY_RULES[2].1,
+        RETENTION_POLICY_RULES[3].1,
+        RETENTION_POLICY_RULES[4].1,
+    );
+    println!("Prune completed successfully.");
+
+    Ok(())
+}
+
+fn prune_zero_change_snapshots() -> Result<()> {
     let game_config = InstantGameConfig::load().context(REPO_MISSING_CONTEXT)?;
     validation::check_restic_and_game_manager(&game_config)?;
 
