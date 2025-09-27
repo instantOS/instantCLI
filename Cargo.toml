@@ -2,6 +2,9 @@
 name = "ins"
 version = "0.1.1"
 edition = "2024"
+description = "Instant CLI - command-line utilities"
+license = "GPL-2.0-only"
+homepage = "https://instantos.io"
 
 [dependencies]
 anyhow = "1.0.100"
