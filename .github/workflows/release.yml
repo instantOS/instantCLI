@@ -41,7 +41,18 @@ jobs:
 
       - name: Extract version
         id: vars
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)
+          if [[ -z "$version" ]]; then
+            echo "Failed to determine version from Cargo.toml" >&2
+            exit 1
+          fi
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [[ -n "$tag_version" && "$tag_version" != "$version" ]]; then
+            echo "Tag version $tag_version does not match Cargo.toml version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
         run: |

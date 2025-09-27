@@ -1,9 +1,13 @@
 #!/bin/bash
 
 _pkgname=instant
-: "${VERSION:=0.1.1}"
+: "${VERSION:=$(awk -F '"' '/^version =/ {print $2; exit}' ../Cargo.toml 2>/dev/null)}"
 pkgname=${_pkgname}
 pkgver=${VERSION}
+if [[ -z ${pkgver} ]]; then
+    echo "Failed to determine version from Cargo.toml; set VERSION explicitly." >&2
+    exit 1
+fi
 pkgrel=1
 pkgdesc="InstantCLI manages instantOS dotfiles and configuration overlays"
 arch=('x86_64')
