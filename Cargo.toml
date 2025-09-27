@@ -37,7 +37,8 @@ freedesktop-file-parser = "0.3.0"
 which = "7.0"
 ratatui = "0.29.0"
 crossterm = "0.29.0"
-base64 = "0.22"
+base64 = "0.21.7"
+dialoguer = "0.10.0"
 
 [dev-dependencies]
 tempfile = "3.21.0"
