@@ -20,23 +20,23 @@ sha256sums=('SKIP')
 makedepends=('cargo' 'rust' 'git')
 
 prepare() {
-    cd "${srcdir}/${pkgname}-${pkgver}"
+    cd "${srcdir}/instantCLI-${pkgver}"
     cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
 }
 
 build() {
-    cd "${srcdir}/${pkgname}-${pkgver}"
+    cd "${srcdir}/instantCLI-${pkgver}"
     export CARGO_TARGET_DIR=target
     cargo build --frozen --release --locked
 }
 
 check() {
-    cd "${srcdir}/${pkgname}-${pkgver}"
+    cd "${srcdir}/instantCLI-${pkgver}"
     cargo test --frozen --locked
 }
 
 package() {
-    cd "${srcdir}/${pkgname}-${pkgver}"
+    cd "${srcdir}/instantCLI-${pkgver}"
     install -Dm0755 "target/release/${_pkgname}" "${pkgdir}/usr/bin/${_pkgname}"
     install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }
