@@ -12,14 +12,11 @@ while enabling easy theme and configuration switching.
 
 ### 🗂️ **Dotfile Management**
 - **Multi-repository support** with priority-based overlaying
-- **Smart modification detection** using SHA256 hashes to protect user changes
-- **Subdirectory management** for organizing different configuration sets
-- **Automatic conflict resolution** with user-friendly prompts
-- **Git integration** for repository synchronization
+- **Smart modification detection** using hashes to protect user changes
+- **Subdirectory management** for organizing different configuration sets like themes
 
 ### 🎮 **Game Save Management**
 - Centralized game save backup and restore
-- Support for multiple game platforms and launchers
 - Automatic save location detection
 
 ### 🩺 **System Diagnostics**
@@ -43,6 +40,18 @@ while enabling easy theme and configuration switching.
 
 ## Installation
 
+### Cargo
+
+```bash
+cargo install ins
+```
+
+### AUR
+
+```bash
+yay -S ins
+```
+
 ### From Source
 
 ```bash
@@ -59,9 +68,9 @@ just rootinstall
 
 ### Prerequisites
 
-- Rust 1.70+ (2024 edition)
+- Rust
 - Git
-- FZF (for interactive menus)
+- FZF
 - Restic
 - SQLite3
 
@@ -102,23 +111,6 @@ ins menu confirm --message "Proceed with operation?"
 ## Configuration
 
 InstantCLI uses a TOML configuration file located at `~/.config/instant/instant.toml`:
-
-```toml
-# Git clone depth for repositories
-clone_depth = 1
-
-# Configured dotfile repositories
-[[repos]]
-url = "https://github.com/user/dotfiles.git"
-name = "my-dotfiles"
-branch = "main"
-active_subdirs = ["dots", "themes"]  # Optional: specify active subdirectories
-
-[[repos]]
-url = "https://github.com/user/themes.git"
-name = "my-themes"
-branch = "main"
-```
 
 ## Commands Reference
 
@@ -240,12 +232,5 @@ cargo test
 
 # Run integration tests
 just test
-
-# Install locally for user testing
-just install
-cd ~ && ins dot status
 ```
 
-## License
-
-This project is licensed under the GNU General Public License v2.0 - see the [LICENSE](LICENSE) file for details.
