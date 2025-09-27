@@ -50,7 +50,11 @@ save_path = "${new_save_path}"
 nearest_checkpoint = "${snapshot_id}"
 EOF
 
-    rm -rf "${new_save_path}"/*
+    if [[ -z "${new_save_path}" ]]; then
+        echo "Error: new_save_path is empty. Aborting to prevent accidental deletion." >&2
+        exit 1
+    fi
+    rm -rf -- "${new_save_path}"/*
 
     instant game restore --force "${game_name}" "${snapshot_id}"
 
