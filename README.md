@@ -71,32 +71,32 @@ just rootinstall
 
 ```bash
 # Add a dotfile repository
-instant dot repo add https://github.com/your-username/dotfiles.git
+ins dot repo add https://github.com/your-username/dotfiles.git
 
 # Apply dotfiles to your system
-instant dot apply
+ins dot apply
 
 # Check status of your dotfiles
-instant dot status
+ins dot status
 ```
 
 ### Basic Usage Examples
 
 ```bash
 # Show all available commands
-instant --help
+ins --help
 
 # Run system diagnostics
-instant doctor
+ins doctor
 
 # Toggle scratchpad terminal
-instant scratchpad toggle
+ins scratchpad toggle
 
 # Launch an application
-instant launch
+ins launch
 
 # Show interactive confirmation dialog
-instant menu confirm --message "Proceed with operation?"
+ins menu confirm --message "Proceed with operation?"
 ```
 
 ## Configuration
@@ -126,40 +126,40 @@ branch = "main"
 
 | Command | Description |
 |---------|-------------|
-| `instant dot apply` | Apply all dotfiles from configured repositories |
-| `instant dot fetch [path]` | Fetch modified files from home directory back to repos |
-| `instant dot reset <path>` | Reset modified files to original state |
-| `instant dot update` | Update all configured repositories |
-| `instant dot status [path]` | Check repository and file status |
-| `instant dot init` | Initialize current directory as a dotfile repository |
-| `instant dot add <path>` | Add new dotfiles to tracking |
-| `instant dot diff [path]` | Show differences between files |
+| `ins dot apply` | Apply all dotfiles from configured repositories |
+| `ins dot fetch [path]` | Fetch modified files from home directory back to repos |
+| `ins dot reset <path>` | Reset modified files to original state |
+| `ins dot update` | Update all configured repositories |
+| `ins dot status [path]` | Check repository and file status |
+| `ins dot init` | Initialize current directory as a dotfile repository |
+| `ins dot add <path>` | Add new dotfiles to tracking |
+| `ins dot diff [path]` | Show differences between files |
 
 ### Repository Management
 
 | Command | Description |
 |---------|-------------|
-| `instant dot repo add <url>` | Add a new dotfile repository |
-| `instant dot repo list` | List all configured repositories |
-| `instant dot repo remove <name>` | Remove a repository |
-| `instant dot repo info <name>` | Show detailed repository information |
-| `instant dot repo enable/disable <name>` | Enable/disable a repository |
+| `ins dot repo add <url>` | Add a new dotfile repository |
+| `ins dot repo list` | List all configured repositories |
+| `ins dot repo remove <name>` | Remove a repository |
+| `ins dot repo info <name>` | Show detailed repository information |
+| `ins dot repo enable/disable <name>` | Enable/disable a repository |
 
 ### Subdirectory Management
 
 | Command | Description |
 |---------|-------------|
-| `instant dot repo subdirs list <name>` | List available subdirectories in a repository |
-| `instant dot repo subdirs set <name> <subdirs...>` | Set active subdirectories for a repository |
+| `ins dot repo subdirs list <name>` | List available subdirectories in a repository |
+| `ins dot repo subdirs set <name> <subdirs...>` | Set active subdirectories in a repository |
 
 ### Scratchpad Terminal
 
 | Command | Description |
 |---------|-------------|
-| `instant scratchpad toggle` | Toggle scratchpad visibility |
-| `instant scratchpad show` | Show scratchpad terminal |
-| `instant scratchpad hide` | Hide scratchpad terminal |
-| `instant scratchpad status` | Check scratchpad status |
+| `ins scratchpad toggle` | Toggle scratchpad visibility |
+| `ins scratchpad show` | Show scratchpad terminal |
+| `ins scratchpad hide` | Hide scratchpad terminal |
+| `ins scratchpad status` | Check scratchpad status |
 
 #### Scratchpad Options
 
@@ -173,19 +173,19 @@ branch = "main"
 
 | Command | Description |
 |---------|-------------|
-| `instant menu confirm --message "text"` | Show confirmation dialog |
-| `instant menu choice --prompt "text" --multi` | Show selection menu |
-| `instant menu input --prompt "text"` | Show text input dialog |
+| `ins menu confirm --message "text"` | Show confirmation dialog |
+| `ins menu choice --prompt "text" --multi` | Show selection menu |
+| `ins menu input --prompt "text"` | Show text input dialog |
 
 ### Other Commands
 
 | Command | Description |
 |---------|-------------|
-| `instant doctor` | Run system diagnostics and fixes |
-| `instant game` | Game save management commands |
-| `instant launch` | Application launcher |
-| `instant dev` | Development utilities |
-| `instant completions` | Shell completion helpers |
+| `ins doctor` | Run system diagnostics and fixes |
+| `ins game` | Game save management commands |
+| `ins launch` | Application launcher |
+| `ins dev` | Development utilities |
+| `ins completions` | Shell completion helpers |
 
 ## How It Works
 
@@ -243,7 +243,7 @@ just test
 
 # Install locally for user testing
 just install
-cd ~ && instant dot status
+cd ~ && ins dot status
 ```
 
 ## License

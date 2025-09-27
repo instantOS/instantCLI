@@ -44,17 +44,17 @@ For testing purposes, you can install the CLI locally and use it as a normal use
 just install
 
 # Test from home directory (simulates real user usage)
-cd ~ && instant <command>
+cd ~ && ins <command>
 
 # Example test commands
-cd ~ && instant dot status
-cd ~ && instant --debug dot apply
-cd ~ && instant dot reset .config
+cd ~ && ins dot status
+cd ~ && ins --debug dot apply
+cd ~ && ins dot reset .config
 ```
 
-**Note**: Using `cd ~ && instant <command>` is the preferred testing method as it simulates how real users will interact with the CLI, avoiding working directory concerns and ensuring the tool behaves correctly in normal usage scenarios.
+**Note**: Using `cd ~ && ins <command>` is the preferred testing method as it simulates how real users will interact with the CLI, avoiding working directory concerns and ensuring the tool behaves correctly in normal usage scenarios.
 
-**Important Note**: Commands involving fzf interactive menus (such as `instant menu` commands and any dotfile operations that require user selection) should be run by the user directly. AI agents are not capable of interacting with fzf's interactive interface, so these commands must be executed manually by a human user.
+**Important Note**: Commands involving fzf interactive menus (such as `ins menu` commands and any dotfile operations that require user selection) should be run by the user directly. AI agents are not capable of interacting with fzf's interactive interface, so these commands must be executed manually by a human user.
 
 **FZF Wrapper Enhancement**: The FzfWrapper has been enhanced to support multi-line messages via the `--header` argument and includes builder patterns for more ergonomic usage. Key improvements:
 
@@ -200,28 +200,28 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 
 ### Dotfile Commands
 - `instant dot apply`: Apply all dotfiles from configured repos
-- `instant dot fetch [<path>]`: Fetch modified files from home directory back to repos
-- `instant dot reset <path>`: Reset modified files to original state
-- `instant dot update`: Update all configured repositories
-- `instant dot status [<path>]`: Check repository status
-- `instant dot init`: Initialize current directory as a dotfile repo
-- `instant dot add <path>`: Add new dotfiles to tracking
-
-### Repository Management Commands
-- `instant dot repo add <url>`: Add a new dotfile repository
-- `instant dot repo list`: List all configured repositories
-- `instant dot repo remove <name>`: Remove a repository
-- `instant dot repo info <name>`: Show detailed repository information
-- `instant dot repo enable <name>`: Enable a disabled repository
-- `instant dot repo disable <name>`: Disable a repository temporarily
-
-### Subdirectory Management Commands
-- `instant dot repo subdirs list <name>`: List available subdirectories
-- `instant dot repo subdirs set <name> <subdirs...>`: Set active subdirectories
-
-### Interactive Menu Commands
-- `instant menu confirm --message "Are you sure?" --default "false"`: Show confirmation dialog
-- `instant menu choice --prompt "Select an item:" --multi`: Show selection menu
+- `ins dot apply`: Apply all dotfiles from configured repos
+- `ins dot fetch [<path>]`: Fetch modified files from home directory back to repos
+- `ins dot reset <path>`: Reset modified files to original state
+- `ins dot update`: Update all configured repositories
+- `ins dot status [<path>]`: Check repository status
+- `ins dot init`: Initialize current directory as a dotfile repo
+- `ins dot add <path>`: Add new dotfiles to tracking
+- `ins dot repo add <url>`: Add a new dotfile repository
+- `ins dot repo list`: List all configured repositories
+- `ins dot repo remove <name>`: Remove a repository
+- `ins dot repo info <name>`: Show detailed repository information
+- `ins dot repo enable <name>`: Enable a disabled repository
+- `ins dot repo disable <name>`: Disable a repository temporarily
+- `ins dot repo subdirs list <name>`: List available subdirectories
+- `ins dot repo subdirs set <name> <subdirs...>`: Set active subdirectories
+- `ins menu confirm --message "Are you sure?" --default "false"`: Show confirmation dialog
+- `ins menu choice --prompt "Select an item:" --multi`: Show selection menu
+- `ins menu input --prompt "Type a value:"`: Show text input dialog
+- `ins scratchpad toggle`: Toggle scratchpad terminal visibility (create if doesn't exist)
+- `ins scratchpad show`: Show scratchpad terminal (create if doesn't exist)
+- `ins scratchpad hide`: Hide scratchpad terminal
+- `ins scratchpad status`: Check if scratchpad terminal is currently visible
 - `instant menu input --prompt "Type a value:"`: Show text input dialog
 
 ### Scratchpad Commands
@@ -244,11 +244,11 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 **Examples**:
 ```bash
 # Default scratchpad
-instant scratchpad show
-
-# Named scratchpad with file manager
-instant scratchpad show --name files --command ranger
-
+ins scratchpad show
+ins scratchpad show --name files --command ranger
+ins scratchpad show --name term1 --command fish
+ins scratchpad show --name term2 --command zsh
+ins scratchpad hide --name term1
 # Multiple scratchpads
 instant scratchpad show --name term1 --command fish
 instant scratchpad show --name term2 --command zsh
@@ -256,7 +256,7 @@ instant scratchpad hide --name term1
 ```
 
 ### System Diagnostics
-- `instant doctor`: Run system diagnostics and fixes
+- `ins doctor`: Run system diagnostics and fixes
 
 ## Multiple Subdirectories Support
 
@@ -285,8 +285,8 @@ active_subdirs = ["dots", "themes"]
 
 ### Subdirectory Management Commands
 
-- `instant dot repo subdirs list <repo>`: List available subdirectories in a repository
-- `instant dot repo subdirs set <repo> <subdirs...>`: Set active subdirectories for a repository
+- `ins dot repo subdirs list <repo>`: List available subdirectories in a repository
+- `ins dot repo subdirs set <repo> <subdirs...>`: Set active subdirectories for a repository
 
 ### Default Behavior
 
