@@ -63,7 +63,7 @@ jobs:
       - name: Check binary functionality
         run: |
           # Test basic CLI functionality
-          ./target/release/instant --help > /dev/null
-          ./target/release/instant --version
+          ./target/release/ins --help > /dev/null
+          ./target/release/ins --version
           echo "✓ CLI binary basic functionality works"
 

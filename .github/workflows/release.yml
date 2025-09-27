@@ -66,7 +66,7 @@ jobs:
       - name: Strip binary
         run: |
           WORKSPACE="$PWD"
-          su builder -c "cd '$WORKSPACE' && strip target/release/instant"
+          su builder -c "cd '$WORKSPACE' && strip target/release/ins"
 
       - name: Build pacman package
         env:
@@ -80,7 +80,7 @@ jobs:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
           mkdir -p artifacts
-          install -Dm0755 "target/release/instant" "artifacts/instant-${VERSION}-x86_64-unknown-linux-gnu"
+          install -Dm0755 "target/release/ins" "artifacts/ins-${VERSION}-x86_64-unknown-linux-gnu"
           shopt -s nullglob
           for pkg in packaging/*.pkg.tar.zst; do mv "$pkg" artifacts/; done
           for src in packaging/*.src.tar.zst; do mv "$src" artifacts/; done
@@ -88,13 +88,13 @@ jobs:
       - name: Upload compiled binary
         uses: actions/upload-artifact@v4
         with:
-          name: instant-${{ steps.vars.outputs.version }}-x86_64-unknown-linux-gnu
-          path: artifacts/instant-${{ steps.vars.outputs.version }}-x86_64-unknown-linux-gnu
+          name: ins-${{ steps.vars.outputs.version }}-x86_64-unknown-linux-gnu
+          path: artifacts/ins-${{ steps.vars.outputs.version }}-x86_64-unknown-linux-gnu
 
       - name: Upload Arch package
         uses: actions/upload-artifact@v4
         with:
-          name: instant-${{ steps.vars.outputs.version }}-arch-packages
+          name: ins-${{ steps.vars.outputs.version }}-arch-packages
           path: |
             artifacts/*.pkg.tar.zst
             artifacts/*.src.tar.zst
