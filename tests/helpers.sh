@@ -28,12 +28,21 @@ cleanup_test_env() {
     fi
 }
 
+ensure_instant_binary() {
+    if [[ -z "${INSTANT_BIN:-}" ]]; then
+        (cd "${REPO_ROOT}" && cargo build --quiet)
+        INSTANT_BIN="${REPO_ROOT}/target/debug/instant"
+    fi
+}
+
 instant() {
-    (cd "${REPO_ROOT}" && cargo run --quiet -- "$@")
+    ensure_instant_binary
+    "${INSTANT_BIN}" "$@"
 }
 
 instant_output() {
-    (cd "${REPO_ROOT}" && cargo run --quiet -- "$@")
+    ensure_instant_binary
+    "${INSTANT_BIN}" "$@"
 }
 
 create_sample_dot_repo() {
