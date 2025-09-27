@@ -98,7 +98,7 @@ impl GameManager {
                     if create_save_path {
                         std::fs::create_dir_all(tilde_path.as_path())
                             .context("Failed to create save directory")?;
-                        println!("✓ Created save directory: {}", trimmed);
+                        println!("✓ Created save directory: {trimmed}");
                     } else {
                         return Err(anyhow::anyhow!(
                             "Save path '{}' does not exist. Use --create-save-path to create it automatically or run 'instant game add' without --save-path for interactive setup.",

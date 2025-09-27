@@ -121,7 +121,7 @@ pub fn debug_snapshot_tags(snapshots: &[crate::restic::wrapper::Snapshot]) -> St
         output.push_str(&format!("  Raw tags: {:?}\n", snapshot.tags));
 
         if let Some(game_name) = extract_game_name_from_tags(&snapshot.tags) {
-            output.push_str(&format!("  Game: {}\n", game_name));
+            output.push_str(&format!("  Game: {game_name}\n"));
         } else {
             output.push_str("  Game: <unable to decode>\n");
         }

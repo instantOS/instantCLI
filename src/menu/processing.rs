@@ -74,9 +74,9 @@ impl RequestProcessor {
             }
             Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
             Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {
-                Ok(MenuResponse::Error(format!("Selection error: {}", e)))
+                Ok(MenuResponse::Error(format!("Selection error: {e}")))
             }
-            Err(e) => Ok(MenuResponse::Error(format!("Selection error: {}", e))),
+            Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),
         }
     }
 
