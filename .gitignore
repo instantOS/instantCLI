@@ -25,6 +25,6 @@ target
 
 /target
 tags
-src/instantCLI-0.1.5
-src/ins-0.1.5.tar.gz
-ins-0.1.5.tar.gz
+src/instantCLI-*
+src/*.tar.gz
+*.tar.gz
