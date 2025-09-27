@@ -13,7 +13,7 @@ mod menu;
 mod restic;
 mod scratchpad;
 
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueHint};
 
 /// Helper function to format and print errors consistently
 fn handle_error(context: &str, error: &anyhow::Error) -> String {
@@ -144,6 +144,7 @@ enum DotCommands {
     /// Reset modified dotfiles to their original state in the given path
     Reset {
         /// Path to reset (relative to ~)
+        #[arg(value_hint = ValueHint::AnyPath)]
         path: String,
     },
     /// Apply dotfiles
@@ -151,6 +152,7 @@ enum DotCommands {
     /// Fetch modified dotfiles from home directory back to repository
     Fetch {
         /// Path to fetch (relative to ~)
+        #[arg(value_hint = ValueHint::AnyPath)]
         path: Option<String>,
         /// Perform a dry run, showing which files would be fetched
         #[arg(long)]
@@ -159,6 +161,7 @@ enum DotCommands {
     /// Add new dotfiles to tracking
     Add {
         /// Path to add (relative to ~)
+        #[arg(value_hint = ValueHint::AnyPath)]
         path: String,
     },
     /// Pull updates for all configured repos and apply changes
@@ -166,6 +169,7 @@ enum DotCommands {
     /// Check dotfile status
     Status {
         /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
+        #[arg(value_hint = ValueHint::AnyPath)]
         path: Option<String>,
         /// Show all dotfiles including clean ones
         #[arg(long)]
@@ -182,6 +186,7 @@ enum DotCommands {
     /// Show differences between modified dotfiles and their source
     Diff {
         /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
+        #[arg(value_hint = ValueHint::AnyPath)]
         path: Option<String>,
     },
 }

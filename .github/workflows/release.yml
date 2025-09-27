@@ -28,7 +28,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          pacman -S --noconfirm --needed base-devel rust pkgconf openssl
+          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -73,7 +73,7 @@ jobs:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
           WORKSPACE="$PWD"
-          su builder -c "cd '$WORKSPACE/packaging' && VERSION='${VERSION}' updpkgsums && makepkg --clean --cleanbuild --force --noconfirm --syncdeps"
+          su builder -c "cd '$WORKSPACE' && VERSION='${VERSION}' updpkgsums && makepkg --clean --cleanbuild --force --noconfirm --syncdeps"
 
       - name: Collect artifacts
         env:
@@ -82,8 +82,8 @@ jobs:
           mkdir -p artifacts
           install -Dm0755 "target/release/ins" "artifacts/ins-${VERSION}-x86_64-unknown-linux-gnu"
           shopt -s nullglob
-          for pkg in packaging/*.pkg.tar.zst; do mv "$pkg" artifacts/; done
-          for src in packaging/*.src.tar.zst; do mv "$src" artifacts/; done
+          for pkg in ./*.pkg.tar.zst; do mv "$pkg" artifacts/; done
+          for src in ./*.src.tar.zst; do mv "$src" artifacts/; done
 
       - name: Upload compiled binary
         uses: actions/upload-artifact@v4
