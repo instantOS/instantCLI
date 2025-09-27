@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::{fs, path::Path};
 
 use crate::game::config::{GameInstallation, InstantGameConfig};
-use crate::game::restic::tags;
+use crate::game::restic::{cache, tags};
 use crate::restic::ResticWrapper;
 
 /// Backup game saves to restic repository with proper tagging
@@ -64,17 +64,27 @@ impl GameBackup {
     /// Restore a game backup
     pub fn restore_game_backup(
         &self,
-        _game_name: &str,
+        game_name: &str,
         snapshot_id: &str,
         target_path: &Path,
     ) -> Result<String> {
+        if !target_path.exists() {
+            fs::create_dir_all(target_path).with_context(|| {
+                format!("Failed to create restore target: {}", target_path.display())
+            })?;
+        }
+
+        let snapshot_path = cache::get_snapshot_by_id(snapshot_id, game_name, &self.config)
+            .context("Failed to locate snapshot metadata")?
+            .and_then(|snapshot| snapshot.paths.first().cloned());
+
         let restic = ResticWrapper::new(
             self.config.repo.as_path().to_string_lossy().to_string(),
             self.config.repo_password.clone(),
         );
 
         let progress = restic
-            .restore(snapshot_id, target_path)
+            .restore(snapshot_id, snapshot_path.as_deref(), target_path)
             .context("Failed to restore restic snapshot")?;
 
         if let Some(summary) = progress.summary {

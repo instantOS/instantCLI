@@ -189,20 +189,30 @@ impl ResticWrapper {
     pub fn restore(
         &self,
         snapshot_id: &str,
+        subpath: Option<&str>,
         target_path: &std::path::Path,
     ) -> Result<RestoreProgress, ResticError> {
-        let args = vec![
-            "restore".to_string(),
-            snapshot_id.to_string(),
-            "--target".to_string(),
+        let mut args = vec!["restore".to_string()];
+
+        let mut snapshot_spec = snapshot_id.to_string();
+        if let Some(path) = subpath {
+            if !path.is_empty() {
+                snapshot_spec.push(':');
+                snapshot_spec.push_str(path);
+            }
+        }
+
+        args.push(snapshot_spec);
+        args.push("--target".to_string());
+        args.push(
             target_path
                 .to_str()
                 .ok_or_else(|| {
                     ResticError::CommandFailed(format!("Invalid target path: {target_path:?}"))
                 })?
                 .to_string(),
-            "--json".to_string(),
-        ];
+        );
+        args.push("--json".to_string());
 
         let mut cmd = self.base_command();
         cmd.args(&args);
