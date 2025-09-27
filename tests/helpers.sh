@@ -30,7 +30,10 @@ cleanup_test_env() {
 
 ensure_instant_binary() {
     if [[ -z "${INSTANT_BIN:-}" ]]; then
-        (cd "${REPO_ROOT}" && cargo build --quiet)
+        (
+            export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-Awarnings"
+            cd "${REPO_ROOT}" && cargo build --quiet
+        )
         INSTANT_BIN="${REPO_ROOT}/target/debug/instant"
     fi
 }
