@@ -210,7 +210,7 @@ pub fn restore_game_saves(
         &game_selection.game_name,
         &snapshot,
         &security_result,
-        false, // Not forced
+        force,
     )? {
         // User cancelled confirmation
         println!("Restore cancelled by user.");

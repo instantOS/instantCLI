@@ -1,12 +1,12 @@
 use anyhow::Result;
 
 use super::cli::GameCommands;
-use super::games::manager::AddGameOptions;
 use super::games::GameManager;
+use super::games::manager::AddGameOptions;
 use super::games::{display, selection};
 use super::operations::{launch_game, sync_game_saves};
-use super::repository::manager::InitOptions;
 use super::repository::RepositoryManager;
+use super::repository::manager::InitOptions;
 use super::restic::{backup_game_saves, handle_restic_command, restore_game_saves};
 use super::setup;
 
@@ -48,10 +48,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
 }
 
 fn handle_init(debug: bool, repo: Option<String>, password: Option<String>) -> Result<()> {
-    RepositoryManager::initialize_game_manager(
-        debug,
-        InitOptions { repo, password },
-    )
+    RepositoryManager::initialize_game_manager(debug, InitOptions { repo, password })
 }
 
 fn handle_add(options: AddGameOptions) -> Result<()> {
@@ -117,7 +114,7 @@ fn handle_debug_tags(game_name: Option<String>) -> Result<()> {
     use anyhow::Context;
 
     let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    
+
     let restic = ResticWrapper::new(
         game_config.repo.as_path().to_string_lossy().to_string(),
         game_config.repo_password.clone(),

@@ -14,8 +14,8 @@ impl FzfSelectable for Snapshot {
         let host = &self.hostname;
 
         // Extract game name from tags if available
-        let game_name = tags::extract_game_name_from_tags(&self.tags)
-            .unwrap_or_else(|| "unknown".to_string());
+        let game_name =
+            tags::extract_game_name_from_tags(&self.tags).unwrap_or_else(|| "unknown".to_string());
 
         format!("{} - {} ({})", game_name, date, host)
     }
@@ -26,8 +26,8 @@ impl FzfSelectable for Snapshot {
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         // Extract game name from tags
-        let game_name = tags::extract_game_name_from_tags(&self.tags)
-            .unwrap_or_else(|| "unknown".to_string());
+        let game_name =
+            tags::extract_game_name_from_tags(&self.tags).unwrap_or_else(|| "unknown".to_string());
 
         let preview_text = create_snapshot_preview(self, &game_name);
         crate::menu::protocol::FzfPreview::Text(preview_text)
