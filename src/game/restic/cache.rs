@@ -1,9 +1,9 @@
 use crate::game::config::InstantGameConfig;
 use crate::game::restic::tags;
 use crate::restic::wrapper::Snapshot;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
 /// Cache duration in seconds (5 minutes)
@@ -17,17 +17,17 @@ pub struct CachedSnapshots {
     pub repository_path: String,
 }
 
-/// Global snapshot cache using OnceLock for thread safety
-static SNAPSHOT_CACHE: OnceLock<HashMap<String, CachedSnapshots>> = OnceLock::new();
-
-/// Get or initialize the snapshot cache
-fn get_cache() -> &'static HashMap<String, CachedSnapshots> {
-    SNAPSHOT_CACHE.get_or_init(HashMap::new)
+#[derive(Debug, Default)]
+struct SnapshotCacheState {
+    repositories: HashMap<String, CachedSnapshots>,
 }
 
-/// Generate cache key for a game and repository
-fn generate_cache_key(repository_path: &str, game_name: &str) -> String {
-    format!("{repository_path}:{game_name}")
+/// Global snapshot cache using OnceLock for thread safety
+static SNAPSHOT_CACHE: OnceLock<Mutex<SnapshotCacheState>> = OnceLock::new();
+
+/// Get or initialize the snapshot cache
+fn get_cache() -> &'static Mutex<SnapshotCacheState> {
+    SNAPSHOT_CACHE.get_or_init(|| Mutex::new(SnapshotCacheState::default()))
 }
 
 /// Check if cached data is still valid (not expired)
@@ -45,99 +45,114 @@ pub fn get_snapshots_for_game(
     config: &InstantGameConfig,
 ) -> Result<Vec<Snapshot>> {
     let repository_path = config.repo.as_path().to_string_lossy().to_string();
-    let cache_key = generate_cache_key(&repository_path, game_name);
-
-    // Check cache first
-    let cache = get_cache();
-    if let Some(cached_data) = cache.get(&cache_key) {
-        if is_cache_valid(cached_data) && cached_data.repository_path == repository_path {
-            return Ok(cached_data.snapshots.clone());
+    // Try to obtain cached repository snapshots first
+    let repository_snapshots = match get_cached_repository_snapshots(&repository_path)? {
+        Some(cached) => cached,
+        None => {
+            let fetched = fetch_repository_snapshots_from_restic(config)?;
+            store_repository_snapshots(&repository_path, fetched.clone())?;
+            fetched
         }
-    }
+    };
 
-    // Cache miss or invalid, fetch fresh data
-    let snapshots = fetch_snapshots_from_restic(game_name, config)?;
+    // Filter repository snapshots for this specific game
+    let required_tags = tags::create_game_tags(game_name);
+    let mut filtered_snapshots: Vec<Snapshot> = repository_snapshots
+        .into_iter()
+        .filter(|snapshot| {
+            required_tags
+                .iter()
+                .all(|tag| snapshot.tags.iter().any(|existing| existing == tag))
+        })
+        .collect();
 
-    // Update cache
-    let mut new_cache = HashMap::new();
-    if let Some(old_cache) = SNAPSHOT_CACHE.get() {
-        new_cache.clone_from(old_cache);
-    }
+    filtered_snapshots.sort_by(|a, b| b.time.cmp(&a.time));
 
-    new_cache.insert(
-        cache_key,
+    Ok(filtered_snapshots)
+}
+
+fn get_cached_repository_snapshots(repository_path: &str) -> Result<Option<Vec<Snapshot>>> {
+    let cache = get_cache()
+        .lock()
+        .map_err(|_| anyhow!("Snapshot cache mutex poisoned"))?;
+
+    Ok(cache
+        .repositories
+        .get(repository_path)
+        .filter(|cached| is_cache_valid(cached) && cached.repository_path == repository_path)
+        .map(|cached| cached.snapshots.clone()))
+}
+
+fn store_repository_snapshots(repository_path: &str, snapshots: Vec<Snapshot>) -> Result<()> {
+    let mut cache = get_cache()
+        .lock()
+        .map_err(|_| anyhow!("Snapshot cache mutex poisoned"))?;
+
+    cache.repositories.insert(
+        repository_path.to_string(),
         CachedSnapshots {
-            snapshots: snapshots.clone(),
+            snapshots,
             timestamp: SystemTime::now(),
-            repository_path,
+            repository_path: repository_path.to_string(),
         },
     );
 
-    // This is safe because we're in a single-threaded context or the first call
-    let _ = SNAPSHOT_CACHE.set(new_cache);
-
-    Ok(snapshots)
+    Ok(())
 }
 
-/// Fetch fresh snapshots from restic (expensive operation)
-fn fetch_snapshots_from_restic(
-    game_name: &str,
-    config: &InstantGameConfig,
-) -> Result<Vec<Snapshot>> {
+/// Fetch fresh snapshots for entire repository from restic (expensive operation)
+fn fetch_repository_snapshots_from_restic(config: &InstantGameConfig) -> Result<Vec<Snapshot>> {
     let restic = crate::restic::wrapper::ResticWrapper::new(
         config.repo.as_path().to_string_lossy().to_string(),
         config.repo_password.clone(),
     );
 
-    let snapshots_json = restic
-        .list_snapshots_filtered(Some(tags::create_game_tags(game_name)))
-        .context("Failed to list snapshots for game")?;
-
-    let mut parsed_snapshots: Vec<Snapshot> =
-        serde_json::from_str(&snapshots_json).context("Failed to parse snapshot data")?;
-
-    // Sort by date (newest first)
-    parsed_snapshots.sort_by(|a, b| b.time.cmp(&a.time));
-
-    Ok(parsed_snapshots)
+    restic
+        .list_snapshots()
+        .context("Failed to list snapshots for repository")
 }
 
 /// Invalidate the entire snapshot cache
 pub fn invalidate_snapshot_cache() {
-    let _ = SNAPSHOT_CACHE.set(HashMap::new());
+    if let Ok(mut cache) = get_cache().lock() {
+        cache.repositories.clear();
+    }
 }
 
 /// Invalidate cache for a specific game
 pub fn invalidate_game_cache(game_name: &str, repository_path: &str) {
-    if let Some(mut cache) = SNAPSHOT_CACHE.get().cloned() {
-        let cache_key = generate_cache_key(repository_path, game_name);
-        cache.remove(&cache_key);
-        let _ = SNAPSHOT_CACHE.set(cache);
+    let _ = game_name; // game-level cache is derived from repository snapshots
+
+    if let Ok(mut cache) = get_cache().lock() {
+        cache.repositories.remove(repository_path);
     }
 }
 
 /// Get cache statistics for debugging
 pub fn get_cache_stats() -> String {
-    let cache = get_cache();
-    let _now = SystemTime::now();
+    if let Ok(cache) = get_cache().lock() {
+        let _now = SystemTime::now();
 
-    let mut valid_entries = 0;
-    let mut expired_entries = 0;
+        let mut valid_entries = 0;
+        let mut expired_entries = 0;
 
-    for cached_data in cache.values() {
-        if is_cache_valid(cached_data) {
-            valid_entries += 1;
-        } else {
-            expired_entries += 1;
+        for cached_data in cache.repositories.values() {
+            if is_cache_valid(cached_data) {
+                valid_entries += 1;
+            } else {
+                expired_entries += 1;
+            }
         }
-    }
 
-    format!(
-        "Snapshot Cache Stats: {} total entries, {} valid, {} expired",
-        cache.len(),
-        valid_entries,
-        expired_entries
-    )
+        format!(
+            "Snapshot Cache Stats: {} total entries, {} valid, {} expired",
+            cache.repositories.len(),
+            valid_entries,
+            expired_entries
+        )
+    } else {
+        "Snapshot Cache Stats: cache unavailable".to_string()
+    }
 }
 
 /// Force refresh snapshots for a specific game
