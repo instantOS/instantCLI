@@ -6,8 +6,8 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
+use clap_complete::engine::CompletionCandidate;
 use clap_complete::env::Shells;
-use clap_complete::{Shell, engine::CompletionCandidate};
 
 use crate::dot::config::ConfigManager;
 use crate::game::config::InstantGameConfig;
@@ -41,11 +41,9 @@ impl SupportedShell {
                 install_path.display()
             ),
             SupportedShell::Zsh => format!(
-                "Add this directory to your ~/.zshrc:\n  fpath=(\"{}\" $fpath)\nThen reload your shell or run: autoload -U compinit && compinit",
-                install_path
-                    .parent()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| install_path.to_string_lossy().into())
+                "Add this to your ~/.zshrc:\n  if [ -r \"{}\" ]; then\n      source \"{}\"\n  fi\nautoload -U compinit && compinit",
+                install_path.display(),
+                install_path.display()
             ),
         }
     }
