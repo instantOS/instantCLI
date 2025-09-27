@@ -68,22 +68,12 @@ jobs:
           WORKSPACE="$PWD"
           su builder -c "cd '$WORKSPACE' && strip target/release/ins"
 
-      - name: Build pacman package
-        env:
-          VERSION: ${{ steps.vars.outputs.version }}
-        run: |
-          WORKSPACE="$PWD"
-          su builder -c "cd '$WORKSPACE' && VERSION='${VERSION}' updpkgsums && makepkg --clean --cleanbuild --force --noconfirm --syncdeps"
-
       - name: Collect artifacts
         env:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
           mkdir -p artifacts
           install -Dm0755 "target/release/ins" "artifacts/ins-${VERSION}-x86_64-unknown-linux-gnu"
-          shopt -s nullglob
-          for pkg in ./*.pkg.tar.zst; do mv "$pkg" artifacts/; done
-          for src in ./*.src.tar.zst; do mv "$src" artifacts/; done
 
       - name: Upload compiled binary
         uses: actions/upload-artifact@v4
@@ -91,18 +81,51 @@ jobs:
           name: ins-${{ steps.vars.outputs.version }}-x86_64-unknown-linux-gnu
           path: artifacts/ins-${{ steps.vars.outputs.version }}-x86_64-unknown-linux-gnu
 
+  pkgbuild:
+    name: Build Arch package
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: vars
+        run: |
+          version=$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)
+          if [[ -z "$version" ]]; then
+            echo "Failed to determine version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build package
+        uses: 2m/arch-pkgbuild-builder@v1.16
+        with:
+          target: pkgbuild
+          pkgname: pkgbuild/ins
+
+      - name: Collect package artifacts
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          mkdir -p artifacts
+          shopt -s nullglob
+          for pkg in pkgbuild/ins/*.pkg.tar.zst; do mv "$pkg" artifacts/; done
+          for src in pkgbuild/ins/*.src.tar.zst; do mv "$src" artifacts/; done
+
       - name: Upload Arch package
         uses: actions/upload-artifact@v4
         with:
           name: ins-${{ steps.vars.outputs.version }}-arch-packages
-          path: |
-            artifacts/*.pkg.tar.zst
-            artifacts/*.src.tar.zst
+          path: artifacts/
 
   release:
     name: Publish GitHub release
     runs-on: ubuntu-latest
-    needs: build
+    needs:
+      - build
+      - pkgbuild
     permissions:
       contents: write
     steps:

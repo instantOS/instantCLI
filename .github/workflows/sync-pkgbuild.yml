@@ -40,14 +40,16 @@ jobs:
           print(data["package"]["version"])
           PY
           )"
-          file_version="$(awk -F '=' '/^pkgver=/ {print $2; exit}' PKGBUILD)"
-          pkgrel="$(awk -F '=' '/^pkgrel=/ {print $2; exit}' PKGBUILD)"
+          pkgbuild_file="pkgbuild/ins/PKGBUILD"
+          file_version="$(awk -F '=' '/^pkgver=/ {print $2; exit}' "$pkgbuild_file")"
+          pkgrel="$(awk -F '=' '/^pkgrel=/ {print $2; exit}' "$pkgbuild_file")"
           if [[ "$file_version" != "$version" ]]; then
-            sed -i "s/^pkgver=.*/pkgver=$version/" PKGBUILD
-            sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+            sed -i "s/^pkgver=.*/pkgver=$version/" "$pkgbuild_file"
+            sed -i "s/^pkgrel=.*/pkgrel=1/" "$pkgbuild_file"
           fi
-          if ! git diff --quiet PKGBUILD; then
-            git add PKGBUILD
+          if ! git diff --quiet "$pkgbuild_file"; then
+            docker run --rm -v "$PWD:/pkg" archlinux:latest bash -lc "cd /pkg/pkgbuild/ins && pacman -Sy --noconfirm pacman-contrib >/dev/null && makepkg --printsrcinfo > .SRCINFO"
+            git add "$pkgbuild_file" pkgbuild/ins/.SRCINFO
             git commit -m "chore: sync PKGBUILD version"
             git push
           fi
