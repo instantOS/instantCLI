@@ -19,9 +19,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-
       - name: Initialise pacman
         run: |
           pacman-key --init
@@ -31,6 +28,9 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -S --noconfirm --needed base-devel rust pkgconf openssl git
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Check code formatting
         run: cargo fmt -- --check
