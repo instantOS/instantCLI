@@ -2,11 +2,11 @@
 
 ## Completed Features
 
-The `instant game setup` command has been successfully implemented with the following functionality:
+The `ins game setup` command has been successfully implemented with the following functionality:
 
 ### Command Description
 ```bash
-instant game setup
+ins game setup
 ```
 
 This command helps users set up games that have been added to the shared configuration but don't have installation paths configured on the current device.

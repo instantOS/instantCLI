@@ -199,7 +199,6 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 ## Key Commands
 
 ### Dotfile Commands
-- `instant dot apply`: Apply all dotfiles from configured repos
 - `ins dot apply`: Apply all dotfiles from configured repos
 - `ins dot fetch [<path>]`: Fetch modified files from home directory back to repos
 - `ins dot reset <path>`: Reset modified files to original state
@@ -222,13 +221,12 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 - `ins scratchpad show`: Show scratchpad terminal (create if doesn't exist)
 - `ins scratchpad hide`: Hide scratchpad terminal
 - `ins scratchpad status`: Check if scratchpad terminal is currently visible
-- `instant menu input --prompt "Type a value:"`: Show text input dialog
 
 ### Scratchpad Commands
-- `instant scratchpad toggle`: Toggle scratchpad terminal visibility (create if doesn't exist)
-- `instant scratchpad show`: Show scratchpad terminal (create if doesn't exist)
-- `instant scratchpad hide`: Hide scratchpad terminal
-- `instant scratchpad status`: Check if scratchpad terminal is currently visible
+- `ins scratchpad toggle`: Toggle scratchpad terminal visibility (create if doesn't exist)
+- `ins scratchpad show`: Show scratchpad terminal (create if doesn't exist)
+- `ins scratchpad hide`: Hide scratchpad terminal
+- `ins scratchpad status`: Check if scratchpad terminal is currently visible
 
 **Named Scratchpads**: You can create multiple scratchpads with different names:
 - `--name <NAME>`: Scratchpad name (default: "instantscratchpad"). Used as prefix for window class.
@@ -250,9 +248,9 @@ ins scratchpad show --name term1 --command fish
 ins scratchpad show --name term2 --command zsh
 ins scratchpad hide --name term1
 # Multiple scratchpads
-instant scratchpad show --name term1 --command fish
-instant scratchpad show --name term2 --command zsh
-instant scratchpad hide --name term1
+ins scratchpad show --name term1 --command fish
+ins scratchpad show --name term2 --command zsh
+ins scratchpad hide --name term1
 ```
 
 ### System Diagnostics

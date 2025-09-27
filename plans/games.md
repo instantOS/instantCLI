@@ -37,7 +37,7 @@ different devices and more.
 
 Game saves as restic snapshots
 
-`instant game sync <game>` command
+`ins game sync <game>` command
 
 For each game installation do the following:
 
@@ -47,20 +47,20 @@ For each game installation do the following:
 - If the newest restic snapshot is newer, then restore the game save from the
 snapshot
 
-`instant game add`
+`ins game add`
 
 interactively prompt for
 - game name
 - path
 
 
-`instant game launch` command
+`ins game launch` command
 
 1. sync game saves
 2. Launch game using provided launchcommand
 
 
-`instant game init`
+`ins game init`
 
 prompt for restic repo to use and its password
 test out restic repo afterwards

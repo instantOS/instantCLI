@@ -89,9 +89,9 @@ Menu server runs in scratchpad terminal, making it impossible to see debug outpu
 #### Proposed Diagnostic Extensions
 ```bash
 # Extend existing doctor commands
-instant doctor debug     # Debug-specific diagnostics
-instant doctor logs       # Log management and viewing
-instant doctor test menu  # Menu server communication test
+ins doctor debug     # Debug-specific diagnostics
+ins doctor logs       # Log management and viewing
+ins doctor test menu  # Menu server communication test
 ```
 
 ### 5. Performance Monitoring

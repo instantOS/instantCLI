@@ -100,21 +100,21 @@ branch = "main"
 
 ## Key Commands
 
-- `instant dot clone <url> [--name <name>] [--branch <branch>]`: Add a new dotfile repository
-- `instant dot apply`: Apply all dotfiles from configured repos
-- `instant dot fetch [<path>]`: Fetch modified files from home directory back to repos
-- `instant dot reset <path>`: Reset modified files to original state
-- `instant dot update`: Update all configured repositories
-- `instant dot status [<path>]`: Check repository status
-- `instant dot init [<name>]`: Initialize current directory as a dotfile repo
-- `instant dot add <path>`: Add new dotfiles to tracking
-- `instant dot remove <repo> [--files]`: Remove a repository from configuration
-- `instant dot list-subdirs <repo>`: List available subdirectories in a repository
-- `instant dot set-subdirs <repo> <subdirs...>`: Set active subdirectories for a repository
-- `instant dot show-subdirs <repo>`: Show currently active subdirectories for a repository
-
-## Multiple Subdirectories Support
-
+- `ins dot clone <url> [--name <name>] [--branch <branch>]`: Add a new dotfile repository
+- `ins dot apply`: Apply all dotfiles from configured repos
+- `ins dot fetch [<path>]`: Fetch modified files from home directory back to repos
+- `ins dot reset <path>`: Reset modified files to original state
+- `ins dot update`: Update all configured repositories
+- `ins dot status [<path>]`: Check repository status
+- `ins dot init [<name>]`: Initialize current directory as a dotfile repo
+- `ins dot add <path>`: Add new dotfiles to tracking
+- `ins dot remove <repo> [--files]`: Remove a repository from configuration
+- `ins dot list-subdirs <repo>`: List available subdirectories in a repository
+- `ins dot set-subdirs <repo> <subdirs...>`: Set active subdirectories for a repository
+- `ins dot show-subdirs <repo>`: Show currently active subdirectories for a repository
+- `ins dot list-subdirs <repo>`: List available subdirectories in a repository
+- `ins dot set-subdirs <repo> <subdirs...>`: Set active subdirectories for a repository
+- `ins dot show-subdirs <repo>`: Show currently active subdirectories for a repository
 InstantCLI repositories can declare multiple subdirectories containing dotfiles, with configurable active subdirectories per repository.
 
 ### Repository Structure
@@ -140,9 +140,9 @@ active_subdirs = ["dots", "themes"]
 
 ### Subdirectory Management Commands
 
-- `instant dot list-subdirs <repo>`: List available subdirectories in a repository
-- `instant dot set-subdirs <repo> <subdirs...>`: Set active subdirectories for a repository
-- `instant dot show-subdirs <repo>`: Show currently active subdirectories for a repository
+- `ins dot list-subdirs <repo>`: List available subdirectories in a repository
+- `ins dot set-subdirs <repo> <subdirs...>`: Set active subdirectories for a repository
+- `ins dot show-subdirs <repo>`: Show currently active subdirectories for a repository
 
 ### Default Behavior
 
