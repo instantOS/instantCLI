@@ -17,28 +17,26 @@ depends=('glibc' 'gcc-libs')
 makedepends=('cargo')
 source=("instantCLI-${pkgver}.tar.gz::https://github.com/instantOS/instantCLI/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('SKIP')
+makedepends=('cargo' 'rust' 'git')
 
 prepare() {
-    cd "${srcdir}/instantCLI-${pkgver}"
-    export RUSTUP_TOOLCHAIN=stable
+    cd "${srcdir}/${pkgname}-${pkgver}"
     cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
 }
 
 build() {
-    cd "${srcdir}/instantCLI-${pkgver}"
-    export RUSTUP_TOOLCHAIN=stable
+    cd "${srcdir}/${pkgname}-${pkgver}"
     export CARGO_TARGET_DIR=target
     cargo build --frozen --release --locked
 }
 
 check() {
-    cd "${srcdir}/instantCLI-${pkgver}"
-    export RUSTUP_TOOLCHAIN=stable
+    cd "${srcdir}/${pkgname}-${pkgver}"
     cargo test --frozen --locked
 }
 
 package() {
-    cd "${srcdir}/instantCLI-${pkgver}"
+    cd "${srcdir}/${pkgname}-${pkgver}"
     install -Dm0755 "target/release/${_pkgname}" "${pkgdir}/usr/bin/${_pkgname}"
     install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

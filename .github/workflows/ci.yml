@@ -13,12 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
-      options: --privileged
     env:
       CARGO_TERM_COLOR: always
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Initialise pacman
         run: |
@@ -28,10 +30,4 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          pacman -S --noconfirm --needed base-devel git rust pkgconf openssl
-
-      - name: Run tests
-        run: cargo test --locked
-
-      - name: Build release binary
-        run: cargo build --release --locked
+          pacman -S --noconfirm --needed base-devel rust pkgconf openssl

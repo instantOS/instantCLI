@@ -6,16 +6,12 @@ on:
       - "v*"
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     name: Build release artifacts
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
-      options: --privileged
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -32,7 +28,10 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          pacman -S --noconfirm --needed base-devel git rust pkgconf openssl
+          pacman -S --noconfirm --needed base-devel rust pkgconf openssl
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Create build user
         run: |
@@ -74,7 +73,7 @@ jobs:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
           WORKSPACE="$PWD"
-          su builder -c "cd '$WORKSPACE/packaging' && VERSION='${VERSION}' makepkg --clean --cleanbuild --force --noconfirm"
+          su builder -c "cd '$WORKSPACE/packaging' && VERSION='${VERSION}' updpkgsums && makepkg --clean --cleanbuild --force --noconfirm --syncdeps"
 
       - name: Collect artifacts
         env:
