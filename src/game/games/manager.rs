@@ -38,6 +38,8 @@ impl GameManager {
             create_save_path,
         } = options;
 
+        let interactive_prompts = name.is_none();
+
         // Get and validate game name
         let game_name = match name {
             Some(name) => {
@@ -59,13 +61,15 @@ impl GameManager {
         // Get optional description
         let description = match description {
             Some(description) => description.trim().to_string(),
-            None => Self::get_game_description()?,
+            None if interactive_prompts => Self::get_game_description()?,
+            None => String::new(),
         };
 
         // Get optional launch command
         let launch_command = match launch_command {
             Some(command) => command.trim().to_string(),
-            None => Self::get_launch_command()?,
+            None if interactive_prompts => Self::get_launch_command()?,
+            None => String::new(),
         };
 
         // Create the game configuration
