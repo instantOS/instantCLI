@@ -5,7 +5,9 @@ use crate::dot::path_serde::TildePath;
 use crate::fzf_wrapper::{ConfirmResult, FzfSelectable, FzfWrapper};
 use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::games::validation::validate_game_manager_initialized;
+use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
+use crate::game::utils::save_files::get_save_directory_info;
 use crate::menu::protocol;
 
 /// Set up games that have been added but don't have installations configured on this device
@@ -92,6 +94,7 @@ fn setup_single_game(
     // Get all snapshots for this game to extract paths
     let snapshots = cache::get_snapshots_for_game(game_name, game_config)
         .context("Failed to get snapshots for game")?;
+    let latest_snapshot_id = snapshots.first().map(|snapshot| snapshot.id.clone());
 
     if snapshots.is_empty() {
         println!("❌ No snapshots found for game '{game_name}'.");
@@ -123,15 +126,9 @@ fn setup_single_game(
         // Convert to TildePath
         let save_path = TildePath::from_str(&path_str)
             .map_err(|e| anyhow::anyhow!("Invalid save path: {}", e))?;
+        let mut installation = GameInstallation::new(game_name, save_path.clone());
 
-        // Create installation
-        let installation = GameInstallation::new(game_name, save_path.clone());
-        installations.installations.push(installation);
-        installations.save()?;
-
-        println!("✅ Game '{game_name}' set up successfully with save path: {path_str}");
-
-        // Ask if user wants to create the directory if it doesn't exist
+        let mut directory_created = false;
         if !save_path.as_path().exists() {
             match FzfWrapper::confirm(&format!(
                 "Save path '{path_str}' does not exist. Would you like to create it?"
@@ -142,18 +139,56 @@ fn setup_single_game(
                     std::fs::create_dir_all(save_path.as_path())
                         .context("Failed to create save directory")?;
                     println!("✅ Created save directory: {path_str}");
+                    directory_created = true;
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {
                     println!("Directory not created. You can create it later when needed.");
                 }
             }
         }
+
+        let save_dir_info = get_save_directory_info(save_path.as_path())
+            .with_context(|| format!("Failed to inspect save directory '{path_str}'"))?;
+        let path_exists_after = save_path.as_path().exists();
+        let should_restore =
+            path_exists_after && (directory_created || save_dir_info.file_count == 0);
+
+        if should_restore {
+            if let Some(snapshot_id) = latest_snapshot_id.as_deref() {
+                println!("📥 Restoring latest backup ({snapshot_id}) into {path_str}...");
+                let restore_summary =
+                    restore_latest_backup(game_name, &save_path, snapshot_id, game_config)?;
+                println!("✅ {restore_summary}");
+                installation.update_checkpoint(snapshot_id.to_string());
+            }
+        }
+        installations.installations.push(installation);
+        installations.save()?;
+
+        println!("✅ Game '{game_name}' set up successfully with save path: {path_str}");
     } else {
         println!("Setup cancelled for game '{game_name}'.");
     }
 
     println!();
     Ok(())
+}
+
+fn restore_latest_backup(
+    game_name: &str,
+    save_path: &TildePath,
+    snapshot_id: &str,
+    game_config: &InstantGameConfig,
+) -> Result<String> {
+    let backup_handler = GameBackup::new(game_config.clone());
+    let summary = backup_handler
+        .restore_game_backup(game_name, snapshot_id, save_path.as_path())
+        .context("Failed to restore latest backup")?;
+
+    let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
+    cache::invalidate_game_cache(game_name, &repo_path);
+
+    Ok(summary)
 }
 
 /// Extract unique paths from all snapshots, grouped by frequency for better presentation
