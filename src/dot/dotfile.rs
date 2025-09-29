@@ -15,6 +15,7 @@ fn get_hash_cache() -> &'static Mutex<HashMap<String, String>> {
     HASH_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+#[derive(Clone)]
 pub struct Dotfile {
     pub source_path: PathBuf,
     pub target_path: PathBuf,
