@@ -35,7 +35,8 @@ prepare_ins_binary() {
 
     (
         export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-Awarnings"
-        cd "${REPO_ROOT}" && cargo build --quiet
+        echo "Compiling ins (debug) for tests..."
+        cd "${REPO_ROOT}" && cargo build
     )
 
     export INS_BIN="${REPO_ROOT}/target/debug/ins"
