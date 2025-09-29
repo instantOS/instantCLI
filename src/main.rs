@@ -12,8 +12,9 @@ mod launch;
 mod menu;
 mod restic;
 mod scratchpad;
+mod ui;
 
-use clap::{CommandFactory, Parser, Subcommand, ValueHint};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum, ValueHint};
 
 /// Helper function to format and print errors consistently
 fn handle_error(context: &str, error: &anyhow::Error) -> String {
@@ -48,6 +49,12 @@ use crate::dot::repo::cli::RepoCommands;
 use crate::scratchpad::ScratchpadCommand;
 
 /// InstantCLI main parser
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum OutputFormatArg {
+    Text,
+    Json,
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -58,6 +65,14 @@ struct Cli {
     /// Custom config file path
     #[arg(short = 'c', long = "config", global = true)]
     config: Option<String>,
+
+    /// Output format for machine-readable integration
+    #[arg(long = "output", value_enum, default_value_t = OutputFormatArg::Text, global = true)]
+    output: OutputFormatArg,
+
+    /// Disable colored output
+    #[arg(long = "no-color", global = true)]
+    no_color: bool,
 
     /// Internal flag set when restarted with sudo
     #[arg(long, hide = true)]
@@ -193,6 +208,7 @@ enum DotCommands {
 
 fn handle_debug_command(command: DebugCommands) -> Result<()> {
     use crate::restic::logging::ResticCommandLogger;
+    use crate::ui::prelude::*;
 
     match command {
         DebugCommands::ResticLogs { limit, clear } => {
@@ -200,7 +216,10 @@ fn handle_debug_command(command: DebugCommands) -> Result<()> {
 
             if clear {
                 logger.clear_logs()?;
-                println!("🗑️  Cleared all restic command logs.");
+                success(
+                    "restic.logs.cleared",
+                    &format!("{} Cleared all restic command logs.", Icons::TRASH),
+                );
             } else {
                 logger.print_recent_logs(limit)?;
             }
@@ -215,6 +234,13 @@ async fn main() -> Result<()> {
     clap_complete::CompleteEnv::with_factory(cli_command).complete();
 
     let cli = Cli::parse();
+
+    // Initialize UI renderer
+    let format = match cli.output {
+        OutputFormatArg::Text => ui::OutputFormat::Text,
+        OutputFormatArg::Json => ui::OutputFormat::Json,
+    };
+    ui::init(format, !cli.no_color);
 
     if cli.debug {
         eprintln!("Debug mode is on");
@@ -376,7 +402,11 @@ async fn main() -> Result<()> {
             }
         },
         None => {
-            println!("{}: run with --help for usage", env!("CARGO_BIN_NAME"));
+            use crate::ui::prelude::*;
+            info(
+                "cli.help",
+                &format!("{}: run with --help for usage", env!("CARGO_BIN_NAME")),
+            );
         }
     }
     Ok(())

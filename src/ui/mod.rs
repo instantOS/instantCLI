@@ -1,0 +1,186 @@
+use colored::*;
+use lazy_static::lazy_static;
+use serde::Serialize;
+use std::io::{self, Write};
+use std::sync::RwLock;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Text,
+    Json,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Level {
+    Info,
+    Success,
+    Warn,
+    Error,
+    Debug,
+}
+
+impl Level {
+    fn icon(self) -> &'static str {
+        match self {
+            Level::Info => Icons::INFO,
+            Level::Success => Icons::CHECK,
+            Level::Warn => Icons::WARN,
+            Level::Error => Icons::ERROR,
+            Level::Debug => Icons::DEBUG,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Level::Info => "info",
+            Level::Success => "success",
+            Level::Warn => "warn",
+            Level::Error => "error",
+            Level::Debug => "debug",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Renderer {
+    pub format: OutputFormat,
+    pub color: bool,
+}
+
+impl Default for Renderer {
+    fn default() -> Self {
+        Self {
+            format: OutputFormat::Text,
+            color: true,
+        }
+    }
+}
+
+lazy_static! {
+    static ref RENDERER: RwLock<Renderer> = RwLock::new(Renderer::default());
+}
+
+pub fn init(format: OutputFormat, color: bool) {
+    if let Ok(mut r) = RENDERER.write() {
+        r.format = format;
+        r.color = color;
+    }
+}
+
+pub mod Icons {
+    // Nerd Font symbols (commonly available glyphs)
+    pub const CHECK: &str = ""; // nf-fa-check_circle
+    pub const ERROR: &str = ""; // nf-fa-times_circle
+    pub const WARN: &str = ""; // nf-fa-exclamation_triangle
+    pub const INFO: &str = ""; // nf-fa-info_circle
+    pub const DEBUG: &str = ""; // nf-fa-bug
+    pub const CLOCK: &str = ""; // nf-fa-clock_o
+    pub const PACKAGE: &str = ""; // nf-oct-package
+    pub const FOLDER: &str = ""; // nf-fa-folder
+    pub const DOWNLOAD: &str = ""; // nf-fa-download
+    pub const UPLOAD: &str = ""; // nf-fa-upload
+    pub const TRASH: &str = ""; // nf-fa-trash_o
+    pub const SEARCH: &str = ""; // nf-fa-search
+    pub const SKIP: &str = ""; // nf-fa-step_forward
+    pub const SEPARATOR_HEAVY: &str = "━";
+    pub const SEPARATOR_LIGHT: &str = "─";
+}
+
+#[derive(Serialize)]
+struct Event<'a> {
+    level: &'a str,
+    code: &'a str,
+    message: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<serde_json::Value>,
+}
+
+fn colorize(level: Level, s: &str, enable: bool) -> String {
+    if !enable {
+        return s.to_string();
+    }
+    match level {
+        Level::Info => s.normal().to_string(),
+        Level::Success => s.green().bold().to_string(),
+        Level::Warn => s.yellow().bold().to_string(),
+        Level::Error => s.red().bold().to_string(),
+        Level::Debug => s.cyan().to_string(),
+    }
+}
+
+fn with_icon(level: Level, msg: &str, enable_color: bool) -> String {
+    let icon = level.icon();
+    let line = format!("{icon} {msg}");
+    colorize(level, &line, enable_color)
+}
+
+pub fn emit(level: Level, code: &str, message: &str, data: Option<serde_json::Value>) {
+    let r = RENDERER.read().expect("renderer poisioned").clone();
+    match r.format {
+        OutputFormat::Text => {
+            let line = with_icon(level, message, r.color);
+            let mut out: Box<dyn Write> = match level {
+                Level::Error | Level::Warn => Box::new(io::stderr()),
+                _ => Box::new(io::stdout()),
+            };
+            let _ = writeln!(out, "{}", line);
+        }
+        OutputFormat::Json => {
+            let ev = Event {
+                level: level.as_str(),
+                code,
+                message,
+                data,
+            };
+            let s = serde_json::to_string(&ev).expect("serialize event");
+            let mut out: Box<dyn Write> = match level {
+                Level::Error | Level::Warn => Box::new(io::stderr()),
+                _ => Box::new(io::stdout()),
+            };
+            let _ = writeln!(out, "{}", s);
+        }
+    }
+}
+
+// Convenience helpers
+pub fn info(code: &str, message: &str) {
+    emit(Level::Info, code, message, None)
+}
+pub fn success(code: &str, message: &str) {
+    emit(Level::Success, code, message, None)
+}
+pub fn warn(code: &str, message: &str) {
+    emit(Level::Warn, code, message, None)
+}
+pub fn error(code: &str, message: &str) {
+    emit(Level::Error, code, message, None)
+}
+pub fn debug(code: &str, message: &str) {
+    emit(Level::Debug, code, message, None)
+}
+
+pub fn separator(light: bool) {
+    let r = RENDERER.read().expect("renderer poisioned").clone();
+    let glyph = if light {
+        Icons::SEPARATOR_LIGHT
+    } else {
+        Icons::SEPARATOR_HEAVY
+    };
+    let line = glyph.repeat(80);
+    let mut out = io::stdout();
+    let _ = writeln!(
+        out,
+        "{}",
+        if r.color {
+            line.normal().to_string()
+        } else {
+            line
+        }
+    );
+}
+
+pub mod prelude {
+    pub use super::{
+        Icons, Level, OutputFormat, debug, emit, error, info, separator, success, warn,
+    };
+}
