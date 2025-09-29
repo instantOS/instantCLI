@@ -109,10 +109,8 @@ pub fn clean_and_pull(repo: &mut Repository) -> Result<()> {
         // Working directory is clean, just fetch
         fetch_branch(repo, &branch_name)?;
     } else {
-        // Working directory is dirty, clean it
-        repo.reset_default(None, None::<&str>)?;
-
-        // Discard all changes
+        // Working directory is dirty, clean it by discarding all changes
+        // Force checkout HEAD and remove ignored/untracked files
         repo.checkout_head(Some(
             &mut CheckoutBuilder::new()
                 .force()
@@ -125,7 +123,8 @@ pub fn clean_and_pull(repo: &mut Repository) -> Result<()> {
     }
 
     // Get the reference for the remote branch
-    let remote_branch_name = format!("origin/{branch_name}");
+    // libgit2 expects a full ref name like refs/remotes/origin/<branch>
+    let remote_branch_name = format!("refs/remotes/origin/{branch_name}");
     let remote_branch_ref = repo
         .find_reference(&remote_branch_name)
         .context("Failed to find remote branch reference")?;

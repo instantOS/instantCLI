@@ -100,7 +100,14 @@ pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
     for repo in repos.iter() {
         let local_repo = repo_mod::LocalRepo::new(cfg, repo.name.clone())?;
         if let Err(e) = local_repo.update(cfg, debug) {
-            eprintln!("Failed to update {}: {}", repo.url, e);
+            eprintln!("Failed to update {}:", repo.url);
+            for (i, cause) in e.chain().enumerate() {
+                if i == 0 {
+                    eprintln!("  {}", cause);
+                } else {
+                    eprintln!("  Caused by: {}", cause);
+                }
+            }
             any_failed = true;
         }
     }
