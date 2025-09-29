@@ -114,6 +114,33 @@ fn with_icon(level: Level, msg: &str, enable_color: bool) -> String {
     colorize(level, &line, enable_color)
 }
 
+fn strip_ansi(input: &str) -> String {
+    // Remove common ANSI escape sequences like \x1b[0m, \x1b[1;32m, and similar
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0x1b { // ESC
+            if i + 1 < bytes.len() && bytes[i + 1] == b'[' {
+                i += 2;
+                // Skip until we hit a letter in @ A-Z [ \ ] ^ _ ` a-z
+                while i < bytes.len() {
+                    let b = bytes[i];
+                    if (b >= b'@' && b <= b'~') {
+                        i += 1; // consume the final byte of the CSI sequence
+                        break;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
 pub fn emit(level: Level, code: &str, message: &str, data: Option<serde_json::Value>) {
     let r = RENDERER.read().expect("renderer poisioned").clone();
     match r.format {
@@ -126,10 +153,12 @@ pub fn emit(level: Level, code: &str, message: &str, data: Option<serde_json::Va
             let _ = writeln!(out, "{}", line);
         }
         OutputFormat::Json => {
+            // Ensure message contains no ANSI control sequences in JSON mode
+            let clean_msg = strip_ansi(message);
             let ev = Event {
                 level: level.as_str(),
                 code,
-                message,
+                message: &clean_msg,
                 data,
             };
             let s = serde_json::to_string(&ev).expect("serialize event");
@@ -161,6 +190,10 @@ pub fn debug(code: &str, message: &str) {
 
 pub fn separator(light: bool) {
     let r = RENDERER.read().expect("renderer poisioned").clone();
+    // In JSON mode, do not print separators to avoid breaking jq parsing
+    if matches!(r.format, OutputFormat::Json) {
+        return;
+    }
     let glyph = if light {
         Icons::SEPARATOR_LIGHT
     } else {

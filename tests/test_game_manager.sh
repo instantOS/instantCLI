@@ -28,8 +28,15 @@ main() {
         --save-path "${save_path}" \
         --create-save-path
 
-    ins game list
-    ins game show "${game_name}"
+    # Verify list uses JSON and contains the game
+    list_json="$(ins --output json game list)"
+    echo "${list_json}" | jq -e '.code == "game.list" and (.data.count | tonumber) >= 1' >/dev/null
+    echo "${list_json}" | jq -e --arg name "${game_name}" '.data.games[].name == $name' >/dev/null
+
+    # Verify show uses JSON and returns correct game name
+    show_json="$(ins --output json game show "${game_name}")"
+    echo "${show_json}" | jq -e --arg name "${game_name}" 'select(.code=="game.show.details") | .data.game.name == $name' >/dev/null
+
     ins game sync --force "${game_name}"
 
     local backup_output
@@ -71,7 +78,13 @@ main() {
     ins game launch "${game_name}"
     ins game setup
     ins game remove "${game_name}" --force
-    ins game list
+
+    # Ensure the game is no longer listed
+    list_after_remove_json="$(ins --output json game list)"
+    if echo "${list_after_remove_json}" | jq -e --arg name "${game_name}" '.data.games[].name == $name' >/dev/null; then
+        echo "Game still present in list after removal" >&2
+        exit 1
+    fi
 
     echo "Game manager end-to-end flow succeeded"
 }
