@@ -65,7 +65,7 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
                 "game.security.installation_missing",
                 &format!(
                     "{} Error: No installation found for game '{game_name}'.",
-                    Icons::ERROR
+                    char::from(Fa::TimesCircle)
                 ),
             );
             info(
@@ -223,7 +223,7 @@ pub fn create_restore_confirmation(
     // Build confirmation message based on security context
     let mut message = format!(
         "{} Restore game saves for '{}' from snapshot {}\n\n",
-        Icons::DOWNLOAD,
+        char::from(Fa::Download),
         game_name,
         &snapshot.id[..8.min(snapshot.id.len())]
     );
@@ -284,7 +284,7 @@ pub fn validate_snapshot_id(
                 "game.security.snapshot_missing",
                 &format!(
                     "{} Error: Snapshot '{snapshot_id}' not found for game '{game_name}'.",
-                    Icons::ERROR
+                    char::from(Fa::TimesCircle)
                 ),
             );
             info(

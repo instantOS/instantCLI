@@ -42,7 +42,7 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
         "dev.clone.success",
         &format!(
             "{} Successfully cloned {} to {}",
-            Icons::CHECK,
+            char::from(Fa::Check),
             repo.name,
             target_dir.display()
         ),
@@ -72,7 +72,7 @@ pub fn ensure_workspace_dir() -> Result<std::path::PathBuf> {
             "dev.clone.workspace_created",
             &format!(
                 "{} Created workspace directory: {}",
-                Icons::FOLDER,
+                char::from(Fa::Folder),
                 workspace_dir.display()
             ),
         );

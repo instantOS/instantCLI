@@ -68,7 +68,7 @@ impl PackageRepo {
             "dev.install.local_changes",
             &format!(
                 "{} Local changes detected in package repository",
-                Icons::WARN
+                char::from(Fa::ExclamationCircle)
             ),
         );
         info("dev.install.stash", "Stashing local changes...");
@@ -90,7 +90,7 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
     if debug {
         crate::ui::debug(
             "dev.install.build.start",
-            &format!("{} Building package: {}", Icons::SEARCH, package.name),
+            &format!("{} Building package: {}", char::from(Fa::Search), package.name),
         );
     }
 
@@ -98,7 +98,7 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
         "dev.install.build.install",
         &format!(
             "{} Building and installing {}... (This may be interactive)",
-            Icons::PACKAGE,
+            char::from(Oct::Package),
             package.name
         ),
     );
@@ -111,7 +111,7 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
 
     success(
         "dev.install.success",
-        &format!("{} Successfully installed {}", Icons::CHECK, package.name),
+        &format!("{} Successfully installed {}", char::from(Fa::Check), package.name),
     );
 
     Ok(())
@@ -121,7 +121,7 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     if debug {
         crate::ui::debug(
             "dev.install.start",
-            &format!("{} Starting package installation...", Icons::SEARCH),
+            &format!("{} Starting package installation...", char::from(Fa::Search)),
         );
     }
 
@@ -136,7 +136,7 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     if debug {
         crate::ui::debug(
             "dev.install.discover",
-            &format!("{} Discovering packages...", Icons::PACKAGE),
+            &format!("{} Discovering packages...", char::from(Oct::Package)),
         );
     }
 

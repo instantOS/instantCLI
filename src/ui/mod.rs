@@ -20,13 +20,13 @@ pub enum Level {
 }
 
 impl Level {
-    fn icon(self) -> &'static str {
+    fn icon(self) -> char {
         match self {
-            Level::Info => Icons::INFO,
-            Level::Success => Icons::CHECK,
-            Level::Warn => Icons::WARN,
-            Level::Error => Icons::ERROR,
-            Level::Debug => Icons::DEBUG,
+            Level::Info => char::from(Fa::InfoCircle),
+            Level::Success => char::from(Fa::Check),
+            Level::Warn => char::from(Fa::ExclamationCircle),
+            Level::Error => char::from(Fa::TimesCircle),
+            Level::Debug => char::from(Fa::Bug),
         }
     }
 
@@ -67,24 +67,13 @@ pub fn init(format: OutputFormat, color: bool) {
     }
 }
 
-pub mod Icons {
-    // Nerd Font symbols from the nerd_font crate
-    pub const CHECK: &str = ""; // Fa::Check
-    pub const ERROR: &str = ""; // Fa::TimesCircle
-    pub const WARN: &str = ""; // Fa::ExclamationCircle
-    pub const INFO: &str = ""; // Fa::InfoCircle
-    pub const DEBUG: &str = ""; // Fa::Bug
-    pub const CLOCK: &str = ""; // Fa::ClockO
-    pub const PACKAGE: &str = ""; // Oct::Package
-    pub const FOLDER: &str = ""; // Fa::Folder
-    pub const DOWNLOAD: &str = ""; // Fa::Download
-    pub const UPLOAD: &str = ""; // Fa::Upload
-    pub const TRASH: &str = ""; // Fa::TrashO
-    pub const SEARCH: &str = ""; // Fa::Search
-    pub const SKIP: &str = ""; // Fa::StepForward
-    pub const SEPARATOR_HEAVY: &str = "━";
-    pub const SEPARATOR_LIGHT: &str = "─";
-}
+// Re-export nerd font icons directly from the nerd_font crate
+pub use nerd_font::categories::Fa;
+pub use nerd_font::categories::Oct;
+
+// Separator characters (not in nerd_font crate)
+pub const SEPARATOR_HEAVY: &str = "━";
+pub const SEPARATOR_LIGHT: &str = "─";
 
 #[derive(Serialize)]
 struct Event<'a> {
@@ -221,9 +210,9 @@ pub fn separator(light: bool) {
         return;
     }
     let glyph = if light {
-        Icons::SEPARATOR_LIGHT
+        SEPARATOR_LIGHT
     } else {
-        Icons::SEPARATOR_HEAVY
+        SEPARATOR_HEAVY
     };
     let line = glyph.repeat(80);
     let mut out = io::stdout();
@@ -240,7 +229,7 @@ pub fn separator(light: bool) {
 
 pub mod prelude {
     pub use super::{
-        Icons, Level, OutputFormat, data, debug, debug_with_data, emit, error, error_with_data,
+        Fa, Oct, Level, OutputFormat, SEPARATOR_HEAVY, SEPARATOR_LIGHT, data, debug, debug_with_data, emit, error, error_with_data,
         get_output_format, info, info_with_data, separator, success, success_with_data, warn, warn_with_data,
     };
 }

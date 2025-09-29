@@ -43,7 +43,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
                 "game.backup.installation_missing",
                 &format!(
                     "{} Error: No installation found for game '{game_name}'.",
-                    Icons::ERROR
+                    char::from(Fa::TimesCircle)
                 ),
             );
             info(
@@ -64,7 +64,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             "game.backup.save_path_missing",
             &format!(
                 "{} Error: Save path does not exist for game '{}': {}",
-                Icons::ERROR,
+                char::from(Fa::TimesCircle),
                 game_name,
                 save_path.display()
             ),
@@ -96,7 +96,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             "game.backup.security.empty_dir",
             &format!(
                 "{} Security: Refusing to backup empty save directory for game '{}': {}",
-                Icons::ERROR,
+                char::from(Fa::TimesCircle),
                 game_name,
                 save_path.display()
             ),
@@ -133,7 +133,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         "game.backup.start",
         &format!(
             "{} Creating backup for '{game_name}'...\nThis may take a while depending on save file size.",
-            Icons::UPLOAD
+            char::from(Fa::Upload)
         ),
     );
 
@@ -143,7 +143,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
                 "game.backup.completed",
                 &format!(
                     "{} Backup completed successfully for game '{game_name}'!\n\n{output}",
-                    Icons::CHECK
+                    char::from(Fa::Check)
                 ),
             );
 
@@ -163,7 +163,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
                 "game.backup.failed",
                 &format!(
                     "{} Backup failed for game '{game_name}': {}",
-                    Icons::ERROR,
+                    char::from(Fa::TimesCircle),
                     e
                 ),
             );
@@ -224,7 +224,7 @@ pub fn restore_game_saves(
                     "game.restore.skipped",
                     &format!(
                         "{} Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-                        Icons::SKIP,
+                        char::from(Fa::StepForward),
                         game_selection.game_name,
                         snapshot_id
                     ),
@@ -245,7 +245,7 @@ pub fn restore_game_saves(
                     "game.restore.snapshot_missing",
                     &format!(
                         "{} Error: Snapshot '{}' not found for game '{}'.",
-                        Icons::ERROR,
+                        char::from(Fa::TimesCircle),
                         snapshot_id,
                         game_selection.game_name
                     ),
@@ -295,7 +295,7 @@ pub fn restore_game_saves(
         "game.restore.start",
         &format!(
             "{} Restoring game saves for '{}'...",
-            Icons::DOWNLOAD,
+            char::from(Fa::Download),
             game_selection.game_name
         ),
     );
@@ -306,7 +306,7 @@ pub fn restore_game_saves(
                 "game.restore.completed",
                 &format!(
                     "{} Restore completed successfully for game '{}'!\n\n{}",
-                    Icons::CHECK,
+                    char::from(Fa::Check),
                     game_selection.game_name,
                     output
                 ),
@@ -329,7 +329,7 @@ pub fn restore_game_saves(
                 "game.restore.failed",
                 &format!(
                     "{} Restore failed for game '{}': {}",
-                    Icons::ERROR,
+                    char::from(Fa::TimesCircle),
                     game_selection.game_name,
                     e
                 ),

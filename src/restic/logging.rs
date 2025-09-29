@@ -150,7 +150,7 @@ impl ResticCommandLogger {
             let time_str = log.timestamp.format("%Y-%m-%d %H:%M:%S UTC").to_string();
             let mut text_block = String::new();
             text_block.push_str(&format!("Log Entry #{}\n", i + 1));
-            text_block.push_str(&format!("  {} Time: {}\n", Icons::CLOCK, time_str));
+            text_block.push_str(&format!("  {} Time: {}\n", char::from(Fa::ClockO), time_str));
             text_block.push_str(&format!(
                 "   Command: {} {}\n",
                 log.command,
@@ -158,15 +158,15 @@ impl ResticCommandLogger {
             ));
             text_block.push_str(&format!(
                 "  {} Repository: {}\n",
-                Icons::FOLDER,
+                char::from(Fa::Folder),
                 log.repository
             ));
             text_block.push_str(&format!(
                 "  {} Success: {}\n",
                 if log.success {
-                    Icons::CHECK
+                    char::from(Fa::Check)
                 } else {
-                    Icons::ERROR
+                    char::from(Fa::TimesCircle)
                 },
                 if log.success { "Yes" } else { "No" }
             ));
@@ -176,14 +176,14 @@ impl ResticCommandLogger {
             if !log.stdout.trim().is_empty() {
                 text_block.push_str(&format!(
                     "  {} STDOUT:\n{}\n",
-                    Icons::UPLOAD,
+                    char::from(Fa::Upload),
                     Self::indent_text(&log.stdout, 4)
                 ));
             }
             if !log.stderr.trim().is_empty() {
                 text_block.push_str(&format!(
                     "  {} STDERR:\n{}\n",
-                    Icons::DOWNLOAD,
+                    char::from(Fa::Download),
                     Self::indent_text(&log.stderr, 4)
                 ));
             }

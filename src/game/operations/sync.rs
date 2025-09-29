@@ -52,7 +52,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.installation_missing",
                     &format!(
                         "{} Error: No installation found for game '{name}'.",
-                        Icons::ERROR
+                        char::from(Fa::TimesCircle)
                     ),
                 );
                 info(
@@ -73,7 +73,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     if games_to_sync.is_empty() {
         warn(
             "game.sync.none",
-            &format!("{} No games configured for syncing.", Icons::WARN),
+            &format!("{} No games configured for syncing.", char::from(Fa::ExclamationCircle)),
         );
         info(
             "game.sync.hint.add",
@@ -101,7 +101,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.restore_skipped",
                     &format!(
                         "{} {}: Cloud checkpoint {} already matches your local saves (use --force to override)",
-                        Icons::SKIP,
+                        char::from(Fa::StepForward),
                         installation.game_name.0.yellow(),
                         snapshot_id
                     ),
@@ -113,7 +113,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.backup.start",
                     &format!(
                         "{} {}: Creating backup...",
-                        Icons::UPLOAD,
+                        char::from(Fa::Upload),
                         installation.game_name.0.yellow()
                     ),
                 );
@@ -122,7 +122,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.backup.failed",
                         &format!(
                             "{} {}: Backup failed: {}",
-                            Icons::ERROR,
+                            char::from(Fa::TimesCircle),
                             installation.game_name.0.red(),
                             e
                         ),
@@ -133,7 +133,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.backup.completed",
                         &format!(
                             "{} {}: Backup completed",
-                            Icons::CHECK,
+                            char::from(Fa::Check),
                             installation.game_name.0.green()
                         ),
                     );
@@ -145,7 +145,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.restore.start",
                     &format!(
                         "{} {}: Restoring from snapshot...",
-                        Icons::DOWNLOAD,
+                        char::from(Fa::Download),
                         installation.game_name.0.yellow()
                     ),
                 );
@@ -156,7 +156,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.restore.failed",
                         &format!(
                             "{} {}: Restore failed: {}",
-                            Icons::ERROR,
+                            char::from(Fa::TimesCircle),
                             installation.game_name.0.red(),
                             e
                         ),
@@ -167,7 +167,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.restore.completed",
                         &format!(
                             "{} {}: Restore completed",
-                            Icons::CHECK,
+                            char::from(Fa::Check),
                             installation.game_name.0.green()
                         ),
                     );
@@ -179,7 +179,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.restore.latest.start",
                     &format!(
                         "{} {}: No local saves, restoring from latest snapshot...",
-                        Icons::DOWNLOAD,
+                        char::from(Fa::Download),
                         installation.game_name.0.yellow()
                     ),
                 );
@@ -190,7 +190,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.restore.latest.failed",
                         &format!(
                             "{} {}: Restore failed: {}",
-                            Icons::ERROR,
+                            char::from(Fa::TimesCircle),
                             installation.game_name.0.red(),
                             e
                         ),
@@ -201,7 +201,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.restore.latest.completed",
                         &format!(
                             "{} {}: Restore completed",
-                            Icons::CHECK,
+                            char::from(Fa::Check),
                             installation.game_name.0.green()
                         ),
                     );
@@ -213,7 +213,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.initial_backup.start",
                     &format!(
                         "{} {}: No snapshots found, creating initial backup...",
-                        Icons::UPLOAD,
+                        char::from(Fa::Upload),
                         installation.game_name.0.yellow()
                     ),
                 );
@@ -222,7 +222,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.initial_backup.failed",
                         &format!(
                             "{} {}: Initial backup failed: {}",
-                            Icons::ERROR,
+                            char::from(Fa::TimesCircle),
                             installation.game_name.0.red(),
                             e
                         ),
@@ -233,7 +233,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.initial_backup.completed",
                         &format!(
                             "{} {}: Initial backup completed",
-                            Icons::CHECK,
+                            char::from(Fa::Check),
                             installation.game_name.0.green()
                         ),
                     );
@@ -245,7 +245,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.error",
                     &format!(
                         "{} {}: {}",
-                        Icons::ERROR,
+                        char::from(Fa::TimesCircle),
                         installation.game_name.0.red(),
                         msg
                     ),
@@ -257,7 +257,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.failed",
                     &format!(
                         "{} {}: Sync failed: {}",
-                        Icons::ERROR,
+                        char::from(Fa::TimesCircle),
                         installation.game_name.0.red(),
                         e
                     ),
@@ -272,11 +272,11 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     info("game.sync.summary.title", "Sync Summary:");
     let summary_text = format!(
         "  {} Synced: {}\n  {} Skipped: {}\n  {} Errors: {}",
-        Icons::CHECK,
+        char::from(Fa::Check),
         total_synced.to_string().green(),
-        Icons::SKIP,
+        char::from(Fa::StepForward),
         total_skipped.to_string().yellow(),
-        Icons::ERROR,
+        char::from(Fa::TimesCircle),
         total_errors.to_string().red()
     );
     emit(

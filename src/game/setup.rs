@@ -31,7 +31,7 @@ pub fn setup_uninstalled_games() -> Result<()> {
             "game.setup.all_configured",
             &format!(
                 "{} All games are already configured for this device!",
-                Icons::CHECK
+                char::from(Fa::Check)
             ),
         );
         return Ok(());
@@ -53,7 +53,7 @@ pub fn setup_uninstalled_games() -> Result<()> {
         if let Err(e) = setup_single_game(&game_name, &game_config, &mut installations) {
             error(
                 "game.setup.failed",
-                &format!("{} Failed to set up game '{game_name}': {e}", Icons::ERROR),
+                &format!("{} Failed to set up game '{game_name}': {e}", char::from(Fa::TimesCircle)),
             );
 
             // Ask if user wants to continue with other games
@@ -101,7 +101,7 @@ fn setup_single_game(
 ) -> Result<()> {
     info(
         "game.setup.start",
-        &format!("{} Setting up game: {game_name}", Icons::INFO),
+        &format!("{} Setting up game: {game_name}", char::from(Fa::InfoCircle)),
     );
 
     // Get all snapshots for this game to extract paths
@@ -112,7 +112,7 @@ fn setup_single_game(
     if snapshots.is_empty() {
         warn(
             "game.setup.no_snapshots",
-            &format!("{} No snapshots found for game '{game_name}'.", Icons::WARN),
+            &format!("{} No snapshots found for game '{game_name}'.", char::from(Fa::ExclamationCircle)),
         );
         info(
             "game.setup.hint.add",
@@ -132,7 +132,7 @@ fn setup_single_game(
             "game.setup.no_paths",
             &format!(
                 "{} No save paths found in snapshots for game '{game_name}'.",
-                Icons::WARN
+                char::from(Fa::ExclamationCircle)
             ),
         );
         info(
@@ -168,7 +168,7 @@ fn setup_single_game(
                         .context("Failed to create save directory")?;
                     success(
                         "game.setup.dir_created",
-                        &format!("{} Created save directory: {path_str}", Icons::CHECK),
+                        &format!("{} Created save directory: {path_str}", char::from(Fa::Check)),
                     );
                     directory_created = true;
                 }
@@ -190,7 +190,7 @@ fn setup_single_game(
                     "game.setup.restore_latest",
                     &format!(
                         "{} Restoring latest backup ({snapshot_id}) into {path_str}...",
-                        Icons::DOWNLOAD
+                        char::from(Fa::Download)
                     ),
                 );
                 let restore_summary =
@@ -206,7 +206,7 @@ fn setup_single_game(
             "game.setup.success",
             &format!(
                 "{} Game '{game_name}' set up successfully with save path: {path_str}",
-                Icons::CHECK
+                char::from(Fa::Check)
             ),
         );
     } else {

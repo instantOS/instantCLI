@@ -399,7 +399,7 @@ pub fn select_snapshot_interactive_with_local_comparison(
             "game.snapshots.none",
             &format!(
                 "{} No snapshots found for game '{game_name}'.\n\nMake sure backups have been created for this game.",
-                Icons::WARN
+                char::from(Fa::ExclamationCircle)
             ),
         );
         return Ok(None);
