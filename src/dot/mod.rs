@@ -1,4 +1,5 @@
 use crate::fzf_wrapper::{FzfSelectable, FzfWrapper};
+use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
 use std::collections::HashMap;
@@ -275,7 +276,7 @@ pub fn fetch_modified(
     let modified_dotfiles = get_modified_dotfiles(config, db, path)?;
 
     if modified_dotfiles.is_empty() {
-        println!("{}", "No modified dotfiles to fetch.".green());
+        info("dot.fetch.no_modified", "No modified dotfiles to fetch.");
         return Ok(());
     }
 
@@ -350,27 +351,57 @@ fn print_fetch_plan(
     grouped_by_repo: &HashMap<RepoName, Vec<&Dotfile>>,
     dry_run: bool,
 ) -> Result<()> {
-    if dry_run {
-        println!(
-            "{}",
-            "Dry run: The following files would be fetched:".yellow()
-        );
-    } else {
-        println!("{}", "Fetching the following modified files:".yellow());
-    }
+    match get_output_format() {
+        OutputFormat::Json => {
+            let fetch_data: Vec<_> = grouped_by_repo.iter().map(|(repo_name, dotfiles)| {
+                let home = PathBuf::from(shellexpand::tilde("~").to_string());
+                let files: Vec<String> = dotfiles.iter().filter_map(|dotfile| {
+                    dotfile.target_path.strip_prefix(&home).ok()
+                        .map(|path| format!("~/{}", path.display()))
+                }).collect();
 
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    for (repo_name, dotfiles) in grouped_by_repo {
-        println!("  Repo: {}", repo_name.as_str().bold());
-        for dotfile in dotfiles {
-            let relative_path = dotfile.target_path.strip_prefix(&home).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to strip prefix from path {}: {}",
-                    dotfile.target_path.display(),
-                    e
-                )
-            })?;
-            println!("    - ~/{}", relative_path.display());
+                serde_json::json!({
+                    "repo": repo_name.as_str(),
+                    "files": files,
+                    "count": files.len(),
+                })
+            }).collect();
+
+            let message = if dry_run {
+                "Dry run: The following files would be fetched"
+            } else {
+                "Fetching the following modified files"
+            };
+
+            info_with_data("dot.fetch.plan", message, serde_json::json!({
+                "dry_run": dry_run,
+                "repos": fetch_data,
+            }));
+        }
+        OutputFormat::Text => {
+            if dry_run {
+                println!(
+                    "{}",
+                    "Dry run: The following files would be fetched:".yellow()
+                );
+            } else {
+                println!("{}", "Fetching the following modified files:".yellow());
+            }
+
+            let home = PathBuf::from(shellexpand::tilde("~").to_string());
+            for (repo_name, dotfiles) in grouped_by_repo {
+                println!("  Repo: {}", repo_name.as_str().bold());
+                for dotfile in dotfiles {
+                    let relative_path = dotfile.target_path.strip_prefix(&home).map_err(|e| {
+                        anyhow::anyhow!(
+                            "Failed to strip prefix from path {}: {}",
+                            dotfile.target_path.display(),
+                            e
+                        )
+                    })?;
+                    println!("    - ~/{}", relative_path.display());
+                }
+            }
         }
     }
     Ok(())
@@ -381,7 +412,7 @@ fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -
         dotfile.fetch(db)?;
     }
     db.cleanup_hashes(hash_cleanup_days)?;
-    println!("\n{}", "Fetch complete.".green());
+    success("dot.fetch.complete", "Fetch complete.");
     Ok(())
 }
 
@@ -403,7 +434,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
                     )
                 })?
                 .to_string_lossy();
-            println!("Created new dotfile: ~/{relative}");
+            success("dot.apply.created", &format!("Created new dotfile: ~/{relative}"));
         }
     }
     db.cleanup_hashes(config.hash_cleanup_days)?;

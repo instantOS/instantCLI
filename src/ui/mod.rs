@@ -68,20 +68,20 @@ pub fn init(format: OutputFormat, color: bool) {
 }
 
 pub mod Icons {
-    // Nerd Font symbols (commonly available glyphs)
-    pub const CHECK: &str = ""; // nf-fa-check_circle
-    pub const ERROR: &str = ""; // nf-fa-times_circle
-    pub const WARN: &str = ""; // nf-fa-exclamation_triangle
-    pub const INFO: &str = ""; // nf-fa-info_circle
-    pub const DEBUG: &str = ""; // nf-fa-bug
-    pub const CLOCK: &str = ""; // nf-fa-clock_o
-    pub const PACKAGE: &str = ""; // nf-oct-package
-    pub const FOLDER: &str = ""; // nf-fa-folder
-    pub const DOWNLOAD: &str = ""; // nf-fa-download
-    pub const UPLOAD: &str = ""; // nf-fa-upload
-    pub const TRASH: &str = ""; // nf-fa-trash_o
-    pub const SEARCH: &str = ""; // nf-fa-search
-    pub const SKIP: &str = ""; // nf-fa-step_forward
+    // Nerd Font symbols from the nerd_font crate
+    pub const CHECK: &str = ""; // Fa::Check
+    pub const ERROR: &str = ""; // Fa::TimesCircle
+    pub const WARN: &str = ""; // Fa::ExclamationCircle
+    pub const INFO: &str = ""; // Fa::InfoCircle
+    pub const DEBUG: &str = ""; // Fa::Bug
+    pub const CLOCK: &str = ""; // Fa::ClockO
+    pub const PACKAGE: &str = ""; // Oct::Package
+    pub const FOLDER: &str = ""; // Fa::Folder
+    pub const DOWNLOAD: &str = ""; // Fa::Download
+    pub const UPLOAD: &str = ""; // Fa::Upload
+    pub const TRASH: &str = ""; // Fa::TrashO
+    pub const SEARCH: &str = ""; // Fa::Search
+    pub const SKIP: &str = ""; // Fa::StepForward
     pub const SEPARATOR_HEAVY: &str = "━";
     pub const SEPARATOR_LIGHT: &str = "─";
 }
@@ -120,7 +120,8 @@ fn strip_ansi(input: &str) -> String {
     let mut out = String::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == 0x1b { // ESC
+        if bytes[i] == 0x1b {
+            // ESC
             if i + 1 < bytes.len() && bytes[i + 1] == b'[' {
                 i += 2;
                 // Skip until we hit a letter in @ A-Z [ \ ] ^ _ ` a-z
@@ -175,17 +176,42 @@ pub fn emit(level: Level, code: &str, message: &str, data: Option<serde_json::Va
 pub fn info(code: &str, message: &str) {
     emit(Level::Info, code, message, None)
 }
+pub fn info_with_data(code: &str, message: &str, data: serde_json::Value) {
+    emit(Level::Info, code, message, Some(data))
+}
 pub fn success(code: &str, message: &str) {
     emit(Level::Success, code, message, None)
+}
+pub fn success_with_data(code: &str, message: &str, data: serde_json::Value) {
+    emit(Level::Success, code, message, Some(data))
 }
 pub fn warn(code: &str, message: &str) {
     emit(Level::Warn, code, message, None)
 }
+pub fn warn_with_data(code: &str, message: &str, data: serde_json::Value) {
+    emit(Level::Warn, code, message, Some(data))
+}
 pub fn error(code: &str, message: &str) {
     emit(Level::Error, code, message, None)
 }
+pub fn error_with_data(code: &str, message: &str, data: serde_json::Value) {
+    emit(Level::Error, code, message, Some(data))
+}
 pub fn debug(code: &str, message: &str) {
     emit(Level::Debug, code, message, None)
+}
+pub fn debug_with_data(code: &str, message: &str, data: serde_json::Value) {
+    emit(Level::Debug, code, message, Some(data))
+}
+
+// Helper for structured data output
+pub fn data(code: &str, data: serde_json::Value) {
+    emit(Level::Info, code, "", Some(data))
+}
+
+// Helper to get current output format
+pub fn get_output_format() -> OutputFormat {
+    RENDERER.read().expect("renderer poisoned").format
 }
 
 pub fn separator(light: bool) {
@@ -214,6 +240,7 @@ pub fn separator(light: bool) {
 
 pub mod prelude {
     pub use super::{
-        Icons, Level, OutputFormat, debug, emit, error, info, separator, success, warn,
+        Icons, Level, OutputFormat, data, debug, debug_with_data, emit, error, error_with_data,
+        get_output_format, info, info_with_data, separator, success, success_with_data, warn, warn_with_data,
     };
 }

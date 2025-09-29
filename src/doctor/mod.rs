@@ -164,157 +164,275 @@ pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> 
 
 // Unified table output functions
 pub fn print_check_list_table(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
-    let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(Row::from(vec![
-            Cell::new("ID")
-                .fg(Color::Blue)
-                .add_attribute(Attribute::Bold),
-            Cell::new("Name").add_attribute(Attribute::Bold),
-            Cell::new("Fix Available").add_attribute(Attribute::Bold),
-            Cell::new("Privileges").add_attribute(Attribute::Bold),
-        ]));
+    use crate::ui::prelude::*;
 
-    for check in checks {
-        let fix = if check.fix_message().is_some() {
-            "✓"
-        } else {
-            "✗"
-        };
-        let privileges = match (check.check_privilege_level(), check.fix_privilege_level()) {
-            (PrivilegeLevel::Any, PrivilegeLevel::Any) => "Any",
-            (PrivilegeLevel::Any, PrivilegeLevel::User) => "User (fix)",
-            (PrivilegeLevel::Any, PrivilegeLevel::Root) => "Root (fix)",
-            (PrivilegeLevel::User, PrivilegeLevel::User) => "User only",
-            (PrivilegeLevel::Root, _) => "Root required",
-            _ => "Mixed",
-        };
+    match get_output_format() {
+        crate::ui::OutputFormat::Json => {
+            let checks_data: Vec<_> = checks
+                .iter()
+                .map(|check| {
+                    let fix_available = check.fix_message().is_some();
+                    let privileges =
+                        match (check.check_privilege_level(), check.fix_privilege_level()) {
+                            (PrivilegeLevel::Any, PrivilegeLevel::Any) => "Any",
+                            (PrivilegeLevel::Any, PrivilegeLevel::User) => "User (fix)",
+                            (PrivilegeLevel::Any, PrivilegeLevel::Root) => "Root (fix)",
+                            (PrivilegeLevel::User, PrivilegeLevel::User) => "User only",
+                            (PrivilegeLevel::Root, _) => "Root required",
+                            _ => "Mixed",
+                        };
 
-        table.add_row(Row::from(vec![
-            Cell::new(check.id()),
-            Cell::new(check.name()),
-            Cell::new(fix),
-            Cell::new(privileges),
-        ]));
+                    serde_json::json!({
+                        "id": check.id(),
+                        "name": check.name(),
+                        "fix_available": fix_available,
+                        "privileges": privileges,
+                        "check_privilege": format!("{:?}", check.check_privilege_level()),
+                        "fix_privilege": format!("{:?}", check.fix_privilege_level()),
+                    })
+                })
+                .collect();
+
+            data(
+                "doctor.check_list",
+                serde_json::json!({
+                    "checks": checks_data,
+                    "count": checks_data.len(),
+                }),
+            );
+        }
+        crate::ui::OutputFormat::Text => {
+            let mut table = Table::new();
+            table
+                .load_preset(UTF8_FULL)
+                .set_content_arrangement(ContentArrangement::Dynamic)
+                .set_header(Row::from(vec![
+                    Cell::new("ID")
+                        .fg(Color::Blue)
+                        .add_attribute(Attribute::Bold),
+                    Cell::new("Name").add_attribute(Attribute::Bold),
+                    Cell::new("Fix Available").add_attribute(Attribute::Bold),
+                    Cell::new("Privileges").add_attribute(Attribute::Bold),
+                ]));
+
+            for check in checks {
+                let fix = if check.fix_message().is_some() {
+                    "✓"
+                } else {
+                    "✗"
+                };
+                let privileges = match (check.check_privilege_level(), check.fix_privilege_level())
+                {
+                    (PrivilegeLevel::Any, PrivilegeLevel::Any) => "Any",
+                    (PrivilegeLevel::Any, PrivilegeLevel::User) => "User (fix)",
+                    (PrivilegeLevel::Any, PrivilegeLevel::Root) => "Root (fix)",
+                    (PrivilegeLevel::User, PrivilegeLevel::User) => "User only",
+                    (PrivilegeLevel::Root, _) => "Root required",
+                    _ => "Mixed",
+                };
+
+                table.add_row(Row::from(vec![
+                    Cell::new(check.id()),
+                    Cell::new(check.name()),
+                    Cell::new(fix),
+                    Cell::new(privileges),
+                ]));
+            }
+
+            println!("{}", "Available Health Checks:".bold());
+            println!("{table}");
+            println!();
+            let bin = env!("CARGO_BIN_NAME");
+            println!("Usage:");
+            println!("  {bin} doctor run <id>    Run a specific check");
+            println!("  {bin} doctor fix <id>    Apply fix for a specific check");
+            println!("  {bin} doctor             Run all checks");
+        }
     }
-
-    println!("{}", "Available Health Checks:".bold());
-    println!("{table}");
-    println!();
-    let bin = env!("CARGO_BIN_NAME");
-    println!("Usage:");
-    println!("  {bin} doctor run <id>    Run a specific check");
-    println!("  {bin} doctor fix <id>    Apply fix for a specific check");
-    println!("  {bin} doctor             Run all checks");
 }
 
 pub fn print_results_table(results: &[CheckResult]) {
-    let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(Row::from(vec![
-            Cell::new("Check").add_attribute(Attribute::Bold),
-            Cell::new("Status").add_attribute(Attribute::Bold),
-            Cell::new("Message").add_attribute(Attribute::Bold),
-        ]));
+    use crate::ui::prelude::*;
 
-    // The Dynamic content arrangement will handle wrapping automatically
+    match get_output_format() {
+        crate::ui::OutputFormat::Json => {
+            let results_data: Vec<_> = results
+                .iter()
+                .map(|result| {
+                    serde_json::json!({
+                        "name": result.name,
+                        "id": result.check_id,
+                        "status": result.status.status_text(),
+                        "success": result.status.is_success(),
+                        "fixable": result.status.is_fixable(),
+                        "message": result.status.message(),
+                        "fixable_indicator": result.status.fixable_indicator(),
+                        "fix_message": result.fix_message,
+                    })
+                })
+                .collect();
 
-    for result in results {
-        let status_cell = Cell::new(result.status.status_text()).fg(result.status.status_color());
+            let success_count = results.iter().filter(|r| r.status.is_success()).count();
+            let failure_count = results.iter().filter(|r| !r.status.is_success()).count();
+            let fixable_count = results.iter().filter(|r| r.status.is_fixable()).count();
 
-        let check_cell = Cell::new(&result.name).fg(result.status.status_color());
+            data(
+                "doctor.results",
+                serde_json::json!({
+                    "results": results_data,
+                    "summary": {
+                        "total": results.len(),
+                        "success": success_count,
+                        "failures": failure_count,
+                        "fixable": fixable_count,
+                    }
+                }),
+            );
+        }
+        crate::ui::OutputFormat::Text => {
+            let mut table = Table::new();
+            table
+                .load_preset(UTF8_FULL)
+                .set_content_arrangement(ContentArrangement::Dynamic)
+                .set_header(Row::from(vec![
+                    Cell::new("Check").add_attribute(Attribute::Bold),
+                    Cell::new("Status").add_attribute(Attribute::Bold),
+                    Cell::new("Message").add_attribute(Attribute::Bold),
+                ]));
 
-        let msg = format!(
-            "{}{}",
-            result.status.message(),
-            result.status.fixable_indicator()
-        );
+            for result in results {
+                let status_cell =
+                    Cell::new(result.status.status_text()).fg(result.status.status_color());
+                let check_cell = Cell::new(&result.name).fg(result.status.status_color());
 
-        table.add_row(Row::from(vec![check_cell, status_cell, Cell::new(msg)]));
+                let msg = format!(
+                    "{}{}",
+                    result.status.message(),
+                    result.status.fixable_indicator()
+                );
+
+                table.add_row(Row::from(vec![check_cell, status_cell, Cell::new(msg)]));
+            }
+
+            println!("{}", "System Health Check Results:".bold());
+            println!("{table}");
+        }
     }
-
-    println!("{}", "System Health Check Results:".bold());
-    println!("{table}");
 }
 
 pub fn print_single_check_result_table(result: &CheckResult) {
-    let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(Row::from(vec![
-            Cell::new("Check").add_attribute(Attribute::Bold),
-            Cell::new("Status").add_attribute(Attribute::Bold),
-            Cell::new("Message").add_attribute(Attribute::Bold),
-        ]));
+    use crate::ui::prelude::*;
 
-    let status_text = match &result.status {
-        CheckStatus::Pass(_) => "PASS",
-        CheckStatus::Fail { .. } => "FAIL",
-    };
-    let status_color = match &result.status {
-        CheckStatus::Pass(_) => Color::Green,
-        CheckStatus::Fail { .. } => Color::Red,
-    };
-    let status_cell = Cell::new(status_text).fg(status_color);
+    match get_output_format() {
+        crate::ui::OutputFormat::Json => {
+            data(
+                "doctor.single_result",
+                serde_json::json!({
+                    "name": result.name,
+                    "id": result.check_id,
+                    "status": result.status.status_text(),
+                    "success": result.status.is_success(),
+                    "fixable": result.status.is_fixable(),
+                    "message": result.status.message(),
+                    "fixable_indicator": result.status.fixable_indicator(),
+                    "fix_message": result.fix_message,
+                    "needs_fix": result.status.needs_fix(),
+                }),
+            );
+        }
+        crate::ui::OutputFormat::Text => {
+            let mut table = Table::new();
+            table
+                .load_preset(UTF8_FULL)
+                .set_content_arrangement(ContentArrangement::Dynamic)
+                .set_header(Row::from(vec![
+                    Cell::new("Check").add_attribute(Attribute::Bold),
+                    Cell::new("Status").add_attribute(Attribute::Bold),
+                    Cell::new("Message").add_attribute(Attribute::Bold),
+                ]));
 
-    let check_color = match &result.status {
-        CheckStatus::Pass(_) => Color::Green,
-        CheckStatus::Fail { .. } => Color::Red,
-    };
-    let check_cell = Cell::new(&result.name).fg(check_color);
+            let status_text = match &result.status {
+                CheckStatus::Pass(_) => "PASS",
+                CheckStatus::Fail { .. } => "FAIL",
+            };
+            let status_color = match &result.status {
+                CheckStatus::Pass(_) => Color::Green,
+                CheckStatus::Fail { .. } => Color::Red,
+            };
+            let status_cell = Cell::new(status_text).fg(status_color);
 
-    let msg = format!(
-        "{}{}",
-        result.status.message(),
-        result.status.fixable_indicator()
-    );
+            let check_color = match &result.status {
+                CheckStatus::Pass(_) => Color::Green,
+                CheckStatus::Fail { .. } => Color::Red,
+            };
+            let check_cell = Cell::new(&result.name).fg(check_color);
 
-    table.add_row(Row::from(vec![check_cell, status_cell, Cell::new(msg)]));
+            let msg = format!(
+                "{}{}",
+                result.status.message(),
+                result.status.fixable_indicator()
+            );
 
-    println!("{}", "Health Check Result:".bold());
-    println!("{table}");
+            table.add_row(Row::from(vec![check_cell, status_cell, Cell::new(msg)]));
 
-    if result.status.needs_fix() {
-        if result.status.is_fixable() {
-            if let Some(ref msg) = result.fix_message {
-                println!();
-                println!("  Fix available: {msg}");
-                println!(
-                    "  Run: {} doctor fix {}",
-                    env!("CARGO_BIN_NAME"),
-                    result.check_id
-                );
+            println!("{}", "Health Check Result:".bold());
+            println!("{table}");
+
+            if result.status.needs_fix() {
+                if result.status.is_fixable() {
+                    if let Some(ref msg) = result.fix_message {
+                        println!();
+                        println!("  Fix available: {msg}");
+                        println!(
+                            "  Run: {} doctor fix {}",
+                            env!("CARGO_BIN_NAME"),
+                            result.check_id
+                        );
+                    }
+                } else {
+                    println!();
+                    println!("  Manual intervention required.");
+                }
             }
-        } else {
-            println!();
-            println!("  Manual intervention required.");
         }
     }
 }
 
 pub fn print_fix_summary_table(check_name: &str, before_status: &str, after_status: &str) {
-    let mut table = Table::new();
-    table
-        .load_preset(UTF8_FULL)
-        .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(Row::from(
-            vec!["Check", "Before Status", "After Status"]
-                .into_iter()
-                .map(|s| Cell::new(s).add_attribute(Attribute::Bold))
-                .collect::<Vec<_>>(),
-        ));
+    use crate::ui::prelude::*;
 
-    table.add_row(Row::from(vec![
-        Cell::new(check_name),
-        Cell::new(before_status).fg(Color::Red),
-        Cell::new(after_status).fg(Color::Green),
-    ]));
+    match get_output_format() {
+        crate::ui::OutputFormat::Json => {
+            data(
+                "doctor.fix_summary",
+                serde_json::json!({
+                    "check": check_name,
+                    "before_status": before_status,
+                    "after_status": after_status,
+                    "success": after_status == "PASS",
+                }),
+            );
+        }
+        crate::ui::OutputFormat::Text => {
+            let mut table = Table::new();
+            table
+                .load_preset(UTF8_FULL)
+                .set_content_arrangement(ContentArrangement::Dynamic)
+                .set_header(Row::from(
+                    vec!["Check", "Before Status", "After Status"]
+                        .into_iter()
+                        .map(|s| Cell::new(s).add_attribute(Attribute::Bold))
+                        .collect::<Vec<_>>(),
+                ));
 
-    println!("{}", "Fix Summary:".bold());
-    println!("{table}");
+            table.add_row(Row::from(vec![
+                Cell::new(check_name),
+                Cell::new(before_status).fg(Color::Red),
+                Cell::new(after_status).fg(Color::Green),
+            ]));
+
+            println!("{}", "Fix Summary:".bold());
+            println!("{table}");
+        }
+    }
 }

@@ -15,22 +15,31 @@ pub fn list_games() -> Result<()> {
     let games_data: Vec<serde_json::Value> = config
         .games
         .iter()
-        .map(|g| json!({
-            "name": g.name.0,
-            "description": g.description,
-            "launch_command": g.launch_command
-        }))
+        .map(|g| {
+            json!({
+                "name": g.name.0,
+                "description": g.description,
+                "launch_command": g.launch_command
+            })
+        })
         .collect();
 
     // Build human-friendly text block
     let mut text = String::new();
     if config.games.is_empty() {
         text.push_str("No games configured yet.\n");
-        text.push_str(&format!("Use '{} game add' to add a game.\n", env!("CARGO_BIN_NAME")));
+        text.push_str(&format!(
+            "Use '{} game add' to add a game.\n",
+            env!("CARGO_BIN_NAME")
+        ));
     } else {
         text.push_str(&format!("{}\n\n", "Configured Games".bold().underline()));
         for game in &config.games {
-            text.push_str(&format!("  {} {}\n", Icons::INFO.bright_blue(), game.name.0.cyan().bold()));
+            text.push_str(&format!(
+                "  {} {}\n",
+                Icons::INFO.bright_blue(),
+                game.name.0.cyan().bold()
+            ));
             if let Some(desc) = &game.description {
                 text.push_str(&format!("    Description: {}\n", desc));
             }

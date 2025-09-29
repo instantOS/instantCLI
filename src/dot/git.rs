@@ -147,20 +147,47 @@ fn show_single_file_status(
     cfg: &config::Config,
     db: &super::db::Database,
 ) -> Result<()> {
+    use crate::ui::{get_output_format, OutputFormat, info_with_data};
+
     let target_path = super::resolve_dotfile_path(path_str)?;
 
-    if let Some(dotfile) = all_dotfiles.get(&target_path) {
-        let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
-        let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
-        println!(
-            "{} -> {}",
-            target_path.display(),
-            get_dotfile_status(dotfile, db)
-        );
-        println!("  Source: {}", dotfile.source_path.display());
-        println!("  Repo: {repo_name} ({dotfile_dir})");
-    } else {
-        println!("{} -> not tracked", target_path.display());
+    match get_output_format() {
+        OutputFormat::Json => {
+            if let Some(dotfile) = all_dotfiles.get(&target_path) {
+                let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
+                let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+                let status_data = serde_json::json!({
+                    "path": target_path.display().to_string(),
+                    "status": get_dotfile_status(dotfile, db),
+                    "source": dotfile.source_path.display().to_string(),
+                    "repo": repo_name.as_str(),
+                    "dotfile_dir": dotfile_dir,
+                    "tracked": true
+                });
+                info_with_data("dot.status.file", "File status", status_data);
+            } else {
+                let status_data = serde_json::json!({
+                    "path": target_path.display().to_string(),
+                    "tracked": false
+                });
+                info_with_data("dot.status.file", "File not tracked", status_data);
+            }
+        }
+        OutputFormat::Text => {
+            if let Some(dotfile) = all_dotfiles.get(&target_path) {
+                let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
+                let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+                println!(
+                    "{} -> {}",
+                    target_path.display(),
+                    get_dotfile_status(dotfile, db)
+                );
+                println!("  Source: {}", dotfile.source_path.display());
+                println!("  Repo: {repo_name} ({dotfile_dir})");
+            } else {
+                println!("{} -> not tracked", target_path.display());
+            }
+        }
     }
 
     Ok(())
@@ -172,6 +199,8 @@ fn show_status_summary(
     db: &super::db::Database,
     show_all: bool,
 ) -> Result<()> {
+    use crate::ui::{get_output_format, OutputFormat, info_with_data};
+
     let home = dirs::home_dir().context("Failed to get home directory")?;
 
     // Categorize files by status
@@ -188,81 +217,148 @@ fn show_status_summary(
         .get(&DotFileStatus::Outdated)
         .map_or(0, |v| v.len());
 
-    println!("Total tracked: {total_files} files");
-    println!("{} Clean: {} files", "✓".green(), clean_count);
+    match get_output_format() {
+        OutputFormat::Json => {
+            let modified_files: Vec<_> = files_by_status
+                .get(&DotFileStatus::Modified)
+                .unwrap_or(&vec![])
+                .iter()
+                .map(|(target_path, _dotfile, repo_name, dotfile_dir)| {
+                    let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
+                    serde_json::json!({
+                        "path": format!("~/{}", relative_path.display()),
+                        "status": "modified",
+                        "repo": repo_name.as_str(),
+                        "dotfile_dir": dotfile_dir
+                    })
+                })
+                .collect();
 
-    if modified_count > 0 {
-        println!("{} Modified: {} files", "⚠".yellow(), modified_count);
-    }
+            let outdated_files: Vec<_> = files_by_status
+                .get(&DotFileStatus::Outdated)
+                .unwrap_or(&vec![])
+                .iter()
+                .map(|(target_path, _dotfile, repo_name, dotfile_dir)| {
+                    let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
+                    serde_json::json!({
+                        "path": format!("~/{}", relative_path.display()),
+                        "status": "outdated",
+                        "repo": repo_name.as_str(),
+                        "dotfile_dir": dotfile_dir
+                    })
+                })
+                .collect();
 
-    if outdated_count > 0 {
-        println!("{} Outdated: {} files", "↓".blue(), outdated_count);
-    }
+            let clean_files: Vec<_> = if show_all {
+                files_by_status
+                    .get(&DotFileStatus::Clean)
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .map(|(target_path, _dotfile, repo_name, dotfile_dir)| {
+                        let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
+                        serde_json::json!({
+                            "path": format!("~/{}", relative_path.display()),
+                            "status": "clean",
+                            "repo": repo_name.as_str(),
+                            "dotfile_dir": dotfile_dir
+                        })
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
 
-    // Show files with issues
-    if modified_count > 0 || outdated_count > 0 {
-        println!();
+            let status_data = serde_json::json!({
+                "total_files": total_files,
+                "clean_count": clean_count,
+                "modified_count": modified_count,
+                "outdated_count": outdated_count,
+                "modified_files": modified_files,
+                "outdated_files": outdated_files,
+                "clean_files": clean_files,
+                "show_all": show_all
+            });
 
-        if let Some(modified_files) = files_by_status.get(&DotFileStatus::Modified) {
-            println!("{}", "Modified files:".yellow().bold());
-            for (target_path, _dotfile, repo_name, dotfile_dir) in modified_files {
-                let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
-                let tilde_path = format!("~/{}", relative_path.display());
-                println!(
-                    "  {} -> {} ({}: {})",
-                    tilde_path,
-                    "modified".yellow(),
-                    repo_name,
-                    dotfile_dir
-                );
+            info_with_data("dot.status.summary", "Dotfile status summary", status_data);
+        }
+        OutputFormat::Text => {
+            println!("Total tracked: {total_files} files");
+            println!("{} Clean: {} files", "✓".green(), clean_count);
+
+            if modified_count > 0 {
+                println!("{} Modified: {} files", "⚠".yellow(), modified_count);
             }
-            println!();
-        }
 
-        if let Some(outdated_files) = files_by_status.get(&DotFileStatus::Outdated) {
-            println!("{}", "Outdated files:".blue().bold());
-            for (target_path, _dotfile, repo_name, dotfile_dir) in outdated_files {
-                let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
-                let tilde_path = format!("~/{}", relative_path.display());
-                println!(
-                    "  {} -> {} ({}: {})",
-                    tilde_path,
-                    "outdated".blue(),
-                    repo_name,
-                    dotfile_dir
-                );
+            if outdated_count > 0 {
+                println!("{} Outdated: {} files", "↓".blue(), outdated_count);
             }
-            println!();
+
+            // Show files with issues
+            if modified_count > 0 || outdated_count > 0 {
+                println!();
+
+                if let Some(modified_files) = files_by_status.get(&DotFileStatus::Modified) {
+                    println!("{}", "Modified files:".yellow().bold());
+                    for (target_path, _dotfile, repo_name, dotfile_dir) in modified_files {
+                        let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
+                        let tilde_path = format!("~/{}", relative_path.display());
+                        println!(
+                            "  {} -> {} ({}: {})",
+                            tilde_path,
+                            "modified".yellow(),
+                            repo_name,
+                            dotfile_dir
+                        );
+                    }
+                    println!();
+                }
+
+                if let Some(outdated_files) = files_by_status.get(&DotFileStatus::Outdated) {
+                    println!("{}", "Outdated files:".blue().bold());
+                    for (target_path, _dotfile, repo_name, dotfile_dir) in outdated_files {
+                        let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
+                        let tilde_path = format!("~/{}", relative_path.display());
+                        println!(
+                            "  {} -> {} ({}: {})",
+                            tilde_path,
+                            "outdated".blue(),
+                            repo_name,
+                            dotfile_dir
+                        );
+                    }
+                    println!();
+                }
+            }
+
+            // Show all files if requested
+            if show_all && clean_count > 0 {
+                println!("{}", "Clean files:".green().bold());
+                for (target_path, _dotfile, repo_name, dotfile_dir) in files_by_status
+                    .get(&DotFileStatus::Clean)
+                    .unwrap_or(&vec![])
+                {
+                    let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
+                    let tilde_path = format!("~/{}", relative_path.display());
+                    println!(
+                        "  {} -> {} ({}: {})",
+                        tilde_path,
+                        "clean".green(),
+                        repo_name,
+                        dotfile_dir
+                    );
+                }
+                println!();
+            }
+
+            // Show action suggestions (only in text mode, JSON mode handles it internally)
+            show_action_suggestions(modified_count, outdated_count, clean_count);
         }
     }
-
-    // Show all files if requested
-    if show_all && clean_count > 0 {
-        println!("{}", "Clean files:".green().bold());
-        for (target_path, _dotfile, repo_name, dotfile_dir) in files_by_status
-            .get(&DotFileStatus::Clean)
-            .unwrap_or(&vec![])
-        {
-            let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
-            let tilde_path = format!("~/{}", relative_path.display());
-            println!(
-                "  {} -> {} ({}: {})",
-                tilde_path,
-                "clean".green(),
-                repo_name,
-                dotfile_dir
-            );
-        }
-        println!();
-    }
-
-    // Show action suggestions
-    show_action_suggestions(modified_count, outdated_count, clean_count);
 
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, serde::Serialize)]
 enum DotFileStatus {
     Modified,
     Outdated,
@@ -322,21 +418,57 @@ fn categorize_files_and_collect_stats<'a>(
 
 /// Show action suggestions based on file status counts
 fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_count: usize) {
-    let bin = env!("CARGO_BIN_NAME");
-    if modified_count > 0 || outdated_count > 0 {
-        println!("{}", "Suggested actions:".bold());
-        if modified_count > 0 {
-            println!("  Use '{bin} dot apply' to apply changes from repositories");
-            println!("  Use '{bin} dot fetch' to save your modifications to repositories");
+    use crate::ui::{get_output_format, OutputFormat, info_with_data};
+
+    match get_output_format() {
+        OutputFormat::Json => {
+            let bin = env!("CARGO_BIN_NAME");
+            let mut suggestions = Vec::new();
+
+            if modified_count > 0 || outdated_count > 0 {
+                if modified_count > 0 {
+                    suggestions.push(format!("Use '{bin} dot apply' to apply changes from repositories"));
+                    suggestions.push(format!("Use '{bin} dot fetch' to save your modifications to repositories"));
+                }
+                if outdated_count > 0 {
+                    suggestions.push(format!("Use '{bin} dot reset <path>' to restore files to their original state"));
+                }
+                suggestions.push(format!("Use '{bin} dot status --all' to see all tracked files including clean ones"));
+            } else if clean_count > 0 {
+                info_with_data("dot.status.message", "All dotfiles are clean and up to date", serde_json::json!({
+                    "status": "clean",
+                    "message": "All dotfiles are clean and up to date!"
+                }));
+                return;
+            } else {
+                suggestions.push(format!("Use '{bin} dot repo add <url>' to add a repository"));
+            }
+
+            let suggestion_data = serde_json::json!({
+                "has_issues": modified_count > 0 || outdated_count > 0,
+                "suggestions": suggestions
+            });
+
+            info_with_data("dot.status.suggestions", "Action suggestions", suggestion_data);
         }
-        if outdated_count > 0 {
-            println!("  Use '{bin} dot reset <path>' to restore files to their original state");
+        OutputFormat::Text => {
+            let bin = env!("CARGO_BIN_NAME");
+            if modified_count > 0 || outdated_count > 0 {
+                println!("{}", "Suggested actions:".bold());
+                if modified_count > 0 {
+                    println!("  Use '{bin} dot apply' to apply changes from repositories");
+                    println!("  Use '{bin} dot fetch' to save your modifications to repositories");
+                }
+                if outdated_count > 0 {
+                    println!("  Use '{bin} dot reset <path>' to restore files to their original state");
+                }
+                println!("  Use '{bin} dot status --all' to see all tracked files including clean ones");
+            } else if clean_count > 0 {
+                println!("✓ All dotfiles are clean and up to date!");
+            } else {
+                println!("No dotfiles found. Use '{bin} dot repo add <url>' to add a repository.");
+            }
         }
-        println!("  Use '{bin} dot status --all' to see all tracked files including clean ones");
-    } else if clean_count > 0 {
-        println!("✓ All dotfiles are clean and up to date!");
-    } else {
-        println!("No dotfiles found. Use '{bin} dot repo add <url>' to add a repository.");
     }
 }
 

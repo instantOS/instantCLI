@@ -2,6 +2,7 @@ use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_f
 use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
 use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
+use crate::ui::prelude::*;
 use anyhow::{Result, anyhow};
 use colored::*;
 
@@ -40,31 +41,78 @@ fn show_available_fixes(results: &[CheckResult]) {
         .filter(|result| result.status.needs_fix() && result.status.is_fixable())
         .collect();
 
-    if !fixable_failures.is_empty() {
-        let fixes_msg = "\nAvailable fixes:".bold().yellow();
-        println!("{fixes_msg}");
-        for result in &fixable_failures {
-            if let Some(ref msg) = result.fix_message {
-                println!("  - {}: {}", result.name, msg);
-                println!(
-                    "    Run: {} doctor fix {}",
-                    env!("CARGO_BIN_NAME"),
-                    result.check_id
-                );
-            }
-        }
-    }
-
     let non_fixable_failures: Vec<_> = results
         .iter()
         .filter(|result| result.status.needs_fix() && !result.status.is_fixable())
         .collect();
 
-    if !non_fixable_failures.is_empty() {
-        let manual_msg = "\nRequires manual intervention:".bold().red();
-        println!("{manual_msg}");
-        for result in &non_fixable_failures {
-            println!("  - {}: {}", result.name, result.status.message());
+    match get_output_format() {
+        crate::ui::OutputFormat::Json => {
+            if !fixable_failures.is_empty() {
+                let fixes_data: Vec<_> = fixable_failures
+                    .iter()
+                    .map(|result| {
+                        serde_json::json!({
+                            "name": result.name,
+                            "id": result.check_id,
+                            "fix_message": result.fix_message,
+                        })
+                    })
+                    .collect();
+
+                data(
+                    "doctor.available_fixes",
+                    serde_json::json!({
+                        "fixable": fixes_data,
+                        "count": fixes_data.len(),
+                    }),
+                );
+            }
+
+            if !non_fixable_failures.is_empty() {
+                let manual_data: Vec<_> = non_fixable_failures
+                    .iter()
+                    .map(|result| {
+                        serde_json::json!({
+                            "name": result.name,
+                            "id": result.check_id,
+                            "message": result.status.message(),
+                        })
+                    })
+                    .collect();
+
+                data(
+                    "doctor.manual_intervention",
+                    serde_json::json!({
+                        "non_fixable": manual_data,
+                        "count": manual_data.len(),
+                    }),
+                );
+            }
+        }
+        crate::ui::OutputFormat::Text => {
+            if !fixable_failures.is_empty() {
+                let fixes_msg = "\nAvailable fixes:".bold().yellow();
+                println!("{fixes_msg}");
+                for result in &fixable_failures {
+                    if let Some(ref msg) = result.fix_message {
+                        println!("  - {}: {}", result.name, msg);
+                        println!(
+                            "    Run: {} doctor fix {}",
+                            env!("CARGO_BIN_NAME"),
+                            result.check_id
+                        );
+                    }
+                }
+            }
+
+            if !non_fixable_failures.is_empty() {
+                let manual_msg = "\nRequires manual intervention:".bold().red();
+                println!("{manual_msg}");
+                for result in &non_fixable_failures {
+                    println!("  - {}: {}", result.name, result.status.message());
+                }
+            }
         }
     }
 }
@@ -108,18 +156,30 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         .ok_or_else(|| anyhow!("Unknown check: {}", check_id))?;
 
     // STEP 1: Always run the check first to determine current state
-    println!("Checking current state for '{}'...", check.name());
+    info(
+        "doctor.fix.check",
+        &format!("Checking current state for '{}'...", check.name()),
+    );
     let check_result = check.execute().await;
 
     // STEP 2: Determine if fix is needed based on check result
     if check_result.is_success() {
-        println!("✓ {}: {}", check.name(), check_result.message());
-        println!("No fix needed - check already passes.");
+        success(
+            "doctor.fix.not_needed",
+            &format!("✓ {}: {}", check.name(), check_result.message()),
+        );
+        info(
+            "doctor.fix.not_needed",
+            "No fix needed - check already passes.",
+        );
         return Ok(());
     }
 
     if !check_result.is_fixable() {
-        println!("✗ {}: {}", check.name(), check_result.message());
+        error(
+            "doctor.fix.not_fixable",
+            &format!("✗ {}: {}", check.name(), check_result.message()),
+        );
         return Err(anyhow!(
             "Check '{}' failed but is not fixable. Manual intervention required.",
             check.name()
@@ -127,8 +187,14 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
     }
 
     // STEP 3: Check is failing and fixable, proceed with fix
-    println!("⚠ {}: {}", check.name(), check_result.message());
-    println!("Fix is available and will be applied.");
+    warn(
+        "doctor.fix.available",
+        &format!("⚠ {}: {}", check.name(), check_result.message()),
+    );
+    info(
+        "doctor.fix.available",
+        "Fix is available and will be applied.",
+    );
 
     // Check if we have the right privileges for the fix
     match check_privilege_requirements(check.as_ref(), true) {
@@ -138,9 +204,12 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         }
         Err(PrivilegeError::NeedRoot) => {
             // Need to escalate privileges
-            println!(
-                "Fix for '{}' requires administrator privileges.",
-                check.name()
+            warn(
+                "doctor.fix.privileges",
+                &format!(
+                    "Fix for '{}' requires administrator privileges.",
+                    check.name()
+                ),
             );
 
             if should_escalate(check.as_ref())? {
@@ -148,7 +217,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
                 // This won't return - process will be restarted with sudo
                 unreachable!()
             } else {
-                println!("Fix cancelled by user.");
+                info("doctor.fix.cancelled", "Fix cancelled by user.");
                 Ok(())
             }
         }
@@ -165,7 +234,10 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
     let before_result = check.execute().await;
     let before_status = before_result.status_text().to_string();
 
-    println!("Applying fix for {}...", check_name.green());
+    info(
+        "doctor.fix.applying",
+        &format!("Applying fix for {}...", check_name),
+    );
 
     match check.fix().await {
         Ok(()) => {
@@ -177,10 +249,9 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            eprintln!(
-                "✗ Failed to apply fix for {}: {}",
-                check.name(),
-                e.to_string().red()
+            error(
+                "doctor.fix.failed",
+                &format!("✗ Failed to apply fix for {}: {}", check.name(), e),
             );
             Err(e)
         }
