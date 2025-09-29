@@ -41,10 +41,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         None => {
             error(
                 "game.backup.installation_missing",
-                &format!(
-                    "{} Error: No installation found for game '{game_name}'.",
-                    char::from(Fa::TimesCircle)
-                ),
+                &format!("Error: No installation found for game '{game_name}'."),
             );
             info(
                 "game.backup.hint.add",
@@ -131,20 +128,14 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
 
     info(
         "game.backup.start",
-        &format!(
-            "{} Creating backup for '{game_name}'...\nThis may take a while depending on save file size.",
-            char::from(Fa::Upload)
-        ),
+        &format!("Creating backup for '{game_name}'...\nThis may take a while depending on save file size."),
     );
 
     match backup_handler.backup_game(installation) {
         Ok(output) => {
             success(
                 "game.backup.completed",
-                &format!(
-                    "{} Backup completed successfully for game '{game_name}'!\n\n{output}",
-                    char::from(Fa::Check)
-                ),
+                &format!("Backup completed successfully for game '{game_name}'!\n\n{output}"),
             );
 
             // Update checkpoint after successful backup
@@ -225,7 +216,7 @@ pub fn restore_game_saves(
             "game.restore.skipped",
             &format!(
                 "{} Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-                char::from(Fa::StepForward),
+                ,
                 game_selection.game_name,
                 snapshot_id
             ),
@@ -294,7 +285,7 @@ pub fn restore_game_saves(
         "game.restore.start",
         &format!(
             "{} Restoring game saves for '{}'...",
-            char::from(Fa::Download),
+            ,
             game_selection.game_name
         ),
     );
@@ -303,12 +294,7 @@ pub fn restore_game_saves(
         Ok(output) => {
             success(
                 "game.restore.completed",
-                &format!(
-                    "{} Restore completed successfully for game '{}'!\n\n{}",
-                    char::from(Fa::Check),
-                    game_selection.game_name,
-                    output
-                ),
+                &format!("Restore completed successfully for game '{}'!\n\n{}", game_selection.game_name, output),
             );
 
             // Update the installation with the checkpoint
@@ -326,12 +312,7 @@ pub fn restore_game_saves(
         Err(e) => {
             error(
                 "game.restore.failed",
-                &format!(
-                    "{} Restore failed for game '{}': {}",
-                    char::from(Fa::TimesCircle),
-                    game_selection.game_name,
-                    e
-                ),
+                &format!("Restore failed for game '{}': {}", game_selection.game_name, e),
             );
             return Err(e);
         }
@@ -352,7 +333,7 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
     if args.is_empty() {
         let bin = env!("CARGO_BIN_NAME");
         eprintln!(
-            "{} Error: No restic command provided.\n\n\
+            "Error: No restic command provided.\n\n\
              Usage: {bin} game restic <restic-command> [args...]\n\n\
              Examples:\n\
              • {bin} game restic snapshots\n\
@@ -360,8 +341,7 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
              • {bin} game restic stats\n\
              • {bin} game restic find .config\n\
              • {bin} game restic restore latest --target /tmp/restore-test",
-            char::from(Fa::TimesCircle)
-        );
+                    );
         return Err(anyhow::anyhow!("no restic command provided"));
     }
 
