@@ -33,11 +33,15 @@ prepare_ins_binary() {
         return
     fi
 
-    (
-        export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-Awarnings"
-        echo "Compiling ins (debug) for tests..."
-        cd "${REPO_ROOT}" && cargo build
-    )
+    echo "Compiling ins (debug) for tests..."
+    cd "${REPO_ROOT}"
+
+    # Optimizations for faster compilation in tests
+    export CARGO_INCREMENTAL=1
+    export CARGO_BUILD_JOBS=$(nproc)  # Use all available cores
+
+    # Only build the ins binary, skip all other dependencies and examples
+    cargo build --bin ins --message-format=human
 
     export INS_BIN="${REPO_ROOT}/target/debug/ins"
     export INS_PREPARED=1
