@@ -10,6 +10,7 @@ use crate::dot::path_serde::TildePath;
 /// Configurable restic retention policy values stored in games.toml
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct RetentionPolicyConfig {
     pub keep_last: Option<u32>,
     pub keep_daily: Option<u32>,
@@ -39,18 +40,6 @@ impl RetentionPolicyConfig {
             keep_weekly: self.keep_weekly.unwrap_or(Self::DEFAULT_KEEP_WEEKLY),
             keep_monthly: self.keep_monthly.unwrap_or(Self::DEFAULT_KEEP_MONTHLY),
             keep_yearly: self.keep_yearly.unwrap_or(Self::DEFAULT_KEEP_YEARLY),
-        }
-    }
-}
-
-impl Default for RetentionPolicyConfig {
-    fn default() -> Self {
-        Self {
-            keep_last: None,
-            keep_daily: None,
-            keep_weekly: None,
-            keep_monthly: None,
-            keep_yearly: None,
         }
     }
 }

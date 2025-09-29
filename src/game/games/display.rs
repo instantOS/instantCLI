@@ -171,7 +171,7 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
     if let Some(cmd) = &launch_command {
         text_block.push_str(&format!("   Launch Command: {}\n\n", cmd.blue()));
     } else {
-        text_block.push_str("\n");
+        text_block.push('\n');
     }
     text_block.push_str(&install_text);
 

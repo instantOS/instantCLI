@@ -342,12 +342,11 @@ fn sync_single_game(
             match compare_snapshot_vs_local(&snapshot.time, local_time) {
                 Ok(TimeComparison::LocalNewer) => Ok(SyncAction::CreateBackup),
                 Ok(TimeComparison::SnapshotNewer) => {
-                    if !force {
-                        if let Some(ref nearest_checkpoint) = installation.nearest_checkpoint {
-                            if nearest_checkpoint == &snapshot.id {
-                                return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
-                            }
-                        }
+                    if !force
+                        && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
+                        && nearest_checkpoint == &snapshot.id
+                    {
+                        return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
                     }
                     Ok(SyncAction::RestoreFromSnapshot(snapshot.id.clone()))
                 }
@@ -366,12 +365,11 @@ fn sync_single_game(
         }
         (None, Some(snapshot)) => {
             // Check if restore should be skipped due to matching checkpoint
-            if !force {
-                if let Some(ref nearest_checkpoint) = installation.nearest_checkpoint {
-                    if nearest_checkpoint == &snapshot.id {
-                        return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
-                    }
-                }
+            if !force
+                && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
+                && nearest_checkpoint == &snapshot.id
+            {
+                return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
             }
 
             // No local saves but snapshots exist - restore from latest

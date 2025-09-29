@@ -245,10 +245,10 @@ impl MenuServer {
     fn process_request_sync(&self, request: MenuRequest) -> Result<MenuResponse> {
         // Handle Show request specially for fast response
         if matches!(request, MenuRequest::Show) {
-            if let Some(ref manager) = self.scratchpad_manager {
-                if let Err(e) = manager.show_fast() {
-                    eprintln!("Warning: Failed to show scratchpad: {e}");
-                }
+            if let Some(ref manager) = self.scratchpad_manager
+                && let Err(e) = manager.show_fast()
+            {
+                eprintln!("Warning: Failed to show scratchpad: {e}");
             }
             return Ok(MenuResponse::ShowResult);
         }
@@ -259,12 +259,11 @@ impl MenuServer {
             MenuRequest::Confirm { .. } | MenuRequest::Choice { .. } | MenuRequest::Input { .. }
         );
 
-        if should_manage_scratchpad {
-            if let Some(ref manager) = self.scratchpad_manager {
-                if let Err(e) = manager.show() {
-                    eprintln!("Warning: Failed to show scratchpad: {e}");
-                }
-            }
+        if should_manage_scratchpad
+            && let Some(ref manager) = self.scratchpad_manager
+            && let Err(e) = manager.show()
+        {
+            eprintln!("Warning: Failed to show scratchpad: {e}");
         }
 
         // Process the request with timeout and visibility monitoring
@@ -281,12 +280,11 @@ impl MenuServer {
         //
         // NOTE: For monitored requests, monitoring is already stopped in process_request_with_integrated_monitoring
         // before this point to prevent false cancellations when we intentionally hide the scratchpad.
-        if should_manage_scratchpad {
-            if let Some(ref manager) = self.scratchpad_manager {
-                if let Err(e) = manager.hide_fast() {
-                    eprintln!("Warning: Failed to hide scratchpad: {e}");
-                }
-            }
+        if should_manage_scratchpad
+            && let Some(ref manager) = self.scratchpad_manager
+            && let Err(e) = manager.hide_fast()
+        {
+            eprintln!("Warning: Failed to hide scratchpad: {e}");
         }
 
         Ok(response)

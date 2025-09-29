@@ -209,11 +209,11 @@ fn find_window_visibility(tree: &Value, window_class: &str) -> Result<bool> {
 /// Recursive helper to find window and check visibility
 fn find_window_recursive(node: &Value, window_class: &str) -> Option<bool> {
     // Check if this node matches our window class
-    if let Some(app_id) = get_window_app_id(node) {
-        if app_id == window_class {
-            // Return the visible field
-            return node.get("visible").and_then(|v| v.as_bool());
-        }
+    if let Some(app_id) = get_window_app_id(node)
+        && app_id == window_class
+    {
+        // Return the visible field
+        return node.get("visible").and_then(|v| v.as_bool());
     }
 
     // Search in nodes

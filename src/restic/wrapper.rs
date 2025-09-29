@@ -165,11 +165,11 @@ impl ResticWrapper {
     ) -> Result<String, ResticError> {
         let mut args: Vec<String> = vec!["snapshots".to_string(), "--json".to_string()];
 
-        if let Some(tags) = tags {
-            if !tags.is_empty() {
-                args.push("--tag".to_string());
-                args.push(tags.join(","));
-            }
+        if let Some(tags) = tags
+            && !tags.is_empty()
+        {
+            args.push("--tag".to_string());
+            args.push(tags.join(","));
         }
 
         let mut cmd = self.base_command();
@@ -234,11 +234,11 @@ impl ResticWrapper {
             }
         }
 
-        if let Some(group_by) = group_by {
-            if !group_by.is_empty() {
-                args.push("--group-by".to_string());
-                args.push(group_by.join(","));
-            }
+        if let Some(group_by) = group_by
+            && !group_by.is_empty()
+        {
+            args.push("--group-by".to_string());
+            args.push(group_by.join(","));
         }
 
         for (flag, value) in retention_rules {
@@ -268,11 +268,11 @@ impl ResticWrapper {
         let mut args = vec!["restore".to_string()];
 
         let mut snapshot_spec = snapshot_id.to_string();
-        if let Some(path) = subpath {
-            if !path.is_empty() {
-                snapshot_spec.push(':');
-                snapshot_spec.push_str(path);
-            }
+        if let Some(path) = subpath
+            && !path.is_empty()
+        {
+            snapshot_spec.push(':');
+            snapshot_spec.push_str(path);
         }
 
         args.push(snapshot_spec);

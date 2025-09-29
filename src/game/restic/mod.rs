@@ -78,15 +78,15 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
 
     // Check if save directory is empty
     let mut is_empty = true;
-    if let Ok(mut entries) = std::fs::read_dir(save_path) {
-        if let Some(entry) = entries.next() {
-            // Only consider non-hidden files/directories
-            if let Ok(entry) = entry {
-                let file_name = entry.file_name();
-                let file_name_str = file_name.to_string_lossy();
-                if !file_name_str.starts_with('.') {
-                    is_empty = false;
-                }
+    if let Ok(mut entries) = std::fs::read_dir(save_path)
+        && let Some(entry) = entries.next()
+    {
+        // Only consider non-hidden files/directories
+        if let Ok(entry) = entry {
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+            if !file_name_str.starts_with('.') {
+                is_empty = false;
             }
         }
     }
@@ -217,21 +217,20 @@ pub fn restore_game_saves(
     };
 
     // Step 4: Check if restore should be skipped due to matching checkpoint
-    if !force {
-        if let Some(ref nearest_checkpoint) = game_selection.installation.nearest_checkpoint {
-            if nearest_checkpoint == &snapshot_id {
-                info(
-                    "game.restore.skipped",
-                    &format!(
-                        "{} Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-                        char::from(Fa::StepForward),
-                        game_selection.game_name,
-                        snapshot_id
-                    ),
-                );
-                return Ok(());
-            }
-        }
+    if !force
+        && let Some(ref nearest_checkpoint) = game_selection.installation.nearest_checkpoint
+        && nearest_checkpoint == &snapshot_id
+    {
+        info(
+            "game.restore.skipped",
+            &format!(
+                "{} Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
+                char::from(Fa::StepForward),
+                game_selection.game_name,
+                snapshot_id
+            ),
+        );
+        return Ok(());
     }
 
     // Step 5: Get snapshot details for security checks
@@ -259,20 +258,20 @@ pub fn restore_game_saves(
         };
 
     // Step 6: Perform security check for snapshot vs local saves
-    if let Some(ref save_info) = security_result.save_info {
-        if !security::check_snapshot_vs_local_saves(
+    if let Some(ref save_info) = security_result.save_info
+        && !security::check_snapshot_vs_local_saves(
             &snapshot,
             save_info,
             &game_selection.game_name,
             force,
-        )? {
-            // User cancelled due to security warning
-            warn(
-                "game.restore.cancelled.security",
-                "Restore cancelled due to security warning.",
-            );
-            return Ok(());
-        }
+        )?
+    {
+        // User cancelled due to security warning
+        warn(
+            "game.restore.cancelled.security",
+            "Restore cancelled due to security warning.",
+        );
+        return Ok(());
     }
 
     // Step 7: Show enhanced restore confirmation with security information

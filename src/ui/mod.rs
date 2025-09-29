@@ -116,7 +116,7 @@ fn strip_ansi(input: &str) -> String {
                 // Skip until we hit a letter in @ A-Z [ \ ] ^ _ ` a-z
                 while i < bytes.len() {
                     let b = bytes[i];
-                    if (b >= b'@' && b <= b'~') {
+                    if (b'@'..=b'~').contains(&b) {
                         i += 1; // consume the final byte of the CSI sequence
                         break;
                     }
@@ -229,8 +229,7 @@ pub fn separator(light: bool) {
 
 pub mod prelude {
     pub use super::{
-        Fa, Level, Oct, OutputFormat, SEPARATOR_HEAVY, SEPARATOR_LIGHT, data, debug,
-        debug_with_data, emit, error, error_with_data, get_output_format, info, info_with_data,
-        separator, success, success_with_data, warn, warn_with_data,
+        Fa, Level, Oct, OutputFormat, data, emit, error, get_output_format, info, info_with_data,
+        separator, success, warn,
     };
 }

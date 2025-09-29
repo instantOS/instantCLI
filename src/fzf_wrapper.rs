@@ -343,10 +343,10 @@ impl FzfBuilder {
         let output = child.wait_with_output()?;
         crate::menu::server::unregister_fzf_process(pid);
 
-        if let Some(code) = output.status.code() {
-            if code == 130 || code == 143 {
-                return Ok(String::new());
-            }
+        if let Some(code) = output.status.code()
+            && (code == 130 || code == 143)
+        {
+            return Ok(String::new());
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -458,10 +458,10 @@ impl FzfBuilder {
         let output = child.wait_with_output()?;
         crate::menu::server::unregister_fzf_process(pid);
 
-        if let Some(code) = output.status.code() {
-            if code == 130 || code == 143 {
-                return Ok(());
-            }
+        if let Some(code) = output.status.code()
+            && (code == 130 || code == 143)
+        {
+            return Ok(());
         }
 
         Ok(())
@@ -592,10 +592,10 @@ impl FzfWrapper {
 
         match output {
             Ok(result) => {
-                if let Some(code) = result.status.code() {
-                    if code == 130 || code == 143 {
-                        return Ok(FzfResult::Cancelled);
-                    }
+                if let Some(code) = result.status.code()
+                    && (code == 130 || code == 143)
+                {
+                    return Ok(FzfResult::Cancelled);
                 }
 
                 let stdout = String::from_utf8_lossy(&result.stdout);

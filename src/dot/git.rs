@@ -613,40 +613,40 @@ fn show_all_diffs(
     }
 
     // Show modified files
-    if let Some(modified_files) = files_by_status.get(&DotFileStatus::Modified) {
-        if !modified_files.is_empty() {
-            println!("{}", "Modified files:".yellow().bold());
-            for (target_path, dotfile, repo_name, dotfile_dir) in modified_files {
-                let home = dirs::home_dir().context("Failed to get home directory")?;
-                let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
-                let tilde_path = format!("~/{}", relative_path.display());
-                println!(
-                    "  {} ({})",
-                    tilde_path,
-                    format!("{repo_name}: {dotfile_dir}").dimmed()
-                );
-                show_dotfile_diff(dotfile, repo_name, dotfile_dir)?;
-                println!();
-            }
+    if let Some(modified_files) = files_by_status.get(&DotFileStatus::Modified)
+        && !modified_files.is_empty()
+    {
+        println!("{}", "Modified files:".yellow().bold());
+        for (target_path, dotfile, repo_name, dotfile_dir) in modified_files {
+            let home = dirs::home_dir().context("Failed to get home directory")?;
+            let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
+            let tilde_path = format!("~/{}", relative_path.display());
+            println!(
+                "  {} ({})",
+                tilde_path,
+                format!("{repo_name}: {dotfile_dir}").dimmed()
+            );
+            show_dotfile_diff(dotfile, repo_name, dotfile_dir)?;
+            println!();
         }
     }
 
     // Show outdated files
-    if let Some(outdated_files) = files_by_status.get(&DotFileStatus::Outdated) {
-        if !outdated_files.is_empty() {
-            println!("{}", "Outdated files:".blue().bold());
-            for (target_path, dotfile, repo_name, dotfile_dir) in outdated_files {
-                let home = dirs::home_dir().context("Failed to get home directory")?;
-                let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
-                let tilde_path = format!("~/{}", relative_path.display());
-                println!(
-                    "  {} ({})",
-                    tilde_path,
-                    format!("{repo_name}: {dotfile_dir}").dimmed()
-                );
-                show_dotfile_diff(dotfile, repo_name, dotfile_dir)?;
-                println!();
-            }
+    if let Some(outdated_files) = files_by_status.get(&DotFileStatus::Outdated)
+        && !outdated_files.is_empty()
+    {
+        println!("{}", "Outdated files:".blue().bold());
+        for (target_path, dotfile, repo_name, dotfile_dir) in outdated_files {
+            let home = dirs::home_dir().context("Failed to get home directory")?;
+            let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
+            let tilde_path = format!("~/{}", relative_path.display());
+            println!(
+                "  {} ({})",
+                tilde_path,
+                format!("{repo_name}: {dotfile_dir}").dimmed()
+            );
+            show_dotfile_diff(dotfile, repo_name, dotfile_dir)?;
+            println!();
         }
     }
 

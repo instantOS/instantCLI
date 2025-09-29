@@ -49,14 +49,14 @@ impl LaunchCache {
     /// Get launch items - extremely fast path for menu display
     pub async fn get_launch_items(&mut self) -> Result<Vec<LaunchItem>> {
         // Always use frecency-sorted cache if available (even if stale)
-        if let Ok(sorted_items) = self.read_frecency_sorted_cache() {
-            if !sorted_items.is_empty() {
-                // Background refresh if any underlying data is stale
-                if !self.is_launch_cache_fresh()? || !self.is_frecency_sorted_cache_fresh()? {
-                    self.trigger_background_refresh_and_resort();
-                }
-                return Ok(sorted_items);
+        if let Ok(sorted_items) = self.read_frecency_sorted_cache()
+            && !sorted_items.is_empty()
+        {
+            // Background refresh if any underlying data is stale
+            if !self.is_launch_cache_fresh()? || !self.is_frecency_sorted_cache_fresh()? {
+                self.trigger_background_refresh_and_resort();
             }
+            return Ok(sorted_items);
         }
 
         // No frecency-sorted cache exists, build from regular cache
@@ -135,12 +135,11 @@ impl LaunchCache {
             }
 
             let path = Path::new(path_dir);
-            if let Ok(metadata) = fs::metadata(path) {
-                if let Ok(dir_mtime) = metadata.modified() {
-                    if dir_mtime > cache_mtime {
-                        return Ok(false); // Directory is newer than cache
-                    }
-                }
+            if let Ok(metadata) = fs::metadata(path)
+                && let Ok(dir_mtime) = metadata.modified()
+                && dir_mtime > cache_mtime
+            {
+                return Ok(false); // Directory is newer than cache
             }
         }
 
@@ -184,25 +183,25 @@ impl LaunchCache {
             let path = Path::new(path_dir);
             if let Ok(entries) = fs::read_dir(path) {
                 for entry in entries.flatten() {
-                    if let Ok(metadata) = entry.metadata() {
-                        if metadata.is_file() {
-                            // Check if file is executable
-                            #[cfg(unix)]
+                    if let Ok(metadata) = entry.metadata()
+                        && metadata.is_file()
+                    {
+                        // Check if file is executable
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let permissions = metadata.permissions();
+                            if permissions.mode() & 0o111 != 0
+                                && let Some(name) = entry.file_name().to_str()
                             {
-                                use std::os::unix::fs::PermissionsExt;
-                                let permissions = metadata.permissions();
-                                if permissions.mode() & 0o111 != 0 {
-                                    if let Some(name) = entry.file_name().to_str() {
-                                        executables.insert(name.to_string());
-                                    }
-                                }
+                                executables.insert(name.to_string());
                             }
+                        }
 
-                            #[cfg(not(unix))]
-                            {
-                                if let Some(name) = entry.file_name().to_str() {
-                                    executables.insert(name.to_string());
-                                }
+                        #[cfg(not(unix))]
+                        {
+                            if let Some(name) = entry.file_name().to_str() {
+                                executables.insert(name.to_string());
                             }
                         }
                     }
@@ -230,25 +229,25 @@ impl LaunchCache {
             let path = Path::new(path_dir);
             if let Ok(entries) = fs::read_dir(path) {
                 for entry in entries.flatten() {
-                    if let Ok(metadata) = entry.metadata() {
-                        if metadata.is_file() {
-                            // Check if file is executable
-                            #[cfg(unix)]
+                    if let Ok(metadata) = entry.metadata()
+                        && metadata.is_file()
+                    {
+                        // Check if file is executable
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let permissions = metadata.permissions();
+                            if permissions.mode() & 0o111 != 0
+                                && let Some(name) = entry.file_name().to_str()
                             {
-                                use std::os::unix::fs::PermissionsExt;
-                                let permissions = metadata.permissions();
-                                if permissions.mode() & 0o111 != 0 {
-                                    if let Some(name) = entry.file_name().to_str() {
-                                        executables.insert(name.to_string());
-                                    }
-                                }
+                                executables.insert(name.to_string());
                             }
+                        }
 
-                            #[cfg(not(unix))]
-                            {
-                                if let Some(name) = entry.file_name().to_str() {
-                                    executables.insert(name.to_string());
-                                }
+                        #[cfg(not(unix))]
+                        {
+                            if let Some(name) = entry.file_name().to_str() {
+                                executables.insert(name.to_string());
                             }
                         }
                     }
@@ -417,12 +416,11 @@ impl LaunchCache {
             }
 
             let path = Path::new(path_dir);
-            if let Ok(metadata) = fs::metadata(path) {
-                if let Ok(dir_mtime) = metadata.modified() {
-                    if dir_mtime > cache_mtime {
-                        return Ok(false); // Directory is newer than cache
-                    }
-                }
+            if let Ok(metadata) = fs::metadata(path)
+                && let Ok(dir_mtime) = metadata.modified()
+                && dir_mtime > cache_mtime
+            {
+                return Ok(false); // Directory is newer than cache
             }
         }
 
@@ -430,14 +428,12 @@ impl LaunchCache {
         let data_dirs = Self::get_xdg_data_dirs();
         for data_dir in data_dirs {
             let apps_dir = data_dir.join("applications");
-            if apps_dir.exists() {
-                if let Ok(metadata) = fs::metadata(&apps_dir) {
-                    if let Ok(dir_mtime) = metadata.modified() {
-                        if dir_mtime > cache_mtime {
-                            return Ok(false); // Apps directory is newer than cache
-                        }
-                    }
-                }
+            if apps_dir.exists()
+                && let Ok(metadata) = fs::metadata(&apps_dir)
+                && let Ok(dir_mtime) = metadata.modified()
+                && dir_mtime > cache_mtime
+            {
+                return Ok(false); // Apps directory is newer than cache
             }
         }
 
@@ -572,12 +568,12 @@ impl LaunchCache {
         if let Ok(entries) = fs::read_dir(apps_dir) {
             for entry in entries.filter_map(Result::ok) {
                 let path = entry.path();
-                if path.extension().and_then(|s| s.to_str()) == Some("desktop") {
-                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                        // Skip obvious test/debug files by filename
-                        if !file_name.contains("test") && !file_name.contains("debug") {
-                            names.push(LaunchItem::DesktopApp(file_name.to_string()));
-                        }
+                if path.extension().and_then(|s| s.to_str()) == Some("desktop")
+                    && let Some(file_name) = path.file_name().and_then(|n| n.to_str())
+                {
+                    // Skip obvious test/debug files by filename
+                    if !file_name.contains("test") && !file_name.contains("debug") {
+                        names.push(LaunchItem::DesktopApp(file_name.to_string()));
                     }
                 }
             }
@@ -597,25 +593,25 @@ impl LaunchCache {
             let path = Path::new(path_dir);
             if let Ok(entries) = fs::read_dir(path) {
                 for entry in entries.flatten() {
-                    if let Ok(metadata) = entry.metadata() {
-                        if metadata.is_file() {
-                            // Check if file is executable
-                            #[cfg(unix)]
+                    if let Ok(metadata) = entry.metadata()
+                        && metadata.is_file()
+                    {
+                        // Check if file is executable
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let permissions = metadata.permissions();
+                            if permissions.mode() & 0o111 != 0
+                                && let Some(name) = entry.file_name().to_str()
                             {
-                                use std::os::unix::fs::PermissionsExt;
-                                let permissions = metadata.permissions();
-                                if permissions.mode() & 0o111 != 0 {
-                                    if let Some(name) = entry.file_name().to_str() {
-                                        executables.insert(name.to_string());
-                                    }
-                                }
+                                executables.insert(name.to_string());
                             }
+                        }
 
-                            #[cfg(not(unix))]
-                            {
-                                if let Some(name) = entry.file_name().to_str() {
-                                    executables.insert(name.to_string());
-                                }
+                        #[cfg(not(unix))]
+                        {
+                            if let Some(name) = entry.file_name().to_str() {
+                                executables.insert(name.to_string());
                             }
                         }
                     }

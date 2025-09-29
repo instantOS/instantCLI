@@ -196,20 +196,18 @@ fn setup_single_game(
         let should_restore =
             path_exists_after && (directory_created || save_dir_info.file_count == 0);
 
-        if should_restore {
-            if let Some(snapshot_id) = latest_snapshot_id.as_deref() {
-                info(
-                    "game.setup.restore_latest",
-                    &format!(
-                        "{} Restoring latest backup ({snapshot_id}) into {path_str}...",
-                        char::from(Fa::Download)
-                    ),
-                );
-                let restore_summary =
-                    restore_latest_backup(game_name, &save_path, snapshot_id, game_config)?;
-                success("game.setup.restore_done", &restore_summary);
-                installation.update_checkpoint(snapshot_id.to_string());
-            }
+        if should_restore && let Some(snapshot_id) = latest_snapshot_id.as_deref() {
+            info(
+                "game.setup.restore_latest",
+                &format!(
+                    "{} Restoring latest backup ({snapshot_id}) into {path_str}...",
+                    char::from(Fa::Download)
+                ),
+            );
+            let restore_summary =
+                restore_latest_backup(game_name, &save_path, snapshot_id, game_config)?;
+            success("game.setup.restore_done", &restore_summary);
+            installation.update_checkpoint(snapshot_id.to_string());
         }
         installations.installations.push(installation);
         installations.save()?;

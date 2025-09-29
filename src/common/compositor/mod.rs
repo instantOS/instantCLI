@@ -69,10 +69,10 @@ impl CompositorType {
     /// Check if a process with the given name is running
     fn is_process_running(process_name: &str) -> bool {
         // Try pgrep first (most reliable)
-        if let Ok(output) = Command::new("pgrep").arg(process_name).output() {
-            if !output.stdout.is_empty() {
-                return true;
-            }
+        if let Ok(output) = Command::new("pgrep").arg(process_name).output()
+            && !output.stdout.is_empty()
+        {
+            return true;
         }
 
         // Try ps as fallback

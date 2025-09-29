@@ -63,10 +63,9 @@ pub fn update_checkpoint_after_backup(
 ) -> Result<()> {
     if let Some(snapshot_id) =
         extract_snapshot_id_from_backup_result(backup_result, game_name, game_config)?
+        && let Err(e) = update_installation_checkpoint(game_name, &snapshot_id)
     {
-        if let Err(e) = update_installation_checkpoint(game_name, &snapshot_id) {
-            eprintln!("Warning: Could not update checkpoint: {e}");
-        }
+        eprintln!("Warning: Could not update checkpoint: {e}");
     }
     Ok(())
 }

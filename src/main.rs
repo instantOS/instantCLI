@@ -14,7 +14,7 @@ mod restic;
 mod scratchpad;
 mod ui;
 
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum, ValueHint};
+use clap::{CommandFactory, Parser, Subcommand, ValueHint};
 
 /// Helper function to format and print errors consistently
 fn handle_error(context: &str, error: &anyhow::Error) -> String {
