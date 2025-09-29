@@ -137,39 +137,74 @@ impl ResticCommandLogger {
     }
 
     pub fn print_recent_logs(&self, limit: Option<usize>) -> Result<()> {
+        use crate::ui::prelude::*;
+
         let logs = self.get_logs()?;
         let limit = limit.unwrap_or(10);
         let recent_logs = logs.iter().take(limit);
 
-        println!("📋 Recent Restic Command Logs:");
-        println!("{}", "═".repeat(80));
+        info("restic.logs.list.start", "Recent Restic Command Logs:");
+        separator(false);
 
         for (i, log) in recent_logs.enumerate() {
-            println!("Log Entry #{}", i + 1);
-            println!(
-                "  🕒 Time: {}",
-                log.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
-            );
-            println!("  📝 Command: {} {}", log.command, log.args.join(" "));
-            println!("  📁 Repository: {}", log.repository);
-            println!("  ✅ Success: {}", if log.success { "Yes" } else { "No" });
+            let time_str = log.timestamp.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+            let mut text_block = String::new();
+            text_block.push_str(&format!("Log Entry #{}\n", i + 1));
+            text_block.push_str(&format!("  {} Time: {}\n", Icons::CLOCK, time_str));
+            text_block.push_str(&format!(
+                "   Command: {} {}\n",
+                log.command,
+                log.args.join(" ")
+            ));
+            text_block.push_str(&format!(
+                "  {} Repository: {}\n",
+                Icons::FOLDER,
+                log.repository
+            ));
+            text_block.push_str(&format!(
+                "  {} Success: {}\n",
+                if log.success {
+                    Icons::CHECK
+                } else {
+                    Icons::ERROR
+                },
+                if log.success { "Yes" } else { "No" }
+            ));
             if let Some(code) = log.exit_code {
-                println!("  🏁 Exit Code: {code}");
+                text_block.push_str(&format!("   Exit Code: {}\n", code));
             }
-
             if !log.stdout.trim().is_empty() {
-                println!("  📤 STDOUT:\n{}", Self::indent_text(&log.stdout, 4));
+                text_block.push_str(&format!(
+                    "  {} STDOUT:\n{}\n",
+                    Icons::UPLOAD,
+                    Self::indent_text(&log.stdout, 4)
+                ));
             }
-
             if !log.stderr.trim().is_empty() {
-                println!("  📥 STDERR:\n{}", Self::indent_text(&log.stderr, 4));
+                text_block.push_str(&format!(
+                    "  {} STDERR:\n{}\n",
+                    Icons::DOWNLOAD,
+                    Self::indent_text(&log.stderr, 4)
+                ));
             }
 
-            println!("{}", "═".repeat(80));
+            let data = serde_json::json!({
+                "index": i + 1,
+                "timestamp": time_str,
+                "command": log.command,
+                "args": log.args,
+                "repository": log.repository,
+                "success": log.success,
+                "exit_code": log.exit_code,
+                "stdout": log.stdout,
+                "stderr": log.stderr,
+            });
+            emit(Level::Info, "restic.logs.entry", &text_block, Some(data));
+            separator(false);
         }
 
         if logs.is_empty() {
-            println!("No restic command logs found.");
+            info("restic.logs.empty", "No restic command logs found.");
         }
 
         Ok(())

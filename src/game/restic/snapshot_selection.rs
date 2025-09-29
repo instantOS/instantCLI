@@ -6,6 +6,7 @@ use crate::game::utils::save_files::{
     get_save_directory_info,
 };
 use crate::restic::wrapper::Snapshot;
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 
 impl FzfSelectable for Snapshot {
@@ -96,7 +97,7 @@ fn create_preview_statistics(summary: &crate::restic::wrapper::SnapshotSummary) 
     let mut stats = String::new();
     let total_files = summary.files_new + summary.files_changed + summary.files_unmodified;
 
-    stats.push_str("📊 BACKUP STATISTICS\n\n");
+    stats.push_str(" BACKUP STATISTICS\n\n");
     stats.push_str(&format!(
         "Total Files:      {}\n",
         format_number(total_files)
@@ -152,7 +153,7 @@ fn create_preview_local_comparison(
 ) -> String {
     let mut comparison = String::new();
 
-    comparison.push_str("💾 LOCAL SAVE COMPARISON\n\n");
+    comparison.push_str(" LOCAL SAVE COMPARISON\n\n");
 
     if let Some(local_info) = local_save_info {
         if local_info.file_count > 0 {
@@ -169,42 +170,40 @@ fn create_preview_local_comparison(
                 // Add comparison result with clear status indication
                 match compare_snapshot_vs_local(snapshot_time, local_time) {
                     Ok(TimeComparison::LocalNewer) => {
-                        comparison.push_str("\n🔴 STATUS: LOCAL SAVES ARE NEWER\n");
-                        comparison
-                            .push_str("    ⚠️  Restoring would overwrite newer local saves\n");
+                        comparison.push_str("\n STATUS: LOCAL SAVES ARE NEWER\n");
+                        comparison.push_str("     Restoring would overwrite newer local saves\n");
                     }
                     Ok(TimeComparison::SnapshotNewer) => {
-                        comparison.push_str("\n🟢 STATUS: SNAPSHOT IS NEWER\n");
-                        comparison
-                            .push_str("    ✅ Safe to restore (backup contains newer data)\n");
+                        comparison.push_str("\n STATUS: SNAPSHOT IS NEWER\n");
+                        comparison.push_str("     Safe to restore (backup contains newer data)\n");
                     }
                     Ok(TimeComparison::Same) => {
-                        comparison.push_str("\n🟡 STATUS: TIMESTAMPS MATCH\n");
-                        comparison.push_str("    📊 Local saves match backup timestamp\n");
+                        comparison.push_str("\n STATUS: TIMESTAMPS MATCH\n");
+                        comparison.push_str("     Local saves match backup timestamp\n");
                     }
                     Ok(TimeComparison::Error(msg)) => {
-                        comparison.push_str("\n🔴 STATUS: COMPARISON ERROR\n");
+                        comparison.push_str("\n STATUS: COMPARISON ERROR\n");
                         comparison.push_str(&format!("    Error: {}\n", truncate_string(&msg, 60)));
                     }
                     Err(_) => {
-                        comparison.push_str("\n🔴 STATUS: COMPARISON FAILED\n");
+                        comparison.push_str("\n STATUS: COMPARISON FAILED\n");
                         comparison.push_str("    Unable to compare timestamps\n");
                     }
                 }
             } else {
                 comparison.push_str("Last Modified:    Unknown\n");
-                comparison.push_str("\n🔴 STATUS: MODIFICATION TIME UNKNOWN\n");
+                comparison.push_str("\n STATUS: MODIFICATION TIME UNKNOWN\n");
                 comparison.push_str("    Cannot determine if local saves are newer\n");
             }
         } else {
             comparison
-                .push_str("│  📁 Local Files:      None found                              │\n");
+                .push_str("│   Local Files:      None found                              │\n");
             comparison
                 .push_str("│                                                                │\n");
             comparison
-                .push_str("│  � STATUS: NO LOCAL SAVES                                     │\n");
+                .push_str("│   STATUS: NO LOCAL SAVES                                     │\n");
             comparison
-                .push_str("│      ✅ Safe to restore (no files to overwrite)              │\n");
+                .push_str("│       Safe to restore (no files to overwrite)              │\n");
         }
     } else {
         comparison.push_str("Local Files:      Information unavailable\n");
@@ -220,7 +219,7 @@ fn create_preview_local_comparison(
 fn create_preview_metadata(snapshot: &Snapshot) -> String {
     let mut metadata = String::new();
 
-    metadata.push_str("🏷️  SNAPSHOT METADATA\n\n");
+    metadata.push_str("  SNAPSHOT METADATA\n\n");
 
     // Tags
     if !snapshot.tags.is_empty() {
@@ -275,7 +274,7 @@ fn create_snapshot_preview(snapshot: &Snapshot, game_name: &str) -> String {
     if let Some(summary) = &snapshot.summary {
         preview.push_str(&create_preview_statistics(summary));
     } else {
-        preview.push_str("📊 No detailed statistics available\n");
+        preview.push_str(" No detailed statistics available\n");
     }
 
     // Metadata
@@ -396,8 +395,12 @@ pub fn select_snapshot_interactive_with_local_comparison(
         .context("Failed to get snapshots for game")?;
 
     if snapshots.is_empty() {
-        println!(
-            "❌ No snapshots found for game '{game_name}'.\n\nMake sure backups have been created for this game."
+        warn(
+            "game.snapshots.none",
+            &format!(
+                "{} No snapshots found for game '{game_name}'.\n\nMake sure backups have been created for this game.",
+                Icons::WARN
+            ),
         );
         return Ok(None);
     }
@@ -426,7 +429,7 @@ pub fn select_snapshot_interactive_with_local_comparison(
     match selected {
         Some(enhanced) => Ok(Some(enhanced.snapshot.id)),
         None => {
-            println!("No snapshot selected.");
+            info("game.snapshots.cancelled", "No snapshot selected.");
             Ok(None)
         }
     }
@@ -450,11 +453,11 @@ impl FzfSelectable for EnhancedSnapshot {
             if local_info.file_count > 0 {
                 if let Some(local_time) = local_info.last_modified {
                     match compare_snapshot_vs_local(&self.snapshot.time, local_time) {
-                        Ok(TimeComparison::LocalNewer) => " ⚠️LOCAL NEWER",
-                        Ok(TimeComparison::SnapshotNewer) => " ✓SNAPSHOT NEWER",
+                        Ok(TimeComparison::LocalNewer) => " LOCAL NEWER",
+                        Ok(TimeComparison::SnapshotNewer) => " SNAPSHOT NEWER",
                         Ok(TimeComparison::Same) => " =SAME TIME",
-                        Ok(TimeComparison::Error(_)) => " ⚠️COMPARE ERROR",
-                        Err(_) => " ⚠️COMPARE ERROR",
+                        Ok(TimeComparison::Error(_)) => " COMPARE ERROR",
+                        Err(_) => " COMPARE ERROR",
                     }
                 } else {
                     " ⚠️NO LOCAL TIME"

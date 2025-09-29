@@ -2,6 +2,7 @@ use crate::common::git;
 use crate::common::progress::create_spinner;
 use crate::dev::fuzzy::select_package;
 use crate::dev::package::Package;
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use duct::cmd;
 use git2::Repository;
@@ -63,8 +64,14 @@ impl PackageRepo {
     }
 
     fn handle_local_changes(&self) -> Result<()> {
-        eprintln!("⚠️  Local changes detected in package repository");
-        eprintln!("💾 Stashing local changes...");
+        warn(
+            "dev.install.local_changes",
+            &format!(
+                "{} Local changes detected in package repository",
+                Icons::WARN
+            ),
+        );
+        info("dev.install.stash", "Stashing local changes...");
 
         let mut repo =
             Repository::open(&self.path).context("Failed to open repository for stashing")?;
@@ -81,12 +88,19 @@ impl PackageRepo {
 
 pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
     if debug {
-        eprintln!("🔍 Building package: {}", package.name);
+        crate::ui::debug(
+            "dev.install.build.start",
+            &format!("{} Building package: {}", Icons::SEARCH, package.name),
+        );
     }
 
-    eprintln!(
-        "📦 Building and installing {}... (This may be interactive)",
-        package.name
+    info(
+        "dev.install.build.install",
+        &format!(
+            "{} Building and installing {}... (This may be interactive)",
+            Icons::PACKAGE,
+            package.name
+        ),
     );
 
     // Build and install package (interactive - no spinner)
@@ -95,14 +109,20 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
         .run()
         .context("Failed to build and install package")?;
 
-    eprintln!("✅ Successfully installed {}", package.name);
+    success(
+        "dev.install.success",
+        &format!("{} Successfully installed {}", Icons::CHECK, package.name),
+    );
 
     Ok(())
 }
 
 pub async fn handle_install(debug: bool) -> Result<()> {
     if debug {
-        eprintln!("🔍 Starting package installation...");
+        crate::ui::debug(
+            "dev.install.start",
+            &format!("{} Starting package installation...", Icons::SEARCH),
+        );
     }
 
     let pb = create_spinner("Preparing package repository...".to_string());
@@ -114,7 +134,10 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     pb.finish_with_message("Package repository ready".to_string());
 
     if debug {
-        eprintln!("📦 Discovering packages...");
+        crate::ui::debug(
+            "dev.install.discover",
+            &format!("{} Discovering packages...", Icons::PACKAGE),
+        );
     }
 
     // Discover available packages
@@ -125,9 +148,15 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     }
 
     if debug {
-        eprintln!("📋 Found {} packages:", packages.len());
+        crate::ui::debug(
+            "dev.install.packages.count",
+            &format!("Found {} packages", packages.len()),
+        );
         for pkg in &packages {
-            eprintln!("  - {} ({:?})", pkg.name, pkg.description);
+            crate::ui::debug(
+                "dev.install.packages.item",
+                &format!("  - {} ({:?})", pkg.name, pkg.description),
+            );
         }
     }
 
@@ -135,7 +164,10 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     let selected_package = select_package(packages).context("Failed to select package")?;
 
     if debug {
-        eprintln!("🎯 Selected package: {}", selected_package.name);
+        crate::ui::debug(
+            "dev.install.selected",
+            &format!("Selected package: {}", selected_package.name),
+        );
     }
 
     // Build and install package

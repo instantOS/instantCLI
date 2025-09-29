@@ -2,8 +2,10 @@ use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,
 };
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use colored::*;
+use serde_json::json;
 
 /// Display list of all configured games
 pub fn list_games() -> Result<()> {
@@ -21,7 +23,11 @@ pub fn list_games() -> Result<()> {
 
     for game in &config.games {
         // Game name with status indicator
-        println!("  {} {}", "🎮".bright_blue(), game.name.0.cyan().bold());
+        println!(
+            "  {} {}",
+            Icons::INFO.bright_blue(),
+            game.name.0.cyan().bold()
+        );
 
         if let Some(desc) = &game.description {
             println!("    Description: {desc}");
@@ -54,9 +60,9 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
     let game = match config.games.iter().find(|g| g.name.0 == game_name) {
         Some(game) => game,
         None => {
-            eprintln!(
-                "Error: Game '{}' not found in configuration.",
-                game_name.red()
+            error(
+                "game.show.not_found",
+                &format!("Game '{}' not found in configuration.", game_name.red()),
             );
             return Ok(());
         }
@@ -68,67 +74,103 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
         .iter()
         .find(|inst| inst.game_name.0 == game_name);
 
-    // Display header
-    println!("{}", "Game Information".bold().underline());
-    println!();
-
-    // Game name with emoji
-    println!("🎮 {}", game.name.0.cyan().bold());
-    println!();
-
-    // Description if available
-    if let Some(desc) = &game.description {
-        println!("📝 {desc}");
-        println!();
-    }
-
-    // Configuration section
-    println!("{}", "Configuration:".bold());
-
+    // Build structured data and a pleasant text summary, then emit via UI
+    let mut launch_command = None::<String>;
     if let Some(cmd) = &game.launch_command {
-        println!("  🚀 Launch Command: {}", cmd.blue());
+        launch_command = Some(cmd.clone());
     }
-    println!();
 
-    // Show actual installation path if available
+    let mut install_data = None::<serde_json::Value>;
+    let mut install_text = String::new();
     if let Some(install) = installation {
-        println!("{}", "Installation:".bold());
         let path_display = install
             .save_path
             .to_tilde_string()
             .unwrap_or_else(|_| install.save_path.as_path().to_string_lossy().to_string());
-        println!("  📁 Save Path: {}", path_display.green());
 
-        // Get save directory information
-        match get_save_directory_info(install.save_path.as_path()) {
+        // Try to read local saves info
+        let save_info_result = get_save_directory_info(install.save_path.as_path());
+        match save_info_result {
             Ok(save_info) => {
+                install_data = Some(json!({
+                    "save_path": path_display,
+                    "local_saves": {
+                        "last_modified": format_system_time_for_display(save_info.last_modified),
+                        "file_count": save_info.file_count,
+                        "total_size": format_file_size(save_info.total_size)
+                    }
+                }));
+
                 if save_info.file_count > 0 {
-                    println!("  💾 Local Saves:");
-                    println!(
-                        "     • Last modified: {}",
-                        format_system_time_for_display(save_info.last_modified)
-                    );
-                    println!("     • Files: {}", save_info.file_count);
-                    println!(
-                        "     • Total size: {}",
+                    install_text.push_str(&format!(
+                        "Installation:\n  {} Save Path: {}\n   Local Saves:\n     • Last modified: {}\n     • Files: {}\n     • Total size: {}\n",
+                        Icons::FOLDER,
+                        path_display.green(),
+                        format_system_time_for_display(save_info.last_modified),
+                        save_info.file_count,
                         format_file_size(save_info.total_size)
-                    );
+                    ));
                 } else {
-                    println!("  💾 Local Saves: No save files found");
+                    install_text.push_str(&format!(
+                        "Installation:\n  {} Save Path: {}\n   Local Saves: No save files found\n",
+                        Icons::FOLDER,
+                        path_display.green()
+                    ));
                 }
             }
             Err(e) => {
-                println!(
-                    "  💾 Local Saves: Unable to analyze save directory ({})",
+                install_data = Some(json!({
+                    "save_path": path_display,
+                    "local_saves_error": e.to_string()
+                }));
+                install_text.push_str(&format!(
+                    "Installation:\n  {} Save Path: {}\n   Local Saves: Unable to analyze save directory ({})\n",
+                    Icons::FOLDER,
+                    path_display.green(),
                     e.to_string().to_lowercase()
-                );
+                ));
             }
         }
-        println!();
     } else {
-        println!("⚠️  No installation data found for this game.");
-        println!();
+        install_text.push_str(&format!(
+            "{}  No installation data found for this game.\n",
+            Icons::WARN
+        ));
     }
+
+    // Build the top text block
+    let mut text_block = String::new();
+    text_block.push_str(&format!("{}\n\n", "Game Information".bold().underline()));
+    text_block.push_str(&format!(
+        "{} {}\n\n",
+        Icons::INFO,
+        game.name.0.cyan().bold()
+    ));
+    if let Some(desc) = &game.description {
+        text_block.push_str(&format!(" {}\n\n", desc));
+    }
+    text_block.push_str(&format!("{}\n", "Configuration:".bold()));
+    if let Some(cmd) = &launch_command {
+        text_block.push_str(&format!("   Launch Command: {}\n\n", cmd.blue()));
+    } else {
+        text_block.push_str("\n");
+    }
+    text_block.push_str(&install_text);
+
+    // Emit combined event (text+data)
+    emit(
+        Level::Info,
+        "game.show.details",
+        &text_block,
+        Some(json!({
+            "game": {
+                "name": game.name.0,
+                "description": game.description,
+                "launch_command": launch_command
+            },
+            "installation": install_data
+        })),
+    );
 
     Ok(())
 }

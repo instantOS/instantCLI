@@ -1,3 +1,4 @@
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use colored::*;
 
@@ -47,10 +48,19 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
         {
             Some(installation) => vec![installation.clone()],
             None => {
-                eprintln!("❌ Error: No installation found for game '{name}'.");
-                eprintln!(
-                    "Please add the game first using '{} game add'.",
-                    env!("CARGO_BIN_NAME")
+                error(
+                    "game.sync.installation_missing",
+                    &format!(
+                        "{} Error: No installation found for game '{name}'.",
+                        Icons::ERROR
+                    ),
+                );
+                info(
+                    "game.sync.hint.add",
+                    &format!(
+                        "Please add the game first using '{} game add'.",
+                        env!("CARGO_BIN_NAME")
+                    ),
                 );
                 return Err(anyhow::anyhow!("game installation not found"));
             }
@@ -61,8 +71,14 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     };
 
     if games_to_sync.is_empty() {
-        eprintln!("❌ No games configured for syncing.");
-        eprintln!("Add games using '{} game add'.", env!("CARGO_BIN_NAME"));
+        warn(
+            "game.sync.none",
+            &format!("{} No games configured for syncing.", Icons::WARN),
+        );
+        info(
+            "game.sync.hint.add",
+            &format!("Add games using '{} game add'.", env!("CARGO_BIN_NAME")),
+        );
         return Ok(());
     }
 
@@ -74,110 +90,206 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     for installation in games_to_sync {
         match sync_single_game(&installation, &game_config, force) {
             Ok(SyncAction::NoActionNeeded) => {
-                println!("✅ {}: Already in sync", installation.game_name.0.green());
+                success(
+                    "game.sync.already_in_sync",
+                    &format!("{}: Already in sync", installation.game_name.0.green()),
+                );
                 total_skipped += 1;
             }
             Ok(SyncAction::RestoreSkipped(snapshot_id)) => {
-                println!(
-                    "⏭️  {}: Cloud checkpoint {} already matches your local saves (use --force to override)",
-                    installation.game_name.0.yellow(),
-                    snapshot_id
+                info(
+                    "game.sync.restore_skipped",
+                    &format!(
+                        "{} {}: Cloud checkpoint {} already matches your local saves (use --force to override)",
+                        Icons::SKIP,
+                        installation.game_name.0.yellow(),
+                        snapshot_id
+                    ),
                 );
                 total_skipped += 1;
             }
             Ok(SyncAction::CreateBackup) => {
-                println!(
-                    "📤 {}: Creating backup...",
-                    installation.game_name.0.yellow()
+                info(
+                    "game.sync.backup.start",
+                    &format!(
+                        "{} {}: Creating backup...",
+                        Icons::UPLOAD,
+                        installation.game_name.0.yellow()
+                    ),
                 );
                 if let Err(e) = create_backup_for_game(&installation, &game_config) {
-                    eprintln!(
-                        "❌ {}: Backup failed: {}",
-                        installation.game_name.0.red(),
-                        e
+                    error(
+                        "game.sync.backup.failed",
+                        &format!(
+                            "{} {}: Backup failed: {}",
+                            Icons::ERROR,
+                            installation.game_name.0.red(),
+                            e
+                        ),
                     );
                     total_errors += 1;
                 } else {
-                    println!("✅ {}: Backup completed", installation.game_name.0.green());
+                    success(
+                        "game.sync.backup.completed",
+                        &format!(
+                            "{} {}: Backup completed",
+                            Icons::CHECK,
+                            installation.game_name.0.green()
+                        ),
+                    );
                     total_synced += 1;
                 }
             }
             Ok(SyncAction::RestoreFromSnapshot(snapshot_id)) => {
-                println!(
-                    "📥 {}: Restoring from snapshot...",
-                    installation.game_name.0.yellow()
+                info(
+                    "game.sync.restore.start",
+                    &format!(
+                        "{} {}: Restoring from snapshot...",
+                        Icons::DOWNLOAD,
+                        installation.game_name.0.yellow()
+                    ),
                 );
                 if let Err(e) =
                     restore_game_from_snapshot(&installation, &game_config, &snapshot_id)
                 {
-                    eprintln!(
-                        "❌ {}: Restore failed: {}",
-                        installation.game_name.0.red(),
-                        e
+                    error(
+                        "game.sync.restore.failed",
+                        &format!(
+                            "{} {}: Restore failed: {}",
+                            Icons::ERROR,
+                            installation.game_name.0.red(),
+                            e
+                        ),
                     );
                     total_errors += 1;
                 } else {
-                    println!("✅ {}: Restore completed", installation.game_name.0.green());
+                    success(
+                        "game.sync.restore.completed",
+                        &format!(
+                            "{} {}: Restore completed",
+                            Icons::CHECK,
+                            installation.game_name.0.green()
+                        ),
+                    );
                     total_synced += 1;
                 }
             }
             Ok(SyncAction::RestoreFromLatest(snapshot_id)) => {
-                println!(
-                    "📥 {}: No local saves, restoring from latest snapshot...",
-                    installation.game_name.0.yellow()
+                info(
+                    "game.sync.restore.latest.start",
+                    &format!(
+                        "{} {}: No local saves, restoring from latest snapshot...",
+                        Icons::DOWNLOAD,
+                        installation.game_name.0.yellow()
+                    ),
                 );
                 if let Err(e) =
                     restore_game_from_snapshot(&installation, &game_config, &snapshot_id)
                 {
-                    eprintln!(
-                        "❌ {}: Restore failed: {}",
-                        installation.game_name.0.red(),
-                        e
+                    error(
+                        "game.sync.restore.latest.failed",
+                        &format!(
+                            "{} {}: Restore failed: {}",
+                            Icons::ERROR,
+                            installation.game_name.0.red(),
+                            e
+                        ),
                     );
                     total_errors += 1;
                 } else {
-                    println!("✅ {}: Restore completed", installation.game_name.0.green());
+                    success(
+                        "game.sync.restore.latest.completed",
+                        &format!(
+                            "{} {}: Restore completed",
+                            Icons::CHECK,
+                            installation.game_name.0.green()
+                        ),
+                    );
                     total_synced += 1;
                 }
             }
             Ok(SyncAction::CreateInitialBackup) => {
-                println!(
-                    "📤 {}: No snapshots found, creating initial backup...",
-                    installation.game_name.0.yellow()
+                info(
+                    "game.sync.initial_backup.start",
+                    &format!(
+                        "{} {}: No snapshots found, creating initial backup...",
+                        Icons::UPLOAD,
+                        installation.game_name.0.yellow()
+                    ),
                 );
                 if let Err(e) = create_backup_for_game(&installation, &game_config) {
-                    eprintln!(
-                        "❌ {}: Initial backup failed: {}",
-                        installation.game_name.0.red(),
-                        e
+                    error(
+                        "game.sync.initial_backup.failed",
+                        &format!(
+                            "{} {}: Initial backup failed: {}",
+                            Icons::ERROR,
+                            installation.game_name.0.red(),
+                            e
+                        ),
                     );
                     total_errors += 1;
                 } else {
-                    println!(
-                        "✅ {}: Initial backup completed",
-                        installation.game_name.0.green()
+                    success(
+                        "game.sync.initial_backup.completed",
+                        &format!(
+                            "{} {}: Initial backup completed",
+                            Icons::CHECK,
+                            installation.game_name.0.green()
+                        ),
                     );
                     total_synced += 1;
                 }
             }
             Ok(SyncAction::Error(msg)) => {
-                eprintln!("❌ {}: {}", installation.game_name.0.red(), msg);
+                error(
+                    "game.sync.error",
+                    &format!(
+                        "{} {}: {}",
+                        Icons::ERROR,
+                        installation.game_name.0.red(),
+                        msg
+                    ),
+                );
                 total_errors += 1;
             }
             Err(e) => {
-                eprintln!("❌ {}: Sync failed: {}", installation.game_name.0.red(), e);
+                error(
+                    "game.sync.failed",
+                    &format!(
+                        "{} {}: Sync failed: {}",
+                        Icons::ERROR,
+                        installation.game_name.0.red(),
+                        e
+                    ),
+                );
                 total_errors += 1;
             }
         }
     }
 
     // Print summary
-    println!("\n{}", "─".repeat(50));
-    println!("Sync Summary:");
-    println!("  ✅ Synced: {}", total_synced.to_string().green());
-    println!("  ⏭️  Skipped: {}", total_skipped.to_string().yellow());
-    println!("  ❌ Errors: {}", total_errors.to_string().red());
-    println!("{}", "─".repeat(50));
+    separator(true);
+    info("game.sync.summary.title", "Sync Summary:");
+    let summary_text = format!(
+        "  {} Synced: {}\n  {} Skipped: {}\n  {} Errors: {}",
+        Icons::CHECK,
+        total_synced.to_string().green(),
+        Icons::SKIP,
+        total_skipped.to_string().yellow(),
+        Icons::ERROR,
+        total_errors.to_string().red()
+    );
+    emit(
+        Level::Info,
+        "game.sync.summary",
+        &summary_text,
+        Some(serde_json::json!({
+            "synced": total_synced,
+            "skipped": total_skipped,
+            "errors": total_errors
+        })),
+    );
+    separator(true);
 
     if total_errors > 0 {
         return Err(anyhow::anyhow!(

@@ -1,5 +1,6 @@
 use crate::common::git;
 use crate::dev::github::GitHubRepo;
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use std::path::Path;
 
@@ -37,15 +38,22 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
 
     result.map_err(|e| CloneError::GitError(e.to_string()))?;
 
-    println!(
-        "✅ Successfully cloned {} to {}",
-        repo.name,
-        target_dir.display()
+    success(
+        "dev.clone.success",
+        &format!(
+            "{} Successfully cloned {} to {}",
+            Icons::CHECK,
+            repo.name,
+            target_dir.display()
+        ),
     );
-    println!("📍 Repository: {}", repo.html_url);
+    info(
+        "dev.clone.repo",
+        &format!(" Repository: {}", repo.html_url),
+    );
 
     if let Some(desc) = &repo.description {
-        println!("📝 {desc}");
+        info("dev.clone.description", &format!(" {desc}"));
     }
 
     Ok(())
@@ -60,9 +68,13 @@ pub fn ensure_workspace_dir() -> Result<std::path::PathBuf> {
 
     if !workspace_dir.exists() {
         std::fs::create_dir_all(&workspace_dir).context("Failed to create workspace directory")?;
-        println!(
-            "📁 Created workspace directory: {}",
-            workspace_dir.display()
+        info(
+            "dev.clone.workspace_created",
+            &format!(
+                "{} Created workspace directory: {}",
+                Icons::FOLDER,
+                workspace_dir.display()
+            ),
         );
     }
 

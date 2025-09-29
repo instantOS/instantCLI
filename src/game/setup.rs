@@ -1,3 +1,4 @@
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 
@@ -26,7 +27,13 @@ pub fn setup_uninstalled_games() -> Result<()> {
     let uninstalled_games = find_uninstalled_games(&game_config, &installations)?;
 
     if uninstalled_games.is_empty() {
-        println!("✅ All games are already configured for this device!");
+        success(
+            "game.setup.all_configured",
+            &format!(
+                "{} All games are already configured for this device!",
+                Icons::CHECK
+            ),
+        );
         return Ok(());
     }
 
@@ -44,7 +51,10 @@ pub fn setup_uninstalled_games() -> Result<()> {
     // Process each uninstalled game
     for game_name in uninstalled_games {
         if let Err(e) = setup_single_game(&game_name, &game_config, &mut installations) {
-            eprintln!("❌ Failed to set up game '{game_name}': {e}");
+            error(
+                "game.setup.failed",
+                &format!("{} Failed to set up game '{game_name}': {e}", Icons::ERROR),
+            );
 
             // Ask if user wants to continue with other games
             match FzfWrapper::confirm("Would you like to continue setting up the remaining games?")
@@ -89,7 +99,10 @@ fn setup_single_game(
     game_config: &InstantGameConfig,
     installations: &mut InstallationsConfig,
 ) -> Result<()> {
-    println!("🎮 Setting up game: {game_name}");
+    info(
+        "game.setup.start",
+        &format!("{} Setting up game: {game_name}", Icons::INFO),
+    );
 
     // Get all snapshots for this game to extract paths
     let snapshots = cache::get_snapshots_for_game(game_name, game_config)
@@ -97,10 +110,16 @@ fn setup_single_game(
     let latest_snapshot_id = snapshots.first().map(|snapshot| snapshot.id.clone());
 
     if snapshots.is_empty() {
-        println!("❌ No snapshots found for game '{game_name}'.");
-        println!(
-            "This game has no backups yet. You'll need to add an installation manually using '{} game add'.",
-            env!("CARGO_BIN_NAME")
+        warn(
+            "game.setup.no_snapshots",
+            &format!("{} No snapshots found for game '{game_name}'.", Icons::WARN),
+        );
+        info(
+            "game.setup.hint.add",
+            &format!(
+                "This game has no backups yet. You'll need to add an installation manually using '{} game add'.",
+                env!("CARGO_BIN_NAME")
+            ),
         );
         return Ok(());
     }
@@ -109,8 +128,17 @@ fn setup_single_game(
     let unique_paths = extract_unique_paths_from_snapshots(&snapshots)?;
 
     if unique_paths.is_empty() {
-        println!("❌ No save paths found in snapshots for game '{game_name}'.");
-        println!("This is unusual. You may need to set up the installation manually.");
+        warn(
+            "game.setup.no_paths",
+            &format!(
+                "{} No save paths found in snapshots for game '{game_name}'.",
+                Icons::WARN
+            ),
+        );
+        info(
+            "game.setup.hint.manual",
+            "This is unusual. You may need to set up the installation manually.",
+        );
         return Ok(());
     }
 
@@ -138,7 +166,10 @@ fn setup_single_game(
                 ConfirmResult::Yes => {
                     std::fs::create_dir_all(save_path.as_path())
                         .context("Failed to create save directory")?;
-                    println!("✅ Created save directory: {path_str}");
+                    success(
+                        "game.setup.dir_created",
+                        &format!("{} Created save directory: {path_str}", Icons::CHECK),
+                    );
                     directory_created = true;
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {
@@ -155,19 +186,34 @@ fn setup_single_game(
 
         if should_restore {
             if let Some(snapshot_id) = latest_snapshot_id.as_deref() {
-                println!("📥 Restoring latest backup ({snapshot_id}) into {path_str}...");
+                info(
+                    "game.setup.restore_latest",
+                    &format!(
+                        "{} Restoring latest backup ({snapshot_id}) into {path_str}...",
+                        Icons::DOWNLOAD
+                    ),
+                );
                 let restore_summary =
                     restore_latest_backup(game_name, &save_path, snapshot_id, game_config)?;
-                println!("✅ {restore_summary}");
+                success("game.setup.restore_done", &restore_summary);
                 installation.update_checkpoint(snapshot_id.to_string());
             }
         }
         installations.installations.push(installation);
         installations.save()?;
 
-        println!("✅ Game '{game_name}' set up successfully with save path: {path_str}");
+        success(
+            "game.setup.success",
+            &format!(
+                "{} Game '{game_name}' set up successfully with save path: {path_str}",
+                Icons::CHECK
+            ),
+        );
     } else {
-        println!("Setup cancelled for game '{game_name}'.");
+        warn(
+            "game.setup.cancelled",
+            &format!("Setup cancelled for game '{game_name}'."),
+        );
     }
 
     println!();

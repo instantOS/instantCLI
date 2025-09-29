@@ -7,6 +7,7 @@ use crate::game::utils::save_files::{
 };
 use crate::game::utils::validation;
 use crate::restic::wrapper::Snapshot;
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 
 /// Result of game selection process
@@ -60,10 +61,19 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
     {
         Some(installation) => installation.clone(),
         None => {
-            eprintln!("❌ Error: No installation found for game '{game_name}'.");
-            eprintln!(
-                "Please add the game first using '{} game add'.",
-                env!("CARGO_BIN_NAME")
+            error(
+                "game.security.installation_missing",
+                &format!(
+                    "{} Error: No installation found for game '{game_name}'.",
+                    Icons::ERROR
+                ),
+            );
+            info(
+                "game.security.hint.add",
+                &format!(
+                    "Please add the game first using '{} game add'.",
+                    env!("CARGO_BIN_NAME")
+                ),
             );
             return Err(anyhow::anyhow!("game installation not found"));
         }
@@ -120,7 +130,7 @@ pub fn check_snapshot_vs_local_saves(
             // Show warning but allow proceed
             let confirmed = FzfWrapper::builder()
                 .message(format!(
-                    "⚠️  Security Warning for '{game_name}':\n\nLocal save files exist but modification time cannot be determined.\n\nRestoring from snapshot might overwrite existing saves.\n\nDo you want to continue?"
+                    "  Security Warning for '{game_name}':\n\nLocal save files exist but modification time cannot be determined.\n\nRestoring from snapshot might overwrite existing saves.\n\nDo you want to continue?"
                 ))
                 .yes_text("Continue Restore")
                 .no_text("Cancel")
@@ -143,7 +153,7 @@ pub fn check_snapshot_vs_local_saves(
 
             let confirmed = FzfWrapper::builder()
                 .message(format!(
-                    "⚠️  CRITICAL Security Warning for '{game_name}':\n\nLocal saves are NEWER than the selected snapshot!\n\n📅 Local saves modified: {local_time_str}\n📅 Snapshot created:   {snapshot_time_str}\n\nRestoring will OVERWRITE newer local saves with older data.\n\nThis action cannot be undone. Are you absolutely sure?"
+                    "  CRITICAL Security Warning for '{game_name}':\n\nLocal saves are NEWER than the selected snapshot!\n\n Local saves modified: {local_time_str}\n Snapshot created:   {snapshot_time_str}\n\nRestoring will OVERWRITE newer local saves with older data.\n\nThis action cannot be undone. Are you absolutely sure?"
                 ))
                 .yes_text("Overwrite Local Saves")
                 .no_text("Cancel Restore")
@@ -159,7 +169,7 @@ pub fn check_snapshot_vs_local_saves(
 
             let confirmed = FzfWrapper::builder()
                 .message(format!(
-                    "📋 Restore Summary for '{}':\n\nSnapshot is newer than local saves.\n\n📅 Local saves modified: {}\n📅 Snapshot created:   {}\n📁 Local save files:   {} ({})\n\nDo you want to continue with the restore?",
+                    " Restore Summary for '{}':\n\nSnapshot is newer than local saves.\n\n Local saves modified: {}\n Snapshot created:   {}\n Local save files:   {} ({})\n\nDo you want to continue with the restore?",
                     game_name, local_time_str, snapshot_time_str, save_info.file_count, format_file_size(save_info.total_size)
                 ))
                 .yes_text("Continue Restore")
@@ -177,7 +187,7 @@ pub fn check_snapshot_vs_local_saves(
             // Error in comparison - warn but allow
             let confirmed = FzfWrapper::builder()
                 .message(format!(
-                    "⚠️  Warning for '{game_name}':\n\nCould not compare snapshot and local save times: {msg}\n\nRestoring might overwrite existing saves.\n\nDo you want to continue?"
+                    "  Warning for '{game_name}':\n\nCould not compare snapshot and local save times: {msg}\n\nRestoring might overwrite existing saves.\n\nDo you want to continue?"
                 ))
                 .yes_text("Continue Restore")
                 .no_text("Cancel")
@@ -212,13 +222,14 @@ pub fn create_restore_confirmation(
 
     // Build confirmation message based on security context
     let mut message = format!(
-        "🔄 Restore game saves for '{}' from snapshot {}\n\n",
+        "{} Restore game saves for '{}' from snapshot {}\n\n",
+        Icons::DOWNLOAD,
         game_name,
         &snapshot.id[..8.min(snapshot.id.len())]
     );
 
     if security_result.has_local_saves {
-        message.push_str("📁 Current local saves:\n");
+        message.push_str(" Current local saves:\n");
         if let Some(_modified_time) = save_path {
             message.push_str(&format!(
                 "  • Last modified: {}\n",
@@ -234,21 +245,21 @@ pub fn create_restore_confirmation(
         }
         message.push('\n');
     } else {
-        message.push_str("📁 No local save files found\n\n");
+        message.push_str(" No local save files found\n\n");
     }
 
     message.push_str(&format!(
-        "🖥️  Snapshot from: {} on {}\n",
+        "  Snapshot from: {} on {}\n",
         format_snapshot_time_for_display(&snapshot.time),
         snapshot.hostname
     ));
 
     if let Some(summary) = &snapshot.summary {
         let total_files = summary.files_new + summary.files_changed + summary.files_unmodified;
-        message.push_str(&format!("📊 Snapshot contains {total_files} files\n"));
+        message.push_str(&format!(" Snapshot contains {total_files} files\n"));
     }
 
-    message.push_str("\n⚠️  This will overwrite existing save files.\nThis action cannot be undone.\n\nAre you sure you want to continue?");
+    message.push_str("\n  This will overwrite existing save files.\nThis action cannot be undone.\n\nAre you sure you want to continue?");
 
     let confirmed = FzfWrapper::builder()
         .message(&message)
@@ -269,8 +280,17 @@ pub fn validate_snapshot_id(
     match super::cache::get_snapshot_by_id(snapshot_id, game_name, config)? {
         Some(_) => Ok(true),
         None => {
-            eprintln!("❌ Error: Snapshot '{snapshot_id}' not found for game '{game_name}'.");
-            eprintln!("Please select a valid snapshot.");
+            error(
+                "game.security.snapshot_missing",
+                &format!(
+                    "{} Error: Snapshot '{snapshot_id}' not found for game '{game_name}'.",
+                    Icons::ERROR
+                ),
+            );
+            info(
+                "game.security.snapshot_hint",
+                "Please select a valid snapshot.",
+            );
             Ok(false)
         }
     }

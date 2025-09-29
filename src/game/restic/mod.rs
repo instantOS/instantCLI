@@ -9,6 +9,7 @@ pub mod tags;
 use crate::game::checkpoint;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection;
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 
 /// Handle game save backup with optional game selection
@@ -38,10 +39,19 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     {
         Some(installation) => installation,
         None => {
-            eprintln!("❌ Error: No installation found for game '{game_name}'.");
-            eprintln!(
-                "Please add the game first using '{} game add'.",
-                env!("CARGO_BIN_NAME")
+            error(
+                "game.backup.installation_missing",
+                &format!(
+                    "{} Error: No installation found for game '{game_name}'.",
+                    Icons::ERROR
+                ),
+            );
+            info(
+                "game.backup.hint.add",
+                &format!(
+                    "Please add the game first using '{} game add'.",
+                    env!("CARGO_BIN_NAME")
+                ),
             );
             return Err(anyhow::anyhow!("game installation not found"));
         }
@@ -50,12 +60,19 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Security check: ensure save directory is not empty
     let save_path = installation.save_path.as_path();
     if !save_path.exists() {
-        eprintln!(
-            "❌ Error: Save path does not exist for game '{}': {}",
-            game_name,
-            save_path.display()
+        error(
+            "game.backup.save_path_missing",
+            &format!(
+                "{} Error: Save path does not exist for game '{}': {}",
+                Icons::ERROR,
+                game_name,
+                save_path.display()
+            ),
         );
-        eprintln!("Please check the game installation configuration.");
+        warn(
+            "game.backup.hint.config",
+            "Please check the game installation configuration.",
+        );
         return Err(anyhow::anyhow!("save path does not exist"));
     }
 
@@ -75,19 +92,34 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     }
 
     if is_empty {
-        eprintln!(
-            "❌ Security: Refusing to backup empty save directory for game '{}': {}",
-            game_name,
-            save_path.display()
+        error(
+            "game.backup.security.empty_dir",
+            &format!(
+                "{} Security: Refusing to backup empty save directory for game '{}': {}",
+                Icons::ERROR,
+                game_name,
+                save_path.display()
+            ),
         );
-        eprintln!(
-            "The save directory appears to be empty or contains only hidden files. This could indicate:"
+        info(
+            "game.backup.security.context",
+            "The save directory appears to be empty or contains only hidden files. This could indicate:",
         );
-        eprintln!("• The game has not created any saves yet");
-        eprintln!("• The save path is configured incorrectly");
-        eprintln!("• The saves are stored in a different location");
-        eprintln!(
-            "Please verify the save path configuration and ensure the game has created save files."
+        info(
+            "game.backup.security.reason1",
+            "• The game has not created any saves yet",
+        );
+        info(
+            "game.backup.security.reason2",
+            "• The save path is configured incorrectly",
+        );
+        info(
+            "game.backup.security.reason3",
+            "• The saves are stored in a different location",
+        );
+        info(
+            "game.backup.security.action",
+            "Please verify the save path configuration and ensure the game has created save files.",
         );
         return Err(anyhow::anyhow!(
             "save directory is empty - security precaution"
@@ -97,13 +129,23 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Create backup
     let backup_handler = backup::GameBackup::new(game_config.clone());
 
-    println!(
-        "🔄 Creating backup for '{game_name}'...\nThis may take a while depending on save file size."
+    info(
+        "game.backup.start",
+        &format!(
+            "{} Creating backup for '{game_name}'...\nThis may take a while depending on save file size.",
+            Icons::UPLOAD
+        ),
     );
 
     match backup_handler.backup_game(installation) {
         Ok(output) => {
-            println!("✅ Backup completed successfully for game '{game_name}'!\n\n{output}");
+            success(
+                "game.backup.completed",
+                &format!(
+                    "{} Backup completed successfully for game '{game_name}'!\n\n{output}",
+                    Icons::CHECK
+                ),
+            );
 
             // Update checkpoint after successful backup
             if let Err(e) =
@@ -117,7 +159,14 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             cache::invalidate_game_cache(&game_name, &repo_path);
         }
         Err(e) => {
-            eprintln!("❌ Backup failed for game '{game_name}': {e}");
+            error(
+                "game.backup.failed",
+                &format!(
+                    "{} Backup failed for game '{game_name}': {}",
+                    Icons::ERROR,
+                    e
+                ),
+            );
             return Err(e);
         }
     }
@@ -171,9 +220,14 @@ pub fn restore_game_saves(
     if !force {
         if let Some(ref nearest_checkpoint) = game_selection.installation.nearest_checkpoint {
             if nearest_checkpoint == &snapshot_id {
-                println!(
-                    "⏭️  Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-                    game_selection.game_name, snapshot_id
+                info(
+                    "game.restore.skipped",
+                    &format!(
+                        "{} Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
+                        Icons::SKIP,
+                        game_selection.game_name,
+                        snapshot_id
+                    ),
                 );
                 return Ok(());
             }
@@ -187,11 +241,19 @@ pub fn restore_game_saves(
         match cache::get_snapshot_by_id(&snapshot_id, &game_selection.game_name, &game_config)? {
             Some(snapshot) => snapshot,
             None => {
-                eprintln!(
-                    "❌ Error: Snapshot '{}' not found for game '{}'.",
-                    snapshot_id, game_selection.game_name
+                error(
+                    "game.restore.snapshot_missing",
+                    &format!(
+                        "{} Error: Snapshot '{}' not found for game '{}'.",
+                        Icons::ERROR,
+                        snapshot_id,
+                        game_selection.game_name
+                    ),
                 );
-                eprintln!("Please select a valid snapshot.");
+                info(
+                    "game.restore.hint.snapshot",
+                    "Please select a valid snapshot.",
+                );
                 return Err(anyhow::anyhow!("snapshot not found"));
             }
         };
@@ -205,7 +267,10 @@ pub fn restore_game_saves(
             force,
         )? {
             // User cancelled due to security warning
-            println!("Restore cancelled due to security warning.");
+            warn(
+                "game.restore.cancelled.security",
+                "Restore cancelled due to security warning.",
+            );
             return Ok(());
         }
     }
@@ -218,7 +283,7 @@ pub fn restore_game_saves(
         force,
     )? {
         // User cancelled confirmation
-        println!("Restore cancelled by user.");
+        warn("game.restore.cancelled.user", "Restore cancelled by user.");
         return Ok(());
     }
 
@@ -226,16 +291,25 @@ pub fn restore_game_saves(
     let save_path = game_selection.installation.save_path.as_path();
     let backup_handler = GameBackup::new(game_config);
 
-    println!(
-        "🔄 Restoring game saves for '{}'...",
-        game_selection.game_name
+    info(
+        "game.restore.start",
+        &format!(
+            "{} Restoring game saves for '{}'...",
+            Icons::DOWNLOAD,
+            game_selection.game_name
+        ),
     );
 
     match backup_handler.restore_game_backup(&game_selection.game_name, &snapshot_id, save_path) {
         Ok(output) => {
-            println!(
-                "✅ Restore completed successfully for game '{}'!\n\n{}",
-                game_selection.game_name, output
+            success(
+                "game.restore.completed",
+                &format!(
+                    "{} Restore completed successfully for game '{}'!\n\n{}",
+                    Icons::CHECK,
+                    game_selection.game_name,
+                    output
+                ),
             );
 
             // Update the installation with the checkpoint
@@ -251,9 +325,14 @@ pub fn restore_game_saves(
             cache::invalidate_game_cache(&game_selection.game_name, &repo_path);
         }
         Err(e) => {
-            eprintln!(
-                "❌ Restore failed for game '{}': {}",
-                game_selection.game_name, e
+            error(
+                "game.restore.failed",
+                &format!(
+                    "{} Restore failed for game '{}': {}",
+                    Icons::ERROR,
+                    game_selection.game_name,
+                    e
+                ),
             );
             return Err(e);
         }
