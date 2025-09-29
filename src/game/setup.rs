@@ -53,7 +53,10 @@ pub fn setup_uninstalled_games() -> Result<()> {
         if let Err(e) = setup_single_game(&game_name, &game_config, &mut installations) {
             error(
                 "game.setup.failed",
-                &format!("{} Failed to set up game '{game_name}': {e}", char::from(Fa::TimesCircle)),
+                &format!(
+                    "{} Failed to set up game '{game_name}': {e}",
+                    char::from(Fa::TimesCircle)
+                ),
             );
 
             // Ask if user wants to continue with other games
@@ -101,7 +104,10 @@ fn setup_single_game(
 ) -> Result<()> {
     info(
         "game.setup.start",
-        &format!("{} Setting up game: {game_name}", char::from(Fa::InfoCircle)),
+        &format!(
+            "{} Setting up game: {game_name}",
+            char::from(Fa::InfoCircle)
+        ),
     );
 
     // Get all snapshots for this game to extract paths
@@ -112,7 +118,10 @@ fn setup_single_game(
     if snapshots.is_empty() {
         warn(
             "game.setup.no_snapshots",
-            &format!("{} No snapshots found for game '{game_name}'.", char::from(Fa::ExclamationCircle)),
+            &format!(
+                "{} No snapshots found for game '{game_name}'.",
+                char::from(Fa::ExclamationCircle)
+            ),
         );
         info(
             "game.setup.hint.add",
@@ -168,7 +177,10 @@ fn setup_single_game(
                         .context("Failed to create save directory")?;
                     success(
                         "game.setup.dir_created",
-                        &format!("{} Created save directory: {path_str}", char::from(Fa::Check)),
+                        &format!(
+                            "{} Created save directory: {path_str}",
+                            char::from(Fa::Check)
+                        ),
                     );
                     directory_created = true;
                 }
@@ -344,7 +356,10 @@ impl FzfSelectable for PathInfo {
             self.devices.len()
         ));
 
-        preview.push_str(&format!("\n{}  DEVICES USING THIS PATH:\n", char::from(Fa::Desktop)));
+        preview.push_str(&format!(
+            "\n{}  DEVICES USING THIS PATH:\n",
+            char::from(Fa::Desktop)
+        ));
         for device in &self.devices {
             preview.push_str(&format!("  • {device}\n"));
         }

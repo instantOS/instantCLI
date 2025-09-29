@@ -150,7 +150,11 @@ impl ResticCommandLogger {
             let time_str = log.timestamp.format("%Y-%m-%d %H:%M:%S UTC").to_string();
             let mut text_block = String::new();
             text_block.push_str(&format!("Log Entry #{}\n", i + 1));
-            text_block.push_str(&format!("  {} Time: {}\n", char::from(Fa::ClockO), time_str));
+            text_block.push_str(&format!(
+                "  {} Time: {}\n",
+                char::from(Fa::ClockO),
+                time_str
+            ));
             text_block.push_str(&format!(
                 "   Command: {} {}\n",
                 log.command,

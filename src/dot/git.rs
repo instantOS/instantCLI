@@ -148,7 +148,7 @@ fn show_single_file_status(
     cfg: &config::Config,
     db: &super::db::Database,
 ) -> Result<()> {
-    use crate::ui::{get_output_format, OutputFormat, info_with_data};
+    use crate::ui::{OutputFormat, get_output_format, info_with_data};
 
     let target_path = super::resolve_dotfile_path(path_str)?;
 
@@ -200,7 +200,7 @@ fn show_status_summary(
     db: &super::db::Database,
     show_all: bool,
 ) -> Result<()> {
-    use crate::ui::{get_output_format, OutputFormat, info_with_data};
+    use crate::ui::{OutputFormat, get_output_format, info_with_data};
 
     let home = dirs::home_dir().context("Failed to get home directory")?;
 
@@ -287,7 +287,11 @@ fn show_status_summary(
             println!("{} Clean: {} files", "✓".green(), clean_count);
 
             if modified_count > 0 {
-                println!("{} Modified: {} files", format!("{}", char::from(Fa::ExclamationCircle)).yellow(), modified_count);
+                println!(
+                    "{} Modified: {} files",
+                    format!("{}", char::from(Fa::ExclamationCircle)).yellow(),
+                    modified_count
+                );
             }
 
             if outdated_count > 0 {
@@ -419,7 +423,7 @@ fn categorize_files_and_collect_stats<'a>(
 
 /// Show action suggestions based on file status counts
 fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_count: usize) {
-    use crate::ui::{get_output_format, OutputFormat, info_with_data};
+    use crate::ui::{OutputFormat, get_output_format, info_with_data};
 
     match get_output_format() {
         OutputFormat::Json => {
@@ -428,21 +432,35 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
 
             if modified_count > 0 || outdated_count > 0 {
                 if modified_count > 0 {
-                    suggestions.push(format!("Use '{bin} dot apply' to apply changes from repositories"));
-                    suggestions.push(format!("Use '{bin} dot fetch' to save your modifications to repositories"));
+                    suggestions.push(format!(
+                        "Use '{bin} dot apply' to apply changes from repositories"
+                    ));
+                    suggestions.push(format!(
+                        "Use '{bin} dot fetch' to save your modifications to repositories"
+                    ));
                 }
                 if outdated_count > 0 {
-                    suggestions.push(format!("Use '{bin} dot reset <path>' to restore files to their original state"));
+                    suggestions.push(format!(
+                        "Use '{bin} dot reset <path>' to restore files to their original state"
+                    ));
                 }
-                suggestions.push(format!("Use '{bin} dot status --all' to see all tracked files including clean ones"));
+                suggestions.push(format!(
+                    "Use '{bin} dot status --all' to see all tracked files including clean ones"
+                ));
             } else if clean_count > 0 {
-                info_with_data("dot.status.message", "All dotfiles are clean and up to date", serde_json::json!({
-                    "status": "clean",
-                    "message": "All dotfiles are clean and up to date!"
-                }));
+                info_with_data(
+                    "dot.status.message",
+                    "All dotfiles are clean and up to date",
+                    serde_json::json!({
+                        "status": "clean",
+                        "message": "All dotfiles are clean and up to date!"
+                    }),
+                );
                 return;
             } else {
-                suggestions.push(format!("Use '{bin} dot repo add <url>' to add a repository"));
+                suggestions.push(format!(
+                    "Use '{bin} dot repo add <url>' to add a repository"
+                ));
             }
 
             let suggestion_data = serde_json::json!({
@@ -450,7 +468,11 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
                 "suggestions": suggestions
             });
 
-            info_with_data("dot.status.suggestions", "Action suggestions", suggestion_data);
+            info_with_data(
+                "dot.status.suggestions",
+                "Action suggestions",
+                suggestion_data,
+            );
         }
         OutputFormat::Text => {
             let bin = env!("CARGO_BIN_NAME");
@@ -461,9 +483,13 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
                     println!("  Use '{bin} dot fetch' to save your modifications to repositories");
                 }
                 if outdated_count > 0 {
-                    println!("  Use '{bin} dot reset <path>' to restore files to their original state");
+                    println!(
+                        "  Use '{bin} dot reset <path>' to restore files to their original state"
+                    );
                 }
-                println!("  Use '{bin} dot status --all' to see all tracked files including clean ones");
+                println!(
+                    "  Use '{bin} dot status --all' to see all tracked files including clean ones"
+                );
             } else if clean_count > 0 {
                 println!("✓ All dotfiles are clean and up to date!");
             } else {

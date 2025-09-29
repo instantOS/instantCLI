@@ -1,6 +1,6 @@
+use crate::ui::Fa;
 use anyhow::Result;
 use clap::Subcommand;
-use crate::ui::Fa;
 
 mod clone;
 mod fuzzy;
@@ -28,7 +28,10 @@ pub async fn handle_dev_command(command: DevCommands, debug: bool) -> Result<()>
 
 async fn handle_clone(debug: bool) -> Result<()> {
     if debug {
-        eprintln!("{} Fetching instantOS repositories...", char::from(Fa::Search));
+        eprintln!(
+            "{} Fetching instantOS repositories...",
+            char::from(Fa::Search)
+        );
     }
 
     let pb =
@@ -51,7 +54,11 @@ async fn handle_clone(debug: bool) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to select repository: {}", e))?;
 
     if debug {
-        eprintln!("{} Selected repository: {}", char::from(Fa::Flag), selected_repo.name);
+        eprintln!(
+            "{} Selected repository: {}",
+            char::from(Fa::Flag),
+            selected_repo.name
+        );
     }
 
     let workspace_dir = ensure_workspace_dir()?;

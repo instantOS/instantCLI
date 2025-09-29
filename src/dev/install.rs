@@ -90,7 +90,11 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
     if debug {
         crate::ui::debug(
             "dev.install.build.start",
-            &format!("{} Building package: {}", char::from(Fa::Search), package.name),
+            &format!(
+                "{} Building package: {}",
+                char::from(Fa::Search),
+                package.name
+            ),
         );
     }
 
@@ -111,7 +115,11 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
 
     success(
         "dev.install.success",
-        &format!("{} Successfully installed {}", char::from(Fa::Check), package.name),
+        &format!(
+            "{} Successfully installed {}",
+            char::from(Fa::Check),
+            package.name
+        ),
     );
 
     Ok(())
@@ -121,7 +129,10 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     if debug {
         crate::ui::debug(
             "dev.install.start",
-            &format!("{} Starting package installation...", char::from(Fa::Search)),
+            &format!(
+                "{} Starting package installation...",
+                char::from(Fa::Search)
+            ),
         );
     }
 

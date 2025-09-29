@@ -73,7 +73,10 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     if games_to_sync.is_empty() {
         warn(
             "game.sync.none",
-            &format!("{} No games configured for syncing.", char::from(Fa::ExclamationCircle)),
+            &format!(
+                "{} No games configured for syncing.",
+                char::from(Fa::ExclamationCircle)
+            ),
         );
         info(
             "game.sync.hint.add",

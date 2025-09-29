@@ -353,19 +353,28 @@ fn print_fetch_plan(
 ) -> Result<()> {
     match get_output_format() {
         OutputFormat::Json => {
-            let fetch_data: Vec<_> = grouped_by_repo.iter().map(|(repo_name, dotfiles)| {
-                let home = PathBuf::from(shellexpand::tilde("~").to_string());
-                let files: Vec<String> = dotfiles.iter().filter_map(|dotfile| {
-                    dotfile.target_path.strip_prefix(&home).ok()
-                        .map(|path| format!("~/{}", path.display()))
-                }).collect();
+            let fetch_data: Vec<_> = grouped_by_repo
+                .iter()
+                .map(|(repo_name, dotfiles)| {
+                    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+                    let files: Vec<String> = dotfiles
+                        .iter()
+                        .filter_map(|dotfile| {
+                            dotfile
+                                .target_path
+                                .strip_prefix(&home)
+                                .ok()
+                                .map(|path| format!("~/{}", path.display()))
+                        })
+                        .collect();
 
-                serde_json::json!({
-                    "repo": repo_name.as_str(),
-                    "files": files,
-                    "count": files.len(),
+                    serde_json::json!({
+                        "repo": repo_name.as_str(),
+                        "files": files,
+                        "count": files.len(),
+                    })
                 })
-            }).collect();
+                .collect();
 
             let message = if dry_run {
                 "Dry run: The following files would be fetched"
@@ -373,10 +382,14 @@ fn print_fetch_plan(
                 "Fetching the following modified files"
             };
 
-            info_with_data("dot.fetch.plan", message, serde_json::json!({
-                "dry_run": dry_run,
-                "repos": fetch_data,
-            }));
+            info_with_data(
+                "dot.fetch.plan",
+                message,
+                serde_json::json!({
+                    "dry_run": dry_run,
+                    "repos": fetch_data,
+                }),
+            );
         }
         OutputFormat::Text => {
             if dry_run {
@@ -434,7 +447,10 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
                     )
                 })?
                 .to_string_lossy();
-            success("dot.apply.created", &format!("Created new dotfile: ~/{relative}"));
+            success(
+                "dot.apply.created",
+                &format!("Created new dotfile: ~/{relative}"),
+            );
         }
     }
     db.cleanup_hashes(config.hash_cleanup_days)?;

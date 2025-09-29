@@ -224,7 +224,10 @@ fn handle_debug_command(command: DebugCommands) -> Result<()> {
                 logger.clear_logs()?;
                 success(
                     "restic.logs.cleared",
-                    &format!("{} Cleared all restic command logs.", char::from(Fa::TrashO)),
+                    &format!(
+                        "{} Cleared all restic command logs.",
+                        char::from(Fa::TrashO)
+                    ),
                 );
             } else {
                 logger.print_recent_logs(limit)?;

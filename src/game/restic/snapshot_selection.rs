@@ -305,7 +305,10 @@ fn create_enhanced_snapshot_preview(
     if let Some(summary) = &snapshot.summary {
         preview.push_str(&create_preview_statistics(summary));
     } else {
-        preview.push_str(&format!("{} No detailed statistics available\n", char::from(Fa::List)));
+        preview.push_str(&format!(
+            "{} No detailed statistics available\n",
+            char::from(Fa::List)
+        ));
     }
 
     // Metadata
