@@ -214,12 +214,7 @@ pub fn restore_game_saves(
     {
         info(
             "game.restore.skipped",
-            &format!(
-                "{} Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-                ,
-                game_selection.game_name,
-                snapshot_id
-            ),
+            &format!("Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)", game_selection.game_name, snapshot_id),
         );
         return Ok(());
     }
@@ -283,11 +278,7 @@ pub fn restore_game_saves(
 
     info(
         "game.restore.start",
-        &format!(
-            "{} Restoring game saves for '{}'...",
-            ,
-            game_selection.game_name
-        ),
+        &format!("Restoring game saves for '{}'...", game_selection.game_name),
     );
 
     match backup_handler.restore_game_backup(&game_selection.game_name, &snapshot_id, save_path) {

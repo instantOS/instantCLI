@@ -154,19 +154,13 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 {
                     error(
                         "game.sync.restore.latest.failed",
-                        &format!(
-                            "{} {}: Restore failed: {}",
-                            installation.game_name.0.red(), e),
-                    );
+                        &format!("{}: Restore failed: {}", installation.game_name.0.red(), e),
                     );
                     total_errors += 1;
                 } else {
                     success(
                         "game.sync.restore.latest.completed",
-                        &format!(
-                            "{} {}: Restore completed",
-                            installation.game_name.0.green()),
-                    );
+                        &format!("{}: Restore completed", installation.game_name.0.green()),
                     );
                     total_synced += 1;
                 }
@@ -174,27 +168,18 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
             Ok(SyncAction::CreateInitialBackup) => {
                 info(
                     "game.sync.initial_backup.start",
-                    &format!(
-                        "{} {}: No snapshots found, creating initial backup...",
-                        installation.game_name.0.yellow()),
-                );
+                    &format!("{}: No snapshots found, creating initial backup...", installation.game_name.0.yellow()),
                 );
                 if let Err(e) = create_backup_for_game(&installation, &game_config) {
                     error(
                         "game.sync.initial_backup.failed",
-                        &format!(
-                            "{} {}: Initial backup failed: {}",
-                            installation.game_name.0.red(), e),
-                    );
+                        &format!("{}: Initial backup failed: {}", installation.game_name.0.red(), e),
                     );
                     total_errors += 1;
                 } else {
                     success(
                         "game.sync.initial_backup.completed",
-                        &format!(
-                            "{} {}: Initial backup completed",
-                            installation.game_name.0.green()),
-                    );
+                        &format!("{}: Initial backup completed", installation.game_name.0.green()),
                     );
                     total_synced += 1;
                 }
@@ -202,24 +187,14 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
             Ok(SyncAction::Error(msg)) => {
                 error(
                     "game.sync.error",
-                    &format!(
-                        "{} {}: {}",
-                        ,
-                        installation.game_name.0.red(),
-                        msg
-                    ),
+                    &format!("{}: {}", installation.game_name.0.red(), msg),
                 );
                 total_errors += 1;
             }
             Err(e) => {
                 error(
                     "game.sync.failed",
-                    &format!(
-                        "{} {}: Sync failed: {}",
-                        ,
-                        installation.game_name.0.red(),
-                        e
-                    ),
+                    &format!("{}: Sync failed: {}", installation.game_name.0.red(), e),
                 );
                 total_errors += 1;
             }
@@ -230,12 +205,9 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     separator(true);
     info("game.sync.summary.title", "Sync Summary:");
     let summary_text = format!(
-        "  {} Synced: {}\n  {} Skipped: {}\n  {} Errors: {}",
-        ,
+        "  Synced: {}\n  Skipped: {}\n  Errors: {}",
         total_synced.to_string().green(),
-        ,
         total_skipped.to_string().yellow(),
-        ,
         total_errors.to_string().red()
     );
     emit(
@@ -243,9 +215,9 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
         "game.sync.summary",
         &summary_text,
         Some(serde_json::json!({
-            "synced" total_synced,
-            "skipped" total_skipped,
-            "errors" total_errors
+            "synced": total_synced,
+            "skipped": total_skipped,
+            "errors": total_errors
         })),
     );
     separator(true);
