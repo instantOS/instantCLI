@@ -189,7 +189,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
     // STEP 3: Check is failing and fixable, proceed with fix
     warn(
         "doctor.fix.available",
-        &format!("⚠ {}: {}", check.name(), check_result.message()),
+        &format!("{} {}: {}", char::from(Fa::ExclamationCircle), check.name(), check_result.message()),
     );
     info(
         "doctor.fix.available",

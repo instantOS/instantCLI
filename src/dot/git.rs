@@ -4,6 +4,7 @@ use crate::dot::config;
 use crate::dot::db::DotFileType;
 use crate::dot::get_all_dotfiles;
 use crate::dot::localrepo as repo_mod;
+use crate::ui::Fa;
 use anyhow::{Context, Result};
 use colored::*;
 use std::path::PathBuf;
@@ -286,7 +287,7 @@ fn show_status_summary(
             println!("{} Clean: {} files", "✓".green(), clean_count);
 
             if modified_count > 0 {
-                println!("{} Modified: {} files", "⚠".yellow(), modified_count);
+                println!("{} Modified: {} files", format!("{}", char::from(Fa::ExclamationCircle)).yellow(), modified_count);
             }
 
             if outdated_count > 0 {

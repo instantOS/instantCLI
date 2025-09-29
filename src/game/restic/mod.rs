@@ -353,14 +353,15 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
     if args.is_empty() {
         let bin = env!("CARGO_BIN_NAME");
         eprintln!(
-            "❌ Error: No restic command provided.\n\n\
+            "{} Error: No restic command provided.\n\n\
              Usage: {bin} game restic <restic-command> [args...]\n\n\
              Examples:\n\
              • {bin} game restic snapshots\n\
              • {bin} game restic backup --tag instantgame\n\
              • {bin} game restic stats\n\
              • {bin} game restic find .config\n\
-             • {bin} game restic restore latest --target /tmp/restore-test"
+             • {bin} game restic restore latest --target /tmp/restore-test",
+            char::from(Fa::TimesCircle)
         );
         return Err(anyhow::anyhow!("no restic command provided"));
     }

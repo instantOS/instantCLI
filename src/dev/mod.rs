@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Subcommand;
+use crate::ui::Fa;
 
 mod clone;
 mod fuzzy;
@@ -27,7 +28,7 @@ pub async fn handle_dev_command(command: DevCommands, debug: bool) -> Result<()>
 
 async fn handle_clone(debug: bool) -> Result<()> {
     if debug {
-        eprintln!("🔍 Fetching instantOS repositories...");
+        eprintln!("{} Fetching instantOS repositories...", char::from(Fa::Search));
     }
 
     let pb =
@@ -40,7 +41,7 @@ async fn handle_clone(debug: bool) -> Result<()> {
     pb.finish_with_message(format!("Found {} repositories", repos.len()));
 
     if debug {
-        eprintln!("📋 Available repositories:");
+        eprintln!("{} Available repositories:", char::from(Fa::List));
         for repo in &repos {
             eprintln!("  - {} ({})", repo.name, repo.full_name);
         }
@@ -50,7 +51,7 @@ async fn handle_clone(debug: bool) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to select repository: {}", e))?;
 
     if debug {
-        eprintln!("🎯 Selected repository: {}", selected_repo.name);
+        eprintln!("{} Selected repository: {}", char::from(Fa::Flag), selected_repo.name);
     }
 
     let workspace_dir = ensure_workspace_dir()?;

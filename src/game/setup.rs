@@ -336,7 +336,7 @@ impl FzfSelectable for PathInfo {
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
         let mut preview = String::new();
-        preview.push_str("📁 SAVE PATH DETAILS\n\n");
+        preview.push_str(&format!("{} SAVE PATH DETAILS\n\n", char::from(Fa::Folder)));
         preview.push_str(&format!("Path:           {}\n", self.path));
         preview.push_str(&format!("Usage Count:    {} snapshots\n", self.frequency));
         preview.push_str(&format!(
@@ -344,7 +344,7 @@ impl FzfSelectable for PathInfo {
             self.devices.len()
         ));
 
-        preview.push_str("\n🖥️  DEVICES USING THIS PATH:\n");
+        preview.push_str(&format!("\n{}  DEVICES USING THIS PATH:\n", char::from(Fa::Desktop)));
         for device in &self.devices {
             preview.push_str(&format!("  • {device}\n"));
         }

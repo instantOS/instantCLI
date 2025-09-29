@@ -1,5 +1,6 @@
 use crate::game::config::InstantGameConfig;
 use crate::game::restic::backup;
+use crate::ui::Fa;
 use anyhow::Result;
 
 /// Common validation utilities for game manager operations
@@ -7,7 +8,8 @@ use anyhow::Result;
 pub fn check_restic_availability() -> Result<()> {
     if !backup::GameBackup::check_restic_availability()? {
         eprintln!(
-            "❌ Error: restic is not installed or not found in PATH.\n\nPlease install restic to use backup functionality."
+            "{} Error: restic is not installed or not found in PATH.\n\nPlease install restic to use backup functionality.",
+            char::from(Fa::TimesCircle)
         );
         return Err(anyhow::anyhow!("restic not available"));
     }
@@ -18,7 +20,8 @@ pub fn check_restic_availability() -> Result<()> {
 pub fn check_game_manager_initialized(game_config: &InstantGameConfig) -> Result<()> {
     if !game_config.is_initialized() {
         eprintln!(
-            "❌ Error: Game manager is not initialized.\n\nPlease run '{} game init' first.",
+            "{} Error: Game manager is not initialized.\n\nPlease run '{} game init' first.",
+            char::from(Fa::TimesCircle),
             env!("CARGO_BIN_NAME")
         );
         return Err(anyhow::anyhow!("game manager not initialized"));

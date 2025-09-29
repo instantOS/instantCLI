@@ -79,12 +79,13 @@ fn create_preview_header(snapshot: &Snapshot, game_name: &str) -> String {
     let formatted_time = format_date_with_time_ago(&snapshot.time);
 
     format!(
-        "🎮 SNAPSHOT INFORMATION\n\
+        "{} SNAPSHOT INFORMATION\n\
          \n\
          Game:      {}\n\
          Host:      {}\n\
          Created:   {}\n\
          Short ID:  {}\n\n",
+        char::from(Fa::Folder),
         game_name,
         snapshot.hostname,
         formatted_time.lines().next().unwrap_or(""),
@@ -304,7 +305,7 @@ fn create_enhanced_snapshot_preview(
     if let Some(summary) = &snapshot.summary {
         preview.push_str(&create_preview_statistics(summary));
     } else {
-        preview.push_str("📊 No detailed statistics available\n");
+        preview.push_str(&format!("{} No detailed statistics available\n", char::from(Fa::List)));
     }
 
     // Metadata
@@ -460,10 +461,10 @@ impl FzfSelectable for EnhancedSnapshot {
                         Err(_) => " COMPARE ERROR",
                     }
                 } else {
-                    " ⚠️NO LOCAL TIME"
+                    &format!("{}NO LOCAL TIME", char::from(Fa::ExclamationCircle))
                 }
             } else {
-                " 📁NO LOCAL SAVES"
+                &format!("{}NO LOCAL SAVES", char::from(Fa::Folder))
             }
         } else {
             ""
