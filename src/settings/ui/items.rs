@@ -124,7 +124,7 @@ impl FzfSelectable for CategoryItem {
                     "  {} {} — {}",
                     char::from(definition.icon),
                     definition.title,
-                    super::setting_summary(definition)
+                    setting_summary(definition)
                 ));
             }
         }

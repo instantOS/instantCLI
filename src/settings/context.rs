@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf, process::Command};
+use std::{env, process::Command};
 
 use anyhow::{Context, Result, bail};
 use duct::cmd;
@@ -6,8 +6,8 @@ use sudo::RunningAs;
 
 use crate::ui::prelude::*;
 
-use super::store::SettingsStore;
-use super::{BoolSettingKey, SettingDefinition, SettingOption, StringSettingKey};
+use super::store::{BoolSettingKey, SettingsStore, StringSettingKey};
+use super::registry::{SettingDefinition, SettingKind, SettingOption};
 
 #[derive(Debug)]
 pub struct SettingsContext {
@@ -252,7 +252,7 @@ pub fn apply_definition(
 ) -> Result<()> {
     match (&definition.kind, override_value) {
         (
-            crate::settings::registry::SettingKind::Toggle {
+            SettingKind::Toggle {
                 key,
                 apply: Some(apply_fn),
                 ..
@@ -260,7 +260,7 @@ pub fn apply_definition(
             Some(ApplyOverride::Bool(value)),
         ) => ctx.with_definition(definition, |ctx| apply_fn(ctx, value)),
         (
-            crate::settings::registry::SettingKind::Toggle {
+            SettingKind::Toggle {
                 key,
                 apply: Some(apply_fn),
                 ..
@@ -271,7 +271,7 @@ pub fn apply_definition(
             ctx.with_definition(definition, |ctx| apply_fn(ctx, value))
         }
         (
-            crate::settings::registry::SettingKind::Choice {
+            SettingKind::Choice {
                 key,
                 options,
                 apply: Some(apply_fn),
@@ -280,7 +280,7 @@ pub fn apply_definition(
             Some(ApplyOverride::Choice(option)),
         ) => ctx.with_definition(definition, |ctx| apply_fn(ctx, option)),
         (
-            crate::settings::registry::SettingKind::Choice {
+            SettingKind::Choice {
                 key,
                 options,
                 apply: Some(apply_fn),

@@ -2,8 +2,6 @@ use anyhow::Result;
 use clap::{Subcommand, ValueHint};
 
 use super::apply;
-use super::context::SettingsContext;
-use super::store::SettingsStore;
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum SettingsCommands {
