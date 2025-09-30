@@ -8,11 +8,9 @@ use duct::cmd;
 
 use crate::fzf_wrapper::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
-
-pub use registry::{CATEGORIES, SETTINGS};
 pub use store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
-use registry::{SettingCategory, SettingDefinition, SettingKind, SettingOption};
+use registry::{SettingCategory, SettingDefinition, SettingKind, SettingOption, CATEGORIES};
 
 #[derive(Debug)]
 pub struct SettingsContext {
@@ -79,7 +77,7 @@ impl SettingsContext {
         if let Err(err) = result {
             let message = format!(
                 "{} Failed to send notification: {err}",
-                char::from(Fa::ExclamationTriangle)
+                char::from(Fa::ExclamationCircle)
             );
             emit(Level::Debug, "settings.notify.error", &message, None);
         }
@@ -89,7 +87,7 @@ impl SettingsContext {
         emit(
             Level::Success,
             code,
-            &format!("{} {message}", char::from(Fa::CheckCircle)),
+            &format!("{} {message}", char::from(Fa::Check)),
             None,
         );
     }
@@ -123,7 +121,7 @@ pub fn handle_settings_command(debug: bool) -> Result<()> {
                 "settings.empty",
                 &format!(
                     "{} No settings registered yet.",
-                    char::from(Fa::ExclamationTriangle)
+                    char::from(Fa::ExclamationCircle)
                 ),
                 None,
             );
@@ -355,7 +353,7 @@ impl FzfSelectable for SettingItem {
 impl FzfSelectable for ChoiceItem {
     fn fzf_display_text(&self) -> String {
         let glyph = if self.is_current {
-            Fa::CheckSquare
+            Fa::CheckSquareO
         } else {
             Fa::SquareO
         };
@@ -382,7 +380,7 @@ pub(super) fn apply_clipboard_manager(ctx: &mut SettingsContext, enabled: bool) 
                 "settings.clipboard.spawn_failed",
                 &format!(
                     "{} Failed to launch clipmenud: {err}",
-                    char::from(Fa::ExclamationTriangle)
+                    char::from(Fa::ExclamationCircle)
                 ),
                 None,
             );
@@ -396,7 +394,7 @@ pub(super) fn apply_clipboard_manager(ctx: &mut SettingsContext, enabled: bool) 
                 "settings.clipboard.stop_failed",
                 &format!(
                     "{} Failed to stop clipmenud: {err}",
-                    char::from(Fa::ExclamationTriangle)
+                    char::from(Fa::ExclamationCircle)
                 ),
                 None,
             );

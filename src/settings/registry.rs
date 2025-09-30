@@ -50,7 +50,7 @@ pub const CATEGORIES: &[SettingCategory] = &[
         id: "appearance",
         title: "Appearance",
         description: "Theme and visual presentation of the desktop.",
-        icon: Fa::PaintBrush,
+        icon: Fa::LightbulbO,
     },
     SettingCategory {
         id: "desktop",
@@ -62,7 +62,7 @@ pub const CATEGORIES: &[SettingCategory] = &[
         id: "workspace",
         title: "Workspace",
         description: "Window manager defaults and layout preferences.",
-        icon: Fa::ThLarge,
+        icon: Fa::Folder,
     },
 ];
 
@@ -71,7 +71,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "appearance.autotheming",
         title: "Autotheming",
         category: "appearance",
-        icon: Fa::SunO,
+        icon: Fa::InfoCircle,
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("appearance.autotheming", true),
             summary: "Enable instantOS theming (disable for custom GTK themes).",
@@ -82,7 +82,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "appearance.animations",
         title: "Animations",
         category: "appearance",
-        icon: Fa::Film,
+        icon: Fa::Check,
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("appearance.animations", true),
             summary: "Controls desktop animation effects.",
@@ -93,7 +93,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "desktop.clipboard",
         title: "Clipboard manager",
         category: "desktop",
-        icon: Fa::Clipboard,
+        icon: Fa::Folder,
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("desktop.clipboard", true),
             summary: "Toggle the clipmenud clipboard manager.",
@@ -104,7 +104,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "workspace.layout",
         title: "Default layout",
         category: "workspace",
-        icon: Fa::ThLarge,
+        icon: Fa::List,
         kind: SettingKind::Choice {
             key: StringSettingKey::new("workspace.layout", "tile"),
             summary: "Select the default instantWM layout.",

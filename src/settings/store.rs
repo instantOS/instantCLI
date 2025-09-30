@@ -46,6 +46,7 @@ impl StringSettingKey {
     }
 }
 
+#[derive(Debug)]
 pub struct SettingsStore {
     path: PathBuf,
     data: SettingsFile,
