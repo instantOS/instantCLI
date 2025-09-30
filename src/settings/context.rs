@@ -302,15 +302,27 @@ pub fn apply_definition(
     }
 }
 
+pub fn select_one_with_style_at<T>(
+    items: Vec<T>,
+    initial_index: Option<usize>,
+) -> Result<Option<T>>
+where
+    T: crate::fzf_wrapper::FzfSelectable + Clone,
+{
+    let mut builder = crate::fzf_wrapper::FzfWrapper::builder().args(["--gap-line=-", "--gap"]);
+    if let Some(index) = initial_index {
+        builder = builder.initial_index(index);
+    }
+
+    match builder.select(items)? {
+        crate::fzf_wrapper::FzfResult::Selected(item) => Ok(Some(item)),
+        _ => Ok(None),
+    }
+}
+
 pub fn select_one_with_style<T>(items: Vec<T>) -> Result<Option<T>>
 where
     T: crate::fzf_wrapper::FzfSelectable + Clone,
 {
-    match crate::fzf_wrapper::FzfWrapper::builder()
-        .args(["--gap-line=-", "--gap"])
-        .select(items)?
-    {
-        crate::fzf_wrapper::FzfResult::Selected(item) => Ok(Some(item)),
-        _ => Ok(None),
-    }
+    select_one_with_style_at(items, None)
 }

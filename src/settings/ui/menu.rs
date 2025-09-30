@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 
 use crate::settings::registry::{self, CATEGORIES, SettingKind};
 
-use super::super::context::{select_one_with_style, SettingsContext};
+use super::super::context::{select_one_with_style_at, SettingsContext};
 use super::items::{
     CategoryItem, CategoryMenuItem, CategoryPageItem, SearchItem, SettingItem,
 };
@@ -10,6 +10,7 @@ use super::items::{
 pub fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
     let store = super::super::store::SettingsStore::load().context("loading settings file")?;
     let mut ctx = SettingsContext::new(store, debug, privileged_flag);
+    let mut cursor: Option<usize> = None;
 
     loop {
         let mut menu_items = Vec::with_capacity(CATEGORIES.len() + 1);
@@ -63,15 +64,24 @@ pub fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
             break;
         }
 
-        match select_one_with_style(menu_items)? {
-            Some(CategoryMenuItem::SearchAll) => {
-                if !handle_search_all(&mut ctx)? {
-                    break;
+        match select_one_with_style_at(menu_items.clone(), cursor)? {
+            Some(selected) => {
+                if let Some(index) = menu_items.iter().position(|candidate| candidate == &selected)
+                {
+                    cursor = Some(index);
                 }
-            }
-            Some(CategoryMenuItem::Category(item)) => {
-                if !handle_category(&mut ctx, item.category)? {
-                    break;
+
+                match selected {
+                    CategoryMenuItem::SearchAll => {
+                        if !handle_search_all(&mut ctx)? {
+                            break;
+                        }
+                    }
+                    CategoryMenuItem::Category(item) => {
+                        if !handle_category(&mut ctx, item.category)? {
+                            break;
+                        }
+                    }
                 }
             }
             None => break,
@@ -95,6 +105,8 @@ pub fn handle_category(
         return Ok(true);
     }
 
+    let mut cursor: Option<usize> = None;
+
     loop {
         let mut entries: Vec<CategoryPageItem> = Vec::with_capacity(setting_defs.len() + 1);
         for &definition in &setting_defs {
@@ -104,8 +116,14 @@ pub fn handle_category(
 
         entries.push(CategoryPageItem::Back);
 
-        match select_one_with_style(entries)? {
+        match select_one_with_style_at(entries.clone(), cursor)? {
             Some(CategoryPageItem::Setting(item)) => {
+                if let Some(index) = entries
+                    .iter()
+                    .position(|candidate| candidate == &CategoryPageItem::Setting(item))
+                {
+                    cursor = Some(index);
+                }
                 super::handlers::handle_setting(ctx, item.definition, item.state)?;
                 ctx.persist()?;
             }
@@ -115,6 +133,8 @@ pub fn handle_category(
 }
 
 pub fn handle_search_all(ctx: &mut SettingsContext) -> Result<bool> {
+    let mut cursor: Option<usize> = None;
+
     loop {
         let mut items = Vec::new();
 
@@ -135,8 +155,11 @@ pub fn handle_search_all(ctx: &mut SettingsContext) -> Result<bool> {
             return Ok(true);
         }
 
-        match select_one_with_style(items)? {
+        match select_one_with_style_at(items.clone(), cursor)? {
             Some(selection) => {
+                if let Some(index) = items.iter().position(|candidate| candidate == &selection) {
+                    cursor = Some(index);
+                }
                 super::handlers::handle_setting(ctx, selection.definition, selection.state)?;
                 ctx.persist()?;
             }
