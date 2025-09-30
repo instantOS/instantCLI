@@ -27,7 +27,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git
+          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git cmake
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
