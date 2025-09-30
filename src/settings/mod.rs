@@ -10,7 +10,7 @@ use crate::fzf_wrapper::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 pub use store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
-use registry::{SettingCategory, SettingDefinition, SettingKind, SettingOption, CATEGORIES};
+use registry::{CATEGORIES, SettingCategory, SettingDefinition, SettingKind, SettingOption};
 
 #[derive(Debug)]
 pub struct SettingsContext {
