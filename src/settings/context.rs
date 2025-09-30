@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 use duct::cmd;
 use sudo::RunningAs;
 
+use crate::common::requirements::RequiredPackage;
 use crate::ui::prelude::*;
 
 use super::registry::{SettingDefinition, SettingKind, SettingOption};
@@ -57,6 +58,16 @@ impl SettingsContext {
             self.store.set_string(key, value);
             self.dirty = true;
         }
+    }
+
+    pub fn ensure_packages(&mut self, packages: &[RequiredPackage]) -> Result<bool> {
+        let mut all_installed = true;
+        for package in packages {
+            if !package.ensure()? {
+                all_installed = false;
+            }
+        }
+        Ok(all_installed)
     }
 
     pub fn persist(&mut self) -> Result<()> {

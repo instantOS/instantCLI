@@ -92,6 +92,39 @@ const WIREMIX_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::WhichSucceeds("wiremix")],
 };
 
+pub const BLUETOOTH_SERVICE_KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.service", false);
+pub const BLUETOOTH_APPLET_KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.applet", false);
+pub const BLUETOOTH_HARDWARE_OVERRIDE_KEY: BoolSettingKey =
+    BoolSettingKey::new("bluetooth.hardware_override", false);
+
+pub const BLUEZ_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "BlueZ bluetooth daemon",
+    arch_package_name: Some("bluez"),
+    ubuntu_package_name: Some("bluez"),
+    tests: &[
+        InstallTest::WhichSucceeds("bluetoothd"),
+        InstallTest::FileExists("/usr/lib/systemd/system/bluetooth.service"),
+    ],
+};
+
+pub const BLUEZ_UTILS_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "BlueZ utilities",
+    arch_package_name: Some("bluez-utils"),
+    ubuntu_package_name: Some("bluez"),
+    tests: &[InstallTest::WhichSucceeds("bluetoothctl")],
+};
+
+pub const BLUEMAN_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Blueman applet",
+    arch_package_name: Some("blueman"),
+    ubuntu_package_name: Some("blueman"),
+    tests: &[InstallTest::WhichSucceeds("blueman-applet")],
+};
+
+pub const BLUETOOTH_CORE_PACKAGES: [RequiredPackage; 2] = [BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE];
+pub const BLUETOOTH_APPLET_PACKAGES: [RequiredPackage; 3] =
+    [BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE, BLUEMAN_PACKAGE];
+
 pub const CATEGORIES: &[SettingCategory] = &[
     SettingCategory {
         id: "appearance",
@@ -122,6 +155,12 @@ pub const CATEGORIES: &[SettingCategory] = &[
         title: "System",
         description: "System administration and user management.",
         icon: Fa::InfoCircle,
+    },
+    SettingCategory {
+        id: "connectivity",
+        title: "Connectivity",
+        description: "Bluetooth and wireless device access.",
+        icon: Fa::Bluetooth,
     },
 ];
 
@@ -247,6 +286,45 @@ pub const SETTINGS: &[SettingDefinition] = &[
         kind: SettingKind::Action {
             summary: "Create and update Linux users, groups, and shells.",
             run: users::manage_users,
+        },
+        requires_reapply: false,
+    },
+    SettingDefinition {
+        id: "connectivity.bluetooth.service",
+        title: "Bluetooth service",
+        category: "connectivity",
+        icon: Fa::Bluetooth,
+        breadcrumbs: &["Bluetooth", "Service"],
+        kind: SettingKind::Toggle {
+            key: BLUETOOTH_SERVICE_KEY,
+            summary: "Enable the system Bluetooth service and keep it running.",
+            apply: Some(super::actions::apply_bluetooth_service),
+        },
+        requires_reapply: false,
+    },
+    SettingDefinition {
+        id: "connectivity.bluetooth.applet",
+        title: "Bluetooth applet",
+        category: "connectivity",
+        icon: Fa::Bluetooth,
+        breadcrumbs: &["Bluetooth", "Applet"],
+        kind: SettingKind::Toggle {
+            key: BLUETOOTH_APPLET_KEY,
+            summary: "Start or stop the Blueman tray applet.",
+            apply: Some(super::actions::apply_bluetooth_applet),
+        },
+        requires_reapply: false,
+    },
+    SettingDefinition {
+        id: "connectivity.bluetooth.pair",
+        title: "Set up new device",
+        category: "connectivity",
+        icon: Fa::Bluetooth,
+        breadcrumbs: &["Bluetooth", "Pair new device"],
+        kind: SettingKind::Command {
+            summary: "Launch the Blueman assistant to pair a Bluetooth device.",
+            command: CommandSpec::detached("blueman-assistant", &[]),
+            required: &BLUETOOTH_APPLET_PACKAGES,
         },
         requires_reapply: false,
     },
