@@ -63,6 +63,17 @@ https://github.com/tsowell/wiremix
 (it is a TUI, so it can just be opened in the terminal the settings are running
 in)
 
+## Styling
+
+Place some spacing around the icons of the settings entries, and place
+separators between them and the actual text.
+
+Use these arguments for the settings menu choice menu:
+fzf --gap-line="-" --gap
+
+This will separat them more and make it look nicer. 
+
+
 ## Remove Entries
 
 This will list redundant entries which I do not like
