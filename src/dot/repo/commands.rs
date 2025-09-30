@@ -40,38 +40,89 @@ fn list_repositories(config_manager: &ConfigManager, _db: &Database) -> Result<(
     let config = config_manager.config();
 
     if config.repos.is_empty() {
-        println!("No repositories configured.");
+        match get_output_format() {
+            OutputFormat::Json => {
+                let data = serde_json::json!({
+                    "repos": [],
+                    "count": 0
+                });
+                emit(
+                    Level::Info,
+                    "dot.repo.list",
+                    "No repositories configured",
+                    Some(data),
+                );
+            }
+            OutputFormat::Text => {
+                println!("No repositories configured.");
+            }
+        }
         return Ok(());
     }
 
-    println!("Configured repositories:");
-    for repo_config in &config.repos {
-        let status = if repo_config.enabled {
-            "enabled".green()
-        } else {
-            "disabled".yellow()
-        };
+    match get_output_format() {
+        OutputFormat::Json => {
+            let repos_data: Vec<_> = config
+                .repos
+                .iter()
+                .map(|repo_config| {
+                    serde_json::json!({
+                        "name": repo_config.name,
+                        "url": repo_config.url,
+                        "branch": repo_config.branch,
+                        "enabled": repo_config.enabled,
+                        "active_subdirectories": if repo_config.active_subdirectories.is_empty() {
+                            vec!["dots"]
+                        } else {
+                            repo_config.active_subdirectories.iter().map(|s| s.as_str()).collect::<Vec<_>>()
+                        }
+                    })
+                })
+                .collect();
 
-        let branch_info = repo_config
-            .branch
-            .as_deref()
-            .map(|b| format!(" ({b})"))
-            .unwrap_or_default();
+            let data = serde_json::json!({
+                "repos": repos_data,
+                "count": config.repos.len()
+            });
 
-        let active_subdirs = if repo_config.active_subdirectories.is_empty() {
-            "dots".to_string()
-        } else {
-            repo_config.active_subdirectories.join(", ")
-        };
+            emit(
+                Level::Info,
+                "dot.repo.list",
+                &format!("Configured repositories: {}", config.repos.len()),
+                Some(data),
+            );
+        }
+        OutputFormat::Text => {
+            println!("Configured repositories:");
+            for repo_config in &config.repos {
+                let status = if repo_config.enabled {
+                    "enabled".green()
+                } else {
+                    "disabled".yellow()
+                };
 
-        println!(
-            "  {}{} - {} [{}]",
-            repo_config.name.cyan(),
-            branch_info,
-            repo_config.url,
-            status
-        );
-        println!("    Active subdirs: {active_subdirs}");
+                let branch_info = repo_config
+                    .branch
+                    .as_deref()
+                    .map(|b| format!(" ({b})"))
+                    .unwrap_or_default();
+
+                let active_subdirs = if repo_config.active_subdirectories.is_empty() {
+                    "dots".to_string()
+                } else {
+                    repo_config.active_subdirectories.join(", ")
+                };
+
+                println!(
+                    "  {}{} - {} [{}]",
+                    repo_config.name.cyan(),
+                    branch_info,
+                    repo_config.url,
+                    status
+                );
+                println!("    Active subdirs: {active_subdirs}");
+            }
+        }
     }
 
     Ok(())
