@@ -27,9 +27,14 @@ pub fn setup_uninstalled_games() -> Result<()> {
     let uninstalled_games = find_uninstalled_games(&game_config, &installations)?;
 
     if uninstalled_games.is_empty() {
-        success(
+        emit(
+            Level::Success,
             "game.setup.all_configured",
-            "All games are already configured for this device!",
+            &format!(
+                "{} All games are already configured for this device!",
+                char::from(Fa::CheckCircle)
+            ),
+            None,
         );
         return Ok(());
     }
@@ -48,9 +53,14 @@ pub fn setup_uninstalled_games() -> Result<()> {
     // Process each uninstalled game
     for game_name in uninstalled_games {
         if let Err(e) = setup_single_game(&game_name, &game_config, &mut installations) {
-            error(
+            emit(
+                Level::Error,
                 "game.setup.failed",
-                &format!("Failed to set up game '{game_name}': {e}"),
+                &format!(
+                    "{} Failed to set up game '{game_name}': {e}",
+                    char::from(Fa::TimesCircle)
+                ),
+                None,
             );
 
             // Ask if user wants to continue with other games
@@ -96,9 +106,14 @@ fn setup_single_game(
     game_config: &InstantGameConfig,
     installations: &mut InstallationsConfig,
 ) -> Result<()> {
-    info(
+    emit(
+        Level::Info,
         "game.setup.start",
-        &format!("Setting up game: {game_name}"),
+        &format!(
+            "{} Setting up game: {game_name}",
+            char::from(Fa::InfoCircle)
+        ),
+        None,
     );
 
     // Get all snapshots for this game to extract paths
@@ -107,16 +122,24 @@ fn setup_single_game(
     let latest_snapshot_id = snapshots.first().map(|snapshot| snapshot.id.clone());
 
     if snapshots.is_empty() {
-        warn(
+        emit(
+            Level::Warn,
             "game.setup.no_snapshots",
-            &format!("No snapshots found for game '{game_name}'."),
+            &format!(
+                "{} No snapshots found for game '{game_name}'.",
+                char::from(Fa::ExclamationTriangle)
+            ),
+            None,
         );
-        info(
+        emit(
+            Level::Info,
             "game.setup.hint.add",
             &format!(
-                "This game has no backups yet. You'll need to add an installation manually using '{} game add'.",
+                "{} This game has no backups yet. You'll need to add an installation manually using '{} game add'.",
+                char::from(Fa::InfoCircle),
                 env!("CARGO_BIN_NAME")
             ),
+            None,
         );
         return Ok(());
     }
@@ -125,13 +148,23 @@ fn setup_single_game(
     let unique_paths = extract_unique_paths_from_snapshots(&snapshots)?;
 
     if unique_paths.is_empty() {
-        warn(
+        emit(
+            Level::Warn,
             "game.setup.no_paths",
-            &format!("No save paths found in snapshots for game '{game_name}'."),
+            &format!(
+                "{} No save paths found in snapshots for game '{game_name}'.",
+                char::from(Fa::ExclamationTriangle)
+            ),
+            None,
         );
-        info(
+        emit(
+            Level::Info,
             "game.setup.hint.manual",
-            "This is unusual. You may need to set up the installation manually.",
+            &format!(
+                "{} This is unusual. You may need to set up the installation manually.",
+                char::from(Fa::InfoCircle)
+            ),
+            None,
         );
         return Ok(());
     }
@@ -160,9 +193,14 @@ fn setup_single_game(
                 ConfirmResult::Yes => {
                     std::fs::create_dir_all(save_path.as_path())
                         .context("Failed to create save directory")?;
-                    success(
+                    emit(
+                        Level::Success,
                         "game.setup.dir_created",
-                        &format!("Created save directory: {path_str}"),
+                        &format!(
+                            "{} Created save directory: {path_str}",
+                            char::from(Fa::CheckCircle)
+                        ),
+                        None,
                     );
                     directory_created = true;
                 }
@@ -179,29 +217,49 @@ fn setup_single_game(
             path_exists_after && (directory_created || save_dir_info.file_count == 0);
 
         if should_restore && let Some(snapshot_id) = latest_snapshot_id.as_deref() {
-            info(
+            emit(
+                Level::Info,
                 "game.setup.restore_latest",
                 &format!(
                     "{} Restoring latest backup ({snapshot_id}) into {path_str}...",
                     char::from(Fa::Download)
                 ),
+                None,
             );
             let restore_summary =
                 restore_latest_backup(game_name, &save_path, snapshot_id, game_config)?;
-            success("game.setup.restore_done", &restore_summary);
+            emit(
+                Level::Success,
+                "game.setup.restore_done",
+                &format!(
+                    "{} {restore_summary}",
+                    char::from(Fa::CheckCircle)
+                ),
+                None,
+            );
             installation.update_checkpoint(snapshot_id.to_string());
         }
         installations.installations.push(installation);
         installations.save()?;
 
-        success(
+        emit(
+            Level::Success,
             "game.setup.success",
-            &format!("Game '{game_name}' set up successfully with save path: {path_str}"),
+            &format!(
+                "{} Game '{game_name}' set up successfully with save path: {path_str}",
+                char::from(Fa::CheckCircle)
+            ),
+            None,
         );
     } else {
-        warn(
+        emit(
+            Level::Warn,
             "game.setup.cancelled",
-            &format!("Setup cancelled for game '{game_name}'."),
+            &format!(
+                "{} Setup cancelled for game '{game_name}'.",
+                char::from(Fa::ExclamationTriangle)
+            ),
+            None,
         );
     }
 

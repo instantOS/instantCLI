@@ -3,13 +3,20 @@ use anyhow::Result;
 
 /// Handle game launching
 pub fn launch_game(game_name: String) -> Result<()> {
-    warn(
+    emit(
+        Level::Warn,
         "game.launch.unimplemented",
-        "Launch command is not implemented yet.",
+        &format!(
+            "{} Launch command is not implemented yet.",
+            char::from(Fa::Wrench)
+        ),
+        None,
     );
-    info(
+    emit(
+        Level::Info,
         "game.launch.preview",
-        &format!("Would launch game: {game_name}"),
+        &format!("{} Would launch game: {game_name}", char::from(Fa::Gamepad)),
+        None,
     );
 
     Ok(())

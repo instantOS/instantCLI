@@ -399,12 +399,14 @@ pub fn select_snapshot_interactive_with_local_comparison(
         .context("Failed to get snapshots for game")?;
 
     if snapshots.is_empty() {
-        warn(
+        emit(
+            Level::Warn,
             "game.snapshots.none",
             &format!(
                 "{} No snapshots found for game '{game_name}'.\n\nMake sure backups have been created for this game.",
                 char::from(Fa::ExclamationCircle)
             ),
+            None,
         );
         return Ok(None);
     }
@@ -433,7 +435,15 @@ pub fn select_snapshot_interactive_with_local_comparison(
     match selected {
         Some(enhanced) => Ok(Some(enhanced.snapshot.id)),
         None => {
-            info("game.snapshots.cancelled", "No snapshot selected.");
+            emit(
+                Level::Info,
+                "game.snapshots.cancelled",
+                &format!(
+                    "{} No snapshot selected.",
+                    char::from(Fa::InfoCircle)
+                ),
+                None,
+            );
             Ok(None)
         }
     }

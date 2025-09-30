@@ -51,14 +51,18 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit(
                     Level::Error,
                     "game.sync.installation_missing",
-                    &format!("❌ Error: No installation found for game '{name}'."),
+                    &format!(
+                        "{} Error: No installation found for game '{name}'.",
+                        char::from(Fa::TimesCircle)
+                    ),
                     None,
                 );
                 emit(
                     Level::Info,
                     "game.sync.hint.add",
                     &format!(
-                        "📝 Please add the game first using '{} game add'.",
+                        "{} Please add the game first using '{} game add'.",
+                        char::from(Fa::InfoCircle),
                         env!("CARGO_BIN_NAME")
                     ),
                     None,
@@ -72,11 +76,23 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     };
 
     if games_to_sync.is_empty() {
-        emit(Level::Warn, "game.sync.none", "⚠️ No games configured for syncing.", None);
+        emit(
+            Level::Warn,
+            "game.sync.none",
+            &format!(
+                "{} No games configured for syncing.",
+                char::from(Fa::ExclamationTriangle)
+            ),
+            None,
+        );
         emit(
             Level::Info,
             "game.sync.hint.add",
-            &format!("📝 Add games using '{} game add'.", env!("CARGO_BIN_NAME")),
+            &format!(
+                "{} Add games using '{} game add'.",
+                char::from(Fa::InfoCircle),
+                env!("CARGO_BIN_NAME")
+            ),
             None,
         );
         return Ok(());
@@ -93,7 +109,11 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit(
                     Level::Success,
                     "game.sync.already_in_sync",
-                    &format!("✅ {}: Already in sync", installation.game_name.0.green()),
+                    &format!(
+                        "{} {}: Already in sync",
+                        char::from(Fa::CheckCircle),
+                        installation.game_name.0.green()
+                    ),
                     None,
                 );
                 total_skipped += 1;
@@ -103,7 +123,8 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     Level::Info,
                     "game.sync.restore_skipped",
                     &format!(
-                        "📋 {}: Cloud checkpoint {} already matches your local saves (use --force to override)",
+                        "{} {}: Cloud checkpoint {} already matches your local saves (use --force to override)",
+                        char::from(Fa::InfoCircle),
                         installation.game_name.0.yellow(),
                         snapshot_id
                     ),
@@ -115,14 +136,23 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit(
                     Level::Info,
                     "game.sync.backup.start",
-                    &format!("🔄 {}: Creating backup...", installation.game_name.0.yellow()),
+                    &format!(
+                        "{} {}: Creating backup...",
+                        char::from(Fa::InfoCircle),
+                        installation.game_name.0.yellow()
+                    ),
                     None,
                 );
                 if let Err(e) = create_backup_for_game(&installation, &game_config) {
                     emit(
                         Level::Error,
                         "game.sync.backup.failed",
-                        &format!("💥 {}: Backup failed: {}", installation.game_name.0.red(), e),
+                        &format!(
+                            "{} {}: Backup failed: {}",
+                            char::from(Fa::TimesCircle),
+                            installation.game_name.0.red(),
+                            e
+                        ),
                         None,
                     );
                     total_errors += 1;
@@ -130,7 +160,11 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit(
                         Level::Success,
                         "game.sync.backup.completed",
-                        &format!("🎉 {}: Backup completed", installation.game_name.0.green()),
+                        &format!(
+                            "{} {}: Backup completed",
+                            char::from(Fa::CheckCircle),
+                            installation.game_name.0.green()
+                        ),
                         None,
                     );
                     total_synced += 1;
@@ -141,7 +175,8 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     Level::Info,
                     "game.sync.restore.start",
                     &format!(
-                        "🔄 {}: Restoring from snapshot...",
+                        "{} {}: Restoring from snapshot...",
+                        char::from(Fa::InfoCircle),
                         installation.game_name.0.yellow()
                     ),
                     None,
@@ -152,7 +187,12 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit(
                         Level::Error,
                         "game.sync.restore.failed",
-                        &format!("💥 {}: Restore failed: {}", installation.game_name.0.red(), e),
+                        &format!(
+                            "{} {}: Restore failed: {}",
+                            char::from(Fa::TimesCircle),
+                            installation.game_name.0.red(),
+                            e
+                        ),
                         None,
                     );
                     total_errors += 1;
@@ -160,7 +200,11 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit(
                         Level::Success,
                         "game.sync.restore.completed",
-                        &format!("🚀 {}: Restore completed", installation.game_name.0.green()),
+                        &format!(
+                            "{} {}: Restore completed",
+                            char::from(Fa::CheckCircle),
+                            installation.game_name.0.green()
+                        ),
                         None,
                     );
                     total_synced += 1;
@@ -171,7 +215,8 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     Level::Info,
                     "game.sync.restore.latest.start",
                     &format!(
-                        "🔄 {}: No local saves, restoring from latest snapshot...",
+                        "{} {}: No local saves, restoring from latest snapshot...",
+                        char::from(Fa::InfoCircle),
                         installation.game_name.0.yellow()
                     ),
                     None,
@@ -182,7 +227,12 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit(
                         Level::Error,
                         "game.sync.restore.latest.failed",
-                        &format!("💥 {}: Restore failed: {}", installation.game_name.0.red(), e),
+                        &format!(
+                            "{} {}: Restore failed: {}",
+                            char::from(Fa::TimesCircle),
+                            installation.game_name.0.red(),
+                            e
+                        ),
                         None,
                     );
                     total_errors += 1;
@@ -190,7 +240,11 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit(
                         Level::Success,
                         "game.sync.restore.latest.completed",
-                        &format!("🚀 {}: Restore completed", installation.game_name.0.green()),
+                        &format!(
+                            "{} {}: Restore completed",
+                            char::from(Fa::CheckCircle),
+                            installation.game_name.0.green()
+                        ),
                         None,
                     );
                     total_synced += 1;
@@ -201,7 +255,8 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     Level::Info,
                     "game.sync.initial_backup.start",
                     &format!(
-                        "🔄 {}: No snapshots found, creating initial backup...",
+                        "{} {}: No snapshots found, creating initial backup...",
+                        char::from(Fa::InfoCircle),
                         installation.game_name.0.yellow()
                     ),
                     None,
@@ -211,7 +266,8 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         Level::Error,
                         "game.sync.initial_backup.failed",
                         &format!(
-                            "💥 {}: Initial backup failed: {}",
+                            "{} {}: Initial backup failed: {}",
+                            char::from(Fa::TimesCircle),
                             installation.game_name.0.red(),
                             e
                         ),
@@ -223,7 +279,8 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         Level::Success,
                         "game.sync.initial_backup.completed",
                         &format!(
-                            "🎉 {}: Initial backup completed",
+                            "{} {}: Initial backup completed",
+                            char::from(Fa::CheckCircle),
                             installation.game_name.0.green()
                         ),
                         None,
@@ -235,7 +292,12 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit(
                     Level::Error,
                     "game.sync.error",
-                    &format!("🚫 {}: {}", installation.game_name.0.red(), msg),
+                    &format!(
+                        "{} {}: {}",
+                        char::from(Fa::TimesCircle),
+                        installation.game_name.0.red(),
+                        msg
+                    ),
                     None,
                 );
                 total_errors += 1;
@@ -244,7 +306,12 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit(
                     Level::Error,
                     "game.sync.failed",
-                    &format!("❌ {}: Sync failed: {}", installation.game_name.0.red(), e),
+                    &format!(
+                        "{} {}: Sync failed: {}",
+                        char::from(Fa::TimesCircle),
+                        installation.game_name.0.red(),
+                        e
+                    ),
                     None,
                 );
                 total_errors += 1;

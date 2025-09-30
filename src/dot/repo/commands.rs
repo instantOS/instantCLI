@@ -105,7 +105,13 @@ fn add_repository(
     emit(
         Level::Success,
         "dot.repo.added",
-        &format!("📦 Added repository '{}' from {}", repo_name, url),
+        &format!(
+            "{} Added repository '{}' from {}",
+            char::from(Fa::CheckCircle),
+            repo_name,
+            url
+        ),
+        None,
     );
 
     // Clone the repository
@@ -114,20 +120,33 @@ fn add_repository(
             emit(
                 Level::Info,
                 "dot.repo.add.clone_path",
-                &format!("📂 Cloned to: {}", path.display()),
+                &format!(
+                    "{} Cloned to: {}",
+                    char::from(Fa::Folder),
+                    path.display()
+                ),
+                None,
             );
 
             // Apply the repository immediately after adding
             emit(
                 Level::Info,
                 "dot.repo.add.apply",
-                "🔄 Applying dotfiles from new repository...",
+                &format!(
+                    "{} Applying dotfiles from new repository...",
+                    char::from(Fa::InfoCircle)
+                ),
+                None,
             );
             if let Err(e) = apply_all_repos(config_manager, db) {
                 emit(
                     Level::Warn,
                     "dot.repo.add.apply_failed",
-                    &format!("⚠️ Failed to apply dotfiles: {e}"),
+                    &format!(
+                        "{} Failed to apply dotfiles: {e}",
+                        char::from(Fa::ExclamationTriangle)
+                    ),
+                    None,
                 );
             }
         }
@@ -135,7 +154,11 @@ fn add_repository(
             emit(
                 Level::Error,
                 "dot.repo.add.clone_failed",
-                &format!("❌ Failed to clone repository: {e}"),
+                &format!(
+                    "{} Failed to clone repository: {e}",
+                    char::from(Fa::TimesCircle)
+                ),
+                None,
             );
             // Remove from config since clone failed
             config_manager.remove_repo(&repo_name)?;

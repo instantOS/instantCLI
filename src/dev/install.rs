@@ -67,14 +67,20 @@ impl PackageRepo {
         emit(
             Level::Warn,
             "dev.install.local_changes",
-            "⚠️ Local changes detected in package repository",
-            None
+            &format!(
+                "{} Local changes detected in package repository",
+                char::from(Fa::ExclamationTriangle)
+            ),
+            None,
         );
         emit(
             Level::Info,
             "dev.install.stash",
-            "🔄 Stashing local changes...",
-            None
+            &format!(
+                "{} Stashing local changes...",
+                char::from(Fa::InfoCircle)
+            ),
+            None,
         );
 
         let mut repo =
@@ -92,19 +98,29 @@ impl PackageRepo {
 
 pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
     if debug {
+        let message = format!(
+            "{} Building package: {}",
+            char::from(Fa::Bug),
+            package.name
+        );
         emit(
             Level::Debug,
             "dev.install.build.start",
-            format!("🔧 Building package: {}", package.name).as_str(),
-            None
+            &message,
+            None,
         );
     }
 
+    let build_message = format!(
+        "{} Building and installing {}... (This may be interactive)",
+        char::from(Fa::InfoCircle),
+        package.name
+    );
     emit(
         Level::Info,
         "dev.install.build.install",
-        format!("📦 Building and installing {}... (This may be interactive)", package.name).as_str(),
-        None
+        &build_message,
+        None,
     );
 
     // Build and install package (interactive - no spinner)
@@ -113,11 +129,16 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
         .run()
         .context("Failed to build and install package")?;
 
+    let success_message = format!(
+        "{} Successfully installed {}",
+        char::from(Fa::CheckCircle),
+        package.name
+    );
     emit(
         Level::Success,
         "dev.install.success",
-        format!("🎉 Successfully installed {}", package.name).as_str(),
-        None
+        &success_message,
+        None,
     );
 
     Ok(())
@@ -125,11 +146,15 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
 
 pub async fn handle_install(debug: bool) -> Result<()> {
     if debug {
+        let start_message = format!(
+            "{} Starting package installation...",
+            char::from(Fa::Bug)
+        );
         emit(
             Level::Debug,
             "dev.install.start",
-            "🚀 Starting package installation...",
-            None
+            &start_message,
+            None,
         );
     }
 
@@ -142,11 +167,15 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     pb.finish_with_message("Package repository ready".to_string());
 
     if debug {
+        let discover_message = format!(
+            "{} Discovering packages...",
+            char::from(Fa::Bug)
+        );
         emit(
             Level::Debug,
             "dev.install.discover",
-            "🔍 Discovering packages...",
-            None
+            &discover_message,
+            None,
         );
     }
 
@@ -158,18 +187,29 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     }
 
     if debug {
+        let count_message = format!(
+            "{} Found {} packages",
+            char::from(Fa::Bug),
+            packages.len()
+        );
         emit(
             Level::Debug,
             "dev.install.packages.count",
-            format!("📊 Found {} packages", packages.len()).as_str(),
-            None
+            &count_message,
+            None,
         );
         for pkg in &packages {
+            let item_message = format!(
+                "{}  - {} ({:?})",
+                char::from(Fa::Bug),
+                pkg.name,
+                pkg.description
+            );
             emit(
                 Level::Debug,
                 "dev.install.packages.item",
-                format!("📋  - {} ({:?})", pkg.name, pkg.description).as_str(),
-                None
+                &item_message,
+                None,
             );
         }
     }
@@ -178,11 +218,16 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     let selected_package = select_package(packages).context("Failed to select package")?;
 
     if debug {
+        let selected_message = format!(
+            "{} Selected package: {}",
+            char::from(Fa::Bug),
+            selected_package.name
+        );
         emit(
             Level::Debug,
             "dev.install.selected",
-            format!("📝 Selected package: {}", selected_package.name).as_str(),
-            None
+            &selected_message,
+            None,
         );
     }
 

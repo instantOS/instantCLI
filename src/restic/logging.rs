@@ -143,7 +143,15 @@ impl ResticCommandLogger {
         let limit = limit.unwrap_or(10);
         let recent_logs = logs.iter().take(limit);
 
-        info("restic.logs.list.start", "Recent Restic Command Logs:");
+        emit(
+            Level::Info,
+            "restic.logs.list.start",
+            &format!(
+                "{} Recent Restic Command Logs:",
+                char::from(Fa::List)
+            ),
+            None,
+        );
         separator(false);
 
         for (i, log) in recent_logs.enumerate() {
@@ -208,7 +216,15 @@ impl ResticCommandLogger {
         }
 
         if logs.is_empty() {
-            info("restic.logs.empty", "No restic command logs found.");
+            emit(
+                Level::Info,
+                "restic.logs.empty",
+                &format!(
+                    "{} No restic command logs found.",
+                    char::from(Fa::InfoCircle)
+                ),
+                None,
+            );
         }
 
         Ok(())

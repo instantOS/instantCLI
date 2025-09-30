@@ -64,7 +64,8 @@ fn show_available_fixes(results: &[CheckResult]) {
                     Level::Info,
                     "doctor.available_fixes",
                     &format!(
-                        "📊 Available fixes: {} fixable issues detected",
+                        "{} Available fixes: {} fixable issues detected",
+                        char::from(Fa::List),
                         fixes_data.len()
                     ),
                     Some(serde_json::json!({
@@ -90,7 +91,8 @@ fn show_available_fixes(results: &[CheckResult]) {
                     Level::Info,
                     "doctor.manual_intervention",
                     &format!(
-                        "📋 Manual intervention required: {} issues need attention",
+                        "{} Manual intervention required: {} issues need attention",
+                        char::from(Fa::ExclamationCircle),
                         manual_data.len()
                     ),
                     Some(serde_json::json!({
@@ -169,7 +171,11 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
     emit(
         Level::Info,
         "doctor.fix.check",
-        &format!("🩺 Checking current state for '{}'...", check.name()),
+        &format!(
+            "{} Checking current state for '{}'...",
+            char::from(Fa::InfoCircle),
+            check.name()
+        ),
         None,
     );
     let check_result = check.execute().await;
@@ -179,13 +185,21 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         emit(
             Level::Success,
             "doctor.fix.not_needed",
-            &format!("✅ {}: {}", check.name(), check_result.message()),
+            &format!(
+                "{} {}: {}",
+                char::from(Fa::CheckCircle),
+                check.name(),
+                check_result.message()
+            ),
             None,
         );
         emit(
             Level::Info,
             "doctor.fix.not_needed",
-            "💊 No fix needed - check already passes.",
+            &format!(
+                "{} No fix needed - check already passes.",
+                char::from(Fa::InfoCircle)
+            ),
             None,
         );
         return Ok(());
@@ -195,7 +209,12 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         emit(
             Level::Error,
             "doctor.fix.not_fixable",
-            &format!("❌ {}: {}", check.name(), check_result.message()),
+            &format!(
+                "{} {}: {}",
+                char::from(Fa::TimesCircle),
+                check.name(),
+                check_result.message()
+            ),
             None,
         );
         return Err(anyhow!(
@@ -209,7 +228,8 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         Level::Warn,
         "doctor.fix.available",
         &format!(
-            "⚠️ {}: {}",
+            "{} {}: {}",
+            char::from(Fa::ExclamationTriangle),
             check.name(),
             check_result.message()
         ),
@@ -218,7 +238,10 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
     emit(
         Level::Info,
         "doctor.fix.available",
-        "🩹 Fix is available and will be applied.",
+        &format!(
+            "{} Fix is available and will be applied.",
+            char::from(Fa::InfoCircle)
+        ),
         None,
     );
 
@@ -234,7 +257,8 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
                 Level::Warn,
                 "doctor.fix.privileges",
                 &format!(
-                    "🔄 Fix for '{}' requires administrator privileges.",
+                    "{} Fix for '{}' requires administrator privileges.",
+                    char::from(Fa::ExclamationTriangle),
                     check.name()
                 ),
                 None,
@@ -246,11 +270,14 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
                 unreachable!()
             } else {
                 emit(
-        Level::Info,
-        "doctor.fix.cancelled",
-        "🚫 Fix cancelled by user.",
-        None,
-    );
+                    Level::Info,
+                    "doctor.fix.cancelled",
+                    &format!(
+                        "{} Fix cancelled by user.",
+                        char::from(Fa::InfoCircle)
+                    ),
+                    None,
+                );
                 Ok(())
             }
         }
@@ -270,7 +297,11 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
     emit(
         Level::Info,
         "doctor.fix.applying",
-        &format!("🏥 Applying fix for {}...", check_name),
+        &format!(
+            "{} Applying fix for {}...",
+            char::from(Fa::InfoCircle),
+            check_name
+        ),
         None,
     );
 
@@ -287,7 +318,12 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
             emit(
                 Level::Error,
                 "doctor.fix.failed",
-                &format!("💥 Failed to apply fix for {}: {}", check.name(), e),
+                &format!(
+                    "{} Failed to apply fix for {}: {}",
+                    char::from(Fa::TimesCircle),
+                    check.name(),
+                    e
+                ),
                 None,
             );
             Err(e)

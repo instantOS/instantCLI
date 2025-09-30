@@ -42,22 +42,33 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
         Level::Success,
         "dev.clone.success",
         &format!(
-            "🚀 Successfully cloned {} to {}",
+            "{} Successfully cloned {} to {}",
+            char::from(Fa::CheckCircle),
             repo.name,
             target_dir.display()
         ),
+        None,
     );
     emit(
         Level::Info,
         "dev.clone.repo",
-        &format!("📋 Repository: {}", repo.html_url),
+        &format!(
+            "{} Repository: {}",
+            char::from(Fa::InfoCircle),
+            repo.html_url
+        ),
+        None,
     );
 
     if let Some(desc) = &repo.description {
         emit(
             Level::Info,
             "dev.clone.description",
-            &format!("📝 {desc}")
+            &format!(
+                "{} {desc}",
+                char::from(Fa::InfoCircle)
+            ),
+            None,
         );
     }
 
@@ -77,9 +88,11 @@ pub fn ensure_workspace_dir() -> Result<std::path::PathBuf> {
             Level::Info,
             "dev.clone.workspace_created",
             &format!(
-                "📂 Created workspace directory: {}",
+                "{} Created workspace directory: {}",
+                char::from(Fa::Folder),
                 workspace_dir.display()
             ),
+            None,
         );
     }
 
