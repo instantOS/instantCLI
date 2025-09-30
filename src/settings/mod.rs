@@ -112,11 +112,33 @@ pub fn handle_settings_command(debug: bool) -> Result<()> {
 
         let mut total_settings = 0usize;
         for category in CATEGORIES {
-            let count = registry::settings_for_category(category.id).len();
-            total_settings += count;
+            let definitions = registry::settings_for_category(category.id);
+            total_settings += definitions.len();
+
+            let mut toggles = 0usize;
+            let mut choices = 0usize;
+            let mut actions = 0usize;
+            let mut highlights = [None, None, None];
+
+            for (idx, definition) in definitions.iter().enumerate() {
+                match definition.kind {
+                    SettingKind::Toggle { .. } => toggles += 1,
+                    SettingKind::Choice { .. } => choices += 1,
+                    SettingKind::Action { .. } => actions += 1,
+                }
+
+                if idx < highlights.len() {
+                    highlights[idx] = Some(*definition);
+                }
+            }
+
             menu_items.push(CategoryMenuItem::Category(CategoryItem {
                 category,
-                total: count,
+                total: definitions.len(),
+                toggles,
+                choices,
+                actions,
+                highlights,
             }));
         }
 
@@ -320,6 +342,10 @@ fn handle_setting(
 struct CategoryItem {
     category: &'static SettingCategory,
     total: usize,
+    toggles: usize,
+    choices: usize,
+    actions: usize,
+    highlights: [Option<&'static SettingDefinition>; 3],
 }
 
 #[derive(Clone, Copy)]
@@ -380,7 +406,56 @@ impl FzfSelectable for CategoryItem {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Text(self.category.description.to_string())
+        let mut lines = Vec::new();
+
+        lines.push(format!(
+            "{} {}",
+            char::from(Fa::InfoCircle),
+            self.category.description
+        ));
+
+        lines.push(String::new());
+        lines.push(format!(
+            "{} {} total settings",
+            char::from(Fa::List),
+            self.total
+        ));
+        lines.push(format!(
+            "{} {} toggle{}",
+            char::from(Fa::ToggleOn),
+            self.toggles,
+            if self.toggles == 1 { "" } else { "s" }
+        ));
+        lines.push(format!(
+            "{} {} choice{}",
+            char::from(Fa::List),
+            self.choices,
+            if self.choices == 1 { "" } else { "s" }
+        ));
+        lines.push(format!(
+            "{} {} action{}",
+            char::from(Fa::Check),
+            self.actions,
+            if self.actions == 1 { "" } else { "s" }
+        ));
+
+        let highlights: Vec<_> = self.highlights.iter().flatten().take(3).collect();
+
+        if !highlights.is_empty() {
+            lines.push(String::new());
+            lines.push(format!("{} Featured settings:", char::from(Fa::LightbulbO)));
+
+            for definition in highlights {
+                lines.push(format!(
+                    "  {} {} — {}",
+                    char::from(definition.icon),
+                    definition.title,
+                    setting_summary(definition)
+                ));
+            }
+        }
+
+        FzfPreview::Text(lines.join("\n"))
     }
 }
 
@@ -543,6 +618,14 @@ impl FzfSelectable for SearchItem {
             | SettingKind::Choice { summary, .. }
             | SettingKind::Action { summary, .. } => FzfPreview::Text(summary.to_string()),
         }
+    }
+}
+
+fn setting_summary(definition: &SettingDefinition) -> &'static str {
+    match &definition.kind {
+        SettingKind::Toggle { summary, .. } => summary,
+        SettingKind::Choice { summary, .. } => summary,
+        SettingKind::Action { summary, .. } => summary,
     }
 }
 
