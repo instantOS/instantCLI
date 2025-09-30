@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf, process::Command};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use duct::cmd;
 use sudo::RunningAs;
 
@@ -231,11 +231,7 @@ pub fn make_apply_override(
         (crate::settings::registry::SettingKind::Toggle { .. }, Some(value), _) => {
             Some(ApplyOverride::Bool(value))
         }
-        (
-            crate::settings::registry::SettingKind::Choice { options, .. },
-            _,
-            Some(value),
-        ) => options
+        (crate::settings::registry::SettingKind::Choice { options, .. }, _, Some(value)) => options
             .iter()
             .find(|option| option.value == value)
             .map(ApplyOverride::Choice),

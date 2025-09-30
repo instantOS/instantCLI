@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::fzf_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 
-use super::{SettingsContext, select_one_with_style};
+use super::context::{SettingsContext, format_icon, select_one_with_style};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct UsersFile {
@@ -135,14 +135,14 @@ impl FzfSelectable for ManageMenuItem {
                 };
                 format!(
                     "{} {} ({}) [{}]",
-                    super::format_icon(Fa::User),
+                    format_icon(Fa::User),
                     username,
                     shell,
                     label
                 )
             }
-            ManageMenuItem::Add => format!("{} Add user", super::format_icon(Fa::Plus)),
-            ManageMenuItem::Back => format!("{} Back", super::format_icon(Fa::ArrowLeft)),
+            ManageMenuItem::Add => format!("{} Add user", format_icon(Fa::Plus)),
+            ManageMenuItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
         }
     }
 
@@ -186,13 +186,13 @@ enum UserActionItem {
 impl FzfSelectable for UserActionItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            UserActionItem::Apply => format!("{} Apply changes", super::format_icon(Fa::Check)),
+            UserActionItem::Apply => format!("{} Apply changes", format_icon(Fa::Check)),
             UserActionItem::ChangeShell => {
-                format!("{} Change shell", super::format_icon(Fa::Terminal))
+                format!("{} Change shell", format_icon(Fa::Terminal))
             }
-            UserActionItem::EditGroups => format!("{} Edit groups", super::format_icon(Fa::List)),
-            UserActionItem::Remove => format!("{} Remove entry", super::format_icon(Fa::TrashO)),
-            UserActionItem::Back => format!("{} Back", super::format_icon(Fa::ArrowLeft)),
+            UserActionItem::EditGroups => format!("{} Edit groups", format_icon(Fa::List)),
+            UserActionItem::Remove => format!("{} Remove entry", format_icon(Fa::TrashO)),
+            UserActionItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
         }
     }
 

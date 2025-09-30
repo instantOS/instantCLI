@@ -1,5 +1,5 @@
-use super::super::registry::{SettingDefinition, SettingKind, SettingOption};
 use super::super::context::SettingsContext;
+use super::super::registry::{SettingDefinition, SettingKind, SettingOption};
 use super::items::SettingState;
 
 pub fn compute_setting_state(

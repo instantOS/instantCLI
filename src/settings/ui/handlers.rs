@@ -1,8 +1,12 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+use duct::cmd;
+use std::process::Command;
 
 use crate::settings::registry::{SettingDefinition, SettingKind};
 
-use super::super::context::{apply_definition, format_icon, select_one_with_style, SettingsContext};
+use super::super::context::{
+    ApplyOverride, SettingsContext, apply_definition, format_icon, select_one_with_style,
+};
 use super::super::registry::CommandStyle;
 use super::items::{ChoiceItem, SettingState, ToggleChoiceItem};
 
@@ -52,9 +56,7 @@ pub fn handle_setting(
                         apply_definition(
                             ctx,
                             definition,
-                            Some(super::super::context::ApplyOverride::Bool(
-                                choice.target_enabled,
-                            )),
+                            Some(ApplyOverride::Bool(choice.target_enabled)),
                         )?;
                     }
                     ctx.emit_success(
@@ -101,9 +103,7 @@ pub fn handle_setting(
                         apply_definition(
                             ctx,
                             definition,
-                            Some(super::super::context::ApplyOverride::Choice(
-                                choice.option,
-                            )),
+                            Some(ApplyOverride::Choice(choice.option)),
                         )?;
                     }
                     ctx.emit_success(
@@ -151,12 +151,12 @@ pub fn handle_setting(
             ctx.with_definition(definition, |ctx| {
                 match command.style {
                     CommandStyle::Terminal => {
-                        duct::cmd(command.program, command.args)
+                        cmd(command.program, command.args)
                             .run()
                             .with_context(|| format!("running {}", command.program))?;
                     }
                     CommandStyle::Detached => {
-                        std::process::Command::new(command.program)
+                        Command::new(command.program)
                             .args(command.args)
                             .spawn()
                             .with_context(|| format!("spawning {}", command.program))?;

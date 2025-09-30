@@ -1,8 +1,8 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
-use crate::settings::registry::{self, CATEGORIES, SettingDefinition, SettingKind, SETTINGS};
+use crate::settings::registry::{self, CATEGORIES, SETTINGS, SettingKind};
 
-use super::super::context::{format_icon, select_one_with_style, SettingsContext};
+use super::super::context::{SettingsContext, format_icon, select_one_with_style};
 use super::items::{
     CategoryItem, CategoryMenuItem, CategoryPageItem, ChoiceItem, SearchItem, SettingItem,
     SettingState, ToggleChoiceItem,
@@ -83,7 +83,10 @@ pub fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn handle_category(ctx: &mut SettingsContext, category: &'static registry::SettingCategory) -> Result<bool> {
+pub fn handle_category(
+    ctx: &mut SettingsContext,
+    category: &'static registry::SettingCategory,
+) -> Result<bool> {
     let setting_defs = registry::settings_for_category(category.id);
     if setting_defs.is_empty() {
         ctx.emit_info(

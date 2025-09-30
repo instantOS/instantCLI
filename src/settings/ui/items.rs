@@ -1,8 +1,8 @@
 use crate::fzf_wrapper::FzfSelectable;
 use crate::ui::prelude::*;
 
-use super::super::registry::{SettingCategory, SettingDefinition, SettingKind, SettingOption};
 use super::super::context::format_icon;
+use super::super::registry::{SettingCategory, SettingDefinition, SettingKind, SettingOption};
 
 #[derive(Clone, Copy)]
 pub struct CategoryItem {
@@ -145,11 +145,9 @@ impl FzfSelectable for CategoryMenuItem {
 
     fn fzf_preview(&self) -> crate::fzf_wrapper::FzfPreview {
         match self {
-            CategoryMenuItem::SearchAll => {
-                crate::fzf_wrapper::FzfPreview::Text(
-                    "Browse and edit any available setting".to_string(),
-                )
-            }
+            CategoryMenuItem::SearchAll => crate::fzf_wrapper::FzfPreview::Text(
+                "Browse and edit any available setting".to_string(),
+            ),
             CategoryMenuItem::Category(item) => item.fzf_preview(),
         }
     }
@@ -164,14 +162,15 @@ impl FzfSelectable for SettingItem {
             }
             SettingState::Choice { current_index } => {
                 let glyph = Fa::List;
-                let current_label = if let SettingKind::Choice { options, .. } = &self.definition.kind {
-                    current_index
-                        .and_then(|index| options.get(index))
-                        .map(|option| option.label)
-                        .unwrap_or("Not set")
-                } else {
-                    "Not set"
-                };
+                let current_label =
+                    if let SettingKind::Choice { options, .. } = &self.definition.kind {
+                        current_index
+                            .and_then(|index| options.get(index))
+                            .map(|option| option.label)
+                            .unwrap_or("Not set")
+                    } else {
+                        "Not set"
+                    };
                 format!(
                     "{} {}  [{}]",
                     format_icon(glyph),
@@ -240,7 +239,10 @@ impl FzfSelectable for ChoiceItem {
     }
 
     fn fzf_preview(&self) -> crate::fzf_wrapper::FzfPreview {
-        crate::fzf_wrapper::FzfPreview::Text(format!("{}\n\n{}", self.option.description, self.summary))
+        crate::fzf_wrapper::FzfPreview::Text(format!(
+            "{}\n\n{}",
+            self.option.description, self.summary
+        ))
     }
 }
 
@@ -285,14 +287,15 @@ impl FzfSelectable for SearchItem {
             }
             SettingState::Choice { current_index } => {
                 let glyph = Fa::List;
-                let current_label = if let SettingKind::Choice { options, .. } = &self.definition.kind {
-                    current_index
-                        .and_then(|index| options.get(index))
-                        .map(|option| option.label)
-                        .unwrap_or("Not set")
-                } else {
-                    "Not set"
-                };
+                let current_label =
+                    if let SettingKind::Choice { options, .. } = &self.definition.kind {
+                        current_index
+                            .and_then(|index| options.get(index))
+                            .map(|option| option.label)
+                            .unwrap_or("Not set")
+                    } else {
+                        "Not set"
+                    };
                 format!("{} {}  [{}]", format_icon(glyph), path, current_label)
             }
             SettingState::Action => {

@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 
 use crate::settings::registry::SETTINGS;
 
-use super::context::{apply_definition, make_apply_override, SettingsContext};
+use super::context::{SettingsContext, apply_definition, make_apply_override};
 use super::store::SettingsStore;
 
 pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()> {

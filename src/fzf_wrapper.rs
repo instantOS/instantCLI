@@ -409,8 +409,8 @@ impl FzfBuilder {
         // - Capture stdout (so we can get the password result)
         // - Let stderr inherit (so gum can display prompts and errors)
         let child = cmd
-            .stdin(std::process::Stdio::inherit())  // Let gum access the terminal for input
-            .stdout(std::process::Stdio::piped())   // Capture the password output
+            .stdin(std::process::Stdio::inherit()) // Let gum access the terminal for input
+            .stdout(std::process::Stdio::piped()) // Capture the password output
             .stderr(std::process::Stdio::inherit()) // Let gum display prompts/errors
             .spawn()?;
 
