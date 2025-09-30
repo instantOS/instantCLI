@@ -222,42 +222,124 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
         .find(|r| r.name == name)
         .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found in configuration", name))?;
 
-    println!("Repository: {}", name.cyan());
-    println!("URL: {}", repo_config.url);
-    println!(
-        "Branch: {}",
-        repo_config.branch.as_deref().unwrap_or("default")
-    );
-    println!(
-        "Status: {}",
-        if repo_config.enabled {
-            "enabled".green()
-        } else {
-            "disabled".yellow()
-        }
-    );
-    println!("Local path: {}", local_repo.local_path(config)?.display());
+    let local_path = local_repo.local_path(config)?.display().to_string();
+    let status_text = if repo_config.enabled {
+        "Enabled".green().to_string()
+    } else {
+        "Disabled".yellow().to_string()
+    };
+
+    let mut rows: Vec<(char, &str, String)> = vec![
+        (char::from(Fa::Folder), "Repository", name.cyan().to_string()),
+        (char::from(Fa::InfoCircle), "URL", repo_config.url.clone()),
+        (
+            char::from(Fa::Flag),
+            "Branch",
+            repo_config
+                .branch
+                .as_deref()
+                .unwrap_or("default")
+                .to_string(),
+        ),
+        (char::from(Fa::Check), "Status", status_text),
+        (char::from(Fa::Folder), "Local Path", local_path),
+    ];
 
     if let Some(author) = &local_repo.meta.author {
-        println!("Author: {author}");
+        rows.push((char::from(Fa::InfoCircle), "Author", author.clone()));
     }
     if let Some(description) = &local_repo.meta.description {
-        println!("Description: {description}");
+        rows.push((char::from(Fa::InfoCircle), "Description", description.clone()));
     }
 
-    println!("\nSubdirectories:");
+    let label_width = rows
+        .iter()
+        .map(|(_, label, _)| label.len())
+        .max()
+        .unwrap_or(0)
+        + 1;
+
+    println!();
+    println!(
+        "{} {}",
+        char::from(Fa::List),
+        "Repository Information".bold()
+    );
+
+    for (icon, label, value) in rows {
+        println!(
+            "  {} {:<width$} {}",
+            icon,
+            format!("{}:", label),
+            value,
+            width = label_width + 1
+        );
+    }
+
+    println!();
+    println!(
+        "{} {}",
+        char::from(Fa::List),
+        "Subdirectories".bold()
+    );
+
+    if local_repo.dotfile_dirs.is_empty() {
+        println!(
+            "  {} {}",
+            char::from(Fa::InfoCircle),
+            "No dotfile directories discovered.".dimmed()
+        );
+        return Ok(());
+    }
+
+    let dir_name_width = local_repo
+        .dotfile_dirs
+        .iter()
+        .map(|dir| {
+            dir.path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .len()
+        })
+        .max()
+        .unwrap_or(0);
+
     for dir in &local_repo.dotfile_dirs {
-        let status = if dir.is_active {
-            "active".green()
-        } else {
-            "inactive".yellow()
-        };
         let dir_name = dir
             .path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("unknown");
-        println!("  {dir_name} - {status}");
+            .unwrap_or("unknown")
+            .to_string();
+        let status_icon = if dir.is_active {
+            char::from(Fa::Check)
+        } else {
+            char::from(Fa::TimesCircle)
+        };
+        let status_text = if dir.is_active {
+            "Active".green().to_string()
+        } else {
+            "Inactive".yellow().to_string()
+        };
+        let configured = repo_config
+            .active_subdirectories
+            .contains(&dir_name);
+        let configured_label = if configured {
+            "configured".blue().to_string()
+        } else {
+            "not configured".dimmed().to_string()
+        };
+
+        println!(
+            "  {} {:<name_width$} {}  ({})  {}",
+            status_icon,
+            dir_name,
+            status_text,
+            configured_label,
+            dir.path.display(),
+            name_width = dir_name_width + 2
+        );
     }
 
     Ok(())
