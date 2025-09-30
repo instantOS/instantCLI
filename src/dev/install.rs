@@ -64,14 +64,18 @@ impl PackageRepo {
     }
 
     fn handle_local_changes(&self) -> Result<()> {
-        warn(
+        emit(
+            Level::Warn,
             "dev.install.local_changes",
-            &format!(
-                "{} Local changes detected in package repository",
-                char::from(Fa::ExclamationCircle)
-            ),
+            "⚠️ Local changes detected in package repository",
+            None
         );
-        info("dev.install.stash", "Stashing local changes...");
+        emit(
+            Level::Info,
+            "dev.install.stash",
+            "🔄 Stashing local changes...",
+            None
+        );
 
         let mut repo =
             Repository::open(&self.path).context("Failed to open repository for stashing")?;
@@ -88,23 +92,19 @@ impl PackageRepo {
 
 pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
     if debug {
-        crate::ui::debug(
+        emit(
+            Level::Debug,
             "dev.install.build.start",
-            &format!(
-                "{} Building package: {}",
-                char::from(Fa::Search),
-                package.name
-            ),
+            format!("🔧 Building package: {}", package.name).as_str(),
+            None
         );
     }
 
-    info(
+    emit(
+        Level::Info,
         "dev.install.build.install",
-        &format!(
-            "{} Building and installing {}... (This may be interactive)",
-            char::from(Oct::Package),
-            package.name
-        ),
+        format!("📦 Building and installing {}... (This may be interactive)", package.name).as_str(),
+        None
     );
 
     // Build and install package (interactive - no spinner)
@@ -113,13 +113,11 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
         .run()
         .context("Failed to build and install package")?;
 
-    success(
+    emit(
+        Level::Success,
         "dev.install.success",
-        &format!(
-            "{} Successfully installed {}",
-            char::from(Fa::Check),
-            package.name
-        ),
+        format!("🎉 Successfully installed {}", package.name).as_str(),
+        None
     );
 
     Ok(())
@@ -127,12 +125,11 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
 
 pub async fn handle_install(debug: bool) -> Result<()> {
     if debug {
-        crate::ui::debug(
+        emit(
+            Level::Debug,
             "dev.install.start",
-            &format!(
-                "{} Starting package installation...",
-                char::from(Fa::Search)
-            ),
+            "🚀 Starting package installation...",
+            None
         );
     }
 
@@ -145,9 +142,11 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     pb.finish_with_message("Package repository ready".to_string());
 
     if debug {
-        crate::ui::debug(
+        emit(
+            Level::Debug,
             "dev.install.discover",
-            &format!("{} Discovering packages...", char::from(Oct::Package)),
+            "🔍 Discovering packages...",
+            None
         );
     }
 
@@ -159,14 +158,18 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     }
 
     if debug {
-        crate::ui::debug(
+        emit(
+            Level::Debug,
             "dev.install.packages.count",
-            &format!("Found {} packages", packages.len()),
+            format!("📊 Found {} packages", packages.len()).as_str(),
+            None
         );
         for pkg in &packages {
-            crate::ui::debug(
+            emit(
+                Level::Debug,
                 "dev.install.packages.item",
-                &format!("  - {} ({:?})", pkg.name, pkg.description),
+                format!("📋  - {} ({:?})", pkg.name, pkg.description).as_str(),
+                None
             );
         }
     }
@@ -175,9 +178,11 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     let selected_package = select_package(packages).context("Failed to select package")?;
 
     if debug {
-        crate::ui::debug(
+        emit(
+            Level::Debug,
             "dev.install.selected",
-            &format!("Selected package: {}", selected_package.name),
+            format!("📝 Selected package: {}", selected_package.name).as_str(),
+            None
         );
     }
 

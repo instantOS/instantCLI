@@ -2,7 +2,7 @@ use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_f
 use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
 use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
-use crate::ui::prelude::*;
+use crate::ui::{prelude::*, Level};
 use anyhow::{Result, anyhow};
 use colored::*;
 
@@ -60,12 +60,17 @@ fn show_available_fixes(results: &[CheckResult]) {
                     })
                     .collect();
 
-                data(
+                emit(
+                    Level::Info,
                     "doctor.available_fixes",
-                    serde_json::json!({
+                    &format!(
+                        "📊 Available fixes: {} fixable issues detected",
+                        fixes_data.len()
+                    ),
+                    Some(serde_json::json!({
                         "fixable": fixes_data,
                         "count": fixes_data.len(),
-                    }),
+                    })),
                 );
             }
 
@@ -81,12 +86,17 @@ fn show_available_fixes(results: &[CheckResult]) {
                     })
                     .collect();
 
-                data(
+                emit(
+                    Level::Info,
                     "doctor.manual_intervention",
-                    serde_json::json!({
+                    &format!(
+                        "📋 Manual intervention required: {} issues need attention",
+                        manual_data.len()
+                    ),
+                    Some(serde_json::json!({
                         "non_fixable": manual_data,
                         "count": manual_data.len(),
-                    }),
+                    })),
                 );
             }
         }
@@ -156,29 +166,37 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         .ok_or_else(|| anyhow!("Unknown check: {}", check_id))?;
 
     // STEP 1: Always run the check first to determine current state
-    info(
+    emit(
+        Level::Info,
         "doctor.fix.check",
-        &format!("Checking current state for '{}'...", check.name()),
+        &format!("🩺 Checking current state for '{}'...", check.name()),
+        None,
     );
     let check_result = check.execute().await;
 
     // STEP 2: Determine if fix is needed based on check result
     if check_result.is_success() {
-        success(
+        emit(
+            Level::Success,
             "doctor.fix.not_needed",
-            &format!("✓ {}: {}", check.name(), check_result.message()),
+            &format!("✅ {}: {}", check.name(), check_result.message()),
+            None,
         );
-        info(
+        emit(
+            Level::Info,
             "doctor.fix.not_needed",
-            "No fix needed - check already passes.",
+            "💊 No fix needed - check already passes.",
+            None,
         );
         return Ok(());
     }
 
     if !check_result.is_fixable() {
-        error(
+        emit(
+            Level::Error,
             "doctor.fix.not_fixable",
-            &format!("✗ {}: {}", check.name(), check_result.message()),
+            &format!("❌ {}: {}", check.name(), check_result.message()),
+            None,
         );
         return Err(anyhow!(
             "Check '{}' failed but is not fixable. Manual intervention required.",
@@ -187,18 +205,21 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
     }
 
     // STEP 3: Check is failing and fixable, proceed with fix
-    warn(
+    emit(
+        Level::Warn,
         "doctor.fix.available",
         &format!(
-            "{} {}: {}",
-            char::from(Fa::ExclamationCircle),
+            "⚠️ {}: {}",
             check.name(),
             check_result.message()
         ),
+        None,
     );
-    info(
+    emit(
+        Level::Info,
         "doctor.fix.available",
-        "Fix is available and will be applied.",
+        "🩹 Fix is available and will be applied.",
+        None,
     );
 
     // Check if we have the right privileges for the fix
@@ -209,12 +230,14 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         }
         Err(PrivilegeError::NeedRoot) => {
             // Need to escalate privileges
-            warn(
+            emit(
+                Level::Warn,
                 "doctor.fix.privileges",
                 &format!(
-                    "Fix for '{}' requires administrator privileges.",
+                    "🔄 Fix for '{}' requires administrator privileges.",
                     check.name()
                 ),
+                None,
             );
 
             if should_escalate(check.as_ref())? {
@@ -222,7 +245,12 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
                 // This won't return - process will be restarted with sudo
                 unreachable!()
             } else {
-                info("doctor.fix.cancelled", "Fix cancelled by user.");
+                emit(
+        Level::Info,
+        "doctor.fix.cancelled",
+        "🚫 Fix cancelled by user.",
+        None,
+    );
                 Ok(())
             }
         }
@@ -239,9 +267,11 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
     let before_result = check.execute().await;
     let before_status = before_result.status_text().to_string();
 
-    info(
+    emit(
+        Level::Info,
         "doctor.fix.applying",
-        &format!("Applying fix for {}...", check_name),
+        &format!("🏥 Applying fix for {}...", check_name),
+        None,
     );
 
     match check.fix().await {
@@ -254,9 +284,11 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            error(
+            emit(
+                Level::Error,
                 "doctor.fix.failed",
-                &format!("✗ Failed to apply fix for {}: {}", check.name(), e),
+                &format!("💥 Failed to apply fix for {}: {}", check.name(), e),
+                None,
             );
             Err(e)
         }

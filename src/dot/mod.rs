@@ -276,7 +276,7 @@ pub fn fetch_modified(
     let modified_dotfiles = get_modified_dotfiles(config, db, path)?;
 
     if modified_dotfiles.is_empty() {
-        info("dot.fetch.no_modified", "No modified dotfiles to fetch.");
+        emit(ui::Level::Info, "dot.fetch.no_modified", "📋 No modified dotfiles to fetch.", None);
         return Ok(());
     }
 
@@ -382,13 +382,14 @@ fn print_fetch_plan(
                 "Fetching the following modified files"
             };
 
-            info_with_data(
+            emit(
+                ui::Level::Info,
                 "dot.fetch.plan",
-                message,
-                serde_json::json!({
+                &format!("📋 {}", message),
+                Some(serde_json::json!({
                     "dry_run": dry_run,
                     "repos": fetch_data,
-                }),
+                })),
             );
         }
         OutputFormat::Text => {
@@ -425,7 +426,7 @@ fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -
         dotfile.fetch(db)?;
     }
     db.cleanup_hashes(hash_cleanup_days)?;
-    success("dot.fetch.complete", "Fetch complete.");
+    emit(ui::Level::Success, "dot.fetch.complete", "✅ Fetch complete.", None);
     Ok(())
 }
 
@@ -447,9 +448,11 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
                     )
                 })?
                 .to_string_lossy();
-            success(
+            emit(
+                ui::Level::Success,
                 "dot.apply.created",
-                &format!("Created new dotfile: ~/{relative}"),
+                &format!("✨ Created new dotfile: ~/{relative}"),
+                None,
             );
         }
     }

@@ -3,6 +3,8 @@ use crate::dot::config::{ConfigManager, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::git::add_repo as git_add_repo;
 use crate::dot::repo::RepositoryManager;
+use crate::ui::prelude::*;
+use crate::ui::Level;
 use anyhow::{Context, Result};
 use colored::*;
 
@@ -100,26 +102,41 @@ fn add_repository(
     // Add the repo to config
     config_manager.add_repo(repo_config.clone())?;
 
-    println!(
-        "{} repository '{}' from {}",
-        "Added".green(),
-        repo_name,
-        url
+    emit(
+        Level::Success,
+        "dot.repo.added",
+        &format!("📦 Added repository '{}' from {}", repo_name, url),
     );
 
     // Clone the repository
     match git_add_repo(config_manager, repo_config, debug) {
         Ok(path) => {
-            println!("Cloned to: {}", path.display());
+            emit(
+                Level::Info,
+                "dot.repo.add.clone_path",
+                &format!("📂 Cloned to: {}", path.display()),
+            );
 
             // Apply the repository immediately after adding
-            println!("Applying dotfiles from new repository...");
+            emit(
+                Level::Info,
+                "dot.repo.add.apply",
+                "🔄 Applying dotfiles from new repository...",
+            );
             if let Err(e) = apply_all_repos(config_manager, db) {
-                eprintln!("Warning: Failed to apply dotfiles: {e}");
+                emit(
+                    Level::Warn,
+                    "dot.repo.add.apply_failed",
+                    &format!("⚠️ Failed to apply dotfiles: {e}"),
+                );
             }
         }
         Err(e) => {
-            eprintln!("Warning: Failed to clone repository: {e}");
+            emit(
+                Level::Error,
+                "dot.repo.add.clone_failed",
+                &format!("❌ Failed to clone repository: {e}"),
+            );
             // Remove from config since clone failed
             config_manager.remove_repo(&repo_name)?;
             return Err(e);

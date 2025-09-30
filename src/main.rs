@@ -222,12 +222,14 @@ fn handle_debug_command(command: DebugCommands) -> Result<()> {
 
             if clear {
                 logger.clear_logs()?;
-                success(
+                emit(
+                    ui::Level::Success,
                     "restic.logs.cleared",
                     &format!(
                         "{} Cleared all restic command logs.",
                         char::from(Fa::TrashO)
                     ),
+                    None,
                 );
             } else {
                 logger.print_recent_logs(limit)?;
@@ -411,10 +413,11 @@ async fn main() -> Result<()> {
             }
         },
         None => {
-            use crate::ui::prelude::*;
-            info(
+            emit(
+                ui::Level::Info,
                 "cli.help",
-                &format!("{}: run with --help for usage", env!("CARGO_BIN_NAME")),
+                &format!("ℹ️ {}: run with --help for usage", env!("CARGO_BIN_NAME")),
+                None,
             );
         }
     }

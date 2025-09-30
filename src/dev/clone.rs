@@ -38,22 +38,27 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
 
     result.map_err(|e| CloneError::GitError(e.to_string()))?;
 
-    success(
+    emit(
+        Level::Success,
         "dev.clone.success",
         &format!(
-            "{} Successfully cloned {} to {}",
-            char::from(Fa::Check),
+            "🚀 Successfully cloned {} to {}",
             repo.name,
             target_dir.display()
         ),
     );
-    info(
+    emit(
+        Level::Info,
         "dev.clone.repo",
-        &format!(" Repository: {}", repo.html_url),
+        &format!("📋 Repository: {}", repo.html_url),
     );
 
     if let Some(desc) = &repo.description {
-        info("dev.clone.description", &format!(" {desc}"));
+        emit(
+            Level::Info,
+            "dev.clone.description",
+            &format!("📝 {desc}")
+        );
     }
 
     Ok(())
@@ -68,11 +73,11 @@ pub fn ensure_workspace_dir() -> Result<std::path::PathBuf> {
 
     if !workspace_dir.exists() {
         std::fs::create_dir_all(&workspace_dir).context("Failed to create workspace directory")?;
-        info(
+        emit(
+            Level::Info,
             "dev.clone.workspace_created",
             &format!(
-                "{} Created workspace directory: {}",
-                char::from(Fa::Folder),
+                "📂 Created workspace directory: {}",
                 workspace_dir.display()
             ),
         );

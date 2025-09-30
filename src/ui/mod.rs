@@ -20,16 +20,6 @@ pub enum Level {
 }
 
 impl Level {
-    fn icon(self) -> char {
-        match self {
-            Level::Info => char::from(Fa::InfoCircle),
-            Level::Success => char::from(Fa::Check),
-            Level::Warn => char::from(Fa::ExclamationCircle),
-            Level::Error => char::from(Fa::TimesCircle),
-            Level::Debug => char::from(Fa::Bug),
-        }
-    }
-
     fn as_str(self) -> &'static str {
         match self {
             Level::Info => "info",
@@ -97,11 +87,6 @@ fn colorize(level: Level, s: &str, enable: bool) -> String {
     }
 }
 
-fn with_icon(level: Level, msg: &str, enable_color: bool) -> String {
-    let icon = level.icon();
-    let line = format!("{icon} {msg}");
-    colorize(level, &line, enable_color)
-}
 
 fn strip_ansi(input: &str) -> String {
     // Remove common ANSI escape sequences like \x1b[0m, \x1b[1;32m, and similar
@@ -135,7 +120,7 @@ pub fn emit(level: Level, code: &str, message: &str, data: Option<serde_json::Va
     let r = RENDERER.read().expect("renderer poisioned").clone();
     match r.format {
         OutputFormat::Text => {
-            let line = with_icon(level, message, r.color);
+            let line = colorize(level, message, r.color);
             let mut out: Box<dyn Write> = match level {
                 Level::Error | Level::Warn => Box::new(io::stderr()),
                 _ => Box::new(io::stdout()),
@@ -161,42 +146,6 @@ pub fn emit(level: Level, code: &str, message: &str, data: Option<serde_json::Va
     }
 }
 
-// Convenience helpers
-pub fn info(code: &str, message: &str) {
-    emit(Level::Info, code, message, None)
-}
-pub fn info_with_data(code: &str, message: &str, data: serde_json::Value) {
-    emit(Level::Info, code, message, Some(data))
-}
-pub fn success(code: &str, message: &str) {
-    emit(Level::Success, code, message, None)
-}
-pub fn success_with_data(code: &str, message: &str, data: serde_json::Value) {
-    emit(Level::Success, code, message, Some(data))
-}
-pub fn warn(code: &str, message: &str) {
-    emit(Level::Warn, code, message, None)
-}
-pub fn warn_with_data(code: &str, message: &str, data: serde_json::Value) {
-    emit(Level::Warn, code, message, Some(data))
-}
-pub fn error(code: &str, message: &str) {
-    emit(Level::Error, code, message, None)
-}
-pub fn error_with_data(code: &str, message: &str, data: serde_json::Value) {
-    emit(Level::Error, code, message, Some(data))
-}
-pub fn debug(code: &str, message: &str) {
-    emit(Level::Debug, code, message, None)
-}
-pub fn debug_with_data(code: &str, message: &str, data: serde_json::Value) {
-    emit(Level::Debug, code, message, Some(data))
-}
-
-// Helper for structured data output
-pub fn data(code: &str, data: serde_json::Value) {
-    emit(Level::Info, code, "", Some(data))
-}
 
 // Helper to get current output format
 pub fn get_output_format() -> OutputFormat {
@@ -228,8 +177,5 @@ pub fn separator(light: bool) {
 }
 
 pub mod prelude {
-    pub use super::{
-        Fa, Level, Oct, OutputFormat, data, emit, error, get_output_format, info, info_with_data,
-        separator, success, warn,
-    };
+    pub use super::{Fa, Level, Oct, OutputFormat, emit, get_output_format, separator};
 }
