@@ -65,14 +65,10 @@ in)
 
 ## Styling
 
-Place some spacing around the icons of the settings entries, and place
-separators between them and the actual text.
-
-Use these arguments for the settings menu choice menu:
-fzf --gap-line="-" --gap
-
-This will separat them more and make it look nicer. 
-
+The settings category previews dont put relevant information first. The user
+doesn't really need to know how many of each setting kind are there, the
+settings themselves, their states and their descriptions are far more important. 
+Rework that. 
 
 ## Remove Entries
 
