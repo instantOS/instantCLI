@@ -6,8 +6,8 @@ use sudo::RunningAs;
 
 use crate::ui::prelude::*;
 
-use super::store::{BoolSettingKey, SettingsStore, StringSettingKey};
 use super::registry::{SettingDefinition, SettingKind, SettingOption};
+use super::store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
 #[derive(Debug)]
 pub struct SettingsContext {
@@ -302,10 +302,7 @@ pub fn apply_definition(
     }
 }
 
-pub fn select_one_with_style_at<T>(
-    items: Vec<T>,
-    initial_index: Option<usize>,
-) -> Result<Option<T>>
+pub fn select_one_with_style_at<T>(items: Vec<T>, initial_index: Option<usize>) -> Result<Option<T>>
 where
     T: crate::fzf_wrapper::FzfSelectable + Clone,
 {

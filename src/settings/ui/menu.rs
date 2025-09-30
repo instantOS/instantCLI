@@ -2,10 +2,8 @@ use anyhow::{Context, Result};
 
 use crate::settings::registry::{self, CATEGORIES, SettingKind};
 
-use super::super::context::{select_one_with_style_at, SettingsContext};
-use super::items::{
-    CategoryItem, CategoryMenuItem, CategoryPageItem, SearchItem, SettingItem,
-};
+use super::super::context::{SettingsContext, select_one_with_style_at};
+use super::items::{CategoryItem, CategoryMenuItem, CategoryPageItem, SearchItem, SettingItem};
 
 pub fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
     let store = super::super::store::SettingsStore::load().context("loading settings file")?;
@@ -66,7 +64,9 @@ pub fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
 
         match select_one_with_style_at(menu_items.clone(), cursor)? {
             Some(selected) => {
-                if let Some(index) = menu_items.iter().position(|candidate| candidate == &selected)
+                if let Some(index) = menu_items
+                    .iter()
+                    .position(|candidate| candidate == &selected)
                 {
                     cursor = Some(index);
                 }
