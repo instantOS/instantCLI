@@ -4,7 +4,7 @@ use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile, status::D
 use anyhow::{Context, Result};
 use colored::*;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn diff_all(
@@ -16,7 +16,7 @@ pub fn diff_all(
     let all_dotfiles = crate::dot::get_all_dotfiles(cfg, db)?;
 
     if let Some(path_str) = path {
-        show_single_file_diff(path_str, &all_dotfiles, cfg, db)?;
+        show_path_diff(path_str, &all_dotfiles, cfg, db)?;
     } else {
         show_all_diffs(&all_dotfiles, cfg, db)?;
     }
@@ -24,7 +24,7 @@ pub fn diff_all(
     Ok(())
 }
 
-pub fn show_single_file_diff(
+pub fn show_path_diff(
     path_str: &str,
     all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
     cfg: &config::Config,
@@ -32,13 +32,85 @@ pub fn show_single_file_diff(
 ) -> Result<()> {
     let target_path = crate::dot::resolve_dotfile_path(path_str)?;
 
-    if let Some(dotfile) = all_dotfiles.get(&target_path) {
+    if target_path.is_dir() {
+        diff_directory(target_path.as_path(), all_dotfiles, cfg, db)
+    } else {
+        diff_file(&target_path, all_dotfiles, cfg, db)
+    }
+}
+
+fn diff_directory(
+    target_dir: &Path,
+    all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
+    cfg: &config::Config,
+    db: &crate::dot::db::Database,
+) -> Result<()> {
+    let mut matching: Vec<_> = all_dotfiles
+        .iter()
+        .filter(|(path, _)| path.starts_with(target_dir))
+        .collect();
+
+    if matching.is_empty() {
+        println!("{} -> not tracked", target_dir.display());
+        return Ok(());
+    }
+
+    matching.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+    let home = dirs::home_dir().context("Failed to get home directory")?;
+    let relative_dir = target_dir.strip_prefix(&home).unwrap_or(target_dir);
+    let tilde_dir = format!("~/{}", relative_dir.display());
+    println!("{}", tilde_dir.as_str().yellow().bold());
+
+    let mut showed_diff = false;
+
+    for (path, dotfile) in matching {
+        let status = get_dotfile_status(dotfile, db);
+
+        if matches!(status, DotFileStatus::Clean) {
+            continue;
+        }
+
+        showed_diff = true;
+
+        let relative_path = path.strip_prefix(&home).unwrap_or(path);
+        let tilde_path = format!("~/{}", relative_path.display());
+        let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
+        let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+
+        println!(
+            "  {} ({})",
+            tilde_path,
+            format!("{}: {}", repo_name, dotfile_dir).dimmed()
+        );
+        show_dotfile_diff(dotfile, &repo_name, &dotfile_dir)?;
+        println!();
+    }
+
+    if !showed_diff {
+        println!(
+            "  {} No modified or outdated dotfiles under {}",
+            "✓".green(),
+            tilde_dir
+        );
+    }
+
+    Ok(())
+}
+
+fn diff_file(
+    target_path: &PathBuf,
+    all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
+    cfg: &config::Config,
+    db: &crate::dot::db::Database,
+) -> Result<()> {
+    if let Some(dotfile) = all_dotfiles.get(target_path) {
         let status = get_dotfile_status(dotfile, db);
 
         match status {
             DotFileStatus::Clean => {
                 let home = dirs::home_dir().context("Failed to get home directory")?;
-                let relative_path = target_path.strip_prefix(&home).unwrap_or(&target_path);
+                let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
                 let tilde_path = format!("~/{}", relative_path.display());
                 println!("{} {} is unmodified", "✓".green(), tilde_path.green());
             }

@@ -49,6 +49,92 @@ pub fn show_single_file_status(
 ) -> Result<()> {
     let target_path = crate::dot::resolve_dotfile_path(path_str)?;
 
+    if target_path.is_dir() {
+        let mut matching: Vec<_> = all_dotfiles
+            .iter()
+            .filter(|(path, _)| path.starts_with(&target_path))
+            .collect();
+
+        if matching.is_empty() {
+            match get_output_format() {
+                OutputFormat::Json => {
+                    let status_data = serde_json::json!({
+                        "path": target_path.display().to_string(),
+                        "tracked": false,
+                        "type": "directory"
+                    });
+                    emit(
+                        Level::Info,
+                        "dot.status.directory",
+                        "Directory not tracked",
+                        Some(status_data),
+                    );
+                }
+                OutputFormat::Text => {
+                    println!("{} -> not tracked", target_path.display());
+                }
+            }
+            return Ok(());
+        }
+
+        matching.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+        match get_output_format() {
+            OutputFormat::Json => {
+                let home = dirs::home_dir().unwrap_or_default();
+                let files: Vec<_> = matching
+                    .into_iter()
+                    .map(|(path, dotfile)| {
+                        let status = get_dotfile_status(dotfile, db);
+                        let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
+                        let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+                        let relative_path = path.strip_prefix(&home).unwrap_or(path);
+                        serde_json::json!({
+                            "path": format!("~/{}", relative_path.display()),
+                            "status": status,
+                            "source": dotfile.source_path.display().to_string(),
+                            "repo": repo_name.as_str(),
+                            "dotfile_dir": dotfile_dir
+                        })
+                    })
+                    .collect();
+
+                let status_data = serde_json::json!({
+                    "path": target_path.display().to_string(),
+                    "tracked": true,
+                    "type": "directory",
+                    "files": files
+                });
+
+                emit(
+                    Level::Info,
+                    "dot.status.directory",
+                    "Directory status",
+                    Some(status_data),
+                );
+            }
+            OutputFormat::Text => {
+                let home = dirs::home_dir().context("Failed to get home directory")?;
+                let relative_dir = target_path.strip_prefix(&home).unwrap_or(&target_path);
+                let tilde_dir = format!("~/{}", relative_dir.display());
+                println!("{}", tilde_dir.bold());
+
+                for (path, dotfile) in matching {
+                    let status = get_dotfile_status(dotfile, db);
+                    let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
+                    let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+                    let relative_path = path.strip_prefix(&home).unwrap_or(path);
+                    let tilde_path = format!("~/{}", relative_path.display());
+                    println!("  {} -> {}", tilde_path, status);
+                    println!("    Source: {}", dotfile.source_path.display());
+                    println!("    Repo: {repo_name} ({dotfile_dir})");
+                }
+            }
+        }
+
+        return Ok(());
+    }
+
     match get_output_format() {
         OutputFormat::Json => {
             if let Some(dotfile) = all_dotfiles.get(&target_path) {

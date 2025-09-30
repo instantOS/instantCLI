@@ -108,6 +108,15 @@ main() {
     assert_json_field "${file_status_json}" ".data.repo" "basic-test"
     assert_json_field "${file_status_json}" ".data.dotfile_dir" "dots"
 
+    # Test directory status JSON output
+    echo "Testing directory status JSON output..."
+    local dir_status_json
+    dir_status_json="$(ins_output --output json dot status .config/instanttest 2>/dev/null)"
+    assert_json_field "${dir_status_json}" ".data.tracked" "true"
+    assert_json_field "${dir_status_json}" ".data.type" "directory"
+    assert_json_field "${dir_status_json}" ".data.files | length" "2"
+    assert_json_field_contains "${dir_status_json}" ".data.files[0].path" "~/.config/instanttest"
+
     echo "✓ All JSON output tests passed"
     echo "✓ Basic dot apply flow succeeded"
 }
