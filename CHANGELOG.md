@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9](https://github.com/instantOS/instantCLI/compare/v0.1.8...v0.1.9) - 2025-09-30
+
+### Fixed
+
+- fix again, I am stupid
+- fix?
+- project needs cmake now
+- fixes
+- fix some stuff
+- fix git error
+
+### Other
+
+- add restic to CI
+- fix runuser
+- format
+- init mise toml
+- format
+- better path arg handling
+- add json tests
+- more json output
+- format and more json output
+- better output
+- better repo output
+- make compile again
+- start manually iconning again
+- faster test times
+- refactor git
+- more output fixes
+- remove duplicate icons
+- format and fix
+- format
+- more nerd icons
+- use nerd_fonts crate
+- more json output
+- add nf dep
+- help
+- more json output features
+- init better ouput everywhere
+- init better output
+- init warp md
+- update readme
+
 ## [0.1.8](https://github.com/instantOS/instantCLI/compare/v0.1.7...v0.1.8) - 2025-09-27
 
 ### Fixed
