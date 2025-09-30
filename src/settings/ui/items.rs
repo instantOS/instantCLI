@@ -4,7 +4,7 @@ use crate::ui::prelude::*;
 use super::super::context::format_icon;
 use super::super::registry::{SettingCategory, SettingDefinition, SettingKind, SettingOption};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub struct CategoryItem {
     pub category: &'static SettingCategory,
     pub total: usize,
@@ -15,25 +15,25 @@ pub struct CategoryItem {
     pub highlights: [Option<&'static SettingDefinition>; 3],
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub enum CategoryMenuItem {
     SearchAll,
     Category(CategoryItem),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub struct SettingItem {
     pub definition: &'static SettingDefinition,
     pub state: SettingState,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub enum CategoryPageItem {
     Setting(SettingItem),
     Back,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub enum SettingState {
     Toggle { enabled: bool },
     Choice { current_index: Option<usize> },
@@ -41,14 +41,14 @@ pub enum SettingState {
     Command,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub struct ChoiceItem {
     pub option: &'static SettingOption,
     pub is_current: bool,
     pub summary: &'static str,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub struct SearchItem {
     pub category: &'static SettingCategory,
     pub definition: &'static SettingDefinition,

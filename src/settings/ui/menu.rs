@@ -5,6 +5,47 @@ use crate::settings::registry::{self, CATEGORIES, SettingKind};
 use super::super::context::{SettingsContext, select_one_with_style_at};
 use super::items::{CategoryItem, CategoryMenuItem, CategoryPageItem, SearchItem, SettingItem};
 
+fn menu_item_index(items: &[CategoryMenuItem], selected: CategoryMenuItem) -> Option<usize> {
+    items
+        .iter()
+        .enumerate()
+        .find_map(|(idx, item)| match (item, selected) {
+            (CategoryMenuItem::SearchAll, CategoryMenuItem::SearchAll) => Some(idx),
+            (CategoryMenuItem::Category(lhs), CategoryMenuItem::Category(rhs))
+                if lhs.category.id == rhs.category.id =>
+            {
+                Some(idx)
+            }
+            _ => None,
+        })
+}
+
+fn category_page_index(items: &[CategoryPageItem], selected: CategoryPageItem) -> Option<usize> {
+    items
+        .iter()
+        .enumerate()
+        .find_map(|(idx, item)| match (item, selected) {
+            (CategoryPageItem::Back, CategoryPageItem::Back) => Some(idx),
+            (CategoryPageItem::Setting(lhs), CategoryPageItem::Setting(rhs))
+                if lhs.definition.id == rhs.definition.id =>
+            {
+                Some(idx)
+            }
+            _ => None,
+        })
+}
+
+fn search_item_index(items: &[SearchItem], selected: SearchItem) -> Option<usize> {
+    items.iter().enumerate().find_map(|(idx, item)| {
+        if item.definition.id == selected.definition.id && item.category.id == selected.category.id
+        {
+            Some(idx)
+        } else {
+            None
+        }
+    })
+}
+
 pub fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
     let store = super::super::store::SettingsStore::load().context("loading settings file")?;
     let mut ctx = SettingsContext::new(store, debug, privileged_flag);
@@ -64,10 +105,7 @@ pub fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
 
         match select_one_with_style_at(menu_items.clone(), cursor)? {
             Some(selected) => {
-                if let Some(index) = menu_items
-                    .iter()
-                    .position(|candidate| candidate == &selected)
-                {
+                if let Some(index) = menu_item_index(&menu_items, selected) {
                     cursor = Some(index);
                 }
 
@@ -118,9 +156,7 @@ pub fn handle_category(
 
         match select_one_with_style_at(entries.clone(), cursor)? {
             Some(CategoryPageItem::Setting(item)) => {
-                if let Some(index) = entries
-                    .iter()
-                    .position(|candidate| candidate == &CategoryPageItem::Setting(item))
+                if let Some(index) = category_page_index(&entries, CategoryPageItem::Setting(item))
                 {
                     cursor = Some(index);
                 }
@@ -157,7 +193,7 @@ pub fn handle_search_all(ctx: &mut SettingsContext) -> Result<bool> {
 
         match select_one_with_style_at(items.clone(), cursor)? {
             Some(selection) => {
-                if let Some(index) = items.iter().position(|candidate| candidate == &selection) {
+                if let Some(index) = search_item_index(&items, selection) {
                     cursor = Some(index);
                 }
                 super::handlers::handle_setting(ctx, selection.definition, selection.state)?;

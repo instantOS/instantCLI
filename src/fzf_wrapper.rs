@@ -651,12 +651,14 @@ impl FzfWrapper {
             item_map.insert(display.clone(), item.clone());
         }
 
-        let cursor_position = match &self.initial_cursor {
+        let cursor_position = match self.initial_cursor.as_ref() {
             Some(InitialCursor::Index(index)) => {
                 if display_lines.is_empty() {
                     None
                 } else {
-                    Some(index.min(display_lines.len() - 1))
+                    let idx = *index;
+                    let last = display_lines.len() - 1;
+                    Some(idx.min(last))
                 }
             }
             Some(InitialCursor::Key(key)) => item_keys
