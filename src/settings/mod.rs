@@ -9,7 +9,7 @@ use clap::{Subcommand, ValueHint};
 use duct::cmd;
 use sudo::RunningAs;
 
-use crate::fzf_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::fzf_wrapper::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 pub use store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
@@ -295,6 +295,19 @@ fn apply_definition(
             }
         }
         _ => Ok(()),
+    }
+}
+
+pub(super) fn select_one_with_style<T>(items: Vec<T>) -> Result<Option<T>>
+where
+    T: FzfSelectable + Clone,
+{
+    match FzfWrapper::builder()
+        .args(["--gap-line=-", "--gap"])
+        .select(items)?
+    {
+        FzfResult::Selected(item) => Ok(Some(item)),
+        _ => Ok(None),
     }
 }
 

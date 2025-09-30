@@ -76,6 +76,7 @@ pub struct FzfBuilder {
 enum DialogType {
     Selection,
     Input,
+    Password,
     Confirmation {
         yes_text: String,
         no_text: String,
@@ -131,6 +132,13 @@ impl FzfBuilder {
     pub fn input(mut self) -> Self {
         self.dialog_type = DialogType::Input;
         self.additional_args = Self::input_args();
+        self
+    }
+
+    /// Configure for password input mode (uses gum)
+    pub fn password(mut self) -> Self {
+        self.dialog_type = DialogType::Password;
+        self.additional_args = Self::password_args();
         self
     }
 
@@ -219,6 +227,14 @@ impl FzfBuilder {
         self.execute_input()
     }
 
+    /// Execute password dialog
+    pub fn password_dialog(self) -> Result<String> {
+        if !matches!(self.dialog_type, DialogType::Password) {
+            return Err(anyhow::anyhow!("Builder not configured for password"));
+        }
+        self.execute_password()
+    }
+
     /// Execute confirmation dialog
     pub fn confirm_dialog(self) -> Result<ConfirmResult> {
         if !matches!(self.dialog_type, DialogType::Confirmation { .. }) {
@@ -245,6 +261,11 @@ impl FzfBuilder {
     /// Execute input dialog
     pub fn show_input(self) -> Result<String> {
         self.input_dialog()
+    }
+
+    /// Execute password dialog
+    pub fn show_password(self) -> Result<String> {
+        self.password_dialog()
     }
 
     /// Execute message dialog
@@ -289,6 +310,11 @@ impl FzfBuilder {
         ];
         args.extend(Self::theme_args());
         args
+    }
+
+    /// Arguments for password dialogs (uses gum)
+    fn password_args() -> Vec<String> {
+        vec![] // gum has its own styling system
     }
 
     /// Catppuccin theme colors
@@ -357,6 +383,35 @@ impl FzfBuilder {
         } else {
             Ok(String::new())
         }
+    }
+
+    fn execute_password(self) -> Result<String> {
+        let mut cmd = Command::new("gum");
+        cmd.arg("input").arg("--password");
+
+        if let Some(prompt) = &self.prompt {
+            cmd.arg("--prompt").arg(format!("{prompt} "));
+        }
+
+        // Add padding for full screen support
+        cmd.arg("--padding").arg("2 4");
+
+        // Set width to use most of the screen
+        cmd.arg("--width").arg("80");
+
+        // Check if header should be used as placeholder
+        if let Some(header) = &self.header {
+            cmd.arg("--placeholder").arg(header);
+        }
+
+        let output = cmd.output()?;
+
+        if !output.status.success() {
+            return Ok(String::new());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.trim().to_string())
     }
 
     fn execute_confirm(self) -> Result<ConfirmResult> {
@@ -670,6 +725,16 @@ impl FzfWrapper {
     /// Input dialog with custom prompt
     pub fn input_dialog(prompt: &str) -> Result<String> {
         Self::builder().prompt(prompt).input().input_dialog()
+    }
+
+    /// Password input mode for getting sensitive user input
+    pub fn password(prompt: &str) -> Result<String> {
+        Self::builder().prompt(prompt).password().password_dialog()
+    }
+
+    /// Password dialog with custom prompt
+    pub fn password_dialog(prompt: &str) -> Result<String> {
+        Self::builder().prompt(prompt).password().password_dialog()
     }
 
     /// Message dialog with custom text
