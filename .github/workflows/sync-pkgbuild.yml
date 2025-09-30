@@ -48,12 +48,18 @@ jobs:
             sed -i "s/^pkgrel=.*/pkgrel=1/" "$pkgbuild_file"
           fi
           if ! git diff --quiet "$pkgbuild_file"; then
-            docker run --rm -v "$PWD:/pkg" archlinux:latest bash -lc "
-              pacman -Sy --noconfirm pacman-contrib >/dev/null
-              useradd -m builder
-              chown -R builder:builder /pkg
-              runuser -u builder -- bash -c 'cd /pkg/pkgbuild/ins && makepkg --printsrcinfo > .SRCINFO'
-            "
+            srcinfo="$(
+              docker run --rm -v "$PWD/pkgbuild/ins:/pkgbuild" archlinux:latest bash -lc '
+                set -euo pipefail
+                pacman -Sy --noconfirm pacman-contrib >/dev/null
+                useradd -m builder
+                install -d -m 755 /home/builder/work
+                cp -a /pkgbuild/. /home/builder/work/
+                chown -R builder:builder /home/builder/work
+                su builder -c "cd /home/builder/work && makepkg --printsrcinfo"
+              '
+            )"
+            printf '%s\n' "$srcinfo" > pkgbuild/ins/.SRCINFO
             git add "$pkgbuild_file" pkgbuild/ins/.SRCINFO
             git commit -m "chore: sync PKGBUILD version"
             git push
