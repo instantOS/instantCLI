@@ -374,10 +374,12 @@ fn show_text_status(
     }
 
     // Show all files if requested
-    if show_all && summary.clean_count > 0
-        && let Some(clean_files) = files_by_status.get(&DotFileStatus::Clean) {
-            show_clean_files(clean_files, home);
-        }
+    if show_all
+        && summary.clean_count > 0
+        && let Some(clean_files) = files_by_status.get(&DotFileStatus::Clean)
+    {
+        show_clean_files(clean_files, home);
+    }
 
     // Show action suggestions
     show_action_suggestions(

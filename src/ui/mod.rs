@@ -59,7 +59,6 @@ pub fn init(format: OutputFormat, color: bool) {
 
 // Re-export nerd font icons directly from the nerd_font crate
 pub use nerd_font::categories::Fa;
-pub use nerd_font::categories::Oct;
 
 // Separator characters (not in nerd_font crate)
 pub const SEPARATOR_HEAVY: &str = "━";
