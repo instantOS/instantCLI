@@ -16,7 +16,7 @@ pub use store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
 use registry::{
     CATEGORIES, CommandSpec, CommandStyle, SettingCategory, SettingDefinition, SettingKind,
-    SettingOption,
+    SettingOption, SETTINGS,
 };
 
 #[derive(Subcommand, Debug, Clone)]
