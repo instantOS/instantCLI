@@ -1,6 +1,6 @@
 use crate::dot::config;
-use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile, status::DotFileStatus};
 use crate::dot::git::status::get_dotfile_status;
+use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile, status::DotFileStatus};
 use anyhow::{Context, Result};
 use colored::*;
 use std::collections::HashMap;
@@ -60,7 +60,8 @@ pub fn show_all_diffs(
     cfg: &config::Config,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
-    let (files_by_status, _) = crate::dot::git::status::categorize_files_and_get_summary(all_dotfiles, cfg, db);
+    let (files_by_status, _) =
+        crate::dot::git::status::categorize_files_and_get_summary(all_dotfiles, cfg, db);
 
     let modified_count = files_by_status
         .get(&DotFileStatus::Modified)
@@ -81,14 +82,21 @@ pub fn show_all_diffs(
         println!("{}", " Modified files:".yellow().bold());
         for file_info in modified_files {
             let home = dirs::home_dir().context("Failed to get home directory")?;
-            let relative_path = file_info.target_path.strip_prefix(&home).unwrap_or(&file_info.target_path);
+            let relative_path = file_info
+                .target_path
+                .strip_prefix(&home)
+                .unwrap_or(&file_info.target_path);
             let tilde_path = format!("~/{}", relative_path.display());
             println!(
                 "  {} ({})",
                 tilde_path,
                 format!("{}: {}", file_info.repo_name, file_info.dotfile_dir).dimmed()
             );
-            show_dotfile_diff(&file_info.dotfile, &file_info.repo_name, &file_info.dotfile_dir)?;
+            show_dotfile_diff(
+                &file_info.dotfile,
+                &file_info.repo_name,
+                &file_info.dotfile_dir,
+            )?;
             println!();
         }
     }
@@ -100,14 +108,21 @@ pub fn show_all_diffs(
         println!("{}", "Outdated files:".blue().bold());
         for file_info in outdated_files {
             let home = dirs::home_dir().context("Failed to get home directory")?;
-            let relative_path = file_info.target_path.strip_prefix(&home).unwrap_or(&file_info.target_path);
+            let relative_path = file_info
+                .target_path
+                .strip_prefix(&home)
+                .unwrap_or(&file_info.target_path);
             let tilde_path = format!("~/{}", relative_path.display());
             println!(
                 "  {} ({})",
                 tilde_path,
                 format!("{}: {}", file_info.repo_name, file_info.dotfile_dir).dimmed()
             );
-            show_dotfile_diff(&file_info.dotfile, &file_info.repo_name, &file_info.dotfile_dir)?;
+            show_dotfile_diff(
+                &file_info.dotfile,
+                &file_info.repo_name,
+                &file_info.dotfile_dir,
+            )?;
             println!();
         }
     }

@@ -126,8 +126,8 @@ fn setup_single_game(
             Level::Warn,
             "game.setup.no_snapshots",
             &format!(
-                    "{} No snapshots found for game '{game_name}'.",
-                    char::from(Fa::ExclamationCircle)
+                "{} No snapshots found for game '{game_name}'.",
+                char::from(Fa::ExclamationCircle)
             ),
             None,
         );
@@ -152,8 +152,8 @@ fn setup_single_game(
             Level::Warn,
             "game.setup.no_paths",
             &format!(
-                    "{} No save paths found in snapshots for game '{game_name}'.",
-                    char::from(Fa::ExclamationCircle)
+                "{} No save paths found in snapshots for game '{game_name}'.",
+                char::from(Fa::ExclamationCircle)
             ),
             None,
         );
@@ -231,10 +231,7 @@ fn setup_single_game(
             emit(
                 Level::Success,
                 "game.setup.restore_done",
-                &format!(
-                    "{} {restore_summary}",
-                    char::from(Fa::Check)
-                ),
+                &format!("{} {restore_summary}", char::from(Fa::Check)),
                 None,
             );
             installation.update_checkpoint(snapshot_id.to_string());

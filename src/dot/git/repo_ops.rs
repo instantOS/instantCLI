@@ -27,7 +27,10 @@ pub fn get_dotfile_dir_name(dotfile: &crate::dot::Dotfile, cfg: &config::Config)
 }
 
 /// Get the repository name for a dotfile (improved version)
-pub fn get_repo_name_for_dotfile(dotfile: &crate::dot::Dotfile, cfg: &config::Config) -> crate::dot::RepoName {
+pub fn get_repo_name_for_dotfile(
+    dotfile: &crate::dot::Dotfile,
+    cfg: &config::Config,
+) -> crate::dot::RepoName {
     // Find which repository this dotfile comes from
     for repo_config in &cfg.repos {
         if dotfile

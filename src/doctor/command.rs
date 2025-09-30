@@ -2,7 +2,7 @@ use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_f
 use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
 use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
-use crate::ui::{prelude::*, Level};
+use crate::ui::{Level, prelude::*};
 use anyhow::{Result, anyhow};
 use colored::*;
 
@@ -228,8 +228,8 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         Level::Warn,
         "doctor.fix.available",
         &format!(
-                    "{} {}: {}",
-                    char::from(Fa::ExclamationCircle),
+            "{} {}: {}",
+            char::from(Fa::ExclamationCircle),
             check.name(),
             check_result.message()
         ),
@@ -257,8 +257,8 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
                 Level::Warn,
                 "doctor.fix.privileges",
                 &format!(
-                        "{} Fix for '{}' requires administrator privileges.",
-                        char::from(Fa::ExclamationCircle),
+                    "{} Fix for '{}' requires administrator privileges.",
+                    char::from(Fa::ExclamationCircle),
                     check.name()
                 ),
                 None,
@@ -272,10 +272,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
                 emit(
                     Level::Info,
                     "doctor.fix.cancelled",
-                    &format!(
-                        "{} Fix cancelled by user.",
-                        char::from(Fa::InfoCircle)
-                    ),
+                    &format!("{} Fix cancelled by user.", char::from(Fa::InfoCircle)),
                     None,
                 );
                 Ok(())

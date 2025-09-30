@@ -76,10 +76,7 @@ impl PackageRepo {
         emit(
             Level::Info,
             "dev.install.stash",
-            &format!(
-                "{} Stashing local changes...",
-                char::from(Fa::InfoCircle)
-            ),
+            &format!("{} Stashing local changes...", char::from(Fa::InfoCircle)),
             None,
         );
 
@@ -98,17 +95,8 @@ impl PackageRepo {
 
 pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
     if debug {
-        let message = format!(
-            "{} Building package: {}",
-            char::from(Fa::Bug),
-            package.name
-        );
-        emit(
-            Level::Debug,
-            "dev.install.build.start",
-            &message,
-            None,
-        );
+        let message = format!("{} Building package: {}", char::from(Fa::Bug), package.name);
+        emit(Level::Debug, "dev.install.build.start", &message, None);
     }
 
     let build_message = format!(
@@ -146,16 +134,8 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
 
 pub async fn handle_install(debug: bool) -> Result<()> {
     if debug {
-        let start_message = format!(
-            "{} Starting package installation...",
-            char::from(Fa::Bug)
-        );
-        emit(
-            Level::Debug,
-            "dev.install.start",
-            &start_message,
-            None,
-        );
+        let start_message = format!("{} Starting package installation...", char::from(Fa::Bug));
+        emit(Level::Debug, "dev.install.start", &start_message, None);
     }
 
     let pb = create_spinner("Preparing package repository...".to_string());
@@ -167,10 +147,7 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     pb.finish_with_message("Package repository ready".to_string());
 
     if debug {
-        let discover_message = format!(
-            "{} Discovering packages...",
-            char::from(Fa::Bug)
-        );
+        let discover_message = format!("{} Discovering packages...", char::from(Fa::Bug));
         emit(
             Level::Debug,
             "dev.install.discover",
@@ -187,11 +164,7 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     }
 
     if debug {
-        let count_message = format!(
-            "{} Found {} packages",
-            char::from(Fa::Bug),
-            packages.len()
-        );
+        let count_message = format!("{} Found {} packages", char::from(Fa::Bug), packages.len());
         emit(
             Level::Debug,
             "dev.install.packages.count",

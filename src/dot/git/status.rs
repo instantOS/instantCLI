@@ -126,10 +126,7 @@ pub fn categorize_files_and_get_summary<'a>(
     all_dotfiles: &'a HashMap<PathBuf, crate::dot::Dotfile>,
     cfg: &'a config::Config,
     db: &'a crate::dot::db::Database,
-) -> (
-    HashMap<DotFileStatus, Vec<FileInfo>>,
-    StatusSummary,
-) {
+) -> (HashMap<DotFileStatus, Vec<FileInfo>>, StatusSummary) {
     let mut files_by_status = HashMap::new();
     let mut clean_count = 0;
     let mut modified_count = 0;
@@ -182,7 +179,10 @@ fn show_json_status(
         .unwrap_or(&vec![])
         .iter()
         .map(|file_info| {
-            let relative_path = file_info.target_path.strip_prefix(&home).unwrap_or(&file_info.target_path);
+            let relative_path = file_info
+                .target_path
+                .strip_prefix(&home)
+                .unwrap_or(&file_info.target_path);
             serde_json::json!({
                 "path": format!("~/{}", relative_path.display()),
                 "status": "modified",
@@ -197,7 +197,10 @@ fn show_json_status(
         .unwrap_or(&vec![])
         .iter()
         .map(|file_info| {
-            let relative_path = file_info.target_path.strip_prefix(&home).unwrap_or(&file_info.target_path);
+            let relative_path = file_info
+                .target_path
+                .strip_prefix(&home)
+                .unwrap_or(&file_info.target_path);
             serde_json::json!({
                 "path": format!("~/{}", relative_path.display()),
                 "status": "outdated",
@@ -213,7 +216,10 @@ fn show_json_status(
             .unwrap_or(&vec![])
             .iter()
             .map(|file_info| {
-                let relative_path = file_info.target_path.strip_prefix(&home).unwrap_or(&file_info.target_path);
+                let relative_path = file_info
+                    .target_path
+                    .strip_prefix(&home)
+                    .unwrap_or(&file_info.target_path);
                 serde_json::json!({
                     "path": format!("~/{}", relative_path.display()),
                     "status": "clean",
@@ -257,7 +263,11 @@ fn show_text_status(
     println!("{} Clean: {} files", "✓".green(), summary.clean_count);
 
     if summary.modified_count > 0 {
-        println!("{} Modified: {} files", "".yellow(), summary.modified_count);
+        println!(
+            "{} Modified: {} files",
+            "".yellow(),
+            summary.modified_count
+        );
     }
 
     if summary.outdated_count > 0 {
@@ -285,14 +295,21 @@ fn show_text_status(
     }
 
     // Show action suggestions
-    show_action_suggestions(summary.modified_count, summary.outdated_count, summary.clean_count);
+    show_action_suggestions(
+        summary.modified_count,
+        summary.outdated_count,
+        summary.clean_count,
+    );
 }
 
 /// Show modified files section
 fn show_modified_files(files: &[FileInfo], home: &PathBuf) {
     println!("{}", " Modified files:".yellow().bold());
     for file_info in files {
-        let relative_path = file_info.target_path.strip_prefix(home).unwrap_or(&file_info.target_path);
+        let relative_path = file_info
+            .target_path
+            .strip_prefix(home)
+            .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
         println!(
             "  {} -> {} ({}: {})",
@@ -309,7 +326,10 @@ fn show_modified_files(files: &[FileInfo], home: &PathBuf) {
 fn show_outdated_files(files: &[FileInfo], home: &PathBuf) {
     println!("{}", "Outdated files:".blue().bold());
     for file_info in files {
-        let relative_path = file_info.target_path.strip_prefix(home).unwrap_or(&file_info.target_path);
+        let relative_path = file_info
+            .target_path
+            .strip_prefix(home)
+            .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
         println!(
             "  {} -> {} ({}: {})",
@@ -326,7 +346,10 @@ fn show_outdated_files(files: &[FileInfo], home: &PathBuf) {
 fn show_clean_files(files: &[FileInfo], home: &PathBuf) {
     println!("{}", "Clean files:".green().bold());
     for file_info in files {
-        let relative_path = file_info.target_path.strip_prefix(home).unwrap_or(&file_info.target_path);
+        let relative_path = file_info
+            .target_path
+            .strip_prefix(home)
+            .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
         println!(
             "  {} -> {} ({}: {})",
@@ -418,7 +441,10 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
 }
 
 /// Get the status of a dotfile
-pub fn get_dotfile_status(dotfile: &crate::dot::Dotfile, db: &crate::dot::db::Database) -> DotFileStatus {
+pub fn get_dotfile_status(
+    dotfile: &crate::dot::Dotfile,
+    db: &crate::dot::db::Database,
+) -> DotFileStatus {
     if !dotfile.is_target_unmodified(db).unwrap_or(false) {
         DotFileStatus::Modified
     } else if dotfile.is_outdated(db) {

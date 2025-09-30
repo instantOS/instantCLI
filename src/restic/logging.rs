@@ -146,10 +146,7 @@ impl ResticCommandLogger {
         emit(
             Level::Info,
             "restic.logs.list.start",
-            &format!(
-                "{} Recent Restic Command Logs:",
-                char::from(Fa::List)
-            ),
+            &format!("{} Recent Restic Command Logs:", char::from(Fa::List)),
             None,
         );
         separator(false);

@@ -64,10 +64,7 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
         emit(
             Level::Info,
             "dev.clone.description",
-            &format!(
-                "{} {desc}",
-            char::from(Fa::InfoCircle)
-            ),
+            &format!("{} {desc}", char::from(Fa::InfoCircle)),
             None,
         );
     }

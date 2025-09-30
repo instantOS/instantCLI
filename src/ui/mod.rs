@@ -87,7 +87,6 @@ fn colorize(level: Level, s: &str, enable: bool) -> String {
     }
 }
 
-
 fn strip_ansi(input: &str) -> String {
     // Remove common ANSI escape sequences like \x1b[0m, \x1b[1;32m, and similar
     let bytes = input.as_bytes();
@@ -145,7 +144,6 @@ pub fn emit(level: Level, code: &str, message: &str, data: Option<serde_json::Va
         }
     }
 }
-
 
 // Helper to get current output format
 pub fn get_output_format() -> OutputFormat {

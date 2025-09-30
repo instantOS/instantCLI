@@ -3,8 +3,8 @@ use crate::dot::config::{ConfigManager, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::git::add_repo as git_add_repo;
 use crate::dot::repo::RepositoryManager;
-use crate::ui::prelude::*;
 use crate::ui::Level;
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use colored::*;
 
@@ -120,11 +120,7 @@ fn add_repository(
             emit(
                 Level::Info,
                 "dot.repo.add.clone_path",
-                &format!(
-                    "{} Cloned to: {}",
-                    char::from(Fa::Folder),
-                    path.display()
-                ),
+                &format!("{} Cloned to: {}", char::from(Fa::Folder), path.display()),
                 None,
             );
 
@@ -143,8 +139,8 @@ fn add_repository(
                     Level::Warn,
                     "dot.repo.add.apply_failed",
                     &format!(
-                    "{} Failed to apply dotfiles: {e}",
-                    char::from(Fa::ExclamationCircle)
+                        "{} Failed to apply dotfiles: {e}",
+                        char::from(Fa::ExclamationCircle)
                     ),
                     None,
                 );
@@ -230,7 +226,11 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
     };
 
     let mut rows: Vec<(char, &str, String)> = vec![
-        (char::from(Fa::Folder), "Repository", name.cyan().to_string()),
+        (
+            char::from(Fa::Folder),
+            "Repository",
+            name.cyan().to_string(),
+        ),
         (char::from(Fa::InfoCircle), "URL", repo_config.url.clone()),
         (
             char::from(Fa::Flag),
@@ -249,7 +249,11 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
         rows.push((char::from(Fa::InfoCircle), "Author", author.clone()));
     }
     if let Some(description) = &local_repo.meta.description {
-        rows.push((char::from(Fa::InfoCircle), "Description", description.clone()));
+        rows.push((
+            char::from(Fa::InfoCircle),
+            "Description",
+            description.clone(),
+        ));
     }
 
     let label_width = rows
@@ -277,11 +281,7 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
     }
 
     println!();
-    println!(
-        "{} {}",
-        char::from(Fa::List),
-        "Subdirectories".bold()
-    );
+    println!("{} {}", char::from(Fa::List), "Subdirectories".bold());
 
     if local_repo.dotfile_dirs.is_empty() {
         println!(
@@ -322,9 +322,7 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
         } else {
             "Inactive".yellow().to_string()
         };
-        let configured = repo_config
-            .active_subdirectories
-            .contains(&dir_name);
+        let configured = repo_config.active_subdirectories.contains(&dir_name);
         let configured_label = if configured {
             "configured".blue().to_string()
         } else {

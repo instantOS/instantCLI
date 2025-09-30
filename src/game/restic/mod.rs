@@ -11,6 +11,27 @@ use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
+use colored::Colorize;
+
+fn emit_restic_event(
+    level: Level,
+    code: &str,
+    icon: Option<char>,
+    plain_message: impl Into<String>,
+    text_message: impl Into<String>,
+    data: Option<serde_json::Value>,
+) {
+    let plain = plain_message.into();
+    let text = text_message.into();
+    let formatted = if matches!(get_output_format(), OutputFormat::Json) {
+        plain
+    } else if let Some(icon) = icon {
+        format!("{icon} {text}")
+    } else {
+        text
+    };
+    emit(level, code, &formatted, data);
+}
 
 /// Handle game save backup with optional game selection
 pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
@@ -39,25 +60,39 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     {
         Some(installation) => installation,
         None => {
-            emit(
+            let plain_message = format!("Error: No installation found for game '{game_name}'.");
+            let text_message = format!(
+                "Error: No installation found for game '{}'.",
+                game_name.red()
+            );
+            let data = serde_json::json!({
+                "game": game_name,
+                "action": "installation_missing"
+            });
+            emit_restic_event(
                 Level::Error,
                 "game.backup.installation_missing",
-                &format!(
-                    "{} Error: No installation found for game '{}'.",
-                    char::from(Fa::TimesCircle),
-                    game_name
-                ),
-                None,
+                Some(char::from(Fa::TimesCircle)),
+                plain_message,
+                text_message,
+                Some(data),
             );
-            emit(
+            emit_restic_event(
                 Level::Info,
                 "game.backup.hint.add",
-                &format!(
-                    "{} Please add the game first using '{} game add'.",
-                    char::from(Fa::InfoCircle),
+                Some(char::from(Fa::InfoCircle)),
+                format!(
+                    "Please add the game first using '{} game add'.",
                     env!("CARGO_BIN_NAME")
                 ),
-                None,
+                format!(
+                    "Please add the game first using '{} game add'.",
+                    env!("CARGO_BIN_NAME")
+                ),
+                Some(serde_json::json!({
+                    "hint": "add_game",
+                    "command": format!("{} game add", env!("CARGO_BIN_NAME"))
+                })),
             );
             return Err(anyhow::anyhow!("game installation not found"));
         }
@@ -66,25 +101,35 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Security check: ensure save directory is not empty
     let save_path = installation.save_path.as_path();
     if !save_path.exists() {
-        emit(
+        let path_display = save_path.display().to_string();
+        emit_restic_event(
             Level::Error,
             "game.backup.save_path_missing",
-            &format!(
-                "{} Error: Save path does not exist for game '{}': {}",
-                char::from(Fa::TimesCircle),
-                game_name,
-                save_path.display()
+            Some(char::from(Fa::TimesCircle)),
+            format!(
+                "Error: Save path does not exist for game '{}': {}",
+                game_name, path_display
             ),
-            None,
+            format!(
+                "Error: Save path does not exist for game '{}': {}",
+                game_name.red(),
+                path_display
+            ),
+            Some(serde_json::json!({
+                "game": game_name.clone(),
+                "action": "save_path_missing",
+                "path": path_display
+            })),
         );
-        emit(
+        emit_restic_event(
             Level::Warn,
             "game.backup.hint.config",
-            &format!(
-                "{} Please check the game installation configuration.",
-                char::from(Fa::ExclamationCircle)
-            ),
-            None,
+            Some(char::from(Fa::ExclamationCircle)),
+            "Please check the game installation configuration.".to_string(),
+            "Please check the game installation configuration.".to_string(),
+            Some(serde_json::json!({
+                "hint": "check_configuration"
+            })),
         );
         return Err(anyhow::anyhow!("save path does not exist"));
     }
@@ -105,49 +150,82 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     }
 
     if is_empty {
-        emit(
+        let path_display = save_path.display().to_string();
+        emit_restic_event(
             Level::Error,
             "game.backup.security.empty_dir",
-            &format!(
-                "{} Security: Refusing to backup empty save directory for game '{}': {}",
-                char::from(Fa::TimesCircle),
-                game_name,
-                save_path.display()
+            Some(char::from(Fa::TimesCircle)),
+            format!(
+                "Security: Refusing to backup empty save directory for game '{}': {}",
+                game_name, path_display
             ),
-            None,
+            format!(
+                "Security: Refusing to backup empty save directory for game '{}': {}",
+                game_name.red(),
+                path_display
+            ),
+            Some(serde_json::json!({
+                "game": game_name.clone(),
+                "action": "empty_save_directory",
+                "path": path_display
+            })),
         );
-        emit(
+
+        emit_restic_event(
             Level::Info,
             "game.backup.security.context",
-            &format!(
-                "{} The save directory appears to be empty or contains only hidden files. This could indicate:",
-                char::from(Fa::InfoCircle)
+            Some(char::from(Fa::InfoCircle)),
+            "The save directory appears to be empty or contains only hidden files. This could indicate:".to_string(),
+            "The save directory appears to be empty or contains only hidden files. This could indicate:".to_string(),
+            Some(serde_json::json!({
+                "context": "empty_save_directory"
+            })),
+        );
+
+        let reasons = [
+            (
+                "game.backup.security.reason1",
+                "The game has not created any saves yet",
+                "no_visible_saves",
             ),
-            None,
-        );
-        emit(
-            Level::Info,
-            "game.backup.security.reason1",
-            "• The game has not created any saves yet",
-            None,
-        );
-        emit(
-            Level::Info,
-            "game.backup.security.reason2",
-            "• The save path is configured incorrectly",
-            None,
-        );
-        emit(
-            Level::Info,
-            "game.backup.security.reason3",
-            "• The saves are stored in a different location",
-            None,
-        );
-        emit(
+            (
+                "game.backup.security.reason2",
+                "The save path is configured incorrectly",
+                "save_path_incorrect",
+            ),
+            (
+                "game.backup.security.reason3",
+                "The saves are stored in a different location",
+                "saves_elsewhere",
+            ),
+        ];
+
+        for (code, text, key) in reasons {
+            emit_restic_event(
+                Level::Info,
+                code,
+                None,
+                text.to_string(),
+                format!("• {text}"),
+                Some(serde_json::json!({
+                    "context": "empty_save_directory",
+                    "detail": key
+                })),
+            );
+        }
+
+        emit_restic_event(
             Level::Info,
             "game.backup.security.action",
-            "Please verify the save path configuration and ensure the game has created save files.",
             None,
+            "Please verify the save path configuration and ensure the game has created save files."
+                .to_string(),
+            "Please verify the save path configuration and ensure the game has created save files."
+                .to_string(),
+            Some(serde_json::json!({
+                "context": "empty_save_directory",
+                "action": "verify_save_path"
+            })),
         );
         return Err(anyhow::anyhow!(
             "save directory is empty - security precaution"
@@ -157,29 +235,41 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Create backup
     let backup_handler = backup::GameBackup::new(game_config.clone());
 
-    emit(
+    emit_restic_event(
         Level::Info,
         "game.backup.start",
-        &format!(
-            "{} Creating backup for '{}'...\nThis may take a while depending on save file size.",
-            char::from(Fa::Save),
+        Some(char::from(Fa::Save)),
+        format!(
+            "Creating backup for '{}'... This may take a while depending on save file size.",
             game_name
         ),
-        None,
+        format!(
+            "Creating backup for '{}'...\nThis may take a while depending on save file size.",
+            game_name.yellow()
+        ),
+        Some(serde_json::json!({
+            "game": game_name.clone(),
+            "action": "backup_start"
+        })),
     );
 
     match backup_handler.backup_game(installation) {
         Ok(output) => {
-            emit(
+            emit_restic_event(
                 Level::Success,
                 "game.backup.completed",
-                &format!(
-                    "{} Backup completed successfully for game '{}'!\n\n{}",
-                    char::from(Fa::Check),
-                    game_name,
+                Some(char::from(Fa::Check)),
+                format!("Backup completed successfully for game '{game_name}'!"),
+                format!(
+                    "Backup completed successfully for game '{}'!\n\n{}",
+                    game_name.green(),
                     output
                 ),
-                None,
+                Some(serde_json::json!({
+                    "game": game_name.clone(),
+                    "action": "backup_completed",
+                    "output": output
+                })),
             );
 
             // Update checkpoint after successful backup
@@ -194,15 +284,17 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             cache::invalidate_game_cache(&game_name, &repo_path);
         }
         Err(e) => {
-            emit(
+            emit_restic_event(
                 Level::Error,
                 "game.backup.failed",
-                &format!(
-                    "{} Backup failed for game '{game_name}': {}",
-                    char::from(Fa::TimesCircle),
-                    e
-                ),
-                None,
+                Some(char::from(Fa::TimesCircle)),
+                format!("Backup failed for game '{game_name}': {e}"),
+                format!("Backup failed for game '{}': {}", game_name.red(), e),
+                Some(serde_json::json!({
+                    "game": game_name,
+                    "action": "backup_failed",
+                    "error": e.to_string()
+                })),
             );
             return Err(e);
         }
@@ -253,21 +345,35 @@ pub fn restore_game_saves(
         }
     };
 
+    let game_name_plain = game_selection.game_name.clone();
+
     // Step 4: Check if restore should be skipped due to matching checkpoint
     if !force
         && let Some(ref nearest_checkpoint) = game_selection.installation.nearest_checkpoint
         && nearest_checkpoint == &snapshot_id
     {
-        emit(
+        let plain_message = format!(
+            "Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
+            game_name_plain, snapshot_id
+        );
+        let text_message = format!(
+            "Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
+            game_selection.game_name.yellow(),
+            snapshot_id
+        );
+        let snapshot_for_data = snapshot_id.clone();
+        emit_restic_event(
             Level::Info,
             "game.restore.skipped",
-            &format!(
-                "{} Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-                char::from(Fa::InfoCircle),
-                game_selection.game_name,
-                snapshot_id
-            ),
-            None,
+            Some(char::from(Fa::InfoCircle)),
+            plain_message,
+            text_message,
+            Some(serde_json::json!({
+                "game": game_name_plain.clone(),
+                "action": "restore_skipped",
+                "snapshot_id": snapshot_for_data,
+                "reason": "checkpoint_matches"
+            })),
         );
         return Ok(());
     }
@@ -279,25 +385,36 @@ pub fn restore_game_saves(
         match cache::get_snapshot_by_id(&snapshot_id, &game_selection.game_name, &game_config)? {
             Some(snapshot) => snapshot,
             None => {
-                emit(
+                let plain_message = format!(
+                    "Error: Snapshot '{}' not found for game '{}'.",
+                    snapshot_id, game_name_plain
+                );
+                let text_message = format!(
+                    "Error: Snapshot '{}' not found for game '{}'.",
+                    snapshot_id,
+                    game_selection.game_name.red()
+                );
+                emit_restic_event(
                     Level::Error,
                     "game.restore.snapshot_missing",
-                    &format!(
-                        "{} Error: Snapshot '{}' not found for game '{}'.",
-                        char::from(Fa::TimesCircle),
-                        snapshot_id,
-                        game_selection.game_name
-                    ),
-                    None,
+                    Some(char::from(Fa::TimesCircle)),
+                    plain_message,
+                    text_message,
+                    Some(serde_json::json!({
+                        "game": game_name_plain.clone(),
+                        "action": "snapshot_missing",
+                        "snapshot_id": snapshot_id
+                    })),
                 );
-                emit(
+                emit_restic_event(
                     Level::Info,
                     "game.restore.hint.snapshot",
-                    &format!(
-                        "{} Please select a valid snapshot.",
-                        char::from(Fa::InfoCircle)
-                    ),
-                    None,
+                    Some(char::from(Fa::InfoCircle)),
+                    "Please select a valid snapshot.".to_string(),
+                    "Please select a valid snapshot.".to_string(),
+                    Some(serde_json::json!({
+                        "hint": "select_valid_snapshot"
+                    })),
                 );
                 return Err(anyhow::anyhow!("snapshot not found"));
             }
@@ -313,14 +430,16 @@ pub fn restore_game_saves(
         )?
     {
         // User cancelled due to security warning
-        emit(
+        emit_restic_event(
             Level::Warn,
             "game.restore.cancelled.security",
-            &format!(
-                "{} Restore cancelled due to security warning.",
-                char::from(Fa::ExclamationCircle)
-            ),
-            None,
+            Some(char::from(Fa::ExclamationCircle)),
+            "Restore cancelled due to security warning.".to_string(),
+            "Restore cancelled due to security warning.".to_string(),
+            Some(serde_json::json!({
+                "game": game_name_plain.clone(),
+                "action": "restore_cancelled_security"
+            })),
         );
         return Ok(());
     }
@@ -333,14 +452,16 @@ pub fn restore_game_saves(
         force,
     )? {
         // User cancelled confirmation
-        emit(
+        emit_restic_event(
             Level::Warn,
             "game.restore.cancelled.user",
-            &format!(
-                "{} Restore cancelled by user.",
-                char::from(Fa::ExclamationCircle)
-            ),
-            None,
+            Some(char::from(Fa::ExclamationCircle)),
+            "Restore cancelled by user.".to_string(),
+            "Restore cancelled by user.".to_string(),
+            Some(serde_json::json!({
+                "game": game_name_plain.clone(),
+                "action": "restore_cancelled_user"
+            })),
         );
         return Ok(());
     }
@@ -349,29 +470,44 @@ pub fn restore_game_saves(
     let save_path = game_selection.installation.save_path.as_path();
     let backup_handler = GameBackup::new(game_config);
 
-    emit(
+    emit_restic_event(
         Level::Info,
         "game.restore.start",
-        &format!(
-            "{} Restoring game saves for '{}'...",
-            char::from(Fa::Download),
-            game_selection.game_name
+        Some(char::from(Fa::Download)),
+        format!("Restoring game saves for '{}'...", game_name_plain),
+        format!(
+            "Restoring game saves for '{}'...",
+            game_selection.game_name.yellow()
         ),
-        None,
+        Some(serde_json::json!({
+            "game": game_selection.game_name.clone(),
+            "action": "restore_start",
+            "snapshot_id": snapshot_id.clone()
+        })),
     );
 
     match backup_handler.restore_game_backup(&game_selection.game_name, &snapshot_id, save_path) {
         Ok(output) => {
-            emit(
+            let output_clone = output.clone();
+            emit_restic_event(
                 Level::Success,
                 "game.restore.completed",
-                &format!(
-                    "{} Restore completed successfully for game '{}'!\n\n{}",
-                    char::from(Fa::Check),
-                    game_selection.game_name,
+                Some(char::from(Fa::Check)),
+                format!(
+                    "Restore completed successfully for game '{}'!",
+                    game_selection.game_name
+                ),
+                format!(
+                    "Restore completed successfully for game '{}'!\n\n{}",
+                    game_selection.game_name.green(),
                     output
                 ),
-                None,
+                Some(serde_json::json!({
+                    "game": game_selection.game_name.clone(),
+                    "action": "restore_completed",
+                    "snapshot_id": snapshot_id.clone(),
+                    "output": output_clone
+                })),
             );
 
             // Update the installation with the checkpoint
@@ -387,16 +523,25 @@ pub fn restore_game_saves(
             cache::invalidate_game_cache(&game_selection.game_name, &repo_path);
         }
         Err(e) => {
-            emit(
+            emit_restic_event(
                 Level::Error,
                 "game.restore.failed",
-                &format!(
-                    "{} Restore failed for game '{}': {}",
-                    char::from(Fa::TimesCircle),
-                    game_selection.game_name,
+                Some(char::from(Fa::TimesCircle)),
+                format!(
+                    "Restore failed for game '{}': {}",
+                    game_selection.game_name, e
+                ),
+                format!(
+                    "Restore failed for game '{}': {}",
+                    game_selection.game_name.red(),
                     e
                 ),
-                None,
+                Some(serde_json::json!({
+                    "game": game_selection.game_name.clone(),
+                    "action": "restore_failed",
+                    "snapshot_id": snapshot_id,
+                    "error": e.to_string()
+                })),
             );
             return Err(e);
         }
@@ -425,7 +570,7 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
              • {bin} game restic stats\n\
              • {bin} game restic find .config\n\
              • {bin} game restic restore latest --target /tmp/restore-test",
-                    );
+        );
         return Err(anyhow::anyhow!("no restic command provided"));
     }
 

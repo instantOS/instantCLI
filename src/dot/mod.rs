@@ -390,14 +390,10 @@ fn print_fetch_plan(
                 "Fetching the following modified files"
             };
 
-                emit(
-                    Level::Info,
+            emit(
+                Level::Info,
                 "dot.fetch.plan",
-                &format!(
-                    "{} {}",
-                    char::from(Fa::InfoCircle),
-                    message
-                ),
+                &format!("{} {}", char::from(Fa::InfoCircle), message),
                 Some(serde_json::json!({
                     "dry_run": dry_run,
                     "repos": fetch_data,
@@ -441,10 +437,7 @@ fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -
     emit(
         Level::Success,
         "dot.fetch.complete",
-        &format!(
-            "{} Fetch complete.",
-            char::from(Fa::Check)
-        ),
+        &format!("{} Fetch complete.", char::from(Fa::Check)),
         None,
     );
     Ok(())

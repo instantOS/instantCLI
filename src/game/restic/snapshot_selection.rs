@@ -438,10 +438,7 @@ pub fn select_snapshot_interactive_with_local_comparison(
             emit(
                 Level::Info,
                 "game.snapshots.cancelled",
-                &format!(
-                    "{} No snapshot selected.",
-                    char::from(Fa::InfoCircle)
-                ),
+                &format!("{} No snapshot selected.", char::from(Fa::InfoCircle)),
                 None,
             );
             Ok(None)
