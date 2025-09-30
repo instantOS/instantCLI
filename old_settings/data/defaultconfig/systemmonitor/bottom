@@ -1,0 +1,2 @@
+command:instantutils open terminal -e btm
+package:bottom,instantutils

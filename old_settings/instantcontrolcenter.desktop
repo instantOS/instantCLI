@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Control Center
+Exec=instantsettings
+Icon=gnome-settings
+Terminal=false
+Type=Application

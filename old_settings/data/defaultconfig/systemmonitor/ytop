@@ -1,0 +1,2 @@
+command:instantutils open terminal -e ytop
+package:ytop-bin,instantutils

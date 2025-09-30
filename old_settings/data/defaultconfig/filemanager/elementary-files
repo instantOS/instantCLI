@@ -1,0 +1,3 @@
+package:pantheon-files
+command:io.elementary.files
+xdg:io.elementary.files

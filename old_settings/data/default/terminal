@@ -1,0 +1,8 @@
+b st:st
+b Urxvt:urxvt
+b Xterm:xterm
+y alacritty:alacritty
+b kitty:kitty
+b lxterminal:lxterminal
+y Gnome terminal:gnome-terminal
+y Terminator:terminator
