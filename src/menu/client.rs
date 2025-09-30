@@ -153,6 +153,16 @@ impl MenuClient {
         }
     }
 
+    /// Show password dialog via server
+    pub fn password(&self, prompt: String) -> Result<String> {
+        match self.send_request(MenuRequest::Password { prompt })? {
+            MenuResponse::PasswordResult(text) => Ok(text),
+            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
+            MenuResponse::Cancelled => Ok(String::new()),
+            _ => anyhow::bail!("Unexpected response type for password request"),
+        }
+    }
+
     /// Show the scratchpad without any other action
     pub fn show(&self) -> Result<()> {
         match self.send_request(MenuRequest::Show)? {
@@ -292,6 +302,18 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
         }
         MenuCommands::Input { prompt, gui: true } => {
             match client.input(prompt.clone()) {
+                Ok(text) => {
+                    println!("{text}");
+                    Ok(0) // Success
+                }
+                Err(e) => {
+                    eprintln!("GUI menu error: {e}");
+                    Ok(3) // Error exit code
+                }
+            }
+        }
+        MenuCommands::Password { prompt, gui: true } => {
+            match client.password(prompt.clone()) {
                 Ok(text) => {
                     println!("{text}");
                     Ok(0) // Success

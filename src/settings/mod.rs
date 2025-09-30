@@ -391,7 +391,7 @@ fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
             break;
         }
 
-        match FzfWrapper::select_one(menu_items)? {
+        match select_one_with_style(menu_items)? {
             Some(CategoryMenuItem::SearchAll) => {
                 if !handle_search_all(&mut ctx)? {
                     break;
@@ -505,7 +505,7 @@ fn handle_category(ctx: &mut SettingsContext, category: &'static SettingCategory
 
     entries.push(CategoryPageItem::Back);
 
-    match FzfWrapper::select_one(entries)? {
+    match select_one_with_style(entries)? {
         Some(CategoryPageItem::Setting(item)) => {
             handle_setting(ctx, item.definition, item.state)?;
             ctx.persist()?;
@@ -535,7 +535,7 @@ fn handle_search_all(ctx: &mut SettingsContext) -> Result<bool> {
         return Ok(true);
     }
 
-    if let Some(selection) = FzfWrapper::select_one(items)? {
+    if let Some(selection) = select_one_with_style(items)? {
         handle_setting(ctx, selection.definition, selection.state)?;
         ctx.persist()?;
     }
@@ -570,7 +570,7 @@ fn handle_setting(
                 },
             ];
 
-            match FzfWrapper::select_one(choices)? {
+            match select_one_with_style(choices)? {
                 Some(choice) => {
                     if choice.target_enabled == current {
                         ctx.emit_info(
@@ -629,7 +629,7 @@ fn handle_setting(
                 })
                 .collect();
 
-            match FzfWrapper::select_one(items)? {
+            match select_one_with_style(items)? {
                 Some(choice) => {
                     ctx.set_string(*key, choice.option.value);
                     if apply.is_some() {

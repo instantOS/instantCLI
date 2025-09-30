@@ -103,6 +103,22 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             }
         }
+        MenuCommands::Password { ref prompt, gui } => {
+            if gui {
+                client::handle_gui_request(&command)
+            } else {
+                match FzfWrapper::password(prompt) {
+                    Ok(password) => {
+                        println!("{password}");
+                        Ok(0) // Success
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        Ok(2) // Error
+                    }
+                }
+            }
+        }
         MenuCommands::Status => {
             let client = client::MenuClient::new();
             if client.is_server_running() {
@@ -208,6 +224,15 @@ pub enum MenuCommands {
     Input {
         /// Input prompt message
         #[arg(long, default_value = "Type a value:")]
+        prompt: String,
+        /// Use GUI menu server instead of local fzf
+        #[arg(long)]
+        gui: bool,
+    },
+    /// Show password input dialog and output password to stdout
+    Password {
+        /// Password prompt message
+        #[arg(long, default_value = "Enter password:")]
         prompt: String,
         /// Use GUI menu server instead of local fzf
         #[arg(long)]

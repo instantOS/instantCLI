@@ -77,6 +77,8 @@ pub enum MenuRequest {
     },
     /// Show text input dialog
     Input { prompt: String },
+    /// Show password input dialog
+    Password { prompt: String },
     /// Get server status information
     Status,
     /// Stop the server
@@ -94,6 +96,8 @@ pub enum MenuResponse {
     ChoiceResult(Vec<SerializableMenuItem>),
     /// Text input result
     InputResult(String),
+    /// Password input result
+    PasswordResult(String),
     /// Server status information
     StatusResult(StatusInfo),
     /// Server stop acknowledgment
