@@ -54,6 +54,7 @@ use crate::dot::config::ConfigManager;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
 use crate::scratchpad::ScratchpadCommand;
+use crate::settings::SettingsCommands;
 use crate::ui::prelude::*;
 
 /// InstantCLI main parser
@@ -133,7 +134,10 @@ enum Commands {
         command: ScratchpadCommand,
     },
     /// Desktop settings and preferences
-    Settings,
+    Settings {
+        #[command(subcommand)]
+        command: Option<SettingsCommands>,
+    },
     /// Debugging and diagnostic utilities
     Debug {
         #[command(subcommand)]
@@ -395,9 +399,13 @@ async fn main() -> Result<()> {
             let exit_code = command.clone().run(&compositor, cli.debug)?;
             std::process::exit(exit_code);
         }
-        Some(Commands::Settings) => {
+        Some(Commands::Settings { command }) => {
             execute_with_error_handling(
-                settings::handle_settings_command(cli.debug),
+                settings::dispatch_settings_command(
+                    cli.debug,
+                    cli.internal_privileged_mode,
+                    command.clone(),
+                ),
                 "Error running settings",
                 None,
             )?;

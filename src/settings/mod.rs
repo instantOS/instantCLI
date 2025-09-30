@@ -204,19 +204,24 @@ impl SettingsContext {
         I::Item: AsRef<std::ffi::OsStr>,
         S: AsRef<std::ffi::OsStr>,
     {
+        let program_os = program.as_ref().to_owned();
         let status = if self.privileged {
-            let mut command = Command::new(program);
+            let mut command = Command::new(&program_os);
             command.args(args);
             command.status()
         } else {
             let mut command = Command::new("/usr/bin/sudo");
-            command.arg(program);
+            command.arg(&program_os);
             command.args(args);
             command.status()
         }?;
 
         if !status.success() {
-            bail!("command {:?} failed with status {:?}", program.as_ref(), status.code());
+            bail!(
+                "command {:?} failed with status {:?}",
+                program_os,
+                status.code()
+            );
         }
 
         Ok(())

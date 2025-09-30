@@ -2,6 +2,7 @@ use crate::common::requirements::{InstallTest, RequiredPackage};
 use crate::ui::prelude::Fa;
 
 use super::store::{BoolSettingKey, StringSettingKey};
+use super::users;
 
 #[derive(Debug, Clone)]
 pub struct SettingCategory {
@@ -116,6 +117,12 @@ pub const CATEGORIES: &[SettingCategory] = &[
         description: "Sound routing tools and audio behaviour.",
         icon: Fa::VolumeUp,
     },
+    SettingCategory {
+        id: "system",
+        title: "System",
+        description: "System administration and user management.",
+        icon: Fa::InfoCircle,
+    },
 ];
 
 pub const SETTINGS: &[SettingDefinition] = &[
@@ -228,6 +235,18 @@ pub const SETTINGS: &[SettingDefinition] = &[
             summary: "Launch the wiremix TUI to manage PipeWire routing and volumes.",
             command: CommandSpec::terminal("wiremix", &[]),
             required: &[WIREMIX_PACKAGE],
+        },
+        requires_reapply: false,
+    },
+    SettingDefinition {
+        id: "system.user_management",
+        title: "User management",
+        category: "system",
+        icon: Fa::InfoCircle,
+        breadcrumbs: &["User management"],
+        kind: SettingKind::Action {
+            summary: "Create and update Linux users, groups, and shells.",
+            run: users::manage_users,
         },
         requires_reapply: false,
     },
