@@ -92,7 +92,6 @@ enum DialogType {
 #[derive(Debug, Clone)]
 enum InitialCursor {
     Index(usize),
-    Key(String),
 }
 
 impl FzfBuilder {
@@ -129,18 +128,6 @@ impl FzfBuilder {
     /// Preselect an item by zero-based index
     pub fn initial_index(mut self, index: usize) -> Self {
         self.initial_cursor = Some(InitialCursor::Index(index));
-        self
-    }
-
-    /// Preselect an item by its key (defaults to display text)
-    pub fn initial_key<S: Into<String>>(mut self, key: S) -> Self {
-        self.initial_cursor = Some(InitialCursor::Key(key.into()));
-        self
-    }
-
-    /// Preselect a specific item using its `fzf_key`
-    pub fn initial_item<T: FzfSelectable>(mut self, item: &T) -> Self {
-        self.initial_cursor = Some(InitialCursor::Key(item.fzf_key()));
         self
     }
 
@@ -635,18 +622,9 @@ impl FzfWrapper {
 
         let mut item_map: HashMap<String, T> = HashMap::new();
         let mut display_lines = Vec::new();
-        let needs_key_lookup = matches!(self.initial_cursor, Some(InitialCursor::Key(_)));
-        let mut item_keys = if needs_key_lookup {
-            Some(Vec::with_capacity(items.len()))
-        } else {
-            None
-        };
 
         for item in &items {
             let display = item.fzf_display_text();
-            if let Some(keys) = item_keys.as_mut() {
-                keys.push(item.fzf_key());
-            }
             display_lines.push(display.clone());
             item_map.insert(display.clone(), item.clone());
         }
@@ -661,9 +639,6 @@ impl FzfWrapper {
                     Some(idx.min(last))
                 }
             }
-            Some(InitialCursor::Key(key)) => item_keys
-                .as_ref()
-                .and_then(|keys| keys.iter().position(|candidate| candidate == key)),
             None => None,
         };
 
