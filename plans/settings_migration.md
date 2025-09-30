@@ -9,12 +9,15 @@ implementation to the new `instant settings` Rust subcommand.
 - [x] Persist settings in `~/.config/instant/settings.toml`
 - [x] Added initial settings: autotheming toggle, animation toggle, clipboard
   manager toggle (with background process management), default layout chooser
+- [x] Implemented launcher-style settings that can execute external TUI/GUI programs
+- [x] Added wiremix audio launcher with dependency checks
+- [x] Created reusable `RequiredPackage` and `InstallTest` helpers for dependency detection
 
 ## 🔄 Pending categories
 
 | Category | Status | Notes |
 | --- | --- | --- |
-| Sound | ⬜️ not started | Requires translating notification sound handling, custom audio selection, and mute logic relying on external tools (`zenity`, `mpv`). |
+| Sound | 🟡 in progress | Wiremix launcher implemented; remaining notification sound flows still pending. |
 | Display | ⬜️ not started | Needs integration with autorandr, brightness assist scripts, HIDPI handling, and lock timeout toggling. |
 | Appearance (wallpaper) | ⬜️ not started | Legacy workflow depends on `instantwallpaper`, custom color generation, and logo toggles. |
 | Network | ⬜️ not started | Port network applet autostart logic, IP diagnostics, and speed test helpers. |

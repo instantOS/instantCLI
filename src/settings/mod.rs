@@ -6,11 +6,15 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use duct::cmd;
 
+use crate::common::requirements::RequiredPackage;
 use crate::fzf_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 pub use store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
-use registry::{CATEGORIES, SettingCategory, SettingDefinition, SettingKind, SettingOption};
+use registry::{
+    CATEGORIES, CommandSpec, CommandStyle, SettingCategory, SettingDefinition, SettingKind,
+    SettingOption,
+};
 
 #[derive(Debug)]
 pub struct SettingsContext {
@@ -118,6 +122,7 @@ pub fn handle_settings_command(debug: bool) -> Result<()> {
             let mut toggles = 0usize;
             let mut choices = 0usize;
             let mut actions = 0usize;
+            let mut commands = 0usize;
             let mut highlights = [None, None, None];
 
             for (idx, definition) in definitions.iter().enumerate() {
@@ -125,6 +130,7 @@ pub fn handle_settings_command(debug: bool) -> Result<()> {
                     SettingKind::Toggle { .. } => toggles += 1,
                     SettingKind::Choice { .. } => choices += 1,
                     SettingKind::Action { .. } => actions += 1,
+                    SettingKind::Command { .. } => commands += 1,
                 }
 
                 if idx < highlights.len() {
@@ -138,6 +144,7 @@ pub fn handle_settings_command(debug: bool) -> Result<()> {
                 toggles,
                 choices,
                 actions,
+                commands,
                 highlights,
             }));
         }
@@ -333,6 +340,58 @@ fn handle_setting(
             ctx.emit_info("settings.action.running", &format!("{}", summary));
             run(ctx)?;
         }
+        SettingKind::Command {
+            summary,
+            command,
+            required,
+        } => {
+            let mut missing = Vec::new();
+            for pkg in *required {
+                let installed = pkg.ensure()?;
+                if !installed {
+                    missing.push(pkg);
+                }
+            }
+
+            if !missing.is_empty() {
+                for pkg in missing {
+                    ctx.emit_info(
+                        "settings.command.missing",
+                        &format!(
+                            "{} missing dependency `{}`. {}",
+                            definition.title,
+                            pkg.name,
+                            pkg.install_hint()
+                        ),
+                    );
+                }
+                return Ok(());
+            }
+
+            ctx.emit_info(
+                "settings.command.launching",
+                &format!("{}", summary),
+            );
+
+            match command.style {
+                CommandStyle::Terminal => {
+                    cmd(command.program, command.args)
+                        .run()
+                        .with_context(|| format!("running {}", command.program))?;
+                }
+                CommandStyle::Detached => {
+                    Command::new(command.program)
+                        .args(command.args)
+                        .spawn()
+                        .with_context(|| format!("spawning {}", command.program))?;
+                }
+            }
+
+            ctx.emit_success(
+                "settings.command.completed",
+                &format!("Launched {}", definition.title),
+            );
+        }
     }
 
     Ok(())
@@ -345,6 +404,7 @@ struct CategoryItem {
     toggles: usize,
     choices: usize,
     actions: usize,
+    commands: usize,
     highlights: [Option<&'static SettingDefinition>; 3],
 }
 
@@ -371,6 +431,7 @@ enum SettingState {
     Toggle { enabled: bool },
     Choice { current_index: Option<usize> },
     Action,
+    Command,
 }
 
 #[derive(Clone, Copy)]
@@ -437,6 +498,12 @@ impl FzfSelectable for CategoryItem {
             char::from(Fa::Check),
             self.actions,
             if self.actions == 1 { "" } else { "s" }
+        ));
+        lines.push(format!(
+            "{} {} command{}",
+            char::from(Fa::Terminal),
+            self.commands,
+            if self.commands == 1 { "" } else { "s" }
         ));
 
         let highlights: Vec<_> = self.highlights.iter().flatten().take(3).collect();
@@ -509,6 +576,16 @@ impl FzfSelectable for SettingItem {
                 char::from(self.definition.icon),
                 self.definition.title
             ),
+            SettingState::Command => {
+                let glyph = match &self.definition.kind {
+                    SettingKind::Command { command, .. } => match command.style {
+                        CommandStyle::Terminal => Fa::Terminal,
+                        CommandStyle::Detached => Fa::ExternalLink,
+                    },
+                    _ => self.definition.icon,
+                };
+                format!("{} {}", char::from(glyph), self.definition.title)
+            }
         }
     }
 
@@ -516,7 +593,8 @@ impl FzfSelectable for SettingItem {
         match &self.definition.kind {
             SettingKind::Toggle { summary, .. }
             | SettingKind::Choice { summary, .. }
-            | SettingKind::Action { summary, .. } => FzfPreview::Text(summary.to_string()),
+            | SettingKind::Action { summary, .. }
+            | SettingKind::Command { summary, .. } => FzfPreview::Text(summary.to_string()),
         }
     }
 }
@@ -609,6 +687,16 @@ impl FzfSelectable for SearchItem {
             SettingState::Action => {
                 format!("{} {}", char::from(self.definition.icon), path)
             }
+            SettingState::Command => {
+                let glyph = match &self.definition.kind {
+                    SettingKind::Command { command, .. } => match command.style {
+                        CommandStyle::Terminal => Fa::Terminal,
+                        CommandStyle::Detached => Fa::ExternalLink,
+                    },
+                    _ => self.definition.icon,
+                };
+                format!("{} {}", char::from(glyph), path)
+            }
         }
     }
 
@@ -616,7 +704,8 @@ impl FzfSelectable for SearchItem {
         match &self.definition.kind {
             SettingKind::Toggle { summary, .. }
             | SettingKind::Choice { summary, .. }
-            | SettingKind::Action { summary, .. } => FzfPreview::Text(summary.to_string()),
+            | SettingKind::Action { summary, .. }
+            | SettingKind::Command { summary, .. } => FzfPreview::Text(summary.to_string()),
         }
     }
 }
@@ -626,6 +715,7 @@ fn setting_summary(definition: &SettingDefinition) -> &'static str {
         SettingKind::Toggle { summary, .. } => summary,
         SettingKind::Choice { summary, .. } => summary,
         SettingKind::Action { summary, .. } => summary,
+        SettingKind::Command { summary, .. } => summary,
     }
 }
 
@@ -645,6 +735,7 @@ fn compute_setting_state(
             SettingState::Choice { current_index }
         }
         SettingKind::Action { .. } => SettingState::Action,
+        SettingKind::Command { .. } => SettingState::Command,
     }
 }
 
