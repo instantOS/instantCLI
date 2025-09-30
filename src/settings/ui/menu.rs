@@ -1,11 +1,10 @@
 use anyhow::{Context, Result};
 
-use crate::settings::registry::{self, CATEGORIES, SETTINGS, SettingKind};
+use crate::settings::registry::{self, CATEGORIES, SettingKind};
 
-use super::super::context::{SettingsContext, format_icon, select_one_with_style};
+use super::super::context::{select_one_with_style, SettingsContext};
 use super::items::{
-    CategoryItem, CategoryMenuItem, CategoryPageItem, ChoiceItem, SearchItem, SettingItem,
-    SettingState, ToggleChoiceItem,
+    CategoryItem, CategoryMenuItem, CategoryPageItem, SearchItem, SettingItem,
 };
 
 pub fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
@@ -96,48 +95,52 @@ pub fn handle_category(
         return Ok(true);
     }
 
-    let mut entries: Vec<CategoryPageItem> = Vec::with_capacity(setting_defs.len() + 1);
-    for definition in setting_defs {
-        let state = super::state::compute_setting_state(ctx, definition);
-        entries.push(CategoryPageItem::Setting(SettingItem { definition, state }));
-    }
-
-    entries.push(CategoryPageItem::Back);
-
-    match select_one_with_style(entries)? {
-        Some(CategoryPageItem::Setting(item)) => {
-            super::handlers::handle_setting(ctx, item.definition, item.state)?;
-            ctx.persist()?;
-            Ok(true)
+    loop {
+        let mut entries: Vec<CategoryPageItem> = Vec::with_capacity(setting_defs.len() + 1);
+        for &definition in &setting_defs {
+            let state = super::state::compute_setting_state(ctx, definition);
+            entries.push(CategoryPageItem::Setting(SettingItem { definition, state }));
         }
-        Some(CategoryPageItem::Back) | None => Ok(true),
+
+        entries.push(CategoryPageItem::Back);
+
+        match select_one_with_style(entries)? {
+            Some(CategoryPageItem::Setting(item)) => {
+                super::handlers::handle_setting(ctx, item.definition, item.state)?;
+                ctx.persist()?;
+            }
+            Some(CategoryPageItem::Back) | None => return Ok(true),
+        }
     }
 }
 
 pub fn handle_search_all(ctx: &mut SettingsContext) -> Result<bool> {
-    let mut items = Vec::new();
+    loop {
+        let mut items = Vec::new();
 
-    for category in CATEGORIES {
-        let definitions = registry::settings_for_category(category.id);
-        for definition in definitions {
-            let state = super::state::compute_setting_state(ctx, definition);
-            items.push(SearchItem {
-                category,
-                definition,
-                state,
-            });
+        for category in CATEGORIES {
+            let definitions = registry::settings_for_category(category.id);
+            for definition in definitions {
+                let state = super::state::compute_setting_state(ctx, definition);
+                items.push(SearchItem {
+                    category,
+                    definition,
+                    state,
+                });
+            }
+        }
+
+        if items.is_empty() {
+            ctx.emit_info("settings.search.empty", "No settings found to search.");
+            return Ok(true);
+        }
+
+        match select_one_with_style(items)? {
+            Some(selection) => {
+                super::handlers::handle_setting(ctx, selection.definition, selection.state)?;
+                ctx.persist()?;
+            }
+            None => return Ok(true),
         }
     }
-
-    if items.is_empty() {
-        ctx.emit_info("settings.search.empty", "No settings found to search.");
-        return Ok(true);
-    }
-
-    if let Some(selection) = select_one_with_style(items)? {
-        super::handlers::handle_setting(ctx, selection.definition, selection.state)?;
-        ctx.persist()?;
-    }
-
-    Ok(true)
 }
