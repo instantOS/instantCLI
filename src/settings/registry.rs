@@ -161,7 +161,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("desktop.clipboard", true),
             summary: "Toggle the clipmenud clipboard manager.",
-            apply: Some(super::apply_clipboard_manager),
+            apply: Some(super::actions::apply_clipboard_manager),
         },
         requires_reapply: false,
     },
