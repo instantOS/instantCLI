@@ -9,13 +9,12 @@ use clap::{Subcommand, ValueHint};
 use duct::cmd;
 use sudo::RunningAs;
 
-use crate::common::requirements::RequiredPackage;
 use crate::fzf_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 pub use store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
 use registry::{
-    CATEGORIES, CommandSpec, CommandStyle, SETTINGS, SettingCategory, SettingDefinition,
+    CATEGORIES, CommandStyle, SETTINGS, SettingCategory, SettingDefinition,
     SettingKind, SettingOption,
 };
 
@@ -523,12 +522,9 @@ fn handle_search_all(ctx: &mut SettingsContext) -> Result<bool> {
         return Ok(true);
     }
 
-    match FzfWrapper::select_one(items)? {
-        Some(selection) => {
-            handle_setting(ctx, selection.definition, selection.state)?;
-            ctx.persist()?;
-        }
-        None => {}
+    if let Some(selection) = FzfWrapper::select_one(items)? {
+        handle_setting(ctx, selection.definition, selection.state)?;
+        ctx.persist()?;
     }
 
     Ok(true)
@@ -639,8 +635,8 @@ fn handle_setting(
             }
         }
         SettingKind::Action { summary, run } => {
-            ctx.emit_info("settings.action.running", &format!("{}", summary));
-            ctx.with_definition(definition, |ctx| run(ctx))?;
+            ctx.emit_info("settings.action.running", &summary.to_string());
+            ctx.with_definition(definition, run)?;
         }
         SettingKind::Command {
             summary,
@@ -670,7 +666,7 @@ fn handle_setting(
                 return Ok(());
             }
 
-            ctx.emit_info("settings.command.launching", &format!("{}", summary));
+            ctx.emit_info("settings.command.launching", &summary.to_string());
 
             ctx.with_definition(definition, |ctx| {
                 match command.style {
