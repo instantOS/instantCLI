@@ -49,14 +49,6 @@ pub struct ChoiceItem {
 }
 
 #[derive(Clone, Copy)]
-pub struct ToggleChoiceItem {
-    pub title: &'static str,
-    pub summary: &'static str,
-    pub target_enabled: bool,
-    pub current_enabled: bool,
-}
-
-#[derive(Clone, Copy)]
 pub struct SearchItem {
     pub category: &'static SettingCategory,
     pub definition: &'static SettingDefinition,
@@ -202,7 +194,21 @@ impl FzfSelectable for SettingItem {
             | SettingKind::Choice { summary, .. }
             | SettingKind::Action { summary, .. }
             | SettingKind::Command { summary, .. } => {
-                crate::fzf_wrapper::FzfPreview::Text(summary.to_string())
+                let mut lines = vec![summary.to_string()];
+
+                if let SettingState::Toggle { enabled } = self.state {
+                    lines.push(String::new());
+                    lines.push(format!(
+                        "Current state: {}",
+                        if enabled { "Enabled" } else { "Disabled" }
+                    ));
+                    lines.push(format!(
+                        "Select to {}.",
+                        if enabled { "disable" } else { "enable" }
+                    ));
+                }
+
+                crate::fzf_wrapper::FzfPreview::Text(lines.join("\n"))
             }
         }
     }
@@ -243,37 +249,6 @@ impl FzfSelectable for ChoiceItem {
             "{}\n\n{}",
             self.option.description, self.summary
         ))
-    }
-}
-
-impl FzfSelectable for ToggleChoiceItem {
-    fn fzf_display_text(&self) -> String {
-        let glyph = if self.target_enabled {
-            Fa::ToggleOn
-        } else {
-            Fa::ToggleOff
-        };
-        let action = if self.target_enabled {
-            "Enable"
-        } else {
-            "Disable"
-        };
-        let current_marker = if self.target_enabled == self.current_enabled {
-            " (current)"
-        } else {
-            ""
-        };
-        format!(
-            "{} {} {}{}",
-            format_icon(glyph),
-            action,
-            self.title,
-            current_marker
-        )
-    }
-
-    fn fzf_preview(&self) -> crate::fzf_wrapper::FzfPreview {
-        crate::fzf_wrapper::FzfPreview::Text(self.summary.to_string())
     }
 }
 
@@ -320,7 +295,21 @@ impl FzfSelectable for SearchItem {
             | SettingKind::Choice { summary, .. }
             | SettingKind::Action { summary, .. }
             | SettingKind::Command { summary, .. } => {
-                crate::fzf_wrapper::FzfPreview::Text(summary.to_string())
+                let mut lines = vec![summary.to_string()];
+
+                if let SettingState::Toggle { enabled } = self.state {
+                    lines.push(String::new());
+                    lines.push(format!(
+                        "Current state: {}",
+                        if enabled { "Enabled" } else { "Disabled" }
+                    ));
+                    lines.push(format!(
+                        "Select to {}.",
+                        if enabled { "disable" } else { "enable" }
+                    ));
+                }
+
+                crate::fzf_wrapper::FzfPreview::Text(lines.join("\n"))
             }
         }
     }

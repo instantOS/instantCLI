@@ -5,7 +5,7 @@ use std::process::Command;
 use crate::settings::registry::{SettingDefinition, SettingKind};
 
 use super::super::context::{
-    ApplyOverride, SettingsContext, apply_definition, format_icon, select_one_with_style,
+    ApplyOverride, SettingsContext, apply_definition, select_one_with_style,
 };
 use super::super::registry::CommandStyle;
 use super::items::{ChoiceItem, SettingState};
