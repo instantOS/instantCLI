@@ -441,6 +441,14 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
 }
 
 /// Get the status of a dotfile
+///
+/// Returns:
+/// - `Modified`: Target file exists and has been modified by user (doesn't match any known source hash)
+/// - `Outdated`: Target file doesn't exist, or exists but doesn't match current source content
+/// - `Clean`: Target file exists and matches current source content (or was created by instantCLI)
+///
+/// Note: Files that don't exist in the home directory but exist in the dotfile repository
+/// are correctly classified as "Outdated" because they need to be applied.
 pub fn get_dotfile_status(
     dotfile: &crate::dot::Dotfile,
     db: &crate::dot::db::Database,

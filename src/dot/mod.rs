@@ -126,10 +126,15 @@ pub fn resolve_dotfile_path(path: &str) -> Result<PathBuf> {
         // Use absolute path as-is
         PathBuf::from(path)
     } else {
-        // For relative paths, resolve relative to current working directory
+        // For relative paths, prefer the current working directory and fall back to the home directory
         let current_dir = std::env::current_dir()
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
-        current_dir.join(path)
+        let candidate = current_dir.join(path);
+        if candidate.exists() {
+            candidate
+        } else {
+            home.join(path)
+        }
     };
 
     // Normalize the path by removing redundant components (like ./, ../) but DON'T resolve symlinks

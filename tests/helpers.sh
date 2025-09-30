@@ -33,7 +33,7 @@ prepare_ins_binary() {
         return
     fi
 
-    echo "Compiling ins (debug) for tests..."
+    echo "Compiling ins (debug) for tests..." >&2
     cd "${REPO_ROOT}"
 
     # Optimizations for faster compilation in tests
@@ -41,7 +41,8 @@ prepare_ins_binary() {
     export CARGO_BUILD_JOBS=$(nproc)  # Use all available cores
 
     # Only build the ins binary, skip all other dependencies and examples
-    cargo build --bin ins --message-format=human
+    # Suppress warnings to avoid interfering with JSON parsing in tests
+    cargo build --bin ins --message-format=human --quiet
 
     export INS_BIN="${REPO_ROOT}/target/debug/ins"
     export INS_PREPARED=1
