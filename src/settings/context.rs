@@ -219,7 +219,7 @@ enum PrivilegedValue {
 }
 
 pub fn format_icon(icon: Fa) -> String {
-    format!("  {}  │", char::from(icon))
+    format!("  {}  ", char::from(icon))
 }
 
 pub fn make_apply_override(
