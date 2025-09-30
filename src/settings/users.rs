@@ -5,7 +5,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::fzf_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
@@ -135,7 +135,7 @@ impl FzfSelectable for ManageMenuItem {
                 };
                 format!("{} ({}) [{}]", username, shell, label)
             }
-            ManageMenuItem::Add => format!("{} Add user", char::from(Fa::PlusCircle)),
+            ManageMenuItem::Add => format!("{} Add user", char::from(Fa::Plus)),
             ManageMenuItem::Back => format!("{} Back", char::from(Fa::ArrowLeft)),
         }
     }
@@ -162,8 +162,7 @@ impl FzfSelectable for ManageMenuItem {
                 }
                 FzfPreview::Text(lines.join("\n"))
             }
-            ManageMenuItem::Add =>
-                FzfPreview::Text("Create a new managed user entry".to_string()),
+            ManageMenuItem::Add => FzfPreview::Text("Create a new managed user entry".to_string()),
             ManageMenuItem::Back => FzfPreview::Text("Return to settings".to_string()),
         }
     }
@@ -195,10 +194,8 @@ impl FzfSelectable for UserActionItem {
         let text = match self {
             UserActionItem::Apply => "Apply the stored configuration to the system",
             UserActionItem::ChangeShell => "Update the user's default shell",
-            UserActionItem::EditGroups =>
-                "Set supplementary groups (comma-separated list)",
-            UserActionItem::Remove =>
-                "Stop managing this user (does not delete the account)",
+            UserActionItem::EditGroups => "Set supplementary groups (comma-separated list)",
+            UserActionItem::Remove => "Stop managing this user (does not delete the account)",
             UserActionItem::Back => "Return to the previous menu",
         };
         FzfPreview::Text(text.to_string())
@@ -219,8 +216,10 @@ pub(super) fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
             })
             .collect();
         items.sort_by(|a, b| match (a, b) {
-            (ManageMenuItem::User { username: lhs, .. }, ManageMenuItem::User { username: rhs, .. }) =>
-                lhs.cmp(rhs),
+            (
+                ManageMenuItem::User { username: lhs, .. },
+                ManageMenuItem::User { username: rhs, .. },
+            ) => lhs.cmp(rhs),
             (ManageMenuItem::User { .. }, _) => std::cmp::Ordering::Less,
             (_, ManageMenuItem::User { .. }) => std::cmp::Ordering::Greater,
             _ => std::cmp::Ordering::Equal,
@@ -245,10 +244,7 @@ pub(super) fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
 
     if dirty {
         store.save()?;
-        ctx.emit_success(
-            "settings.users.saved",
-            "User configuration updated.",
-        );
+        ctx.emit_success("settings.users.saved", "User configuration updated.");
     } else {
         ctx.emit_info("settings.users.noop", "No changes made to users.");
     }
@@ -384,10 +380,7 @@ fn apply_user_spec(ctx: &mut SettingsContext, username: &str, spec: &UserSpec) -
             "settings.users.create",
             &format!("Creating system user {}", username),
         );
-        ctx.run_command_as_root(
-            "useradd",
-            ["-m", "-s", desired.shell.as_str(), username],
-        )?;
+        ctx.run_command_as_root("useradd", ["-m", "-s", desired.shell.as_str(), username])?;
 
         if !desired.groups.is_empty() {
             let joined = desired.groups.join(",");

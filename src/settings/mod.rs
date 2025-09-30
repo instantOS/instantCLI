@@ -4,7 +4,7 @@ mod users;
 
 use std::{env, path::PathBuf, process::Command};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Subcommand, ValueHint};
 use duct::cmd;
 use sudo::RunningAs;
@@ -15,8 +15,8 @@ use crate::ui::prelude::*;
 pub use store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
 use registry::{
-    CATEGORIES, CommandSpec, CommandStyle, SettingCategory, SettingDefinition, SettingKind,
-    SettingOption, SETTINGS,
+    CATEGORIES, CommandSpec, CommandStyle, SETTINGS, SettingCategory, SettingDefinition,
+    SettingKind, SettingOption,
 };
 
 #[derive(Subcommand, Debug, Clone)]
@@ -157,9 +157,9 @@ impl SettingsContext {
             return Ok(());
         }
 
-        let definition = self
-            .current_definition
-            .ok_or_else(|| anyhow::anyhow!("no active setting definition for privilege escalation"))?;
+        let definition = self.current_definition.ok_or_else(|| {
+            anyhow::anyhow!("no active setting definition for privilege escalation")
+        })?;
 
         let exe = env::current_exe().context("locating executable")?;
         let settings_path = self.store.path().to_path_buf();
@@ -192,7 +192,11 @@ impl SettingsContext {
             .with_context(|| format!("escalating setting {}", definition.id))?;
 
         if !status.success() {
-            bail!("privileged apply for {} exited with status {:?}", definition.id, status.code());
+            bail!(
+                "privileged apply for {} exited with status {:?}",
+                definition.id,
+                status.code()
+            );
         }
 
         Ok(())
@@ -282,7 +286,9 @@ fn apply_definition(
             None,
         ) => {
             let current_value = ctx.string(*key);
-            if let Some(option) = options.iter().find(|candidate| candidate.value == current_value)
+            if let Some(option) = options
+                .iter()
+                .find(|candidate| candidate.value == current_value)
             {
                 ctx.with_definition(definition, |ctx| apply_fn(ctx, option))
             } else {
@@ -398,7 +404,10 @@ fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()> {
 
     let mut applied = 0usize;
 
-    for definition in SETTINGS.iter().filter(|definition| definition.requires_reapply) {
+    for definition in SETTINGS
+        .iter()
+        .filter(|definition| definition.requires_reapply)
+    {
         match definition.kind {
             SettingKind::Toggle { .. } | SettingKind::Choice { .. } => {
                 ctx.emit_info(
@@ -420,7 +429,10 @@ fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()> {
     } else {
         ctx.emit_success(
             "settings.apply.completed",
-            &format!("Reapplied {applied} setting{}", if applied == 1 { "" } else { "s" }),
+            &format!(
+                "Reapplied {applied} setting{}",
+                if applied == 1 { "" } else { "s" }
+            ),
         );
     }
 
@@ -565,7 +577,11 @@ fn handle_setting(
 
                     ctx.set_bool(*key, choice.target_enabled);
                     if apply.is_some() {
-                        apply_definition(ctx, definition, Some(ApplyOverride::Bool(choice.target_enabled)))?;
+                        apply_definition(
+                            ctx,
+                            definition,
+                            Some(ApplyOverride::Bool(choice.target_enabled)),
+                        )?;
                     }
                     ctx.emit_success(
                         "settings.toggle.updated",
@@ -608,7 +624,11 @@ fn handle_setting(
                 Some(choice) => {
                     ctx.set_string(*key, choice.option.value);
                     if apply.is_some() {
-                        apply_definition(ctx, definition, Some(ApplyOverride::Choice(choice.option)))?;
+                        apply_definition(
+                            ctx,
+                            definition,
+                            Some(ApplyOverride::Choice(choice.option)),
+                        )?;
                     }
                     ctx.emit_success(
                         "settings.choice.updated",
@@ -650,10 +670,7 @@ fn handle_setting(
                 return Ok(());
             }
 
-            ctx.emit_info(
-                "settings.command.launching",
-                &format!("{}", summary),
-            );
+            ctx.emit_info("settings.command.launching", &format!("{}", summary));
 
             ctx.with_definition(definition, |ctx| {
                 match command.style {
