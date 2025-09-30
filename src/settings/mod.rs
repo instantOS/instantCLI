@@ -336,7 +336,7 @@ pub fn dispatch_settings_command(
 }
 
 fn format_icon(icon: Fa) -> String {
-    format!("  {}  │", char::from(icon))
+    format!("  {}  ", char::from(icon))
 }
 
 fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
