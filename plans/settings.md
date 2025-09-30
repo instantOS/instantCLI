@@ -1,6 +1,21 @@
 # Plans for settings
 
+
 ## Systems
+
+### Settings invoking external commands
+
+Some settings do not hold values, they just open external programs which handle
+the actual settings. In this case, the `ins` cli does not need to care about the value
+or state of the actual setting, it just needs to open the program in the
+terminal the settings are currently running in. 
+Adjust the architecture to make this kind of settings entry work, and implement
+the wiremix setting mentioned at the bottom of this file. 
+TUI commands should open in the same terminal as the settings are running in,
+GUI commands should open non-blocking. Make sure the DX for adding these kinds
+of entries is ergonomic. 
+
+### Required Packages
 
 Some settings may require specific programs to be installed, but I do not want
 to have each of them as a hard dependency. There should be a RequiredPackage
