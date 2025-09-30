@@ -53,6 +53,7 @@ use crate::dot::config::ConfigManager;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
 use crate::scratchpad::ScratchpadCommand;
+use crate::ui::prelude::*;
 
 /// InstantCLI main parser
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -214,7 +215,6 @@ enum DotCommands {
 
 fn handle_debug_command(command: DebugCommands) -> Result<()> {
     use crate::restic::logging::ResticCommandLogger;
-    use crate::ui::prelude::*;
 
     match command {
         DebugCommands::ResticLogs { limit, clear } => {
@@ -223,7 +223,7 @@ fn handle_debug_command(command: DebugCommands) -> Result<()> {
             if clear {
                 logger.clear_logs()?;
                 emit(
-                    ui::Level::Success,
+                    Level::Success,
                     "restic.logs.cleared",
                     &format!(
                         "{} Cleared all restic command logs.",
@@ -414,7 +414,7 @@ async fn main() -> Result<()> {
         },
         None => {
             emit(
-                ui::Level::Info,
+                Level::Info,
                 "cli.help",
                 &format!("ℹ️ {}: run with --help for usage", env!("CARGO_BIN_NAME")),
                 None,

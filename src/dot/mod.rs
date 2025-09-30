@@ -277,7 +277,7 @@ pub fn fetch_modified(
 
     if modified_dotfiles.is_empty() {
         emit(
-            ui::Level::Info,
+            Level::Info,
             "dot.fetch.no_modified",
             &format!(
                 "{} No modified dotfiles to fetch.",
@@ -390,8 +390,8 @@ fn print_fetch_plan(
                 "Fetching the following modified files"
             };
 
-            emit(
-                ui::Level::Info,
+                emit(
+                    Level::Info,
                 "dot.fetch.plan",
                 &format!(
                     "{} {}",
@@ -439,7 +439,7 @@ fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -
     }
     db.cleanup_hashes(hash_cleanup_days)?;
     emit(
-        ui::Level::Success,
+        Level::Success,
         "dot.fetch.complete",
         &format!(
             "{} Fetch complete.",
@@ -469,7 +469,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
                 })?
                 .to_string_lossy();
             emit(
-                ui::Level::Success,
+                Level::Success,
                 "dot.apply.created",
                 &format!(
                     "{} Created new dotfile: ~/{relative}",

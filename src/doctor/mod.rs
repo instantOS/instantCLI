@@ -193,12 +193,14 @@ pub fn print_check_list_table(checks: &[Box<dyn DoctorCheck + Send + Sync>]) {
                 })
                 .collect();
 
-            data(
+            emit(
+                Level::Info,
                 "doctor.check_list",
-                serde_json::json!({
+                "Doctor check list",
+                Some(serde_json::json!({
                     "checks": checks_data,
                     "count": checks_data.len(),
-                }),
+                })),
             );
         }
         crate::ui::OutputFormat::Text => {
@@ -276,9 +278,11 @@ pub fn print_results_table(results: &[CheckResult]) {
             let failure_count = results.iter().filter(|r| !r.status.is_success()).count();
             let fixable_count = results.iter().filter(|r| r.status.is_fixable()).count();
 
-            data(
+            emit(
+                Level::Info,
                 "doctor.results",
-                serde_json::json!({
+                "Doctor results",
+                Some(serde_json::json!({
                     "results": results_data,
                     "summary": {
                         "total": results.len(),
@@ -286,7 +290,7 @@ pub fn print_results_table(results: &[CheckResult]) {
                         "failures": failure_count,
                         "fixable": fixable_count,
                     }
-                }),
+                })),
             );
         }
         crate::ui::OutputFormat::Text => {
@@ -325,9 +329,11 @@ pub fn print_single_check_result_table(result: &CheckResult) {
 
     match get_output_format() {
         crate::ui::OutputFormat::Json => {
-            data(
+            emit(
+                Level::Info,
                 "doctor.single_result",
-                serde_json::json!({
+                "Doctor single result",
+                Some(serde_json::json!({
                     "name": result.name,
                     "id": result.check_id,
                     "status": result.status.status_text(),
@@ -337,7 +343,7 @@ pub fn print_single_check_result_table(result: &CheckResult) {
                     "fixable_indicator": result.status.fixable_indicator(),
                     "fix_message": result.fix_message,
                     "needs_fix": result.status.needs_fix(),
-                }),
+                })),
             );
         }
         crate::ui::OutputFormat::Text => {
@@ -403,14 +409,16 @@ pub fn print_fix_summary_table(check_name: &str, before_status: &str, after_stat
 
     match get_output_format() {
         crate::ui::OutputFormat::Json => {
-            data(
+            emit(
+                Level::Info,
                 "doctor.fix_summary",
-                serde_json::json!({
+                "Doctor fix summary",
+                Some(serde_json::json!({
                     "check": check_name,
                     "before_status": before_status,
                     "after_status": after_status,
                     "success": after_status == "PASS",
-                }),
+                })),
             );
         }
         crate::ui::OutputFormat::Text => {

@@ -78,9 +78,15 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
     let game = match config.games.iter().find(|g| g.name.0 == game_name) {
         Some(game) => game,
         None => {
-            error(
+            emit(
+                Level::Error,
                 "game.show.not_found",
-                &format!("Game '{}' not found in configuration.", game_name.red()),
+                &format!(
+                    "{} Game '{}' not found in configuration.",
+                    char::from(Fa::TimesCircle),
+                    game_name.red()
+                ),
+                None,
             );
             return Ok(());
         }

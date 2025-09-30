@@ -61,19 +61,23 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
     {
         Some(installation) => installation.clone(),
         None => {
-            error(
+            emit(
+                Level::Error,
                 "game.security.installation_missing",
                 &format!(
                     "{} Error: No installation found for game '{game_name}'.",
                     char::from(Fa::TimesCircle)
                 ),
+                None,
             );
-            info(
+            emit(
+                Level::Info,
                 "game.security.hint.add",
                 &format!(
                     "Please add the game first using '{} game add'.",
                     env!("CARGO_BIN_NAME")
                 ),
+                None,
             );
             return Err(anyhow::anyhow!("game installation not found"));
         }
@@ -280,16 +284,20 @@ pub fn validate_snapshot_id(
     match super::cache::get_snapshot_by_id(snapshot_id, game_name, config)? {
         Some(_) => Ok(true),
         None => {
-            error(
+            emit(
+                Level::Error,
                 "game.security.snapshot_missing",
                 &format!(
                     "{} Error: Snapshot '{snapshot_id}' not found for game '{game_name}'.",
                     char::from(Fa::TimesCircle)
                 ),
+                None,
             );
-            info(
+            emit(
+                Level::Info,
                 "game.security.snapshot_hint",
                 "Please select a valid snapshot.",
+                None,
             );
             Ok(false)
         }

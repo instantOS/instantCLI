@@ -187,7 +187,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
             "doctor.fix.not_needed",
             &format!(
                 "{} {}: {}",
-                char::from(Fa::CheckCircle),
+                char::from(Fa::Check),
                 check.name(),
                 check_result.message()
             ),
@@ -228,8 +228,8 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         Level::Warn,
         "doctor.fix.available",
         &format!(
-            "{} {}: {}",
-            char::from(Fa::ExclamationTriangle),
+                    "{} {}: {}",
+                    char::from(Fa::ExclamationCircle),
             check.name(),
             check_result.message()
         ),
@@ -257,8 +257,8 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
                 Level::Warn,
                 "doctor.fix.privileges",
                 &format!(
-                    "{} Fix for '{}' requires administrator privileges.",
-                    char::from(Fa::ExclamationTriangle),
+                        "{} Fix for '{}' requires administrator privileges.",
+                        char::from(Fa::ExclamationCircle),
                     check.name()
                 ),
                 None,

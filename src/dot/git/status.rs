@@ -1,6 +1,6 @@
 use crate::dot::config;
 use crate::dot::git::{get_dotfile_dir_name, get_repo_name_for_dotfile};
-use crate::ui::{OutputFormat, get_output_format, info_with_data};
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use colored::*;
 use serde_json;
@@ -62,13 +62,23 @@ pub fn show_single_file_status(
                     "dotfile_dir": dotfile_dir,
                     "tracked": true
                 });
-                info_with_data("dot.status.file", "File status", status_data);
+                emit(
+                    Level::Info,
+                    "dot.status.file",
+                    "File status",
+                    Some(status_data),
+                );
             } else {
                 let status_data = serde_json::json!({
                     "path": target_path.display().to_string(),
                     "tracked": false
                 });
-                info_with_data("dot.status.file", "File not tracked", status_data);
+                emit(
+                    Level::Info,
+                    "dot.status.file",
+                    "File not tracked",
+                    Some(status_data),
+                );
             }
         }
         OutputFormat::Text => {
@@ -227,7 +237,12 @@ fn show_json_status(
         "show_all": show_all
     });
 
-    info_with_data("dot.status.summary", "Dotfile status summary", status_data);
+    emit(
+        Level::Info,
+        "dot.status.summary",
+        "Dotfile status summary",
+        Some(status_data),
+    );
 }
 
 /// Show status in text format
@@ -349,13 +364,14 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
                     "Use '{bin} dot status --all' to see all tracked files including clean ones"
                 ));
             } else if clean_count > 0 {
-                info_with_data(
+                emit(
+                    Level::Info,
                     "dot.status.message",
                     "All dotfiles are clean and up to date",
-                    serde_json::json!({
+                    Some(serde_json::json!({
                         "status": "clean",
                         "message": "All dotfiles are clean and up to date!"
-                    }),
+                    })),
                 );
                 return;
             } else {
@@ -369,10 +385,11 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
                 "suggestions": suggestions
             });
 
-            info_with_data(
+            emit(
+                Level::Info,
                 "dot.status.suggestions",
                 "Action suggestions",
-                suggestion_data,
+                Some(suggestion_data),
             );
         }
         OutputFormat::Text => {
