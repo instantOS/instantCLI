@@ -138,7 +138,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.backup.start",
                     &format!(
                         "{} {}: Creating backup...",
-                        char::from(Fa::InfoCircle),
+                        char::from(Fa::Upload),
                         installation.game_name.0.yellow()
                     ),
                     None,
@@ -256,7 +256,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.initial_backup.start",
                     &format!(
                         "{} {}: No snapshots found, creating initial backup...",
-                        char::from(Fa::InfoCircle),
+                        char::from(Fa::Upload),
                         installation.game_name.0.yellow()
                     ),
                     None,
@@ -354,16 +354,10 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
             Some(summary_data),
         );
 
-        let (error_level, error_icon) = if total_errors == 0 {
-            (Level::Success, None)
-        } else {
-            (Level::Error, Some(char::from(Fa::ExclamationCircle)))
-        };
-
         let entries = [
             (
                 Level::Success,
-                Some(char::from(Fa::Upload)),
+                Some(char::from(Fa::Check)),
                 "Synced",
                 total_synced,
                 "game.sync.summary.synced",
@@ -376,8 +370,8 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 "game.sync.summary.skipped",
             ),
             (
-                error_level,
-                error_icon,
+                Level::Error,
+                Some(char::from(Fa::TimesCircle)),
                 "Errors",
                 total_errors,
                 "game.sync.summary.errors",
