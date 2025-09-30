@@ -54,30 +54,28 @@ pub fn apply_clipboard_manager(ctx: &mut SettingsContext, enabled: bool) -> Resu
 }
 
 fn detect_bluetooth_hardware() -> bool {
-    if let Ok(entries) = std::fs::read_dir("/sys/class/bluetooth") {
-        if entries.filter_map(Result::ok).next().is_some() {
-            return true;
-        }
+    if let Ok(entries) = std::fs::read_dir("/sys/class/bluetooth")
+        && entries.filter_map(Result::ok).next().is_some()
+    {
+        return true;
     }
 
-    if let Ok(output) = std::process::Command::new("lsusb").output() {
-        if output.status.success()
-            && String::from_utf8_lossy(&output.stdout)
-                .to_lowercase()
-                .contains("bluetooth")
-        {
-            return true;
-        }
+    if let Ok(output) = std::process::Command::new("lsusb").output()
+        && output.status.success()
+        && String::from_utf8_lossy(&output.stdout)
+            .to_lowercase()
+            .contains("bluetooth")
+    {
+        return true;
     }
 
-    if let Ok(output) = std::process::Command::new("rfkill").arg("list").output() {
-        if output.status.success()
-            && String::from_utf8_lossy(&output.stdout)
-                .to_lowercase()
-                .contains("bluetooth")
-        {
-            return true;
-        }
+    if let Ok(output) = std::process::Command::new("rfkill").arg("list").output()
+        && output.status.success()
+        && String::from_utf8_lossy(&output.stdout)
+            .to_lowercase()
+            .contains("bluetooth")
+    {
+        return true;
     }
 
     false
