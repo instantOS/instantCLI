@@ -373,6 +373,23 @@ fn parse_groups(input: &str) -> Vec<String> {
 
 fn apply_user_spec(ctx: &mut SettingsContext, username: &str, spec: &UserSpec) -> Result<()> {
     let desired = spec.sanitized();
+    let (valid_groups, missing_groups) = partition_groups(&desired.groups)?;
+
+    if !missing_groups.is_empty() {
+        let arch_hint = if missing_groups.iter().any(|group| group == "sudo") {
+            " Arch-based systems typically use the 'wheel' group for sudo access."
+        } else {
+            ""
+        };
+
+        let message = format!(
+            "{} Skipping unknown group(s): {}.{arch_hint}",
+            char::from(Fa::ExclamationCircle),
+            missing_groups.join(", ")
+        );
+        emit(Level::Warn, "settings.users.missing_groups", &message, None);
+    }
+
     let info = get_user_info(username)?;
 
     if info.is_none() {
@@ -382,8 +399,8 @@ fn apply_user_spec(ctx: &mut SettingsContext, username: &str, spec: &UserSpec) -
         );
         ctx.run_command_as_root("useradd", ["-m", "-s", desired.shell.as_str(), username])?;
 
-        if !desired.groups.is_empty() {
-            let joined = desired.groups.join(",");
+        if !valid_groups.is_empty() {
+            let joined = valid_groups.join(",");
             ctx.run_command_as_root("usermod", ["-a", "-G", &joined, username])?;
         }
 
@@ -400,7 +417,7 @@ fn apply_user_spec(ctx: &mut SettingsContext, username: &str, spec: &UserSpec) -
         ctx.run_command_as_root("chsh", ["-s", desired.shell.as_str(), username])?;
     }
 
-    let desired_set: BTreeSet<_> = desired.groups.iter().cloned().collect();
+    let desired_set: BTreeSet<_> = valid_groups.iter().cloned().collect();
     let current_set: BTreeSet<_> = info.groups.iter().cloned().collect();
 
     for group in desired_set.difference(&current_set) {
@@ -415,6 +432,30 @@ fn apply_user_spec(ctx: &mut SettingsContext, username: &str, spec: &UserSpec) -
     }
 
     Ok(())
+}
+
+fn partition_groups(groups: &[String]) -> Result<(Vec<String>, Vec<String>)> {
+    let mut valid = Vec::new();
+    let mut missing = Vec::new();
+
+    for group in groups {
+        if group_exists(group)? {
+            valid.push(group.clone());
+        } else {
+            missing.push(group.clone());
+        }
+    }
+
+    Ok((valid, missing))
+}
+
+fn group_exists(name: &str) -> Result<bool> {
+    let status = Command::new("getent")
+        .arg("group")
+        .arg(name)
+        .status()
+        .with_context(|| format!("checking group {name}"))?;
+    Ok(status.success())
 }
 
 struct UserInfo {
