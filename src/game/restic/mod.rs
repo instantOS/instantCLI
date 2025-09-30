@@ -39,19 +39,25 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     {
         Some(installation) => installation,
         None => {
-            emit!(
+            emit(
                 Level::Error,
                 "game.backup.installation_missing",
-                "{} Error: No installation found for game '{}'.",
-                char::from(Fa::TimesCircle),
-                game_name
+                &format!(
+                    "{} Error: No installation found for game '{}'.",
+                    char::from(Fa::TimesCircle),
+                    game_name
+                ),
+                None,
             );
-            emit!(
+            emit(
                 Level::Info,
                 "game.backup.hint.add",
-                "{} Please add the game first using '{} game add'.",
-                char::from(Fa::InfoCircle),
-                env!("CARGO_BIN_NAME")
+                &format!(
+                    "{} Please add the game first using '{} game add'.",
+                    char::from(Fa::InfoCircle),
+                    env!("CARGO_BIN_NAME")
+                ),
+                None,
             );
             return Err(anyhow::anyhow!("game installation not found"));
         }
@@ -60,19 +66,25 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Security check: ensure save directory is not empty
     let save_path = installation.save_path.as_path();
     if !save_path.exists() {
-        emit!(
+        emit(
             Level::Error,
             "game.backup.save_path_missing",
-            "{} Error: Save path does not exist for game '{}': {}",
-            char::from(Fa::TimesCircle),
-            game_name,
-            save_path.display()
+            &format!(
+                "{} Error: Save path does not exist for game '{}': {}",
+                char::from(Fa::TimesCircle),
+                game_name,
+                save_path.display()
+            ),
+            None,
         );
-        emit!(
+        emit(
             Level::Warn,
             "game.backup.hint.config",
-            "{} Please check the game installation configuration.",
-            char::from(Fa::ExclamationTriangle)
+            &format!(
+                "{} Please check the game installation configuration.",
+                char::from(Fa::ExclamationCircle)
+            ),
+            None,
         );
         return Err(anyhow::anyhow!("save path does not exist"));
     }
@@ -93,39 +105,49 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     }
 
     if is_empty {
-        emit!(
+        emit(
             Level::Error,
             "game.backup.security.empty_dir",
-            "{} Security: Refusing to backup empty save directory for game '{}': {}",
-            char::from(Fa::TimesCircle),
-            game_name,
-            save_path.display()
+            &format!(
+                "{} Security: Refusing to backup empty save directory for game '{}': {}",
+                char::from(Fa::TimesCircle),
+                game_name,
+                save_path.display()
+            ),
+            None,
         );
-        emit!(
+        emit(
             Level::Info,
             "game.backup.security.context",
-            "{} The save directory appears to be empty or contains only hidden files. This could indicate:",
-            char::from(Fa::InfoCircle)
+            &format!(
+                "{} The save directory appears to be empty or contains only hidden files. This could indicate:",
+                char::from(Fa::InfoCircle)
+            ),
+            None,
         );
-        emit!(
+        emit(
             Level::Info,
             "game.backup.security.reason1",
-            "• The game has not created any saves yet"
+            "• The game has not created any saves yet",
+            None,
         );
-        emit!(
+        emit(
             Level::Info,
             "game.backup.security.reason2",
-            "• The save path is configured incorrectly"
+            "• The save path is configured incorrectly",
+            None,
         );
-        emit!(
+        emit(
             Level::Info,
             "game.backup.security.reason3",
-            "• The saves are stored in a different location"
+            "• The saves are stored in a different location",
+            None,
         );
-        emit!(
+        emit(
             Level::Info,
             "game.backup.security.action",
-            "Please verify the save path configuration and ensure the game has created save files."
+            "Please verify the save path configuration and ensure the game has created save files.",
+            None,
         );
         return Err(anyhow::anyhow!(
             "save directory is empty - security precaution"
@@ -135,23 +157,29 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Create backup
     let backup_handler = backup::GameBackup::new(game_config.clone());
 
-    emit!(
+    emit(
         Level::Info,
         "game.backup.start",
-        "{} Creating backup for '{}'...\nThis may take a while depending on save file size.",
-        char::from(Fa::Save),
-        game_name
+        &format!(
+            "{} Creating backup for '{}'...\nThis may take a while depending on save file size.",
+            char::from(Fa::Save),
+            game_name
+        ),
+        None,
     );
 
     match backup_handler.backup_game(installation) {
         Ok(output) => {
-            emit!(
+            emit(
                 Level::Success,
                 "game.backup.completed",
-                "{} Backup completed successfully for game '{}'!\n\n{}",
-                char::from(Fa::CheckCircle),
-                game_name,
-                output
+                &format!(
+                    "{} Backup completed successfully for game '{}'!\n\n{}",
+                    char::from(Fa::Check),
+                    game_name,
+                    output
+                ),
+                None,
             );
 
             // Update checkpoint after successful backup
@@ -166,12 +194,15 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             cache::invalidate_game_cache(&game_name, &repo_path);
         }
         Err(e) => {
-            emit!(
+            emit(
                 Level::Error,
                 "game.backup.failed",
-                "{} Backup failed for game '{game_name}': {}",
-                char::from(Fa::TimesCircle),
-                e
+                &format!(
+                    "{} Backup failed for game '{game_name}': {}",
+                    char::from(Fa::TimesCircle),
+                    e
+                ),
+                None,
             );
             return Err(e);
         }
@@ -227,13 +258,16 @@ pub fn restore_game_saves(
         && let Some(ref nearest_checkpoint) = game_selection.installation.nearest_checkpoint
         && nearest_checkpoint == &snapshot_id
     {
-        emit!(
+        emit(
             Level::Info,
             "game.restore.skipped",
-            "{} Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
-            char::from(Fa::InfoCircle),
-            game_selection.game_name,
-            snapshot_id
+            &format!(
+                "{} Restore skipped for game '{}' from snapshot {} (checkpoint matches, use --force to override)",
+                char::from(Fa::InfoCircle),
+                game_selection.game_name,
+                snapshot_id
+            ),
+            None,
         );
         return Ok(());
     }
@@ -245,19 +279,25 @@ pub fn restore_game_saves(
         match cache::get_snapshot_by_id(&snapshot_id, &game_selection.game_name, &game_config)? {
             Some(snapshot) => snapshot,
             None => {
-                emit!(
+                emit(
                     Level::Error,
                     "game.restore.snapshot_missing",
-                    "{} Error: Snapshot '{}' not found for game '{}'.",
-                    char::from(Fa::TimesCircle),
-                    snapshot_id,
-                    game_selection.game_name
+                    &format!(
+                        "{} Error: Snapshot '{}' not found for game '{}'.",
+                        char::from(Fa::TimesCircle),
+                        snapshot_id,
+                        game_selection.game_name
+                    ),
+                    None,
                 );
-                emit!(
+                emit(
                     Level::Info,
                     "game.restore.hint.snapshot",
-                    "{} Please select a valid snapshot.",
-                    char::from(Fa::InfoCircle)
+                    &format!(
+                        "{} Please select a valid snapshot.",
+                        char::from(Fa::InfoCircle)
+                    ),
+                    None,
                 );
                 return Err(anyhow::anyhow!("snapshot not found"));
             }
@@ -273,11 +313,14 @@ pub fn restore_game_saves(
         )?
     {
         // User cancelled due to security warning
-        emit!(
+        emit(
             Level::Warn,
             "game.restore.cancelled.security",
-            "{} Restore cancelled due to security warning.",
-            char::from(Fa::ExclamationTriangle)
+            &format!(
+                "{} Restore cancelled due to security warning.",
+                char::from(Fa::ExclamationCircle)
+            ),
+            None,
         );
         return Ok(());
     }
@@ -290,11 +333,14 @@ pub fn restore_game_saves(
         force,
     )? {
         // User cancelled confirmation
-        emit!(
+        emit(
             Level::Warn,
             "game.restore.cancelled.user",
-            "{} Restore cancelled by user.",
-            char::from(Fa::ExclamationTriangle)
+            &format!(
+                "{} Restore cancelled by user.",
+                char::from(Fa::ExclamationCircle)
+            ),
+            None,
         );
         return Ok(());
     }
@@ -303,23 +349,29 @@ pub fn restore_game_saves(
     let save_path = game_selection.installation.save_path.as_path();
     let backup_handler = GameBackup::new(game_config);
 
-    emit!(
+    emit(
         Level::Info,
         "game.restore.start",
-        "{} Restoring game saves for '{}'...",
-        char::from(Fa::Download),
-        game_selection.game_name
+        &format!(
+            "{} Restoring game saves for '{}'...",
+            char::from(Fa::Download),
+            game_selection.game_name
+        ),
+        None,
     );
 
     match backup_handler.restore_game_backup(&game_selection.game_name, &snapshot_id, save_path) {
         Ok(output) => {
-            emit!(
+            emit(
                 Level::Success,
                 "game.restore.completed",
-                "{} Restore completed successfully for game '{}'!\n\n{}",
-                char::from(Fa::CheckCircle),
-                game_selection.game_name,
-                output
+                &format!(
+                    "{} Restore completed successfully for game '{}'!\n\n{}",
+                    char::from(Fa::Check),
+                    game_selection.game_name,
+                    output
+                ),
+                None,
             );
 
             // Update the installation with the checkpoint
@@ -335,13 +387,16 @@ pub fn restore_game_saves(
             cache::invalidate_game_cache(&game_selection.game_name, &repo_path);
         }
         Err(e) => {
-            emit!(
+            emit(
                 Level::Error,
                 "game.restore.failed",
-                "{} Restore failed for game '{}': {}",
-                char::from(Fa::TimesCircle),
-                game_selection.game_name,
-                e
+                &format!(
+                    "{} Restore failed for game '{}': {}",
+                    char::from(Fa::TimesCircle),
+                    game_selection.game_name,
+                    e
+                ),
+                None,
             );
             return Err(e);
         }

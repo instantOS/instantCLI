@@ -43,7 +43,7 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
         "dev.clone.success",
         &format!(
             "{} Successfully cloned {} to {}",
-            char::from(Fa::CheckCircle),
+            char::from(Fa::Check),
             repo.name,
             target_dir.display()
         ),
@@ -66,7 +66,7 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
             "dev.clone.description",
             &format!(
                 "{} {desc}",
-                char::from(Fa::InfoCircle)
+            char::from(Fa::InfoCircle)
             ),
             None,
         );

@@ -81,7 +81,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
             "game.sync.none",
             &format!(
                 "{} No games configured for syncing.",
-                char::from(Fa::ExclamationTriangle)
+                char::from(Fa::ExclamationCircle)
             ),
             None,
         );
@@ -111,7 +111,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     "game.sync.already_in_sync",
                     &format!(
                         "{} {}: Already in sync",
-                        char::from(Fa::CheckCircle),
+                        char::from(Fa::Check),
                         installation.game_name.0.green()
                     ),
                     None,
@@ -162,7 +162,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.backup.completed",
                         &format!(
                             "{} {}: Backup completed",
-                            char::from(Fa::CheckCircle),
+                            char::from(Fa::Check),
                             installation.game_name.0.green()
                         ),
                         None,
@@ -202,7 +202,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.restore.completed",
                         &format!(
                             "{} {}: Restore completed",
-                            char::from(Fa::CheckCircle),
+                            char::from(Fa::Check),
                             installation.game_name.0.green()
                         ),
                         None,
@@ -242,7 +242,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.restore.latest.completed",
                         &format!(
                             "{} {}: Restore completed",
-                            char::from(Fa::CheckCircle),
+                            char::from(Fa::Check),
                             installation.game_name.0.green()
                         ),
                         None,
@@ -280,7 +280,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                         "game.sync.initial_backup.completed",
                         &format!(
                             "{} {}: Initial backup completed",
-                            char::from(Fa::CheckCircle),
+                            char::from(Fa::Check),
                             installation.game_name.0.green()
                         ),
                         None,
@@ -320,7 +320,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     }
 
     // Print summary
-    emit(Level::Info, "separator", "─".repeat(80), None);
+    emit(Level::Info, "separator", &"─".repeat(80), None);
     let summary_data = serde_json::json!({
         "synced": total_synced,
         "skipped": total_skipped,
@@ -345,7 +345,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
             &summary_text,
             Some(summary_data),
         );
-        emit(Level::Info, "separator", "─".repeat(80), None);
+        emit(Level::Info, "separator", &"─".repeat(80), None);
     } else {
         emit(
             Level::Info,
@@ -401,7 +401,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
             emit(level, code, &message, None);
         }
 
-        emit(Level::Info, "separator", "─".repeat(80), None);
+        emit(Level::Info, "separator", &"─".repeat(80), None);
     }
 
     if total_errors > 0 {

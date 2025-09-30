@@ -69,7 +69,7 @@ impl PackageRepo {
             "dev.install.local_changes",
             &format!(
                 "{} Local changes detected in package repository",
-                char::from(Fa::ExclamationTriangle)
+                char::from(Fa::ExclamationCircle)
             ),
             None,
         );
@@ -131,7 +131,7 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
 
     let success_message = format!(
         "{} Successfully installed {}",
-        char::from(Fa::CheckCircle),
+        char::from(Fa::Check),
         package.name
     );
     emit(

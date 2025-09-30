@@ -32,7 +32,7 @@ pub fn setup_uninstalled_games() -> Result<()> {
             "game.setup.all_configured",
             &format!(
                 "{} All games are already configured for this device!",
-                char::from(Fa::CheckCircle)
+                char::from(Fa::Check)
             ),
             None,
         );
@@ -126,8 +126,8 @@ fn setup_single_game(
             Level::Warn,
             "game.setup.no_snapshots",
             &format!(
-                "{} No snapshots found for game '{game_name}'.",
-                char::from(Fa::ExclamationTriangle)
+                    "{} No snapshots found for game '{game_name}'.",
+                    char::from(Fa::ExclamationCircle)
             ),
             None,
         );
@@ -152,8 +152,8 @@ fn setup_single_game(
             Level::Warn,
             "game.setup.no_paths",
             &format!(
-                "{} No save paths found in snapshots for game '{game_name}'.",
-                char::from(Fa::ExclamationTriangle)
+                    "{} No save paths found in snapshots for game '{game_name}'.",
+                    char::from(Fa::ExclamationCircle)
             ),
             None,
         );
@@ -198,7 +198,7 @@ fn setup_single_game(
                         "game.setup.dir_created",
                         &format!(
                             "{} Created save directory: {path_str}",
-                            char::from(Fa::CheckCircle)
+                            char::from(Fa::Check)
                         ),
                         None,
                     );
@@ -233,7 +233,7 @@ fn setup_single_game(
                 "game.setup.restore_done",
                 &format!(
                     "{} {restore_summary}",
-                    char::from(Fa::CheckCircle)
+                    char::from(Fa::Check)
                 ),
                 None,
             );
@@ -247,7 +247,7 @@ fn setup_single_game(
             "game.setup.success",
             &format!(
                 "{} Game '{game_name}' set up successfully with save path: {path_str}",
-                char::from(Fa::CheckCircle)
+                char::from(Fa::Check)
             ),
             None,
         );
@@ -257,7 +257,7 @@ fn setup_single_game(
             "game.setup.cancelled",
             &format!(
                 "{} Setup cancelled for game '{game_name}'.",
-                char::from(Fa::ExclamationTriangle)
+                char::from(Fa::ExclamationCircle)
             ),
             None,
         );

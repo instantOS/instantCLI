@@ -443,7 +443,7 @@ fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -
         "dot.fetch.complete",
         &format!(
             "{} Fetch complete.",
-            char::from(Fa::CheckCircle)
+            char::from(Fa::Check)
         ),
         None,
     );
@@ -473,7 +473,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
                 "dot.apply.created",
                 &format!(
                     "{} Created new dotfile: ~/{relative}",
-                    char::from(Fa::CheckCircle)
+                    char::from(Fa::Check)
                 ),
                 None,
             );

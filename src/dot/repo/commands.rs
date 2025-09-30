@@ -107,7 +107,7 @@ fn add_repository(
         "dot.repo.added",
         &format!(
             "{} Added repository '{}' from {}",
-            char::from(Fa::CheckCircle),
+            char::from(Fa::Check),
             repo_name,
             url
         ),
@@ -143,8 +143,8 @@ fn add_repository(
                     Level::Warn,
                     "dot.repo.add.apply_failed",
                     &format!(
-                        "{} Failed to apply dotfiles: {e}",
-                        char::from(Fa::ExclamationTriangle)
+                    "{} Failed to apply dotfiles: {e}",
+                    char::from(Fa::ExclamationCircle)
                     ),
                     None,
                 );
