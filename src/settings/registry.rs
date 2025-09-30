@@ -42,6 +42,7 @@ pub struct SettingDefinition {
     pub title: &'static str,
     pub category: &'static str,
     pub icon: Fa,
+    pub breadcrumbs: &'static [&'static str],
     pub kind: SettingKind,
 }
 
@@ -72,6 +73,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         title: "Autotheming",
         category: "appearance",
         icon: Fa::InfoCircle,
+        breadcrumbs: &["Autotheming"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("appearance.autotheming", true),
             summary: "Enable instantOS theming (disable for custom GTK themes).",
@@ -83,6 +85,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         title: "Animations",
         category: "appearance",
         icon: Fa::Check,
+        breadcrumbs: &["Animations"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("appearance.animations", true),
             summary: "Controls desktop animation effects.",
@@ -94,6 +97,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         title: "Clipboard manager",
         category: "desktop",
         icon: Fa::Folder,
+        breadcrumbs: &["Clipboard manager"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("desktop.clipboard", true),
             summary: "Toggle the clipmenud clipboard manager.",
@@ -105,6 +109,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         title: "Default layout",
         category: "workspace",
         icon: Fa::List,
+        breadcrumbs: &["Default layout"],
         kind: SettingKind::Choice {
             key: StringSettingKey::new("workspace.layout", "tile"),
             summary: "Select the default instantWM layout.",

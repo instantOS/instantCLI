@@ -107,15 +107,20 @@ pub fn handle_settings_command(debug: bool) -> Result<()> {
     let mut ctx = SettingsContext::new(store, debug);
 
     loop {
-        let category_items: Vec<CategoryItem> = CATEGORIES
-            .iter()
-            .map(|category| CategoryItem {
-                category,
-                total: registry::settings_for_category(category.id).len(),
-            })
-            .collect();
+        let mut menu_items = Vec::with_capacity(CATEGORIES.len() + 1);
+        menu_items.push(CategoryMenuItem::SearchAll);
 
-        if category_items.is_empty() {
+        let mut total_settings = 0usize;
+        for category in CATEGORIES {
+            let count = registry::settings_for_category(category.id).len();
+            total_settings += count;
+            menu_items.push(CategoryMenuItem::Category(CategoryItem {
+                category,
+                total: count,
+            }));
+        }
+
+        if total_settings == 0 {
             emit(
                 Level::Warn,
                 "settings.empty",
@@ -128,8 +133,13 @@ pub fn handle_settings_command(debug: bool) -> Result<()> {
             break;
         }
 
-        match FzfWrapper::select_one(category_items)? {
-            Some(item) => {
+        match FzfWrapper::select_one(menu_items)? {
+            Some(CategoryMenuItem::SearchAll) => {
+                if !handle_search_all(&mut ctx)? {
+                    break;
+                }
+            }
+            Some(CategoryMenuItem::Category(item)) => {
                 if !handle_category(&mut ctx, item.category)? {
                     break;
                 }
@@ -152,33 +162,53 @@ fn handle_category(ctx: &mut SettingsContext, category: &'static SettingCategory
         return Ok(true);
     }
 
-    let mut items: Vec<SettingItem> = Vec::new();
+    let mut entries: Vec<CategoryPageItem> = Vec::with_capacity(setting_defs.len() + 1);
     for definition in setting_defs {
-        let state = match &definition.kind {
-            SettingKind::Toggle { key, .. } => SettingState::Toggle {
-                enabled: ctx.bool(*key),
-            },
-            SettingKind::Choice { key, options, .. } => {
-                let current_value = ctx.string(*key);
-                let current_index = options
-                    .iter()
-                    .position(|option| option.value == current_value);
-                SettingState::Choice { current_index }
-            }
-            SettingKind::Action { .. } => SettingState::Action,
-        };
-
-        items.push(SettingItem { definition, state });
+        let state = compute_setting_state(ctx, definition);
+        entries.push(CategoryPageItem::Setting(SettingItem { definition, state }));
     }
 
-    match FzfWrapper::select_one(items)? {
-        Some(item) => {
+    entries.push(CategoryPageItem::Back);
+
+    match FzfWrapper::select_one(entries)? {
+        Some(CategoryPageItem::Setting(item)) => {
             handle_setting(ctx, item.definition, item.state)?;
             ctx.persist()?;
             Ok(true)
         }
-        None => Ok(true),
+        Some(CategoryPageItem::Back) | None => Ok(true),
     }
+}
+
+fn handle_search_all(ctx: &mut SettingsContext) -> Result<bool> {
+    let mut items = Vec::new();
+
+    for category in CATEGORIES {
+        let definitions = registry::settings_for_category(category.id);
+        for definition in definitions {
+            let state = compute_setting_state(ctx, definition);
+            items.push(SearchItem {
+                category,
+                definition,
+                state,
+            });
+        }
+    }
+
+    if items.is_empty() {
+        ctx.emit_info("settings.search.empty", "No settings found to search.");
+        return Ok(true);
+    }
+
+    match FzfWrapper::select_one(items)? {
+        Some(selection) => {
+            handle_setting(ctx, selection.definition, selection.state)?;
+            ctx.persist()?;
+        }
+        None => {}
+    }
+
+    Ok(true)
 }
 
 fn handle_setting(
@@ -274,9 +304,21 @@ struct CategoryItem {
 }
 
 #[derive(Clone, Copy)]
+enum CategoryMenuItem {
+    SearchAll,
+    Category(CategoryItem),
+}
+
+#[derive(Clone, Copy)]
 struct SettingItem {
     definition: &'static SettingDefinition,
     state: SettingState,
+}
+
+#[derive(Clone, Copy)]
+enum CategoryPageItem {
+    Setting(SettingItem),
+    Back,
 }
 
 #[derive(Clone, Copy)]
@@ -293,6 +335,13 @@ struct ChoiceItem {
     summary: &'static str,
 }
 
+#[derive(Clone, Copy)]
+struct SearchItem {
+    category: &'static SettingCategory,
+    definition: &'static SettingDefinition,
+    state: SettingState,
+}
+
 impl FzfSelectable for CategoryItem {
     fn fzf_display_text(&self) -> String {
         format!(
@@ -305,6 +354,26 @@ impl FzfSelectable for CategoryItem {
 
     fn fzf_preview(&self) -> FzfPreview {
         FzfPreview::Text(self.category.description.to_string())
+    }
+}
+
+impl FzfSelectable for CategoryMenuItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            CategoryMenuItem::SearchAll => {
+                format!("{} Search all settings", char::from(Fa::Search))
+            }
+            CategoryMenuItem::Category(item) => item.fzf_display_text(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            CategoryMenuItem::SearchAll => {
+                FzfPreview::Text("Browse and edit any available setting".to_string())
+            }
+            CategoryMenuItem::Category(item) => item.fzf_preview(),
+        }
     }
 }
 
@@ -350,6 +419,24 @@ impl FzfSelectable for SettingItem {
     }
 }
 
+impl FzfSelectable for CategoryPageItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            CategoryPageItem::Setting(item) => item.fzf_display_text(),
+            CategoryPageItem::Back => {
+                format!("{} Back", char::from(Fa::ArrowLeft))
+            }
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            CategoryPageItem::Setting(item) => item.fzf_preview(),
+            CategoryPageItem::Back => FzfPreview::Text("Return to categories".to_string()),
+        }
+    }
+}
+
 impl FzfSelectable for ChoiceItem {
     fn fzf_display_text(&self) -> String {
         let glyph = if self.is_current {
@@ -363,6 +450,68 @@ impl FzfSelectable for ChoiceItem {
     fn fzf_preview(&self) -> FzfPreview {
         FzfPreview::Text(format!("{}\n\n{}", self.option.description, self.summary))
     }
+}
+
+impl FzfSelectable for SearchItem {
+    fn fzf_display_text(&self) -> String {
+        let path = format_setting_path(self.category, self.definition);
+        match self.state {
+            SettingState::Toggle { enabled } => {
+                let glyph = if enabled { Fa::ToggleOn } else { Fa::ToggleOff };
+                format!("{} {}", char::from(glyph), path)
+            }
+            SettingState::Choice { current_index } => {
+                let glyph = Fa::List;
+                let current_label =
+                    if let SettingKind::Choice { options, .. } = &self.definition.kind {
+                        current_index
+                            .and_then(|index| options.get(index))
+                            .map(|option| option.label)
+                            .unwrap_or("Not set")
+                    } else {
+                        "Not set"
+                    };
+                format!("{} {}  [{}]", char::from(glyph), path, current_label)
+            }
+            SettingState::Action => {
+                format!("{} {}", char::from(self.definition.icon), path)
+            }
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match &self.definition.kind {
+            SettingKind::Toggle { summary, .. }
+            | SettingKind::Choice { summary, .. }
+            | SettingKind::Action { summary, .. } => FzfPreview::Text(summary.to_string()),
+        }
+    }
+}
+
+fn compute_setting_state(
+    ctx: &SettingsContext,
+    definition: &'static SettingDefinition,
+) -> SettingState {
+    match &definition.kind {
+        SettingKind::Toggle { key, .. } => SettingState::Toggle {
+            enabled: ctx.bool(*key),
+        },
+        SettingKind::Choice { key, options, .. } => {
+            let current_value = ctx.string(*key);
+            let current_index = options
+                .iter()
+                .position(|option| option.value == current_value);
+            SettingState::Choice { current_index }
+        }
+        SettingKind::Action { .. } => SettingState::Action,
+    }
+}
+
+fn format_setting_path(category: &SettingCategory, definition: &SettingDefinition) -> String {
+    let mut segments = Vec::with_capacity(1 + definition.breadcrumbs.len());
+    segments.push(category.title);
+    segments.extend(definition.breadcrumbs.iter().copied());
+    segments.join(" -> ")
 }
 
 pub(super) fn apply_clipboard_manager(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
