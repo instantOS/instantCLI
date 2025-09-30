@@ -12,6 +12,7 @@ mod launch;
 mod menu;
 mod restic;
 mod scratchpad;
+mod settings;
 mod ui;
 
 use clap::{CommandFactory, Parser, Subcommand, ValueHint};
@@ -131,6 +132,8 @@ enum Commands {
         #[command(subcommand)]
         command: ScratchpadCommand,
     },
+    /// Desktop settings and preferences
+    Settings,
     /// Debugging and diagnostic utilities
     Debug {
         #[command(subcommand)]
@@ -391,6 +394,13 @@ async fn main() -> Result<()> {
             let compositor = common::compositor::CompositorType::detect();
             let exit_code = command.clone().run(&compositor, cli.debug)?;
             std::process::exit(exit_code);
+        }
+        Some(Commands::Settings) => {
+            execute_with_error_handling(
+                settings::handle_settings_command(cli.debug),
+                "Error running settings",
+                None,
+            )?;
         }
         Some(Commands::Debug { command }) => {
             execute_with_error_handling(
