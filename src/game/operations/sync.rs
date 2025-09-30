@@ -52,7 +52,7 @@ fn emit_separator() {
     } else {
         '─'
     };
-    let line: String = std::iter::repeat(ch).take(80).collect();
+    let line: String = std::iter::repeat_n(ch, 80).collect();
     emit(Level::Info, "separator", &line, None);
 }
 

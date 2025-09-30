@@ -175,5 +175,5 @@ pub fn separator(light: bool) {
 }
 
 pub mod prelude {
-    pub use super::{Fa, Level, Oct, OutputFormat, emit, get_output_format, separator};
+    pub use super::{Fa, Level, OutputFormat, emit, get_output_format, separator};
 }
