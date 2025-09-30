@@ -1,3 +1,4 @@
+use crate::common::requirements::{InstallTest, RequiredPackage};
 use crate::ui::prelude::Fa;
 
 use super::store::{BoolSettingKey, StringSettingKey};
@@ -34,6 +35,11 @@ pub enum SettingKind {
         summary: &'static str,
         run: fn(&mut super::SettingsContext) -> anyhow::Result<()>,
     },
+    Command {
+        summary: &'static str,
+        command: CommandSpec,
+        required: &'static [RequiredPackage],
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +51,44 @@ pub struct SettingDefinition {
     pub breadcrumbs: &'static [&'static str],
     pub kind: SettingKind,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub enum CommandStyle {
+    Terminal,
+    Detached,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CommandSpec {
+    pub program: &'static str,
+    pub args: &'static [&'static str],
+    pub style: CommandStyle,
+}
+
+impl CommandSpec {
+    pub const fn terminal(program: &'static str, args: &'static [&'static str]) -> Self {
+        Self {
+            program,
+            args,
+            style: CommandStyle::Terminal,
+        }
+    }
+
+    pub const fn detached(program: &'static str, args: &'static [&'static str]) -> Self {
+        Self {
+            program,
+            args,
+            style: CommandStyle::Detached,
+        }
+    }
+}
+
+const WIREMIX_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "wiremix",
+    arch_package_name: Some("wiremix"),
+    ubuntu_package_name: None,
+    tests: &[InstallTest::WhichSucceeds("wiremix")],
+};
 
 pub const CATEGORIES: &[SettingCategory] = &[
     SettingCategory {
@@ -64,6 +108,12 @@ pub const CATEGORIES: &[SettingCategory] = &[
         title: "Workspace",
         description: "Window manager defaults and layout preferences.",
         icon: Fa::Folder,
+    },
+    SettingCategory {
+        id: "audio",
+        title: "Audio",
+        description: "Sound routing tools and audio behaviour.",
+        icon: Fa::VolumeUp,
     },
 ];
 
@@ -161,6 +211,18 @@ pub const SETTINGS: &[SettingDefinition] = &[
                 },
             ],
             apply: None,
+        },
+    },
+    SettingDefinition {
+        id: "audio.wiremix",
+        title: "Wiremix",
+        category: "audio",
+        icon: Fa::VolumeUp,
+        breadcrumbs: &["Wiremix"],
+        kind: SettingKind::Command {
+            summary: "Launch the wiremix TUI to manage PipeWire routing and volumes.",
+            command: CommandSpec::terminal("wiremix", &[]),
+            required: &[WIREMIX_PACKAGE],
         },
     },
 ];
