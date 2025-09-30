@@ -74,7 +74,7 @@ pub fn handle_setting(
             }
         }
         SettingKind::Action { summary, run } => {
-            ctx.emit_info("settings.action.running", &summary.to_string());
+            ctx.emit_info("settings.action.running", summary.as_ref());
             ctx.with_definition(definition, run)?;
         }
         SettingKind::Command {
@@ -105,7 +105,7 @@ pub fn handle_setting(
                 return Ok(());
             }
 
-            ctx.emit_info("settings.command.launching", &summary.to_string());
+            ctx.emit_info("settings.command.launching", summary.as_ref());
 
             ctx.with_definition(definition, |ctx| {
                 match command.style {
