@@ -8,7 +8,7 @@ use super::super::context::{
     ApplyOverride, SettingsContext, apply_definition, format_icon, select_one_with_style,
 };
 use super::super::registry::CommandStyle;
-use super::items::{ChoiceItem, SettingState, ToggleChoiceItem};
+use super::items::{ChoiceItem, SettingState};
 
 pub fn handle_setting(
     ctx: &mut SettingsContext,
@@ -16,64 +16,23 @@ pub fn handle_setting(
     state: SettingState,
 ) -> Result<()> {
     match &definition.kind {
-        SettingKind::Toggle {
-            key,
-            summary,
-            apply,
-        } => {
+        SettingKind::Toggle { key, apply, .. } => {
             let current = matches!(state, SettingState::Toggle { enabled: true });
-            let choices = vec![
-                ToggleChoiceItem {
-                    title: definition.title,
-                    summary,
-                    target_enabled: true,
-                    current_enabled: current,
-                },
-                ToggleChoiceItem {
-                    title: definition.title,
-                    summary,
-                    target_enabled: false,
-                    current_enabled: current,
-                },
-            ];
+            let target = !current;
 
-            match select_one_with_style(choices)? {
-                Some(choice) => {
-                    if choice.target_enabled == current {
-                        ctx.emit_info(
-                            "settings.toggle.noop",
-                            &format!(
-                                "{} is already {}.",
-                                definition.title,
-                                if current { "enabled" } else { "disabled" }
-                            ),
-                        );
-                        return Ok(());
-                    }
-
-                    ctx.set_bool(*key, choice.target_enabled);
-                    if apply.is_some() {
-                        apply_definition(
-                            ctx,
-                            definition,
-                            Some(ApplyOverride::Bool(choice.target_enabled)),
-                        )?;
-                    }
-                    ctx.emit_success(
-                        "settings.toggle.updated",
-                        &format!(
-                            "{} {}",
-                            definition.title,
-                            if choice.target_enabled {
-                                "enabled"
-                            } else {
-                                "disabled"
-                            }
-                        ),
-                    );
-                }
-                None => ctx.emit_info("settings.toggle.cancelled", "No changes made."),
+            ctx.set_bool(*key, target);
+            if apply.is_some() {
+                apply_definition(ctx, definition, Some(ApplyOverride::Bool(target)))?;
             }
+
+            ctx.emit_success(
+                "settings.toggle.updated",
+                &format!(
+                    "{} {}",
+                    definition.title,
+                    if target { "enabled" } else { "disabled" }
+                ),
+            );
         }
         SettingKind::Choice {
             key,
