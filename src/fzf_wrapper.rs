@@ -36,6 +36,7 @@ pub struct FzfWrapper {
     prompt: Option<String>,
     header: Option<String>,
     additional_args: Vec<String>,
+    initial_cursor: Option<InitialCursor>,
 }
 
 impl FzfWrapper {
@@ -70,6 +71,7 @@ pub struct FzfBuilder {
     header: Option<String>,
     additional_args: Vec<String>,
     dialog_type: DialogType,
+    initial_cursor: Option<InitialCursor>,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +89,12 @@ enum DialogType {
     },
 }
 
+#[derive(Debug, Clone)]
+enum InitialCursor {
+    Index(usize),
+    Key(String),
+}
+
 impl FzfBuilder {
     /// Create a new builder with default selection options
     pub fn new() -> Self {
@@ -96,6 +104,7 @@ impl FzfBuilder {
             header: None,
             additional_args: Self::default_args(),
             dialog_type: DialogType::Selection,
+            initial_cursor: None,
         }
     }
 
@@ -114,6 +123,24 @@ impl FzfBuilder {
     /// Set the header text (supports multi-line)
     pub fn header<S: Into<String>>(mut self, header: S) -> Self {
         self.header = Some(header.into());
+        self
+    }
+
+    /// Preselect an item by zero-based index
+    pub fn initial_index(mut self, index: usize) -> Self {
+        self.initial_cursor = Some(InitialCursor::Index(index));
+        self
+    }
+
+    /// Preselect an item by its key (defaults to display text)
+    pub fn initial_key<S: Into<String>>(mut self, key: S) -> Self {
+        self.initial_cursor = Some(InitialCursor::Key(key.into()));
+        self
+    }
+
+    /// Preselect a specific item using its `fzf_key`
+    pub fn initial_item<T: FzfSelectable>(mut self, item: &T) -> Self {
+        self.initial_cursor = Some(InitialCursor::Key(item.fzf_key()));
         self
     }
 
@@ -215,6 +242,7 @@ impl FzfBuilder {
             prompt: self.prompt,
             header: self.header,
             additional_args: self.additional_args,
+            initial_cursor: self.initial_cursor,
         };
         wrapper.select(items)
     }
@@ -588,12 +616,14 @@ impl FzfWrapper {
         prompt: Option<String>,
         header: Option<String>,
         additional_args: Vec<String>,
+        initial_cursor: Option<InitialCursor>,
     ) -> Self {
         Self {
             multi_select,
             prompt,
             header,
             additional_args,
+            initial_cursor,
         }
     }
 
@@ -605,12 +635,35 @@ impl FzfWrapper {
 
         let mut item_map: HashMap<String, T> = HashMap::new();
         let mut display_lines = Vec::new();
+        let needs_key_lookup = matches!(self.initial_cursor, Some(InitialCursor::Key(_)));
+        let mut item_keys = if needs_key_lookup {
+            Some(Vec::with_capacity(items.len()))
+        } else {
+            None
+        };
 
         for item in &items {
             let display = item.fzf_display_text();
+            if let Some(keys) = item_keys.as_mut() {
+                keys.push(item.fzf_key());
+            }
             display_lines.push(display.clone());
             item_map.insert(display.clone(), item.clone());
         }
+
+        let cursor_position = match &self.initial_cursor {
+            Some(InitialCursor::Index(index)) => {
+                if display_lines.is_empty() {
+                    None
+                } else {
+                    Some(index.min(display_lines.len() - 1))
+                }
+            }
+            Some(InitialCursor::Key(key)) => item_keys
+                .as_ref()
+                .and_then(|keys| keys.iter().position(|candidate| candidate == key)),
+            None => None,
+        };
 
         let preview_map = PreviewUtils::build_preview_mapping(&items)?;
         let has_previews = !preview_map.is_empty();
@@ -635,6 +688,10 @@ impl FzfWrapper {
                 .arg("--with-nth=1")
                 .arg("--preview")
                 .arg("echo {} | cut -f2 | base64 -d");
+        }
+
+        if let Some(position) = cursor_position {
+            cmd.arg("--bind").arg(format!("load:pos({})", position + 1));
         }
 
         for arg in &self.additional_args {
