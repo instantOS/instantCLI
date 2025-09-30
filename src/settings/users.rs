@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::fzf_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 
-use super::SettingsContext;
+use super::{SettingsContext, select_one_with_style};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct UsersFile {
@@ -133,10 +133,16 @@ impl FzfSelectable for ManageMenuItem {
                 } else {
                     groups.join(", ")
                 };
-                format!("{} ({}) [{}]", username, shell, label)
+                format!(
+                    "{} {} ({}) [{}]",
+                    super::format_icon(Fa::User),
+                    username,
+                    shell,
+                    label
+                )
             }
-            ManageMenuItem::Add => format!("{} Add user", char::from(Fa::Plus)),
-            ManageMenuItem::Back => format!("{} Back", char::from(Fa::ArrowLeft)),
+            ManageMenuItem::Add => format!("{} Add user", super::format_icon(Fa::Plus)),
+            ManageMenuItem::Back => format!("{} Back", super::format_icon(Fa::ArrowLeft)),
         }
     }
 
@@ -180,13 +186,13 @@ enum UserActionItem {
 impl FzfSelectable for UserActionItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            UserActionItem::Apply => format!("{} Apply changes", char::from(Fa::Check)),
+            UserActionItem::Apply => format!("{} Apply changes", super::format_icon(Fa::Check)),
             UserActionItem::ChangeShell => {
-                format!("{} Change shell", char::from(Fa::Terminal))
+                format!("{} Change shell", super::format_icon(Fa::Terminal))
             }
-            UserActionItem::EditGroups => format!("{} Edit groups", char::from(Fa::List)),
-            UserActionItem::Remove => format!("{} Remove entry", char::from(Fa::TrashO)),
-            UserActionItem::Back => format!("{} Back", char::from(Fa::ArrowLeft)),
+            UserActionItem::EditGroups => format!("{} Edit groups", super::format_icon(Fa::List)),
+            UserActionItem::Remove => format!("{} Remove entry", super::format_icon(Fa::TrashO)),
+            UserActionItem::Back => format!("{} Back", super::format_icon(Fa::ArrowLeft)),
         }
     }
 
@@ -227,7 +233,7 @@ pub(super) fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
         items.push(ManageMenuItem::Add);
         items.push(ManageMenuItem::Back);
 
-        match FzfWrapper::select_one(items)? {
+        match select_one_with_style(items)? {
             Some(ManageMenuItem::Add) => {
                 if add_user(ctx, &mut store)? {
                     dirty = true;
@@ -314,7 +320,7 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
             UserActionItem::Back,
         ];
 
-        match FzfWrapper::select_one(actions)? {
+        match select_one_with_style(actions)? {
             Some(UserActionItem::Apply) => {
                 apply_user_spec(ctx, username, &spec)?;
             }

@@ -376,7 +376,7 @@ impl FzfBuilder {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let lines: Vec<&str> = stdout.trim().split('\n').collect();
+        let lines: Vec<&str> = stdout.trim_end().split('\n').collect();
 
         if let Some(query) = lines.first() {
             Ok(query.trim().to_string())
@@ -393,25 +393,56 @@ impl FzfBuilder {
             cmd.arg("--prompt").arg(format!("{prompt} "));
         }
 
-        // Add padding for full screen support
-        cmd.arg("--padding").arg("2 4");
+        // Add styling for better visibility
+        cmd.arg("--padding").arg("1 2");
+        cmd.arg("--width").arg("60");
 
-        // Set width to use most of the screen
-        cmd.arg("--width").arg("80");
+        // Add header to make the password dialog more visible
+        cmd.arg("--header").arg("🔐 Password Input");
 
-        // Check if header should be used as placeholder
+        // Add placeholder text if no header provided
         if let Some(header) = &self.header {
             cmd.arg("--placeholder").arg(header);
+        } else {
+            cmd.arg("--placeholder").arg("Enter your password");
         }
 
-        let output = cmd.output()?;
-
-        if !output.status.success() {
-            return Ok(String::new());
+        // Try to run gum, but handle TTY errors gracefully
+        match cmd.output() {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    Ok(stdout.trim().to_string())
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    // If it's a TTY error, fallback to a simple prompt
+                    if stderr.contains("TTY") || stderr.contains("/dev/tty") {
+                        self.fallback_password_input()
+                    } else {
+                        Ok(String::new())
+                    }
+                }
+            }
+            Err(_) => {
+                // If gum fails to run, use fallback
+                self.fallback_password_input()
+            }
         }
+    }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout.trim().to_string())
+    /// Fallback password input method for when gum is not available
+    fn fallback_password_input(&self) -> Result<String> {
+        use std::io::Write;
+
+        // Print prompt to stderr to avoid interfering with output
+        eprint!("{}: ", self.prompt.as_deref().unwrap_or("Enter password"));
+        let _ = std::io::stderr().flush();
+
+        // Read password from stdin
+        let mut password = String::new();
+        std::io::stdin().read_line(&mut password)?;
+
+        Ok(password.trim().to_string())
     }
 
     fn execute_confirm(self) -> Result<ConfirmResult> {
@@ -655,7 +686,7 @@ impl FzfWrapper {
 
                 let stdout = String::from_utf8_lossy(&result.stdout);
                 let selected_lines: Vec<&str> = stdout
-                    .trim()
+                    .trim_end()
                     .split('\n')
                     .filter(|line| !line.is_empty())
                     .collect();

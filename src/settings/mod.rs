@@ -14,8 +14,8 @@ use crate::ui::prelude::*;
 pub use store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
 use registry::{
-    CATEGORIES, CommandStyle, SETTINGS, SettingCategory, SettingDefinition,
-    SettingKind, SettingOption,
+    CATEGORIES, CommandStyle, SETTINGS, SettingCategory, SettingDefinition, SettingKind,
+    SettingOption,
 };
 
 #[derive(Subcommand, Debug, Clone)]
@@ -333,6 +333,10 @@ pub fn dispatch_settings_command(
             settings_file,
         ),
     }
+}
+
+fn format_icon(icon: Fa) -> String {
+    format!("  {}  │", char::from(icon))
 }
 
 fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
@@ -771,7 +775,7 @@ impl FzfSelectable for CategoryItem {
     fn fzf_display_text(&self) -> String {
         format!(
             "{} {} ({} settings)",
-            char::from(self.category.icon),
+            format_icon(self.category.icon),
             self.category.title,
             self.total
         )
@@ -841,7 +845,7 @@ impl FzfSelectable for CategoryMenuItem {
     fn fzf_display_text(&self) -> String {
         match self {
             CategoryMenuItem::SearchAll => {
-                format!("{} Search all settings", char::from(Fa::Search))
+                format!("{} Search all settings", format_icon(Fa::Search))
             }
             CategoryMenuItem::Category(item) => item.fzf_display_text(),
         }
@@ -862,7 +866,7 @@ impl FzfSelectable for SettingItem {
         match self.state {
             SettingState::Toggle { enabled } => {
                 let glyph = if enabled { Fa::ToggleOn } else { Fa::ToggleOff };
-                format!("{} {}", char::from(glyph), self.definition.title)
+                format!("{} {}", format_icon(glyph), self.definition.title)
             }
             SettingState::Choice { current_index } => {
                 let glyph = Fa::List;
@@ -877,14 +881,14 @@ impl FzfSelectable for SettingItem {
                     };
                 format!(
                     "{} {}  [{}]",
-                    char::from(glyph),
+                    format_icon(glyph),
                     self.definition.title,
                     current_label
                 )
             }
             SettingState::Action => format!(
                 "{} {}",
-                char::from(self.definition.icon),
+                format_icon(self.definition.icon),
                 self.definition.title
             ),
             SettingState::Command => {
@@ -895,7 +899,7 @@ impl FzfSelectable for SettingItem {
                     },
                     _ => self.definition.icon,
                 };
-                format!("{} {}", char::from(glyph), self.definition.title)
+                format!("{} {}", format_icon(glyph), self.definition.title)
             }
         }
     }
@@ -915,7 +919,7 @@ impl FzfSelectable for CategoryPageItem {
         match self {
             CategoryPageItem::Setting(item) => item.fzf_display_text(),
             CategoryPageItem::Back => {
-                format!("{} Back", char::from(Fa::ArrowLeft))
+                format!("{} Back", format_icon(Fa::ArrowLeft))
             }
         }
     }
@@ -935,7 +939,7 @@ impl FzfSelectable for ChoiceItem {
         } else {
             Fa::SquareO
         };
-        format!("{} {}", char::from(glyph), self.option.label)
+        format!("{} {}", format_icon(glyph), self.option.label)
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -962,7 +966,7 @@ impl FzfSelectable for ToggleChoiceItem {
         };
         format!(
             "{} {} {}{}",
-            char::from(glyph),
+            format_icon(glyph),
             action,
             self.title,
             current_marker
@@ -980,7 +984,7 @@ impl FzfSelectable for SearchItem {
         match self.state {
             SettingState::Toggle { enabled } => {
                 let glyph = if enabled { Fa::ToggleOn } else { Fa::ToggleOff };
-                format!("{} {}", char::from(glyph), path)
+                format!("{} {}", format_icon(glyph), path)
             }
             SettingState::Choice { current_index } => {
                 let glyph = Fa::List;
@@ -993,10 +997,10 @@ impl FzfSelectable for SearchItem {
                     } else {
                         "Not set"
                     };
-                format!("{} {}  [{}]", char::from(glyph), path, current_label)
+                format!("{} {}  [{}]", format_icon(glyph), path, current_label)
             }
             SettingState::Action => {
-                format!("{} {}", char::from(self.definition.icon), path)
+                format!("{} {}", format_icon(self.definition.icon), path)
             }
             SettingState::Command => {
                 let glyph = match &self.definition.kind {
@@ -1006,7 +1010,7 @@ impl FzfSelectable for SearchItem {
                     },
                     _ => self.definition.icon,
                 };
-                format!("{} {}", char::from(glyph), path)
+                format!("{} {}", format_icon(glyph), path)
             }
         }
     }

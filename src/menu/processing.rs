@@ -34,6 +34,7 @@ impl RequestProcessor {
                 multi,
             } => self.handle_choice_request(prompt, items, multi),
             MenuRequest::Input { prompt } => self.handle_input_request(prompt),
+            MenuRequest::Password { prompt } => self.handle_password_request(prompt),
             MenuRequest::Status => Ok(self.get_status_info()),
             MenuRequest::Stop => self.handle_stop_request(),
             MenuRequest::Show => Ok(MenuResponse::ShowResult),
@@ -86,6 +87,16 @@ impl RequestProcessor {
             Ok(input) => Ok(MenuResponse::InputResult(input)),
             Err(e) => Ok(MenuResponse::Error(format!(
                 "Failed to show input dialog: {e}"
+            ))),
+        }
+    }
+
+    /// Handle password input request
+    fn handle_password_request(&self, prompt: String) -> Result<MenuResponse> {
+        match FzfWrapper::password(&prompt) {
+            Ok(password) => Ok(MenuResponse::PasswordResult(password)),
+            Err(e) => Ok(MenuResponse::Error(format!(
+                "Failed to show password dialog: {e}"
             ))),
         }
     }

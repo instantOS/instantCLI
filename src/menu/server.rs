@@ -256,7 +256,10 @@ impl MenuServer {
         // Show scratchpad if configured (for interactive requests only)
         let should_manage_scratchpad = matches!(
             request,
-            MenuRequest::Confirm { .. } | MenuRequest::Choice { .. } | MenuRequest::Input { .. }
+            MenuRequest::Confirm { .. }
+                | MenuRequest::Choice { .. }
+                | MenuRequest::Input { .. }
+                | MenuRequest::Password { .. }
         );
 
         if should_manage_scratchpad
