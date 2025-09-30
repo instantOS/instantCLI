@@ -55,6 +55,10 @@ pub struct SettingsStore {
 impl SettingsStore {
     pub fn load() -> Result<Self> {
         let path = settings_file_path()?;
+        Self::load_from_path(path)
+    }
+
+    pub fn load_from_path(path: PathBuf) -> Result<Self> {
         if !path.exists() {
             return Ok(Self {
                 path,

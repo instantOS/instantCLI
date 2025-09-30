@@ -1,10 +1,13 @@
 mod registry;
 mod store;
+mod users;
 
-use std::process::Command;
+use std::{env, path::PathBuf, process::Command};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
+use clap::{Subcommand, ValueHint};
 use duct::cmd;
+use sudo::RunningAs;
 
 use crate::common::requirements::RequiredPackage;
 use crate::fzf_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
@@ -16,24 +19,49 @@ use registry::{
     SettingOption,
 };
 
+#[derive(Subcommand, Debug, Clone)]
+pub enum SettingsCommands {
+    /// Reapply settings that do not persist across reboots
+    Apply,
+    #[command(hide = true)]
+    InternalApply {
+        #[arg(long = "setting-id")]
+        setting_id: String,
+        #[arg(long = "bool-value")]
+        bool_value: Option<bool>,
+        #[arg(long = "string-value")]
+        string_value: Option<String>,
+        #[arg(long = "settings-file", value_hint = ValueHint::FilePath)]
+        settings_file: Option<PathBuf>,
+    },
+}
+
 #[derive(Debug)]
 pub struct SettingsContext {
     store: SettingsStore,
     dirty: bool,
     debug: bool,
+    privileged: bool,
+    current_definition: Option<&'static SettingDefinition>,
 }
 
 impl SettingsContext {
-    pub fn new(store: SettingsStore, debug: bool) -> Self {
+    pub fn new(store: SettingsStore, debug: bool, privileged_flag: bool) -> Self {
         Self {
             store,
             dirty: false,
             debug,
+            privileged: privileged_flag || matches!(sudo::check(), RunningAs::Root),
+            current_definition: None,
         }
     }
 
     pub fn debug(&self) -> bool {
         self.debug
+    }
+
+    pub fn is_privileged(&self) -> bool {
+        self.privileged
     }
 
     pub fn bool(&self, key: BoolSettingKey) -> bool {
@@ -104,11 +132,189 @@ impl SettingsContext {
             None,
         );
     }
+
+    pub fn with_definition<F>(&mut self, definition: &'static SettingDefinition, f: F) -> Result<()>
+    where
+        F: FnOnce(&mut SettingsContext) -> Result<()>,
+    {
+        let previous = self.current_definition;
+        self.current_definition = Some(definition);
+        let result = f(self);
+        self.current_definition = previous;
+        result
+    }
+
+    pub fn request_privileged_bool(&mut self, value: bool) -> Result<()> {
+        self.invoke_privileged(PrivilegedValue::Bool(value))
+    }
+
+    pub fn request_privileged_choice<S: Into<String>>(&mut self, value: S) -> Result<()> {
+        self.invoke_privileged(PrivilegedValue::Choice(value.into()))
+    }
+
+    fn invoke_privileged(&mut self, value: PrivilegedValue) -> Result<()> {
+        if self.privileged {
+            return Ok(());
+        }
+
+        let definition = self
+            .current_definition
+            .ok_or_else(|| anyhow::anyhow!("no active setting definition for privilege escalation"))?;
+
+        let exe = env::current_exe().context("locating executable")?;
+        let settings_path = self.store.path().to_path_buf();
+
+        let mut command = Command::new("/usr/bin/sudo");
+        command.arg(&exe);
+        if self.debug {
+            command.arg("--debug");
+        }
+        command.arg("--internal-privileged-mode");
+        command.arg("settings");
+        command.arg("internal-apply");
+        command.arg("--setting-id");
+        command.arg(definition.id);
+        command.arg("--settings-file");
+        command.arg(&settings_path);
+        match value {
+            PrivilegedValue::Bool(v) => {
+                command.arg("--bool-value");
+                command.arg(if v { "true" } else { "false" });
+            }
+            PrivilegedValue::Choice(v) => {
+                command.arg("--string-value");
+                command.arg(v);
+            }
+        }
+
+        let status = command
+            .status()
+            .with_context(|| format!("escalating setting {}", definition.id))?;
+
+        if !status.success() {
+            bail!("privileged apply for {} exited with status {:?}", definition.id, status.code());
+        }
+
+        Ok(())
+    }
+
+    pub fn run_command_as_root<I, S>(&self, program: S, args: I) -> Result<()>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<std::ffi::OsStr>,
+        S: AsRef<std::ffi::OsStr>,
+    {
+        let status = if self.privileged {
+            let mut command = Command::new(program);
+            command.args(args);
+            command.status()
+        } else {
+            let mut command = Command::new("/usr/bin/sudo");
+            command.arg(program);
+            command.args(args);
+            command.status()
+        }?;
+
+        if !status.success() {
+            bail!("command {:?} failed with status {:?}", program.as_ref(), status.code());
+        }
+
+        Ok(())
+    }
 }
 
-pub fn handle_settings_command(debug: bool) -> Result<()> {
+enum PrivilegedValue {
+    Bool(bool),
+    Choice(String),
+}
+
+enum ApplyOverride {
+    Bool(bool),
+    Choice(&'static SettingOption),
+}
+
+fn apply_definition(
+    ctx: &mut SettingsContext,
+    definition: &'static SettingDefinition,
+    override_value: Option<ApplyOverride>,
+) -> Result<()> {
+    match (&definition.kind, override_value) {
+        (
+            SettingKind::Toggle {
+                key,
+                apply: Some(apply_fn),
+                ..
+            },
+            Some(ApplyOverride::Bool(value)),
+        ) => ctx.with_definition(definition, |ctx| apply_fn(ctx, value)),
+        (
+            SettingKind::Toggle {
+                key,
+                apply: Some(apply_fn),
+                ..
+            },
+            None,
+        ) => {
+            let value = ctx.bool(*key);
+            ctx.with_definition(definition, |ctx| apply_fn(ctx, value))
+        }
+        (
+            SettingKind::Choice {
+                key,
+                options,
+                apply: Some(apply_fn),
+                ..
+            },
+            Some(ApplyOverride::Choice(option)),
+        ) => ctx.with_definition(definition, |ctx| apply_fn(ctx, option)),
+        (
+            SettingKind::Choice {
+                key,
+                options,
+                apply: Some(apply_fn),
+                ..
+            },
+            None,
+        ) => {
+            let current_value = ctx.string(*key);
+            if let Some(option) = options.iter().find(|candidate| candidate.value == current_value)
+            {
+                ctx.with_definition(definition, |ctx| apply_fn(ctx, option))
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
+pub fn dispatch_settings_command(
+    debug: bool,
+    privileged_flag: bool,
+    command: Option<SettingsCommands>,
+) -> Result<()> {
+    match command {
+        None => run_settings_ui(debug, privileged_flag),
+        Some(SettingsCommands::Apply) => run_nonpersistent_apply(debug, privileged_flag),
+        Some(SettingsCommands::InternalApply {
+            setting_id,
+            bool_value,
+            string_value,
+            settings_file,
+        }) => run_internal_apply(
+            debug,
+            privileged_flag,
+            &setting_id,
+            bool_value,
+            string_value,
+            settings_file,
+        ),
+    }
+}
+
+fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
     let store = SettingsStore::load().context("loading settings file")?;
-    let mut ctx = SettingsContext::new(store, debug);
+    let mut ctx = SettingsContext::new(store, debug, privileged_flag);
 
     loop {
         let mut menu_items = Vec::with_capacity(CATEGORIES.len() + 1);
@@ -178,6 +384,77 @@ pub fn handle_settings_command(debug: bool) -> Result<()> {
     }
 
     ctx.persist()?;
+    Ok(())
+}
+
+fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()> {
+    let store = SettingsStore::load().context("loading settings file")?;
+    let mut ctx = SettingsContext::new(store, debug, privileged_flag);
+
+    let mut applied = 0usize;
+
+    for definition in SETTINGS.iter().filter(|definition| definition.requires_reapply) {
+        match definition.kind {
+            SettingKind::Toggle { .. } | SettingKind::Choice { .. } => {
+                ctx.emit_info(
+                    "settings.apply.reapply",
+                    &format!("Reapplying {}", definition.title),
+                );
+                apply_definition(&mut ctx, definition, None)?;
+                applied += 1;
+            }
+            _ => {}
+        }
+    }
+
+    if applied == 0 {
+        ctx.emit_info(
+            "settings.apply.none",
+            "No non-persistent settings are currently enabled.",
+        );
+    } else {
+        ctx.emit_success(
+            "settings.apply.completed",
+            &format!("Reapplied {applied} setting{}", if applied == 1 { "" } else { "s" }),
+        );
+    }
+
+    Ok(())
+}
+
+fn run_internal_apply(
+    debug: bool,
+    privileged_flag: bool,
+    setting_id: &str,
+    bool_value: Option<bool>,
+    string_value: Option<String>,
+    settings_file: Option<PathBuf>,
+) -> Result<()> {
+    let store = if let Some(path) = settings_file {
+        SettingsStore::load_from_path(path)
+    } else {
+        SettingsStore::load()
+    }
+    .context("loading settings file for privileged apply")?;
+
+    let mut ctx = SettingsContext::new(store, debug, privileged_flag);
+
+    let definition = SETTINGS
+        .iter()
+        .find(|definition| definition.id == setting_id)
+        .with_context(|| format!("unknown setting id {setting_id}"))?;
+
+    let override_value = match (&definition.kind, bool_value, string_value.as_deref()) {
+        (SettingKind::Toggle { .. }, Some(value), _) => Some(ApplyOverride::Bool(value)),
+        (SettingKind::Choice { options, .. }, _, Some(value)) => options
+            .iter()
+            .find(|option| option.value == value)
+            .map(ApplyOverride::Choice),
+        _ => None,
+    };
+
+    apply_definition(&mut ctx, definition, override_value)?;
+
     Ok(())
 }
 
@@ -282,8 +559,8 @@ fn handle_setting(
                     }
 
                     ctx.set_bool(*key, choice.target_enabled);
-                    if let Some(apply_fn) = apply {
-                        apply_fn(ctx, choice.target_enabled)?;
+                    if apply.is_some() {
+                        apply_definition(ctx, definition, Some(ApplyOverride::Bool(choice.target_enabled)))?;
                     }
                     ctx.emit_success(
                         "settings.toggle.updated",
@@ -325,8 +602,8 @@ fn handle_setting(
             match FzfWrapper::select_one(items)? {
                 Some(choice) => {
                     ctx.set_string(*key, choice.option.value);
-                    if let Some(apply_fn) = apply {
-                        apply_fn(ctx, choice.option)?;
+                    if apply.is_some() {
+                        apply_definition(ctx, definition, Some(ApplyOverride::Choice(choice.option)))?;
                     }
                     ctx.emit_success(
                         "settings.choice.updated",
@@ -338,7 +615,7 @@ fn handle_setting(
         }
         SettingKind::Action { summary, run } => {
             ctx.emit_info("settings.action.running", &format!("{}", summary));
-            run(ctx)?;
+            ctx.with_definition(definition, |ctx| run(ctx))?;
         }
         SettingKind::Command {
             summary,
@@ -373,19 +650,22 @@ fn handle_setting(
                 &format!("{}", summary),
             );
 
-            match command.style {
-                CommandStyle::Terminal => {
-                    cmd(command.program, command.args)
-                        .run()
-                        .with_context(|| format!("running {}", command.program))?;
+            ctx.with_definition(definition, |ctx| {
+                match command.style {
+                    CommandStyle::Terminal => {
+                        cmd(command.program, command.args)
+                            .run()
+                            .with_context(|| format!("running {}", command.program))?;
+                    }
+                    CommandStyle::Detached => {
+                        Command::new(command.program)
+                            .args(command.args)
+                            .spawn()
+                            .with_context(|| format!("spawning {}", command.program))?;
+                    }
                 }
-                CommandStyle::Detached => {
-                    Command::new(command.program)
-                        .args(command.args)
-                        .spawn()
-                        .with_context(|| format!("spawning {}", command.program))?;
-                }
-            }
+                Ok(())
+            })?;
 
             ctx.emit_success(
                 "settings.command.completed",

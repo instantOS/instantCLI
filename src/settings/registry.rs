@@ -50,6 +50,7 @@ pub struct SettingDefinition {
     pub icon: Fa,
     pub breadcrumbs: &'static [&'static str],
     pub kind: SettingKind,
+    pub requires_reapply: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -129,6 +130,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             summary: "Enable instantOS theming (disable for custom GTK themes).",
             apply: None,
         },
+        requires_reapply: false,
     },
     SettingDefinition {
         id: "appearance.animations",
@@ -141,6 +143,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             summary: "Controls desktop animation effects.",
             apply: None,
         },
+        requires_reapply: false,
     },
     SettingDefinition {
         id: "desktop.clipboard",
@@ -153,6 +156,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             summary: "Toggle the clipmenud clipboard manager.",
             apply: Some(super::apply_clipboard_manager),
         },
+        requires_reapply: false,
     },
     SettingDefinition {
         id: "workspace.layout",
@@ -212,6 +216,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             ],
             apply: None,
         },
+        requires_reapply: false,
     },
     SettingDefinition {
         id: "audio.wiremix",
@@ -224,6 +229,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             command: CommandSpec::terminal("wiremix", &[]),
             required: &[WIREMIX_PACKAGE],
         },
+        requires_reapply: false,
     },
 ];
 
