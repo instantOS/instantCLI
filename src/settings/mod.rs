@@ -6,7 +6,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use duct::cmd;
 
-use crate::fzf_wrapper::{ConfirmResult, FzfPreview, FzfSelectable, FzfWrapper};
+use crate::fzf_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 pub use store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
@@ -223,34 +223,53 @@ fn handle_setting(
             apply,
         } => {
             let current = matches!(state, SettingState::Toggle { enabled: true });
-            let next = !current;
-            let intent = if next { "Enable" } else { "Disable" };
-            let prompt = format!(
-                "{} {} {}?\n\n{}",
-                char::from(if next { Fa::ToggleOn } else { Fa::ToggleOff }),
-                intent,
-                definition.title,
-                summary
-            );
+            let choices = vec![
+                ToggleChoiceItem {
+                    title: definition.title,
+                    summary,
+                    target_enabled: true,
+                    current_enabled: current,
+                },
+                ToggleChoiceItem {
+                    title: definition.title,
+                    summary,
+                    target_enabled: false,
+                    current_enabled: current,
+                },
+            ];
 
-            match FzfWrapper::confirm(&prompt)? {
-                ConfirmResult::Yes => {
-                    ctx.set_bool(*key, next);
+            match FzfWrapper::select_one(choices)? {
+                Some(choice) => {
+                    if choice.target_enabled == current {
+                        ctx.emit_info(
+                            "settings.toggle.noop",
+                            &format!(
+                                "{} is already {}.",
+                                definition.title,
+                                if current { "enabled" } else { "disabled" }
+                            ),
+                        );
+                        return Ok(());
+                    }
+
+                    ctx.set_bool(*key, choice.target_enabled);
                     if let Some(apply_fn) = apply {
-                        apply_fn(ctx, next)?;
+                        apply_fn(ctx, choice.target_enabled)?;
                     }
                     ctx.emit_success(
                         "settings.toggle.updated",
                         &format!(
                             "{} {}",
                             definition.title,
-                            if next { "enabled" } else { "disabled" }
+                            if choice.target_enabled {
+                                "enabled"
+                            } else {
+                                "disabled"
+                            }
                         ),
                     );
                 }
-                _ => {
-                    ctx.emit_info("settings.toggle.cancelled", "No changes made.");
-                }
+                None => ctx.emit_info("settings.toggle.cancelled", "No changes made."),
             }
         }
         SettingKind::Choice {
@@ -333,6 +352,14 @@ struct ChoiceItem {
     option: &'static SettingOption,
     is_current: bool,
     summary: &'static str,
+}
+
+#[derive(Clone, Copy)]
+struct ToggleChoiceItem {
+    title: &'static str,
+    summary: &'static str,
+    target_enabled: bool,
+    current_enabled: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -449,6 +476,37 @@ impl FzfSelectable for ChoiceItem {
 
     fn fzf_preview(&self) -> FzfPreview {
         FzfPreview::Text(format!("{}\n\n{}", self.option.description, self.summary))
+    }
+}
+
+impl FzfSelectable for ToggleChoiceItem {
+    fn fzf_display_text(&self) -> String {
+        let glyph = if self.target_enabled {
+            Fa::ToggleOn
+        } else {
+            Fa::ToggleOff
+        };
+        let action = if self.target_enabled {
+            "Enable"
+        } else {
+            "Disable"
+        };
+        let current_marker = if self.target_enabled == self.current_enabled {
+            " (current)"
+        } else {
+            ""
+        };
+        format!(
+            "{} {} {}{}",
+            char::from(glyph),
+            action,
+            self.title,
+            current_marker
+        )
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Text(self.summary.to_string())
     }
 }
 
