@@ -52,8 +52,7 @@ jobs:
               pacman -Sy --noconfirm pacman-contrib >/dev/null
               useradd -m builder
               chown -R builder:builder /pkg
-              cd /pkg/pkgbuild/ins
-              sudo -u builder makepkg --printsrcinfo > .SRCINFO
+              runuser -u builder -- bash -c 'cd /pkg/pkgbuild/ins && makepkg --printsrcinfo > .SRCINFO'
             "
             git add "$pkgbuild_file" pkgbuild/ins/.SRCINFO
             git commit -m "chore: sync PKGBUILD version"
