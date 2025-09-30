@@ -397,36 +397,31 @@ impl FzfBuilder {
         cmd.arg("--padding").arg("1 2");
         cmd.arg("--width").arg("60");
 
-        // Add header to make the password dialog more visible
-        cmd.arg("--header").arg("🔐 Password Input");
-
-        // Add placeholder text if no header provided
+        // Add placeholder text if header provided
         if let Some(header) = &self.header {
             cmd.arg("--placeholder").arg(header);
         } else {
             cmd.arg("--placeholder").arg("Enter your password");
         }
 
-        // Try to run gum, but handle TTY errors gracefully
-        match cmd.output() {
-            Ok(output) => {
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    Ok(stdout.trim().to_string())
-                } else {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    // If it's a TTY error, fallback to a simple prompt
-                    if stderr.contains("TTY") || stderr.contains("/dev/tty") {
-                        self.fallback_password_input()
-                    } else {
-                        Ok(String::new())
-                    }
-                }
-            }
-            Err(_) => {
-                // If gum fails to run, use fallback
-                self.fallback_password_input()
-            }
+        // For interactive commands like gum, we need to:
+        // - Let stdin inherit from the parent process (so gum can read user input)
+        // - Capture stdout (so we can get the password result)
+        // - Let stderr inherit (so gum can display prompts and errors)
+        let child = cmd
+            .stdin(std::process::Stdio::inherit())  // Let gum access the terminal for input
+            .stdout(std::process::Stdio::piped())   // Capture the password output
+            .stderr(std::process::Stdio::inherit()) // Let gum display prompts/errors
+            .spawn()?;
+
+        let output = child.wait_with_output()?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Ok(stdout.trim().to_string())
+        } else {
+            // If gum failed, use fallback method
+            self.fallback_password_input()
         }
     }
 
