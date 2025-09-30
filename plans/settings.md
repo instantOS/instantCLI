@@ -33,8 +33,10 @@ RequiredPackage {
 
 impl RequiredPackage {
     fn ensure() -> bool {
-        package managers tend to be slow, so only fall back to check that if the other tests fail
-        prompt for installation using the appropriate package name
+        // package managers tend to be slow, so only fall back to check that if the other tests fail
+        // prompt for installation using the appropriate package name
+        // use the fzf wrapper to prompt for installation, if yes, actually
+call the package manager to install the package
         ...
     }
 }
