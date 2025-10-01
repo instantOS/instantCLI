@@ -110,7 +110,23 @@ fn ensure_bluetooth_ready(ctx: &mut SettingsContext) -> Result<bool> {
 }
 
 pub fn apply_bluetooth_service(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    let systemd = SystemdManager::system();
+    // Create a privileged systemd manager that uses the context's root command execution
+    let executor: crate::common::systemd::CommandExecutor = Box::new(|program, args| {
+        let status = if ctx.is_privileged() {
+            let mut command = std::process::Command::new(program);
+            command.args(args);
+            command.status()
+        } else {
+            let mut command = std::process::Command::new("/usr/bin/sudo");
+            command.arg(program);
+            command.args(args);
+            command.status()
+        }?;
+
+        Ok(status)
+    });
+    
+    let systemd = SystemdManager::system_privileged(executor);
     
     if enabled {
         if !ensure_bluetooth_ready(ctx)? {
@@ -123,15 +139,15 @@ pub fn apply_bluetooth_service(ctx: &mut SettingsContext, enabled: bool) -> Resu
         }
 
         if !systemd.is_enabled(BLUETOOTH_SERVICE_NAME) {
-            ctx.run_command_as_root("systemctl", ["enable", "--now", BLUETOOTH_SERVICE_NAME])?;
+            systemd.enable_and_start(BLUETOOTH_SERVICE_NAME)?;
         } else if !systemd.is_active(BLUETOOTH_SERVICE_NAME) {
-            ctx.run_command_as_root("systemctl", ["start", BLUETOOTH_SERVICE_NAME])?;
+            systemd.start(BLUETOOTH_SERVICE_NAME)?;
         }
 
         ctx.notify("Bluetooth service", "Bluetooth service enabled");
     } else {
         if systemd.is_enabled(BLUETOOTH_SERVICE_NAME) || systemd.is_active(BLUETOOTH_SERVICE_NAME) {
-            ctx.run_command_as_root("systemctl", ["disable", "--now", BLUETOOTH_SERVICE_NAME])?;
+            systemd.disable_and_stop(BLUETOOTH_SERVICE_NAME)?;
             ctx.notify("Bluetooth service", "Bluetooth service disabled");
         }
     }

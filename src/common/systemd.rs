@@ -102,20 +102,40 @@ impl UserServiceConfig {
     }
 }
 
+/// Command executor function type for privileged operations
+pub type CommandExecutor = Box<dyn Fn(&str, &[&str]) -> Result<std::process::ExitStatus> + Send + Sync>;
+
 /// Systemd service manager for common operations
 pub struct SystemdManager {
     scope: ServiceScope,
+    command_executor: Option<CommandExecutor>,
 }
 
 impl SystemdManager {
     /// Create a new systemd manager for the given scope
     pub fn new(scope: ServiceScope) -> Self {
-        Self { scope }
+        Self { 
+            scope,
+            command_executor: None,
+        }
+    }
+
+    /// Create a new systemd manager with a custom command executor for privileged operations
+    pub fn new_with_executor(scope: ServiceScope, executor: CommandExecutor) -> Self {
+        Self {
+            scope,
+            command_executor: Some(executor),
+        }
     }
 
     /// Create a systemd manager for system services
     pub fn system() -> Self {
         Self::new(ServiceScope::System)
+    }
+
+    /// Create a systemd manager for system services with privileged command execution
+    pub fn system_privileged(executor: CommandExecutor) -> Self {
+        Self::new_with_executor(ServiceScope::System, executor)
     }
 
     /// Create a systemd manager for user services
@@ -324,13 +344,19 @@ impl SystemdManager {
 
     /// Run systemctl with the appropriate scope arguments
     fn run_systemctl(&self, args: &[&str]) -> Result<std::process::ExitStatus> {
-        let mut cmd = Command::new("systemctl");
-        cmd.args(self.scope.systemctl_args());
-        cmd.args(args);
+        let mut full_args = self.scope.systemctl_args();
+        full_args.extend_from_slice(args);
 
-        let status = cmd.status()
-            .with_context(|| format!("Failed to run systemctl with args: {:?}", args))?;
-        Ok(status)
+        if let Some(ref executor) = self.command_executor {
+            executor("systemctl", &full_args)
+        } else {
+            let mut cmd = Command::new("systemctl");
+            cmd.args(&full_args);
+
+            let status = cmd.status()
+                .with_context(|| format!("Failed to run systemctl with args: {:?}", full_args))?;
+            Ok(status)
+        }
     }
 }
 
