@@ -4,6 +4,45 @@ use crate::ui::prelude::Fa;
 use super::store::{BoolSettingKey, StringSettingKey};
 use super::users;
 
+/// A requirement that must be satisfied before a setting can be used
+#[derive(Debug, Clone)]
+pub enum SettingRequirement {
+    /// Requires a package to be installed
+    Package(RequiredPackage),
+    /// Requires a custom condition to be true (e.g., service running, hardware present)
+    Condition {
+        description: &'static str,
+        check: fn() -> bool,
+        resolve_hint: &'static str,
+    },
+}
+
+impl SettingRequirement {
+    /// Check if this requirement is currently satisfied
+    pub fn is_satisfied(&self) -> bool {
+        match self {
+            SettingRequirement::Package(pkg) => pkg.is_installed(),
+            SettingRequirement::Condition { check, .. } => check(),
+        }
+    }
+
+    /// Get a human-readable description of this requirement
+    pub fn description(&self) -> &str {
+        match self {
+            SettingRequirement::Package(pkg) => pkg.name,
+            SettingRequirement::Condition { description, .. } => description,
+        }
+    }
+
+    /// Get a hint for how to resolve this requirement
+    pub fn resolve_hint(&self) -> String {
+        match self {
+            SettingRequirement::Package(pkg) => pkg.install_hint(),
+            SettingRequirement::Condition { resolve_hint, .. } => resolve_hint.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SettingCategory {
     pub id: &'static str,
@@ -39,7 +78,6 @@ pub enum SettingKind {
     Command {
         summary: &'static str,
         command: CommandSpec,
-        required: &'static [RequiredPackage],
     },
 }
 
@@ -52,6 +90,8 @@ pub struct SettingDefinition {
     pub breadcrumbs: &'static [&'static str],
     pub kind: SettingKind,
     pub requires_reapply: bool,
+    /// Requirements that must be satisfied before this setting can be used
+    pub requirements: &'static [SettingRequirement],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -93,7 +133,6 @@ const WIREMIX_PACKAGE: RequiredPackage = RequiredPackage {
 };
 
 pub const BLUETOOTH_SERVICE_KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.service", false);
-pub const BLUETOOTH_APPLET_KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.applet", false);
 pub const BLUETOOTH_HARDWARE_OVERRIDE_KEY: BoolSettingKey =
     BoolSettingKey::new("bluetooth.hardware_override", false);
 
@@ -122,8 +161,32 @@ pub const BLUEMAN_PACKAGE: RequiredPackage = RequiredPackage {
 };
 
 pub const BLUETOOTH_CORE_PACKAGES: [RequiredPackage; 2] = [BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE];
-pub const BLUETOOTH_APPLET_PACKAGES: [RequiredPackage; 3] =
-    [BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE, BLUEMAN_PACKAGE];
+
+/// Check if the bluetooth service is currently active
+fn bluetooth_service_active() -> bool {
+    std::process::Command::new("systemctl")
+        .args(["is-active", "--quiet", "bluetooth"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+// Requirement definitions for common use cases
+pub const WIREMIX_REQUIREMENT: SettingRequirement =
+    SettingRequirement::Package(WIREMIX_PACKAGE);
+
+pub const BLUETOOTH_SERVICE_REQUIREMENT: SettingRequirement = SettingRequirement::Condition {
+    description: "Bluetooth service must be running",
+    check: bluetooth_service_active,
+    resolve_hint: "Enable the Bluetooth service in Settings > Connectivity > Bluetooth",
+};
+
+pub const BLUETOOTH_MANAGER_REQUIREMENTS: [SettingRequirement; 4] = [
+    SettingRequirement::Package(BLUEZ_PACKAGE),
+    SettingRequirement::Package(BLUEZ_UTILS_PACKAGE),
+    SettingRequirement::Package(BLUEMAN_PACKAGE),
+    BLUETOOTH_SERVICE_REQUIREMENT,
+];
 
 pub const CATEGORIES: &[SettingCategory] = &[
     SettingCategory {
@@ -177,6 +240,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             apply: None,
         },
         requires_reapply: false,
+        requirements: &[],
     },
     SettingDefinition {
         id: "appearance.animations",
@@ -190,6 +254,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             apply: None,
         },
         requires_reapply: false,
+        requirements: &[],
     },
     SettingDefinition {
         id: "desktop.clipboard",
@@ -203,6 +268,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             apply: Some(super::actions::apply_clipboard_manager),
         },
         requires_reapply: false,
+        requirements: &[],
     },
     SettingDefinition {
         id: "workspace.layout",
@@ -263,6 +329,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             apply: None,
         },
         requires_reapply: false,
+        requirements: &[],
     },
     SettingDefinition {
         id: "audio.wiremix",
@@ -273,9 +340,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
         kind: SettingKind::Command {
             summary: "Launch the wiremix TUI to manage PipeWire routing and volumes.",
             command: CommandSpec::terminal("wiremix", &[]),
-            required: &[WIREMIX_PACKAGE],
         },
         requires_reapply: false,
+        requirements: &[WIREMIX_REQUIREMENT],
     },
     SettingDefinition {
         id: "system.user_management",
@@ -288,6 +355,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: users::manage_users,
         },
         requires_reapply: false,
+        requirements: &[],
     },
     SettingDefinition {
         id: "connectivity.bluetooth.service",
@@ -301,32 +369,20 @@ pub const SETTINGS: &[SettingDefinition] = &[
             apply: Some(super::actions::apply_bluetooth_service),
         },
         requires_reapply: false,
+        requirements: &[],
     },
     SettingDefinition {
-        id: "connectivity.bluetooth.applet",
-        title: "Bluetooth applet",
+        id: "connectivity.bluetooth.manager",
+        title: "Manage devices",
         category: "connectivity",
         icon: Fa::Bluetooth,
-        breadcrumbs: &["Bluetooth", "Applet"],
-        kind: SettingKind::Toggle {
-            key: BLUETOOTH_APPLET_KEY,
-            summary: "Start or stop the Blueman tray applet.",
-            apply: Some(super::actions::apply_bluetooth_applet),
-        },
-        requires_reapply: false,
-    },
-    SettingDefinition {
-        id: "connectivity.bluetooth.pair",
-        title: "Set up new device",
-        category: "connectivity",
-        icon: Fa::Bluetooth,
-        breadcrumbs: &["Bluetooth", "Pair new device"],
+        breadcrumbs: &["Bluetooth", "Manage devices"],
         kind: SettingKind::Command {
-            summary: "Launch the Blueman assistant to pair a Bluetooth device.",
-            command: CommandSpec::detached("blueman-assistant", &[]),
-            required: &BLUETOOTH_APPLET_PACKAGES,
+            summary: "Launch Blueman manager to pair and manage Bluetooth devices.",
+            command: CommandSpec::detached("blueman-manager", &[]),
         },
         requires_reapply: false,
+        requirements: &BLUETOOTH_MANAGER_REQUIREMENTS,
     },
 ];
 

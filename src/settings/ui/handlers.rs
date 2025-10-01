@@ -2,7 +2,8 @@ use anyhow::{Context, Result};
 use duct::cmd;
 use std::process::Command;
 
-use crate::settings::registry::{SettingDefinition, SettingKind};
+use crate::fzf_wrapper::FzfWrapper;
+use crate::settings::registry::{SettingDefinition, SettingKind, SettingRequirement};
 
 use super::super::context::{
     ApplyOverride, SettingsContext, apply_definition, select_one_with_style,
@@ -10,11 +11,59 @@ use super::super::context::{
 use super::super::registry::CommandStyle;
 use super::items::{ChoiceItem, SettingState};
 
+/// Check and handle requirements for a setting
+fn ensure_requirements(
+    ctx: &mut SettingsContext,
+    definition: &'static SettingDefinition,
+) -> Result<bool> {
+    let mut unmet = Vec::new();
+
+    for requirement in definition.requirements {
+        match requirement {
+            SettingRequirement::Package(pkg) => {
+                if !pkg.ensure()? {
+                    unmet.push(requirement);
+                }
+            }
+            SettingRequirement::Condition { check, .. } => {
+                if !check() {
+                    unmet.push(requirement);
+                }
+            }
+        }
+    }
+
+    if !unmet.is_empty() {
+        let mut messages = Vec::new();
+        messages.push(format!("Cannot use '{}' - requirements not met:", definition.title));
+        messages.push(String::new());
+        for req in &unmet {
+            messages.push(format!("  • {}", req.description()));
+            messages.push(format!("    {}", req.resolve_hint()));
+            messages.push(String::new());
+        }
+
+        FzfWrapper::builder()
+            .message(&messages.join("\n"))
+            .title("Requirements Not Met")
+            .show_message()?;
+
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
 pub fn handle_setting(
     ctx: &mut SettingsContext,
     definition: &'static SettingDefinition,
     state: SettingState,
 ) -> Result<()> {
+    // Check requirements before allowing any action
+    if !definition.requirements.is_empty() && !ensure_requirements(ctx, definition)? {
+        return Ok(());
+    }
+
     match &definition.kind {
         SettingKind::Toggle { key, apply, .. } => {
             let current = matches!(state, SettingState::Toggle { enabled: true });
@@ -80,31 +129,7 @@ pub fn handle_setting(
         SettingKind::Command {
             summary,
             command,
-            required,
         } => {
-            let mut missing = Vec::new();
-            for pkg in *required {
-                let installed = pkg.ensure()?;
-                if !installed {
-                    missing.push(pkg);
-                }
-            }
-
-            if !missing.is_empty() {
-                for pkg in missing {
-                    ctx.emit_info(
-                        "settings.command.missing",
-                        &format!(
-                            "{} missing dependency `{}`. {}",
-                            definition.title,
-                            pkg.name,
-                            pkg.install_hint()
-                        ),
-                    );
-                }
-                return Ok(());
-            }
-
             ctx.emit_info("settings.command.launching", summary.as_ref());
 
             ctx.with_definition(definition, |ctx| {
