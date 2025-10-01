@@ -1,6 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use duct::cmd;
 
+use crate::common::systemd::{SystemdManager, UserServiceConfig};
 use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
 use crate::ui::prelude::*;
 
@@ -11,6 +12,7 @@ use super::registry::{
 };
 
 const BLUETOOTH_SERVICE_NAME: &str = "bluetooth";
+const UDISKIE_SERVICE_NAME: &str = "udiskie";
 
 pub fn apply_clipboard_manager(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let is_running = std::process::Command::new("pgrep")
@@ -150,15 +152,6 @@ pub fn apply_bluetooth_service(ctx: &mut SettingsContext, enabled: bool) -> Resu
     Ok(())
 }
 
-fn udiskie_running() -> bool {
-    std::process::Command::new("pgrep")
-        .arg("-x")
-        .arg("udiskie")
-        .output()
-        .map(|output| !output.stdout.is_empty())
-        .unwrap_or(false)
-}
-
 pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     // Ensure udiskie is installed
     if !UDISKIE_PACKAGE.ensure()? {
@@ -170,40 +163,78 @@ pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Resu
         return Ok(());
     }
 
-    let is_running = udiskie_running();
+    let systemd_manager = SystemdManager::user();
 
-    if enabled && !is_running {
-        // Start udiskie with tray icon (-t flag)
-        if let Err(err) = std::process::Command::new("udiskie")
-            .arg("-t")
-            .spawn()
-        {
+    if enabled {
+        // Create the udiskie service configuration
+        let service_config = UserServiceConfig::new(
+            UDISKIE_SERVICE_NAME,
+            "udiskie removable media automounter",
+            "/usr/bin/udiskie"
+        );
+        
+        // Create the user service file
+        if let Err(err) = systemd_manager.create_user_service(&service_config) {
             emit(
                 Level::Warn,
-                "settings.storage.udiskie.spawn_failed",
+                "settings.storage.udiskie.service_creation_failed",
                 &format!(
-                    "{} Failed to launch udiskie: {err}",
+                    "{} Failed to create udiskie service file: {err}",
                     char::from(Fa::ExclamationCircle)
                 ),
                 None,
             );
-        } else {
-            ctx.notify("Auto-mount", "udiskie started - removable drives will auto-mount");
+            return Err(err);
         }
-    } else if !enabled && is_running {
-        if let Err(err) = cmd!("pkill", "-x", "udiskie").run() {
-            emit(
-                Level::Warn,
-                "settings.storage.udiskie.stop_failed",
-                &format!(
-                    "{} Failed to stop udiskie: {err}",
-                    char::from(Fa::ExclamationCircle)
-                ),
-                None,
-            );
-        } else {
-            ctx.notify("Auto-mount", "udiskie stopped");
+
+        // Enable and start the service
+        if !systemd_manager.is_enabled(UDISKIE_SERVICE_NAME) {
+            if let Err(err) = systemd_manager.enable_and_start(UDISKIE_SERVICE_NAME) {
+                emit(
+                    Level::Warn,
+                    "settings.storage.udiskie.enable_failed",
+                    &format!(
+                        "{} Failed to enable udiskie service: {err}",
+                        char::from(Fa::ExclamationCircle)
+                    ),
+                    None,
+                );
+                return Err(err);
+            }
+        } else if !systemd_manager.is_active(UDISKIE_SERVICE_NAME) {
+            if let Err(err) = systemd_manager.start(UDISKIE_SERVICE_NAME) {
+                emit(
+                    Level::Warn,
+                    "settings.storage.udiskie.start_failed",
+                    &format!(
+                        "{} Failed to start udiskie service: {err}",
+                        char::from(Fa::ExclamationCircle)
+                    ),
+                    None,
+                );
+                return Err(err);
+            }
         }
+
+        ctx.notify("Auto-mount", "udiskie service enabled - removable drives will auto-mount");
+    } else {
+        // Disable and stop the service
+        if systemd_manager.is_enabled(UDISKIE_SERVICE_NAME) || systemd_manager.is_active(UDISKIE_SERVICE_NAME) {
+            if let Err(err) = systemd_manager.disable_and_stop(UDISKIE_SERVICE_NAME) {
+                emit(
+                    Level::Warn,
+                    "settings.storage.udiskie.disable_failed",
+                    &format!(
+                        "{} Failed to disable udiskie service: {err}",
+                        char::from(Fa::ExclamationCircle)
+                    ),
+                    None,
+                );
+                return Err(err);
+            }
+        }
+
+        ctx.notify("Auto-mount", "udiskie service disabled");
     }
 
     Ok(())
