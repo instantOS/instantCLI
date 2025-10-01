@@ -83,21 +83,6 @@ fn detect_bluetooth_hardware() -> bool {
     false
 }
 
-fn service_check(args: &[&str]) -> bool {
-    std::process::Command::new("systemctl")
-        .args(args)
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
-fn service_is_active(service: &str) -> bool {
-    service_check(&["is-active", "--quiet", service])
-}
-
-fn service_is_enabled(service: &str) -> bool {
-    service_check(&["is-enabled", "--quiet", service])
-}
 
 fn ensure_bluetooth_ready(ctx: &mut SettingsContext) -> Result<bool> {
     if !ctx.bool(BLUETOOTH_HARDWARE_OVERRIDE_KEY) && !detect_bluetooth_hardware() {
@@ -125,6 +110,8 @@ fn ensure_bluetooth_ready(ctx: &mut SettingsContext) -> Result<bool> {
 }
 
 pub fn apply_bluetooth_service(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+    let systemd = SystemdManager::system();
+    
     if enabled {
         if !ensure_bluetooth_ready(ctx)? {
             ctx.set_bool(BLUETOOTH_SERVICE_KEY, false);
@@ -135,15 +122,15 @@ pub fn apply_bluetooth_service(ctx: &mut SettingsContext, enabled: bool) -> Resu
             return Ok(());
         }
 
-        if !service_is_enabled(BLUETOOTH_SERVICE_NAME) {
+        if !systemd.is_enabled(BLUETOOTH_SERVICE_NAME) {
             ctx.run_command_as_root("systemctl", ["enable", "--now", BLUETOOTH_SERVICE_NAME])?;
-        } else if !service_is_active(BLUETOOTH_SERVICE_NAME) {
+        } else if !systemd.is_active(BLUETOOTH_SERVICE_NAME) {
             ctx.run_command_as_root("systemctl", ["start", BLUETOOTH_SERVICE_NAME])?;
         }
 
         ctx.notify("Bluetooth service", "Bluetooth service enabled");
     } else {
-        if service_is_enabled(BLUETOOTH_SERVICE_NAME) || service_is_active(BLUETOOTH_SERVICE_NAME) {
+        if systemd.is_enabled(BLUETOOTH_SERVICE_NAME) || systemd.is_active(BLUETOOTH_SERVICE_NAME) {
             ctx.run_command_as_root("systemctl", ["disable", "--now", BLUETOOTH_SERVICE_NAME])?;
             ctx.notify("Bluetooth service", "Bluetooth service disabled");
         }

@@ -187,11 +187,7 @@ pub const BLUETOOTH_CORE_PACKAGES: [RequiredPackage; 2] = [BLUEZ_PACKAGE, BLUEZ_
 
 /// Check if the bluetooth service is currently active
 fn bluetooth_service_active() -> bool {
-    std::process::Command::new("systemctl")
-        .args(["is-active", "--quiet", "bluetooth"])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    crate::common::systemd::SystemdManager::system().is_active("bluetooth")
 }
 
 // Requirement definitions for common use cases
