@@ -102,13 +102,10 @@ impl UserServiceConfig {
     }
 }
 
-/// Command executor function type for privileged operations
-pub type CommandExecutor = Box<dyn Fn(&str, &[&str]) -> Result<std::process::ExitStatus> + Send + Sync>;
-
 /// Systemd service manager for common operations
 pub struct SystemdManager {
     scope: ServiceScope,
-    command_executor: Option<CommandExecutor>,
+    use_sudo: bool,
 }
 
 impl SystemdManager {
@@ -116,15 +113,15 @@ impl SystemdManager {
     pub fn new(scope: ServiceScope) -> Self {
         Self { 
             scope,
-            command_executor: None,
+            use_sudo: false,
         }
     }
 
-    /// Create a new systemd manager with a custom command executor for privileged operations
-    pub fn new_with_executor(scope: ServiceScope, executor: CommandExecutor) -> Self {
+    /// Create a new systemd manager for the given scope with sudo support
+    pub fn new_with_sudo(scope: ServiceScope) -> Self {
         Self {
             scope,
-            command_executor: Some(executor),
+            use_sudo: true,
         }
     }
 
@@ -133,9 +130,9 @@ impl SystemdManager {
         Self::new(ServiceScope::System)
     }
 
-    /// Create a systemd manager for system services with privileged command execution
-    pub fn system_privileged(executor: CommandExecutor) -> Self {
-        Self::new_with_executor(ServiceScope::System, executor)
+    /// Create a systemd manager for system services with sudo support
+    pub fn system_with_sudo() -> Self {
+        Self::new_with_sudo(ServiceScope::System)
     }
 
     /// Create a systemd manager for user services
@@ -347,16 +344,20 @@ impl SystemdManager {
         let mut full_args = self.scope.systemctl_args();
         full_args.extend_from_slice(args);
 
-        if let Some(ref executor) = self.command_executor {
-            executor("systemctl", &full_args)
+        let mut cmd = if self.use_sudo {
+            let mut cmd = Command::new("/usr/bin/sudo");
+            cmd.arg("systemctl");
+            cmd.args(&full_args);
+            cmd
         } else {
             let mut cmd = Command::new("systemctl");
             cmd.args(&full_args);
+            cmd
+        };
 
-            let status = cmd.status()
-                .with_context(|| format!("Failed to run systemctl with args: {:?}", full_args))?;
-            Ok(status)
-        }
+        let status = cmd.status()
+            .with_context(|| format!("Failed to run systemctl with args: {:?}", full_args))?;
+        Ok(status)
     }
 }
 

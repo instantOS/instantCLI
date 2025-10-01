@@ -110,23 +110,8 @@ fn ensure_bluetooth_ready(ctx: &mut SettingsContext) -> Result<bool> {
 }
 
 pub fn apply_bluetooth_service(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    // Create a privileged systemd manager that uses the context's root command execution
-    let executor: crate::common::systemd::CommandExecutor = Box::new(|program, args| {
-        let status = if ctx.is_privileged() {
-            let mut command = std::process::Command::new(program);
-            command.args(args);
-            command.status()
-        } else {
-            let mut command = std::process::Command::new("/usr/bin/sudo");
-            command.arg(program);
-            command.args(args);
-            command.status()
-        }?;
-
-        Ok(status)
-    });
-    
-    let systemd = SystemdManager::system_privileged(executor);
+    // Create a systemd manager with sudo support for system services
+    let systemd = SystemdManager::system_with_sudo();
     
     if enabled {
         if !ensure_bluetooth_ready(ctx)? {
