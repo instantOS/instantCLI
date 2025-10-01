@@ -7,6 +7,7 @@ use crate::ui::prelude::*;
 use super::context::SettingsContext;
 use super::registry::{
     BLUETOOTH_CORE_PACKAGES, BLUETOOTH_HARDWARE_OVERRIDE_KEY, BLUETOOTH_SERVICE_KEY,
+    UDISKIE_AUTOMOUNT_KEY, UDISKIE_PACKAGE,
 };
 
 const BLUETOOTH_SERVICE_NAME: &str = "bluetooth";
@@ -143,6 +144,65 @@ pub fn apply_bluetooth_service(ctx: &mut SettingsContext, enabled: bool) -> Resu
         if service_is_enabled(BLUETOOTH_SERVICE_NAME) || service_is_active(BLUETOOTH_SERVICE_NAME) {
             ctx.run_command_as_root("systemctl", ["disable", "--now", BLUETOOTH_SERVICE_NAME])?;
             ctx.notify("Bluetooth service", "Bluetooth service disabled");
+        }
+    }
+
+    Ok(())
+}
+
+fn udiskie_running() -> bool {
+    std::process::Command::new("pgrep")
+        .arg("-x")
+        .arg("udiskie")
+        .output()
+        .map(|output| !output.stdout.is_empty())
+        .unwrap_or(false)
+}
+
+pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+    // Ensure udiskie is installed
+    if !UDISKIE_PACKAGE.ensure()? {
+        ctx.set_bool(UDISKIE_AUTOMOUNT_KEY, false);
+        ctx.emit_info(
+            "settings.storage.udiskie.aborted",
+            "Auto-mount setup was cancelled.",
+        );
+        return Ok(());
+    }
+
+    let is_running = udiskie_running();
+
+    if enabled && !is_running {
+        // Start udiskie with tray icon (-t flag)
+        if let Err(err) = std::process::Command::new("udiskie")
+            .arg("-t")
+            .spawn()
+        {
+            emit(
+                Level::Warn,
+                "settings.storage.udiskie.spawn_failed",
+                &format!(
+                    "{} Failed to launch udiskie: {err}",
+                    char::from(Fa::ExclamationCircle)
+                ),
+                None,
+            );
+        } else {
+            ctx.notify("Auto-mount", "udiskie started - removable drives will auto-mount");
+        }
+    } else if !enabled && is_running {
+        if let Err(err) = cmd!("pkill", "-x", "udiskie").run() {
+            emit(
+                Level::Warn,
+                "settings.storage.udiskie.stop_failed",
+                &format!(
+                    "{} Failed to stop udiskie: {err}",
+                    char::from(Fa::ExclamationCircle)
+                ),
+                None,
+            );
+        } else {
+            ctx.notify("Auto-mount", "udiskie stopped");
         }
     }
 

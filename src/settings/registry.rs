@@ -132,9 +132,32 @@ const WIREMIX_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::WhichSucceeds("wiremix")],
 };
 
+pub const UDISKIE_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "udiskie",
+    arch_package_name: Some("udiskie"),
+    ubuntu_package_name: Some("udiskie"),
+    tests: &[InstallTest::WhichSucceeds("udiskie")],
+};
+
+pub const GNOME_DISKS_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "GNOME Disks",
+    arch_package_name: Some("gnome-disk-utility"),
+    ubuntu_package_name: Some("gnome-disk-utility"),
+    tests: &[InstallTest::WhichSucceeds("gnome-disks")],
+};
+
+pub const GPARTED_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "GParted",
+    arch_package_name: Some("gparted"),
+    ubuntu_package_name: Some("gparted"),
+    tests: &[InstallTest::WhichSucceeds("gparted")],
+};
+
 pub const BLUETOOTH_SERVICE_KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.service", false);
 pub const BLUETOOTH_HARDWARE_OVERRIDE_KEY: BoolSettingKey =
     BoolSettingKey::new("bluetooth.hardware_override", false);
+
+pub const UDISKIE_AUTOMOUNT_KEY: BoolSettingKey = BoolSettingKey::new("storage.udiskie", false);
 
 pub const BLUEZ_PACKAGE: RequiredPackage = RequiredPackage {
     name: "BlueZ bluetooth daemon",
@@ -224,6 +247,12 @@ pub const CATEGORIES: &[SettingCategory] = &[
         title: "Connectivity",
         description: "Bluetooth and wireless device access.",
         icon: Fa::Bluetooth,
+    },
+    SettingCategory {
+        id: "storage",
+        title: "Storage",
+        description: "Disk management and auto-mounting.",
+        icon: Fa::Save,
     },
 ];
 
@@ -383,6 +412,46 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: false,
         requirements: &BLUETOOTH_MANAGER_REQUIREMENTS,
+    },
+    SettingDefinition {
+        id: "storage.automount",
+        title: "Auto-mount disks",
+        category: "storage",
+        icon: Fa::Save,
+        breadcrumbs: &["Auto-mount disks"],
+        kind: SettingKind::Toggle {
+            key: UDISKIE_AUTOMOUNT_KEY,
+            summary: "Automatically mount removable drives with udiskie.",
+            apply: Some(super::actions::apply_udiskie_automount),
+        },
+        requires_reapply: false,
+        requirements: &[],
+    },
+    SettingDefinition {
+        id: "storage.disks",
+        title: "Disk management",
+        category: "storage",
+        icon: Fa::Save,
+        breadcrumbs: &["Disk management"],
+        kind: SettingKind::Command {
+            summary: "Launch GNOME Disks to manage drives and partitions.",
+            command: CommandSpec::detached("gnome-disks", &[]),
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(GNOME_DISKS_PACKAGE)],
+    },
+    SettingDefinition {
+        id: "storage.gparted",
+        title: "Partition editor",
+        category: "storage",
+        icon: Fa::Wrench,
+        breadcrumbs: &["Partition editor"],
+        kind: SettingKind::Command {
+            summary: "Launch GParted for advanced partition management (requires root).",
+            command: CommandSpec::detached("gparted", &[]),
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(GPARTED_PACKAGE)],
     },
 ];
 
