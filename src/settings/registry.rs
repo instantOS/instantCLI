@@ -271,7 +271,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "appearance.autotheming",
         title: "Autotheming",
         category: "appearance",
-        icon: NerdFont::Info,
+        icon: NerdFont::Palette,
         breadcrumbs: &["Autotheming"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("appearance.autotheming", true),

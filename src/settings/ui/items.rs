@@ -130,7 +130,8 @@ impl FzfSelectable for SettingItem {
         match self.state {
             SettingState::Toggle { enabled } => {
                 let glyph = if enabled { NerdFont::ToggleOn } else { NerdFont::ToggleOff };
-                format!("{} {}", format_icon(glyph), self.definition.title)
+                let status_text = if enabled { "[ON]" } else { "[OFF]" };
+                format!("{} {} {}", format_icon(glyph), self.definition.title, status_text)
             }
             SettingState::Choice { current_index } => {
                 let glyph = NerdFont::List;
@@ -221,7 +222,8 @@ impl FzfSelectable for ChoiceItem {
         } else {
             NerdFont::Square
         };
-        format!("{} {}", format_icon(glyph), self.option.label)
+        let status_text = if self.is_current { "[✓]" } else { "[ ]" };
+        format!("{} {} {}", format_icon(glyph), self.option.label, status_text)
     }
 
     fn fzf_preview(&self) -> crate::fzf_wrapper::FzfPreview {
@@ -238,7 +240,8 @@ impl FzfSelectable for SearchItem {
         match self.state {
             SettingState::Toggle { enabled } => {
                 let glyph = if enabled { NerdFont::ToggleOn } else { NerdFont::ToggleOff };
-                format!("{} {}", format_icon(glyph), path)
+                let status_text = if enabled { "[ON]" } else { "[OFF]" };
+                format!("{} {} {}", format_icon(glyph), path, status_text)
             }
             SettingState::Choice { current_index } => {
                 let glyph = NerdFont::List;

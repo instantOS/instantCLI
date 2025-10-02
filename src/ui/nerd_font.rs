@@ -126,6 +126,11 @@ pub enum NerdFont {
     Upgrade,        //
     About,          //
     Partition,      //
+
+    // Toggle-specific semantic icons
+    Palette,        //
+    Magic,          //
+    Clipboard,      //
 }
 
 impl NerdFont {
@@ -252,6 +257,11 @@ impl NerdFont {
             Self::Upgrade => '\u{f0aa}',        // fa-arrow-circle-up
             Self::About => '\u{f05a}',          // fa-info-circle (reused but semantic)
             Self::Partition => '\u{f1c0}',      // fa-database (reused but semantic)
+
+            // Toggle-specific semantic icons
+            Self::Palette => '\u{f53f}',        // fa-palette
+            Self::Magic => '\u{f0d0}',          // fa-magic
+            Self::Clipboard => '\u{f328}',      // fa-clipboard
         }
     }
 }
