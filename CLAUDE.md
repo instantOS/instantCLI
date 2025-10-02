@@ -56,31 +56,41 @@ cd ~ && ins dot reset .config
 
 **Important Note**: Commands involving fzf interactive menus (such as `ins menu` commands and any dotfile operations that require user selection) should be run by the user directly. AI agents are not capable of interacting with fzf's interactive interface, so these commands must be executed manually by a human user.
 
-**FZF Wrapper Enhancement**: The FzfWrapper has been enhanced to support multi-line messages via the `--header` argument and includes builder patterns for more ergonomic usage. Key improvements:
+**FZF Wrapper Enhancement**: The FzfWrapper has been enhanced with a unified builder pattern for all FZF operations. Key improvements:
 
-- **Multi-line support**: Added `header` field to `FzfOptions` struct, enabling multi-line text in dialogs
-- **Builder patterns**: Added `FzfWrapperBuilder`, `ConfirmationDialogBuilder`, and `MessageDialogBuilder` for fluent configuration
+- **Unified Builder Pattern**: Single `FzfBuilder` handles all dialog types (selection, input, password, confirmation, message)
+- **Multi-line support**: Full support for multi-line headers and messages
 - **Enhanced APIs**:
-  - `FzfWrapper::confirm_builder()` - Create customizable confirmation dialogs with multi-line messages
-  - `FzfWrapper::message_builder()` - Create message dialogs with titles and multi-line content
-  - `FzfWrapper::builder()` - Build custom FZF configurations with fluent API
+  - `FzfWrapper::builder()` - Create customizable FZF configurations with fluent API
+  - `FzfWrapper::select_one()` - Quick single selection with default options
+  - `FzfWrapper::select_many()` - Quick multi-selection with default options
+  - `FzfWrapper::input()` - Text input dialog
+  - `FzfWrapper::confirm_dialog()` - Confirmation dialog
+  - `FzfWrapper::message_dialog()` - Message dialog
+- **Streaming Support**: `select_streaming()` allows FZF to start showing results before command completes
+- **Preview Support**: Built-in preview functionality for complex data structures
 - **Backward compatibility**: All existing APIs continue to work unchanged
-- **Ergonomic improvements**: Chain methods for configuration, custom button text, titles, and multi-line content
 
 Example usage:
 ```rust
 // Multi-line confirmation with custom styling
-FzfWrapper::confirm_builder()
-    .message("Are you sure you want to remove this game?\n\nThis action cannot be undone.")
+let result = FzfWrapper::builder()
+    .confirm("Are you sure you want to remove this game?\n\nThis action cannot be undone.")
     .yes_text("Remove Game")
     .no_text("Keep Game")
-    .show()?
+    .confirm_dialog()?;
 
 // Message with title
-FzfWrapper::message_builder()
+FzfWrapper::builder()
     .message("Operation completed successfully!")
     .title("Success")
-    .show()?
+    .message_dialog()?;
+
+// Streaming selection from command output
+let result = FzfWrapper::builder()
+    .multi_select(true)
+    .args(["--preview", "pacman -Sii {}"])
+    .select_streaming("pacman -Slq")?;
 ```
 
 ## Architecture
