@@ -248,7 +248,7 @@ impl NerdFont {
             Self::Settings => '',  // fa-settings
 
             // Additional icons for better semantics
-            Self::Users2 => '👥',    // fa-users (alternative)
+            Self::Users2 => '',    // fa-users (alternative)
             Self::Shield => '🛡',    // fa-shield
             Self::HardDrive => '󰋊', // fa-hdd
             Self::Server => '🖥',    // fa-server
