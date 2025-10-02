@@ -267,8 +267,10 @@ mod tests {
 
     #[test]
     fn test_game_installation_new() {
-        let installation =
-            GameInstallation::new(GameName("test_game".to_string()), TildePath::new(PathBuf::from("~/.test/saves")));
+        let installation = GameInstallation::new(
+            GameName("test_game".to_string()),
+            TildePath::new(PathBuf::from("~/.test/saves")),
+        );
 
         assert_eq!(installation.game_name.0, "test_game");
         assert_eq!(installation.nearest_checkpoint, None);
@@ -276,9 +278,11 @@ mod tests {
 
     #[test]
     fn test_game_installation_with_checkpoint() {
-        let installation =
-            GameInstallation::new(GameName("test_game".to_string()), TildePath::new(PathBuf::from("~/.test/saves")))
-                .with_checkpoint("checkpoint123");
+        let installation = GameInstallation::new(
+            GameName("test_game".to_string()),
+            TildePath::new(PathBuf::from("~/.test/saves")),
+        )
+        .with_checkpoint("checkpoint123");
 
         assert_eq!(installation.game_name.0, "test_game");
         assert_eq!(
@@ -289,8 +293,10 @@ mod tests {
 
     #[test]
     fn test_game_installation_update_checkpoint() {
-        let mut installation =
-            GameInstallation::new(GameName("test_game".to_string()), TildePath::new(PathBuf::from("~/.test/saves")));
+        let mut installation = GameInstallation::new(
+            GameName("test_game".to_string()),
+            TildePath::new(PathBuf::from("~/.test/saves")),
+        );
 
         installation.update_checkpoint("checkpoint456");
         assert_eq!(
@@ -307,9 +313,11 @@ mod tests {
 
     #[test]
     fn test_game_installation_clear_checkpoint() {
-        let mut installation =
-            GameInstallation::new(GameName("test_game".to_string()), TildePath::new(PathBuf::from("~/.test/saves")))
-                .with_checkpoint("checkpoint123");
+        let mut installation = GameInstallation::new(
+            GameName("test_game".to_string()),
+            TildePath::new(PathBuf::from("~/.test/saves")),
+        )
+        .with_checkpoint("checkpoint123");
 
         assert_eq!(
             installation.nearest_checkpoint,
