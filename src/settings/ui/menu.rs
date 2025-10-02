@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 
 use crate::settings::registry::{self, CATEGORIES, SettingKind};
 
+use super::super::commands::SettingsNavigation;
 use super::super::context::{SettingsContext, select_one_with_style_at};
 use super::items::{CategoryItem, CategoryMenuItem, CategoryPageItem, SearchItem, SettingItem};
 
@@ -46,9 +47,29 @@ fn search_item_index(items: &[SearchItem], selected: SearchItem) -> Option<usize
     })
 }
 
-pub fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
+pub fn run_settings_ui(
+    debug: bool,
+    privileged_flag: bool,
+    navigation: Option<SettingsNavigation>,
+) -> Result<()> {
     let store = super::super::store::SettingsStore::load().context("loading settings file")?;
     let mut ctx = SettingsContext::new(store, debug, privileged_flag);
+
+    // Handle direct navigation
+    if let Some(nav) = navigation {
+        match nav {
+            SettingsNavigation::Setting(setting_id) => {
+                return handle_direct_setting(&mut ctx, &setting_id);
+            }
+            SettingsNavigation::Category(category_id) => {
+                return handle_direct_category(&mut ctx, &category_id);
+            }
+            SettingsNavigation::Search => {
+                return handle_search_all_persistent(&mut ctx);
+            }
+        }
+    }
+
     let mut cursor: Option<usize> = None;
 
     loop {
@@ -128,6 +149,82 @@ pub fn run_settings_ui(debug: bool, privileged_flag: bool) -> Result<()> {
 
     ctx.persist()?;
     Ok(())
+}
+
+/// Handle navigation directly to a specific setting
+fn handle_direct_setting(ctx: &mut SettingsContext, setting_id: &str) -> Result<()> {
+    // Find the setting by ID
+    let setting = registry::SETTINGS
+        .iter()
+        .find(|s| s.id == setting_id)
+        .ok_or_else(|| anyhow::anyhow!("Setting '{}' not found", setting_id))?;
+
+    // Compute the state
+    let state = super::state::compute_setting_state(ctx, setting);
+
+    // Show the setting and allow interaction
+    super::handlers::handle_setting(ctx, setting, state)?;
+    ctx.persist()?;
+
+    Ok(())
+}
+
+/// Handle navigation directly to a specific category
+fn handle_direct_category(ctx: &mut SettingsContext, category_id: &str) -> Result<()> {
+    let category = registry::category_by_id(category_id)
+        .ok_or_else(|| anyhow::anyhow!("Category '{}' not found", category_id))?;
+
+    // Enter the category and stay in it
+    handle_category_persistent(ctx, category)?;
+    ctx.persist()?;
+
+    Ok(())
+}
+
+/// Handle search all in a persistent way (doesn't return to main menu)
+fn handle_search_all_persistent(ctx: &mut SettingsContext) -> Result<()> {
+    handle_search_all(ctx)?;
+    ctx.persist()?;
+    Ok(())
+}
+
+/// Handle category in a persistent way (for direct navigation)
+fn handle_category_persistent(
+    ctx: &mut SettingsContext,
+    category: &'static registry::SettingCategory,
+) -> Result<()> {
+    let setting_defs = registry::settings_for_category(category.id);
+    if setting_defs.is_empty() {
+        ctx.emit_info(
+            "settings.category.empty",
+            &format!("No settings available for {} yet.", category.title),
+        );
+        return Ok(());
+    }
+
+    let mut cursor: Option<usize> = None;
+
+    loop {
+        let mut entries: Vec<CategoryPageItem> = Vec::with_capacity(setting_defs.len() + 1);
+        for &definition in &setting_defs {
+            let state = super::state::compute_setting_state(ctx, definition);
+            entries.push(CategoryPageItem::Setting(SettingItem { definition, state }));
+        }
+
+        entries.push(CategoryPageItem::Back);
+
+        match select_one_with_style_at(entries.clone(), cursor)? {
+            Some(CategoryPageItem::Setting(item)) => {
+                if let Some(index) = category_page_index(&entries, CategoryPageItem::Setting(item))
+                {
+                    cursor = Some(index);
+                }
+                super::handlers::handle_setting(ctx, item.definition, item.state)?;
+                ctx.persist()?;
+            }
+            Some(CategoryPageItem::Back) | None => return Ok(()),
+        }
+    }
 }
 
 pub fn handle_category(

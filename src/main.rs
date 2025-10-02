@@ -137,6 +137,15 @@ enum Commands {
     Settings {
         #[command(subcommand)]
         command: Option<SettingsCommands>,
+        /// Navigate directly to a specific setting by ID (e.g., "appearance.animations")
+        #[arg(short = 's', long = "setting", conflicts_with_all = ["category", "search"])]
+        setting: Option<String>,
+        /// Navigate directly to a specific category (e.g., "appearance", "desktop")
+        #[arg(short = 'c', long = "category", conflicts_with_all = ["setting", "search"])]
+        category: Option<String>,
+        /// Start in search mode to browse all settings
+        #[arg(long = "search", conflicts_with_all = ["setting", "category"])]
+        search: bool,
     },
     /// Debugging and diagnostic utilities
     Debug {
@@ -399,12 +408,29 @@ async fn main() -> Result<()> {
             let exit_code = command.clone().run(&compositor, cli.debug)?;
             std::process::exit(exit_code);
         }
-        Some(Commands::Settings { command }) => {
+        Some(Commands::Settings {
+            command,
+            setting,
+            category,
+            search,
+        }) => {
+            use settings::SettingsNavigation;
+            let navigation = if let Some(setting_id) = setting {
+                Some(SettingsNavigation::Setting(setting_id.clone()))
+            } else if let Some(category_id) = category {
+                Some(SettingsNavigation::Category(category_id.clone()))
+            } else if *search {
+                Some(SettingsNavigation::Search)
+            } else {
+                None
+            };
+
             execute_with_error_handling(
                 settings::dispatch_settings_command(
                     cli.debug,
                     cli.internal_privileged_mode,
                     command.clone(),
+                    navigation,
                 ),
                 "Error running settings",
                 None,

@@ -514,3 +514,7 @@ pub fn settings_for_category(id: &str) -> Vec<&'static SettingDefinition> {
         .filter(|setting| setting.category == id)
         .collect()
 }
+
+pub fn setting_by_id(id: &str) -> Option<&'static SettingDefinition> {
+    SETTINGS.iter().find(|setting| setting.id == id)
+}
