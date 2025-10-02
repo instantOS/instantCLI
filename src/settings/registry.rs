@@ -160,6 +160,13 @@ pub const FASTFETCH_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::WhichSucceeds("fastfetch")],
 };
 
+pub const TOPGRADE_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "topgrade",
+    arch_package_name: Some("topgrade"),
+    ubuntu_package_name: None,
+    tests: &[InstallTest::WhichSucceeds("topgrade")],
+};
+
 pub const BLUETOOTH_SERVICE_KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.service", false);
 pub const BLUETOOTH_HARDWARE_OVERRIDE_KEY: BoolSettingKey =
     BoolSettingKey::new("bluetooth.hardware_override", false);
@@ -481,6 +488,19 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: false,
         requirements: &[SettingRequirement::Package(FASTFETCH_PACKAGE)],
+    },
+    SettingDefinition {
+        id: "system.upgrade",
+        title: "Upgrade",
+        category: "system",
+        icon: Fa::ArrowUp,
+        breadcrumbs: &["Upgrade"],
+        kind: SettingKind::Command {
+            summary: "Upgrade all installed packages and system components using topgrade.",
+            command: CommandSpec::terminal("topgrade", &[]),
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(TOPGRADE_PACKAGE)],
     },
 ];
 
