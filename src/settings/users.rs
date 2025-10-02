@@ -115,6 +115,7 @@ enum ManageMenuItem {
         username: String,
         shell: String,
         groups: Vec<String>,
+        in_toml: bool,
     },
     Add,
     Back,
@@ -127,18 +128,21 @@ impl FzfSelectable for ManageMenuItem {
                 username,
                 shell,
                 groups,
+                in_toml,
             } => {
                 let label = if groups.is_empty() {
                     "no groups".to_string()
                 } else {
                     groups.join(", ")
                 };
+                let status = if *in_toml { "managed" } else { "system" };
                 format!(
-                    "{} {} ({}) [{}]",
+                    "{} {} ({}) [{}] ({})",
                     format_icon(Fa::User),
                     username,
                     shell,
-                    label
+                    label,
+                    status
                 )
             }
             ManageMenuItem::Add => format!("{} Add user", format_icon(Fa::Plus)),
@@ -152,9 +156,16 @@ impl FzfSelectable for ManageMenuItem {
                 username,
                 shell,
                 groups,
+                in_toml,
             } => {
+                let status = if *in_toml {
+                    "Managed in TOML configuration"
+                } else {
+                    "System user with home directory"
+                };
                 let mut lines = vec![
                     format!("{} User: {}", char::from(Fa::InfoCircle), username),
+                    format!("{} Status: {}", char::from(Fa::Tag), status),
                     format!("{} Shell: {}", char::from(Fa::Terminal), shell),
                 ];
                 if groups.is_empty() {
@@ -178,7 +189,7 @@ impl FzfSelectable for ManageMenuItem {
 enum UserActionItem {
     Apply,
     ChangeShell,
-    EditGroups,
+    ManageGroups,
     Remove,
     Back,
 }
@@ -190,7 +201,7 @@ impl FzfSelectable for UserActionItem {
             UserActionItem::ChangeShell => {
                 format!("{} Change shell", format_icon(Fa::Terminal))
             }
-            UserActionItem::EditGroups => format!("{} Edit groups", format_icon(Fa::List)),
+            UserActionItem::ManageGroups => format!("{} Manage groups", format_icon(Fa::List)),
             UserActionItem::Remove => format!("{} Remove entry", format_icon(Fa::TrashO)),
             UserActionItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
         }
@@ -200,11 +211,52 @@ impl FzfSelectable for UserActionItem {
         let text = match self {
             UserActionItem::Apply => "Apply the stored configuration to the system",
             UserActionItem::ChangeShell => "Update the user's default shell",
-            UserActionItem::EditGroups => "Set supplementary groups (comma-separated list)",
+            UserActionItem::ManageGroups => "Add or remove supplementary groups",
             UserActionItem::Remove => "Stop managing this user (does not delete the account)",
             UserActionItem::Back => "Return to the previous menu",
         };
         FzfPreview::Text(text.to_string())
+    }
+}
+
+#[derive(Clone)]
+enum GroupActionItem {
+    AddGroup,
+    RemoveGroup,
+    Back,
+}
+
+impl FzfSelectable for GroupActionItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            GroupActionItem::AddGroup => format!("{} Add group", format_icon(Fa::Plus)),
+            GroupActionItem::RemoveGroup => format!("{} Remove group", format_icon(Fa::Minus)),
+            GroupActionItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let text = match self {
+            GroupActionItem::AddGroup => "Add a supplementary group to the user",
+            GroupActionItem::RemoveGroup => "Remove a supplementary group from the user",
+            GroupActionItem::Back => "Return to user management",
+        };
+        FzfPreview::Text(text.to_string())
+    }
+}
+
+#[derive(Clone)]
+struct GroupItem {
+    name: String,
+}
+
+impl FzfSelectable for GroupItem {
+    fn fzf_display_text(&self) -> String {
+        format!("{} {}", char::from(Fa::List), self.name)
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Text(format!("Group: {}", self.name))
     }
 }
 
@@ -213,14 +265,43 @@ pub(super) fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
     let mut dirty = false;
 
     loop {
-        let mut items: Vec<ManageMenuItem> = store
-            .iter()
-            .map(|(username, spec)| ManageMenuItem::User {
-                username: username.clone(),
-                shell: spec.shell.clone(),
-                groups: spec.groups.clone(),
+        // Get all users: from TOML + system users with home directories
+        let system_users = get_system_users_with_home()?;
+        let mut all_usernames = BTreeSet::new();
+        
+        // Add users from TOML
+        for username in store.iter().map(|(name, _)| name.clone()) {
+            all_usernames.insert(username);
+        }
+        
+        // Add system users with home directories
+        for username in system_users {
+            all_usernames.insert(username);
+        }
+
+        let mut items: Vec<ManageMenuItem> = all_usernames
+            .into_iter()
+            .filter_map(|username| {
+                let in_toml = store.get(&username).is_some();
+                
+                // Try to get info from store first, then from system
+                let (shell, groups) = if let Some(spec) = store.get(&username) {
+                    (spec.shell.clone(), spec.groups.clone())
+                } else if let Ok(Some(info)) = get_user_info(&username) {
+                    (info.shell, info.groups)
+                } else {
+                    return None;
+                };
+
+                Some(ManageMenuItem::User {
+                    username,
+                    shell,
+                    groups,
+                    in_toml,
+                })
             })
             .collect();
+
         items.sort_by(|a, b| match (a, b) {
             (
                 ManageMenuItem::User { username: lhs, .. },
@@ -307,22 +388,35 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
 fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str) -> Result<bool> {
     let mut changed = false;
 
-    loop {
-        let Some(spec) = store.get(username).cloned() else {
-            return Ok(changed);
-        };
+    // Load or initialize user spec
+    let mut current_spec = if let Some(spec) = store.get(username) {
+        spec.clone()
+    } else if let Ok(Some(info)) = get_user_info(username) {
+        // User exists on system but not in TOML - create initial spec from system
+        UserSpec {
+            shell: info.shell,
+            groups: info.groups,
+        }
+    } else {
+        // User doesn't exist anywhere - use defaults
+        UserSpec::default()
+    };
 
+    loop {
         let actions = vec![
             UserActionItem::Apply,
             UserActionItem::ChangeShell,
-            UserActionItem::EditGroups,
+            UserActionItem::ManageGroups,
             UserActionItem::Remove,
             UserActionItem::Back,
         ];
 
         match select_one_with_style(actions)? {
             Some(UserActionItem::Apply) => {
-                apply_user_spec(ctx, username, &spec)?;
+                apply_user_spec(ctx, username, &current_spec)?;
+                // Save to TOML after successful apply
+                store.insert(username, current_spec.clone());
+                changed = true;
             }
             Some(UserActionItem::ChangeShell) => {
                 let input = FzfWrapper::builder()
@@ -333,25 +427,16 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                 if input.trim().is_empty() {
                     continue;
                 }
-                let mut updated = spec.clone();
-                updated.shell = input;
-                let updated = updated.sanitized();
-                store.insert(username, updated.clone());
-                apply_user_spec(ctx, username, &updated)?;
+                current_spec.shell = input;
+                current_spec = current_spec.sanitized();
+                store.insert(username, current_spec.clone());
+                apply_user_spec(ctx, username, &current_spec)?;
                 changed = true;
             }
-            Some(UserActionItem::EditGroups) => {
-                let input = FzfWrapper::builder()
-                    .prompt("Groups")
-                    .header("Comma separated group names")
-                    .input()
-                    .show_input()?;
-                let mut updated = spec.clone();
-                updated.groups = parse_groups(&input);
-                let updated = updated.sanitized();
-                store.insert(username, updated.clone());
-                apply_user_spec(ctx, username, &updated)?;
-                changed = true;
+            Some(UserActionItem::ManageGroups) => {
+                if manage_user_groups(ctx, store, username, &mut current_spec)? {
+                    changed = true;
+                }
             }
             Some(UserActionItem::Remove) => {
                 store.remove(username);
@@ -361,6 +446,121 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                 );
                 changed = true;
                 break;
+            }
+            _ => break,
+        }
+    }
+
+    Ok(changed)
+}
+
+fn manage_user_groups(
+    ctx: &mut SettingsContext,
+    store: &mut UserStore,
+    username: &str,
+    spec: &mut UserSpec,
+) -> Result<bool> {
+    let mut changed = false;
+
+    loop {
+        let actions = vec![
+            GroupActionItem::AddGroup,
+            GroupActionItem::RemoveGroup,
+            GroupActionItem::Back,
+        ];
+
+        match select_one_with_style(actions)? {
+            Some(GroupActionItem::AddGroup) => {
+                // Get all system groups
+                let all_groups = get_all_system_groups()?;
+                if all_groups.is_empty() {
+                    ctx.emit_info("settings.users.groups", "No system groups found.");
+                    continue;
+                }
+
+                // Filter out groups already assigned
+                let current_groups: BTreeSet<_> = spec.groups.iter().cloned().collect();
+                let available_groups: Vec<GroupItem> = all_groups
+                    .into_iter()
+                    .filter(|g| !current_groups.contains(g))
+                    .map(|name| GroupItem { name })
+                    .collect();
+
+                if available_groups.is_empty() {
+                    ctx.emit_info(
+                        "settings.users.groups",
+                        "User is already in all available groups.",
+                    );
+                    continue;
+                }
+
+                // Show selection menu with multi-select
+                let selected = FzfWrapper::builder()
+                    .prompt("Select groups to add")
+                    .header("Use Tab to select multiple, Enter to confirm")
+                    .args(["--multi"])
+                    .select(available_groups)?;
+
+                if let crate::fzf_wrapper::FzfResult::Selected(group_items) = selected {
+                    for item in group_items {
+                        if !spec.groups.contains(&item.name) {
+                            spec.groups.push(item.name);
+                        }
+                    }
+                    *spec = spec.sanitized();
+                    store.insert(username, spec.clone());
+                    apply_user_spec(ctx, username, spec)?;
+                    changed = true;
+                }
+            }
+            Some(GroupActionItem::RemoveGroup) => {
+                if spec.groups.is_empty() {
+                    ctx.emit_info("settings.users.groups", "User has no supplementary groups.");
+                    continue;
+                }
+
+                // Get primary group to prevent removal
+                let primary_group = get_user_info(username)?
+                    .and_then(|info| info.primary_group);
+
+                // Show selection menu for removal
+                let groups_to_show: Vec<GroupItem> = spec
+                    .groups
+                    .iter()
+                    .map(|name| GroupItem { name: name.clone() })
+                    .collect();
+                    
+                let selected = FzfWrapper::builder()
+                    .prompt("Select groups to remove")
+                    .header("Use Tab to select multiple, Enter to confirm")
+                    .args(["--multi"])
+                    .select(groups_to_show)?;
+
+                if let crate::fzf_wrapper::FzfResult::Selected(groups_to_remove) = selected {
+                    let remove_set: BTreeSet<_> = groups_to_remove
+                        .iter()
+                        .map(|item| item.name.clone())
+                        .collect();
+                    spec.groups.retain(|g| {
+                        if remove_set.contains(g) {
+                            // Don't remove primary group
+                            if Some(g.as_str()) == primary_group.as_deref() {
+                                ctx.emit_info(
+                                    "settings.users.groups",
+                                    &format!("Skipping primary group: {}", g),
+                                );
+                                return true;
+                            }
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    *spec = spec.sanitized();
+                    store.insert(username, spec.clone());
+                    apply_user_spec(ctx, username, spec)?;
+                    changed = true;
+                }
             }
             _ => break,
         }
@@ -531,4 +731,59 @@ fn get_user_info(username: &str) -> Result<Option<UserInfo>> {
         primary_group,
         groups,
     }))
+}
+
+fn get_system_users_with_home() -> Result<Vec<String>> {
+    let output = Command::new("getent")
+        .arg("passwd")
+        .output()
+        .context("querying system users")?;
+
+    if !output.status.success() {
+        return Ok(Vec::new());
+    }
+
+    let passwd_data = String::from_utf8_lossy(&output.stdout);
+    let users: Vec<String> = passwd_data
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split(':').collect();
+            if fields.len() >= 7 {
+                let username = fields[0];
+                let home = fields[5];
+                if home.starts_with("/home/") {
+                    return Some(username.to_string());
+                }
+            }
+            None
+        })
+        .collect();
+
+    Ok(users)
+}
+
+fn get_all_system_groups() -> Result<Vec<String>> {
+    let output = Command::new("getent")
+        .arg("group")
+        .output()
+        .context("querying system groups")?;
+
+    if !output.status.success() {
+        return Ok(Vec::new());
+    }
+
+    let group_data = String::from_utf8_lossy(&output.stdout);
+    let groups: Vec<String> = group_data
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split(':').collect();
+            if !fields.is_empty() {
+                Some(fields[0].to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(groups)
 }
