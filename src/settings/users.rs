@@ -189,6 +189,7 @@ impl FzfSelectable for ManageMenuItem {
 enum UserActionItem {
     Apply,
     ChangeShell,
+    ChangePassword,
     ManageGroups,
     Remove,
     Back,
@@ -201,6 +202,9 @@ impl FzfSelectable for UserActionItem {
             UserActionItem::ChangeShell => {
                 format!("{} Change shell", format_icon(Fa::Terminal))
             }
+            UserActionItem::ChangePassword => {
+                format!("{} Change password", format_icon(Fa::Key))
+            }
             UserActionItem::ManageGroups => format!("{} Manage groups", format_icon(Fa::List)),
             UserActionItem::Remove => format!("{} Remove entry", format_icon(Fa::TrashO)),
             UserActionItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
@@ -211,6 +215,7 @@ impl FzfSelectable for UserActionItem {
         let text = match self {
             UserActionItem::Apply => "Apply the stored configuration to the system",
             UserActionItem::ChangeShell => "Update the user's default shell",
+            UserActionItem::ChangePassword => "Change the user's password",
             UserActionItem::ManageGroups => "Add or remove supplementary groups",
             UserActionItem::Remove => "Stop managing this user (does not delete the account)",
             UserActionItem::Back => "Return to the previous menu",
@@ -220,8 +225,37 @@ impl FzfSelectable for UserActionItem {
 }
 
 #[derive(Clone)]
-enum GroupActionItem {
+enum GroupMenuItem {
+    ExistingGroup(String),
     AddGroup,
+    Back,
+}
+
+impl FzfSelectable for GroupMenuItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            GroupMenuItem::ExistingGroup(name) => {
+                format!("{} {}", char::from(Fa::List), name)
+            }
+            GroupMenuItem::AddGroup => format!("{} Add group", format_icon(Fa::Plus)),
+            GroupMenuItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let text = match self {
+            GroupMenuItem::ExistingGroup(name) => {
+                format!("Group: {}\n\nSelect to manage this group membership", name)
+            }
+            GroupMenuItem::AddGroup => "Add a new supplementary group to the user",
+            GroupMenuItem::Back => "Return to user management",
+        };
+        FzfPreview::Text(text.to_string())
+    }
+}
+
+#[derive(Clone)]
+enum GroupActionItem {
     RemoveGroup,
     Back,
 }
@@ -229,7 +263,6 @@ enum GroupActionItem {
 impl FzfSelectable for GroupActionItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            GroupActionItem::AddGroup => format!("{} Add group", format_icon(Fa::Plus)),
             GroupActionItem::RemoveGroup => format!("{} Remove group", format_icon(Fa::Minus)),
             GroupActionItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
         }
@@ -237,9 +270,8 @@ impl FzfSelectable for GroupActionItem {
 
     fn fzf_preview(&self) -> FzfPreview {
         let text = match self {
-            GroupActionItem::AddGroup => "Add a supplementary group to the user",
-            GroupActionItem::RemoveGroup => "Remove a supplementary group from the user",
-            GroupActionItem::Back => "Return to user management",
+            GroupActionItem::RemoveGroup => "Remove this group from the user",
+            GroupActionItem::Back => "Return to group list",
         };
         FzfPreview::Text(text.to_string())
     }
@@ -363,19 +395,45 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
         .input()
         .show_input()?;
 
-    let groups = FzfWrapper::builder()
-        .prompt("Groups (comma separated)")
-        .input()
-        .show_input()?;
+    // Use group selection menu instead of comma-separated input
+    let all_groups = get_all_system_groups()?;
+    let group_items: Vec<GroupItem> = all_groups
+        .into_iter()
+        .map(|name| GroupItem { name })
+        .collect();
+
+    let mut selected_groups = Vec::new();
+    if !group_items.is_empty() {
+        let result = FzfWrapper::builder()
+            .prompt("Select groups")
+            .header("Use Tab to select multiple, Enter to confirm, Esc to skip")
+            .args(["--multi"])
+            .select(group_items)?;
+
+        match result {
+            crate::fzf_wrapper::FzfResult::Selected(item) => {
+                selected_groups.push(item.name);
+            }
+            crate::fzf_wrapper::FzfResult::MultiSelected(items) => {
+                selected_groups.extend(items.into_iter().map(|item| item.name));
+            }
+            _ => {}
+        }
+    }
 
     let spec = UserSpec {
         shell,
-        groups: parse_groups(&groups),
+        groups: selected_groups,
     }
     .sanitized();
 
     store.insert(username, spec.clone());
     apply_user_spec(ctx, username, &spec)?;
+
+    // Prompt for password
+    if let Some(password) = prompt_password_with_confirmation(ctx, "Set password for user")? {
+        set_user_password(ctx, username, &password)?;
+    }
 
     ctx.emit_success(
         "settings.users.added",
@@ -406,6 +464,7 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
         let actions = vec![
             UserActionItem::Apply,
             UserActionItem::ChangeShell,
+            UserActionItem::ChangePassword,
             UserActionItem::ManageGroups,
             UserActionItem::Remove,
             UserActionItem::Back,
@@ -432,6 +491,11 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                 store.insert(username, current_spec.clone());
                 apply_user_spec(ctx, username, &current_spec)?;
                 changed = true;
+            }
+            Some(UserActionItem::ChangePassword) => {
+                if let Some(password) = prompt_password_with_confirmation(ctx, "New password")? {
+                    set_user_password(ctx, username, &password)?;
+                }
             }
             Some(UserActionItem::ManageGroups) => {
                 if manage_user_groups(ctx, store, username, &mut current_spec)? {
@@ -463,14 +527,24 @@ fn manage_user_groups(
     let mut changed = false;
 
     loop {
-        let actions = vec![
-            GroupActionItem::AddGroup,
-            GroupActionItem::RemoveGroup,
-            GroupActionItem::Back,
-        ];
+        // Build menu with existing groups + Add Group option
+        let mut items: Vec<GroupMenuItem> = spec
+            .groups
+            .iter()
+            .map(|name| GroupMenuItem::ExistingGroup(name.clone()))
+            .collect();
+        
+        items.push(GroupMenuItem::AddGroup);
+        items.push(GroupMenuItem::Back);
 
-        match select_one_with_style(actions)? {
-            Some(GroupActionItem::AddGroup) => {
+        match select_one_with_style(items)? {
+            Some(GroupMenuItem::ExistingGroup(group_name)) => {
+                // Show submenu for this group
+                if manage_single_group(ctx, store, username, spec, &group_name)? {
+                    changed = true;
+                }
+            }
+            Some(GroupMenuItem::AddGroup) => {
                 // Get all system groups
                 let all_groups = get_all_system_groups()?;
                 if all_groups.is_empty() {
@@ -525,65 +599,54 @@ fn manage_user_groups(
                     _ => {}
                 }
             }
-            Some(GroupActionItem::RemoveGroup) => {
-                if spec.groups.is_empty() {
-                    ctx.emit_info("settings.users.groups", "User has no supplementary groups.");
-                    continue;
-                }
-
-                // Get primary group to prevent removal
-                let primary_group = get_user_info(username)?
-                    .and_then(|info| info.primary_group);
-
-                // Show selection menu for removal
-                let groups_to_show: Vec<GroupItem> = spec
-                    .groups
-                    .iter()
-                    .map(|name| GroupItem { name: name.clone() })
-                    .collect();
-                    
-                let selected = FzfWrapper::builder()
-                    .prompt("Select groups to remove")
-                    .header("Use Tab to select multiple, Enter to confirm")
-                    .args(["--multi"])
-                    .select(groups_to_show)?;
-
-                let groups_to_remove = match selected {
-                    crate::fzf_wrapper::FzfResult::Selected(item) => vec![item],
-                    crate::fzf_wrapper::FzfResult::MultiSelected(items) => items,
-                    _ => continue,
-                };
-
-                let remove_set: BTreeSet<_> = groups_to_remove
-                    .iter()
-                    .map(|item| item.name.clone())
-                    .collect();
-                    
-                spec.groups.retain(|g| {
-                    if remove_set.contains(g) {
-                        // Don't remove primary group
-                        if Some(g.as_str()) == primary_group.as_deref() {
-                            ctx.emit_info(
-                                "settings.users.groups",
-                                &format!("Skipping primary group: {}", g),
-                            );
-                            return true;
-                        }
-                        false
-                    } else {
-                        true
-                    }
-                });
-                *spec = spec.sanitized();
-                store.insert(username, spec.clone());
-                apply_user_spec(ctx, username, spec)?;
-                changed = true;
-            }
             _ => break,
         }
     }
 
     Ok(changed)
+}
+
+fn manage_single_group(
+    ctx: &mut SettingsContext,
+    store: &mut UserStore,
+    username: &str,
+    spec: &mut UserSpec,
+    group_name: &str,
+) -> Result<bool> {
+    let actions = vec![
+        GroupActionItem::RemoveGroup,
+        GroupActionItem::Back,
+    ];
+
+    match select_one_with_style(actions)? {
+        Some(GroupActionItem::RemoveGroup) => {
+            // Get primary group to prevent removal
+            let primary_group = get_user_info(username)?
+                .and_then(|info| info.primary_group);
+
+            // Don't remove primary group
+            if Some(group_name) == primary_group.as_deref() {
+                ctx.emit_info(
+                    "settings.users.groups",
+                    &format!("Cannot remove primary group: {}", group_name),
+                );
+                return Ok(false);
+            }
+
+            spec.groups.retain(|g| g != group_name);
+            *spec = spec.sanitized();
+            store.insert(username, spec.clone());
+            apply_user_spec(ctx, username, spec)?;
+            
+            ctx.emit_success(
+                "settings.users.groups",
+                &format!("Removed {} from {}", group_name, username),
+            );
+            
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
 }
 
 fn parse_groups(input: &str) -> Vec<String> {
@@ -592,6 +655,62 @@ fn parse_groups(input: &str) -> Vec<String> {
         .map(|segment| segment.trim().to_string())
         .filter(|segment| !segment.is_empty())
         .collect()
+}
+
+fn prompt_password_with_confirmation(ctx: &SettingsContext, prompt: &str) -> Result<Option<String>> {
+    let password1 = FzfWrapper::builder()
+        .prompt(prompt)
+        .password()
+        .show_password()?;
+
+    if password1.trim().is_empty() {
+        ctx.emit_info("settings.users.password", "Password cannot be empty.");
+        return Ok(None);
+    }
+
+    let password2 = FzfWrapper::builder()
+        .prompt("Confirm password")
+        .password()
+        .show_password()?;
+
+    if password1 != password2 {
+        ctx.emit_info("settings.users.password", "Passwords do not match.");
+        return Ok(None);
+    }
+
+    Ok(Some(password1))
+}
+
+fn set_user_password(ctx: &mut SettingsContext, username: &str, password: &str) -> Result<()> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = if ctx.is_privileged() {
+        std::process::Command::new("chpasswd")
+            .stdin(Stdio::piped())
+            .spawn()
+    } else {
+        std::process::Command::new("sudo")
+            .arg("chpasswd")
+            .stdin(Stdio::piped())
+            .spawn()
+    }?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        writeln!(stdin, "{}:{}", username, password)?;
+    }
+
+    let status = child.wait()?;
+    if !status.success() {
+        anyhow::bail!("Failed to set password for user {}", username);
+    }
+
+    ctx.emit_success(
+        "settings.users.password",
+        &format!("Password updated for {}", username),
+    );
+
+    Ok(())
 }
 
 fn apply_user_spec(ctx: &mut SettingsContext, username: &str, spec: &UserSpec) -> Result<()> {
