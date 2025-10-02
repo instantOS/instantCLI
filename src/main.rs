@@ -141,7 +141,7 @@ enum Commands {
         #[arg(short = 's', long = "setting", conflicts_with_all = ["category", "search"])]
         setting: Option<String>,
         /// Navigate directly to a specific category (e.g., "appearance", "desktop")
-        #[arg(short = 'c', long = "category", conflicts_with_all = ["setting", "search"])]
+        #[arg(long = "category", conflicts_with_all = ["setting", "search"])]
         category: Option<String>,
         /// Start in search mode to browse all settings
         #[arg(long = "search", conflicts_with_all = ["setting", "category"])]

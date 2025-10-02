@@ -10,7 +10,7 @@ pub enum SettingsCommands {
     /// List available categories and settings
     List {
         /// Show only categories
-        #[arg(short = 'c', long = "categories")]
+        #[arg(long = "categories")]
         categories_only: bool,
         /// Filter by category ID
         #[arg(short = 'f', long = "filter")]
