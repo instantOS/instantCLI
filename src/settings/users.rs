@@ -247,10 +247,10 @@ impl FzfSelectable for GroupMenuItem {
             GroupMenuItem::ExistingGroup(name) => {
                 format!("Group: {}\n\nSelect to manage this group membership", name)
             }
-            GroupMenuItem::AddGroup => "Add a new supplementary group to the user",
-            GroupMenuItem::Back => "Return to user management",
+            GroupMenuItem::AddGroup => "Add a new supplementary group to the user".to_string(),
+            GroupMenuItem::Back => "Return to user management".to_string(),
         };
-        FzfPreview::Text(text.to_string())
+        FzfPreview::Text(text)
     }
 }
 
