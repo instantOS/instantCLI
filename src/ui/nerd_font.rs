@@ -138,130 +138,130 @@ impl NerdFont {
     pub const fn unicode(&self) -> char {
         match self {
             // Navigation and UI
-            Self::ArrowLeft => '\u{f060}',    // fa-arrow-left
-            Self::ArrowUp => '\u{f062}',      // fa-arrow-up
-            Self::ArrowDown => '\u{f063}',    // fa-arrow-down
-            Self::ArrowRight => '\u{f061}',   // fa-arrow-right
-            Self::ChevronLeft => '\u{f053}',  // fa-chevron-left
-            Self::ChevronRight => '\u{f054}', // fa-chevron-right
-            Self::ChevronUp => '\u{f077}',    // fa-chevron-up
-            Self::ChevronDown => '\u{f078}',  // fa-chevron-down
+            Self::ArrowLeft => '',    // fa-arrow-left
+            Self::ArrowUp => '',      // fa-arrow-up
+            Self::ArrowDown => '',    // fa-arrow-down
+            Self::ArrowRight => '',   // fa-arrow-right
+            Self::ChevronLeft => '',  // fa-chevron-left
+            Self::ChevronRight => '', // fa-chevron-right
+            Self::ChevronUp => '',    // fa-chevron-up
+            Self::ChevronDown => '',  // fa-chevron-down
 
             // Status and feedback
-            Self::Check => '\u{f00c}',       // fa-check
-            Self::CheckCircle => '\u{f058}', // fa-check-circle
-            Self::CheckSquare => '\u{f14a}', // fa-check-square
-            Self::Cross => '\u{f00d}',       // fa-times
-            Self::CrossCircle => '\u{f057}', // fa-times-circle
-            Self::Warning => '\u{f071}',     // fa-exclamation-triangle
-            Self::Info => '\u{f05a}',        // fa-info-circle
-            Self::Question => '\u{f059}',    // fa-question-circle
+            Self::Check => '✓',       // fa-check
+            Self::CheckCircle => '', // fa-check-circle
+            Self::CheckSquare => '', // fa-check-square
+            Self::Cross => '✗',       // fa-times
+            Self::CrossCircle => '', // fa-times-circle
+            Self::Warning => '',     // fa-exclamation-triangle
+            Self::Info => 'ℹ',        // fa-info-circle
+            Self::Question => '',    // fa-question-circle
 
             // Files and folders
-            Self::Folder => '\u{f07b}',     // fa-folder
-            Self::FolderOpen => '\u{f07c}', // fa-folder-open
-            Self::File => '\u{f15b}',       // fa-file
-            Self::FileText => '\u{f15c}',   // fa-file-text
-            Self::Save => '\u{f0c7}',       // fa-save
-            Self::Download => '\u{f019}',   // fa-download
-            Self::Upload => '\u{f093}',     // fa-upload
-            Self::Archive => '\u{f187}',    // fa-archive
+            Self::Folder => '',     // fa-folder
+            Self::FolderOpen => '', // fa-folder-open
+            Self::File => '',       // fa-file
+            Self::FileText => '',   // fa-file-text
+            Self::Save => '',       // fa-save
+            Self::Download => '',   // fa-download
+            Self::Upload => '',     // fa-upload
+            Self::Archive => '',    // fa-archive
 
             // System and hardware
-            Self::Desktop => '\u{f108}',  // fa-desktop
-            Self::Terminal => '\u{f120}', // fa-terminal
-            Self::Gear => '\u{f013}',     // fa-gear
-            Self::Wrench => '\u{f0ad}',   // fa-wrench
-            Self::Bug => '\u{f188}',      // fa-bug
-            Self::Key => '\u{f084}',      // fa-key
-            Self::Lock => '\u{f023}',     // fa-lock
-            Self::Unlock => '\u{f09c}',   // fa-unlock
+            Self::Desktop => '',  // fa-desktop
+            Self::Terminal => '', // fa-terminal
+            Self::Gear => '⚙',     // fa-gear
+            Self::Wrench => '',   // fa-wrench
+            Self::Bug => '',      // fa-bug
+            Self::Key => '',      // fa-key
+            Self::Lock => '',     // fa-lock
+            Self::Unlock => '',   // fa-unlock
 
             // Media and audio
-            Self::VolumeUp => '\u{f028}',   // fa-volume-up
-            Self::VolumeDown => '\u{f027}', // fa-volume-down
-            Self::VolumeMute => '\u{f026}', // fa-volume-mute
-            Self::Play => '\u{f04b}',       // fa-play
-            Self::Pause => '\u{f04c}',      // fa-pause
-            Self::Stop => '\u{f04d}',       // fa-stop
+            Self::VolumeUp => '󰝝',   // fa-volume-up
+            Self::VolumeDown => '󰝞', // fa-volume-down
+            Self::VolumeMute => '', // fa-volume-mute
+            Self::Play => '▶',       // fa-play
+            Self::Pause => '⏸',      // fa-pause
+            Self::Stop => '⏹',       // fa-stop
 
             // Communication and network
-            Self::Bluetooth => '\u{f293}',    // fa-bluetooth
-            Self::Wifi => '\u{f1eb}',         // fa-wifi
-            Self::Globe => '\u{f0ac}',        // fa-globe
-            Self::Link => '\u{f0c1}',         // fa-link
-            Self::ExternalLink => '\u{f08e}', // fa-external-link
+            Self::Bluetooth => '',    // fa-bluetooth
+            Self::Wifi => '',         // fa-wifi
+            Self::Globe => '',        // fa-globe
+            Self::Link => '',         // fa-link
+            Self::ExternalLink => '', // fa-external-link
 
             // User and social
-            Self::User => '\u{f007}',      // fa-user
-            Self::Users => '\u{f0c0}',     // fa-users
-            Self::UserPlus => '\u{f234}',  // fa-user-plus
-            Self::UserMinus => '\u{f235}', // fa-user-minus
+            Self::User => '',      // fa-user
+            Self::Users => '',     // fa-users
+            Self::UserPlus => '',  // fa-user-plus
+            Self::UserMinus => '', // fa-user-minus
 
             // Actions and controls
-            Self::Plus => '\u{f067}',   // fa-plus
-            Self::Minus => '\u{f068}',  // fa-minus
-            Self::Edit => '\u{f044}',   // fa-edit
-            Self::Trash => '\u{f1f8}',  // fa-trash
-            Self::Search => '\u{f002}', // fa-search
-            Self::Filter => '\u{f0b0}', // fa-filter
+            Self::Plus => '+',   // fa-plus
+            Self::Minus => '-',  // fa-minus
+            Self::Edit => '✏',   // fa-edit
+            Self::Trash => '🗑',  // fa-trash
+            Self::Search => '', // fa-search
+            Self::Filter => '', // fa-filter
 
             // Gaming and entertainment
-            Self::Gamepad => '\u{f11b}', // fa-gamepad
-            Self::Trophy => '\u{f091}',  // fa-trophy
-            Self::Star => '\u{f005}',    // fa-star
-            Self::Flag => '\u{f024}',    // fa-flag
-            Self::Target => '\u{f140}',  // fa-bullseye
+            Self::Gamepad => '', // fa-gamepad
+            Self::Trophy => '',  // fa-trophy
+            Self::Star => '',    // fa-star
+            Self::Flag => '🏳',    // fa-flag
+            Self::Target => '',  // fa-bullseye
 
             // Data and analytics
-            Self::Chart => '\u{f080}',    // fa-bar-chart
-            Self::List => '\u{f03a}',     // fa-list
-            Self::Table => '\u{f0ce}',    // fa-table
-            Self::Database => '\u{f1c0}', // fa-database
+            Self::Chart => '',    // fa-bar-chart
+            Self::List => '',     // fa-list
+            Self::Table => '',    // fa-table
+            Self::Database => '', // fa-database
 
             // Time and scheduling
-            Self::Clock => '\u{f017}',    // fa-clock
-            Self::Calendar => '\u{f073}', // fa-calendar
-            Self::Timer => '\u{f2f2}',    // fa-stopwatch
+            Self::Clock => '',    // fa-clock
+            Self::Calendar => '󰃭', // fa-calendar
+            Self::Timer => '⏱',    // fa-stopwatch
 
             // Development and tools
-            Self::Code => '\u{f121}',    // fa-code
-            Self::Git => '\u{f1d3}',     // fa-git
-            Self::Branch => '\u{f126}',  // fa-code-branch
-            Self::Tag => '\u{f02b}',     // fa-tag
-            Self::Package => '\u{f187}', // fa-archive (reused)
+            Self::Code => '',    // fa-code
+            Self::Git => '',     // fa-git
+            Self::Branch => '',  // fa-code-branch
+            Self::Tag => '',     // fa-tag
+            Self::Package => '', // fa-package
 
             // UI controls
-            Self::ToggleOn => '\u{f205}',    // fa-toggle-on
-            Self::ToggleOff => '\u{f204}',   // fa-toggle-off
-            Self::Square => '\u{f0c8}',      // fa-square
-            Self::SquareCheck => '\u{f14a}', // fa-check-square (reused)
-            Self::Circle => '\u{f111}',      // fa-circle
-            Self::CircleCheck => '\u{f058}', // fa-check-circle (reused)
+            Self::ToggleOn => '',    // fa-toggle-on
+            Self::ToggleOff => '',   // fa-toggle-off
+            Self::Square => '◻',      // fa-square
+            Self::SquareCheck => '☑', // fa-check-square
+            Self::Circle => '',      // fa-circle
+            Self::CircleCheck => '', // fa-check-circle
 
             // Miscellaneous
-            Self::Lightbulb => '\u{f0eb}', // fa-lightbulb
-            Self::Rocket => '\u{f135}',    // fa-rocket
-            Self::Refresh => '\u{f021}',   // fa-refresh
-            Self::Sync => '\u{f021}',      // fa-refresh (reused)
-            Self::Home => '\u{f015}',      // fa-home
-            Self::Settings => '\u{f013}',  // fa-gear (reused)
+            Self::Lightbulb => '', // fa-lightbulb
+            Self::Rocket => '',    // fa-rocket
+            Self::Refresh => '',   // fa-refresh
+            Self::Sync => '',      // fa-sync
+            Self::Home => '',      // fa-home
+            Self::Settings => '',  // fa-settings
 
             // Additional icons for better semantics
-            Self::Users2 => '\u{f0c0}',    // fa-users (alternative)
-            Self::Shield => '\u{f132}',    // fa-shield
-            Self::HardDrive => '\u{f0a0}', // fa-hdd
-            Self::Server => '\u{f233}',    // fa-server
-            Self::Cpu => '\u{f2db}',       // fa-microchip
-            Self::Memory => '\u{f538}',    // fa-memory
-            Self::Upgrade => '\u{f0aa}',   // fa-arrow-circle-up
-            Self::About => '\u{f05a}',     // fa-info-circle (reused but semantic)
-            Self::Partition => '\u{f1c0}', // fa-database (reused but semantic)
+            Self::Users2 => '👥',    // fa-users (alternative)
+            Self::Shield => '🛡',    // fa-shield
+            Self::HardDrive => '󰋊', // fa-hdd
+            Self::Server => '🖥',    // fa-server
+            Self::Cpu => '',       // fa-microchip
+            Self::Memory => '󰍛',    // fa-memory
+            Self::Upgrade => '⬆',    // fa-arrow-circle-up
+            Self::About => 'ℹ',      // fa-info-circle
+            Self::Partition => '', // fa-partition
 
             // Toggle-specific semantic icons
-            Self::Palette => '\u{f53f}',   // fa-palette
-            Self::Magic => '\u{f0d0}',     // fa-magic
-            Self::Clipboard => '\u{f328}', // fa-clipboard
+            Self::Palette => '󰏘',   // fa-palette
+            Self::Magic => '',     // fa-magic
+            Self::Clipboard => '', // fa-clipboard
         }
     }
 }
