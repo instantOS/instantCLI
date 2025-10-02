@@ -47,7 +47,7 @@ fn ensure_requirements(
         }
 
         FzfWrapper::builder()
-            .message(&messages.join("\n"))
+            .message(messages.join("\n"))
             .title("Requirements Not Met")
             .show_message()?;
 

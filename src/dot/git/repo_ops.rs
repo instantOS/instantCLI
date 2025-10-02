@@ -74,7 +74,7 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
     // Note: config addition is now handled by the caller (add_repository function)
 
     // validate metadata but do not delete invalid clones; report their existence
-    let local_repo = repo_mod::LocalRepo::new(&config, repo.name.clone())?;
+    let local_repo = repo_mod::LocalRepo::new(config, repo.name.clone())?;
     let meta = &local_repo.meta;
 
     if debug {
@@ -89,7 +89,7 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
     // Initialize database with source file hashes to prevent false "modified" status
     // when identical files already exist in the home directory
     if let Ok(db) = crate::dot::db::Database::new(config.database_path().to_path_buf())
-        && let Ok(dotfiles) = get_all_dotfiles(&config, &db)
+        && let Ok(dotfiles) = get_all_dotfiles(config, &db)
     {
         for (_, dotfile) in dotfiles {
             // Only register hashes for dotfiles from this repository

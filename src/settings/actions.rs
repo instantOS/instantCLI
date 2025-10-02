@@ -129,11 +129,11 @@ pub fn apply_bluetooth_service(ctx: &mut SettingsContext, enabled: bool) -> Resu
         }
 
         ctx.notify("Bluetooth service", "Bluetooth service enabled");
-    } else {
-        if systemd.is_enabled(BLUETOOTH_SERVICE_NAME) || systemd.is_active(BLUETOOTH_SERVICE_NAME) {
-            systemd.disable_and_stop(BLUETOOTH_SERVICE_NAME)?;
-            ctx.notify("Bluetooth service", "Bluetooth service disabled");
-        }
+    } else if systemd.is_enabled(BLUETOOTH_SERVICE_NAME)
+        || systemd.is_active(BLUETOOTH_SERVICE_NAME)
+    {
+        systemd.disable_and_stop(BLUETOOTH_SERVICE_NAME)?;
+        ctx.notify("Bluetooth service", "Bluetooth service disabled");
     }
 
     Ok(())
@@ -188,19 +188,19 @@ pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Resu
                 );
                 return Err(err);
             }
-        } else if !systemd_manager.is_active(UDISKIE_SERVICE_NAME) {
-            if let Err(err) = systemd_manager.start(UDISKIE_SERVICE_NAME) {
-                emit(
-                    Level::Warn,
-                    "settings.storage.udiskie.start_failed",
-                    &format!(
-                        "{} Failed to start udiskie service: {err}",
-                        char::from(NerdFont::Warning)
-                    ),
-                    None,
-                );
-                return Err(err);
-            }
+        } else if !systemd_manager.is_active(UDISKIE_SERVICE_NAME)
+            && let Err(err) = systemd_manager.start(UDISKIE_SERVICE_NAME)
+        {
+            emit(
+                Level::Warn,
+                "settings.storage.udiskie.start_failed",
+                &format!(
+                    "{} Failed to start udiskie service: {err}",
+                    char::from(NerdFont::Warning)
+                ),
+                None,
+            );
+            return Err(err);
         }
 
         ctx.notify(
@@ -209,21 +209,20 @@ pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Resu
         );
     } else {
         // Disable and stop the service
-        if systemd_manager.is_enabled(UDISKIE_SERVICE_NAME)
-            || systemd_manager.is_active(UDISKIE_SERVICE_NAME)
+        if (systemd_manager.is_enabled(UDISKIE_SERVICE_NAME)
+            || systemd_manager.is_active(UDISKIE_SERVICE_NAME))
+            && let Err(err) = systemd_manager.disable_and_stop(UDISKIE_SERVICE_NAME)
         {
-            if let Err(err) = systemd_manager.disable_and_stop(UDISKIE_SERVICE_NAME) {
-                emit(
-                    Level::Warn,
-                    "settings.storage.udiskie.disable_failed",
-                    &format!(
-                        "{} Failed to disable udiskie service: {err}",
-                        char::from(NerdFont::Warning)
-                    ),
-                    None,
-                );
-                return Err(err);
-            }
+            emit(
+                Level::Warn,
+                "settings.storage.udiskie.disable_failed",
+                &format!(
+                    "{} Failed to disable udiskie service: {err}",
+                    char::from(NerdFont::Warning)
+                ),
+                None,
+            );
+            return Err(err);
         }
 
         ctx.notify("Auto-mount", "udiskie service disabled");

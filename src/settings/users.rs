@@ -533,15 +533,12 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                     .header("Choose a shell from /etc/shells")
                     .select(shell_items)?;
 
-                match selected {
-                    crate::fzf_wrapper::FzfResult::Selected(item) => {
-                        current_spec.shell = item.path;
-                        current_spec = current_spec.sanitized();
-                        store.insert(username, current_spec.clone());
-                        apply_user_spec(ctx, username, &current_spec)?;
-                        changed = true;
-                    }
-                    _ => {}
+                if let crate::fzf_wrapper::FzfResult::Selected(item) = selected {
+                    current_spec.shell = item.path;
+                    current_spec = current_spec.sanitized();
+                    store.insert(username, current_spec.clone());
+                    apply_user_spec(ctx, username, &current_spec)?;
+                    changed = true;
                 }
             }
             Some(UserActionItem::ChangePassword) => {
