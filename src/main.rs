@@ -50,7 +50,7 @@ fn execute_with_error_handling<T>(
 
 use crate::dev::DevCommands;
 use crate::doctor::DoctorCommands;
-use crate::dot::config::ConfigManager;
+use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
 use crate::scratchpad::ScratchpadCommand;
@@ -285,16 +285,16 @@ async fn main() -> Result<()> {
         }
         Some(Commands::Dot { command }) => {
             // Load configuration once at startup
-            let mut config_manager = execute_with_error_handling(
-                ConfigManager::load_from(cli.config.as_deref()),
+            let mut config = execute_with_error_handling(
+                Config::load(cli.config.as_deref()),
                 "Error loading configuration",
                 None,
             )?;
 
             // Ensure directories exist and create database instance once at startup
-            config_manager.config().ensure_directories()?;
+            config.ensure_directories()?;
             let db = execute_with_error_handling(
-                Database::new(config_manager.config().database_path().to_path_buf()),
+                Database::new(config.database_path().to_path_buf()),
                 "Error opening database",
                 None,
             )?;
@@ -303,7 +303,7 @@ async fn main() -> Result<()> {
                 DotCommands::Repo { command } => {
                     execute_with_error_handling(
                         dot::repo::commands::handle_repo_command(
-                            &mut config_manager,
+                            &mut config,
                             &db,
                             command,
                             cli.debug,
@@ -314,48 +314,42 @@ async fn main() -> Result<()> {
                 }
                 DotCommands::Reset { path } => {
                     execute_with_error_handling(
-                        dot::reset_modified(&config_manager.config, &db, path),
+                        dot::reset_modified(&config, &db, path),
                         "Error resetting dotfiles",
                         None,
                     )?;
                 }
                 DotCommands::Apply => {
                     execute_with_error_handling(
-                        dot::apply_all(&config_manager.config, &db),
+                        dot::apply_all(&config, &db),
                         "Error applying dotfiles",
                         Some("Applied dotfiles"),
                     )?;
                 }
                 DotCommands::Fetch { path, dry_run } => {
                     execute_with_error_handling(
-                        dot::fetch_modified(&config_manager.config, &db, path.as_deref(), *dry_run),
+                        dot::fetch_modified(&config, &db, path.as_deref(), *dry_run),
                         "Error fetching dotfiles",
                         Some("Fetched modified dotfiles"),
                     )?;
                 }
                 DotCommands::Add { path } => {
                     execute_with_error_handling(
-                        dot::add_dotfile(&config_manager.config, &db, path),
+                        dot::add_dotfile(&config, &db, path),
                         "Error adding dotfile",
                         Some(&format!("Added dotfile {}", path.green())),
                     )?;
                 }
                 DotCommands::Update => {
                     execute_with_error_handling(
-                        dot::update_all(&config_manager.config, cli.debug),
+                        dot::update_all(&config, cli.debug),
                         "Error updating repos",
                         Some("All repos updated"),
                     )?;
                 }
                 DotCommands::Status { path, all } => {
                     execute_with_error_handling(
-                        dot::status_all(
-                            &config_manager.config,
-                            cli.debug,
-                            path.as_deref(),
-                            &db,
-                            *all,
-                        ),
+                        dot::status_all(&config, cli.debug, path.as_deref(), &db, *all),
                         "Error checking repo status",
                         None,
                     )?;
@@ -378,7 +372,7 @@ async fn main() -> Result<()> {
                 }
                 DotCommands::Diff { path } => {
                     execute_with_error_handling(
-                        dot::diff_all(&config_manager.config, cli.debug, path.as_deref(), &db),
+                        dot::diff_all(&config, cli.debug, path.as_deref(), &db),
                         "Error showing dotfile differences",
                         None,
                     )?;

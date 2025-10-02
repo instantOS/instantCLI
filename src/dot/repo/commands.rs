@@ -1,5 +1,5 @@
 use super::cli::{RepoCommands, SubdirCommands};
-use crate::dot::config::{ConfigManager, extract_repo_name};
+use crate::dot::config::{Config, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::git::add_repo as git_add_repo;
 use crate::dot::repo::RepositoryManager;
@@ -10,35 +10,28 @@ use colored::*;
 
 /// Handle repository subcommands
 pub fn handle_repo_command(
-    config_manager: &mut ConfigManager,
+    config: &mut Config,
     db: &Database,
     command: &RepoCommands,
     debug: bool,
 ) -> Result<()> {
     match command {
-        RepoCommands::List => list_repositories(config_manager, db),
-        RepoCommands::Add { url, name, branch } => add_repository(
-            config_manager,
-            db,
-            url,
-            name.as_deref(),
-            branch.as_deref(),
-            debug,
-        ),
-        RepoCommands::Remove { name, keep_files } => {
-            remove_repository(config_manager, db, name, !*keep_files)
+        RepoCommands::List => list_repositories(config, db),
+        RepoCommands::Add { url, name, branch } => {
+            add_repository(config, db, url, name.as_deref(), branch.as_deref(), debug)
         }
-        RepoCommands::Info { name } => show_repository_info(config_manager, db, name),
-        RepoCommands::Enable { name } => enable_repository(config_manager, name),
-        RepoCommands::Disable { name } => disable_repository(config_manager, name),
-        RepoCommands::Subdirs { command } => handle_subdir_command(config_manager, db, command),
+        RepoCommands::Remove { name, keep_files } => {
+            remove_repository(config, db, name, !*keep_files)
+        }
+        RepoCommands::Info { name } => show_repository_info(config, db, name),
+        RepoCommands::Enable { name } => enable_repository(config, name),
+        RepoCommands::Disable { name } => disable_repository(config, name),
+        RepoCommands::Subdirs { command } => handle_subdir_command(config, db, command),
     }
 }
 
 /// List all configured repositories
-fn list_repositories(config_manager: &ConfigManager, _db: &Database) -> Result<()> {
-    let config = config_manager.config();
-
+fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
     if config.repos.is_empty() {
         match get_output_format() {
             OutputFormat::Json => {
@@ -130,7 +123,7 @@ fn list_repositories(config_manager: &ConfigManager, _db: &Database) -> Result<(
 
 /// Add a new repository
 fn add_repository(
-    config_manager: &mut ConfigManager,
+    config: &mut Config,
     db: &Database,
     url: &str,
     name: Option<&str>,
@@ -151,7 +144,7 @@ fn add_repository(
     };
 
     // Add the repo to config
-    config_manager.add_repo(repo_config.clone())?;
+    config.add_repo(repo_config.clone(), None)?;
 
     emit(
         Level::Success,
@@ -166,7 +159,7 @@ fn add_repository(
     );
 
     // Clone the repository
-    match git_add_repo(config_manager, repo_config, debug) {
+    match git_add_repo(config, repo_config, debug) {
         Ok(path) => {
             emit(
                 Level::Info,
@@ -189,7 +182,7 @@ fn add_repository(
                 ),
                 None,
             );
-            if let Err(e) = apply_all_repos(config_manager, db) {
+            if let Err(e) = apply_all_repos(config, db) {
                 emit(
                     Level::Warn,
                     "dot.repo.add.apply_failed",
@@ -212,7 +205,7 @@ fn add_repository(
                 None,
             );
             // Remove from config since clone failed
-            config_manager.remove_repo(&repo_name)?;
+            config.remove_repo(&repo_name, None)?;
             return Err(e);
         }
     }
@@ -222,13 +215,11 @@ fn add_repository(
 
 /// Remove a repository
 fn remove_repository(
-    config_manager: &mut ConfigManager,
+    config: &mut Config,
     db: &Database,
     name: &str,
     remove_files: bool,
 ) -> Result<()> {
-    let config = config_manager.config();
-
     // Find the repository
     let _repo_index = config
         .repos
@@ -254,7 +245,7 @@ fn remove_repository(
     }
 
     // Remove from config
-    config_manager.remove_repo(name)?;
+    config.remove_repo(name, None)?;
 
     println!("{} repository '{}'", "Removed".green(), name);
 
@@ -262,8 +253,7 @@ fn remove_repository(
 }
 
 /// Show detailed repository information
-fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &str) -> Result<()> {
-    let config = config_manager.config();
+fn show_repository_info(config: &Config, db: &Database, name: &str) -> Result<()> {
     let repo_manager = RepositoryManager::new(config, db);
 
     let local_repo = repo_manager.get_repository_info(name)?;
@@ -399,41 +389,38 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
 }
 
 /// Enable a repository
-fn enable_repository(config_manager: &mut ConfigManager, name: &str) -> Result<()> {
-    config_manager.enable_repo(name)?;
+fn enable_repository(config: &mut Config, name: &str) -> Result<()> {
+    config.enable_repo(name, None)?;
     println!("{} repository '{}'", "Enabled".green(), name);
     Ok(())
 }
 
 /// Disable a repository
-fn disable_repository(config_manager: &mut ConfigManager, name: &str) -> Result<()> {
-    config_manager.disable_repo(name)?;
+fn disable_repository(config: &mut Config, name: &str) -> Result<()> {
+    config.disable_repo(name, None)?;
     println!("{} repository '{}'", "Disabled".yellow(), name);
     Ok(())
 }
 
 /// Handle subdirectory commands
 fn handle_subdir_command(
-    config_manager: &mut ConfigManager,
+    config: &mut Config,
     db: &Database,
     command: &SubdirCommands,
 ) -> Result<()> {
     match command {
-        SubdirCommands::List { name, active } => {
-            list_subdirectories(config_manager, db, name, *active)
-        }
-        SubdirCommands::Set { name, subdirs } => set_subdirectories(config_manager, name, subdirs),
+        SubdirCommands::List { name, active } => list_subdirectories(config, db, name, *active),
+        SubdirCommands::Set { name, subdirs } => set_subdirectories(config, name, subdirs),
     }
 }
 
 /// List subdirectories for a repository
 fn list_subdirectories(
-    config_manager: &ConfigManager,
+    config: &Config,
     db: &Database,
     name: &str,
     active_only: bool,
 ) -> Result<()> {
-    let config = config_manager.config();
     let repo_manager = RepositoryManager::new(config, db);
 
     let local_repo = repo_manager.get_repository_info(name)?;
@@ -477,12 +464,8 @@ fn list_subdirectories(
 }
 
 /// Set active subdirectories for a repository
-fn set_subdirectories(
-    config_manager: &mut ConfigManager,
-    name: &str,
-    subdirs: &[String],
-) -> Result<()> {
-    config_manager.set_active_subdirs(name, subdirs.to_vec())?;
+fn set_subdirectories(config: &mut Config, name: &str, subdirs: &[String]) -> Result<()> {
+    config.set_active_subdirs(name, subdirs.to_vec(), None)?;
     println!(
         "{} active subdirectories for repository '{}': {}",
         "Set".green(),
@@ -493,9 +476,9 @@ fn set_subdirectories(
 }
 
 /// Apply all repositories (helper function)
-fn apply_all_repos(config_manager: &ConfigManager, db: &Database) -> Result<()> {
+fn apply_all_repos(config: &Config, db: &Database) -> Result<()> {
     use crate::dot::apply_all;
 
-    apply_all(&config_manager.config, db)?;
+    apply_all(config, db)?;
     Ok(())
 }

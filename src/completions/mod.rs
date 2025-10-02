@@ -5,7 +5,7 @@ use clap::ValueEnum;
 use clap_complete::engine::CompletionCandidate;
 use clap_complete::env::Shells;
 
-use crate::dot::config::ConfigManager;
+use crate::dot::config::Config;
 use crate::game::config::InstantGameConfig;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -148,16 +148,11 @@ pub fn game_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
 
 pub fn repo_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
     let prefix = lossy_prefix(current);
-    let Ok(manager) = ConfigManager::load() else {
+    let Ok(config) = Config::load(None) else {
         return Vec::new();
     };
 
-    let names = manager
-        .config
-        .repos
-        .into_iter()
-        .map(|repo| repo.name)
-        .collect();
+    let names = config.repos.into_iter().map(|repo| repo.name).collect();
 
     sort_and_filter(names, &prefix)
 }

@@ -254,8 +254,8 @@ impl NerdFont {
             Self::Server => '🖥',    // fa-server
             Self::Cpu => '',       // fa-microchip
             Self::Memory => '󰍛',    // fa-memory
-            Self::Upgrade => '⬆',    // fa-arrow-circle-up
-            Self::About => 'ℹ',      // fa-info-circle
+            Self::Upgrade => '⬆',   // fa-arrow-circle-up
+            Self::About => 'ℹ',     // fa-info-circle
             Self::Partition => '', // fa-partition
 
             // Toggle-specific semantic icons
