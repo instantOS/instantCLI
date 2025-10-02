@@ -74,37 +74,6 @@ impl FzfSelectable for CategoryItem {
             self.category.description
         ));
 
-        lines.push(String::new());
-        lines.push(format!(
-            "{} {} total settings",
-            char::from(Fa::List),
-            self.total
-        ));
-        lines.push(format!(
-            "{} {} toggle{}",
-            char::from(Fa::ToggleOn),
-            self.toggles,
-            if self.toggles == 1 { "" } else { "s" }
-        ));
-        lines.push(format!(
-            "{} {} choice{}",
-            char::from(Fa::List),
-            self.choices,
-            if self.choices == 1 { "" } else { "s" }
-        ));
-        lines.push(format!(
-            "{} {} action{}",
-            char::from(Fa::Check),
-            self.actions,
-            if self.actions == 1 { "" } else { "s" }
-        ));
-        lines.push(format!(
-            "{} {} command{}",
-            char::from(Fa::Terminal),
-            self.commands,
-            if self.commands == 1 { "" } else { "s" }
-        ));
-
         let highlights: Vec<_> = self.highlights.iter().flatten().take(3).collect();
 
         if !highlights.is_empty() {
@@ -113,13 +82,24 @@ impl FzfSelectable for CategoryItem {
 
             for definition in highlights {
                 lines.push(format!(
-                    "  {} {} — {}",
+                    "  {} {}",
                     char::from(definition.icon),
                     definition.title,
+                ));
+                lines.push(format!(
+                    "    {}",
                     setting_summary(definition)
                 ));
             }
         }
+
+        lines.push(String::new());
+        lines.push(format!(
+            "{} {} total setting{}",
+            char::from(Fa::List),
+            self.total,
+            if self.total == 1 { "" } else { "s" }
+        ));
 
         crate::fzf_wrapper::FzfPreview::Text(lines.join("\n"))
     }
