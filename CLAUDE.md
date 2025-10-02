@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InstantCLI is a Rust-based command-line tool (v0.1.1) for managing dotfiles and instantOS configurations. It provides a decentralized approach to dotfile management that respects user modifications while enabling easy theme and configuration switching.
+InstantCLI is a Rust-based command-line tool (v0.1.9) for managing dotfiles, game saves, system settings, and instantOS configurations. It provides a decentralized approach to dotfile management that respects user modifications while enabling easy theme and configuration switching, along with comprehensive system management capabilities.
 
 ## Common Development Commands
 
@@ -105,9 +105,60 @@ FzfWrapper::message_builder()
    - `path_serde.rs`: Path serialization/deserialization
    - `path_tests.rs`: Path-related tests
 
-3. **System Diagnostics** (`src/doctor/`): System health checks and diagnostics
+3. **Game Save Management** (`src/game/`): Game save backup and synchronization using restic
+   - `cli.rs`: Game command definitions
+   - `commands.rs`: Game command handlers
+   - `config.rs`: Game configuration management
+   - `games/`: Game management logic
+   - `operations/`: Game operations (launch, sync)
+   - `repository/`: Repository management for game saves
+   - `restic/`: Restic wrapper for backup operations
+   - `setup.rs`: Game setup and configuration
+
+4. **System Settings** (`src/settings/`): System configuration management
+   - `mod.rs`: Settings module orchestration
+   - `commands.rs`: Settings CLI command definitions
+   - `registry.rs`: Settings definitions and metadata
+   - `ui/`: Settings user interface components
+   - `actions.rs`: Setting application logic
+   - `store.rs`: Settings persistence
+   - `apply.rs`: Settings application and reapplication
+
+5. **Interactive Menus** (`src/menu/`): FZF-based interactive menu system
+   - `mod.rs`: Menu command definitions and handlers
+   - `server.rs`: Menu server for GUI integration
+   - `client.rs`: Menu client for server communication
+   - `protocol.rs`: Communication protocol definitions
+   - `tui.rs`: Terminal user interface components
+
+6. **System Diagnostics** (`src/doctor/`): System health checks and diagnostics
    - `mod.rs`: Doctor trait definitions and orchestration
    - `checks.rs`: Individual health check implementations
+   - `command.rs`: Doctor command handlers
+   - `registry.rs`: Health check registry
+
+7. **Scratchpad Management** (`src/scratchpad/`): Terminal scratchpad functionality
+   - `mod.rs`: Scratchpad command definitions
+   - `operations.rs`: Scratchpad operations (show, hide, toggle)
+   - `terminal.rs`: Terminal management
+   - `visibility.rs`: Window visibility management
+
+8. **Application Launcher** (`src/launch/`): Desktop application launcher
+   - `mod.rs`: Launch command handlers
+   - `desktop.rs`: Desktop file parsing
+   - `execute.rs`: Application execution
+   - `cache.rs`: Application cache management
+
+9. **Development Tools** (`src/dev/`): Development utilities
+   - `mod.rs`: Dev command definitions
+   - `clone.rs`: Repository cloning utilities
+   - `install.rs`: Installation helpers
+   - `github.rs`: GitHub integration
+
+10. **Restic Wrapper** (`src/restic/`): Backup system integration
+    - `wrapper.rs`: Restic command wrapper
+    - `error.rs`: Error handling for restic operations
+    - `logging.rs`: Restic command logging
 
 ### Key Concepts
 
@@ -206,6 +257,7 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 - `ins dot status [<path>]`: Check repository status
 - `ins dot init`: Initialize current directory as a dotfile repo
 - `ins dot add <path>`: Add new dotfiles to tracking
+- `ins dot diff [<path>]`: Show differences between source and target files
 - `ins dot repo add <url>`: Add a new dotfile repository
 - `ins dot repo list`: List all configured repositories
 - `ins dot repo remove <name>`: Remove a repository
@@ -214,13 +266,33 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 - `ins dot repo disable <name>`: Disable a repository temporarily
 - `ins dot repo subdirs list <name>`: List available subdirectories
 - `ins dot repo subdirs set <name> <subdirs...>`: Set active subdirectories
-- `ins menu confirm --message "Are you sure?" --default "false"`: Show confirmation dialog
+
+### Game Save Management Commands
+- `ins game init`: Initialize restic repository for game saves
+- `ins game add`: Add a new game to track
+- `ins game list`: List all tracked games
+- `ins game remove <game>`: Remove a game from tracking
+- `ins game backup [<game>]`: Backup game saves
+- `ins game restore [<game>]`: Restore game saves from backup
+- `ins game launch <game>`: Launch a game
+- `ins game sync <game>`: Sync game saves (backup then restore latest)
+- `ins game setup`: Set up games that have been added but not configured
+- `ins game prune`: Clean up old backup snapshots
+
+### System Settings Commands
+- `ins settings`: Open interactive settings UI
+- `ins settings apply`: Reapply settings that don't persist across reboots
+- `ins settings list`: List available settings and categories
+- `ins settings list --categories`: List only setting categories
+
+### Interactive Menu Commands
+- `ins menu confirm --message "Are you sure?"`: Show confirmation dialog
 - `ins menu choice --prompt "Select an item:" --multi`: Show selection menu
 - `ins menu input --prompt "Type a value:"`: Show text input dialog
-- `ins scratchpad toggle`: Toggle scratchpad terminal visibility (create if doesn't exist)
-- `ins scratchpad show`: Show scratchpad terminal (create if doesn't exist)
-- `ins scratchpad hide`: Hide scratchpad terminal
-- `ins scratchpad status`: Check if scratchpad terminal is currently visible
+- `ins menu password --prompt "Enter password:"`: Show password input dialog
+- `ins menu server launch`: Launch menu server
+- `ins menu server stop`: Stop menu server
+- `ins menu status`: Get menu server status
 
 ### Scratchpad Commands
 - `ins scratchpad toggle`: Toggle scratchpad terminal visibility (create if doesn't exist)
@@ -253,8 +325,16 @@ ins scratchpad show --name term2 --command zsh
 ins scratchpad hide --name term1
 ```
 
-### System Diagnostics
+### Application Launcher Commands
+- `ins launch`: Launch applications interactively
+- `ins launch --list`: List available applications
+
+### System Diagnostics Commands
 - `ins doctor`: Run system diagnostics and fixes
+
+### Development Commands
+- `ins dev clone`: Clone development repositories
+- `ins dev install`: Install development tools
 
 ## Multiple Subdirectories Support
 
