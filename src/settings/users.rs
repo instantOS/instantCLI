@@ -292,6 +292,21 @@ impl FzfSelectable for GroupItem {
     }
 }
 
+#[derive(Clone)]
+struct ShellItem {
+    path: String,
+}
+
+impl FzfSelectable for ShellItem {
+    fn fzf_display_text(&self) -> String {
+        format!("{} {}", char::from(Fa::Terminal), self.path)
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Text(format!("Shell: {}", self.path))
+    }
+}
+
 pub(super) fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
     let mut store = UserStore::load()?;
     let mut dirty = false;
@@ -390,10 +405,30 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
         return Ok(false);
     }
 
-    let shell = FzfWrapper::builder()
-        .prompt("Shell (default /bin/bash)")
-        .input()
-        .show_input()?;
+    // Select shell from /etc/shells
+    let available_shells = get_available_shells()?;
+    let shell_items: Vec<ShellItem> = available_shells
+        .into_iter()
+        .map(|path| ShellItem { path })
+        .collect();
+    
+    let shell = if shell_items.is_empty() {
+        ctx.emit_info(
+            "settings.users.shell",
+            "No shells found in /etc/shells, using default",
+        );
+        default_shell()
+    } else {
+        let selected = FzfWrapper::builder()
+            .prompt("Select shell")
+            .header("Choose a shell from /etc/shells (Esc for default)")
+            .select(shell_items)?;
+
+        match selected {
+            crate::fzf_wrapper::FzfResult::Selected(item) => item.path,
+            _ => default_shell(),
+        }
+    };
 
     // Use group selection menu instead of comma-separated input
     let all_groups = get_all_system_groups()?;
@@ -478,19 +513,35 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                 changed = true;
             }
             Some(UserActionItem::ChangeShell) => {
-                let input = FzfWrapper::builder()
-                    .prompt("Shell")
-                    .header("Enter new shell path")
-                    .input()
-                    .show_input()?;
-                if input.trim().is_empty() {
+                let available_shells = get_available_shells()?;
+                let shell_items: Vec<ShellItem> = available_shells
+                    .into_iter()
+                    .map(|path| ShellItem { path })
+                    .collect();
+                
+                if shell_items.is_empty() {
+                    ctx.emit_info(
+                        "settings.users.shell",
+                        "No shells found in /etc/shells",
+                    );
                     continue;
                 }
-                current_spec.shell = input;
-                current_spec = current_spec.sanitized();
-                store.insert(username, current_spec.clone());
-                apply_user_spec(ctx, username, &current_spec)?;
-                changed = true;
+
+                let selected = FzfWrapper::builder()
+                    .prompt("Select shell")
+                    .header("Choose a shell from /etc/shells")
+                    .select(shell_items)?;
+
+                match selected {
+                    crate::fzf_wrapper::FzfResult::Selected(item) => {
+                        current_spec.shell = item.path;
+                        current_spec = current_spec.sanitized();
+                        store.insert(username, current_spec.clone());
+                        apply_user_spec(ctx, username, &current_spec)?;
+                        changed = true;
+                    }
+                    _ => {}
+                }
             }
             Some(UserActionItem::ChangePassword) => {
                 if let Some(password) = prompt_password_with_confirmation(ctx, "New password")? {
@@ -914,4 +965,27 @@ fn get_all_system_groups() -> Result<Vec<String>> {
         .collect();
 
     Ok(groups)
+}
+
+fn get_available_shells() -> Result<Vec<String>> {
+    let shells_path = std::path::Path::new("/etc/shells");
+    if !shells_path.exists() {
+        return Ok(vec![default_shell()]);
+    }
+
+    let contents = fs::read_to_string(shells_path)
+        .context("reading /etc/shells")?;
+    
+    let shells: Vec<String> = contents
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| line.to_string())
+        .collect();
+
+    if shells.is_empty() {
+        Ok(vec![default_shell()])
+    } else {
+        Ok(shells)
+    }
 }
