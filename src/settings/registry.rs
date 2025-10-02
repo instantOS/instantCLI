@@ -205,8 +205,7 @@ fn bluetooth_service_active() -> bool {
 }
 
 // Requirement definitions for common use cases
-pub const WIREMIX_REQUIREMENT: SettingRequirement =
-    SettingRequirement::Package(WIREMIX_PACKAGE);
+pub const WIREMIX_REQUIREMENT: SettingRequirement = SettingRequirement::Package(WIREMIX_PACKAGE);
 
 pub const BLUETOOTH_SERVICE_REQUIREMENT: SettingRequirement = SettingRequirement::Condition {
     description: "Bluetooth service must be running",

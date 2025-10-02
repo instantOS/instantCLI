@@ -15,7 +15,10 @@ pub fn launch_game(game_name: String) -> Result<()> {
     emit(
         Level::Info,
         "game.launch.preview",
-        &format!("{} Would launch game: {game_name}", char::from(NerdFont::Gamepad)),
+        &format!(
+            "{} Would launch game: {game_name}",
+            char::from(NerdFont::Gamepad)
+        ),
         None,
     );
 

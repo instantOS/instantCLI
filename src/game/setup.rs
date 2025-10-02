@@ -380,7 +380,10 @@ impl FzfSelectable for PathInfo {
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
         let mut preview = String::new();
-        preview.push_str(&format!("{} SAVE PATH DETAILS\n\n", char::from(NerdFont::Folder)));
+        preview.push_str(&format!(
+            "{} SAVE PATH DETAILS\n\n",
+            char::from(NerdFont::Folder)
+        ));
         preview.push_str(&format!("Path:           {}\n", self.path));
         preview.push_str(&format!("Usage Count:    {} snapshots\n", self.frequency));
         preview.push_str(&format!(

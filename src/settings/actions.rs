@@ -83,7 +83,6 @@ fn detect_bluetooth_hardware() -> bool {
     false
 }
 
-
 fn ensure_bluetooth_ready(ctx: &mut SettingsContext) -> Result<bool> {
     if !ctx.bool(BLUETOOTH_HARDWARE_OVERRIDE_KEY) && !detect_bluetooth_hardware() {
         let result = FzfWrapper::builder()
@@ -112,7 +111,7 @@ fn ensure_bluetooth_ready(ctx: &mut SettingsContext) -> Result<bool> {
 pub fn apply_bluetooth_service(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     // Create a systemd manager with sudo support for system services
     let systemd = SystemdManager::system_with_sudo();
-    
+
     if enabled {
         if !ensure_bluetooth_ready(ctx)? {
             ctx.set_bool(BLUETOOTH_SERVICE_KEY, false);
@@ -158,9 +157,9 @@ pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Resu
         let service_config = UserServiceConfig::new(
             UDISKIE_SERVICE_NAME,
             "udiskie removable media automounter",
-            "/usr/bin/udiskie"
+            "/usr/bin/udiskie",
         );
-        
+
         // Create the user service file
         if let Err(err) = systemd_manager.create_user_service(&service_config) {
             emit(
@@ -204,10 +203,15 @@ pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Resu
             }
         }
 
-        ctx.notify("Auto-mount", "udiskie service enabled - removable drives will auto-mount");
+        ctx.notify(
+            "Auto-mount",
+            "udiskie service enabled - removable drives will auto-mount",
+        );
     } else {
         // Disable and stop the service
-        if systemd_manager.is_enabled(UDISKIE_SERVICE_NAME) || systemd_manager.is_active(UDISKIE_SERVICE_NAME) {
+        if systemd_manager.is_enabled(UDISKIE_SERVICE_NAME)
+            || systemd_manager.is_active(UDISKIE_SERVICE_NAME)
+        {
             if let Err(err) = systemd_manager.disable_and_stop(UDISKIE_SERVICE_NAME) {
                 emit(
                     Level::Warn,

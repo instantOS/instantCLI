@@ -114,7 +114,10 @@ impl RepositoryManager {
         config: &InstantGameConfig,
         debug: bool,
     ) -> Result<()> {
-        println!("{} Rclone remote is accessible!", char::from(NerdFont::Check));
+        println!(
+            "{} Rclone remote is accessible!",
+            char::from(NerdFont::Check)
+        );
         println!(
             "{} The remote works, but no restic repository exists there yet.",
             char::from(NerdFont::Lightbulb)

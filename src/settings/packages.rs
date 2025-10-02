@@ -1,7 +1,7 @@
+use super::SettingsContext;
+use crate::fzf_wrapper::{FzfResult, FzfWrapper};
 use anyhow::{Context, Result};
 use std::process::Command;
-use crate::fzf_wrapper::{FzfWrapper, FzfResult};
-use super::SettingsContext;
 
 /// Run the interactive package installer as a settings action
 pub fn run_package_installer_action(ctx: &mut SettingsContext) -> Result<()> {
@@ -61,7 +61,7 @@ fn run_package_installer(debug: bool) -> Result<()> {
 
             // Install packages
             install_packages(&packages, debug)?;
-            
+
             // Show success message
             println!("✓ Package installation completed successfully!");
         }
@@ -104,7 +104,7 @@ fn install_packages(packages: &[String], debug: bool) -> Result<()> {
     }
 
     println!("Installing packages...");
-    
+
     let status = Command::new("sudo")
         .arg("pacman")
         .arg("-S")

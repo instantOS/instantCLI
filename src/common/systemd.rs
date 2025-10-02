@@ -49,7 +49,11 @@ pub struct UserServiceConfig {
 
 impl UserServiceConfig {
     /// Create a new user service configuration
-    pub fn new(name: impl Into<String>, description: impl Into<String>, exec_start: impl Into<String>) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        exec_start: impl Into<String>,
+    ) -> Self {
         Self {
             name: name.into(),
             description: description.into(),
@@ -111,7 +115,7 @@ pub struct SystemdManager {
 impl SystemdManager {
     /// Create a new systemd manager for the given scope
     pub fn new(scope: ServiceScope) -> Self {
-        Self { 
+        Self {
             scope,
             use_sudo: false,
         }
@@ -157,7 +161,7 @@ impl SystemdManager {
     /// Get the detailed state of a service
     pub fn get_state(&self, service_name: &str) -> ServiceState {
         let output = self.run_systemctl(&["is-active", service_name]);
-        
+
         match output {
             Ok(status) if status.success() => ServiceState::Active,
             Ok(status) => {
@@ -175,7 +179,7 @@ impl SystemdManager {
     /// Get the enablement state of a service
     pub fn get_enablement(&self, service_name: &str) -> ServiceEnablement {
         let output = self.run_systemctl(&["is-enabled", service_name]);
-        
+
         match output {
             Ok(status) if status.success() => ServiceEnablement::Enabled,
             Ok(status) => {
@@ -192,9 +196,10 @@ impl SystemdManager {
 
     /// Start a service
     pub fn start(&self, service_name: &str) -> Result<()> {
-        let status = self.run_systemctl(&["start", service_name])
+        let status = self
+            .run_systemctl(&["start", service_name])
             .with_context(|| format!("Failed to start service '{}'", service_name))?;
-        
+
         if !status.success() {
             anyhow::bail!("Failed to start service '{}'", service_name);
         }
@@ -203,9 +208,10 @@ impl SystemdManager {
 
     /// Stop a service
     pub fn stop(&self, service_name: &str) -> Result<()> {
-        let status = self.run_systemctl(&["stop", service_name])
+        let status = self
+            .run_systemctl(&["stop", service_name])
             .with_context(|| format!("Failed to stop service '{}'", service_name))?;
-        
+
         if !status.success() {
             anyhow::bail!("Failed to stop service '{}'", service_name);
         }
@@ -214,9 +220,10 @@ impl SystemdManager {
 
     /// Enable a service
     pub fn enable(&self, service_name: &str) -> Result<()> {
-        let status = self.run_systemctl(&["enable", service_name])
+        let status = self
+            .run_systemctl(&["enable", service_name])
             .with_context(|| format!("Failed to enable service '{}'", service_name))?;
-        
+
         if !status.success() {
             anyhow::bail!("Failed to enable service '{}'", service_name);
         }
@@ -225,9 +232,10 @@ impl SystemdManager {
 
     /// Disable a service
     pub fn disable(&self, service_name: &str) -> Result<()> {
-        let status = self.run_systemctl(&["disable", service_name])
+        let status = self
+            .run_systemctl(&["disable", service_name])
             .with_context(|| format!("Failed to disable service '{}'", service_name))?;
-        
+
         if !status.success() {
             anyhow::bail!("Failed to disable service '{}'", service_name);
         }
@@ -236,9 +244,10 @@ impl SystemdManager {
 
     /// Enable and start a service
     pub fn enable_and_start(&self, service_name: &str) -> Result<()> {
-        let status = self.run_systemctl(&["enable", "--now", service_name])
+        let status = self
+            .run_systemctl(&["enable", "--now", service_name])
             .with_context(|| format!("Failed to enable and start service '{}'", service_name))?;
-        
+
         if !status.success() {
             anyhow::bail!("Failed to enable and start service '{}'", service_name);
         }
@@ -247,9 +256,10 @@ impl SystemdManager {
 
     /// Disable and stop a service
     pub fn disable_and_stop(&self, service_name: &str) -> Result<()> {
-        let status = self.run_systemctl(&["disable", "--now", service_name])
+        let status = self
+            .run_systemctl(&["disable", "--now", service_name])
             .with_context(|| format!("Failed to disable and stop service '{}'", service_name))?;
-        
+
         if !status.success() {
             anyhow::bail!("Failed to disable and stop service '{}'", service_name);
         }
@@ -258,9 +268,10 @@ impl SystemdManager {
 
     /// Reload systemd daemon
     pub fn daemon_reload(&self) -> Result<()> {
-        let status = self.run_systemctl(&["daemon-reload"])
+        let status = self
+            .run_systemctl(&["daemon-reload"])
             .context("Failed to reload systemd daemon")?;
-        
+
         if !status.success() {
             anyhow::bail!("Failed to reload systemd daemon");
         }
@@ -274,12 +285,16 @@ impl SystemdManager {
         }
 
         let service_dir = self.get_user_service_dir()?;
-        std::fs::create_dir_all(&service_dir)
-            .with_context(|| format!("Failed to create service directory {}", service_dir.display()))?;
+        std::fs::create_dir_all(&service_dir).with_context(|| {
+            format!(
+                "Failed to create service directory {}",
+                service_dir.display()
+            )
+        })?;
 
         let service_path = service_dir.join(format!("{}.service", config.name));
         let service_content = config.to_service_content();
-        
+
         std::fs::write(&service_path, service_content)
             .with_context(|| format!("Failed to write service file {}", service_path.display()))?;
 
@@ -300,8 +315,12 @@ impl SystemdManager {
         }
 
         let service_dir = self.get_user_service_dir()?;
-        std::fs::create_dir_all(&service_dir)
-            .with_context(|| format!("Failed to create service directory {}", service_dir.display()))?;
+        std::fs::create_dir_all(&service_dir).with_context(|| {
+            format!(
+                "Failed to create service directory {}",
+                service_dir.display()
+            )
+        })?;
 
         let service_path = service_dir.join(format!("{}.service", service_name));
         std::fs::write(&service_path, service_content)
@@ -323,8 +342,9 @@ impl SystemdManager {
         let service_path = service_dir.join(format!("{}.service", service_name));
 
         if service_path.exists() {
-            std::fs::remove_file(&service_path)
-                .with_context(|| format!("Failed to remove service file {}", service_path.display()))?;
+            std::fs::remove_file(&service_path).with_context(|| {
+                format!("Failed to remove service file {}", service_path.display())
+            })?;
             // Reload daemon to reflect the removal
             self.daemon_reload()?;
         }
@@ -334,8 +354,7 @@ impl SystemdManager {
 
     /// Get the user service directory path
     fn get_user_service_dir(&self) -> Result<std::path::PathBuf> {
-        let config_dir = dirs::config_dir()
-            .context("unable to determine user config directory")?;
+        let config_dir = dirs::config_dir().context("unable to determine user config directory")?;
         Ok(config_dir.join("systemd").join("user"))
     }
 
@@ -355,7 +374,8 @@ impl SystemdManager {
             cmd
         };
 
-        let status = cmd.status()
+        let status = cmd
+            .status()
             .with_context(|| format!("Failed to run systemctl with args: {:?}", full_args))?;
         Ok(status)
     }
@@ -390,7 +410,7 @@ pub mod utils {
         UserServiceConfig::new(
             "udiskie",
             "udiskie removable media automounter",
-            "/usr/bin/udiskie"
+            "/usr/bin/udiskie",
         )
     }
 
@@ -406,7 +426,10 @@ mod tests {
 
     #[test]
     fn test_service_scope_args() {
-        assert_eq!(ServiceScope::System.systemctl_args(), vec![] as Vec<&'static str>);
+        assert_eq!(
+            ServiceScope::System.systemctl_args(),
+            vec![] as Vec<&'static str>
+        );
         assert_eq!(ServiceScope::User.systemctl_args(), vec!["--user"]);
     }
 
@@ -414,7 +437,7 @@ mod tests {
     fn test_user_service_config() {
         let config = UserServiceConfig::new("test-service", "Test Service", "/usr/bin/test");
         let content = config.to_service_content();
-        
+
         assert!(content.contains("Description=Test Service"));
         assert!(content.contains("ExecStart=/usr/bin/test"));
         assert!(content.contains("Restart=always"));
@@ -428,9 +451,9 @@ mod tests {
             .with_restart("on-failure")
             .with_restart_sec(10)
             .with_wanted_by("graphical.target");
-        
+
         let content = config.to_service_content();
-        
+
         assert!(content.contains("Description=Custom Service"));
         assert!(content.contains("ExecStart=/usr/bin/custom"));
         assert!(content.contains("Restart=on-failure"));

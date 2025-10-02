@@ -171,7 +171,11 @@ fn add_repository(
             emit(
                 Level::Info,
                 "dot.repo.add.clone_path",
-                &format!("{} Cloned to: {}", char::from(NerdFont::Folder), path.display()),
+                &format!(
+                    "{} Cloned to: {}",
+                    char::from(NerdFont::Folder),
+                    path.display()
+                ),
                 None,
             );
 

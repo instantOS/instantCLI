@@ -95,7 +95,11 @@ impl PackageRepo {
 
 pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
     if debug {
-        let message = format!("{} Building package: {}", char::from(NerdFont::Bug), package.name);
+        let message = format!(
+            "{} Building package: {}",
+            char::from(NerdFont::Bug),
+            package.name
+        );
         emit(Level::Debug, "dev.install.build.start", &message, None);
     }
 
@@ -134,7 +138,10 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
 
 pub async fn handle_install(debug: bool) -> Result<()> {
     if debug {
-        let start_message = format!("{} Starting package installation...", char::from(NerdFont::Bug));
+        let start_message = format!(
+            "{} Starting package installation...",
+            char::from(NerdFont::Bug)
+        );
         emit(Level::Debug, "dev.install.start", &start_message, None);
     }
 
@@ -164,7 +171,11 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     }
 
     if debug {
-        let count_message = format!("{} Found {} packages", char::from(NerdFont::Bug), packages.len());
+        let count_message = format!(
+            "{} Found {} packages",
+            char::from(NerdFont::Bug),
+            packages.len()
+        );
         emit(
             Level::Debug,
             "dev.install.packages.count",

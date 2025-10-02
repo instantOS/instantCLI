@@ -35,7 +35,10 @@ fn ensure_requirements(
 
     if !unmet.is_empty() {
         let mut messages = Vec::new();
-        messages.push(format!("Cannot use '{}' - requirements not met:", definition.title));
+        messages.push(format!(
+            "Cannot use '{}' - requirements not met:",
+            definition.title
+        ));
         messages.push(String::new());
         for req in &unmet {
             messages.push(format!("  • {}", req.description()));
@@ -126,10 +129,7 @@ pub fn handle_setting(
             ctx.emit_info("settings.action.running", summary.as_ref());
             ctx.with_definition(definition, run)?;
         }
-        SettingKind::Command {
-            summary,
-            command,
-        } => {
+        SettingKind::Command { summary, command } => {
             ctx.emit_info("settings.command.launching", summary.as_ref());
 
             ctx.with_definition(definition, |ctx| {

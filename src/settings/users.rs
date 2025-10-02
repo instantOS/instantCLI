@@ -205,7 +205,9 @@ impl FzfSelectable for UserActionItem {
             UserActionItem::ChangePassword => {
                 format!("{} Change password", format_icon(NerdFont::Key))
             }
-            UserActionItem::ManageGroups => format!("{} Manage groups", format_icon(NerdFont::List)),
+            UserActionItem::ManageGroups => {
+                format!("{} Manage groups", format_icon(NerdFont::List))
+            }
             UserActionItem::Remove => format!("{} Remove entry", format_icon(NerdFont::Trash)),
             UserActionItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
         }
@@ -263,7 +265,9 @@ enum GroupActionItem {
 impl FzfSelectable for GroupActionItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            GroupActionItem::RemoveGroup => format!("{} Remove group", format_icon(NerdFont::Minus)),
+            GroupActionItem::RemoveGroup => {
+                format!("{} Remove group", format_icon(NerdFont::Minus))
+            }
             GroupActionItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
         }
     }
@@ -315,12 +319,12 @@ pub(super) fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
         // Get all users: from TOML + system users with home directories
         let system_users = get_system_users_with_home()?;
         let mut all_usernames = BTreeSet::new();
-        
+
         // Add users from TOML
         for username in store.iter().map(|(name, _)| name.clone()) {
             all_usernames.insert(username);
         }
-        
+
         // Add system users with home directories
         for username in system_users {
             all_usernames.insert(username);
@@ -330,7 +334,7 @@ pub(super) fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
             .into_iter()
             .filter_map(|username| {
                 let in_toml = store.get(&username).is_some();
-                
+
                 // Try to get info from store first, then from system
                 let (shell, groups) = if let Some(spec) = store.get(&username) {
                     (spec.shell.clone(), spec.groups.clone())
@@ -411,7 +415,7 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
         .into_iter()
         .map(|path| ShellItem { path })
         .collect();
-    
+
     let shell = if shell_items.is_empty() {
         ctx.emit_info(
             "settings.users.shell",
@@ -518,12 +522,9 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                     .into_iter()
                     .map(|path| ShellItem { path })
                     .collect();
-                
+
                 if shell_items.is_empty() {
-                    ctx.emit_info(
-                        "settings.users.shell",
-                        "No shells found in /etc/shells",
-                    );
+                    ctx.emit_info("settings.users.shell", "No shells found in /etc/shells");
                     continue;
                 }
 
@@ -584,7 +585,7 @@ fn manage_user_groups(
             .iter()
             .map(|name| GroupMenuItem::ExistingGroup(name.clone()))
             .collect();
-        
+
         items.push(GroupMenuItem::AddGroup);
         items.push(GroupMenuItem::Back);
 
@@ -664,16 +665,12 @@ fn manage_single_group(
     spec: &mut UserSpec,
     group_name: &str,
 ) -> Result<bool> {
-    let actions = vec![
-        GroupActionItem::RemoveGroup,
-        GroupActionItem::Back,
-    ];
+    let actions = vec![GroupActionItem::RemoveGroup, GroupActionItem::Back];
 
     match select_one_with_style(actions)? {
         Some(GroupActionItem::RemoveGroup) => {
             // Get primary group to prevent removal
-            let primary_group = get_user_info(username)?
-                .and_then(|info| info.primary_group);
+            let primary_group = get_user_info(username)?.and_then(|info| info.primary_group);
 
             // Don't remove primary group
             if Some(group_name) == primary_group.as_deref() {
@@ -688,19 +685,22 @@ fn manage_single_group(
             *spec = spec.sanitized();
             store.insert(username, spec.clone());
             apply_user_spec(ctx, username, spec)?;
-            
+
             ctx.emit_success(
                 "settings.users.groups",
                 &format!("Removed {} from {}", group_name, username),
             );
-            
+
             Ok(true)
         }
         _ => Ok(false),
     }
 }
 
-fn prompt_password_with_confirmation(ctx: &SettingsContext, prompt: &str) -> Result<Option<String>> {
+fn prompt_password_with_confirmation(
+    ctx: &SettingsContext,
+    prompt: &str,
+) -> Result<Option<String>> {
     let password1 = FzfWrapper::builder()
         .prompt(prompt)
         .password()
@@ -973,9 +973,8 @@ fn get_available_shells() -> Result<Vec<String>> {
         return Ok(vec![default_shell()]);
     }
 
-    let contents = fs::read_to_string(shells_path)
-        .context("reading /etc/shells")?;
-    
+    let contents = fs::read_to_string(shells_path).context("reading /etc/shells")?;
+
     let shells: Vec<String> = contents
         .lines()
         .map(|line| line.trim())

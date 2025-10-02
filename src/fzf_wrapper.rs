@@ -11,14 +11,14 @@ fn shell_escape(s: &str) -> String {
     if s.is_empty() {
         return "''".to_string();
     }
-    
+
     // If the string contains no special characters, return as-is
-    if s.chars().all(|c| {
-        c.is_alphanumeric() || matches!(c, '-' | '_' | '=' | '/' | '.' | ':' | ',')
-    }) {
+    if s.chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '=' | '/' | '.' | ':' | ','))
+    {
         return s.to_string();
     }
-    
+
     // Otherwise, wrap in single quotes and escape any single quotes
     format!("'{}'", s.replace('\'', r"'\''"))
 }
@@ -254,10 +254,10 @@ impl FzfBuilder {
 
     /// Execute selection from a streaming command output
     /// This allows fzf to start showing results before the command completes
-    /// 
+    ///
     /// # Arguments
     /// * `command` - Shell command that generates list items (one per line)
-    /// 
+    ///
     /// # Example
     /// ```
     /// // Show package list from pacman as it loads
@@ -662,7 +662,7 @@ impl FzfWrapper {
     pub fn select_streaming(&self, input_command: &str) -> Result<FzfResult<String>> {
         // Build fzf arguments
         let mut fzf_args = vec!["--tiebreak=index".to_string()];
-        
+
         if self.multi_select {
             fzf_args.push("--multi".to_string());
         }
@@ -682,11 +682,9 @@ impl FzfWrapper {
         // Build the full command: input_command | fzf args...
         let mut cmd = Command::new("sh");
         cmd.arg("-c");
-        
+
         // Properly escape arguments for shell
-        let escaped_args: Vec<String> = fzf_args.iter()
-            .map(|arg| shell_escape(arg))
-            .collect();
+        let escaped_args: Vec<String> = fzf_args.iter().map(|arg| shell_escape(arg)).collect();
         let fzf_cmd = format!("fzf {}", escaped_args.join(" "));
         let full_command = format!("{} | {}", input_command, fzf_cmd);
         cmd.arg(&full_command);

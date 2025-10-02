@@ -61,7 +61,7 @@ pub fn run_settings_ui(
             // Find the setting and determine its index in the search view
             let mut target_index = None;
             let mut found = false;
-            
+
             let mut idx = 0;
             for category in CATEGORIES {
                 let definitions = registry::settings_for_category(category.id);
@@ -77,11 +77,11 @@ pub fn run_settings_ui(
                     break;
                 }
             }
-            
+
             if !found {
                 anyhow::bail!("Setting '{}' not found", setting_id);
             }
-            
+
             InitialView::SearchAll(target_index)
         }
         Some(SettingsNavigation::Category(category_id)) => {
@@ -95,17 +95,15 @@ pub fn run_settings_ui(
 
     loop {
         match initial_view {
-            InitialView::MainMenu(cursor) => {
-                match run_main_menu(&mut ctx, cursor)? {
-                    MenuAction::EnterCategory(category, cursor) => {
-                        initial_view = InitialView::Category(category, cursor);
-                    }
-                    MenuAction::EnterSearch(cursor) => {
-                        initial_view = InitialView::SearchAll(cursor);
-                    }
-                    MenuAction::Exit => break,
+            InitialView::MainMenu(cursor) => match run_main_menu(&mut ctx, cursor)? {
+                MenuAction::EnterCategory(category, cursor) => {
+                    initial_view = InitialView::Category(category, cursor);
                 }
-            }
+                MenuAction::EnterSearch(cursor) => {
+                    initial_view = InitialView::SearchAll(cursor);
+                }
+                MenuAction::Exit => break,
+            },
             InitialView::Category(category, cursor) => {
                 if handle_category(&mut ctx, category, cursor)? {
                     // User selected Back or Esc, return to main menu
@@ -259,10 +257,7 @@ pub fn handle_category(
     }
 }
 
-pub fn handle_search_all(
-    ctx: &mut SettingsContext,
-    initial_cursor: Option<usize>,
-) -> Result<bool> {
+pub fn handle_search_all(ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Result<bool> {
     let mut cursor = initial_cursor;
 
     loop {

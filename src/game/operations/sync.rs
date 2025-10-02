@@ -421,7 +421,11 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     let summary_title = if matches!(get_output_format(), OutputFormat::Json) {
         "Sync Summary".to_string()
     } else {
-        format!("{} {} Sync Summary", char::from(NerdFont::Chart), char::from(NerdFont::List))
+        format!(
+            "{} {} Sync Summary",
+            char::from(NerdFont::Chart),
+            char::from(NerdFont::List)
+        )
     };
 
     if matches!(get_output_format(), OutputFormat::Json) {

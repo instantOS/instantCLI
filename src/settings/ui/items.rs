@@ -78,7 +78,10 @@ impl FzfSelectable for CategoryItem {
 
         if !highlights.is_empty() {
             lines.push(String::new());
-            lines.push(format!("{} Featured settings:", char::from(NerdFont::Lightbulb)));
+            lines.push(format!(
+                "{} Featured settings:",
+                char::from(NerdFont::Lightbulb)
+            ));
 
             for definition in highlights {
                 lines.push(format!(
@@ -86,10 +89,7 @@ impl FzfSelectable for CategoryItem {
                     char::from(definition.icon),
                     definition.title,
                 ));
-                lines.push(format!(
-                    "    {}",
-                    setting_summary(definition)
-                ));
+                lines.push(format!("    {}", setting_summary(definition)));
             }
         }
 
@@ -130,7 +130,12 @@ impl FzfSelectable for SettingItem {
         match self.state {
             SettingState::Toggle { enabled } => {
                 let status_text = if enabled { "[ON]" } else { "[OFF]" };
-                format!("{} {} {}", format_icon(self.definition.icon), self.definition.title, status_text)
+                format!(
+                    "{} {} {}",
+                    format_icon(self.definition.icon),
+                    self.definition.title,
+                    status_text
+                )
             }
             SettingState::Choice { current_index } => {
                 let glyph = NerdFont::List;
@@ -222,7 +227,12 @@ impl FzfSelectable for ChoiceItem {
             NerdFont::Square
         };
         let status_text = if self.is_current { "[✓]" } else { "[ ]" };
-        format!("{} {} {}", format_icon(glyph), self.option.label, status_text)
+        format!(
+            "{} {} {}",
+            format_icon(glyph),
+            self.option.label,
+            status_text
+        )
     }
 
     fn fzf_preview(&self) -> crate::fzf_wrapper::FzfPreview {
@@ -239,7 +249,12 @@ impl FzfSelectable for SearchItem {
         match self.state {
             SettingState::Toggle { enabled } => {
                 let status_text = if enabled { "[ON]" } else { "[OFF]" };
-                format!("{} {} {}", format_icon(self.definition.icon), path, status_text)
+                format!(
+                    "{} {} {}",
+                    format_icon(self.definition.icon),
+                    path,
+                    status_text
+                )
             }
             SettingState::Choice { current_index } => {
                 let glyph = NerdFont::List;

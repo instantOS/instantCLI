@@ -175,5 +175,5 @@ pub fn separator(light: bool) {
 }
 
 pub mod prelude {
-    pub use super::{NerdFont, Level, OutputFormat, emit, get_output_format, separator};
+    pub use super::{Level, NerdFont, OutputFormat, emit, get_output_format, separator};
 }
