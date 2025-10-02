@@ -2,7 +2,7 @@ use super::init::initialize_restic_repo;
 use crate::dot::path_serde::TildePath;
 use crate::fzf_wrapper::FzfWrapper;
 use crate::game::config::InstantGameConfig;
-use crate::ui::Fa;
+use crate::ui::NerdFont;
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -31,7 +31,7 @@ impl RepositoryManager {
                     if e.to_string().contains("reconfiguration needed") {
                         println!(
                             "{} Starting repository reconfiguration...",
-                            char::from(Fa::StepForward)
+                            char::from(NerdFont::Play)
                         );
                         // Clear the current config to force new setup
                         config.repo =
@@ -61,20 +61,20 @@ impl RepositoryManager {
 
         println!(
             "{} Testing repository connection...",
-            char::from(Fa::Search)
+            char::from(NerdFont::Search)
         );
         match Self::validate_repository_connection(&config.repo, &config.repo_password, debug) {
             Ok(()) => {
                 println!(
                     "{} Repository connection is working properly!",
-                    char::from(Fa::Check)
+                    char::from(NerdFont::Check)
                 );
                 Ok(())
             }
             Err(e) => {
                 println!(
                     "{} Repository connection test failed: {e}",
-                    char::from(Fa::TimesCircle)
+                    char::from(NerdFont::CrossCircle)
                 );
                 Self::handle_connection_failure(config, debug)
             }
@@ -100,7 +100,7 @@ impl RepositoryManager {
     ) -> Result<()> {
         println!(
             "{} Detected rclone remote configuration. Testing remote accessibility...",
-            char::from(Fa::Search)
+            char::from(NerdFont::Search)
         );
 
         match Self::test_rclone_remote(repo_str, debug) {
@@ -114,16 +114,16 @@ impl RepositoryManager {
         config: &InstantGameConfig,
         debug: bool,
     ) -> Result<()> {
-        println!("{} Rclone remote is accessible!", char::from(Fa::Check));
+        println!("{} Rclone remote is accessible!", char::from(NerdFont::Check));
         println!(
             "{} The remote works, but no restic repository exists there yet.",
-            char::from(Fa::LightbulbO)
+            char::from(NerdFont::Lightbulb)
         );
 
         // Use message dialog before the interactive prompt
         let message = format!(
             "{} Repository Creation Options:\n\nYour rclone remote is working, but there's no restic repository there yet.",
-            char::from(Fa::Flag)
+            char::from(NerdFont::Flag)
         );
 
         FzfWrapper::message(&message)?;
@@ -142,12 +142,12 @@ impl RepositoryManager {
     fn create_repository_in_existing_remote(config: &InstantGameConfig, debug: bool) -> Result<()> {
         println!(
             "{} Creating restic repository in existing remote...",
-            char::from(Fa::Upload)
+            char::from(NerdFont::Upload)
         );
         if initialize_restic_repo(config.repo.as_path(), &config.repo_password, debug)? {
             println!(
                 "{} Repository created successfully in existing remote!",
-                char::from(Fa::Check)
+                char::from(NerdFont::Check)
             );
             Ok(())
         } else {
@@ -162,7 +162,7 @@ impl RepositoryManager {
         // Use message dialog before the interactive prompt
         let message = format!(
             "{} Repository Configuration:\n\nYou chose not to create a repository in the existing remote.\nWould you like to reconfigure the repository settings instead?",
-            char::from(Fa::List)
+            char::from(NerdFont::List)
         );
 
         FzfWrapper::message(&message)?;
@@ -172,7 +172,7 @@ impl RepositoryManager {
             crate::fzf_wrapper::ConfirmResult::Yes => {
                 println!(
                     "{} Proceeding with reconfiguration...",
-                    char::from(Fa::StepForward)
+                    char::from(NerdFont::Play)
                 );
                 Err(anyhow::anyhow!("Repository reconfiguration needed"))
             }
@@ -188,8 +188,8 @@ impl RepositoryManager {
         // Use message dialog before the interactive prompt
         let message = format!(
             "{} Rclone Remote Issue:\n\nRclone remote test failed: {remote_error}\n{} The remote configuration may be incorrect or inaccessible.\n\nWould you like to reconfigure the repository settings?",
-            char::from(Fa::TimesCircle),
-            char::from(Fa::LightbulbO)
+            char::from(NerdFont::CrossCircle),
+            char::from(NerdFont::Lightbulb)
         );
 
         FzfWrapper::message(&message)?;
@@ -199,7 +199,7 @@ impl RepositoryManager {
             crate::fzf_wrapper::ConfirmResult::Yes => {
                 println!(
                     "{} Proceeding with reconfiguration...",
-                    char::from(Fa::StepForward)
+                    char::from(NerdFont::Play)
                 );
                 Err(anyhow::anyhow!("Repository reconfiguration needed"))
             }
@@ -215,7 +215,7 @@ impl RepositoryManager {
         // Use message dialog before the interactive prompt
         let message = format!(
             "{} Repository Connection Failed:\n\nThe repository connection failed.\nWould you like to reconfigure the repository settings?",
-            char::from(Fa::TimesCircle)
+            char::from(NerdFont::CrossCircle)
         );
 
         FzfWrapper::message(&message)?;
@@ -225,7 +225,7 @@ impl RepositoryManager {
             crate::fzf_wrapper::ConfirmResult::Yes => {
                 println!(
                     "{} Proceeding with reconfiguration...",
-                    char::from(Fa::StepForward)
+                    char::from(NerdFont::Play)
                 );
                 Err(anyhow::anyhow!("Repository reconfiguration needed"))
             }
@@ -271,7 +271,7 @@ impl RepositoryManager {
             config.save()?;
             println!(
                 "{} Game save manager initialized successfully!",
-                char::from(Fa::Check)
+                char::from(NerdFont::Check)
             );
             println!(
                 "Repository: {}",
@@ -371,7 +371,7 @@ impl RepositoryManager {
         // Show helpful information about repository formats using message dialog
         let message = format!(
             "{} Repository Options:\n\n• Local path: /path/to/repo or ~/games/repo\n• Rclone remote: rclone:remote:name\n• SFTP: sftp:user@host:/path\n• S3: s3:bucketname\n• Other: See restic documentation for supported backends\n\nEnter your repository path or leave empty for default local repository.",
-            char::from(Fa::Folder)
+            char::from(NerdFont::Folder)
         );
 
         // Show message then prompt for input
@@ -405,15 +405,15 @@ impl RepositoryManager {
             if repo_input.starts_with("rclone:") {
                 println!(
                     "{} Configuring rclone remote: {repo_input}",
-                    char::from(Fa::Folder)
+                    char::from(NerdFont::Folder)
                 );
                 println!(
                     "{} Make sure your rclone is configured and the remote exists",
-                    char::from(Fa::LightbulbO)
+                    char::from(NerdFont::Lightbulb)
                 );
                 println!(
                     "{} Test with: rclone lsd {repo_input}",
-                    char::from(Fa::Terminal)
+                    char::from(NerdFont::Terminal)
                 );
             }
 

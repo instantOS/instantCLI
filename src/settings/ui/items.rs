@@ -70,7 +70,7 @@ impl FzfSelectable for CategoryItem {
 
         lines.push(format!(
             "{} {}",
-            char::from(Fa::InfoCircle),
+            char::from(NerdFont::Info),
             self.category.description
         ));
 
@@ -78,7 +78,7 @@ impl FzfSelectable for CategoryItem {
 
         if !highlights.is_empty() {
             lines.push(String::new());
-            lines.push(format!("{} Featured settings:", char::from(Fa::LightbulbO)));
+            lines.push(format!("{} Featured settings:", char::from(NerdFont::Lightbulb)));
 
             for definition in highlights {
                 lines.push(format!(
@@ -96,7 +96,7 @@ impl FzfSelectable for CategoryItem {
         lines.push(String::new());
         lines.push(format!(
             "{} {} total setting{}",
-            char::from(Fa::List),
+            char::from(NerdFont::List),
             self.total,
             if self.total == 1 { "" } else { "s" }
         ));
@@ -109,7 +109,7 @@ impl FzfSelectable for CategoryMenuItem {
     fn fzf_display_text(&self) -> String {
         match self {
             CategoryMenuItem::SearchAll => {
-                format!("{} Search all settings", format_icon(Fa::Search))
+                format!("{} Search all settings", format_icon(NerdFont::Search))
             }
             CategoryMenuItem::Category(item) => item.fzf_display_text(),
         }
@@ -129,11 +129,11 @@ impl FzfSelectable for SettingItem {
     fn fzf_display_text(&self) -> String {
         match self.state {
             SettingState::Toggle { enabled } => {
-                let glyph = if enabled { Fa::ToggleOn } else { Fa::ToggleOff };
+                let glyph = if enabled { NerdFont::ToggleOn } else { NerdFont::ToggleOff };
                 format!("{} {}", format_icon(glyph), self.definition.title)
             }
             SettingState::Choice { current_index } => {
-                let glyph = Fa::List;
+                let glyph = NerdFont::List;
                 let current_label =
                     if let SettingKind::Choice { options, .. } = &self.definition.kind {
                         current_index
@@ -158,8 +158,8 @@ impl FzfSelectable for SettingItem {
             SettingState::Command => {
                 let glyph = match &self.definition.kind {
                     SettingKind::Command { command, .. } => match command.style {
-                        crate::settings::registry::CommandStyle::Terminal => Fa::Terminal,
-                        crate::settings::registry::CommandStyle::Detached => Fa::ExternalLink,
+                        crate::settings::registry::CommandStyle::Terminal => NerdFont::Terminal,
+                        crate::settings::registry::CommandStyle::Detached => NerdFont::ExternalLink,
                     },
                     _ => self.definition.icon,
                 };
@@ -199,7 +199,7 @@ impl FzfSelectable for CategoryPageItem {
         match self {
             CategoryPageItem::Setting(item) => item.fzf_display_text(),
             CategoryPageItem::Back => {
-                format!("{} Back", format_icon(Fa::ArrowLeft))
+                format!("{} Back", format_icon(NerdFont::ArrowLeft))
             }
         }
     }
@@ -217,9 +217,9 @@ impl FzfSelectable for CategoryPageItem {
 impl FzfSelectable for ChoiceItem {
     fn fzf_display_text(&self) -> String {
         let glyph = if self.is_current {
-            Fa::CheckSquareO
+            NerdFont::CheckSquare
         } else {
-            Fa::SquareO
+            NerdFont::Square
         };
         format!("{} {}", format_icon(glyph), self.option.label)
     }
@@ -237,11 +237,11 @@ impl FzfSelectable for SearchItem {
         let path = super::format_setting_path(self.category, self.definition);
         match self.state {
             SettingState::Toggle { enabled } => {
-                let glyph = if enabled { Fa::ToggleOn } else { Fa::ToggleOff };
+                let glyph = if enabled { NerdFont::ToggleOn } else { NerdFont::ToggleOff };
                 format!("{} {}", format_icon(glyph), path)
             }
             SettingState::Choice { current_index } => {
-                let glyph = Fa::List;
+                let glyph = NerdFont::List;
                 let current_label =
                     if let SettingKind::Choice { options, .. } = &self.definition.kind {
                         current_index
@@ -259,8 +259,8 @@ impl FzfSelectable for SearchItem {
             SettingState::Command => {
                 let glyph = match &self.definition.kind {
                     SettingKind::Command { command, .. } => match command.style {
-                        crate::settings::registry::CommandStyle::Terminal => Fa::Terminal,
-                        crate::settings::registry::CommandStyle::Detached => Fa::ExternalLink,
+                        crate::settings::registry::CommandStyle::Terminal => NerdFont::Terminal,
+                        crate::settings::registry::CommandStyle::Detached => NerdFont::ExternalLink,
                     },
                     _ => self.definition.icon,
                 };

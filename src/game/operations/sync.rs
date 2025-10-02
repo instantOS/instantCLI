@@ -79,7 +79,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit_with_icon(
                     Level::Error,
                     "game.sync.installation_missing",
-                    char::from(Fa::TimesCircle),
+                    char::from(NerdFont::CrossCircle),
                     format!("Error: No installation found for game '{name}'."),
                     format!("Error: No installation found for game '{}'.", name.red()),
                     Some(serde_json::json!({
@@ -90,7 +90,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit_with_icon(
                     Level::Info,
                     "game.sync.hint.add",
-                    char::from(Fa::InfoCircle),
+                    char::from(NerdFont::Info),
                     format!(
                         "Please add the game first using '{} game add'.",
                         env!("CARGO_BIN_NAME")
@@ -116,7 +116,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
         emit_with_icon(
             Level::Warn,
             "game.sync.none",
-            char::from(Fa::ExclamationCircle),
+            char::from(NerdFont::Warning),
             "No games configured for syncing.".to_string(),
             "No games configured for syncing.".to_string(),
             Some(serde_json::json!({
@@ -126,7 +126,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
         emit_with_icon(
             Level::Info,
             "game.sync.hint.add",
-            char::from(Fa::InfoCircle),
+            char::from(NerdFont::Info),
             format!("Add games using '{} game add'.", env!("CARGO_BIN_NAME")),
             format!("Add games using '{} game add'.", env!("CARGO_BIN_NAME")),
             Some(serde_json::json!({
@@ -149,7 +149,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit_with_icon(
                     Level::Success,
                     "game.sync.already_in_sync",
-                    char::from(Fa::Check),
+                    char::from(NerdFont::Check),
                     format!("{}: Already in sync", game_name_plain),
                     format!("{}: Already in sync", installation.game_name.0.green()),
                     Some(serde_json::json!({
@@ -163,7 +163,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit_with_icon(
                     Level::Info,
                     "game.sync.restore_skipped",
-                    char::from(Fa::InfoCircle),
+                    char::from(NerdFont::Info),
                     format!(
                         "{}: Cloud checkpoint {} already matches your local saves (use --force to override)",
                         game_name_plain, snapshot_id
@@ -185,7 +185,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit_with_icon(
                     Level::Info,
                     "game.sync.backup.start",
-                    char::from(Fa::Upload),
+                    char::from(NerdFont::Upload),
                     format!("{}: Creating backup...", game_name_plain.clone()),
                     format!("{}: Creating backup...", installation.game_name.0.yellow()),
                     Some(serde_json::json!({
@@ -197,7 +197,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit_with_icon(
                         Level::Error,
                         "game.sync.backup.failed",
-                        char::from(Fa::TimesCircle),
+                        char::from(NerdFont::CrossCircle),
                         format!("{}: Backup failed: {}", game_name_plain.clone(), e),
                         format!("{}: Backup failed: {}", installation.game_name.0.red(), e),
                         Some(serde_json::json!({
@@ -211,7 +211,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit_with_icon(
                         Level::Success,
                         "game.sync.backup.completed",
-                        char::from(Fa::Check),
+                        char::from(NerdFont::Check),
                         format!("{}: Backup completed", game_name_plain.clone()),
                         format!("{}: Backup completed", installation.game_name.0.green()),
                         Some(serde_json::json!({
@@ -226,7 +226,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit_with_icon(
                     Level::Info,
                     "game.sync.restore.start",
-                    char::from(Fa::InfoCircle),
+                    char::from(NerdFont::Info),
                     format!("{}: Restoring from snapshot...", game_name_plain.clone()),
                     format!(
                         "{}: Restoring from snapshot...",
@@ -244,7 +244,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit_with_icon(
                         Level::Error,
                         "game.sync.restore.failed",
-                        char::from(Fa::TimesCircle),
+                        char::from(NerdFont::CrossCircle),
                         format!("{}: Restore failed: {}", game_name_plain.clone(), e),
                         format!("{}: Restore failed: {}", installation.game_name.0.red(), e),
                         Some(serde_json::json!({
@@ -259,7 +259,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit_with_icon(
                         Level::Success,
                         "game.sync.restore.completed",
-                        char::from(Fa::Check),
+                        char::from(NerdFont::Check),
                         format!("{}: Restore completed", game_name_plain.clone()),
                         format!("{}: Restore completed", installation.game_name.0.green()),
                         Some(serde_json::json!({
@@ -275,7 +275,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit_with_icon(
                     Level::Info,
                     "game.sync.restore.latest.start",
-                    char::from(Fa::InfoCircle),
+                    char::from(NerdFont::Info),
                     format!(
                         "{}: No local saves, restoring from latest snapshot...",
                         game_name_plain.clone()
@@ -296,7 +296,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit_with_icon(
                         Level::Error,
                         "game.sync.restore.latest.failed",
-                        char::from(Fa::TimesCircle),
+                        char::from(NerdFont::CrossCircle),
                         format!("{}: Restore failed: {}", game_name_plain.clone(), e),
                         format!("{}: Restore failed: {}", installation.game_name.0.red(), e),
                         Some(serde_json::json!({
@@ -311,7 +311,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit_with_icon(
                         Level::Success,
                         "game.sync.restore.latest.completed",
-                        char::from(Fa::Check),
+                        char::from(NerdFont::Check),
                         format!("{}: Restore completed", game_name_plain.clone()),
                         format!("{}: Restore completed", installation.game_name.0.green()),
                         Some(serde_json::json!({
@@ -327,7 +327,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit_with_icon(
                     Level::Info,
                     "game.sync.initial_backup.start",
-                    char::from(Fa::Upload),
+                    char::from(NerdFont::Upload),
                     format!(
                         "{}: No snapshots found, creating initial backup...",
                         game_name_plain.clone()
@@ -345,7 +345,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit_with_icon(
                         Level::Error,
                         "game.sync.initial_backup.failed",
-                        char::from(Fa::TimesCircle),
+                        char::from(NerdFont::CrossCircle),
                         format!("{}: Initial backup failed: {}", game_name_plain.clone(), e),
                         format!(
                             "{}: Initial backup failed: {}",
@@ -363,7 +363,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     emit_with_icon(
                         Level::Success,
                         "game.sync.initial_backup.completed",
-                        char::from(Fa::Check),
+                        char::from(NerdFont::Check),
                         format!("{}: Initial backup completed", game_name_plain.clone()),
                         format!(
                             "{}: Initial backup completed",
@@ -381,7 +381,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit_with_icon(
                     Level::Error,
                     "game.sync.error",
-                    char::from(Fa::TimesCircle),
+                    char::from(NerdFont::CrossCircle),
                     format!("{}: {}", game_name_plain.clone(), msg),
                     format!("{}: {}", installation.game_name.0.red(), msg),
                     Some(serde_json::json!({
@@ -396,7 +396,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                 emit_with_icon(
                     Level::Error,
                     "game.sync.failed",
-                    char::from(Fa::TimesCircle),
+                    char::from(NerdFont::CrossCircle),
                     format!("{}: Sync failed: {}", game_name_plain.clone(), e),
                     format!("{}: Sync failed: {}", installation.game_name.0.red(), e),
                     Some(serde_json::json!({
@@ -421,7 +421,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     let summary_title = if matches!(get_output_format(), OutputFormat::Json) {
         "Sync Summary".to_string()
     } else {
-        format!("📊 {} Sync Summary", char::from(Fa::List))
+        format!("{} {} Sync Summary", char::from(NerdFont::Chart), char::from(NerdFont::List))
     };
 
     if matches!(get_output_format(), OutputFormat::Json) {
@@ -448,21 +448,21 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
         let entries = [
             (
                 Level::Success,
-                Some(char::from(Fa::Check)),
+                Some(char::from(NerdFont::Check)),
                 "Synced",
                 total_synced,
                 "game.sync.summary.synced",
             ),
             (
                 Level::Info,
-                Some(char::from(Fa::Flag)),
+                Some(char::from(NerdFont::Flag)),
                 "Skipped",
                 total_skipped,
                 "game.sync.summary.skipped",
             ),
             (
                 Level::Error,
-                Some(char::from(Fa::TimesCircle)),
+                Some(char::from(NerdFont::CrossCircle)),
                 "Errors",
                 total_errors,
                 "game.sync.summary.errors",

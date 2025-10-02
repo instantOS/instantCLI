@@ -65,7 +65,7 @@ fn show_available_fixes(results: &[CheckResult]) {
                     "doctor.available_fixes",
                     &format!(
                         "{} Available fixes: {} fixable issues detected",
-                        char::from(Fa::List),
+                        char::from(NerdFont::List),
                         fixes_data.len()
                     ),
                     Some(serde_json::json!({
@@ -92,7 +92,7 @@ fn show_available_fixes(results: &[CheckResult]) {
                     "doctor.manual_intervention",
                     &format!(
                         "{} Manual intervention required: {} issues need attention",
-                        char::from(Fa::ExclamationCircle),
+                        char::from(NerdFont::Warning),
                         manual_data.len()
                     ),
                     Some(serde_json::json!({
@@ -173,7 +173,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         "doctor.fix.check",
         &format!(
             "{} Checking current state for '{}'...",
-            char::from(Fa::InfoCircle),
+            char::from(NerdFont::Info),
             check.name()
         ),
         None,
@@ -187,7 +187,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
             "doctor.fix.not_needed",
             &format!(
                 "{} {}: {}",
-                char::from(Fa::Check),
+                char::from(NerdFont::Check),
                 check.name(),
                 check_result.message()
             ),
@@ -198,7 +198,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
             "doctor.fix.not_needed",
             &format!(
                 "{} No fix needed - check already passes.",
-                char::from(Fa::InfoCircle)
+                char::from(NerdFont::Info)
             ),
             None,
         );
@@ -211,7 +211,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
             "doctor.fix.not_fixable",
             &format!(
                 "{} {}: {}",
-                char::from(Fa::TimesCircle),
+                char::from(NerdFont::CrossCircle),
                 check.name(),
                 check_result.message()
             ),
@@ -229,7 +229,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         "doctor.fix.available",
         &format!(
             "{} {}: {}",
-            char::from(Fa::ExclamationCircle),
+            char::from(NerdFont::Warning),
             check.name(),
             check_result.message()
         ),
@@ -240,7 +240,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         "doctor.fix.available",
         &format!(
             "{} Fix is available and will be applied.",
-            char::from(Fa::InfoCircle)
+            char::from(NerdFont::Info)
         ),
         None,
     );
@@ -258,7 +258,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
                 "doctor.fix.privileges",
                 &format!(
                     "{} Fix for '{}' requires administrator privileges.",
-                    char::from(Fa::ExclamationCircle),
+                    char::from(NerdFont::Warning),
                     check.name()
                 ),
                 None,
@@ -272,7 +272,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
                 emit(
                     Level::Info,
                     "doctor.fix.cancelled",
-                    &format!("{} Fix cancelled by user.", char::from(Fa::InfoCircle)),
+                    &format!("{} Fix cancelled by user.", char::from(NerdFont::Info)),
                     None,
                 );
                 Ok(())
@@ -296,7 +296,7 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
         "doctor.fix.applying",
         &format!(
             "{} Applying fix for {}...",
-            char::from(Fa::InfoCircle),
+            char::from(NerdFont::Info),
             check_name
         ),
         None,
@@ -317,7 +317,7 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
                 "doctor.fix.failed",
                 &format!(
                     "{} Failed to apply fix for {}: {}",
-                    char::from(Fa::TimesCircle),
+                    char::from(NerdFont::CrossCircle),
                     check.name(),
                     e
                 ),

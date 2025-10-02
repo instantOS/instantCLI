@@ -43,7 +43,7 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
         "dev.clone.success",
         &format!(
             "{} Successfully cloned {} to {}",
-            char::from(Fa::Check),
+            char::from(NerdFont::Check),
             repo.name,
             target_dir.display()
         ),
@@ -54,7 +54,7 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
         "dev.clone.repo",
         &format!(
             "{} Repository: {}",
-            char::from(Fa::InfoCircle),
+            char::from(NerdFont::Info),
             repo.html_url
         ),
         None,
@@ -64,7 +64,7 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
         emit(
             Level::Info,
             "dev.clone.description",
-            &format!("{} {desc}", char::from(Fa::InfoCircle)),
+            &format!("{} {desc}", char::from(NerdFont::Info)),
             None,
         );
     }
@@ -86,7 +86,7 @@ pub fn ensure_workspace_dir() -> Result<std::path::PathBuf> {
             "dev.clone.workspace_created",
             &format!(
                 "{} Created workspace directory: {}",
-                char::from(Fa::Folder),
+                char::from(NerdFont::Folder),
                 workspace_dir.display()
             ),
             None,

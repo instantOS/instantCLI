@@ -243,7 +243,7 @@ fn handle_debug_command(command: DebugCommands) -> Result<()> {
                     "restic.logs.cleared",
                     &format!(
                         "{} Cleared all restic command logs.",
-                        char::from(Fa::TrashO)
+                        char::from(NerdFont::Trash)
                     ),
                     None,
                 );

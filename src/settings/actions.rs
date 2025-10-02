@@ -29,7 +29,7 @@ pub fn apply_clipboard_manager(ctx: &mut SettingsContext, enabled: bool) -> Resu
                 "settings.clipboard.spawn_failed",
                 &format!(
                     "{} Failed to launch clipmenud: {err}",
-                    char::from(Fa::ExclamationCircle)
+                    char::from(NerdFont::Warning)
                 ),
                 None,
             );
@@ -43,7 +43,7 @@ pub fn apply_clipboard_manager(ctx: &mut SettingsContext, enabled: bool) -> Resu
                 "settings.clipboard.stop_failed",
                 &format!(
                     "{} Failed to stop clipmenud: {err}",
-                    char::from(Fa::ExclamationCircle)
+                    char::from(NerdFont::Warning)
                 ),
                 None,
             );
@@ -168,7 +168,7 @@ pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Resu
                 "settings.storage.udiskie.service_creation_failed",
                 &format!(
                     "{} Failed to create udiskie service file: {err}",
-                    char::from(Fa::ExclamationCircle)
+                    char::from(NerdFont::Warning)
                 ),
                 None,
             );
@@ -183,7 +183,7 @@ pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Resu
                     "settings.storage.udiskie.enable_failed",
                     &format!(
                         "{} Failed to enable udiskie service: {err}",
-                        char::from(Fa::ExclamationCircle)
+                        char::from(NerdFont::Warning)
                     ),
                     None,
                 );
@@ -196,7 +196,7 @@ pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Resu
                     "settings.storage.udiskie.start_failed",
                     &format!(
                         "{} Failed to start udiskie service: {err}",
-                        char::from(Fa::ExclamationCircle)
+                        char::from(NerdFont::Warning)
                     ),
                     None,
                 );
@@ -214,7 +214,7 @@ pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Resu
                     "settings.storage.udiskie.disable_failed",
                     &format!(
                         "{} Failed to disable udiskie service: {err}",
-                        char::from(Fa::ExclamationCircle)
+                        char::from(NerdFont::Warning)
                     ),
                     None,
                 );

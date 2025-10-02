@@ -32,7 +32,7 @@ pub fn setup_uninstalled_games() -> Result<()> {
             "game.setup.all_configured",
             &format!(
                 "{} All games are already configured for this device!",
-                char::from(Fa::Check)
+                char::from(NerdFont::Check)
             ),
             None,
         );
@@ -58,7 +58,7 @@ pub fn setup_uninstalled_games() -> Result<()> {
                 "game.setup.failed",
                 &format!(
                     "{} Failed to set up game '{game_name}': {e}",
-                    char::from(Fa::TimesCircle)
+                    char::from(NerdFont::CrossCircle)
                 ),
                 None,
             );
@@ -111,7 +111,7 @@ fn setup_single_game(
         "game.setup.start",
         &format!(
             "{} Setting up game: {game_name}",
-            char::from(Fa::InfoCircle)
+            char::from(NerdFont::Info)
         ),
         None,
     );
@@ -127,7 +127,7 @@ fn setup_single_game(
             "game.setup.no_snapshots",
             &format!(
                 "{} No snapshots found for game '{game_name}'.",
-                char::from(Fa::ExclamationCircle)
+                char::from(NerdFont::Warning)
             ),
             None,
         );
@@ -136,7 +136,7 @@ fn setup_single_game(
             "game.setup.hint.add",
             &format!(
                 "{} This game has no backups yet. You'll need to add an installation manually using '{} game add'.",
-                char::from(Fa::InfoCircle),
+                char::from(NerdFont::Info),
                 env!("CARGO_BIN_NAME")
             ),
             None,
@@ -153,7 +153,7 @@ fn setup_single_game(
             "game.setup.no_paths",
             &format!(
                 "{} No save paths found in snapshots for game '{game_name}'.",
-                char::from(Fa::ExclamationCircle)
+                char::from(NerdFont::Warning)
             ),
             None,
         );
@@ -162,7 +162,7 @@ fn setup_single_game(
             "game.setup.hint.manual",
             &format!(
                 "{} This is unusual. You may need to set up the installation manually.",
-                char::from(Fa::InfoCircle)
+                char::from(NerdFont::Info)
             ),
             None,
         );
@@ -198,7 +198,7 @@ fn setup_single_game(
                         "game.setup.dir_created",
                         &format!(
                             "{} Created save directory: {path_str}",
-                            char::from(Fa::Check)
+                            char::from(NerdFont::Check)
                         ),
                         None,
                     );
@@ -222,7 +222,7 @@ fn setup_single_game(
                 "game.setup.restore_latest",
                 &format!(
                     "{} Restoring latest backup ({snapshot_id}) into {path_str}...",
-                    char::from(Fa::Download)
+                    char::from(NerdFont::Download)
                 ),
                 None,
             );
@@ -231,7 +231,7 @@ fn setup_single_game(
             emit(
                 Level::Success,
                 "game.setup.restore_done",
-                &format!("{} {restore_summary}", char::from(Fa::Check)),
+                &format!("{} {restore_summary}", char::from(NerdFont::Check)),
                 None,
             );
             installation.update_checkpoint(snapshot_id.to_string());
@@ -244,7 +244,7 @@ fn setup_single_game(
             "game.setup.success",
             &format!(
                 "{} Game '{game_name}' set up successfully with save path: {path_str}",
-                char::from(Fa::Check)
+                char::from(NerdFont::Check)
             ),
             None,
         );
@@ -254,7 +254,7 @@ fn setup_single_game(
             "game.setup.cancelled",
             &format!(
                 "{} Setup cancelled for game '{game_name}'.",
-                char::from(Fa::ExclamationCircle)
+                char::from(NerdFont::Warning)
             ),
             None,
         );
@@ -380,7 +380,7 @@ impl FzfSelectable for PathInfo {
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
         let mut preview = String::new();
-        preview.push_str(&format!("{} SAVE PATH DETAILS\n\n", char::from(Fa::Folder)));
+        preview.push_str(&format!("{} SAVE PATH DETAILS\n\n", char::from(NerdFont::Folder)));
         preview.push_str(&format!("Path:           {}\n", self.path));
         preview.push_str(&format!("Usage Count:    {} snapshots\n", self.frequency));
         preview.push_str(&format!(
@@ -390,7 +390,7 @@ impl FzfSelectable for PathInfo {
 
         preview.push_str(&format!(
             "\n{}  DEVICES USING THIS PATH:\n",
-            char::from(Fa::Desktop)
+            char::from(NerdFont::Desktop)
         ));
         for device in &self.devices {
             preview.push_str(&format!("  • {device}\n"));

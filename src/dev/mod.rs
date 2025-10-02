@@ -1,4 +1,4 @@
-use crate::ui::Fa;
+use crate::ui::NerdFont;
 use anyhow::Result;
 use clap::Subcommand;
 
@@ -30,7 +30,7 @@ async fn handle_clone(debug: bool) -> Result<()> {
     if debug {
         eprintln!(
             "{} Fetching instantOS repositories...",
-            char::from(Fa::Search)
+            char::from(NerdFont::Search)
         );
     }
 
@@ -44,7 +44,7 @@ async fn handle_clone(debug: bool) -> Result<()> {
     pb.finish_with_message(format!("Found {} repositories", repos.len()));
 
     if debug {
-        eprintln!("{} Available repositories:", char::from(Fa::List));
+        eprintln!("{} Available repositories:", char::from(NerdFont::List));
         for repo in &repos {
             eprintln!("  - {} ({})", repo.name, repo.full_name);
         }
@@ -56,7 +56,7 @@ async fn handle_clone(debug: bool) -> Result<()> {
     if debug {
         eprintln!(
             "{} Selected repository: {}",
-            char::from(Fa::Flag),
+            char::from(NerdFont::Flag),
             selected_repo.name
         );
     }

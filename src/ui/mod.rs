@@ -57,8 +57,9 @@ pub fn init(format: OutputFormat, color: bool) {
     }
 }
 
-// Re-export nerd font icons directly from the nerd_font crate
-pub use nerd_font::categories::Fa;
+// Custom nerd font icons
+pub mod nerd_font;
+pub use nerd_font::NerdFont;
 
 // Separator characters (not in nerd_font crate)
 pub const SEPARATOR_HEAVY: &str = "━";
@@ -174,5 +175,5 @@ pub fn separator(light: bool) {
 }
 
 pub mod prelude {
-    pub use super::{Fa, Level, OutputFormat, emit, get_output_format, separator};
+    pub use super::{NerdFont, Level, OutputFormat, emit, get_output_format, separator};
 }

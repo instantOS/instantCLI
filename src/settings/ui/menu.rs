@@ -193,7 +193,7 @@ fn run_main_menu(ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Re
                 "settings.empty",
                 &format!(
                     "{} No settings registered yet.",
-                    char::from(crate::ui::prelude::Fa::ExclamationCircle)
+                    char::from(crate::ui::prelude::NerdFont::Warning)
                 ),
                 None,
             );

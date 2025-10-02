@@ -82,7 +82,7 @@ impl SettingsContext {
         if self.debug {
             let message = format!(
                 "{} {}",
-                char::from(Fa::InfoCircle),
+                char::from(NerdFont::Info),
                 format!("{summary}: {body}")
             );
             emit(Level::Debug, "settings.notify", &message, None);
@@ -93,7 +93,7 @@ impl SettingsContext {
         if let Err(err) = result {
             let message = format!(
                 "{} Failed to send notification: {err}",
-                char::from(Fa::ExclamationCircle)
+                char::from(NerdFont::Warning)
             );
             emit(Level::Debug, "settings.notify.error", &message, None);
         }
@@ -103,7 +103,7 @@ impl SettingsContext {
         emit(
             Level::Success,
             code,
-            &format!("{} {message}", char::from(Fa::Check)),
+            &format!("{} {message}", char::from(NerdFont::Check)),
             None,
         );
     }
@@ -112,7 +112,7 @@ impl SettingsContext {
         emit(
             Level::Info,
             code,
-            &format!("{} {message}", char::from(Fa::InfoCircle)),
+            &format!("{} {message}", char::from(NerdFont::Info)),
             None,
         );
     }
@@ -229,7 +229,7 @@ enum PrivilegedValue {
     Choice(String),
 }
 
-pub fn format_icon(icon: Fa) -> String {
+pub fn format_icon(icon: NerdFont) -> String {
     format!("  {}  ", char::from(icon))
 }
 

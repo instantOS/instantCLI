@@ -286,7 +286,7 @@ pub fn fetch_modified(
             "dot.fetch.no_modified",
             &format!(
                 "{} No modified dotfiles to fetch.",
-                char::from(Fa::InfoCircle)
+                char::from(NerdFont::Info)
             ),
             None,
         );
@@ -398,7 +398,7 @@ fn print_fetch_plan(
             emit(
                 Level::Info,
                 "dot.fetch.plan",
-                &format!("{} {}", char::from(Fa::InfoCircle), message),
+                &format!("{} {}", char::from(NerdFont::Info), message),
                 Some(serde_json::json!({
                     "dry_run": dry_run,
                     "repos": fetch_data,
@@ -442,7 +442,7 @@ fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -
     emit(
         Level::Success,
         "dot.fetch.complete",
-        &format!("{} Fetch complete.", char::from(Fa::Check)),
+        &format!("{} Fetch complete.", char::from(NerdFont::Check)),
         None,
     );
     Ok(())
@@ -471,7 +471,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
                 "dot.apply.created",
                 &format!(
                     "{} Created new dotfile: ~/{relative}",
-                    char::from(Fa::Check)
+                    char::from(NerdFont::Check)
                 ),
                 None,
             );

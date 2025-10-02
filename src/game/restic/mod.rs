@@ -72,7 +72,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             emit_restic_event(
                 Level::Error,
                 "game.backup.installation_missing",
-                Some(char::from(Fa::TimesCircle)),
+                Some(char::from(NerdFont::CrossCircle)),
                 plain_message,
                 text_message,
                 Some(data),
@@ -80,7 +80,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             emit_restic_event(
                 Level::Info,
                 "game.backup.hint.add",
-                Some(char::from(Fa::InfoCircle)),
+                Some(char::from(NerdFont::Info)),
                 format!(
                     "Please add the game first using '{} game add'.",
                     env!("CARGO_BIN_NAME")
@@ -105,7 +105,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         emit_restic_event(
             Level::Error,
             "game.backup.save_path_missing",
-            Some(char::from(Fa::TimesCircle)),
+            Some(char::from(NerdFont::CrossCircle)),
             format!(
                 "Error: Save path does not exist for game '{}': {}",
                 game_name, path_display
@@ -124,7 +124,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         emit_restic_event(
             Level::Warn,
             "game.backup.hint.config",
-            Some(char::from(Fa::ExclamationCircle)),
+            Some(char::from(NerdFont::Warning)),
             "Please check the game installation configuration.".to_string(),
             "Please check the game installation configuration.".to_string(),
             Some(serde_json::json!({
@@ -154,7 +154,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         emit_restic_event(
             Level::Error,
             "game.backup.security.empty_dir",
-            Some(char::from(Fa::TimesCircle)),
+            Some(char::from(NerdFont::CrossCircle)),
             format!(
                 "Security: Refusing to backup empty save directory for game '{}': {}",
                 game_name, path_display
@@ -174,7 +174,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         emit_restic_event(
             Level::Info,
             "game.backup.security.context",
-            Some(char::from(Fa::InfoCircle)),
+            Some(char::from(NerdFont::Info)),
             "The save directory appears to be empty or contains only hidden files. This could indicate:".to_string(),
             "The save directory appears to be empty or contains only hidden files. This could indicate:".to_string(),
             Some(serde_json::json!({
@@ -238,7 +238,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     emit_restic_event(
         Level::Info,
         "game.backup.start",
-        Some(char::from(Fa::Save)),
+        Some(char::from(NerdFont::Save)),
         format!(
             "Creating backup for '{}'... This may take a while depending on save file size.",
             game_name
@@ -258,7 +258,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             emit_restic_event(
                 Level::Success,
                 "game.backup.completed",
-                Some(char::from(Fa::Check)),
+                Some(char::from(NerdFont::Check)),
                 format!("Backup completed successfully for game '{game_name}'!"),
                 format!(
                     "Backup completed successfully for game '{}'!\n\n{}",
@@ -287,7 +287,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             emit_restic_event(
                 Level::Error,
                 "game.backup.failed",
-                Some(char::from(Fa::TimesCircle)),
+                Some(char::from(NerdFont::CrossCircle)),
                 format!("Backup failed for game '{game_name}': {e}"),
                 format!("Backup failed for game '{}': {}", game_name.red(), e),
                 Some(serde_json::json!({
@@ -365,7 +365,7 @@ pub fn restore_game_saves(
         emit_restic_event(
             Level::Info,
             "game.restore.skipped",
-            Some(char::from(Fa::InfoCircle)),
+            Some(char::from(NerdFont::Info)),
             plain_message,
             text_message,
             Some(serde_json::json!({
@@ -397,7 +397,7 @@ pub fn restore_game_saves(
                 emit_restic_event(
                     Level::Error,
                     "game.restore.snapshot_missing",
-                    Some(char::from(Fa::TimesCircle)),
+                    Some(char::from(NerdFont::CrossCircle)),
                     plain_message,
                     text_message,
                     Some(serde_json::json!({
@@ -409,7 +409,7 @@ pub fn restore_game_saves(
                 emit_restic_event(
                     Level::Info,
                     "game.restore.hint.snapshot",
-                    Some(char::from(Fa::InfoCircle)),
+                    Some(char::from(NerdFont::Info)),
                     "Please select a valid snapshot.".to_string(),
                     "Please select a valid snapshot.".to_string(),
                     Some(serde_json::json!({
@@ -433,7 +433,7 @@ pub fn restore_game_saves(
         emit_restic_event(
             Level::Warn,
             "game.restore.cancelled.security",
-            Some(char::from(Fa::ExclamationCircle)),
+            Some(char::from(NerdFont::Warning)),
             "Restore cancelled due to security warning.".to_string(),
             "Restore cancelled due to security warning.".to_string(),
             Some(serde_json::json!({
@@ -455,7 +455,7 @@ pub fn restore_game_saves(
         emit_restic_event(
             Level::Warn,
             "game.restore.cancelled.user",
-            Some(char::from(Fa::ExclamationCircle)),
+            Some(char::from(NerdFont::Warning)),
             "Restore cancelled by user.".to_string(),
             "Restore cancelled by user.".to_string(),
             Some(serde_json::json!({
@@ -473,7 +473,7 @@ pub fn restore_game_saves(
     emit_restic_event(
         Level::Info,
         "game.restore.start",
-        Some(char::from(Fa::Download)),
+        Some(char::from(NerdFont::Download)),
         format!("Restoring game saves for '{}'...", game_name_plain),
         format!(
             "Restoring game saves for '{}'...",
@@ -492,7 +492,7 @@ pub fn restore_game_saves(
             emit_restic_event(
                 Level::Success,
                 "game.restore.completed",
-                Some(char::from(Fa::Check)),
+                Some(char::from(NerdFont::Check)),
                 format!(
                     "Restore completed successfully for game '{}'!",
                     game_selection.game_name
@@ -526,7 +526,7 @@ pub fn restore_game_saves(
             emit_restic_event(
                 Level::Error,
                 "game.restore.failed",
-                Some(char::from(Fa::TimesCircle)),
+                Some(char::from(NerdFont::CrossCircle)),
                 format!(
                     "Restore failed for game '{}': {}",
                     game_selection.game_name, e

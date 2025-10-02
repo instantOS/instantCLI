@@ -158,7 +158,7 @@ fn add_repository(
         "dot.repo.added",
         &format!(
             "{} Added repository '{}' from {}",
-            char::from(Fa::Check),
+            char::from(NerdFont::Check),
             repo_name,
             url
         ),
@@ -171,7 +171,7 @@ fn add_repository(
             emit(
                 Level::Info,
                 "dot.repo.add.clone_path",
-                &format!("{} Cloned to: {}", char::from(Fa::Folder), path.display()),
+                &format!("{} Cloned to: {}", char::from(NerdFont::Folder), path.display()),
                 None,
             );
 
@@ -181,7 +181,7 @@ fn add_repository(
                 "dot.repo.add.apply",
                 &format!(
                     "{} Applying dotfiles from new repository...",
-                    char::from(Fa::InfoCircle)
+                    char::from(NerdFont::Info)
                 ),
                 None,
             );
@@ -191,7 +191,7 @@ fn add_repository(
                     "dot.repo.add.apply_failed",
                     &format!(
                         "{} Failed to apply dotfiles: {e}",
-                        char::from(Fa::ExclamationCircle)
+                        char::from(NerdFont::Warning)
                     ),
                     None,
                 );
@@ -203,7 +203,7 @@ fn add_repository(
                 "dot.repo.add.clone_failed",
                 &format!(
                     "{} Failed to clone repository: {e}",
-                    char::from(Fa::TimesCircle)
+                    char::from(NerdFont::CrossCircle)
                 ),
                 None,
             );
@@ -278,13 +278,13 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
 
     let mut rows: Vec<(char, &str, String)> = vec![
         (
-            char::from(Fa::Folder),
+            char::from(NerdFont::Folder),
             "Repository",
             name.cyan().to_string(),
         ),
-        (char::from(Fa::InfoCircle), "URL", repo_config.url.clone()),
+        (char::from(NerdFont::Info), "URL", repo_config.url.clone()),
         (
-            char::from(Fa::Flag),
+            char::from(NerdFont::Flag),
             "Branch",
             repo_config
                 .branch
@@ -292,16 +292,16 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
                 .unwrap_or("default")
                 .to_string(),
         ),
-        (char::from(Fa::Check), "Status", status_text),
-        (char::from(Fa::Folder), "Local Path", local_path),
+        (char::from(NerdFont::Check), "Status", status_text),
+        (char::from(NerdFont::Folder), "Local Path", local_path),
     ];
 
     if let Some(author) = &local_repo.meta.author {
-        rows.push((char::from(Fa::InfoCircle), "Author", author.clone()));
+        rows.push((char::from(NerdFont::Info), "Author", author.clone()));
     }
     if let Some(description) = &local_repo.meta.description {
         rows.push((
-            char::from(Fa::InfoCircle),
+            char::from(NerdFont::Info),
             "Description",
             description.clone(),
         ));
@@ -317,7 +317,7 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
     println!();
     println!(
         "{} {}",
-        char::from(Fa::List),
+        char::from(NerdFont::List),
         "Repository Information".bold()
     );
 
@@ -332,12 +332,12 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
     }
 
     println!();
-    println!("{} {}", char::from(Fa::List), "Subdirectories".bold());
+    println!("{} {}", char::from(NerdFont::List), "Subdirectories".bold());
 
     if local_repo.dotfile_dirs.is_empty() {
         println!(
             "  {} {}",
-            char::from(Fa::InfoCircle),
+            char::from(NerdFont::Info),
             "No dotfile directories discovered.".dimmed()
         );
         return Ok(());
@@ -364,9 +364,9 @@ fn show_repository_info(config_manager: &ConfigManager, db: &Database, name: &st
             .unwrap_or("unknown")
             .to_string();
         let status_icon = if dir.is_active {
-            char::from(Fa::Check)
+            char::from(NerdFont::Check)
         } else {
-            char::from(Fa::TimesCircle)
+            char::from(NerdFont::CrossCircle)
         };
         let status_text = if dir.is_active {
             "Active".green().to_string()

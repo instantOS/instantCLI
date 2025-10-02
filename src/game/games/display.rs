@@ -37,7 +37,7 @@ pub fn list_games() -> Result<()> {
         for game in &config.games {
             text.push_str(&format!(
                 "  {} {}\n",
-                char::from(Fa::InfoCircle).to_string().bright_blue(),
+                char::from(NerdFont::Info).to_string().bright_blue(),
                 game.name.0.cyan().bold()
             ));
             if let Some(desc) = &game.description {
@@ -83,7 +83,7 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
                 "game.show.not_found",
                 &format!(
                     "{} Game '{}' not found in configuration.",
-                    char::from(Fa::TimesCircle),
+                    char::from(NerdFont::CrossCircle),
                     game_name.red()
                 ),
                 None,
@@ -128,7 +128,7 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
                 if save_info.file_count > 0 {
                     install_text.push_str(&format!(
                         "Installation:\n  {} Save Path: {}\n   Local Saves:\n     • Last modified: {}\n     • Files: {}\n     • Total size: {}\n",
-                        char::from(Fa::Folder),
+                        char::from(NerdFont::Folder),
                         path_display.green(),
                         format_system_time_for_display(save_info.last_modified),
                         save_info.file_count,
@@ -137,7 +137,7 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
                 } else {
                     install_text.push_str(&format!(
                         "Installation:\n  {} Save Path: {}\n   Local Saves: No save files found\n",
-                        char::from(Fa::Folder),
+                        char::from(NerdFont::Folder),
                         path_display.green()
                     ));
                 }
@@ -149,7 +149,7 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
                 }));
                 install_text.push_str(&format!(
                     "Installation:\n  {} Save Path: {}\n   Local Saves: Unable to analyze save directory ({})\n",
-                    char::from(Fa::Folder),
+                    char::from(NerdFont::Folder),
                     path_display.green(),
                     e.to_string().to_lowercase()
                 ));
@@ -158,7 +158,7 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
     } else {
         install_text.push_str(&format!(
             "{}  No installation data found for this game.\n",
-            char::from(Fa::ExclamationCircle)
+            char::from(NerdFont::Warning)
         ));
     }
 
@@ -167,7 +167,7 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
     text_block.push_str(&format!("{}\n\n", "Game Information".bold().underline()));
     text_block.push_str(&format!(
         "{} {}\n\n",
-        char::from(Fa::InfoCircle),
+        char::from(NerdFont::Info),
         game.name.0.cyan().bold()
     ));
     if let Some(desc) = &game.description {

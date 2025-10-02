@@ -138,15 +138,15 @@ impl FzfSelectable for ManageMenuItem {
                 let status = if *in_toml { "managed" } else { "system" };
                 format!(
                     "{} {} ({}) [{}] ({})",
-                    format_icon(Fa::User),
+                    format_icon(NerdFont::User),
                     username,
                     shell,
                     label,
                     status
                 )
             }
-            ManageMenuItem::Add => format!("{} Add user", format_icon(Fa::Plus)),
-            ManageMenuItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
+            ManageMenuItem::Add => format!("{} Add user", format_icon(NerdFont::Plus)),
+            ManageMenuItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
         }
     }
 
@@ -164,16 +164,16 @@ impl FzfSelectable for ManageMenuItem {
                     "System user with home directory"
                 };
                 let mut lines = vec![
-                    format!("{} User: {}", char::from(Fa::InfoCircle), username),
-                    format!("{} Status: {}", char::from(Fa::Tag), status),
-                    format!("{} Shell: {}", char::from(Fa::Terminal), shell),
+                    format!("{} User: {}", char::from(NerdFont::Info), username),
+                    format!("{} Status: {}", char::from(NerdFont::Tag), status),
+                    format!("{} Shell: {}", char::from(NerdFont::Terminal), shell),
                 ];
                 if groups.is_empty() {
-                    lines.push(format!("{} Groups: (none)", char::from(Fa::List)));
+                    lines.push(format!("{} Groups: (none)", char::from(NerdFont::List)));
                 } else {
                     lines.push(format!(
                         "{} Groups: {}",
-                        char::from(Fa::List),
+                        char::from(NerdFont::List),
                         groups.join(", ")
                     ));
                 }
@@ -198,16 +198,16 @@ enum UserActionItem {
 impl FzfSelectable for UserActionItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            UserActionItem::Apply => format!("{} Apply changes", format_icon(Fa::Check)),
+            UserActionItem::Apply => format!("{} Apply changes", format_icon(NerdFont::Check)),
             UserActionItem::ChangeShell => {
-                format!("{} Change shell", format_icon(Fa::Terminal))
+                format!("{} Change shell", format_icon(NerdFont::Terminal))
             }
             UserActionItem::ChangePassword => {
-                format!("{} Change password", format_icon(Fa::Key))
+                format!("{} Change password", format_icon(NerdFont::Key))
             }
-            UserActionItem::ManageGroups => format!("{} Manage groups", format_icon(Fa::List)),
-            UserActionItem::Remove => format!("{} Remove entry", format_icon(Fa::TrashO)),
-            UserActionItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
+            UserActionItem::ManageGroups => format!("{} Manage groups", format_icon(NerdFont::List)),
+            UserActionItem::Remove => format!("{} Remove entry", format_icon(NerdFont::Trash)),
+            UserActionItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
         }
     }
 
@@ -235,10 +235,10 @@ impl FzfSelectable for GroupMenuItem {
     fn fzf_display_text(&self) -> String {
         match self {
             GroupMenuItem::ExistingGroup(name) => {
-                format!("{} {}", char::from(Fa::List), name)
+                format!("{} {}", char::from(NerdFont::List), name)
             }
-            GroupMenuItem::AddGroup => format!("{} Add group", format_icon(Fa::Plus)),
-            GroupMenuItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
+            GroupMenuItem::AddGroup => format!("{} Add group", format_icon(NerdFont::Plus)),
+            GroupMenuItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
         }
     }
 
@@ -263,8 +263,8 @@ enum GroupActionItem {
 impl FzfSelectable for GroupActionItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            GroupActionItem::RemoveGroup => format!("{} Remove group", format_icon(Fa::Minus)),
-            GroupActionItem::Back => format!("{} Back", format_icon(Fa::ArrowLeft)),
+            GroupActionItem::RemoveGroup => format!("{} Remove group", format_icon(NerdFont::Minus)),
+            GroupActionItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
         }
     }
 
@@ -284,7 +284,7 @@ struct GroupItem {
 
 impl FzfSelectable for GroupItem {
     fn fzf_display_text(&self) -> String {
-        format!("{} {}", char::from(Fa::List), self.name)
+        format!("{} {}", char::from(NerdFont::List), self.name)
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -299,7 +299,7 @@ struct ShellItem {
 
 impl FzfSelectable for ShellItem {
     fn fzf_display_text(&self) -> String {
-        format!("{} {}", char::from(Fa::Terminal), self.path)
+        format!("{} {}", char::from(NerdFont::Terminal), self.path)
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -769,7 +769,7 @@ fn apply_user_spec(ctx: &mut SettingsContext, username: &str, spec: &UserSpec) -
 
         let message = format!(
             "{} Skipping unknown group(s): {}.{arch_hint}",
-            char::from(Fa::ExclamationCircle),
+            char::from(NerdFont::Warning),
             missing_groups.join(", ")
         );
         emit(Level::Warn, "settings.users.missing_groups", &message, None);

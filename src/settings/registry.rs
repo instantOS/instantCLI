@@ -1,5 +1,5 @@
 use crate::common::requirements::{InstallTest, RequiredPackage};
-use crate::ui::prelude::Fa;
+use crate::ui::prelude::NerdFont;
 
 use super::store::{BoolSettingKey, StringSettingKey};
 use super::users;
@@ -48,7 +48,7 @@ pub struct SettingCategory {
     pub id: &'static str,
     pub title: &'static str,
     pub description: &'static str,
-    pub icon: Fa,
+    pub icon: NerdFont,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -86,7 +86,7 @@ pub struct SettingDefinition {
     pub id: &'static str,
     pub title: &'static str,
     pub category: &'static str,
-    pub icon: Fa,
+    pub icon: NerdFont,
     pub breadcrumbs: &'static [&'static str],
     pub kind: SettingKind,
     pub requires_reapply: bool,
@@ -226,43 +226,43 @@ pub const CATEGORIES: &[SettingCategory] = &[
         id: "appearance",
         title: "Appearance",
         description: "Theme and visual presentation of the desktop.",
-        icon: Fa::LightbulbO,
+        icon: NerdFont::Lightbulb,
     },
     SettingCategory {
         id: "desktop",
         title: "Desktop",
         description: "Interactive desktop behaviour and helpers.",
-        icon: Fa::Desktop,
+        icon: NerdFont::Desktop,
     },
     SettingCategory {
         id: "workspace",
         title: "Workspace",
         description: "Window manager defaults and layout preferences.",
-        icon: Fa::Folder,
+        icon: NerdFont::Folder,
     },
     SettingCategory {
         id: "audio",
         title: "Audio",
         description: "Sound routing tools and audio behaviour.",
-        icon: Fa::VolumeUp,
+        icon: NerdFont::VolumeUp,
     },
     SettingCategory {
         id: "system",
         title: "System",
         description: "System administration and user management.",
-        icon: Fa::InfoCircle,
+        icon: NerdFont::Server,
     },
     SettingCategory {
         id: "connectivity",
         title: "Connectivity",
         description: "Bluetooth and wireless device access.",
-        icon: Fa::Bluetooth,
+        icon: NerdFont::Bluetooth,
     },
     SettingCategory {
         id: "storage",
         title: "Storage",
         description: "Disk management and auto-mounting.",
-        icon: Fa::Save,
+        icon: NerdFont::Save,
     },
 ];
 
@@ -271,7 +271,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "appearance.autotheming",
         title: "Autotheming",
         category: "appearance",
-        icon: Fa::InfoCircle,
+        icon: NerdFont::Info,
         breadcrumbs: &["Autotheming"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("appearance.autotheming", true),
@@ -285,7 +285,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "appearance.animations",
         title: "Animations",
         category: "appearance",
-        icon: Fa::Check,
+        icon: NerdFont::Check,
         breadcrumbs: &["Animations"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("appearance.animations", true),
@@ -299,7 +299,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "desktop.clipboard",
         title: "Clipboard manager",
         category: "desktop",
-        icon: Fa::Folder,
+        icon: NerdFont::Folder,
         breadcrumbs: &["Clipboard manager"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("desktop.clipboard", true),
@@ -313,7 +313,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "workspace.layout",
         title: "Default layout",
         category: "workspace",
-        icon: Fa::List,
+        icon: NerdFont::List,
         breadcrumbs: &["Default layout"],
         kind: SettingKind::Choice {
             key: StringSettingKey::new("workspace.layout", "tile"),
@@ -372,12 +372,12 @@ pub const SETTINGS: &[SettingDefinition] = &[
     },
     SettingDefinition {
         id: "audio.wiremix",
-        title: "Wiremix",
+        title: "General audio settings",
         category: "audio",
-        icon: Fa::VolumeUp,
-        breadcrumbs: &["Wiremix"],
+        icon: NerdFont::Settings,
+        breadcrumbs: &["General audio settings"],
         kind: SettingKind::Command {
-            summary: "Launch the wiremix TUI to manage PipeWire routing and volumes.",
+            summary: "Launch wiremix TUI to manage PipeWire routing and volumes.",
             command: CommandSpec::terminal("wiremix", &[]),
         },
         requires_reapply: false,
@@ -387,7 +387,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "system.user_management",
         title: "User management",
         category: "system",
-        icon: Fa::InfoCircle,
+        icon: NerdFont::Users2,
         breadcrumbs: &["User management"],
         kind: SettingKind::Action {
             summary: "Create and update Linux users, groups, and shells.",
@@ -400,7 +400,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "system.install_packages",
         title: "Install packages",
         category: "system",
-        icon: Fa::Download,
+        icon: NerdFont::Download,
         breadcrumbs: &["Install packages"],
         kind: SettingKind::Action {
             summary: "Browse and install system packages using an interactive fuzzy finder.",
@@ -413,7 +413,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "connectivity.bluetooth.service",
         title: "Bluetooth service",
         category: "connectivity",
-        icon: Fa::Bluetooth,
+        icon: NerdFont::Bluetooth,
         breadcrumbs: &["Bluetooth", "Service"],
         kind: SettingKind::Toggle {
             key: BLUETOOTH_SERVICE_KEY,
@@ -427,7 +427,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "connectivity.bluetooth.manager",
         title: "Manage devices",
         category: "connectivity",
-        icon: Fa::Bluetooth,
+        icon: NerdFont::Bluetooth,
         breadcrumbs: &["Bluetooth", "Manage devices"],
         kind: SettingKind::Command {
             summary: "Launch Blueman manager to pair and manage Bluetooth devices.",
@@ -440,7 +440,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "storage.automount",
         title: "Auto-mount disks",
         category: "storage",
-        icon: Fa::Save,
+        icon: NerdFont::HardDrive,
         breadcrumbs: &["Auto-mount disks"],
         kind: SettingKind::Toggle {
             key: UDISKIE_AUTOMOUNT_KEY,
@@ -454,7 +454,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "storage.disks",
         title: "Disk management",
         category: "storage",
-        icon: Fa::Save,
+        icon: NerdFont::HardDrive,
         breadcrumbs: &["Disk management"],
         kind: SettingKind::Command {
             summary: "Launch GNOME Disks to manage drives and partitions.",
@@ -467,7 +467,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "storage.gparted",
         title: "Partition editor",
         category: "storage",
-        icon: Fa::Wrench,
+        icon: NerdFont::Partition,
         breadcrumbs: &["Partition editor"],
         kind: SettingKind::Command {
             summary: "Launch GParted for advanced partition management (requires root).",
@@ -480,7 +480,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "system.about",
         title: "About",
         category: "system",
-        icon: Fa::InfoCircle,
+        icon: NerdFont::About,
         breadcrumbs: &["About"],
         kind: SettingKind::Command {
             summary: "Display system information using fastfetch.",
@@ -493,7 +493,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "system.upgrade",
         title: "Upgrade",
         category: "system",
-        icon: Fa::ArrowUp,
+        icon: NerdFont::Upgrade,
         breadcrumbs: &["Upgrade"],
         kind: SettingKind::Command {
             summary: "Upgrade all installed packages and system components using topgrade.",
