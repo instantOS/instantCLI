@@ -129,9 +129,8 @@ impl FzfSelectable for SettingItem {
     fn fzf_display_text(&self) -> String {
         match self.state {
             SettingState::Toggle { enabled } => {
-                let glyph = if enabled { NerdFont::ToggleOn } else { NerdFont::ToggleOff };
                 let status_text = if enabled { "[ON]" } else { "[OFF]" };
-                format!("{} {} {}", format_icon(glyph), self.definition.title, status_text)
+                format!("{} {} {}", format_icon(self.definition.icon), self.definition.title, status_text)
             }
             SettingState::Choice { current_index } => {
                 let glyph = NerdFont::List;
@@ -239,9 +238,8 @@ impl FzfSelectable for SearchItem {
         let path = super::format_setting_path(self.category, self.definition);
         match self.state {
             SettingState::Toggle { enabled } => {
-                let glyph = if enabled { NerdFont::ToggleOn } else { NerdFont::ToggleOff };
                 let status_text = if enabled { "[ON]" } else { "[OFF]" };
-                format!("{} {} {}", format_icon(glyph), path, status_text)
+                format!("{} {} {}", format_icon(self.definition.icon), path, status_text)
             }
             SettingState::Choice { current_index } => {
                 let glyph = NerdFont::List;

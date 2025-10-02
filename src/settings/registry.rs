@@ -285,7 +285,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "appearance.animations",
         title: "Animations",
         category: "appearance",
-        icon: NerdFont::Check,
+        icon: NerdFont::Magic,
         breadcrumbs: &["Animations"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("appearance.animations", true),
@@ -299,7 +299,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         id: "desktop.clipboard",
         title: "Clipboard manager",
         category: "desktop",
-        icon: NerdFont::Folder,
+        icon: NerdFont::Clipboard,
         breadcrumbs: &["Clipboard manager"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("desktop.clipboard", true),
