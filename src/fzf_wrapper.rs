@@ -5,6 +5,24 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::Command;
 
+/// Escape a string for safe use in a shell command
+/// Uses single quotes for safety, escaping any single quotes in the input
+fn shell_escape(s: &str) -> String {
+    if s.is_empty() {
+        return "''".to_string();
+    }
+    
+    // If the string contains no special characters, return as-is
+    if s.chars().all(|c| {
+        c.is_alphanumeric() || matches!(c, '-' | '_' | '=' | '/' | '.' | ':' | ',')
+    }) {
+        return s.to_string();
+    }
+    
+    // Otherwise, wrap in single quotes and escape any single quotes
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
 /// Preview type for fzf items
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FzfPreview {
@@ -665,7 +683,11 @@ impl FzfWrapper {
         let mut cmd = Command::new("sh");
         cmd.arg("-c");
         
-        let fzf_cmd = format!("fzf {}", fzf_args.join(" "));
+        // Properly escape arguments for shell
+        let escaped_args: Vec<String> = fzf_args.iter()
+            .map(|arg| shell_escape(arg))
+            .collect();
+        let fzf_cmd = format!("fzf {}", escaped_args.join(" "));
         let full_command = format!("{} | {}", input_command, fzf_cmd);
         cmd.arg(&full_command);
 
