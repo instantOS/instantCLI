@@ -649,14 +649,6 @@ fn manage_single_group(
     }
 }
 
-fn parse_groups(input: &str) -> Vec<String> {
-    input
-        .split(',')
-        .map(|segment| segment.trim().to_string())
-        .filter(|segment| !segment.is_empty())
-        .collect()
-}
-
 fn prompt_password_with_confirmation(ctx: &SettingsContext, prompt: &str) -> Result<Option<String>> {
     let password1 = FzfWrapper::builder()
         .prompt(prompt)
