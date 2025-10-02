@@ -2,6 +2,7 @@ pub mod actions;
 pub mod apply;
 pub mod commands;
 pub mod context;
+pub mod packages;
 pub mod registry;
 pub mod store;
 pub mod ui;

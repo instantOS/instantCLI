@@ -234,6 +234,31 @@ impl FzfBuilder {
         wrapper.select(items)
     }
 
+    /// Execute selection from a streaming command output
+    /// This allows fzf to start showing results before the command completes
+    /// 
+    /// # Arguments
+    /// * `command` - Shell command that generates list items (one per line)
+    /// 
+    /// # Example
+    /// ```
+    /// // Show package list from pacman as it loads
+    /// let result = FzfWrapper::builder()
+    ///     .multi_select(true)
+    ///     .args(["--preview", "pacman -Sii {}"])
+    ///     .select_streaming("pacman -Slq")?;
+    /// ```
+    pub fn select_streaming(self, command: &str) -> Result<FzfResult<String>> {
+        let wrapper = FzfWrapper {
+            multi_select: self.multi_select,
+            prompt: self.prompt,
+            header: self.header,
+            additional_args: self.additional_args,
+            initial_cursor: self.initial_cursor,
+        };
+        wrapper.select_streaming(command)
+    }
+
     /// Execute input dialog
     pub fn input_dialog(self) -> Result<String> {
         if !matches!(self.dialog_type, DialogType::Input) {
@@ -611,6 +636,75 @@ impl FzfWrapper {
             header,
             additional_args,
             initial_cursor,
+        }
+    }
+
+    /// Select items from a streaming command
+    /// This allows fzf to start processing results before the command completes
+    pub fn select_streaming(&self, input_command: &str) -> Result<FzfResult<String>> {
+        // Build fzf arguments
+        let mut fzf_args = vec!["--tiebreak=index".to_string()];
+        
+        if self.multi_select {
+            fzf_args.push("--multi".to_string());
+        }
+
+        if let Some(prompt) = &self.prompt {
+            fzf_args.push("--prompt".to_string());
+            fzf_args.push(format!("{} > ", prompt));
+        }
+
+        if let Some(header) = &self.header {
+            fzf_args.push("--header".to_string());
+            fzf_args.push(header.clone());
+        }
+
+        fzf_args.extend(self.additional_args.clone());
+
+        // Build the full command: input_command | fzf args...
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c");
+        
+        let fzf_cmd = format!("fzf {}", fzf_args.join(" "));
+        let full_command = format!("{} | {}", input_command, fzf_cmd);
+        cmd.arg(&full_command);
+
+        let child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::inherit())
+            .spawn()?;
+
+        let pid = child.id();
+        let _ = crate::menu::server::register_fzf_process(pid);
+
+        let output = child.wait_with_output();
+        crate::menu::server::unregister_fzf_process(pid);
+
+        match output {
+            Ok(result) => {
+                if let Some(code) = result.status.code()
+                    && (code == 130 || code == 143)
+                {
+                    return Ok(FzfResult::Cancelled);
+                }
+
+                let stdout = String::from_utf8_lossy(&result.stdout);
+                let selected_lines: Vec<&str> = stdout
+                    .trim_end()
+                    .split('\n')
+                    .filter(|line| !line.is_empty())
+                    .collect();
+
+                if selected_lines.is_empty() {
+                    Ok(FzfResult::Cancelled)
+                } else if self.multi_select {
+                    let items: Vec<String> = selected_lines.iter().map(|s| s.to_string()).collect();
+                    Ok(FzfResult::MultiSelected(items))
+                } else {
+                    Ok(FzfResult::Selected(selected_lines[0].to_string()))
+                }
+            }
+            Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {e}"))),
         }
     }
 

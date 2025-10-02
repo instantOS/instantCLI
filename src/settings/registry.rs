@@ -390,6 +390,19 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[],
     },
     SettingDefinition {
+        id: "system.install_packages",
+        title: "Install packages",
+        category: "system",
+        icon: Fa::Download,
+        breadcrumbs: &["Install packages"],
+        kind: SettingKind::Action {
+            summary: "Browse and install system packages using an interactive fuzzy finder.",
+            run: super::packages::run_package_installer_action,
+        },
+        requires_reapply: false,
+        requirements: &[],
+    },
+    SettingDefinition {
         id: "connectivity.bluetooth.service",
         title: "Bluetooth service",
         category: "connectivity",
