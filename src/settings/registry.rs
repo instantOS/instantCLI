@@ -153,6 +153,13 @@ pub const GPARTED_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::WhichSucceeds("gparted")],
 };
 
+pub const FASTFETCH_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "fastfetch",
+    arch_package_name: Some("fastfetch"),
+    ubuntu_package_name: Some("fastfetch"),
+    tests: &[InstallTest::WhichSucceeds("fastfetch")],
+};
+
 pub const BLUETOOTH_SERVICE_KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.service", false);
 pub const BLUETOOTH_HARDWARE_OVERRIDE_KEY: BoolSettingKey =
     BoolSettingKey::new("bluetooth.hardware_override", false);
@@ -448,6 +455,19 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: false,
         requirements: &[SettingRequirement::Package(GPARTED_PACKAGE)],
+    },
+    SettingDefinition {
+        id: "system.about",
+        title: "About",
+        category: "system",
+        icon: Fa::InfoCircle,
+        breadcrumbs: &["About"],
+        kind: SettingKind::Command {
+            summary: "Display system information using fastfetch.",
+            command: CommandSpec::terminal("sh", &["-c", "fastfetch && read -n 1"]),
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(FASTFETCH_PACKAGE)],
     },
 ];
 
