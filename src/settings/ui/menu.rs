@@ -55,22 +55,98 @@ pub fn run_settings_ui(
     let store = super::super::store::SettingsStore::load().context("loading settings file")?;
     let mut ctx = SettingsContext::new(store, debug, privileged_flag);
 
-    // Handle direct navigation
-    if let Some(nav) = navigation {
-        match nav {
-            SettingsNavigation::Setting(setting_id) => {
-                return handle_direct_setting(&mut ctx, &setting_id);
+    // Determine initial state based on navigation
+    let mut initial_view = match navigation {
+        Some(SettingsNavigation::Setting(setting_id)) => {
+            // Find the setting and determine its index in the search view
+            let mut target_index = None;
+            let mut found = false;
+            
+            let mut idx = 0;
+            for category in CATEGORIES {
+                let definitions = registry::settings_for_category(category.id);
+                for definition in definitions {
+                    if definition.id == setting_id {
+                        target_index = Some(idx);
+                        found = true;
+                        break;
+                    }
+                    idx += 1;
+                }
+                if found {
+                    break;
+                }
             }
-            SettingsNavigation::Category(category_id) => {
-                return handle_direct_category(&mut ctx, &category_id);
+            
+            if !found {
+                anyhow::bail!("Setting '{}' not found", setting_id);
             }
-            SettingsNavigation::Search => {
-                return handle_search_all_persistent(&mut ctx);
+            
+            InitialView::SearchAll(target_index)
+        }
+        Some(SettingsNavigation::Category(category_id)) => {
+            let category = registry::category_by_id(&category_id)
+                .ok_or_else(|| anyhow::anyhow!("Category '{}' not found", category_id))?;
+            InitialView::Category(category, Some(0))
+        }
+        Some(SettingsNavigation::Search) => InitialView::SearchAll(None),
+        None => InitialView::MainMenu(None),
+    };
+
+    loop {
+        match initial_view {
+            InitialView::MainMenu(cursor) => {
+                match run_main_menu(&mut ctx, cursor)? {
+                    MenuAction::EnterCategory(category, cursor) => {
+                        initial_view = InitialView::Category(category, cursor);
+                    }
+                    MenuAction::EnterSearch(cursor) => {
+                        initial_view = InitialView::SearchAll(cursor);
+                    }
+                    MenuAction::Exit => break,
+                }
+            }
+            InitialView::Category(category, cursor) => {
+                if handle_category(&mut ctx, category, cursor)? {
+                    // User selected Back or Esc, return to main menu
+                    initial_view = InitialView::MainMenu(None);
+                } else {
+                    // User exited (shouldn't happen with Back option, but handle it)
+                    break;
+                }
+            }
+            InitialView::SearchAll(cursor) => {
+                if handle_search_all(&mut ctx, cursor)? {
+                    // User exited search, return to main menu
+                    initial_view = InitialView::MainMenu(Some(0)); // Select "Search All" in main menu
+                } else {
+                    break;
+                }
             }
         }
     }
 
-    let mut cursor: Option<usize> = None;
+    ctx.persist()?;
+    Ok(())
+}
+
+/// Initial view state for the settings UI
+enum InitialView {
+    MainMenu(Option<usize>),
+    Category(&'static registry::SettingCategory, Option<usize>),
+    SearchAll(Option<usize>),
+}
+
+/// Action to take after a menu interaction
+enum MenuAction {
+    EnterCategory(&'static registry::SettingCategory, Option<usize>),
+    EnterSearch(Option<usize>),
+    Exit,
+}
+
+/// Run the main category selection menu
+fn run_main_menu(ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Result<MenuAction> {
+    let mut cursor = initial_cursor;
 
     loop {
         let mut menu_items = Vec::with_capacity(CATEGORIES.len() + 1);
@@ -121,7 +197,7 @@ pub fn run_settings_ui(
                 ),
                 None,
             );
-            break;
+            return Ok(MenuAction::Exit);
         }
 
         match select_one_with_style_at(menu_items.clone(), cursor)? {
@@ -132,97 +208,14 @@ pub fn run_settings_ui(
 
                 match selected {
                     CategoryMenuItem::SearchAll => {
-                        if !handle_search_all(&mut ctx)? {
-                            break;
-                        }
+                        return Ok(MenuAction::EnterSearch(None));
                     }
                     CategoryMenuItem::Category(item) => {
-                        if !handle_category(&mut ctx, item.category)? {
-                            break;
-                        }
+                        return Ok(MenuAction::EnterCategory(item.category, None));
                     }
                 }
             }
-            None => break,
-        }
-    }
-
-    ctx.persist()?;
-    Ok(())
-}
-
-/// Handle navigation directly to a specific setting
-fn handle_direct_setting(ctx: &mut SettingsContext, setting_id: &str) -> Result<()> {
-    // Find the setting by ID
-    let setting = registry::SETTINGS
-        .iter()
-        .find(|s| s.id == setting_id)
-        .ok_or_else(|| anyhow::anyhow!("Setting '{}' not found", setting_id))?;
-
-    // Compute the state
-    let state = super::state::compute_setting_state(ctx, setting);
-
-    // Show the setting and allow interaction
-    super::handlers::handle_setting(ctx, setting, state)?;
-    ctx.persist()?;
-
-    Ok(())
-}
-
-/// Handle navigation directly to a specific category
-fn handle_direct_category(ctx: &mut SettingsContext, category_id: &str) -> Result<()> {
-    let category = registry::category_by_id(category_id)
-        .ok_or_else(|| anyhow::anyhow!("Category '{}' not found", category_id))?;
-
-    // Enter the category and stay in it
-    handle_category_persistent(ctx, category)?;
-    ctx.persist()?;
-
-    Ok(())
-}
-
-/// Handle search all in a persistent way (doesn't return to main menu)
-fn handle_search_all_persistent(ctx: &mut SettingsContext) -> Result<()> {
-    handle_search_all(ctx)?;
-    ctx.persist()?;
-    Ok(())
-}
-
-/// Handle category in a persistent way (for direct navigation)
-fn handle_category_persistent(
-    ctx: &mut SettingsContext,
-    category: &'static registry::SettingCategory,
-) -> Result<()> {
-    let setting_defs = registry::settings_for_category(category.id);
-    if setting_defs.is_empty() {
-        ctx.emit_info(
-            "settings.category.empty",
-            &format!("No settings available for {} yet.", category.title),
-        );
-        return Ok(());
-    }
-
-    let mut cursor: Option<usize> = None;
-
-    loop {
-        let mut entries: Vec<CategoryPageItem> = Vec::with_capacity(setting_defs.len() + 1);
-        for &definition in &setting_defs {
-            let state = super::state::compute_setting_state(ctx, definition);
-            entries.push(CategoryPageItem::Setting(SettingItem { definition, state }));
-        }
-
-        entries.push(CategoryPageItem::Back);
-
-        match select_one_with_style_at(entries.clone(), cursor)? {
-            Some(CategoryPageItem::Setting(item)) => {
-                if let Some(index) = category_page_index(&entries, CategoryPageItem::Setting(item))
-                {
-                    cursor = Some(index);
-                }
-                super::handlers::handle_setting(ctx, item.definition, item.state)?;
-                ctx.persist()?;
-            }
-            Some(CategoryPageItem::Back) | None => return Ok(()),
+            None => return Ok(MenuAction::Exit),
         }
     }
 }
@@ -230,6 +223,7 @@ fn handle_category_persistent(
 pub fn handle_category(
     ctx: &mut SettingsContext,
     category: &'static registry::SettingCategory,
+    initial_cursor: Option<usize>,
 ) -> Result<bool> {
     let setting_defs = registry::settings_for_category(category.id);
     if setting_defs.is_empty() {
@@ -240,7 +234,7 @@ pub fn handle_category(
         return Ok(true);
     }
 
-    let mut cursor: Option<usize> = None;
+    let mut cursor = initial_cursor;
 
     loop {
         let mut entries: Vec<CategoryPageItem> = Vec::with_capacity(setting_defs.len() + 1);
@@ -265,8 +259,11 @@ pub fn handle_category(
     }
 }
 
-pub fn handle_search_all(ctx: &mut SettingsContext) -> Result<bool> {
-    let mut cursor: Option<usize> = None;
+pub fn handle_search_all(
+    ctx: &mut SettingsContext,
+    initial_cursor: Option<usize>,
+) -> Result<bool> {
+    let mut cursor = initial_cursor;
 
     loop {
         let mut items = Vec::new();
