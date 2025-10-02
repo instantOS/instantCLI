@@ -501,16 +501,28 @@ fn manage_user_groups(
                     .args(["--multi"])
                     .select(available_groups)?;
 
-                if let crate::fzf_wrapper::FzfResult::Selected(group_items) = selected {
-                    for item in group_items {
+                match selected {
+                    crate::fzf_wrapper::FzfResult::Selected(item) => {
                         if !spec.groups.contains(&item.name) {
                             spec.groups.push(item.name);
                         }
+                        *spec = spec.sanitized();
+                        store.insert(username, spec.clone());
+                        apply_user_spec(ctx, username, spec)?;
+                        changed = true;
                     }
-                    *spec = spec.sanitized();
-                    store.insert(username, spec.clone());
-                    apply_user_spec(ctx, username, spec)?;
-                    changed = true;
+                    crate::fzf_wrapper::FzfResult::MultiSelected(group_items) => {
+                        for item in group_items {
+                            if !spec.groups.contains(&item.name) {
+                                spec.groups.push(item.name);
+                            }
+                        }
+                        *spec = spec.sanitized();
+                        store.insert(username, spec.clone());
+                        apply_user_spec(ctx, username, spec)?;
+                        changed = true;
+                    }
+                    _ => {}
                 }
             }
             Some(GroupActionItem::RemoveGroup) => {
@@ -536,31 +548,36 @@ fn manage_user_groups(
                     .args(["--multi"])
                     .select(groups_to_show)?;
 
-                if let crate::fzf_wrapper::FzfResult::Selected(groups_to_remove) = selected {
-                    let remove_set: BTreeSet<_> = groups_to_remove
-                        .iter()
-                        .map(|item| item.name.clone())
-                        .collect();
-                    spec.groups.retain(|g| {
-                        if remove_set.contains(g) {
-                            // Don't remove primary group
-                            if Some(g.as_str()) == primary_group.as_deref() {
-                                ctx.emit_info(
-                                    "settings.users.groups",
-                                    &format!("Skipping primary group: {}", g),
-                                );
-                                return true;
-                            }
-                            false
-                        } else {
-                            true
+                let groups_to_remove = match selected {
+                    crate::fzf_wrapper::FzfResult::Selected(item) => vec![item],
+                    crate::fzf_wrapper::FzfResult::MultiSelected(items) => items,
+                    _ => continue,
+                };
+
+                let remove_set: BTreeSet<_> = groups_to_remove
+                    .iter()
+                    .map(|item| item.name.clone())
+                    .collect();
+                    
+                spec.groups.retain(|g| {
+                    if remove_set.contains(g) {
+                        // Don't remove primary group
+                        if Some(g.as_str()) == primary_group.as_deref() {
+                            ctx.emit_info(
+                                "settings.users.groups",
+                                &format!("Skipping primary group: {}", g),
+                            );
+                            return true;
                         }
-                    });
-                    *spec = spec.sanitized();
-                    store.insert(username, spec.clone());
-                    apply_user_spec(ctx, username, spec)?;
-                    changed = true;
-                }
+                        false
+                    } else {
+                        true
+                    }
+                });
+                *spec = spec.sanitized();
+                store.insert(username, spec.clone());
+                apply_user_spec(ctx, username, spec)?;
+                changed = true;
             }
             _ => break,
         }
