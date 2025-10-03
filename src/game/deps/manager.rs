@@ -68,21 +68,22 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
             expanded_source
         )
     })?;
-    let kind = if metadata.is_file() {
-        DependencyKind::File
-    } else if metadata.is_dir() {
-        DependencyKind::Directory
-    } else {
-        return Err(anyhow!("Dependency path must be a file or directory"));
-    };
+    if metadata.is_file() {
+        return Err(anyhow!(
+            "File dependencies are not supported. Please provide a directory path."
+        ));
+    }
+
+    if !metadata.is_dir() {
+        return Err(anyhow!("Dependency path must be a directory"));
+    }
 
     let backup = backup_dependency(&game_name, &dependency_id, &source_path_buf, &game_config)?;
 
     let dependency = GameDependency {
         id: dependency_id.clone(),
         source_path: source_path_buf.to_string_lossy().to_string(),
-        snapshot_id: Some(backup.snapshot_id.clone()),
-        kind,
+        kind: DependencyKind::Directory,
     };
 
     if let Some(game) = game_config.games.get_mut(game_index) {
@@ -156,8 +157,6 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
     };
 
     let dependency_id = selected_dependency.id.clone();
-    let dependency_kind = selected_dependency.kind;
-
     let target_path_input = resolve_install_path(
         install_path_arg,
         &game_name,
@@ -173,18 +172,17 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
             )
         })?;
 
-    if !prepare_install_target(&install_path_tilde, dependency_kind)? {
+    if !prepare_install_target(&install_path_tilde, selected_dependency.kind)? {
         return Ok(());
     }
 
-    let target_path_buf = install_path_tilde.as_path().to_path_buf();
-
-    let restore = restore_dependency(
+    let restore_outcome = restore_dependency(
         &game_name,
         &selected_dependency,
         &game_config,
-        &target_path_buf,
+        install_path_tilde.as_path(),
     )?;
+    let detected_kind = restore_outcome.kind;
 
     let game = game_config
         .games
@@ -195,7 +193,7 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
         .iter_mut()
         .find(|dep| dep.id == dependency_id)
     {
-        dep.snapshot_id = Some(restore.snapshot_id.clone());
+        dep.kind = detected_kind;
     }
     game_config.save()?;
 
@@ -225,17 +223,22 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
             install_path_tilde
                 .to_tilde_string()
                 .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string()),
-            restore.snapshot_id
+            restore_outcome.snapshot_id
         ),
         Some(serde_json::json!({
             "game": game_name,
             "dependency": dependency_id,
-            "snapshot": restore.snapshot_id,
+            "snapshot": restore_outcome.snapshot_id,
+            "summary": restore_outcome.summary,
             "install_path": install_path_tilde
                 .to_tilde_string()
                 .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string())
         })),
     );
+
+    if let Some(summary) = &restore_outcome.summary {
+        println!("{} {}", char::from(NerdFont::Info), summary);
+    }
 
     Ok(())
 }
@@ -549,36 +552,7 @@ fn prepare_install_target(
                 }
             }
         }
-        DependencyKind::File => {
-            if let Some(parent) = path.as_path().parent() {
-                if !parent.exists() {
-                    match FzfWrapper::confirm(&format!(
-                        "Parent directory '{}' does not exist. Create it?",
-                        parent.display()
-                    ))? {
-                        ConfirmResult::Yes => {
-                            fs::create_dir_all(parent).with_context(|| {
-                                format!("Failed to create parent directory '{}'", parent.display())
-                            })?;
-                        }
-                        ConfirmResult::No | ConfirmResult::Cancelled => {
-                            println!("{} Installation cancelled.", char::from(NerdFont::Warning));
-                            return Ok(false);
-                        }
-                    }
-                }
-            }
-
-            if path.as_path().exists() {
-                match FzfWrapper::confirm(&format!("File '{}' exists. Overwrite it?", display))? {
-                    ConfirmResult::Yes => {}
-                    ConfirmResult::No | ConfirmResult::Cancelled => {
-                        println!("{} Installation cancelled.", char::from(NerdFont::Warning));
-                        return Ok(false);
-                    }
-                }
-            }
-        }
+        DependencyKind::File => unreachable!("file dependencies should be filtered out earlier"),
     }
 
     Ok(true)

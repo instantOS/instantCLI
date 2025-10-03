@@ -44,21 +44,7 @@ pub fn show_dependency_list(
             })
             .and_then(|installed| installed.install_path.to_tilde_string().ok());
 
-        text.push_str(&format!(
-            "{} {}\n",
-            char::from(NerdFont::Package),
-            dependency.id
-        ));
-        text.push_str(&format!(
-            "   • Source: {}\n",
-            format_path_for_display(&dependency.source_path)
-        ));
         text.push_str(&format!("   • Kind: {:?}\n", dependency.kind));
-        if let Some(snapshot) = &dependency.snapshot_id {
-            text.push_str(&format!("   • Snapshot: {}\n", snapshot));
-        } else {
-            text.push_str("   • Snapshot: <not captured>\n");
-        }
         if let Some(path) = &installed_path {
             text.push_str(&format!("   • Installed at: {}\n", path));
         } else {
@@ -70,7 +56,6 @@ pub fn show_dependency_list(
             "id": dependency.id,
             "source_path": dependency.source_path,
             "kind": format!("{:?}", dependency.kind),
-            "snapshot_id": dependency.snapshot_id,
             "installed_path": installed_path,
         }));
     }

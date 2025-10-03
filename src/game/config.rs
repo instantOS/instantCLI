@@ -142,8 +142,6 @@ impl Default for DependencyKind {
 pub struct GameDependency {
     pub id: String,
     pub source_path: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub snapshot_id: Option<String>,
     #[serde(default)]
     pub kind: DependencyKind,
 }

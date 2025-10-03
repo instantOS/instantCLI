@@ -45,12 +45,6 @@ impl<'a> FzfSelectable for DependencyOption<'a> {
         ));
         preview.push_str(&format!("Kind: {:?}\n", self.dependency.kind));
 
-        if let Some(snapshot) = &self.dependency.snapshot_id {
-            preview.push_str(&format!("Snapshot: {}\n", snapshot));
-        } else {
-            preview.push_str("Snapshot: <not captured yet>\n");
-        }
-
         FzfPreview::Text(preview)
     }
 }
