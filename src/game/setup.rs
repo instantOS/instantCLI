@@ -81,31 +81,25 @@ fn maybe_setup_restic_games(
     game_config: &mut InstantGameConfig,
     installations: &mut InstallationsConfig,
 ) -> Result<()> {
-    let mut first_iteration = true;
-
     loop {
         let candidates = discover_restic_game_candidates(game_config)?;
 
-        if first_iteration {
-            if candidates.is_empty() {
-                println!(
-                    "{} No new restic-backed games detected.",
-                    char::from(NerdFont::Info)
-                );
-            } else {
-                println!(
-                    "\n{} Found {} restic backup{} ready for setup:",
-                    char::from(NerdFont::Gamepad),
-                    candidates.len(),
-                    if candidates.len() == 1 { "" } else { "s" }
-                );
-                println!(
-                    "   • Pick an existing backup to bootstrap setup\n   • Enter a different game name\n   • Skip to only configure already-added games"
-                );
-            }
+        if candidates.is_empty() {
+            println!(
+                "{} No new restic-backed games detected.",
+                char::from(NerdFont::Info)
+            );
+        } else {
+            println!(
+                "\n{} Found {} restic backup{} ready for setup:",
+                char::from(NerdFont::Gamepad),
+                candidates.len(),
+                if candidates.len() == 1 { "" } else { "s" }
+            );
+            println!(
+                "   • Pick an existing backup to bootstrap setup\n   • Enter a different game name\n   • Skip to only configure already-added games"
+            );
         }
-
-        first_iteration = false;
 
         let selection = match prompt_restic_game_choice(&candidates)? {
             Some(action) => action,
@@ -515,8 +509,52 @@ fn setup_single_game(
         let save_dir_info = get_save_directory_info(save_path.as_path())
             .with_context(|| format!("Failed to inspect save directory '{path_str}'"))?;
         let path_exists_after = save_path.as_path().exists();
-        let should_restore =
+        let mut should_restore =
             path_exists_after && (directory_created || save_dir_info.file_count == 0);
+
+        if path_exists_after && save_dir_info.file_count > 0 {
+            let overwrite_prompt = format!(
+                "{} The directory '{path_str}' already contains {} file{}.\nRestoring from backup will replace its contents. Proceed?",
+                char::from(NerdFont::Warning),
+                save_dir_info.file_count,
+                if save_dir_info.file_count == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            );
+
+            match FzfWrapper::builder()
+                .confirm(overwrite_prompt)
+                .yes_text("Restore and overwrite")
+                .no_text("Choose a different path")
+                .show_confirmation()
+                .map_err(|e| anyhow::anyhow!("Failed to confirm restore overwrite: {}", e))?
+            {
+                ConfirmResult::Yes => {
+                    should_restore = true;
+                }
+                ConfirmResult::No => {
+                    println!(
+                        "{} Keeping existing files in '{path_str}'. Restore skipped.",
+                        char::from(NerdFont::Info)
+                    );
+                    should_restore = false;
+                }
+                ConfirmResult::Cancelled => {
+                    emit(
+                        Level::Warn,
+                        "game.setup.cancelled",
+                        &format!(
+                            "{} Setup cancelled for game '{game_name}'.",
+                            char::from(NerdFont::Warning)
+                        ),
+                        None,
+                    );
+                    return Ok(());
+                }
+            }
+        }
 
         if should_restore && let Some(snapshot_id) = latest_snapshot_id.as_deref() {
             emit(
