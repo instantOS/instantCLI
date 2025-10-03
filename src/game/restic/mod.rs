@@ -1,6 +1,7 @@
 pub mod backup;
 pub mod cache;
 pub mod commands;
+pub mod dependencies;
 pub mod prune;
 pub mod security;
 pub mod snapshot_selection;

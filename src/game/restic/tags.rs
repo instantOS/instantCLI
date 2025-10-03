@@ -37,6 +37,8 @@ use base64::{Engine as _, engine::general_purpose};
 ///
 /// The primary tag used for all game-related snapshots
 pub const INSTANT_GAME_TAG: &str = "instantgame";
+/// Tag used for dependency snapshots
+pub const INSTANT_GAME_DEPENDENCY_TAG: &str = "instantgame-dep";
 
 /// Encode a game name for use as a restic tag
 ///
@@ -79,6 +81,43 @@ pub fn create_game_tags(game_name: &str) -> Vec<String> {
         INSTANT_GAME_TAG.to_string(),
         encode_game_name_for_tag(game_name),
     ]
+}
+
+/// Encode a dependency ID for use as a restic tag fragment
+pub fn encode_dependency_id_for_tag(dependency_id: &str) -> String {
+    general_purpose::STANDARD.encode(dependency_id.as_bytes())
+}
+
+/// Decode a dependency ID from a restic tag fragment
+pub fn decode_dependency_id_from_tag(encoded_tag: &str) -> Result<String> {
+    let decoded_bytes = general_purpose::STANDARD
+        .decode(encoded_tag)
+        .context("Failed to decode base64 dependency tag")?;
+
+    String::from_utf8(decoded_bytes).context("Decoded dependency tag contains invalid UTF-8")
+}
+
+/// Create tag set for dependency snapshot (game + dependency ID)
+pub fn create_dependency_tags(game_name: &str, dependency_id: &str) -> Vec<String> {
+    vec![
+        INSTANT_GAME_DEPENDENCY_TAG.to_string(),
+        format!("game:{}", encode_game_name_for_tag(game_name)),
+        format!("dep:{}", encode_dependency_id_for_tag(dependency_id)),
+    ]
+}
+
+/// Extract dependency info (game name & dependency id) from tags
+pub fn extract_dependency_info_from_tags(tags: &[String]) -> Option<(String, String)> {
+    let game_tag = tags.iter().find(|tag| tag.starts_with("game:"))?;
+    let dep_tag = tags.iter().find(|tag| tag.starts_with("dep:"))?;
+
+    let encoded_game = game_tag.strip_prefix("game:")?;
+    let encoded_dep = dep_tag.strip_prefix("dep:")?;
+
+    let game = decode_game_name_from_tag(encoded_game).ok()?;
+    let dependency = decode_dependency_id_from_tag(encoded_dep).ok()?;
+
+    Some((game, dependency))
 }
 
 /// Extract game name from snapshot tags
@@ -214,6 +253,16 @@ mod tests {
         let tags = vec!["instantgame".to_string(), "invalid_base64!".to_string()];
         let extracted = extract_game_name_from_tags(&tags);
         assert!(extracted.is_none());
+    }
+
+    #[test]
+    fn test_dependency_tag_encoding_decoding() {
+        let tags = create_dependency_tags("Test Game", "dep-1");
+        assert_eq!(tags[0], INSTANT_GAME_DEPENDENCY_TAG);
+
+        let info = extract_dependency_info_from_tags(&tags).unwrap();
+        assert_eq!(info.0, "Test Game");
+        assert_eq!(info.1, "dep-1");
     }
 
     #[test]

@@ -1,0 +1,633 @@
+use std::fs;
+use std::path::PathBuf;
+
+use anyhow::{Context, Result, anyhow};
+
+use crate::game::config::{
+    DependencyKind, Game, GameDependency, GameInstallation, InstallationsConfig,
+    InstalledDependency, InstantGameConfig,
+};
+use crate::game::deps::{display, selection};
+use crate::game::games::selection::select_game_interactive;
+use crate::game::restic::dependencies::{backup_dependency, restore_dependency};
+use crate::game::utils::save_files::get_save_directory_info;
+use crate::game::utils::validation;
+use crate::menu_utils::{
+    ConfirmResult, FilePickerScope, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
+};
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::prelude::*;
+
+pub struct AddDependencyOptions {
+    pub game_name: Option<String>,
+    pub dependency_id: Option<String>,
+    pub source_path: Option<String>,
+}
+
+pub struct InstallDependencyOptions {
+    pub game_name: Option<String>,
+    pub dependency_id: Option<String>,
+    pub install_path: Option<String>,
+}
+
+pub struct UninstallDependencyOptions {
+    pub game_name: Option<String>,
+    pub dependency_id: Option<String>,
+}
+
+pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
+    let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+
+    validation::check_restic_and_game_manager(&game_config)?;
+
+    let AddDependencyOptions {
+        game_name: game_name_arg,
+        dependency_id: dependency_id_arg,
+        source_path: source_path_arg,
+    } = options;
+
+    let game_name = resolve_game_name(game_name_arg, Some("Select game to add dependency"))?;
+
+    let game_index = game_config
+        .games
+        .iter()
+        .position(|game| game.name.0 == game_name)
+        .ok_or_else(|| anyhow!("Game '{}' not found in configuration", game_name))?;
+
+    let dependency_id = {
+        let game_ref = &game_config.games[game_index];
+        resolve_dependency_id(dependency_id_arg, &game_name, game_ref)?
+    };
+
+    let source_path = resolve_source_path(source_path_arg, &game_name)?;
+    let expanded_source = shellexpand::tilde(&source_path).to_string();
+    let source_path_buf = PathBuf::from(&expanded_source);
+    let metadata = fs::metadata(&source_path_buf).with_context(|| {
+        format!(
+            "Failed to read metadata for dependency path: {}",
+            expanded_source
+        )
+    })?;
+    let kind = if metadata.is_file() {
+        DependencyKind::File
+    } else if metadata.is_dir() {
+        DependencyKind::Directory
+    } else {
+        return Err(anyhow!("Dependency path must be a file or directory"));
+    };
+
+    let backup = backup_dependency(&game_name, &dependency_id, &source_path_buf, &game_config)?;
+
+    let dependency = GameDependency {
+        id: dependency_id.clone(),
+        source_path: source_path_buf.to_string_lossy().to_string(),
+        snapshot_id: Some(backup.snapshot_id.clone()),
+        kind,
+    };
+
+    if let Some(game) = game_config.games.get_mut(game_index) {
+        game.dependencies.push(dependency);
+    }
+    game_config.save()?;
+
+    emit(
+        Level::Success,
+        "game.deps.add",
+        &format!(
+            "{} Added dependency '{}' for '{}' (snapshot: {}).",
+            char::from(NerdFont::Check),
+            dependency_id,
+            game_name,
+            backup.snapshot_id
+        ),
+        Some(serde_json::json!({
+            "game": game_name,
+            "dependency": dependency_id,
+            "snapshot": backup.snapshot_id,
+            "reused_existing": backup.reused_existing
+        })),
+    );
+
+    Ok(())
+}
+
+pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
+    let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let mut installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
+
+    validation::check_restic_and_game_manager(&game_config)?;
+
+    let InstallDependencyOptions {
+        game_name: game_name_arg,
+        dependency_id: dependency_id_arg,
+        install_path: install_path_arg,
+    } = options;
+
+    let game_name = resolve_game_name(game_name_arg, Some("Select game to install dependency"))?;
+    let game_index = game_config
+        .games
+        .iter()
+        .position(|game| game.name.0 == game_name)
+        .ok_or_else(|| anyhow!("Game '{}' not found in configuration", game_name))?;
+
+    let game_ref = &game_config.games[game_index];
+
+    if game_ref.dependencies.is_empty() {
+        println!(
+            "{} Game '{}' has no registered dependencies.",
+            char::from(NerdFont::Info),
+            game_name
+        );
+        return Ok(());
+    }
+
+    let selected_dependency = if let Some(id) = dependency_id_arg {
+        game_ref
+            .dependencies
+            .iter()
+            .find(|dep| dep.id == id)
+            .cloned()
+            .ok_or_else(|| anyhow!("Dependency '{}' not found for game '{}'", id, game_name))?
+    } else {
+        selection::select_dependency(&game_name, &game_ref.dependencies)?
+            .ok_or_else(|| anyhow!("Dependency selection cancelled"))?
+            .clone()
+    };
+
+    let dependency_id = selected_dependency.id.clone();
+    let dependency_kind = selected_dependency.kind;
+
+    let target_path_input = resolve_install_path(
+        install_path_arg,
+        &game_name,
+        &dependency_id,
+        &selected_dependency,
+    )?;
+
+    let install_path_tilde = crate::dot::path_serde::TildePath::from_str(&target_path_input)
+        .with_context(|| {
+            format!(
+                "Invalid install path provided for dependency '{}': {}",
+                dependency_id, target_path_input
+            )
+        })?;
+
+    if !prepare_install_target(&install_path_tilde, dependency_kind)? {
+        return Ok(());
+    }
+
+    let target_path_buf = install_path_tilde.as_path().to_path_buf();
+
+    let restore = restore_dependency(
+        &game_name,
+        &selected_dependency,
+        &game_config,
+        &target_path_buf,
+    )?;
+
+    let game = game_config
+        .games
+        .get_mut(game_index)
+        .expect("game index should be valid");
+    if let Some(dep) = game
+        .dependencies
+        .iter_mut()
+        .find(|dep| dep.id == dependency_id)
+    {
+        dep.snapshot_id = Some(restore.snapshot_id.clone());
+    }
+    game_config.save()?;
+
+    let installation = installations
+        .installations
+        .iter_mut()
+        .find(|inst| inst.game_name.0 == game_name)
+        .ok_or_else(|| {
+            anyhow!(
+                "Game '{}' is not configured on this device. Run '{} game setup' first.",
+                game_name,
+                env!("CARGO_BIN_NAME")
+            )
+        })?;
+
+    upsert_installed_dependency(installation, &dependency_id, install_path_tilde.clone());
+    installations.save()?;
+
+    emit(
+        Level::Success,
+        "game.deps.install",
+        &format!(
+            "{} Installed dependency '{}' for '{}' into {} (snapshot: {}).",
+            char::from(NerdFont::Check),
+            dependency_id,
+            game_name,
+            install_path_tilde
+                .to_tilde_string()
+                .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string()),
+            restore.snapshot_id
+        ),
+        Some(serde_json::json!({
+            "game": game_name,
+            "dependency": dependency_id,
+            "snapshot": restore.snapshot_id,
+            "install_path": install_path_tilde
+                .to_tilde_string()
+                .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string())
+        })),
+    );
+
+    Ok(())
+}
+
+pub fn uninstall_dependency(options: UninstallDependencyOptions) -> Result<()> {
+    let mut installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+
+    let game_name = resolve_game_name(
+        options.game_name,
+        Some("Select game to uninstall dependency"),
+    )?;
+
+    let game = game_config
+        .games
+        .iter()
+        .find(|game| game.name.0 == game_name)
+        .ok_or_else(|| anyhow!("Game '{}' not found in configuration", game_name))?;
+
+    if game.dependencies.is_empty() {
+        println!(
+            "{} Game '{}' has no registered dependencies.",
+            char::from(NerdFont::Info),
+            game_name
+        );
+        return Ok(());
+    }
+
+    let dependency_id = if let Some(id) = options.dependency_id {
+        id
+    } else {
+        selection::select_dependency(&game_name, &game.dependencies)?
+            .ok_or_else(|| anyhow!("Dependency selection cancelled"))?
+            .id
+            .clone()
+    };
+
+    let installation = installations
+        .installations
+        .iter_mut()
+        .find(|inst| inst.game_name.0 == game_name)
+        .ok_or_else(|| anyhow!("Game '{}' is not configured on this device.", game_name))?;
+
+    let initial_len = installation.dependencies.len();
+    installation
+        .dependencies
+        .retain(|dep| dep.dependency_id != dependency_id);
+
+    if installation.dependencies.len() == initial_len {
+        println!(
+            "{} Dependency '{}' was not installed for '{}' on this device.",
+            char::from(NerdFont::Info),
+            dependency_id,
+            game_name
+        );
+        return Ok(());
+    }
+
+    installations.save()?;
+
+    emit(
+        Level::Success,
+        "game.deps.uninstall",
+        &format!(
+            "{} Removed dependency '{}' installation record for '{}'.",
+            char::from(NerdFont::Check),
+            dependency_id,
+            game_name
+        ),
+        Some(serde_json::json!({
+            "game": game_name,
+            "dependency": dependency_id
+        })),
+    );
+
+    Ok(())
+}
+
+pub fn list_dependencies(game_name: Option<String>) -> Result<()> {
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
+
+    let game_name = resolve_game_name(game_name, Some("Select game to list dependencies"))?;
+
+    let game = game_config
+        .games
+        .iter()
+        .find(|game| game.name.0 == game_name)
+        .ok_or_else(|| anyhow!("Game '{}' not found in configuration", game_name))?;
+
+    let installation = installations
+        .installations
+        .iter()
+        .find(|inst| inst.game_name.0 == game_name);
+
+    display::show_dependency_list(&game_name, &game.dependencies, installation)
+}
+
+fn resolve_game_name(game_name: Option<String>, prompt: Option<&str>) -> Result<String> {
+    if let Some(name) = game_name {
+        return Ok(name);
+    }
+
+    match select_game_interactive(prompt)? {
+        Some(name) => Ok(name),
+        None => Err(anyhow!("Game selection cancelled")),
+    }
+}
+
+fn resolve_dependency_id(
+    dependency_id: Option<String>,
+    game_name: &str,
+    game: &Game,
+) -> Result<String> {
+    if let Some(id) = dependency_id {
+        let trimmed = id.trim();
+        if trimmed.is_empty() {
+            return Err(anyhow!("Dependency ID cannot be empty"));
+        }
+        if game
+            .dependencies
+            .iter()
+            .any(|dependency| dependency.id == trimmed)
+        {
+            return Err(anyhow!(
+                "Dependency '{}' already exists for '{}'",
+                trimmed,
+                game_name
+            ));
+        }
+        return Ok(trimmed.to_string());
+    }
+
+    let input = FzfWrapper::input(&format!("Enter dependency ID for '{}':", game_name))
+        .context("Failed to read dependency id input")?;
+
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!("Dependency ID cannot be empty"));
+    }
+
+    if game
+        .dependencies
+        .iter()
+        .any(|dependency| dependency.id == trimmed)
+    {
+        return Err(anyhow!(
+            "Dependency '{}' already exists for '{}'",
+            trimmed,
+            game_name
+        ));
+    }
+
+    Ok(trimmed.to_string())
+}
+
+fn resolve_source_path(path: Option<String>, game_name: &str) -> Result<String> {
+    if let Some(path) = path {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            return Err(anyhow!("Dependency path cannot be empty"));
+        }
+        return Ok(trimmed.to_string());
+    }
+
+    let selection = PathInputBuilder::new()
+        .header(format!(
+            "{} Select the dependency path for '{}'",
+            char::from(NerdFont::Package),
+            game_name
+        ))
+        .manual_prompt("Enter file or directory path:")
+        .scope(FilePickerScope::FilesAndDirectories)
+        .picker_hint("Select the file or directory to capture as a dependency")
+        .choose()?;
+
+    match selection {
+        PathInputSelection::Manual(input) => {
+            let trimmed = input.trim();
+            if trimmed.is_empty() {
+                Err(anyhow!("Dependency path cannot be empty"))
+            } else {
+                Ok(trimmed.to_string())
+            }
+        }
+        PathInputSelection::Picker(path) => Ok(path.display().to_string()),
+        PathInputSelection::Cancelled => Err(anyhow!("Dependency path selection cancelled")),
+    }
+}
+
+fn resolve_install_path(
+    path: Option<String>,
+    game_name: &str,
+    dependency_id: &str,
+    dependency: &GameDependency,
+) -> Result<String> {
+    if let Some(path) = path {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            return Err(anyhow!("Install path cannot be empty"));
+        }
+        return Ok(trimmed.to_string());
+    }
+
+    let source_display = format_path_for_display(&dependency.source_path);
+    let options = vec![
+        InstallPathOption::new(
+            format!(
+                "{} Use source path ({})",
+                char::from(NerdFont::Folder),
+                source_display
+            ),
+            Some(dependency.source_path.clone()),
+        ),
+        InstallPathOption::new(
+            format!("{} Choose a different path", char::from(NerdFont::Edit)),
+            None,
+        ),
+    ];
+
+    match FzfWrapper::select_one(options)? {
+        Some(selection) => match selection.value {
+            Some(value) => Ok(value),
+            None => prompt_custom_install_path(game_name, dependency_id),
+        },
+        None => Err(anyhow!("Install path selection cancelled")),
+    }
+}
+
+fn prompt_custom_install_path(game_name: &str, dependency_id: &str) -> Result<String> {
+    let selection = PathInputBuilder::new()
+        .header(format!(
+            "{} Choose install path for dependency '{}'",
+            char::from(NerdFont::Folder),
+            dependency_id
+        ))
+        .manual_prompt(format!(
+            "Enter destination for '{}' dependency of '{}'",
+            dependency_id, game_name
+        ))
+        .scope(FilePickerScope::FilesAndDirectories)
+        .picker_hint("Select where the dependency should be installed")
+        .choose()?;
+
+    match selection {
+        PathInputSelection::Manual(input) => {
+            let trimmed = input.trim();
+            if trimmed.is_empty() {
+                Err(anyhow!("Install path cannot be empty"))
+            } else {
+                Ok(trimmed.to_string())
+            }
+        }
+        PathInputSelection::Picker(path) => Ok(path.display().to_string()),
+        PathInputSelection::Cancelled => Err(anyhow!("Install path selection cancelled")),
+    }
+}
+
+fn prepare_install_target(
+    path: &crate::dot::path_serde::TildePath,
+    kind: DependencyKind,
+) -> Result<bool> {
+    let display = path
+        .to_tilde_string()
+        .unwrap_or_else(|_| path.as_path().display().to_string());
+
+    match kind {
+        DependencyKind::Directory => {
+            if path.as_path().exists() {
+                if !path.as_path().is_dir() {
+                    return Err(anyhow!(
+                        "Target path {} exists but is not a directory",
+                        display
+                    ));
+                }
+
+                let info = get_save_directory_info(path.as_path())?;
+                if info.file_count > 0 {
+                    let prompt = format!(
+                        "{} Directory '{}' contains {} file(s). Overwrite contents?",
+                        char::from(NerdFont::Warning),
+                        display,
+                        info.file_count
+                    );
+                    match FzfWrapper::builder()
+                        .confirm(prompt)
+                        .yes_text("Overwrite directory")
+                        .no_text("Cancel")
+                        .show_confirmation()?
+                    {
+                        ConfirmResult::Yes => {}
+                        ConfirmResult::No | ConfirmResult::Cancelled => {
+                            println!("{} Installation cancelled.", char::from(NerdFont::Warning));
+                            return Ok(false);
+                        }
+                    }
+                }
+            } else {
+                match FzfWrapper::confirm(&format!("Create directory '{}'?", display))? {
+                    ConfirmResult::Yes => {
+                        fs::create_dir_all(path.as_path()).with_context(|| {
+                            format!("Failed to create directory '{}'.", display)
+                        })?;
+                    }
+                    ConfirmResult::No | ConfirmResult::Cancelled => {
+                        println!("{} Installation cancelled.", char::from(NerdFont::Warning));
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+        DependencyKind::File => {
+            if let Some(parent) = path.as_path().parent() {
+                if !parent.exists() {
+                    match FzfWrapper::confirm(&format!(
+                        "Parent directory '{}' does not exist. Create it?",
+                        parent.display()
+                    ))? {
+                        ConfirmResult::Yes => {
+                            fs::create_dir_all(parent).with_context(|| {
+                                format!("Failed to create parent directory '{}'", parent.display())
+                            })?;
+                        }
+                        ConfirmResult::No | ConfirmResult::Cancelled => {
+                            println!("{} Installation cancelled.", char::from(NerdFont::Warning));
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+
+            if path.as_path().exists() {
+                match FzfWrapper::confirm(&format!("File '{}' exists. Overwrite it?", display))? {
+                    ConfirmResult::Yes => {}
+                    ConfirmResult::No | ConfirmResult::Cancelled => {
+                        println!("{} Installation cancelled.", char::from(NerdFont::Warning));
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+fn upsert_installed_dependency(
+    installation: &mut GameInstallation,
+    dependency_id: &str,
+    install_path: crate::dot::path_serde::TildePath,
+) {
+    if let Some(existing) = installation
+        .dependencies
+        .iter_mut()
+        .find(|dep| dep.dependency_id == dependency_id)
+    {
+        existing.install_path = install_path;
+    } else {
+        installation.dependencies.push(InstalledDependency {
+            dependency_id: dependency_id.to_string(),
+            install_path,
+        });
+    }
+}
+
+fn format_path_for_display(path: &str) -> String {
+    let buf = PathBuf::from(path);
+    crate::dot::path_serde::TildePath::new(buf)
+        .to_tilde_string()
+        .unwrap_or_else(|_| path.to_string())
+}
+
+#[derive(Clone)]
+struct InstallPathOption {
+    label: String,
+    value: Option<String>,
+}
+
+impl InstallPathOption {
+    fn new(label: String, value: Option<String>) -> Self {
+        Self { label, value }
+    }
+}
+
+impl FzfSelectable for InstallPathOption {
+    fn fzf_display_text(&self) -> String {
+        self.label.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.label.clone()
+    }
+}

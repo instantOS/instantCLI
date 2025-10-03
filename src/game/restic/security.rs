@@ -47,6 +47,7 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
                         game_name: crate::game::config::GameName(String::new()),
                         save_path: crate::dot::path_serde::TildePath::new(std::path::PathBuf::new()),
                         nearest_checkpoint: None,
+                        dependencies: Vec::new(),
                     },
                 });
             }
