@@ -26,6 +26,14 @@ pub fn setup_uninstalled_games() -> Result<()> {
         let snapshot_overview = restic::collect_snapshot_overview(&game_config)?;
         let candidates = collect_setup_candidates(&game_config, &installations, &snapshot_overview);
 
+        if candidates.is_empty() {
+            println!(
+                "{} No games require setup. Use `ins game add` to add a new game.",
+                char::from(NerdFont::Info)
+            );
+            return Ok(());
+        }
+
         let selection = prompt_installation_choice(&candidates)?;
 
         match selection {
