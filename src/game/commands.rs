@@ -2,7 +2,11 @@ use anyhow::Result;
 
 use crate::common::requirements::RESTIC_PACKAGE;
 
-use super::cli::GameCommands;
+use super::cli::{DependencyCommands, GameCommands};
+use super::deps::{
+    AddDependencyOptions, InstallDependencyOptions, UninstallDependencyOptions, add_dependency,
+    install_dependency, list_dependencies as list_game_dependencies, uninstall_dependency,
+};
 use super::games::GameManager;
 use super::games::manager::AddGameOptions;
 use super::games::{display, selection};
@@ -28,7 +32,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Init { repo, password } => {
             ensure_restic_available()?;
             handle_init(debug, repo, password)
-        },
+        }
         GameCommands::Add {
             name,
             description,
@@ -45,7 +49,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Sync { game_name, force } => {
             ensure_restic_available()?;
             handle_sync(game_name, force)
-        },
+        }
         GameCommands::Launch { game_name } => handle_launch(game_name),
         GameCommands::List => handle_list(),
         GameCommands::Show { game_name } => handle_show(game_name),
@@ -53,18 +57,18 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Backup { game_name } => {
             ensure_restic_available()?;
             handle_backup(game_name)
-        },
+        }
         GameCommands::Prune {
             game_name,
             zero_changes,
         } => {
             ensure_restic_available()?;
             handle_prune(game_name, zero_changes)
-        },
+        }
         GameCommands::Restic { args } => {
             ensure_restic_available()?;
             handle_restic_command(args)
-        },
+        }
         GameCommands::Restore {
             game_name,
             snapshot_id,
@@ -72,11 +76,12 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         } => {
             ensure_restic_available()?;
             handle_restore(game_name, snapshot_id, force)
-        },
+        }
         GameCommands::Setup => {
             ensure_restic_available()?;
             handle_setup()
-        },
+        }
+        GameCommands::Deps { command } => handle_dependency_command(command),
         #[cfg(debug_assertions)]
         GameCommands::Debug { debug_command } => handle_debug(debug_command),
     }
@@ -136,6 +141,37 @@ fn handle_restore(
 
 fn handle_setup() -> Result<()> {
     setup::setup_uninstalled_games()
+}
+
+fn handle_dependency_command(command: DependencyCommands) -> Result<()> {
+    match command {
+        DependencyCommands::Add {
+            game_name,
+            dependency_id,
+            path,
+        } => add_dependency(AddDependencyOptions {
+            game_name,
+            dependency_id,
+            source_path: path,
+        }),
+        DependencyCommands::Install {
+            game_name,
+            dependency_id,
+            path,
+        } => install_dependency(InstallDependencyOptions {
+            game_name,
+            dependency_id,
+            install_path: path,
+        }),
+        DependencyCommands::Uninstall {
+            game_name,
+            dependency_id,
+        } => uninstall_dependency(UninstallDependencyOptions {
+            game_name,
+            dependency_id,
+        }),
+        DependencyCommands::List { game_name } => list_game_dependencies(game_name),
+    }
 }
 
 #[cfg(debug_assertions)]

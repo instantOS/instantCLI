@@ -96,12 +96,57 @@ pub enum GameCommands {
     },
     /// Set up games that have been added but are not configured on this device
     Setup,
+    /// Manage game dependencies
+    Deps {
+        /// Dependency subcommands
+        #[command(subcommand)]
+        command: DependencyCommands,
+    },
     /// Debug command: Show snapshot tag information (for developers)
     #[cfg(debug_assertions)]
     Debug {
         /// Debug subcommands
         #[command(subcommand)]
         debug_command: DebugCommands,
+    },
+}
+
+/// Dependency management commands
+#[derive(Subcommand, Debug, Clone)]
+pub enum DependencyCommands {
+    /// Add a dependency to a game and snapshot it into restic
+    Add {
+        /// Game name (optional, prompts if omitted)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
+        game_name: Option<String>,
+        /// Dependency identifier (optional, prompts if omitted)
+        dependency_id: Option<String>,
+        /// Path to dependency source file or directory (optional, prompts if omitted)
+        path: Option<String>,
+    },
+    /// Install a dependency onto this device
+    Install {
+        /// Game name (optional, prompts if omitted)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
+        game_name: Option<String>,
+        /// Dependency identifier (optional, prompts if omitted)
+        dependency_id: Option<String>,
+        /// Destination path (optional, prompts if omitted)
+        path: Option<String>,
+    },
+    /// Remove dependency installation record from this device
+    Uninstall {
+        /// Game name (optional, prompts if omitted)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
+        game_name: Option<String>,
+        /// Dependency identifier (optional, prompts if omitted)
+        dependency_id: Option<String>,
+    },
+    /// List dependencies for a game
+    List {
+        /// Game name (optional, prompts if omitted)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
+        game_name: Option<String>,
     },
 }
 
