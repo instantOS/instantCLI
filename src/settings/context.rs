@@ -80,11 +80,7 @@ impl SettingsContext {
 
     pub fn notify(&self, summary: &str, body: &str) {
         if self.debug {
-            let message = format!(
-                "{} {}",
-                char::from(NerdFont::Info),
-                format!("{summary}: {body}")
-            );
+            let message = format!("{} {summary}: {body}", char::from(NerdFont::Info));
             emit(Level::Debug, "settings.notify", &message, None);
             return;
         }

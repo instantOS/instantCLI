@@ -34,7 +34,7 @@ use base64::{Engine as _, engine::general_purpose};
 /// let game_name = tags::extract_game_name_from_tags(&tags).unwrap();
 /// // Returns: "Game: With, Special Characters!"
 /// ```
-
+///
 /// The primary tag used for all game-related snapshots
 pub const INSTANT_GAME_TAG: &str = "instantgame";
 

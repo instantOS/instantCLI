@@ -51,15 +51,13 @@ fn write_if_changed(path: &Path, contents: &str) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum FilePickerScope {
     #[default]
     Files,
     Directories,
     FilesAndDirectories,
 }
-
 
 impl FilePickerScope {
     pub fn as_env_value(&self) -> &'static str {

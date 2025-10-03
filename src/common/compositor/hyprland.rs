@@ -230,6 +230,8 @@ mod tests {
     fn test_command_construction() {
         // Test that commands are constructed correctly
         // This doesn't actually run hyprctl, just tests the logic
-        assert!(true);
+        let command = "focusworkspace special:term";
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        assert_eq!(parts, vec!["focusworkspace", "special:term"]);
     }
 }

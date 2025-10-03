@@ -36,8 +36,8 @@ impl Package {
         if let Ok(content) = fs::read_to_string(pkgbuild_path) {
             for line in content.lines() {
                 let line = line.trim();
-                if line.starts_with("pkgdesc=") {
-                    let desc = line["pkgdesc=".len()..].trim_matches(&['\'', '"'][..]);
+                if let Some(rest) = line.strip_prefix("pkgdesc=") {
+                    let desc = rest.trim_matches(&['\'', '"'][..]);
                     return Some(desc.to_string());
                 }
             }

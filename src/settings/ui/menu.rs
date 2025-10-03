@@ -144,78 +144,69 @@ enum MenuAction {
 
 /// Run the main category selection menu
 fn run_main_menu(ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Result<MenuAction> {
-    let mut cursor = initial_cursor;
+    let mut menu_items = Vec::with_capacity(CATEGORIES.len() + 1);
+    menu_items.push(CategoryMenuItem::SearchAll);
 
-    loop {
-        let mut menu_items = Vec::with_capacity(CATEGORIES.len() + 1);
-        menu_items.push(CategoryMenuItem::SearchAll);
+    let mut total_settings = 0usize;
+    for category in CATEGORIES {
+        let definitions = registry::settings_for_category(category.id);
+        total_settings += definitions.len();
 
-        let mut total_settings = 0usize;
-        for category in CATEGORIES {
-            let definitions = registry::settings_for_category(category.id);
-            total_settings += definitions.len();
+        let mut toggles = 0usize;
+        let mut choices = 0usize;
+        let mut actions = 0usize;
+        let mut commands = 0usize;
+        let mut highlights = [None, None, None];
 
-            let mut toggles = 0usize;
-            let mut choices = 0usize;
-            let mut actions = 0usize;
-            let mut commands = 0usize;
-            let mut highlights = [None, None, None];
-
-            for (idx, definition) in definitions.iter().enumerate() {
-                match definition.kind {
-                    SettingKind::Toggle { .. } => toggles += 1,
-                    SettingKind::Choice { .. } => choices += 1,
-                    SettingKind::Action { .. } => actions += 1,
-                    SettingKind::Command { .. } => commands += 1,
-                }
-
-                if idx < highlights.len() {
-                    highlights[idx] = Some(*definition);
-                }
+        for (idx, definition) in definitions.iter().enumerate() {
+            match definition.kind {
+                SettingKind::Toggle { .. } => toggles += 1,
+                SettingKind::Choice { .. } => choices += 1,
+                SettingKind::Action { .. } => actions += 1,
+                SettingKind::Command { .. } => commands += 1,
             }
 
-            menu_items.push(CategoryMenuItem::Category(CategoryItem {
-                category,
-                total: definitions.len(),
-                toggles,
-                choices,
-                actions,
-                commands,
-                highlights,
-            }));
-        }
-
-        if total_settings == 0 {
-            crate::ui::prelude::emit(
-                crate::ui::prelude::Level::Warn,
-                "settings.empty",
-                &format!(
-                    "{} No settings registered yet.",
-                    char::from(crate::ui::prelude::NerdFont::Warning)
-                ),
-                None,
-            );
-            return Ok(MenuAction::Exit);
-        }
-
-        match select_one_with_style_at(menu_items.clone(), cursor)? {
-            Some(selected) => {
-                if let Some(index) = menu_item_index(&menu_items, selected) {
-                    cursor = Some(index);
-                }
-
-                match selected {
-                    CategoryMenuItem::SearchAll => {
-                        return Ok(MenuAction::EnterSearch(None));
-                    }
-                    CategoryMenuItem::Category(item) => {
-                        return Ok(MenuAction::EnterCategory(item.category, None));
-                    }
-                }
+            if idx < highlights.len() {
+                highlights[idx] = Some(*definition);
             }
-            None => return Ok(MenuAction::Exit),
         }
+
+        menu_items.push(CategoryMenuItem::Category(CategoryItem {
+            category,
+            total: definitions.len(),
+            toggles,
+            choices,
+            actions,
+            commands,
+            highlights,
+        }));
     }
+
+    if total_settings == 0 {
+        crate::ui::prelude::emit(
+            crate::ui::prelude::Level::Warn,
+            "settings.empty",
+            &format!(
+                "{} No settings registered yet.",
+                char::from(crate::ui::prelude::NerdFont::Warning)
+            ),
+            None,
+        );
+        return Ok(MenuAction::Exit);
+    }
+
+    let selection = select_one_with_style_at(menu_items.clone(), initial_cursor)?;
+    let selected_index = selection.and_then(|item| menu_item_index(&menu_items, item));
+
+    let action = match selection {
+        Some(CategoryMenuItem::SearchAll) => MenuAction::EnterSearch(selected_index),
+        Some(CategoryMenuItem::Category(item)) => {
+            MenuAction::EnterCategory(item.category, selected_index)
+        }
+        None => MenuAction::Exit,
+    };
+
+    Ok(action)
 }
 
 pub fn handle_category(
