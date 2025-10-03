@@ -37,8 +37,12 @@ prepare_ins_binary() {
     cd "${REPO_ROOT}"
 
     # Optimizations for faster compilation in tests
-    export CARGO_INCREMENTAL=1
-    export CARGO_BUILD_JOBS=$(nproc)  # Use all available cores
+    if [[ -n "${SCCACHE_DISABLE_INCR_COMPILATION:-}" || "${RUSTC_WRAPPER:-}" == *sccache* ]]; then
+        export CARGO_INCREMENTAL=0
+    else
+        export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-1}"
+    fi
+    export CARGO_BUILD_JOBS=$(nproc)
 
     # Only build the ins binary, skip all other dependencies and examples
     # Suppress warnings to avoid interfering with JSON parsing in tests
