@@ -1,6 +1,6 @@
 use super::{selection::select_game_interactive, validation::*};
 use crate::dot::path_serde::TildePath;
-use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
+use crate::menu_wrapper::{ConfirmResult, FzfWrapper};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
 use anyhow::{Context, Result};
 

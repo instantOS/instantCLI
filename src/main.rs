@@ -6,7 +6,7 @@ mod completions;
 mod dev;
 mod doctor;
 mod dot;
-mod fzf_wrapper;
+mod menu_wrapper;
 mod game;
 mod launch;
 mod menu;

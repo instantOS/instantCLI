@@ -1,5 +1,5 @@
 use super::SettingsContext;
-use crate::fzf_wrapper::{FzfResult, FzfWrapper};
+use crate::menu_wrapper::{FzfResult, FzfWrapper};
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -54,7 +54,7 @@ fn run_package_installer(debug: bool) -> Result<()> {
                 .confirm(&confirm_msg)
                 .show_confirmation()?;
 
-            if !matches!(confirm, crate::fzf_wrapper::ConfirmResult::Yes) {
+            if !matches!(confirm, crate::menu_wrapper::ConfirmResult::Yes) {
                 println!("Installation cancelled.");
                 return Ok(());
             }

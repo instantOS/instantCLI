@@ -1,4 +1,4 @@
-use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
+use crate::menu_wrapper::{ConfirmResult, FzfWrapper};
 use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection;
 use crate::game::utils::save_files::{

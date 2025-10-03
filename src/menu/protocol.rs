@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use crate::fzf_wrapper::FzfSelectable;
+use crate::menu_wrapper::FzfSelectable;
 
 /// Serializable menu item with rich preview support
 ///
@@ -48,7 +48,7 @@ pub struct SerializableMenuItem {
 }
 
 /// Re-export FzfPreview from fzf_wrapper for use in protocol
-pub use crate::fzf_wrapper::FzfPreview;
+pub use crate::menu_wrapper::FzfPreview;
 
 impl FzfSelectable for SerializableMenuItem {
     fn fzf_display_text(&self) -> String {
@@ -203,12 +203,12 @@ pub fn generate_request_id() -> String {
 }
 
 /// Convert FZF confirmation result to protocol result
-impl From<crate::fzf_wrapper::ConfirmResult> for ConfirmResult {
-    fn from(result: crate::fzf_wrapper::ConfirmResult) -> Self {
+impl From<crate::menu_wrapper::ConfirmResult> for ConfirmResult {
+    fn from(result: crate::menu_wrapper::ConfirmResult) -> Self {
         match result {
-            crate::fzf_wrapper::ConfirmResult::Yes => ConfirmResult::Yes,
-            crate::fzf_wrapper::ConfirmResult::No => ConfirmResult::No,
-            crate::fzf_wrapper::ConfirmResult::Cancelled => ConfirmResult::Cancelled,
+            crate::menu_wrapper::ConfirmResult::Yes => ConfirmResult::Yes,
+            crate::menu_wrapper::ConfirmResult::No => ConfirmResult::No,
+            crate::menu_wrapper::ConfirmResult::Cancelled => ConfirmResult::Cancelled,
         }
     }
 }
@@ -227,7 +227,7 @@ impl From<ConfirmResult> for i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fzf_wrapper::FzfPreview;
+    use crate::menu_wrapper::FzfPreview;
 
     #[test]
     fn test_request_serialization() {

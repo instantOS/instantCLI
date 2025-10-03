@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::fzf_wrapper::FzfWrapper;
+use crate::menu_wrapper::FzfWrapper;
 use anyhow::{Context, Result};
 use duct::cmd;
 
@@ -108,7 +108,7 @@ impl RequiredPackage {
             .no_text("Cancel")
             .show_confirmation()?;
 
-        let should_install = matches!(should_install, crate::fzf_wrapper::ConfirmResult::Yes);
+        let should_install = matches!(should_install, crate::menu_wrapper::ConfirmResult::Yes);
 
         if should_install {
             if let Err(err) = self.install_with_prompt() {

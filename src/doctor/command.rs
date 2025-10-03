@@ -1,7 +1,7 @@
 use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_for_fix};
 use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
-use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
+use crate::menu_wrapper::{ConfirmResult, FzfWrapper};
 use crate::ui::{Level, prelude::*};
 use anyhow::{Result, anyhow};
 use colored::*;

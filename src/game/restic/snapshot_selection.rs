@@ -1,4 +1,4 @@
-use crate::fzf_wrapper::{FzfSelectable, FzfWrapper};
+use crate::menu_wrapper::{FzfSelectable, FzfWrapper};
 use crate::game::config::InstantGameConfig;
 use crate::game::restic::tags;
 use crate::game::utils::save_files::{

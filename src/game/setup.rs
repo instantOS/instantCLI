@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 
 use crate::dot::path_serde::TildePath;
-use crate::fzf_wrapper::{ConfirmResult, FzfSelectable, FzfWrapper};
+use crate::menu_wrapper::{ConfirmResult, FzfSelectable, FzfWrapper};
 use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::games::validation::validate_game_manager_initialized;
 use crate::game::restic::backup::GameBackup;

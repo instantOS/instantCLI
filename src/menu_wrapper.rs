@@ -1,9 +1,16 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
 use std::io::Write;
-use std::process::Command;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use tempfile::{Builder as TempFileBuilder, TempPath};
+use which::which;
+
+const YAZI_INIT_LUA: &str = include_str!("menu_wrapper_yazi_init.lua");
+const YAZI_CACHE_SUBDIR: &str = "ins/menu/yazi";
 
 /// Escape a string for safe use in a shell command
 /// Uses single quotes for safety, escaping any single quotes in the input
@@ -418,14 +425,14 @@ impl FzfBuilder {
             .spawn()?;
 
         let pid = child.id();
-        let _ = crate::menu::server::register_fzf_process(pid);
+        let _ = crate::menu::server::register_menu_process(pid);
 
         if let Some(stdin) = child.stdin.as_mut() {
             stdin.write_all(b"")?;
         }
 
         let output = child.wait_with_output()?;
-        crate::menu::server::unregister_fzf_process(pid);
+        crate::menu::server::unregister_menu_process(pid);
 
         if let Some(code) = output.status.code()
             && (code == 130 || code == 143)
@@ -526,7 +533,7 @@ impl FzfBuilder {
             .spawn()?;
 
         let pid = child.id();
-        let _ = crate::menu::server::register_fzf_process(pid);
+        let _ = crate::menu::server::register_menu_process(pid);
 
         let mut stdin = child
             .stdin
@@ -537,7 +544,7 @@ impl FzfBuilder {
         stdin.flush()?;
 
         let output = child.wait_with_output()?;
-        crate::menu::server::unregister_fzf_process(pid);
+        crate::menu::server::unregister_menu_process(pid);
 
         if !output.status.success() {
             return Ok(ConfirmResult::Cancelled);
@@ -588,14 +595,14 @@ impl FzfBuilder {
             .spawn()?;
 
         let pid = child.id();
-        let _ = crate::menu::server::register_fzf_process(pid);
+        let _ = crate::menu::server::register_menu_process(pid);
 
         if let Some(stdin) = child.stdin.as_mut() {
             stdin.write_all(ok_text.as_bytes())?;
         }
 
         let output = child.wait_with_output()?;
-        crate::menu::server::unregister_fzf_process(pid);
+        crate::menu::server::unregister_menu_process(pid);
 
         if let Some(code) = output.status.code()
             && (code == 130 || code == 143)
@@ -695,10 +702,10 @@ impl FzfWrapper {
             .spawn()?;
 
         let pid = child.id();
-        let _ = crate::menu::server::register_fzf_process(pid);
+        let _ = crate::menu::server::register_menu_process(pid);
 
         let output = child.wait_with_output();
-        crate::menu::server::unregister_fzf_process(pid);
+        crate::menu::server::unregister_menu_process(pid);
 
         match output {
             Ok(result) => {
@@ -810,14 +817,14 @@ impl FzfWrapper {
             .spawn()?;
 
         let pid = child.id();
-        let _ = crate::menu::server::register_fzf_process(pid);
+        let _ = crate::menu::server::register_menu_process(pid);
 
         if let Some(stdin) = child.stdin.as_mut() {
             stdin.write_all(input_text.as_bytes())?;
         }
 
         let output = child.wait_with_output();
-        crate::menu::server::unregister_fzf_process(pid);
+        crate::menu::server::unregister_menu_process(pid);
 
         match output {
             Ok(result) => {

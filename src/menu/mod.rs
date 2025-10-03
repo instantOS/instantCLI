@@ -1,4 +1,4 @@
-use crate::fzf_wrapper::{ConfirmResult, FzfPreview, FzfWrapper};
+use crate::menu_wrapper::{ConfirmResult, FzfPreview, FzfWrapper};
 use anyhow::Result;
 use protocol::SerializableMenuItem;
 
@@ -69,18 +69,18 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                     .multi_select(multi)
                     .select(item_list)?
                 {
-                    crate::fzf_wrapper::FzfResult::Selected(item) => {
+                    crate::menu_wrapper::FzfResult::Selected(item) => {
                         println!("{}", item.display_text);
                         Ok(0) // Selected
                     }
-                    crate::fzf_wrapper::FzfResult::MultiSelected(items) => {
+                    crate::menu_wrapper::FzfResult::MultiSelected(items) => {
                         for item in items {
                             println!("{}", item.display_text);
                         }
                         Ok(0) // Selected
                     }
-                    crate::fzf_wrapper::FzfResult::Cancelled => Ok(1), // Cancelled
-                    crate::fzf_wrapper::FzfResult::Error(e) => {
+                    crate::menu_wrapper::FzfResult::Cancelled => Ok(1), // Cancelled
+                    crate::menu_wrapper::FzfResult::Error(e) => {
                         eprintln!("Error: {e}");
                         Ok(2) // Error
                     }
