@@ -82,22 +82,38 @@ fn maybe_setup_restic_games(
     installations: &mut InstallationsConfig,
 ) -> Result<()> {
     loop {
-        let candidates = discover_restic_game_candidates(game_config)?;
+        let candidates = discover_restic_game_candidates(game_config, installations)?;
 
         if candidates.is_empty() {
             println!(
-                "{} No new restic-backed games detected.",
+                "{} No new game setup candidates detected.",
                 char::from(NerdFont::Info)
             );
         } else {
+            let restic_count = candidates
+                .iter()
+                .filter(|candidate| candidate.kind != ResticCandidateKind::LocalConfig)
+                .count();
+            let local_count = candidates
+                .iter()
+                .filter(|candidate| candidate.kind == ResticCandidateKind::LocalConfig)
+                .count();
+
             println!(
-                "\n{} Found {} restic backup{} ready for setup:",
+                "\n{} Found {} game setup option{}:",
                 char::from(NerdFont::Gamepad),
                 candidates.len(),
                 if candidates.len() == 1 { "" } else { "s" }
             );
+
+            if restic_count > 0 {
+                println!("   • Pick an existing restic backup to bootstrap setup");
+            }
+            if local_count > 0 {
+                println!("   • Configure games already defined in your local configuration");
+            }
             println!(
-                "   • Pick an existing backup to bootstrap setup\n   • Enter a different game name\n   • Skip to only configure already-added games"
+                "   • Enter a different game name\n   • Skip to only configure already-added games"
             );
         }
 
@@ -128,27 +144,45 @@ fn maybe_setup_restic_games(
 
 fn discover_restic_game_candidates(
     game_config: &InstantGameConfig,
+    installations: &InstallationsConfig,
 ) -> Result<Vec<ResticGameCandidate>> {
     let snapshots =
         cache::get_repository_snapshots(game_config).context("Failed to list restic snapshots")?;
-
-    let existing_games: HashSet<_> = game_config
-        .games
-        .iter()
-        .map(|game| game.name.0.clone())
-        .collect();
 
     let mut aggregated: HashMap<String, ResticGameCandidate> = HashMap::new();
 
     for snapshot in snapshots {
         if let Some(game_name) = tags::extract_game_name_from_tags(&snapshot.tags) {
-            if existing_games.contains(&game_name) {
+            let game_entry = game_config
+                .games
+                .iter()
+                .find(|game| game.name.0 == game_name);
+            let in_config = game_entry.is_some();
+            let has_installation = installations
+                .installations
+                .iter()
+                .any(|inst| inst.game_name.0 == game_name);
+
+            if has_installation {
                 continue;
             }
 
-            let entry = aggregated
-                .entry(game_name.clone())
-                .or_insert_with(|| ResticGameCandidate::new(game_name.clone()));
+            let kind = if in_config {
+                ResticCandidateKind::NeedsInstallation
+            } else {
+                ResticCandidateKind::NewGame
+            };
+
+            let description = game_entry.and_then(|game| game.description.clone());
+
+            let entry = aggregated.entry(game_name.clone()).or_insert_with(|| {
+                ResticGameCandidate::new(game_name.clone(), kind, description.clone())
+            });
+
+            entry.kind = kind;
+            if entry.description.is_none() {
+                entry.description = description.clone();
+            }
 
             entry.snapshot_count += 1;
             entry.hosts.insert(snapshot.hostname.clone());
@@ -163,6 +197,31 @@ fn discover_restic_game_candidates(
                 entry.latest_snapshot_host = Some(snapshot.hostname.clone());
             }
         }
+    }
+
+    for game in &game_config.games {
+        if installations
+            .installations
+            .iter()
+            .any(|inst| inst.game_name.0 == game.name.0)
+        {
+            continue;
+        }
+
+        aggregated
+            .entry(game.name.0.clone())
+            .and_modify(|entry| {
+                if entry.description.is_none() {
+                    entry.description = game.description.clone();
+                }
+            })
+            .or_insert_with(|| {
+                ResticGameCandidate::new(
+                    game.name.0.clone(),
+                    ResticCandidateKind::LocalConfig,
+                    game.description.clone(),
+                )
+            });
     }
 
     let mut candidates: Vec<_> = aggregated.into_values().collect();
@@ -201,76 +260,84 @@ fn handle_restic_candidate(
     installations: &mut InstallationsConfig,
 ) -> Result<()> {
     println!(
-        "\n{} Preparing setup for '{}' from restic backups...",
+        "\n{} Preparing setup for '{}'...",
         char::from(NerdFont::Gamepad),
         candidate.name
     );
 
-    let description = GameManager::get_game_description()?;
-    let launch_command = GameManager::get_launch_command()?;
+    match candidate.kind {
+        ResticCandidateKind::NewGame => {
+            let description = GameManager::get_game_description()?;
+            let launch_command = GameManager::get_launch_command()?;
 
-    let mut game = Game::new(candidate.name.clone());
+            let mut game = Game::new(candidate.name.clone());
 
-    if !description.trim().is_empty() {
-        game.description = Some(description.trim().to_string());
+            if !description.trim().is_empty() {
+                game.description = Some(description.trim().to_string());
+            }
+
+            if !launch_command.trim().is_empty() {
+                game.launch_command = Some(launch_command.trim().to_string());
+            }
+
+            game_config.games.push(game);
+            game_config.save()?;
+
+            setup_single_game(&candidate.name, game_config, installations)
+        }
+        ResticCandidateKind::NeedsInstallation | ResticCandidateKind::LocalConfig => {
+            setup_single_game(&candidate.name, game_config, installations)
+        }
     }
-
-    if !launch_command.trim().is_empty() {
-        game.launch_command = Some(launch_command.trim().to_string());
-    }
-
-    game_config.games.push(game);
-    game_config.save()?;
-
-    setup_single_game(&candidate.name, game_config, installations)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 enum ResticSetupAction {
     Restic(ResticGameCandidate),
     Manual,
     Skip,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResticCandidateKind {
+    NewGame,
+    NeedsInstallation,
+    LocalConfig,
+}
+
 #[derive(Debug, Clone)]
 struct ResticGameCandidate {
     name: String,
+    kind: ResticCandidateKind,
     snapshot_count: usize,
     hosts: HashSet<String>,
     latest_snapshot_time: Option<String>,
     latest_snapshot_host: Option<String>,
+    description: Option<String>,
 }
 
 impl ResticGameCandidate {
-    fn new(name: String) -> Self {
+    fn new(name: String, kind: ResticCandidateKind, description: Option<String>) -> Self {
         Self {
             name,
+            kind,
             snapshot_count: 0,
             hosts: HashSet::new(),
             latest_snapshot_time: None,
             latest_snapshot_host: None,
+            description,
         }
     }
 
     fn display_text(&self) -> String {
         let icon = char::from(NerdFont::Gamepad);
-        let snapshot_label = if self.snapshot_count == 1 {
-            "snapshot"
-        } else {
-            "snapshots"
-        };
-
-        let latest = self
-            .latest_snapshot_time
-            .as_ref()
-            .and_then(|time| format_snapshot_timestamp(time, self.latest_snapshot_host.as_deref()))
-            .map(|formatted| format!(" • last backup {formatted}"))
-            .unwrap_or_default();
-
-        format!(
-            "{icon} {}  •  {} {}{}",
-            self.name, self.snapshot_count, snapshot_label, latest
-        )
+        match self.kind {
+            ResticCandidateKind::NewGame => format!("{icon} {} (new)", self.name),
+            ResticCandidateKind::NeedsInstallation => {
+                format!("{icon} {} (install)", self.name)
+            }
+            ResticCandidateKind::LocalConfig => format!("{icon} {} (local config)", self.name),
+        }
     }
 
     fn preview(&self) -> protocol::FzfPreview {
@@ -280,7 +347,21 @@ impl ResticGameCandidate {
             char::from(NerdFont::Gamepad)
         ));
         preview.push_str(&format!("Name: {}\n", self.name));
+        preview.push_str(&format!(
+            "Status: {}\n",
+            match self.kind {
+                ResticCandidateKind::NewGame => "Not tracked yet (will be added)",
+                ResticCandidateKind::NeedsInstallation => "Tracked game (needs local installation)",
+                ResticCandidateKind::LocalConfig => "Tracked locally (no restic backups yet)",
+            }
+        ));
         preview.push_str(&format!("Snapshots: {}\n", self.snapshot_count));
+
+        if let Some(description) = &self.description {
+            if !description.trim().is_empty() {
+                preview.push_str(&format!("Description: {}\n", description.trim()));
+            }
+        }
 
         if let Some(time) = self
             .latest_snapshot_time
@@ -296,11 +377,32 @@ impl ResticGameCandidate {
             preview.push_str(&format!("Hosts: {}\n", hosts.join(", ")));
         }
 
+        match self.kind {
+            ResticCandidateKind::LocalConfig => {
+                preview.push_str(&format!(
+                    "\n{} This game is already defined in your local configuration. You'll be prompted to provide a save path manually.\n",
+                    char::from(NerdFont::Info)
+                ));
+            }
+            ResticCandidateKind::NeedsInstallation => {
+                preview.push_str(&format!(
+                    "\n{} Select a save path to configure this installation on the current device.\n",
+                    char::from(NerdFont::Info)
+                ));
+            }
+            ResticCandidateKind::NewGame => {
+                preview.push_str(&format!(
+                    "\n{} A new game entry will be created before configuration.",
+                    char::from(NerdFont::Info)
+                ));
+            }
+        }
+
         protocol::FzfPreview::Text(preview)
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 struct ResticSetupOption {
     action: ResticSetupAction,
 }
@@ -417,6 +519,8 @@ fn setup_single_game(
         .context("Failed to get snapshots for game")?;
     let latest_snapshot_id = snapshots.first().map(|snapshot| snapshot.id.clone());
 
+    let mut unique_paths = Vec::new();
+
     if snapshots.is_empty() {
         emit(
             Level::Warn,
@@ -431,47 +535,47 @@ fn setup_single_game(
             Level::Info,
             "game.setup.hint.add",
             &format!(
-                "{} This game has no backups yet. You'll need to add an installation manually using '{} game add'.",
-                char::from(NerdFont::Info),
-                env!("CARGO_BIN_NAME")
-            ),
-            None,
-        );
-        return Ok(());
-    }
-
-    // Extract unique paths from all snapshots
-    let unique_paths = extract_unique_paths_from_snapshots(&snapshots)?;
-
-    if unique_paths.is_empty() {
-        emit(
-            Level::Warn,
-            "game.setup.no_paths",
-            &format!(
-                "{} No save paths found in snapshots for game '{game_name}'.",
-                char::from(NerdFont::Warning)
-            ),
-            None,
-        );
-        emit(
-            Level::Info,
-            "game.setup.hint.manual",
-            &format!(
-                "{} This is unusual. You may need to set up the installation manually.",
+                "{} You'll be prompted to choose a save path manually.",
                 char::from(NerdFont::Info)
             ),
             None,
         );
-        return Ok(());
+    } else {
+        unique_paths = extract_unique_paths_from_snapshots(&snapshots)?;
+
+        if unique_paths.is_empty() {
+            emit(
+                Level::Warn,
+                "game.setup.no_paths",
+                &format!(
+                    "{} No save paths found in snapshots for game '{game_name}'.",
+                    char::from(NerdFont::Warning)
+                ),
+                None,
+            );
+            emit(
+                Level::Info,
+                "game.setup.hint.manual",
+                &format!(
+                    "{} You'll be prompted to choose a save path manually.",
+                    char::from(NerdFont::Info)
+                ),
+                None,
+            );
+        } else {
+            println!(
+                "\nFound {} unique save path(s) from different devices/snapshots:",
+                unique_paths.len()
+            );
+        }
     }
 
-    println!(
-        "\nFound {} unique save path(s) from different devices/snapshots:",
-        unique_paths.len()
-    );
-
     // Let user choose from available paths or enter a custom one
-    let chosen_path = choose_installation_path(game_name, &unique_paths)?;
+    let chosen_path = if unique_paths.is_empty() {
+        prompt_manual_save_path(game_name)?
+    } else {
+        choose_installation_path(game_name, &unique_paths)?
+    };
 
     if let Some(path_str) = chosen_path {
         // Convert to TildePath
@@ -779,6 +883,64 @@ impl FzfSelectable for StringOption {
     }
 }
 
+fn tilde_display_string(tilde: &TildePath) -> String {
+    tilde
+        .to_tilde_string()
+        .unwrap_or_else(|_| tilde.as_path().to_string_lossy().to_string())
+}
+
+fn prompt_manual_save_path(game_name: &str) -> Result<Option<String>> {
+    let prompt = format!(
+        "{} Enter the save path for '{}' (e.g., ~/.local/share/{}/saves):",
+        char::from(NerdFont::Edit),
+        game_name,
+        game_name.to_lowercase().replace(' ', "-")
+    );
+
+    let path_selection = PathInputBuilder::new()
+        .header(format!(
+            "{} Choose the save path for '{game_name}'",
+            char::from(NerdFont::Folder)
+        ))
+        .manual_prompt(prompt)
+        .scope(FilePickerScope::Directories)
+        .picker_hint(format!(
+            "{} Select the directory to use for {game_name} save files",
+            char::from(NerdFont::Info)
+        ))
+        .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
+        .picker_option_label(format!(
+            "{} Browse and choose a folder",
+            char::from(NerdFont::FolderOpen)
+        ))
+        .choose()?;
+
+    match path_selection {
+        PathInputSelection::Manual(input) => {
+            let trimmed = input.trim();
+            if trimmed.is_empty() {
+                println!("Empty path provided. Setup cancelled.");
+                Ok(None)
+            } else {
+                let tilde = TildePath::from_str(trimmed)
+                    .map_err(|e| anyhow::anyhow!("Invalid save path: {}", e))?;
+                Ok(Some(tilde_display_string(&tilde)))
+            }
+        }
+        PathInputSelection::Picker(path) => {
+            let tilde = TildePath::new(path);
+            Ok(Some(tilde_display_string(&tilde)))
+        }
+        PathInputSelection::Cancelled => {
+            println!(
+                "{} No path selected. Setup cancelled.",
+                char::from(NerdFont::Warning)
+            );
+            Ok(None)
+        }
+    }
+}
+
 /// Let user choose from available paths or enter a custom one
 fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Option<String>> {
     //TODO: this should be an fzf wrapper message, as it is followed by a choice
@@ -807,61 +969,7 @@ fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Optio
     match selected {
         Some(selection) => {
             if selection.value == "CUSTOM" {
-                let prompt = format!(
-                    "{} Enter the save path for '{}' (e.g., ~/.local/share/{}/saves):",
-                    char::from(NerdFont::Edit),
-                    game_name,
-                    game_name.to_lowercase().replace(' ', "-")
-                );
-
-                let path_selection = PathInputBuilder::new()
-                    .header(format!(
-                        "{} Choose the save path for '{game_name}'",
-                        char::from(NerdFont::Folder)
-                    ))
-                    .manual_prompt(prompt)
-                    .scope(FilePickerScope::Directories)
-                    .picker_hint(format!(
-                        "{} Select the directory to use for {game_name} save files",
-                        char::from(NerdFont::Info)
-                    ))
-                    .manual_option_label(format!(
-                        "{} Type an exact path",
-                        char::from(NerdFont::Edit)
-                    ))
-                    .picker_option_label(format!(
-                        "{} Browse and choose a folder",
-                        char::from(NerdFont::FolderOpen)
-                    ))
-                    .choose()?;
-
-                match path_selection {
-                    PathInputSelection::Manual(input) => {
-                        if input.is_empty() {
-                            println!("Empty path provided. Setup cancelled.");
-                            Ok(None)
-                        } else {
-                            let tilde = TildePath::from_str(&input)
-                                .map_err(|e| anyhow::anyhow!("Invalid save path: {}", e))?;
-                            Ok(Some(tilde.to_tilde_string().unwrap_or_else(|_| {
-                                tilde.as_path().to_string_lossy().to_string()
-                            })))
-                        }
-                    }
-                    PathInputSelection::Picker(path) => {
-                        let tilde = TildePath::new(path);
-                        Ok(Some(tilde.to_tilde_string().unwrap_or_else(|_| {
-                            tilde.as_path().to_string_lossy().to_string()
-                        })))
-                    }
-                    PathInputSelection::Cancelled => {
-                        println!(
-                            "{} No path selected. Setup cancelled.",
-                            char::from(NerdFont::Warning)
-                        );
-                        Ok(None)
-                    }
-                }
+                prompt_manual_save_path(game_name)
             } else {
                 // User selected one of the existing paths
                 Ok(Some(selection.value))
