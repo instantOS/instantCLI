@@ -234,7 +234,7 @@ impl GameManager {
     }
 
     /// Get optional game description from user input
-    fn get_game_description() -> Result<String> {
+    pub(crate) fn get_game_description() -> Result<String> {
         Ok(FzfWrapper::input("Enter game description (optional)")
             .map_err(|e| anyhow::anyhow!("Failed to get description input: {}", e))?
             .trim()
@@ -242,7 +242,7 @@ impl GameManager {
     }
 
     /// Get optional launch command from user input
-    fn get_launch_command() -> Result<String> {
+    pub(crate) fn get_launch_command() -> Result<String> {
         Ok(FzfWrapper::input("Enter launch command (optional)")
             .map_err(|e| anyhow::anyhow!("Failed to get launch command input: {}", e))?
             .trim()

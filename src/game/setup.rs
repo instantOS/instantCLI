@@ -3,10 +3,11 @@ use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 
 use crate::dot::path_serde::TildePath;
-use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::game::games::manager::{AddGameOptions, GameManager};
 use crate::game::games::validation::validate_game_manager_initialized;
 use crate::game::restic::backup::GameBackup;
-use crate::game::restic::cache;
+use crate::game::restic::{cache, tags};
 use crate::game::utils::save_files::get_save_directory_info;
 use crate::menu::protocol;
 use crate::menu_utils::{
@@ -17,7 +18,7 @@ use crate::ui::nerd_font::NerdFont;
 /// Set up games that have been added but don't have installations configured on this device
 pub fn setup_uninstalled_games() -> Result<()> {
     // Load configurations
-    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let mut installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
 
@@ -26,19 +27,13 @@ pub fn setup_uninstalled_games() -> Result<()> {
         return Ok(());
     }
 
+    maybe_setup_restic_games(&mut game_config, &mut installations)?;
+
     // Find games without installations
     let uninstalled_games = find_uninstalled_games(&game_config, &installations)?;
 
     if uninstalled_games.is_empty() {
-        emit(
-            Level::Success,
-            "game.setup.all_configured",
-            &format!(
-                "{} All games are already configured for this device!",
-                char::from(NerdFont::Check)
-            ),
-            None,
-        );
+        GameManager::add_game(AddGameOptions::default())?;
         return Ok(());
     }
 
@@ -80,6 +75,310 @@ pub fn setup_uninstalled_games() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn maybe_setup_restic_games(
+    game_config: &mut InstantGameConfig,
+    installations: &mut InstallationsConfig,
+) -> Result<()> {
+    let mut first_iteration = true;
+
+    loop {
+        let candidates = discover_restic_game_candidates(game_config)?;
+
+        if first_iteration {
+            if candidates.is_empty() {
+                println!(
+                    "{} No new restic-backed games detected.",
+                    char::from(NerdFont::Info)
+                );
+            } else {
+                println!(
+                    "\n{} Found {} restic backup{} ready for setup:",
+                    char::from(NerdFont::Gamepad),
+                    candidates.len(),
+                    if candidates.len() == 1 { "" } else { "s" }
+                );
+                println!(
+                    "   • Pick an existing backup to bootstrap setup\n   • Enter a different game name\n   • Skip to only configure already-added games"
+                );
+            }
+        }
+
+        first_iteration = false;
+
+        let selection = match prompt_restic_game_choice(&candidates)? {
+            Some(action) => action,
+            None => break,
+        };
+
+        match selection {
+            ResticSetupAction::Restic(candidate) => {
+                handle_restic_candidate(candidate, game_config, installations)?;
+                break;
+            }
+            ResticSetupAction::Manual => {
+                GameManager::add_game(AddGameOptions::default())?;
+                *game_config =
+                    InstantGameConfig::load().context("Failed to reload game configuration")?;
+                *installations = InstallationsConfig::load()
+                    .context("Failed to reload installations configuration")?;
+                break;
+            }
+            ResticSetupAction::Skip => break,
+        }
+    }
+
+    Ok(())
+}
+
+fn discover_restic_game_candidates(
+    game_config: &InstantGameConfig,
+) -> Result<Vec<ResticGameCandidate>> {
+    let snapshots =
+        cache::get_repository_snapshots(game_config).context("Failed to list restic snapshots")?;
+
+    let existing_games: HashSet<_> = game_config
+        .games
+        .iter()
+        .map(|game| game.name.0.clone())
+        .collect();
+
+    let mut aggregated: HashMap<String, ResticGameCandidate> = HashMap::new();
+
+    for snapshot in snapshots {
+        if let Some(game_name) = tags::extract_game_name_from_tags(&snapshot.tags) {
+            if existing_games.contains(&game_name) {
+                continue;
+            }
+
+            let entry = aggregated
+                .entry(game_name.clone())
+                .or_insert_with(|| ResticGameCandidate::new(game_name.clone()));
+
+            entry.snapshot_count += 1;
+            entry.hosts.insert(snapshot.hostname.clone());
+
+            if entry
+                .latest_snapshot_time
+                .as_ref()
+                .map(|time| snapshot.time > *time)
+                .unwrap_or(true)
+            {
+                entry.latest_snapshot_time = Some(snapshot.time.clone());
+                entry.latest_snapshot_host = Some(snapshot.hostname.clone());
+            }
+        }
+    }
+
+    let mut candidates: Vec<_> = aggregated.into_values().collect();
+
+    candidates.sort_by(|a, b| {
+        b.snapshot_count
+            .cmp(&a.snapshot_count)
+            .then(b.latest_snapshot_time.cmp(&a.latest_snapshot_time))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    Ok(candidates)
+}
+
+fn prompt_restic_game_choice(
+    candidates: &[ResticGameCandidate],
+) -> Result<Option<ResticSetupAction>> {
+    let mut options: Vec<ResticSetupOption> = candidates
+        .iter()
+        .cloned()
+        .map(ResticSetupOption::restic)
+        .collect();
+
+    options.push(ResticSetupOption::manual());
+    options.push(ResticSetupOption::skip());
+
+    let selected = FzfWrapper::select_one(options)
+        .map_err(|e| anyhow::anyhow!("Failed to select restic game: {}", e))?;
+
+    Ok(selected.map(|opt| opt.action))
+}
+
+fn handle_restic_candidate(
+    candidate: ResticGameCandidate,
+    game_config: &mut InstantGameConfig,
+    installations: &mut InstallationsConfig,
+) -> Result<()> {
+    println!(
+        "\n{} Preparing setup for '{}' from restic backups...",
+        char::from(NerdFont::Gamepad),
+        candidate.name
+    );
+
+    let description = GameManager::get_game_description()?;
+    let launch_command = GameManager::get_launch_command()?;
+
+    let mut game = Game::new(candidate.name.clone());
+
+    if !description.trim().is_empty() {
+        game.description = Some(description.trim().to_string());
+    }
+
+    if !launch_command.trim().is_empty() {
+        game.launch_command = Some(launch_command.trim().to_string());
+    }
+
+    game_config.games.push(game);
+    game_config.save()?;
+
+    setup_single_game(&candidate.name, game_config, installations)
+}
+
+#[derive(Debug, Clone)]
+enum ResticSetupAction {
+    Restic(ResticGameCandidate),
+    Manual,
+    Skip,
+}
+
+#[derive(Debug, Clone)]
+struct ResticGameCandidate {
+    name: String,
+    snapshot_count: usize,
+    hosts: HashSet<String>,
+    latest_snapshot_time: Option<String>,
+    latest_snapshot_host: Option<String>,
+}
+
+impl ResticGameCandidate {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            snapshot_count: 0,
+            hosts: HashSet::new(),
+            latest_snapshot_time: None,
+            latest_snapshot_host: None,
+        }
+    }
+
+    fn display_text(&self) -> String {
+        let icon = char::from(NerdFont::Gamepad);
+        let snapshot_label = if self.snapshot_count == 1 {
+            "snapshot"
+        } else {
+            "snapshots"
+        };
+
+        let latest = self
+            .latest_snapshot_time
+            .as_ref()
+            .and_then(|time| format_snapshot_timestamp(time, self.latest_snapshot_host.as_deref()))
+            .map(|formatted| format!(" • last backup {formatted}"))
+            .unwrap_or_default();
+
+        format!(
+            "{icon} {}  •  {} {}{}",
+            self.name, self.snapshot_count, snapshot_label, latest
+        )
+    }
+
+    fn preview(&self) -> protocol::FzfPreview {
+        let mut preview = String::new();
+        preview.push_str(&format!(
+            "{} RESTIC BACKUP SUMMARY\n\n",
+            char::from(NerdFont::Gamepad)
+        ));
+        preview.push_str(&format!("Name: {}\n", self.name));
+        preview.push_str(&format!("Snapshots: {}\n", self.snapshot_count));
+
+        if let Some(time) = self
+            .latest_snapshot_time
+            .as_ref()
+            .and_then(|iso| format_snapshot_timestamp(iso, self.latest_snapshot_host.as_deref()))
+        {
+            preview.push_str(&format!("Last Backup: {}\n", time));
+        }
+
+        if !self.hosts.is_empty() {
+            let mut hosts: Vec<_> = self.hosts.iter().cloned().collect();
+            hosts.sort();
+            preview.push_str(&format!("Hosts: {}\n", hosts.join(", ")));
+        }
+
+        protocol::FzfPreview::Text(preview)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ResticSetupOption {
+    action: ResticSetupAction,
+}
+
+impl ResticSetupOption {
+    fn restic(candidate: ResticGameCandidate) -> Self {
+        Self {
+            action: ResticSetupAction::Restic(candidate),
+        }
+    }
+
+    fn manual() -> Self {
+        Self {
+            action: ResticSetupAction::Manual,
+        }
+    }
+
+    fn skip() -> Self {
+        Self {
+            action: ResticSetupAction::Skip,
+        }
+    }
+}
+
+impl FzfSelectable for ResticSetupOption {
+    fn fzf_display_text(&self) -> String {
+        match &self.action {
+            ResticSetupAction::Restic(candidate) => candidate.display_text(),
+            ResticSetupAction::Manual => format!(
+                "{} Enter a new game name manually",
+                char::from(NerdFont::Edit)
+            ),
+            ResticSetupAction::Skip => format!(
+                "{} Skip restic discovery (only configure existing games)",
+                char::from(NerdFont::Stop)
+            ),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match &self.action {
+            ResticSetupAction::Restic(candidate) => format!("restic:{}", candidate.name),
+            ResticSetupAction::Manual => "manual".to_string(),
+            ResticSetupAction::Skip => "skip".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> protocol::FzfPreview {
+        match &self.action {
+            ResticSetupAction::Restic(candidate) => candidate.preview(),
+            ResticSetupAction::Manual => protocol::FzfPreview::Text(format!(
+                "{} You'll be prompted for all details, just like '{} game add'.",
+                char::from(NerdFont::Edit),
+                env!("CARGO_BIN_NAME")
+            )),
+            ResticSetupAction::Skip => protocol::FzfPreview::Text(
+                "Continue without setting up new games from restic right now.".to_string(),
+            ),
+        }
+    }
+}
+
+fn format_snapshot_timestamp(iso: &str, host: Option<&str>) -> Option<String> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(iso).ok()?;
+    let local = parsed.with_timezone(&chrono::Local);
+    let timestamp = local.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    if let Some(host) = host {
+        Some(format!("{} ({host})", timestamp))
+    } else {
+        Some(timestamp)
+    }
 }
 
 /// Find games that are in the config but don't have installations

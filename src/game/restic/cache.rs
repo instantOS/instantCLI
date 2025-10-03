@@ -44,20 +44,8 @@ pub fn get_snapshots_for_game(
     game_name: &str,
     config: &InstantGameConfig,
 ) -> Result<Vec<Snapshot>> {
-    let repository_path = config.repo.as_path().to_string_lossy().to_string();
-    // Try to obtain cached repository snapshots first
-    let repository_snapshots = match get_cached_repository_snapshots(&repository_path)? {
-        Some(cached) => cached,
-        None => {
-            let fetched = fetch_repository_snapshots_from_restic(config)?;
-            store_repository_snapshots(&repository_path, fetched.clone())?;
-            fetched
-        }
-    };
-
-    // Filter repository snapshots for this specific game
     let required_tags = tags::create_game_tags(game_name);
-    let mut filtered_snapshots: Vec<Snapshot> = repository_snapshots
+    let mut filtered_snapshots: Vec<Snapshot> = get_repository_snapshots(config)?
         .into_iter()
         .filter(|snapshot| {
             required_tags
@@ -69,6 +57,19 @@ pub fn get_snapshots_for_game(
     filtered_snapshots.sort_by(|a, b| b.time.cmp(&a.time));
 
     Ok(filtered_snapshots)
+}
+
+/// Retrieve all snapshots for the configured repository, using the in-memory cache when possible
+pub fn get_repository_snapshots(config: &InstantGameConfig) -> Result<Vec<Snapshot>> {
+    let repository_path = config.repo.as_path().to_string_lossy().to_string();
+
+    if let Some(cached) = get_cached_repository_snapshots(&repository_path)? {
+        return Ok(cached);
+    }
+
+    let fetched = fetch_repository_snapshots_from_restic(config)?;
+    store_repository_snapshots(&repository_path, fetched.clone())?;
+    Ok(fetched)
 }
 
 fn get_cached_repository_snapshots(repository_path: &str) -> Result<Option<Vec<Snapshot>>> {
