@@ -98,6 +98,8 @@ pub struct Game {
     pub name: GameName,
     pub description: Option<String>,
     pub launch_command: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<GameDependency>,
 }
 
 impl Game {
@@ -106,6 +108,7 @@ impl Game {
             name: name.into(),
             description: None,
             launch_command: None,
+            dependencies: Vec::new(),
         }
     }
 
@@ -120,12 +123,39 @@ impl Game {
     }
 }
 
+/// Type of dependency content captured in restic
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DependencyKind {
+    File,
+    Directory,
+}
+
+impl Default for DependencyKind {
+    fn default() -> Self {
+        DependencyKind::Directory
+    }
+}
+
+/// Definition of a game dependency stored in games.toml
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameDependency {
+    pub id: String,
+    pub source_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_id: Option<String>,
+    #[serde(default)]
+    pub kind: DependencyKind,
+}
+
 /// Game installation - device-specific
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameInstallation {
     pub game_name: GameName,
     pub save_path: TildePath,
     pub nearest_checkpoint: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<InstalledDependency>,
 }
 
 impl GameInstallation {
@@ -134,6 +164,7 @@ impl GameInstallation {
             game_name: game_name.into(),
             save_path: save_path.into(),
             nearest_checkpoint: None,
+            dependencies: Vec::new(),
         }
     }
 
@@ -149,6 +180,13 @@ impl GameInstallation {
     pub fn clear_checkpoint(&mut self) {
         self.nearest_checkpoint = None;
     }
+}
+
+/// Installed dependency mapping stored in installations.toml
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstalledDependency {
+    pub dependency_id: String,
+    pub install_path: TildePath,
 }
 
 /// Main game configuration
@@ -274,6 +312,7 @@ mod tests {
 
         assert_eq!(installation.game_name.0, "test_game");
         assert_eq!(installation.nearest_checkpoint, None);
+        assert!(installation.dependencies.is_empty());
     }
 
     #[test]
@@ -289,6 +328,7 @@ mod tests {
             installation.nearest_checkpoint,
             Some("checkpoint123".to_string())
         );
+        assert!(installation.dependencies.is_empty());
     }
 
     #[test]
@@ -303,6 +343,7 @@ mod tests {
             installation.nearest_checkpoint,
             Some("checkpoint456".to_string())
         );
+        assert!(installation.dependencies.is_empty());
 
         installation.update_checkpoint("checkpoint789");
         assert_eq!(
@@ -326,6 +367,7 @@ mod tests {
 
         installation.clear_checkpoint();
         assert_eq!(installation.nearest_checkpoint, None);
+        assert!(installation.dependencies.is_empty());
     }
 
     #[test]
@@ -379,5 +421,14 @@ mod tests {
         assert_eq!(rules.len(), 5);
         assert!(rules.contains(&("keep-last".to_string(), "5".to_string())));
         assert!(rules.contains(&("keep-yearly".to_string(), "13".to_string())));
+    }
+
+    #[test]
+    fn test_game_dependency_default_kind() {
+        let json = r#"{"id":"dep1","source_path":"/opt/game/dep"}"#;
+        let dependency: GameDependency = serde_json::from_str(json).unwrap();
+        assert_eq!(dependency.id, "dep1");
+        assert_eq!(dependency.source_path, "/opt/game/dep");
+        assert_eq!(dependency.kind, DependencyKind::Directory);
     }
 }
