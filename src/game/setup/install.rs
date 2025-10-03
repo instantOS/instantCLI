@@ -1,0 +1,241 @@
+use anyhow::{Context, Result, anyhow};
+use std::fs;
+
+use crate::dot::path_serde::TildePath;
+use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::game::restic::backup::GameBackup;
+use crate::game::restic::cache;
+use crate::game::utils::save_files::get_save_directory_info;
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::prelude::*;
+
+use super::paths::{
+    choose_installation_path, extract_unique_paths_from_snapshots, prompt_manual_save_path,
+};
+
+/// Set up a single game by collecting paths from snapshots and letting the user choose one.
+pub(super) fn setup_single_game(
+    game_name: &str,
+    game_config: &InstantGameConfig,
+    installations: &mut InstallationsConfig,
+) -> Result<()> {
+    emit(
+        Level::Info,
+        "game.setup.start",
+        &format!(
+            "{} Setting up game: {game_name}",
+            char::from(NerdFont::Info)
+        ),
+        None,
+    );
+
+    let snapshots = cache::get_snapshots_for_game(game_name, game_config)
+        .context("Failed to get snapshots for game")?;
+    let latest_snapshot_id = snapshots.first().map(|snapshot| snapshot.id.clone());
+
+    let mut unique_paths = Vec::new();
+
+    if snapshots.is_empty() {
+        emit(
+            Level::Warn,
+            "game.setup.no_snapshots",
+            &format!(
+                "{} No snapshots found for game '{game_name}'.",
+                char::from(NerdFont::Warning)
+            ),
+            None,
+        );
+        emit(
+            Level::Info,
+            "game.setup.hint.add",
+            &format!(
+                "{} You'll be prompted to choose a save path manually.",
+                char::from(NerdFont::Info)
+            ),
+            None,
+        );
+    } else {
+        unique_paths = extract_unique_paths_from_snapshots(&snapshots)?;
+
+        if unique_paths.is_empty() {
+            emit(
+                Level::Warn,
+                "game.setup.no_paths",
+                &format!(
+                    "{} No save paths found in snapshots for game '{game_name}'.",
+                    char::from(NerdFont::Warning)
+                ),
+                None,
+            );
+            emit(
+                Level::Info,
+                "game.setup.hint.manual",
+                &format!(
+                    "{} You'll be prompted to choose a save path manually.",
+                    char::from(NerdFont::Info)
+                ),
+                None,
+            );
+        } else {
+            println!(
+                "\nFound {} unique save path(s) from different devices/snapshots:",
+                unique_paths.len()
+            );
+        }
+    }
+
+    let chosen_path = if unique_paths.is_empty() {
+        prompt_manual_save_path(game_name)?
+    } else {
+        choose_installation_path(game_name, &unique_paths)?
+    };
+
+    if let Some(path_str) = chosen_path {
+        let save_path =
+            TildePath::from_str(&path_str).map_err(|e| anyhow!("Invalid save path: {e}"))?;
+        let mut installation = GameInstallation::new(game_name, save_path.clone());
+
+        let mut directory_created = false;
+        if !save_path.as_path().exists() {
+            match FzfWrapper::confirm(&format!(
+                "Save path '{path_str}' does not exist. Would you like to create it?"
+            ))
+            .map_err(|e| anyhow!("Failed to get confirmation: {e}"))?
+            {
+                ConfirmResult::Yes => {
+                    fs::create_dir_all(save_path.as_path())
+                        .context("Failed to create save directory")?;
+                    emit(
+                        Level::Success,
+                        "game.setup.dir_created",
+                        &format!(
+                            "{} Created save directory: {path_str}",
+                            char::from(NerdFont::Check)
+                        ),
+                        None,
+                    );
+                    directory_created = true;
+                }
+                ConfirmResult::No | ConfirmResult::Cancelled => {
+                    println!("Directory not created. You can create it later when needed.");
+                }
+            }
+        }
+
+        let save_dir_info = get_save_directory_info(save_path.as_path())
+            .with_context(|| format!("Failed to inspect save directory '{path_str}'"))?;
+        let path_exists_after = save_path.as_path().exists();
+        let mut should_restore =
+            path_exists_after && (directory_created || save_dir_info.file_count == 0);
+
+        if path_exists_after && save_dir_info.file_count > 0 {
+            let overwrite_prompt = format!(
+                "{} The directory '{path_str}' already contains {} file{}.\nRestoring from backup will replace its contents. Proceed?",
+                char::from(NerdFont::Warning),
+                save_dir_info.file_count,
+                if save_dir_info.file_count == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            );
+
+            match FzfWrapper::builder()
+                .confirm(overwrite_prompt)
+                .yes_text("Restore and overwrite")
+                .no_text("Choose a different path")
+                .show_confirmation()
+                .map_err(|e| anyhow!("Failed to confirm restore overwrite: {e}"))?
+            {
+                ConfirmResult::Yes => {
+                    should_restore = true;
+                }
+                ConfirmResult::No => {
+                    println!(
+                        "{} Keeping existing files in '{path_str}'. Restore skipped.",
+                        char::from(NerdFont::Info)
+                    );
+                    should_restore = false;
+                }
+                ConfirmResult::Cancelled => {
+                    emit(
+                        Level::Warn,
+                        "game.setup.cancelled",
+                        &format!(
+                            "{} Setup cancelled for game '{game_name}'.",
+                            char::from(NerdFont::Warning)
+                        ),
+                        None,
+                    );
+                    return Ok(());
+                }
+            }
+        }
+
+        if should_restore && let Some(snapshot_id) = latest_snapshot_id.as_deref() {
+            emit(
+                Level::Info,
+                "game.setup.restore_latest",
+                &format!(
+                    "{} Restoring latest backup ({snapshot_id}) into {path_str}...",
+                    char::from(NerdFont::Download)
+                ),
+                None,
+            );
+
+            let restore_summary =
+                restore_latest_backup(game_name, &save_path, snapshot_id, game_config)?;
+            emit(
+                Level::Success,
+                "game.setup.restore_done",
+                &format!("{} {restore_summary}", char::from(NerdFont::Check)),
+                None,
+            );
+            installation.update_checkpoint(snapshot_id.to_string());
+        }
+
+        installations.installations.push(installation);
+        installations.save()?;
+
+        emit(
+            Level::Success,
+            "game.setup.success",
+            &format!(
+                "{} Game '{game_name}' set up successfully with save path: {path_str}",
+                char::from(NerdFont::Check)
+            ),
+            None,
+        );
+    } else {
+        emit(
+            Level::Warn,
+            "game.setup.cancelled",
+            &format!(
+                "{} Setup cancelled for game '{game_name}'.",
+                char::from(NerdFont::Warning)
+            ),
+            None,
+        );
+    }
+
+    println!();
+    Ok(())
+}
+
+fn restore_latest_backup(
+    game_name: &str,
+    save_path: &TildePath,
+    snapshot_id: &str,
+    game_config: &InstantGameConfig,
+) -> Result<String> {
+    let backup_handler = GameBackup::new(game_config.clone());
+    let summary = backup_handler
+        .restore_game_backup(game_name, snapshot_id, save_path.as_path())
+        .context("Failed to restore latest backup")?;
+
+    let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
+    cache::invalidate_game_cache(game_name, &repo_path);
+
+    Ok(summary)
+}
