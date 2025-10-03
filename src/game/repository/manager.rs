@@ -1,7 +1,7 @@
 use super::init::initialize_restic_repo;
 use crate::dot::path_serde::TildePath;
 use crate::game::config::InstantGameConfig;
-use crate::menu_wrapper::FzfWrapper;
+use crate::menu_utils::FzfWrapper;
 use crate::ui::NerdFont;
 use anyhow::{Context, Result};
 use std::process::Command;
@@ -133,11 +133,10 @@ impl RepositoryManager {
         match FzfWrapper::confirm("Create restic repository in existing remote?")
             .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
         {
-            crate::menu_wrapper::ConfirmResult::Yes => {
+            crate::menu_utils::ConfirmResult::Yes => {
                 Self::create_repository_in_existing_remote(config, debug)
             }
-            crate::menu_wrapper::ConfirmResult::No
-            | crate::menu_wrapper::ConfirmResult::Cancelled => {
+            crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
                 Self::handle_declined_repo_creation()
             }
         }
@@ -174,17 +173,18 @@ impl RepositoryManager {
         match FzfWrapper::confirm("Would you like to reconfigure the repository settings?")
             .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
         {
-            crate::menu_wrapper::ConfirmResult::Yes => {
+            crate::menu_utils::ConfirmResult::Yes => {
                 println!(
                     "{} Proceeding with reconfiguration...",
                     char::from(NerdFont::Play)
                 );
                 Err(anyhow::anyhow!("Repository reconfiguration needed"))
             }
-            crate::menu_wrapper::ConfirmResult::No
-            | crate::menu_wrapper::ConfirmResult::Cancelled => Err(anyhow::anyhow!(
-                "Repository setup cancelled. Please reconfigure when ready."
-            )),
+            crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
+                Err(anyhow::anyhow!(
+                    "Repository setup cancelled. Please reconfigure when ready."
+                ))
+            }
         }
     }
 
@@ -201,17 +201,18 @@ impl RepositoryManager {
         match FzfWrapper::confirm("Would you like to reconfigure the repository settings?")
             .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
         {
-            crate::menu_wrapper::ConfirmResult::Yes => {
+            crate::menu_utils::ConfirmResult::Yes => {
                 println!(
                     "{} Proceeding with reconfiguration...",
                     char::from(NerdFont::Play)
                 );
                 Err(anyhow::anyhow!("Repository reconfiguration needed"))
             }
-            crate::menu_wrapper::ConfirmResult::No
-            | crate::menu_wrapper::ConfirmResult::Cancelled => Err(anyhow::anyhow!(
-                "Remote is not accessible. Please check your rclone configuration and network connection."
-            )),
+            crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
+                Err(anyhow::anyhow!(
+                    "Remote is not accessible. Please check your rclone configuration and network connection."
+                ))
+            }
         }
     }
 
@@ -227,17 +228,18 @@ impl RepositoryManager {
         match FzfWrapper::confirm("Would you like to reconfigure the repository settings?")
             .map_err(|e| anyhow::anyhow!("Failed to get user input: {}", e))?
         {
-            crate::menu_wrapper::ConfirmResult::Yes => {
+            crate::menu_utils::ConfirmResult::Yes => {
                 println!(
                     "{} Proceeding with reconfiguration...",
                     char::from(NerdFont::Play)
                 );
                 Err(anyhow::anyhow!("Repository reconfiguration needed"))
             }
-            crate::menu_wrapper::ConfirmResult::No
-            | crate::menu_wrapper::ConfirmResult::Cancelled => Err(anyhow::anyhow!(
-                "Repository connection failed. Please check your configuration."
-            )),
+            crate::menu_utils::ConfirmResult::No | crate::menu_utils::ConfirmResult::Cancelled => {
+                Err(anyhow::anyhow!(
+                    "Repository connection failed. Please check your configuration."
+                ))
+            }
         }
     }
 

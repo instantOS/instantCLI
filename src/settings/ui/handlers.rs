@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use duct::cmd;
 use std::process::Command;
 
-use crate::menu_wrapper::FzfWrapper;
+use crate::menu_utils::FzfWrapper;
 use crate::settings::registry::{SettingDefinition, SettingKind, SettingRequirement};
 
 use super::super::context::{

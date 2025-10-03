@@ -8,7 +8,7 @@ use std::{
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::menu_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 
 use super::context::{SettingsContext, format_icon, select_one_with_style};
@@ -429,7 +429,7 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
             .select(shell_items)?;
 
         match selected {
-            crate::menu_wrapper::FzfResult::Selected(item) => item.path,
+            crate::menu_utils::FzfResult::Selected(item) => item.path,
             _ => default_shell(),
         }
     };
@@ -450,10 +450,10 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
             .select(group_items)?;
 
         match result {
-            crate::menu_wrapper::FzfResult::Selected(item) => {
+            crate::menu_utils::FzfResult::Selected(item) => {
                 selected_groups.push(item.name);
             }
-            crate::menu_wrapper::FzfResult::MultiSelected(items) => {
+            crate::menu_utils::FzfResult::MultiSelected(items) => {
                 selected_groups.extend(items.into_iter().map(|item| item.name));
             }
             _ => {}
@@ -533,7 +533,7 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                     .header("Choose a shell from /etc/shells")
                     .select(shell_items)?;
 
-                if let crate::menu_wrapper::FzfResult::Selected(item) = selected {
+                if let crate::menu_utils::FzfResult::Selected(item) = selected {
                     current_spec.shell = item.path;
                     current_spec = current_spec.sanitized();
                     store.insert(username, current_spec.clone());
@@ -625,7 +625,7 @@ fn manage_user_groups(
                     .select(available_groups)?;
 
                 match selected {
-                    crate::menu_wrapper::FzfResult::Selected(item) => {
+                    crate::menu_utils::FzfResult::Selected(item) => {
                         if !spec.groups.contains(&item.name) {
                             spec.groups.push(item.name);
                         }
@@ -634,7 +634,7 @@ fn manage_user_groups(
                         apply_user_spec(ctx, username, spec)?;
                         changed = true;
                     }
-                    crate::menu_wrapper::FzfResult::MultiSelected(group_items) => {
+                    crate::menu_utils::FzfResult::MultiSelected(group_items) => {
                         for item in group_items {
                             if !spec.groups.contains(&item.name) {
                                 spec.groups.push(item.name);

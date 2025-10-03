@@ -9,7 +9,7 @@ mod dot;
 mod game;
 mod launch;
 mod menu;
-mod menu_wrapper;
+mod menu_utils;
 mod restic;
 mod scratchpad;
 mod settings;

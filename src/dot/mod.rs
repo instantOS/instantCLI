@@ -1,4 +1,4 @@
-use crate::menu_wrapper::{FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
@@ -19,8 +19,8 @@ impl FzfSelectable for RepoSelectItem {
         self.repo.name.clone()
     }
 
-    fn fzf_preview(&self) -> crate::menu_wrapper::FzfPreview {
-        crate::menu_wrapper::FzfPreview::Text(format!(
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        crate::menu_utils::FzfPreview::Text(format!(
             "URL: {}\nBranch: {}\nEnabled: {}",
             self.repo.url,
             self.repo.branch.as_deref().unwrap_or("default"),
@@ -45,8 +45,8 @@ impl FzfSelectable for DotsDirSelectItem {
             .unwrap_or_else(|| self.dots_dir.path.display().to_string())
     }
 
-    fn fzf_preview(&self) -> crate::menu_wrapper::FzfPreview {
-        crate::menu_wrapper::FzfPreview::Text(format!(
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        crate::menu_utils::FzfPreview::Text(format!(
             "Repository: {}\nPath: {}\nActive: {}",
             self.repo_name,
             self.dots_dir.path.display(),
@@ -540,9 +540,9 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
         .select(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {
-        crate::menu_wrapper::FzfResult::Selected(item) => Ok(item.repo),
-        crate::menu_wrapper::FzfResult::Cancelled => Err(anyhow::anyhow!("No repository selected")),
-        crate::menu_wrapper::FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
+        crate::menu_utils::FzfResult::Selected(item) => Ok(item.repo),
+        crate::menu_utils::FzfResult::Cancelled => Err(anyhow::anyhow!("No repository selected")),
+        crate::menu_utils::FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
         _ => Err(anyhow::anyhow!("Unexpected selection result")),
     }
 }
@@ -579,11 +579,11 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
         .select(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {
-        crate::menu_wrapper::FzfResult::Selected(item) => Ok(item.dots_dir),
-        crate::menu_wrapper::FzfResult::Cancelled => {
+        crate::menu_utils::FzfResult::Selected(item) => Ok(item.dots_dir),
+        crate::menu_utils::FzfResult::Cancelled => {
             Err(anyhow::anyhow!("No dots directory selected"))
         }
-        crate::menu_wrapper::FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
+        crate::menu_utils::FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
         _ => Err(anyhow::anyhow!("Unexpected selection result")),
     }
 }

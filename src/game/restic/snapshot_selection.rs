@@ -4,7 +4,7 @@ use crate::game::utils::save_files::{
     TimeComparison, compare_snapshot_vs_local, format_system_time_for_display,
     get_save_directory_info,
 };
-use crate::menu_wrapper::{FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfSelectable, FzfWrapper};
 use crate::restic::wrapper::Snapshot;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};

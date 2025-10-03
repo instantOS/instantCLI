@@ -5,7 +5,7 @@ use crate::game::utils::save_files::{
     get_save_directory_info,
 };
 use crate::game::utils::validation;
-use crate::menu_wrapper::{ConfirmResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::restic::wrapper::Snapshot;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};

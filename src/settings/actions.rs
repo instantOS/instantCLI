@@ -2,7 +2,7 @@ use anyhow::Result;
 use duct::cmd;
 
 use crate::common::systemd::{SystemdManager, UserServiceConfig};
-use crate::menu_wrapper::{ConfirmResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::prelude::*;
 
 use super::context::SettingsContext;

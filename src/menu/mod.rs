@@ -1,4 +1,4 @@
-use crate::menu_wrapper::{
+use crate::menu_utils::{
     ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfWrapper, MenuWrapper,
 };
 use anyhow::Result;
@@ -72,18 +72,18 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                     .multi_select(multi)
                     .select(item_list)?
                 {
-                    crate::menu_wrapper::FzfResult::Selected(item) => {
+                    crate::menu_utils::FzfResult::Selected(item) => {
                         println!("{}", item.display_text);
                         Ok(0) // Selected
                     }
-                    crate::menu_wrapper::FzfResult::MultiSelected(items) => {
+                    crate::menu_utils::FzfResult::MultiSelected(items) => {
                         for item in items {
                             println!("{}", item.display_text);
                         }
                         Ok(0) // Selected
                     }
-                    crate::menu_wrapper::FzfResult::Cancelled => Ok(1), // Cancelled
-                    crate::menu_wrapper::FzfResult::Error(e) => {
+                    crate::menu_utils::FzfResult::Cancelled => Ok(1), // Cancelled
+                    crate::menu_utils::FzfResult::Error(e) => {
                         eprintln!("Error: {e}");
                         Ok(2) // Error
                     }

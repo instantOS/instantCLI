@@ -1,4 +1,4 @@
-use crate::menu_wrapper::FzfSelectable;
+use crate::menu_utils::FzfSelectable;
 use crate::ui::prelude::*;
 
 use super::super::context::format_icon;
@@ -65,7 +65,7 @@ impl FzfSelectable for CategoryItem {
         )
     }
 
-    fn fzf_preview(&self) -> crate::menu_wrapper::FzfPreview {
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         let mut lines = Vec::new();
 
         lines.push(format!(
@@ -101,7 +101,7 @@ impl FzfSelectable for CategoryItem {
             if self.total == 1 { "" } else { "s" }
         ));
 
-        crate::menu_wrapper::FzfPreview::Text(lines.join("\n"))
+        crate::menu_utils::FzfPreview::Text(lines.join("\n"))
     }
 }
 
@@ -115,9 +115,9 @@ impl FzfSelectable for CategoryMenuItem {
         }
     }
 
-    fn fzf_preview(&self) -> crate::menu_wrapper::FzfPreview {
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match self {
-            CategoryMenuItem::SearchAll => crate::menu_wrapper::FzfPreview::Text(
+            CategoryMenuItem::SearchAll => crate::menu_utils::FzfPreview::Text(
                 "Browse and edit any available setting".to_string(),
             ),
             CategoryMenuItem::Category(item) => item.fzf_preview(),
@@ -173,7 +173,7 @@ impl FzfSelectable for SettingItem {
         }
     }
 
-    fn fzf_preview(&self) -> crate::menu_wrapper::FzfPreview {
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match &self.definition.kind {
             SettingKind::Toggle { summary, .. }
             | SettingKind::Choice { summary, .. }
@@ -193,7 +193,7 @@ impl FzfSelectable for SettingItem {
                     ));
                 }
 
-                crate::menu_wrapper::FzfPreview::Text(lines.join("\n"))
+                crate::menu_utils::FzfPreview::Text(lines.join("\n"))
             }
         }
     }
@@ -209,11 +209,11 @@ impl FzfSelectable for CategoryPageItem {
         }
     }
 
-    fn fzf_preview(&self) -> crate::menu_wrapper::FzfPreview {
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match self {
             CategoryPageItem::Setting(item) => item.fzf_preview(),
             CategoryPageItem::Back => {
-                crate::menu_wrapper::FzfPreview::Text("Return to categories".to_string())
+                crate::menu_utils::FzfPreview::Text("Return to categories".to_string())
             }
         }
     }
@@ -235,8 +235,8 @@ impl FzfSelectable for ChoiceItem {
         )
     }
 
-    fn fzf_preview(&self) -> crate::menu_wrapper::FzfPreview {
-        crate::menu_wrapper::FzfPreview::Text(format!(
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        crate::menu_utils::FzfPreview::Text(format!(
             "{}\n\n{}",
             self.option.description, self.summary
         ))
@@ -285,7 +285,7 @@ impl FzfSelectable for SearchItem {
         }
     }
 
-    fn fzf_preview(&self) -> crate::menu_wrapper::FzfPreview {
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match &self.definition.kind {
             SettingKind::Toggle { summary, .. }
             | SettingKind::Choice { summary, .. }
@@ -305,7 +305,7 @@ impl FzfSelectable for SearchItem {
                     ));
                 }
 
-                crate::menu_wrapper::FzfPreview::Text(lines.join("\n"))
+                crate::menu_utils::FzfPreview::Text(lines.join("\n"))
             }
         }
     }

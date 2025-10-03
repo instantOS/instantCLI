@@ -1,5 +1,5 @@
-use crate::menu_wrapper::ConfirmResult;
-use crate::menu_wrapper::FzfWrapper;
+use crate::menu_utils::ConfirmResult;
+use crate::menu_utils::FzfWrapper;
 use crate::restic::ResticWrapper;
 use anyhow::{Context, Result};
 use colored::*;

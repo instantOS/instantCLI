@@ -315,22 +315,22 @@ pub fn apply_definition(
 
 pub fn select_one_with_style_at<T>(items: Vec<T>, initial_index: Option<usize>) -> Result<Option<T>>
 where
-    T: crate::menu_wrapper::FzfSelectable + Clone,
+    T: crate::menu_utils::FzfSelectable + Clone,
 {
-    let mut builder = crate::menu_wrapper::FzfWrapper::builder().args(["--gap-line=-", "--gap"]);
+    let mut builder = crate::menu_utils::FzfWrapper::builder().args(["--gap-line=-", "--gap"]);
     if let Some(index) = initial_index {
         builder = builder.initial_index(index);
     }
 
     match builder.select(items)? {
-        crate::menu_wrapper::FzfResult::Selected(item) => Ok(Some(item)),
+        crate::menu_utils::FzfResult::Selected(item) => Ok(Some(item)),
         _ => Ok(None),
     }
 }
 
 pub fn select_one_with_style<T>(items: Vec<T>) -> Result<Option<T>>
 where
-    T: crate::menu_wrapper::FzfSelectable + Clone,
+    T: crate::menu_utils::FzfSelectable + Clone,
 {
     select_one_with_style_at(items, None)
 }

@@ -1,5 +1,5 @@
 use super::protocol::*;
-use crate::menu_wrapper::{FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper};
+use crate::menu_utils::{FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper};
 use anyhow::Result;
 use std::sync::{
     Arc,
@@ -97,14 +97,14 @@ impl RequestProcessor {
             .multi_select(multi)
             .select(items)
         {
-            Ok(crate::menu_wrapper::FzfResult::Selected(item)) => {
+            Ok(crate::menu_utils::FzfResult::Selected(item)) => {
                 Ok(MenuResponse::ChoiceResult(vec![item]))
             }
-            Ok(crate::menu_wrapper::FzfResult::MultiSelected(items)) => {
+            Ok(crate::menu_utils::FzfResult::MultiSelected(items)) => {
                 Ok(MenuResponse::ChoiceResult(items))
             }
-            Ok(crate::menu_wrapper::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
-            Ok(crate::menu_wrapper::FzfResult::Error(e)) => {
+            Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
+            Ok(crate::menu_utils::FzfResult::Error(e)) => {
                 Ok(MenuResponse::Error(format!("Selection error: {e}")))
             }
             Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),

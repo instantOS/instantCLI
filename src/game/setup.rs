@@ -9,7 +9,7 @@ use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
 use crate::game::utils::save_files::get_save_directory_info;
 use crate::menu::protocol;
-use crate::menu_wrapper::{ConfirmResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper};
 
 /// Set up games that have been added but don't have installations configured on this device
 pub fn setup_uninstalled_games() -> Result<()> {
