@@ -143,6 +143,7 @@ pub(super) fn choose_installation_path(
     }
 }
 
+#[derive(Debug, Clone)]
 pub(super) struct PathInfo {
     pub path: String,
     frequency: usize,

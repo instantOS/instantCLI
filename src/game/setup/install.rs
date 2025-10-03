@@ -13,12 +13,14 @@ use crate::ui::prelude::*;
 use super::paths::{
     choose_installation_path, extract_unique_paths_from_snapshots, prompt_manual_save_path,
 };
+use super::restic::SnapshotOverview;
 
 /// Set up a single game by collecting paths from snapshots and letting the user choose one.
 pub(super) fn setup_single_game(
     game_name: &str,
     game_config: &InstantGameConfig,
     installations: &mut InstallationsConfig,
+    snapshot_context: Option<&SnapshotOverview>,
 ) -> Result<()> {
     emit(
         Level::Info,
@@ -30,13 +32,26 @@ pub(super) fn setup_single_game(
         None,
     );
 
-    let snapshots = cache::get_snapshots_for_game(game_name, game_config)
-        .context("Failed to get snapshots for game")?;
-    let latest_snapshot_id = snapshots.first().map(|snapshot| snapshot.id.clone());
+    let (unique_paths, latest_snapshot_id, snapshot_count) = if let Some(context) = snapshot_context
+    {
+        (
+            context.unique_paths.clone(),
+            context.latest_snapshot_id.clone(),
+            context.snapshot_count,
+        )
+    } else {
+        let snapshots = cache::get_snapshots_for_game(game_name, game_config)
+            .context("Failed to get snapshots for game")?;
+        let latest_snapshot_id = snapshots.first().map(|snapshot| snapshot.id.clone());
+        let unique_paths = if snapshots.is_empty() {
+            Vec::new()
+        } else {
+            extract_unique_paths_from_snapshots(&snapshots)?
+        };
+        (unique_paths, latest_snapshot_id, snapshots.len())
+    };
 
-    let mut unique_paths = Vec::new();
-
-    if snapshots.is_empty() {
+    if snapshot_count == 0 {
         emit(
             Level::Warn,
             "game.setup.no_snapshots",
@@ -55,34 +70,30 @@ pub(super) fn setup_single_game(
             ),
             None,
         );
+    } else if unique_paths.is_empty() {
+        emit(
+            Level::Warn,
+            "game.setup.no_paths",
+            &format!(
+                "{} No save paths found in snapshots for game '{game_name}'.",
+                char::from(NerdFont::Warning)
+            ),
+            None,
+        );
+        emit(
+            Level::Info,
+            "game.setup.hint.manual",
+            &format!(
+                "{} You'll be prompted to choose a save path manually.",
+                char::from(NerdFont::Info)
+            ),
+            None,
+        );
     } else {
-        unique_paths = extract_unique_paths_from_snapshots(&snapshots)?;
-
-        if unique_paths.is_empty() {
-            emit(
-                Level::Warn,
-                "game.setup.no_paths",
-                &format!(
-                    "{} No save paths found in snapshots for game '{game_name}'.",
-                    char::from(NerdFont::Warning)
-                ),
-                None,
-            );
-            emit(
-                Level::Info,
-                "game.setup.hint.manual",
-                &format!(
-                    "{} You'll be prompted to choose a save path manually.",
-                    char::from(NerdFont::Info)
-                ),
-                None,
-            );
-        } else {
-            println!(
-                "\nFound {} unique save path(s) from different devices/snapshots:",
-                unique_paths.len()
-            );
-        }
+        println!(
+            "\nFound {} unique save path(s) from different devices/snapshots:",
+            unique_paths.len()
+        );
     }
 
     let chosen_path = if unique_paths.is_empty() {
