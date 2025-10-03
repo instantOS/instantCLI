@@ -264,12 +264,14 @@ impl FilePickerBuilder {
             }
         }
 
-        if let Some(dir) = &self.start_dir {
-            cmd.arg(dir);
-        }
+        let launch_target = if let Some(selection) = initial_selection {
+            Some(selection.to_path_buf())
+        } else {
+            self.start_dir.clone()
+        };
 
-        if let Some(selection) = initial_selection {
-            cmd.arg(selection);
+        if let Some(target) = &launch_target {
+            cmd.arg(target);
         }
 
         if let Some(dir) = current_dir {
