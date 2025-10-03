@@ -202,8 +202,8 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
                 .unwrap_or_else(|| "Not installed".to_string());
 
             text_block.push_str(&format!(
-                "  • {} ({:?}) — {}\n",
-                dependency.id, dependency.kind, status
+                "  • {} (Directory) — {}\n",
+                dependency.id, status
             ));
         }
     }

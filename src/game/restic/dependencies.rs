@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::game::config::{DependencyKind, GameDependency, InstantGameConfig};
+use crate::game::config::{GameDependency, InstantGameConfig};
 use crate::game::restic::{cache, tags};
 use crate::restic::wrapper::{BackupProgress, ResticWrapper, Snapshot};
 use anyhow::{Context, Result, anyhow};
@@ -16,7 +16,6 @@ pub struct DependencyBackupResult {
 /// Result of restoring a dependency snapshot
 pub struct DependencyRestoreOutcome {
     pub snapshot_id: String,
-    pub kind: DependencyKind,
     pub summary: Option<String>,
 }
 
@@ -156,7 +155,6 @@ pub fn restore_dependency(
 
     Ok(DependencyRestoreOutcome {
         snapshot_id,
-        kind: DependencyKind::Directory,
         summary,
     })
 }

@@ -43,7 +43,7 @@ impl<'a> FzfSelectable for DependencyOption<'a> {
             "Source path: {}\n",
             format_path_for_display(&self.dependency.source_path)
         ));
-        preview.push_str(&format!("Kind: {:?}\n", self.dependency.kind));
+        preview.push_str("Kind: Directory\n");
 
         FzfPreview::Text(preview)
     }

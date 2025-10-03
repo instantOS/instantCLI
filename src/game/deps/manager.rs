@@ -108,7 +108,7 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
 }
 
 pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
-    let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let mut installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
 
@@ -520,7 +520,7 @@ fn prepare_install_target(
             }
         }
     } else {
-        match FzfWrapper::confirm(&format!("Create directory '{}'?)", display))? {
+        match FzfWrapper::confirm(&format!("Create directory '{}'?'", display))? {
             ConfirmResult::Yes => {
                 fs::create_dir_all(path.as_path())
                     .with_context(|| format!("Failed to create directory '{}'.", display))?;
