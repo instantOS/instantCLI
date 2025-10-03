@@ -757,6 +757,8 @@ impl FzfBuilder {
             "10".to_string(),
         ];
         args.extend(Self::theme_args());
+        args.push("--info=hidden".to_string());
+        args.push("--color=header:-1".to_string());
         args
     }
 
