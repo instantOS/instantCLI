@@ -1,5 +1,7 @@
 use anyhow::Result;
 
+use crate::common::requirements::RESTIC_PACKAGE;
+
 use super::cli::GameCommands;
 use super::games::GameManager;
 use super::games::manager::AddGameOptions;
@@ -15,9 +17,18 @@ use super::setup;
 #[cfg(debug_assertions)]
 use super::cli::DebugCommands;
 
+/// Ensure restic is available, prompting for installation if needed
+fn ensure_restic_available() -> Result<()> {
+    RESTIC_PACKAGE.ensure()?;
+    Ok(())
+}
+
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
     match command {
-        GameCommands::Init { repo, password } => handle_init(debug, repo, password),
+        GameCommands::Init { repo, password } => {
+            ensure_restic_available()?;
+            handle_init(debug, repo, password)
+        },
         GameCommands::Add {
             name,
             description,
@@ -31,23 +42,41 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             save_path,
             create_save_path,
         }),
-        GameCommands::Sync { game_name, force } => handle_sync(game_name, force),
+        GameCommands::Sync { game_name, force } => {
+            ensure_restic_available()?;
+            handle_sync(game_name, force)
+        },
         GameCommands::Launch { game_name } => handle_launch(game_name),
         GameCommands::List => handle_list(),
         GameCommands::Show { game_name } => handle_show(game_name),
         GameCommands::Remove { game_name, force } => handle_remove(game_name, force),
-        GameCommands::Backup { game_name } => handle_backup(game_name),
+        GameCommands::Backup { game_name } => {
+            ensure_restic_available()?;
+            handle_backup(game_name)
+        },
         GameCommands::Prune {
             game_name,
             zero_changes,
-        } => handle_prune(game_name, zero_changes),
-        GameCommands::Restic { args } => handle_restic_command(args),
+        } => {
+            ensure_restic_available()?;
+            handle_prune(game_name, zero_changes)
+        },
+        GameCommands::Restic { args } => {
+            ensure_restic_available()?;
+            handle_restic_command(args)
+        },
         GameCommands::Restore {
             game_name,
             snapshot_id,
             force,
-        } => handle_restore(game_name, snapshot_id, force),
-        GameCommands::Setup => handle_setup(),
+        } => {
+            ensure_restic_available()?;
+            handle_restore(game_name, snapshot_id, force)
+        },
+        GameCommands::Setup => {
+            ensure_restic_available()?;
+            handle_setup()
+        },
         #[cfg(debug_assertions)]
         GameCommands::Debug { debug_command } => handle_debug(debug_command),
     }

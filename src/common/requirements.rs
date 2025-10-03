@@ -198,3 +198,11 @@ impl RequiredPackage {
         }
     }
 }
+
+/// Required package for restic (backup tool used by game commands)
+pub static RESTIC_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "restic",
+    arch_package_name: Some("restic"),
+    ubuntu_package_name: Some("restic"),
+    tests: &[InstallTest::WhichSucceeds("restic")],
+};
