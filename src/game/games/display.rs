@@ -181,6 +181,33 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
     }
     text_block.push_str(&install_text);
 
+    if !game.dependencies.is_empty() {
+        text_block.push('\n');
+        text_block.push_str(&format!(
+            "{} Dependencies:\n",
+            char::from(NerdFont::Package)
+        ));
+
+        for dependency in &game.dependencies {
+            let installed = installation.and_then(|inst| {
+                inst.dependencies
+                    .iter()
+                    .find(|dep| dep.dependency_id == dependency.id)
+                    .and_then(|dep| dep.install_path.to_tilde_string().ok())
+            });
+
+            let status = installed
+                .as_ref()
+                .map(|path| format!("Installed at {path}"))
+                .unwrap_or_else(|| "Not installed".to_string());
+
+            text_block.push_str(&format!(
+                "  • {} ({:?}) — {}\n",
+                dependency.id, dependency.kind, status
+            ));
+        }
+    }
+
     // Emit combined event (text+data)
     emit(
         Level::Info,
