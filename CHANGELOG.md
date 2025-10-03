@@ -7,6 +7,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.10](https://github.com/instantOS/instantCLI/compare/v0.1.9...v0.1.10) - 2025-10-03
+
+### Added
+
+- *(fix)* bump minor version hopefully
+
+### Fixed
+
+- fix CI
+- better edit icon
+- filepicker preselection
+- fix fzf confirm colors
+- fix icon
+- fix nerd fonts
+- fix conflict
+- fix package command
+- fix
+- fix multi select
+- fix snake case
+- fix compilation
+- fix password prompt
+- fix some stuff
+- fix
+- fix some stuff
+- fix release workflow
+
+### Other
+
+- add setup helpful message
+- restructure setup
+- refactor game setup
+- better file picker handling of incorrect selections
+- better setup process
+- improve setup
+- add easier setup for uninstalled games
+- add path picker to game manager
+- file path picker in add
+- clippy
+- add placeholder notices
+- make picker return a pathbuf
+- refactor
+- add hints to yazi picker
+- add yazi picker
+- rename menu wrapper
+- init file picker plan
+- clippy
+- format
+- remove configmanager wrapper
+- update further
+- update agents files
+- format
+- finish toggle rework
+- init better toggle icons
+- init migration to own nerd fonts crate
+- deduplicate, make more intuitive
+- add direct settings access via CLI
+- add upgrade settings entry
+- add package installer
+- add about section
+- better settings preview
+- better shell editing
+- remove old code
+- init user password management
+- better group management
+- massively simplify
+- systemd root support
+- migrate to systemd module
+- add systemd management module
+- add disk settings
+- better settings requirements
+- update plans
+- bluetooth plans
+- what
+- huh
+- format
+- clippy
+- init bluetooth setting
+- clippy
+- styling
+- remove initialkey
+- more settings value stuff
+- format
+- init settings value preselection
+- init optional preselection
+- improve toggling
+- change how toggling works
+- change settings UI loop
+- further refactor
+- further refactor
+- more refactor
+- init settings menu refactor
+- new plans
+- style
+- add password to server
+- implement password prompt
+- clippy
+- add requirements prompt
+- manageduser stuff
+- init user editing mod
+- init user settings
+- init arch for applying settings
+- new plans
+- more plans
+- more implementation for external stuff
+- init requirements system
+- better category preview
+- new plans
+- more intuitive stuff
+- add search and back and new plans
+- format
+- init settings
+- add old settings
+
 ## [0.1.9](https://github.com/instantOS/instantCLI/compare/v0.1.8...v0.1.9) - 2025-09-30
 
 ### Fixed
