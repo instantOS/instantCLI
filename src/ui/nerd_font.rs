@@ -201,7 +201,7 @@ impl NerdFont {
             // Actions and controls
             Self::Plus => '+',   // fa-plus
             Self::Minus => '-',  // fa-minus
-            Self::Edit => '✏',   // fa-edit
+            Self::Edit => '',   // fa-edit
             Self::Trash => '🗑',  // fa-trash
             Self::Search => '', // fa-search
             Self::Filter => '', // fa-filter
