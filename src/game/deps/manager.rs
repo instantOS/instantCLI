@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, anyhow};
 
 use crate::game::config::{
-    DependencyKind, Game, GameDependency, GameInstallation, InstallationsConfig,
-    InstalledDependency, InstantGameConfig,
+    Game, GameDependency, GameInstallation, InstallationsConfig, InstalledDependency,
+    InstantGameConfig,
 };
 use crate::game::deps::{display, selection};
 use crate::game::games::selection::select_game_interactive;
@@ -68,14 +68,10 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
             expanded_source
         )
     })?;
-    if metadata.is_file() {
-        return Err(anyhow!(
-            "File dependencies are not supported. Please provide a directory path."
-        ));
-    }
-
     if !metadata.is_dir() {
-        return Err(anyhow!("Dependency path must be a directory"));
+        return Err(anyhow!(
+            "Dependency path must be a directory (file dependencies are not supported)"
+        ));
     }
 
     let backup = backup_dependency(&game_name, &dependency_id, &source_path_buf, &game_config)?;
@@ -83,7 +79,6 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
     let dependency = GameDependency {
         id: dependency_id.clone(),
         source_path: source_path_buf.to_string_lossy().to_string(),
-        kind: DependencyKind::Directory,
     };
 
     if let Some(game) = game_config.games.get_mut(game_index) {
@@ -172,7 +167,7 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
             )
         })?;
 
-    if !prepare_install_target(&install_path_tilde, selected_dependency.kind)? {
+    if !prepare_install_target(&install_path_tilde)? {
         return Ok(());
     }
 
@@ -182,20 +177,6 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
         &game_config,
         install_path_tilde.as_path(),
     )?;
-    let detected_kind = restore_outcome.kind;
-
-    let game = game_config
-        .games
-        .get_mut(game_index)
-        .expect("game index should be valid");
-    if let Some(dep) = game
-        .dependencies
-        .iter_mut()
-        .find(|dep| dep.id == dependency_id)
-    {
-        dep.kind = detected_kind;
-    }
-    game_config.save()?;
 
     let installation = installations
         .installations
@@ -283,37 +264,40 @@ pub fn uninstall_dependency(options: UninstallDependencyOptions) -> Result<()> {
         .find(|inst| inst.game_name.0 == game_name)
         .ok_or_else(|| anyhow!("Game '{}' is not configured on this device.", game_name))?;
 
-    let initial_len = installation.dependencies.len();
-    installation
+    if let Some(index) = installation
         .dependencies
-        .retain(|dep| dep.dependency_id != dependency_id);
+        .iter()
+        .position(|dep| dep.dependency_id == dependency_id)
+    {
+        let removed = installation.dependencies.remove(index);
+        installations.save()?;
 
-    if installation.dependencies.len() == initial_len {
+        emit(
+            Level::Success,
+            "game.deps.uninstall",
+            &format!(
+                "{} Uninstalled dependency '{}' for '{}'.",
+                char::from(NerdFont::Check),
+                dependency_id,
+                game_name
+            ),
+            Some(serde_json::json!({
+                "game": game_name,
+                "dependency": dependency_id,
+                "install_path": removed
+                    .install_path
+                    .to_tilde_string()
+                    .unwrap_or_else(|_| removed.install_path.as_path().display().to_string())
+            })),
+        );
+    } else {
         println!(
             "{} Dependency '{}' was not installed for '{}' on this device.",
             char::from(NerdFont::Info),
             dependency_id,
             game_name
         );
-        return Ok(());
     }
-
-    installations.save()?;
-
-    emit(
-        Level::Success,
-        "game.deps.uninstall",
-        &format!(
-            "{} Removed dependency '{}' installation record for '{}'.",
-            char::from(NerdFont::Check),
-            dependency_id,
-            game_name
-        ),
-        Some(serde_json::json!({
-            "game": game_name,
-            "dependency": dependency_id
-        })),
-    );
 
     Ok(())
 }
@@ -501,58 +485,51 @@ fn prompt_custom_install_path(game_name: &str, dependency_id: &str) -> Result<St
 
 fn prepare_install_target(
     path: &crate::dot::path_serde::TildePath,
-    kind: DependencyKind,
 ) -> Result<bool> {
     let display = path
         .to_tilde_string()
         .unwrap_or_else(|_| path.as_path().display().to_string());
 
-    match kind {
-        DependencyKind::Directory => {
-            if path.as_path().exists() {
-                if !path.as_path().is_dir() {
-                    return Err(anyhow!(
-                        "Target path {} exists but is not a directory",
-                        display
-                    ));
-                }
+    if path.as_path().exists() {
+        if !path.as_path().is_dir() {
+            return Err(anyhow!(
+                "Target path {} exists but is not a directory",
+                display
+            ));
+        }
 
-                let info = get_save_directory_info(path.as_path())?;
-                if info.file_count > 0 {
-                    let prompt = format!(
-                        "{} Directory '{}' contains {} file(s). Overwrite contents?",
-                        char::from(NerdFont::Warning),
-                        display,
-                        info.file_count
-                    );
-                    match FzfWrapper::builder()
-                        .confirm(prompt)
-                        .yes_text("Overwrite directory")
-                        .no_text("Cancel")
-                        .show_confirmation()?
-                    {
-                        ConfirmResult::Yes => {}
-                        ConfirmResult::No | ConfirmResult::Cancelled => {
-                            println!("{} Installation cancelled.", char::from(NerdFont::Warning));
-                            return Ok(false);
-                        }
-                    }
-                }
-            } else {
-                match FzfWrapper::confirm(&format!("Create directory '{}'?", display))? {
-                    ConfirmResult::Yes => {
-                        fs::create_dir_all(path.as_path()).with_context(|| {
-                            format!("Failed to create directory '{}'.", display)
-                        })?;
-                    }
-                    ConfirmResult::No | ConfirmResult::Cancelled => {
-                        println!("{} Installation cancelled.", char::from(NerdFont::Warning));
-                        return Ok(false);
-                    }
+        let info = get_save_directory_info(path.as_path())?;
+        if info.file_count > 0 {
+            let prompt = format!(
+                "{} Directory '{}' contains {} file(s). Overwrite contents?",
+                char::from(NerdFont::Warning),
+                display,
+                info.file_count
+            );
+            match FzfWrapper::builder()
+                .confirm(prompt)
+                .yes_text("Overwrite directory")
+                .no_text("Cancel")
+                .show_confirmation()?
+            {
+                ConfirmResult::Yes => {}
+                ConfirmResult::No | ConfirmResult::Cancelled => {
+                    println!("{} Installation cancelled.", char::from(NerdFont::Warning));
+                    return Ok(false);
                 }
             }
         }
-        DependencyKind::File => unreachable!("file dependencies should be filtered out earlier"),
+    } else {
+        match FzfWrapper::confirm(&format!("Create directory '{}'?)", display))? {
+            ConfirmResult::Yes => {
+                fs::create_dir_all(path.as_path())
+                    .with_context(|| format!("Failed to create directory '{}'.", display))?;
+            }
+            ConfirmResult::No | ConfirmResult::Cancelled => {
+                println!("{} Installation cancelled.", char::from(NerdFont::Warning));
+                return Ok(false);
+            }
+        }
     }
 
     Ok(true)

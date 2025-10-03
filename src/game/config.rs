@@ -123,27 +123,11 @@ impl Game {
     }
 }
 
-/// Type of dependency content captured in restic
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum DependencyKind {
-    File,
-    Directory,
-}
-
-impl Default for DependencyKind {
-    fn default() -> Self {
-        DependencyKind::Directory
-    }
-}
-
 /// Definition of a game dependency stored in games.toml
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameDependency {
     pub id: String,
     pub source_path: String,
-    #[serde(default)]
-    pub kind: DependencyKind,
 }
 
 /// Game installation - device-specific
@@ -421,12 +405,4 @@ mod tests {
         assert!(rules.contains(&("keep-yearly".to_string(), "13".to_string())));
     }
 
-    #[test]
-    fn test_game_dependency_default_kind() {
-        let json = r#"{"id":"dep1","source_path":"/opt/game/dep"}"#;
-        let dependency: GameDependency = serde_json::from_str(json).unwrap();
-        assert_eq!(dependency.id, "dep1");
-        assert_eq!(dependency.source_path, "/opt/game/dep");
-        assert_eq!(dependency.kind, DependencyKind::Directory);
-    }
 }
