@@ -274,7 +274,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         breadcrumbs: &["Autotheming"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("appearance.autotheming", true),
-            summary: "Enable instantOS theming (disable for custom GTK themes).",
+            summary: "Enable instantOS theming (disable for custom GTK themes).\n\nNote: Placeholder only; changing this setting currently has no effect.",
             apply: None,
         },
         requires_reapply: false,
@@ -288,7 +288,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         breadcrumbs: &["Animations"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("appearance.animations", true),
-            summary: "Controls desktop animation effects.",
+            summary: "Controls desktop animation effects.\n\nNote: Placeholder only; changing this setting currently has no effect.",
             apply: None,
         },
         requires_reapply: false,
