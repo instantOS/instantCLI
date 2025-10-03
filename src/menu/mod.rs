@@ -1,6 +1,9 @@
-use crate::menu_wrapper::{ConfirmResult, FzfPreview, FzfWrapper};
+use crate::menu_wrapper::{
+    ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfWrapper, MenuWrapper,
+};
 use anyhow::Result;
 use protocol::SerializableMenuItem;
+use std::path::PathBuf;
 
 pub mod client;
 pub mod processing;
@@ -84,6 +87,44 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                         eprintln!("Error: {e}");
                         Ok(2) // Error
                     }
+                }
+            }
+        }
+        MenuCommands::Pick {
+            ref start,
+            dirs,
+            files,
+            multi,
+            gui,
+        } => {
+            let scope = match (dirs, files) {
+                (true, false) => FilePickerScope::Directories,
+                (false, true) => FilePickerScope::Files,
+                (true, true) => FilePickerScope::FilesAndDirectories,
+                (false, false) => FilePickerScope::Files,
+            };
+
+            if gui {
+                client::handle_gui_request(&command)
+            } else {
+                let mut builder = MenuWrapper::file_picker().scope(scope).multi(multi);
+
+                if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
+                    builder = builder.start_dir(PathBuf::from(start_dir));
+                }
+
+                match builder.pick()? {
+                    FilePickerResult::Selected(path) => {
+                        println!("{}", path.display());
+                        Ok(0)
+                    }
+                    FilePickerResult::MultiSelected(paths) => {
+                        for path in paths {
+                            println!("{}", path.display());
+                        }
+                        Ok(0)
+                    }
+                    FilePickerResult::Cancelled => Ok(1),
                 }
             }
         }
@@ -235,6 +276,24 @@ pub enum MenuCommands {
         #[arg(long, default_value = "Enter password:")]
         prompt: String,
         /// Use GUI menu server instead of local fzf
+        #[arg(long)]
+        gui: bool,
+    },
+    /// Launch file picker and output selected path(s)
+    Pick {
+        /// Starting directory for the picker
+        #[arg(long = "start", value_hint = clap::ValueHint::AnyPath)]
+        start: Option<String>,
+        /// Restrict selection to directories (defaults to files)
+        #[arg(long)]
+        dirs: bool,
+        /// Allow selecting files (enabled by default)
+        #[arg(long)]
+        files: bool,
+        /// Allow multiple selections
+        #[arg(long)]
+        multi: bool,
+        /// Use GUI menu server instead of local picker
         #[arg(long)]
         gui: bool,
     },

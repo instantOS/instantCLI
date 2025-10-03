@@ -260,6 +260,7 @@ impl MenuServer {
                 | MenuRequest::Choice { .. }
                 | MenuRequest::Input { .. }
                 | MenuRequest::Password { .. }
+                | MenuRequest::FilePicker { .. }
         );
 
         if should_manage_scratchpad

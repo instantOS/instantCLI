@@ -163,6 +163,25 @@ impl MenuClient {
         }
     }
 
+    /// Launch file picker via server
+    pub fn file_picker(
+        &self,
+        start: Option<String>,
+        scope: FilePickerScope,
+        multi: bool,
+    ) -> Result<Vec<String>> {
+        match self.send_request(MenuRequest::FilePicker {
+            start,
+            scope,
+            multi,
+        })? {
+            MenuResponse::FilePickerResult(paths) => Ok(paths),
+            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
+            MenuResponse::Cancelled => Ok(vec![]),
+            _ => anyhow::bail!("Unexpected response type for file picker request"),
+        }
+    }
+
     /// Show the scratchpad without any other action
     pub fn show(&self) -> Result<()> {
         match self.send_request(MenuRequest::Show)? {
@@ -321,6 +340,37 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
                 Err(e) => {
                     eprintln!("GUI menu error: {e}");
                     Ok(3) // Error exit code
+                }
+            }
+        }
+        MenuCommands::Pick {
+            start,
+            dirs,
+            files,
+            multi,
+            gui: true,
+        } => {
+            let scope = match (*dirs, *files) {
+                (true, false) => FilePickerScope::Directories,
+                (false, true) => FilePickerScope::Files,
+                (true, true) => FilePickerScope::FilesAndDirectories,
+                (false, false) => FilePickerScope::Files,
+            };
+
+            match client.file_picker(start.clone(), scope, *multi) {
+                Ok(paths) => {
+                    if paths.is_empty() {
+                        Ok(1)
+                    } else {
+                        for path in paths {
+                            println!("{path}");
+                        }
+                        Ok(0)
+                    }
+                }
+                Err(e) => {
+                    eprintln!("GUI menu error: {e}");
+                    Ok(3)
                 }
             }
         }

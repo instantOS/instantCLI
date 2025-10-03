@@ -1,7 +1,7 @@
 use super::init::initialize_restic_repo;
 use crate::dot::path_serde::TildePath;
-use crate::menu_wrapper::FzfWrapper;
 use crate::game::config::InstantGameConfig;
+use crate::menu_wrapper::FzfWrapper;
 use crate::ui::NerdFont;
 use anyhow::{Context, Result};
 use std::process::Command;
@@ -137,7 +137,9 @@ impl RepositoryManager {
                 Self::create_repository_in_existing_remote(config, debug)
             }
             crate::menu_wrapper::ConfirmResult::No
-            | crate::menu_wrapper::ConfirmResult::Cancelled => Self::handle_declined_repo_creation(),
+            | crate::menu_wrapper::ConfirmResult::Cancelled => {
+                Self::handle_declined_repo_creation()
+            }
         }
     }
 

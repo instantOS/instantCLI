@@ -47,8 +47,8 @@ pub struct SerializableMenuItem {
     pub metadata: Option<HashMap<String, String>>,
 }
 
-/// Re-export FzfPreview from fzf_wrapper for use in protocol
-pub use crate::menu_wrapper::FzfPreview;
+/// Re-export types from menu wrapper for use in protocol
+pub use crate::menu_wrapper::{FilePickerScope, FzfPreview};
 
 impl FzfSelectable for SerializableMenuItem {
     fn fzf_display_text(&self) -> String {
@@ -79,6 +79,12 @@ pub enum MenuRequest {
     Input { prompt: String },
     /// Show password input dialog
     Password { prompt: String },
+    /// Launch file picker dialog
+    FilePicker {
+        start: Option<String>,
+        scope: FilePickerScope,
+        multi: bool,
+    },
     /// Get server status information
     Status,
     /// Stop the server
@@ -106,6 +112,8 @@ pub enum MenuResponse {
     Error(String),
     /// Operation was cancelled
     Cancelled,
+    /// File picker result paths
+    FilePickerResult(Vec<String>),
     /// Show operation completed successfully
     ShowResult,
 }

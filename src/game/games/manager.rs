@@ -1,7 +1,7 @@
 use super::{selection::select_game_interactive, validation::*};
 use crate::dot::path_serde::TildePath;
-use crate::menu_wrapper::{ConfirmResult, FzfWrapper};
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::menu_wrapper::{ConfirmResult, FzfWrapper};
 use anyhow::{Context, Result};
 
 /// Options for adding a game non-interactively

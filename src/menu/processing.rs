@@ -1,5 +1,5 @@
 use super::protocol::*;
-use crate::menu_wrapper::FzfWrapper;
+use crate::menu_wrapper::{FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper};
 use anyhow::Result;
 use std::sync::{
     Arc,
@@ -35,9 +35,39 @@ impl RequestProcessor {
             } => self.handle_choice_request(prompt, items, multi),
             MenuRequest::Input { prompt } => self.handle_input_request(prompt),
             MenuRequest::Password { prompt } => self.handle_password_request(prompt),
+            MenuRequest::FilePicker {
+                start,
+                scope,
+                multi,
+            } => self.handle_file_picker_request(start, scope, multi),
             MenuRequest::Status => Ok(self.get_status_info()),
             MenuRequest::Stop => self.handle_stop_request(),
             MenuRequest::Show => Ok(MenuResponse::ShowResult),
+        }
+    }
+
+    /// Handle file picker request
+    fn handle_file_picker_request(
+        &self,
+        start: Option<String>,
+        scope: FilePickerScope,
+        multi: bool,
+    ) -> Result<MenuResponse> {
+        let mut builder = MenuWrapper::file_picker().scope(scope).multi(multi);
+
+        if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
+            builder = builder.start_dir(start_dir);
+        }
+
+        match builder.pick() {
+            Ok(FilePickerResult::Selected(path)) => Ok(MenuResponse::FilePickerResult(vec![
+                path.display().to_string(),
+            ])),
+            Ok(FilePickerResult::MultiSelected(paths)) => Ok(MenuResponse::FilePickerResult(
+                paths.into_iter().map(|p| p.display().to_string()).collect(),
+            )),
+            Ok(FilePickerResult::Cancelled) => Ok(MenuResponse::Cancelled),
+            Err(e) => Ok(MenuResponse::Error(format!("File picker error: {e}"))),
         }
     }
 

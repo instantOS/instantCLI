@@ -3,13 +3,13 @@ use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 
 use crate::dot::path_serde::TildePath;
-use crate::menu_wrapper::{ConfirmResult, FzfSelectable, FzfWrapper};
 use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::games::validation::validate_game_manager_initialized;
 use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
 use crate::game::utils::save_files::get_save_directory_info;
 use crate::menu::protocol;
+use crate::menu_wrapper::{ConfirmResult, FzfSelectable, FzfWrapper};
 
 /// Set up games that have been added but don't have installations configured on this device
 pub fn setup_uninstalled_games() -> Result<()> {

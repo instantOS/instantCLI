@@ -1,4 +1,3 @@
-use crate::menu_wrapper::{ConfirmResult, FzfWrapper};
 use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection;
 use crate::game::utils::save_files::{
@@ -6,6 +5,7 @@ use crate::game::utils::save_files::{
     get_save_directory_info,
 };
 use crate::game::utils::validation;
+use crate::menu_wrapper::{ConfirmResult, FzfWrapper};
 use crate::restic::wrapper::Snapshot;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
