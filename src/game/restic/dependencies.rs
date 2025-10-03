@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::game::config::{DependencyKind, GameDependency, InstantGameConfig};
 use crate::game::restic::{cache, tags};
-use crate::restic::wrapper::{BackupProgress, ResticWrapper, RestoreProgress, Snapshot};
+use crate::restic::wrapper::{BackupProgress, ResticWrapper, Snapshot};
 use anyhow::{Context, Result, anyhow};
 
 /// Result of creating or reusing a dependency snapshot
@@ -96,7 +96,7 @@ pub fn backup_dependency(
     })
 }
 
-/// Restore dependency snapshot content into target path (files or directories)
+/// Restore dependency snapshot content into target path (directories only)
 pub fn restore_dependency(
     game_name: &str,
     dependency: &GameDependency,
@@ -146,11 +146,13 @@ pub fn restore_dependency(
         ));
     }
 
-    let summary = progress
-        .summary
-        .as_ref()
-        .map(|restored| format!("restored {} files", restored.files_restored))
-        .or_else(|| Some("restore completed".to_string()));
+    let summary = Some(
+        progress
+            .summary
+            .as_ref()
+            .map(|restored| format!("restored {} files", restored.files_restored))
+            .unwrap_or_else(|| "restore completed".to_string()),
+    );
 
     Ok(DependencyRestoreOutcome {
         snapshot_id,

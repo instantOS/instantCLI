@@ -1,7 +1,5 @@
 use serde::Deserialize;
-use std::fs::File;
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use crate::restic::error::ResticError;
 use crate::restic::logging::ResticCommandLogger;
@@ -301,46 +299,6 @@ impl ResticWrapper {
 
         let stdout = String::from_utf8(output.stdout)?;
         RestoreProgress::parse(&stdout)
-    }
-
-    pub fn dump_to_file(
-        &self,
-        snapshot_id: &str,
-        file_path: &str,
-        target_path: &std::path::Path,
-    ) -> Result<(), ResticError> {
-        if let Some(parent) = target_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let mut cmd = self.base_command();
-        cmd.arg("dump")
-            .arg(snapshot_id)
-            .arg(file_path)
-            .stdout(Stdio::piped());
-
-        let mut child = cmd.spawn().map_err(|e| {
-            ResticError::CommandFailed(format!("Failed to execute restic dump: {e}"))
-        })?;
-
-        let mut reader = child
-            .stdout
-            .take()
-            .ok_or_else(|| ResticError::CommandFailed("Failed to capture dump output".into()))?;
-
-        let mut file = File::create(target_path)?;
-        std::io::copy(&mut reader, &mut file)?;
-        file.flush()?;
-
-        let status = child.wait()?;
-        if !status.success() {
-            return Err(ResticError::from_exit_code(
-                status.code().unwrap_or(1),
-                "restic dump failed",
-            ));
-        }
-
-        Ok(())
     }
 }
 
