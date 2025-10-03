@@ -9,6 +9,9 @@ use std::process::{Command, Stdio};
 use tempfile::Builder as TempFileBuilder;
 use which::which;
 
+const YAZI_INIT_LUA: &str = include_str!("menu_wrapper_yazi_init.lua");
+const YAZI_CACHE_SUBDIR: &str = "ins/menu/yazi";
+
 /// Escape a string for safe use in a shell command
 /// Uses single quotes for safety, escaping any single quotes in the input
 fn shell_escape(s: &str) -> String {
@@ -66,6 +69,47 @@ impl FzfWrapper {
     pub fn builder() -> FzfBuilder {
         FzfBuilder::new()
     }
+}
+
+fn yazi_config_dir() -> PathBuf {
+    let mut base = dirs::cache_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+    for segment in YAZI_CACHE_SUBDIR.split('/') {
+        base.push(segment);
+    }
+    base
+}
+
+fn ensure_yazi_config() -> Result<PathBuf> {
+    let dir = yazi_config_dir();
+    fs::create_dir_all(&dir).with_context(|| {
+        format!(
+            "Failed to create Yazi config directory at {}",
+            dir.display()
+        )
+    })?;
+
+    let init_path = dir.join("init.lua");
+    write_if_changed(&init_path, YAZI_INIT_LUA)?;
+
+    Ok(dir)
+}
+
+fn write_if_changed(path: &Path, contents: &str) -> Result<()> {
+    let should_write = match fs::read_to_string(path) {
+        Ok(existing) => existing != contents,
+        Err(_) => true,
+    };
+
+    if should_write {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to prepare directory for {}", parent.display()))?;
+        }
+
+        fs::write(path, contents).with_context(|| format!("Failed to write {}", path.display()))?;
+    }
+
+    Ok(())
 }
 
 /// Result of fzf selection
@@ -1009,6 +1053,8 @@ impl FilePickerBuilder {
         let yazi_path = which("yazi")
             .context("`yazi` command was not found. Install it to use the menu file picker.")?;
 
+        let config_dir = ensure_yazi_config()?;
+
         let chooser_file = TempFileBuilder::new()
             .prefix("ins-menu-picker-")
             .suffix(".txt")
@@ -1016,7 +1062,10 @@ impl FilePickerBuilder {
             .context("Failed to create temporary chooser file")?;
         let chooser_path = chooser_file.path().to_path_buf();
 
-        if !self.launch_yazi(&yazi_path, &chooser_path)?.success() {
+        if !self
+            .launch_yazi(&yazi_path, &config_dir, &chooser_path)?
+            .success()
+        {
             return Ok(FilePickerResult::Cancelled);
         }
 
@@ -1089,11 +1138,13 @@ impl FilePickerBuilder {
     fn launch_yazi(
         &self,
         yazi_path: &Path,
+        config_dir: &Path,
         chooser_path: &Path,
     ) -> Result<std::process::ExitStatus> {
         let mut cmd = Command::new(yazi_path);
         cmd.arg("--chooser-file")
             .arg(chooser_path)
+            .env("YAZI_CONFIG_HOME", config_dir)
             .env("INS_MENU_PICKER_MULTI", if self.multi { "1" } else { "0" })
             .env("INS_MENU_PICKER_SCOPE", self.scope.as_env_value());
 
