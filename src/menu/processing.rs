@@ -60,12 +60,8 @@ impl RequestProcessor {
         }
 
         match builder.pick() {
-            Ok(FilePickerResult::Selected(path)) => Ok(MenuResponse::FilePickerResult(vec![
-                path.display().to_string(),
-            ])),
-            Ok(FilePickerResult::MultiSelected(paths)) => Ok(MenuResponse::FilePickerResult(
-                paths.into_iter().map(|p| p.display().to_string()).collect(),
-            )),
+            Ok(FilePickerResult::Selected(path)) => Ok(MenuResponse::FilePickerResult(vec![path])),
+            Ok(FilePickerResult::MultiSelected(paths)) => Ok(MenuResponse::FilePickerResult(paths)),
             Ok(FilePickerResult::Cancelled) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!("File picker error: {e}"))),
         }

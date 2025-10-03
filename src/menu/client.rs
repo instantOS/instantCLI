@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::io::{self, BufRead, Read, Write};
 use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
@@ -169,7 +170,7 @@ impl MenuClient {
         start: Option<String>,
         scope: FilePickerScope,
         multi: bool,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<PathBuf>> {
         match self.send_request(MenuRequest::FilePicker {
             start,
             scope,
@@ -177,7 +178,7 @@ impl MenuClient {
         })? {
             MenuResponse::FilePickerResult(paths) => Ok(paths),
             MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
-            MenuResponse::Cancelled => Ok(vec![]),
+            MenuResponse::Cancelled => Ok(Vec::new()),
             _ => anyhow::bail!("Unexpected response type for file picker request"),
         }
     }
@@ -363,7 +364,7 @@ pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
                         Ok(1)
                     } else {
                         for path in paths {
-                            println!("{path}");
+                            println!("{}", path.display());
                         }
                         Ok(0)
                     }

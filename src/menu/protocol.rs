@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::SystemTime;
 
 use crate::menu_utils::FzfSelectable;
@@ -113,7 +114,7 @@ pub enum MenuResponse {
     /// Operation was cancelled
     Cancelled,
     /// File picker result paths
-    FilePickerResult(Vec<String>),
+    FilePickerResult(Vec<PathBuf>),
     /// Show operation completed successfully
     ShowResult,
 }
