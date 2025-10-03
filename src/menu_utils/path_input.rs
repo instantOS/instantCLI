@@ -5,6 +5,7 @@ use anyhow::{Result, anyhow};
 use super::file_picker::{FilePickerScope, MenuWrapper};
 use super::fzf::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::dot::path_serde::TildePath;
+use crate::ui::nerd_font::NerdFont;
 
 #[derive(Debug, Clone)]
 enum PathInputChoice {
@@ -19,18 +20,8 @@ struct PathInputOption {
 }
 
 impl PathInputOption {
-    fn manual() -> Self {
-        Self {
-            label: "Type or paste a path manually".to_string(),
-            choice: PathInputChoice::Manual,
-        }
-    }
-
-    fn picker() -> Self {
-        Self {
-            label: "Use the interactive file picker".to_string(),
-            choice: PathInputChoice::Picker,
-        }
+    fn new(label: String, choice: PathInputChoice) -> Self {
+        Self { label, choice }
     }
 }
 
@@ -51,16 +42,25 @@ pub struct PathInputBuilder {
     scope: FilePickerScope,
     start_dir: Option<PathBuf>,
     picker_hint: Option<String>,
+    manual_option_label: String,
+    picker_option_label: String,
 }
 
 impl PathInputBuilder {
     pub fn new() -> Self {
+        let manual_icon = char::from(NerdFont::Edit);
+        let picker_icon = char::from(NerdFont::FolderOpen);
         Self {
-            header: "How would you like to provide the path?".to_string(),
-            manual_prompt: "Enter path:".to_string(),
+            header: format!(
+                "{} Choose the path you want to use",
+                char::from(NerdFont::Folder)
+            ),
+            manual_prompt: format!("{manual_icon} Enter the path:"),
             scope: FilePickerScope::FilesAndDirectories,
             start_dir: dirs::home_dir(),
             picker_hint: None,
+            manual_option_label: format!("{manual_icon} Enter a specific path"),
+            picker_option_label: format!("{picker_icon} Browse with the picker"),
         }
     }
 
@@ -89,8 +89,21 @@ impl PathInputBuilder {
         self
     }
 
+    pub fn manual_option_label<S: Into<String>>(mut self, label: S) -> Self {
+        self.manual_option_label = label.into();
+        self
+    }
+
+    pub fn picker_option_label<S: Into<String>>(mut self, label: S) -> Self {
+        self.picker_option_label = label.into();
+        self
+    }
+
     pub fn choose(self) -> Result<PathInputSelection> {
-        let options = vec![PathInputOption::manual(), PathInputOption::picker()];
+        let options = vec![
+            PathInputOption::new(self.manual_option_label.clone(), PathInputChoice::Manual),
+            PathInputOption::new(self.picker_option_label.clone(), PathInputChoice::Picker),
+        ];
 
         loop {
             let selection = FzfWrapper::builder()
@@ -103,7 +116,11 @@ impl PathInputBuilder {
                         let input = FzfWrapper::input(&self.manual_prompt)?;
                         let trimmed = input.trim().to_string();
                         if trimmed.is_empty() {
-                            return Ok(PathInputSelection::Cancelled);
+                            println!(
+                                "{} No path entered. Please choose a path.",
+                                char::from(NerdFont::Warning)
+                            );
+                            continue;
                         }
                         return Ok(PathInputSelection::Manual(trimmed));
                     }

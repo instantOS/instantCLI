@@ -4,6 +4,7 @@ use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGa
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
+use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
 /// Options for adding a game non-interactively
@@ -112,7 +113,7 @@ impl GameManager {
 
                 tilde_path
             }
-            None => Self::get_save_path()?,
+            None => Self::get_save_path(&game_name)?,
         };
 
         // Add the game to the configuration
@@ -249,14 +250,27 @@ impl GameManager {
     }
 
     /// Get save path from user input with validation
-    fn get_save_path() -> Result<TildePath> {
+    fn get_save_path(game_name: &str) -> Result<TildePath> {
         let selection = PathInputBuilder::new()
-            .header("How would you like to provide the save path?")
-            .manual_prompt(
-                "Enter path where save files are located (e.g., ~/.local/share/game-name/saves)",
-            )
+            .header(format!(
+                "{} Choose the save path for '{game_name}'",
+                char::from(NerdFont::Folder)
+            ))
+            .manual_prompt(format!(
+                "{} Enter the save path (e.g., ~/.local/share/{}/saves)",
+                char::from(NerdFont::Edit),
+                game_name.to_lowercase().replace(' ', "-")
+            ))
             .scope(FilePickerScope::Directories)
-            .picker_hint("Select the directory containing your save files")
+            .picker_hint(format!(
+                "{} Select the directory that stores the save files",
+                char::from(NerdFont::Info)
+            ))
+            .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
+            .picker_option_label(format!(
+                "{} Browse and choose a folder",
+                char::from(NerdFont::FolderOpen)
+            ))
             .choose()?;
 
         let save_path = match selection {
@@ -280,17 +294,24 @@ impl GameManager {
 
         if !save_path.as_path().exists() {
             match FzfWrapper::confirm(&format!(
-                "Save path '{save_path_display}' does not exist. Would you like to create it?"
+                "{} Save path '{save_path_display}' does not exist. Create it?",
+                char::from(NerdFont::Warning)
             ))
             .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))?
             {
                 ConfirmResult::Yes => {
                     std::fs::create_dir_all(save_path.as_path())
                         .context("Failed to create save directory")?;
-                    println!("✓ Created save directory: {save_path_display}");
+                    println!(
+                        "{} Created save directory: {save_path_display}",
+                        char::from(NerdFont::Check)
+                    );
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {
-                    println!("Game addition cancelled: save path does not exist.");
+                    println!(
+                        "{} Game addition cancelled: save path does not exist.",
+                        char::from(NerdFont::Warning)
+                    );
                     return Err(anyhow::anyhow!("Save path does not exist"));
                 }
             }

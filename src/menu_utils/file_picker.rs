@@ -229,7 +229,7 @@ impl FilePickerBuilder {
         }
 
         if let Some(dir) = &self.start_dir {
-            cmd.arg("--cwd").arg(dir);
+            cmd.arg(dir);
             cmd.current_dir(dir);
         }
 

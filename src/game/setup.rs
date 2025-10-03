@@ -12,6 +12,7 @@ use crate::menu::protocol;
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
+use crate::ui::nerd_font::NerdFont;
 
 /// Set up games that have been added but don't have installations configured on this device
 pub fn setup_uninstalled_games() -> Result<()> {
@@ -444,11 +445,14 @@ impl FzfSelectable for StringOption {
 /// Let user choose from available paths or enter a custom one
 fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Option<String>> {
     //TODO: this should be an fzf wrapper message, as it is followed by a choice
-    println!("\nChoose how to set up the save path for '{game_name}':");
+    println!(
+        "\n{} Select the save path for '{game_name}':",
+        char::from(NerdFont::Folder)
+    );
 
     // Create options including the paths and a custom option
     let mut options = vec![StringOption::new(
-        "[Enter custom path]".to_string(),
+        format!("{} Enter a different path", char::from(NerdFont::Edit)),
         "CUSTOM".to_string(),
     )];
 
@@ -467,19 +471,30 @@ fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Optio
         Some(selection) => {
             if selection.value == "CUSTOM" {
                 let prompt = format!(
-                    "Enter custom save path for '{}' (e.g., ~/.local/share/{}/saves):",
+                    "{} Enter the save path for '{}' (e.g., ~/.local/share/{}/saves):",
+                    char::from(NerdFont::Edit),
                     game_name,
                     game_name.to_lowercase().replace(' ', "-")
                 );
 
                 let path_selection = PathInputBuilder::new()
                     .header(format!(
-                        "How would you like to provide the save path for '{game_name}'?"
+                        "{} Choose the save path for '{game_name}'",
+                        char::from(NerdFont::Folder)
                     ))
                     .manual_prompt(prompt)
                     .scope(FilePickerScope::Directories)
                     .picker_hint(format!(
-                        "Select the directory to use for {game_name} save files"
+                        "{} Select the directory to use for {game_name} save files",
+                        char::from(NerdFont::Info)
+                    ))
+                    .manual_option_label(format!(
+                        "{} Type an exact path",
+                        char::from(NerdFont::Edit)
+                    ))
+                    .picker_option_label(format!(
+                        "{} Browse and choose a folder",
+                        char::from(NerdFont::FolderOpen)
                     ))
                     .choose()?;
 
@@ -503,7 +518,10 @@ fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Optio
                         })))
                     }
                     PathInputSelection::Cancelled => {
-                        println!("No path selected. Setup cancelled.");
+                        println!(
+                            "{} No path selected. Setup cancelled.",
+                            char::from(NerdFont::Warning)
+                        );
                         Ok(None)
                     }
                 }
@@ -513,7 +531,10 @@ fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Optio
             }
         }
         None => {
-            println!("No path selected. Setup cancelled.");
+            println!(
+                "{} No path selected. Setup cancelled.",
+                char::from(NerdFont::Warning)
+            );
             Ok(None)
         }
     }
