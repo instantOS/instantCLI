@@ -1,6 +1,6 @@
 use crate::dev::github::GitHubRepo;
 use crate::dev::package::Package;
-use crate::fzf_wrapper::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use anyhow::Result;
 
 #[derive(thiserror::Error, Debug)]
@@ -89,9 +89,9 @@ pub fn select_repository(repos: Vec<GitHubRepo>) -> Result<GitHubRepo, FzfError>
         .select(items)
         .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
     {
-        crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.repo),
-        crate::fzf_wrapper::FzfResult::Cancelled => Err(FzfError::UserCancelled),
-        crate::fzf_wrapper::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
+        crate::menu_utils::FzfResult::Selected(item) => Ok(item.repo),
+        crate::menu_utils::FzfResult::Cancelled => Err(FzfError::UserCancelled),
+        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
         _ => Err(FzfError::FzfError(
             "Unexpected selection result".to_string(),
         )),
@@ -114,9 +114,9 @@ pub fn select_package(packages: Vec<Package>) -> Result<Package, FzfError> {
         .select(items)
         .map_err(|e| FzfError::FzfError(format!("Selection error: {e}")))?
     {
-        crate::fzf_wrapper::FzfResult::Selected(item) => Ok(item.package),
-        crate::fzf_wrapper::FzfResult::Cancelled => Err(FzfError::UserCancelled),
-        crate::fzf_wrapper::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
+        crate::menu_utils::FzfResult::Selected(item) => Ok(item.package),
+        crate::menu_utils::FzfResult::Cancelled => Err(FzfError::UserCancelled),
+        crate::menu_utils::FzfResult::Error(e) => Err(FzfError::FzfError(e)),
         _ => Err(FzfError::FzfError(
             "Unexpected selection result".to_string(),
         )),

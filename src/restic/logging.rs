@@ -146,7 +146,7 @@ impl ResticCommandLogger {
         emit(
             Level::Info,
             "restic.logs.list.start",
-            &format!("{} Recent Restic Command Logs:", char::from(Fa::List)),
+            &format!("{} Recent Restic Command Logs:", char::from(NerdFont::List)),
             None,
         );
         separator(false);
@@ -157,7 +157,7 @@ impl ResticCommandLogger {
             text_block.push_str(&format!("Log Entry #{}\n", i + 1));
             text_block.push_str(&format!(
                 "  {} Time: {}\n",
-                char::from(Fa::ClockO),
+                char::from(NerdFont::Clock),
                 time_str
             ));
             text_block.push_str(&format!(
@@ -167,15 +167,15 @@ impl ResticCommandLogger {
             ));
             text_block.push_str(&format!(
                 "  {} Repository: {}\n",
-                char::from(Fa::Folder),
+                char::from(NerdFont::Folder),
                 log.repository
             ));
             text_block.push_str(&format!(
                 "  {} Success: {}\n",
                 if log.success {
-                    char::from(Fa::Check)
+                    char::from(NerdFont::Check)
                 } else {
-                    char::from(Fa::TimesCircle)
+                    char::from(NerdFont::CrossCircle)
                 },
                 if log.success { "Yes" } else { "No" }
             ));
@@ -185,14 +185,14 @@ impl ResticCommandLogger {
             if !log.stdout.trim().is_empty() {
                 text_block.push_str(&format!(
                     "  {} STDOUT:\n{}\n",
-                    char::from(Fa::Upload),
+                    char::from(NerdFont::Upload),
                     Self::indent_text(&log.stdout, 4)
                 ));
             }
             if !log.stderr.trim().is_empty() {
                 text_block.push_str(&format!(
                     "  {} STDERR:\n{}\n",
-                    char::from(Fa::Download),
+                    char::from(NerdFont::Download),
                     Self::indent_text(&log.stderr, 4)
                 ));
             }
@@ -218,7 +218,7 @@ impl ResticCommandLogger {
                 "restic.logs.empty",
                 &format!(
                     "{} No restic command logs found.",
-                    char::from(Fa::InfoCircle)
+                    char::from(NerdFont::Info)
                 ),
                 None,
             );

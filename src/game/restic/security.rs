@@ -1,4 +1,3 @@
-use crate::fzf_wrapper::{ConfirmResult, FzfWrapper};
 use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection;
 use crate::game::utils::save_files::{
@@ -6,6 +5,7 @@ use crate::game::utils::save_files::{
     get_save_directory_info,
 };
 use crate::game::utils::validation;
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::restic::wrapper::Snapshot;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
@@ -66,7 +66,7 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
                 "game.security.installation_missing",
                 &format!(
                     "{} Error: No installation found for game '{game_name}'.",
-                    char::from(Fa::TimesCircle)
+                    char::from(NerdFont::CrossCircle)
                 ),
                 None,
             );
@@ -227,7 +227,7 @@ pub fn create_restore_confirmation(
     // Build confirmation message based on security context
     let mut message = format!(
         "{} Restore game saves for '{}' from snapshot {}\n\n",
-        char::from(Fa::Download),
+        char::from(NerdFont::Download),
         game_name,
         &snapshot.id[..8.min(snapshot.id.len())]
     );
@@ -289,7 +289,7 @@ pub fn validate_snapshot_id(
                 "game.security.snapshot_missing",
                 &format!(
                     "{} Error: Snapshot '{snapshot_id}' not found for game '{game_name}'.",
-                    char::from(Fa::TimesCircle)
+                    char::from(NerdFont::CrossCircle)
                 ),
                 None,
             );

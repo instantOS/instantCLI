@@ -125,23 +125,9 @@ impl Config {
         fs::create_dir_all(self.repos_path()).context("creating repos directory")?;
         Ok(())
     }
-}
 
-/// Wrapper that holds config and its custom path
-#[derive(Debug, Clone)]
-pub struct ConfigManager {
-    pub config: Config,
-    pub custom_path: Option<String>,
-}
-
-impl ConfigManager {
-    /// Load config from default location
-    pub fn load() -> Result<Self> {
-        Self::load_from(None)
-    }
-
-    /// Load config from a specific path or the default location
-    pub fn load_from(custom_path: Option<&str>) -> Result<Self> {
+    /// Load config from default location or custom path
+    pub fn load(custom_path: Option<&str>) -> Result<Self> {
         let cfg_path = config_file_path(custom_path)?;
         let config = if !cfg_path.exists() {
             let default = Config::default();
@@ -155,121 +141,94 @@ impl ConfigManager {
             toml::from_str(&s).context("parsing config toml")?
         };
 
-        Ok(Self {
-            config,
-            custom_path: custom_path.map(|s| s.to_string()),
-        })
+        Ok(config)
     }
 
-    /// Save the config to the original path it was loaded from
-    pub fn save(&self) -> Result<()> {
-        let cfg_path = config_file_path(self.custom_path.as_deref())?;
-        let toml = toml::to_string_pretty(&self.config).context("serializing config to toml")?;
+    /// Save the config to default location or custom path
+    pub fn save(&self, custom_path: Option<&str>) -> Result<()> {
+        let cfg_path = config_file_path(custom_path)?;
+        let toml = toml::to_string_pretty(self).context("serializing config to toml")?;
         fs::write(cfg_path, toml).context("writing config file")?;
         Ok(())
     }
 
-    /// Get an immutable reference to the config
-    pub fn config(&self) -> &Config {
-        &self.config
-    }
-
-    /// Get a mutable reference to the config
-    pub fn config_mut(&mut self) -> &mut Config {
-        &mut self.config
-    }
-
-    /// Get the config and save it after modification (builder pattern)
-    pub fn with_config_mut<F>(&mut self, f: F) -> Result<()>
-    where
-        F: FnOnce(&mut Config) -> Result<()>,
-    {
-        f(self.config_mut())?;
-        self.save()
-    }
-
     /// Add a repo to the config and persist the change
-    pub fn add_repo(&mut self, mut repo: Repo) -> Result<()> {
-        self.with_config_mut(|config| {
-            // Auto-generate name if not provided
-            if repo.name.trim().is_empty() {
-                repo.name = extract_repo_name(&repo.url);
-            }
+    pub fn add_repo(&mut self, mut repo: Repo, custom_path: Option<&str>) -> Result<()> {
+        // Auto-generate name if not provided
+        if repo.name.trim().is_empty() {
+            repo.name = extract_repo_name(&repo.url);
+        }
 
-            // Check for duplicate names
-            if config.repos.iter().any(|r| r.name == repo.name) {
-                return Err(anyhow::anyhow!(
-                    "Repository with name '{}' already exists",
-                    repo.name
-                ));
-            }
+        // Check for duplicate names
+        if self.repos.iter().any(|r| r.name == repo.name) {
+            return Err(anyhow::anyhow!(
+                "Repository with name '{}' already exists",
+                repo.name
+            ));
+        }
 
-            config.repos.push(repo);
-            Ok(())
-        })
+        self.repos.push(repo);
+        self.save(custom_path)
     }
 
     /// Set active subdirectories for a specific repo by name
-    pub fn set_active_subdirs(&mut self, repo_name: &str, subdirs: Vec<String>) -> Result<()> {
-        self.with_config_mut(|config| {
-            for repo in &mut config.repos {
-                if repo.name == repo_name {
-                    repo.active_subdirectories = subdirs;
-                    return Ok(());
-                }
+    pub fn set_active_subdirs(
+        &mut self,
+        repo_name: &str,
+        subdirs: Vec<String>,
+        custom_path: Option<&str>,
+    ) -> Result<()> {
+        for repo in &mut self.repos {
+            if repo.name == repo_name {
+                repo.active_subdirectories = subdirs;
+                return self.save(custom_path);
             }
-            Err(anyhow::anyhow!(
-                "Repository with name '{}' not found",
-                repo_name
-            ))
-        })
+        }
+        Err(anyhow::anyhow!(
+            "Repository with name '{}' not found",
+            repo_name
+        ))
     }
 
     /// Enable a repository by name
-    pub fn enable_repo(&mut self, repo_name: &str) -> Result<()> {
-        self.with_config_mut(|config| {
-            for repo in &mut config.repos {
-                if repo.name == repo_name {
-                    repo.enabled = true;
-                    return Ok(());
-                }
+    pub fn enable_repo(&mut self, repo_name: &str, custom_path: Option<&str>) -> Result<()> {
+        for repo in &mut self.repos {
+            if repo.name == repo_name {
+                repo.enabled = true;
+                return self.save(custom_path);
             }
-            Err(anyhow::anyhow!(
-                "Repository with name '{}' not found",
-                repo_name
-            ))
-        })
+        }
+        Err(anyhow::anyhow!(
+            "Repository with name '{}' not found",
+            repo_name
+        ))
     }
 
     /// Disable a repository by name
-    pub fn disable_repo(&mut self, repo_name: &str) -> Result<()> {
-        self.with_config_mut(|config| {
-            for repo in &mut config.repos {
-                if repo.name == repo_name {
-                    repo.enabled = false;
-                    return Ok(());
-                }
+    pub fn disable_repo(&mut self, repo_name: &str, custom_path: Option<&str>) -> Result<()> {
+        for repo in &mut self.repos {
+            if repo.name == repo_name {
+                repo.enabled = false;
+                return self.save(custom_path);
             }
-            Err(anyhow::anyhow!(
-                "Repository with name '{}' not found",
-                repo_name
-            ))
-        })
+        }
+        Err(anyhow::anyhow!(
+            "Repository with name '{}' not found",
+            repo_name
+        ))
     }
 
     /// Remove a repository by name
-    pub fn remove_repo(&mut self, repo_name: &str) -> Result<()> {
-        self.with_config_mut(|config| {
-            let original_len = config.repos.len();
-            config.repos.retain(|r| r.name != repo_name);
-            if config.repos.len() == original_len {
-                return Err(anyhow::anyhow!(
-                    "Repository with name '{}' not found",
-                    repo_name
-                ));
-            }
-            Ok(())
-        })
+    pub fn remove_repo(&mut self, repo_name: &str, custom_path: Option<&str>) -> Result<()> {
+        let original_len = self.repos.len();
+        self.repos.retain(|r| r.name != repo_name);
+        if self.repos.len() == original_len {
+            return Err(anyhow::anyhow!(
+                "Repository with name '{}' not found",
+                repo_name
+            ));
+        }
+        self.save(custom_path)
     }
 }
 

@@ -6,12 +6,13 @@ mod completions;
 mod dev;
 mod doctor;
 mod dot;
-mod fzf_wrapper;
 mod game;
 mod launch;
 mod menu;
+mod menu_utils;
 mod restic;
 mod scratchpad;
+mod settings;
 mod ui;
 
 use clap::{CommandFactory, Parser, Subcommand, ValueHint};
@@ -49,10 +50,11 @@ fn execute_with_error_handling<T>(
 
 use crate::dev::DevCommands;
 use crate::doctor::DoctorCommands;
-use crate::dot::config::ConfigManager;
+use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
 use crate::scratchpad::ScratchpadCommand;
+use crate::settings::SettingsCommands;
 use crate::ui::prelude::*;
 
 /// InstantCLI main parser
@@ -130,6 +132,20 @@ enum Commands {
     Scratchpad {
         #[command(subcommand)]
         command: ScratchpadCommand,
+    },
+    /// Desktop settings and preferences
+    Settings {
+        #[command(subcommand)]
+        command: Option<SettingsCommands>,
+        /// Navigate directly to a specific setting by ID (e.g., "appearance.animations")
+        #[arg(short = 's', long = "setting", conflicts_with_all = ["category", "search"])]
+        setting: Option<String>,
+        /// Navigate directly to a specific category (e.g., "appearance", "desktop")
+        #[arg(long = "category", conflicts_with_all = ["setting", "search"])]
+        category: Option<String>,
+        /// Start in search mode to browse all settings
+        #[arg(long = "search", conflicts_with_all = ["setting", "category"])]
+        search: bool,
     },
     /// Debugging and diagnostic utilities
     Debug {
@@ -227,7 +243,7 @@ fn handle_debug_command(command: DebugCommands) -> Result<()> {
                     "restic.logs.cleared",
                     &format!(
                         "{} Cleared all restic command logs.",
-                        char::from(Fa::TrashO)
+                        char::from(NerdFont::Trash)
                     ),
                     None,
                 );
@@ -269,16 +285,16 @@ async fn main() -> Result<()> {
         }
         Some(Commands::Dot { command }) => {
             // Load configuration once at startup
-            let mut config_manager = execute_with_error_handling(
-                ConfigManager::load_from(cli.config.as_deref()),
+            let mut config = execute_with_error_handling(
+                Config::load(cli.config.as_deref()),
                 "Error loading configuration",
                 None,
             )?;
 
             // Ensure directories exist and create database instance once at startup
-            config_manager.config().ensure_directories()?;
+            config.ensure_directories()?;
             let db = execute_with_error_handling(
-                Database::new(config_manager.config().database_path().to_path_buf()),
+                Database::new(config.database_path().to_path_buf()),
                 "Error opening database",
                 None,
             )?;
@@ -287,7 +303,7 @@ async fn main() -> Result<()> {
                 DotCommands::Repo { command } => {
                     execute_with_error_handling(
                         dot::repo::commands::handle_repo_command(
-                            &mut config_manager,
+                            &mut config,
                             &db,
                             command,
                             cli.debug,
@@ -298,48 +314,42 @@ async fn main() -> Result<()> {
                 }
                 DotCommands::Reset { path } => {
                     execute_with_error_handling(
-                        dot::reset_modified(&config_manager.config, &db, path),
+                        dot::reset_modified(&config, &db, path),
                         "Error resetting dotfiles",
                         None,
                     )?;
                 }
                 DotCommands::Apply => {
                     execute_with_error_handling(
-                        dot::apply_all(&config_manager.config, &db),
+                        dot::apply_all(&config, &db),
                         "Error applying dotfiles",
                         Some("Applied dotfiles"),
                     )?;
                 }
                 DotCommands::Fetch { path, dry_run } => {
                     execute_with_error_handling(
-                        dot::fetch_modified(&config_manager.config, &db, path.as_deref(), *dry_run),
+                        dot::fetch_modified(&config, &db, path.as_deref(), *dry_run),
                         "Error fetching dotfiles",
                         Some("Fetched modified dotfiles"),
                     )?;
                 }
                 DotCommands::Add { path } => {
                     execute_with_error_handling(
-                        dot::add_dotfile(&config_manager.config, &db, path),
+                        dot::add_dotfile(&config, &db, path),
                         "Error adding dotfile",
                         Some(&format!("Added dotfile {}", path.green())),
                     )?;
                 }
                 DotCommands::Update => {
                     execute_with_error_handling(
-                        dot::update_all(&config_manager.config, cli.debug),
+                        dot::update_all(&config, cli.debug),
                         "Error updating repos",
                         Some("All repos updated"),
                     )?;
                 }
                 DotCommands::Status { path, all } => {
                     execute_with_error_handling(
-                        dot::status_all(
-                            &config_manager.config,
-                            cli.debug,
-                            path.as_deref(),
-                            &db,
-                            *all,
-                        ),
+                        dot::status_all(&config, cli.debug, path.as_deref(), &db, *all),
                         "Error checking repo status",
                         None,
                     )?;
@@ -362,7 +372,7 @@ async fn main() -> Result<()> {
                 }
                 DotCommands::Diff { path } => {
                     execute_with_error_handling(
-                        dot::diff_all(&config_manager.config, cli.debug, path.as_deref(), &db),
+                        dot::diff_all(&config, cli.debug, path.as_deref(), &db),
                         "Error showing dotfile differences",
                         None,
                     )?;
@@ -391,6 +401,34 @@ async fn main() -> Result<()> {
             let compositor = common::compositor::CompositorType::detect();
             let exit_code = command.clone().run(&compositor, cli.debug)?;
             std::process::exit(exit_code);
+        }
+        Some(Commands::Settings {
+            command,
+            setting,
+            category,
+            search,
+        }) => {
+            use settings::SettingsNavigation;
+            let navigation = if let Some(setting_id) = setting {
+                Some(SettingsNavigation::Setting(setting_id.clone()))
+            } else if let Some(category_id) = category {
+                Some(SettingsNavigation::Category(category_id.clone()))
+            } else if *search {
+                Some(SettingsNavigation::Search)
+            } else {
+                None
+            };
+
+            execute_with_error_handling(
+                settings::dispatch_settings_command(
+                    cli.debug,
+                    cli.internal_privileged_mode,
+                    command.clone(),
+                    navigation,
+                ),
+                "Error running settings",
+                None,
+            )?;
         }
         Some(Commands::Debug { command }) => {
             execute_with_error_handling(

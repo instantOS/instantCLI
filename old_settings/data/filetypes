@@ -1,0 +1,15 @@
+:y Folder:inode/directory
+:b Plain text:text/plain
+:r PDF:application/pdf
+:g Epub:application/epub+zip
+:b JSON:application/json
+:y PNG:image/png
+:y Jpeg:image/jpg
+:y GIF:image/gif
+:b 金MP4:video/mp4
+:b 金MP4:video/mp4
+:b Link:x-scheme-handler/http:x-scheme-handler/https
+:g Zip:application/zip
+:g GZ:application/gzip
+:g XZ:application/x-xz
+:y 縉SVG:image/svg

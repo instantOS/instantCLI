@@ -1,0 +1,8 @@
+b appmenu:appmenu
+b jgmenu:jgmenu
+b instantMENU:instantmenu
+b dmenu:dmenu
+b rofi:rofi
+b panther:panther
+b albert:albert
+g xfce4-appfinder:xfce4-appfinder

@@ -4,7 +4,7 @@ This file provides guidance to Gemini when working with code in this repository.
 
 ## Project Overview
 
-InstantCLI is a Rust-based command-line tool for managing dotfiles and instantOS configurations. It provides a decentralized approach to dotfile management that respects user modifications while enabling easy theme and configuration switching.
+InstantCLI is a Rust-based command-line tool (v0.1.9) for managing dotfiles, game saves, system settings, and instantOS configurations. It provides a decentralized approach to dotfile management that respects user modifications while enabling easy theme and configuration switching, along with comprehensive system management capabilities.
 
 ## Common Development Commands
 
@@ -27,10 +27,34 @@ cargo run -- --debug <command>
 ```bash
 # Run all tests
 cargo test
+just test
 
 # Run specific test
 cargo test test_apply_and_fetch
+
+# Install locally for user testing (builds and copies to ~/.local/bin/)
+just install
 ```
+
+### User Testing
+For testing purposes, you can install the CLI locally and use it as a normal user would:
+
+```bash
+# Install the CLI (builds and installs to ~/.local/bin/)
+just install
+
+# Test from home directory (simulates real user usage)
+cd ~ && ins <command>
+
+# Example test commands
+cd ~ && ins dot status
+cd ~ && ins --debug dot apply
+cd ~ && ins dot reset .config
+```
+
+**Note**: Using `cd ~ && ins <command>` is the preferred testing method as it simulates how real users will interact with the CLI, avoiding working directory concerns and ensuring the tool behaves correctly in normal usage scenarios.
+
+**Important Note**: Commands involving fzf interactive menus (such as `ins menu` commands and any dotfile operations that require user selection) should be run by the user directly. AI agents are not capable of interacting with fzf's interactive interface, so these commands must be executed manually by a human user.
 
 ## Architecture
 
@@ -46,6 +70,57 @@ cargo test test_apply_and_fetch
    - `git.rs`: Git repository operations (cloning, updating, status checking)
    - `localrepo.rs`: Local repository representation and management
    - `meta.rs`: Repository initialization and metadata handling
+   - `repo/`: Repository management subdirectory
+     - `cli.rs`: Repository CLI command definitions
+     - `commands.rs`: Repository command handlers
+     - `manager.rs`: Repository management logic
+
+3. **Game Save Management** (`src/game/`): Game save backup and synchronization using restic
+   - `cli.rs`: Game command definitions
+   - `commands.rs`: Game command handlers
+   - `config.rs`: Game configuration management
+   - `games/`: Game management logic
+   - `operations/`: Game operations (launch, sync)
+   - `repository/`: Repository management for game saves
+   - `restic/`: Restic wrapper for backup operations
+
+4. **System Settings** (`src/settings/`): System configuration management
+   - `commands.rs`: Settings CLI command definitions
+   - `registry.rs`: Settings definitions and metadata
+   - `ui/`: Settings user interface components
+   - `actions.rs`: Setting application logic
+   - `store.rs`: Settings persistence
+
+5. **Interactive Menus** (`src/menu/`): FZF-based interactive menu system
+   - `mod.rs`: Menu command definitions and handlers
+   - `server.rs`: Menu server for GUI integration
+   - `client.rs`: Menu client for server communication
+   - `protocol.rs`: Communication protocol definitions
+
+6. **System Diagnostics** (`src/doctor/`): System health checks and diagnostics
+   - `mod.rs`: Doctor trait definitions and orchestration
+   - `checks.rs`: Individual health check implementations
+   - `command.rs`: Doctor command handlers
+
+7. **Scratchpad Management** (`src/scratchpad/`): Terminal scratchpad functionality
+   - `mod.rs`: Scratchpad command definitions
+   - `operations.rs`: Scratchpad operations (show, hide, toggle)
+   - `terminal.rs`: Terminal management
+
+8. **Application Launcher** (`src/launch/`): Desktop application launcher
+   - `mod.rs`: Launch command handlers
+   - `desktop.rs`: Desktop file parsing
+   - `execute.rs`: Application execution
+
+9. **Development Tools** (`src/dev/`): Development utilities
+   - `mod.rs`: Dev command definitions
+   - `clone.rs`: Repository cloning utilities
+   - `install.rs`: Installation helpers
+
+10. **Restic Wrapper** (`src/restic/`): Backup system integration
+    - `wrapper.rs`: Restic command wrapper
+    - `error.rs`: Error handling for restic operations
+    - `logging.rs`: Restic command logging
 
 ### Key Concepts
 
@@ -58,22 +133,39 @@ cargo test test_apply_and_fetch
 - Later repos override earlier ones for the same file paths
 
 **User Modification Protection**:
-- SHA256 hashes track file states in SQLite database
+- SHA256 hashes track file states in SQLite database with explicit source/target distinction
 - User-modified files are never overwritten automatically
-- Files are only updated if they match known unmodified hashes
+- Files are only updated if they are determined to be unmodified using hash comparison
 
-### Database Schema
+### Hash System Architecture
 
-SQLite database at `~/.local/share/instantos/instant.db`:
+The hash system distinguishes between **source files** (in dotfile repositories) and **target files** (in home directory):
+
+**Database Schema**:
 ```sql
-CREATE TABLE hashes (
+CREATE TABLE file_hashes (
     created TEXT NOT NULL,
-    hash TEXT NOT NULL, 
+    hash TEXT NOT NULL,
     path TEXT NOT NULL,
-    unmodified INTEGER NOT NULL,
+    source_file INTEGER NOT NULL,  -- true=source file, false=target file
     PRIMARY KEY (hash, path)
 )
 ```
+
+**DotFileType Enum**:
+- `SourceFile` (serializes as `true`): Files in the dotfile repository (`~/.local/share/instantos/dots/`)
+- `TargetFile` (serializes as `false`): Files in the home directory (`~/`)
+
+**Modification Detection Logic**:
+The `is_target_unmodified()` function determines if a target file can be safely overwritten:
+
+**Returns true (safe to overwrite) if**:
+1. **File doesn't exist** - Can be safely created
+2. **File was created by instantCLI** - Hash matches any source file hash in database
+3. **File matches current source** - Hash matches current source file hash
+
+**Returns false (user modification detected) if**:
+- File exists, has been modified by user, and doesn't match current source
 
 ### Configuration Structure
 
@@ -91,7 +183,9 @@ branch = "main"
 
 **No Git Commits**: Do NOT create git commits. The repository has strict policies against automated commits. If changes need to be committed, ask the user for explicit permission.
 
-**Hash-Based Safety**: All file operations respect the hash-based modification detection system. Never bypass this system as it protects user modifications.
+**Compile After Changes**: Always compile the code after making changes to verify correctness with the compiler. Use `cargo check` for quick syntax checks or `cargo build` for full compilation.
+
+**Hash-Based Safety**: All file operations respect the hash-based modification detection system. Never bypass this system as it protects user modifications. The system distinguishes between source files (repository copies) and target files (home directory installations) using the `source_file` database field.
 
 **Config Locations**: 
 - Config: `~/.config/instant/instant.toml`
@@ -100,21 +194,67 @@ branch = "main"
 
 ## Key Commands
 
-- `ins dot clone <url> [--name <name>] [--branch <branch>]`: Add a new dotfile repository
+### Dotfile Commands
 - `ins dot apply`: Apply all dotfiles from configured repos
 - `ins dot fetch [<path>]`: Fetch modified files from home directory back to repos
 - `ins dot reset <path>`: Reset modified files to original state
 - `ins dot update`: Update all configured repositories
 - `ins dot status [<path>]`: Check repository status
-- `ins dot init [<name>]`: Initialize current directory as a dotfile repo
+- `ins dot init`: Initialize current directory as a dotfile repo
 - `ins dot add <path>`: Add new dotfiles to tracking
-- `ins dot remove <repo> [--files]`: Remove a repository from configuration
-- `ins dot list-subdirs <repo>`: List available subdirectories in a repository
-- `ins dot set-subdirs <repo> <subdirs...>`: Set active subdirectories for a repository
-- `ins dot show-subdirs <repo>`: Show currently active subdirectories for a repository
-- `ins dot list-subdirs <repo>`: List available subdirectories in a repository
-- `ins dot set-subdirs <repo> <subdirs...>`: Set active subdirectories for a repository
-- `ins dot show-subdirs <repo>`: Show currently active subdirectories for a repository
+- `ins dot diff [<path>]`: Show differences between source and target files
+- `ins dot repo add <url>`: Add a new dotfile repository
+- `ins dot repo list`: List all configured repositories
+- `ins dot repo remove <name>`: Remove a repository
+- `ins dot repo info <name>`: Show detailed repository information
+- `ins dot repo enable <name>`: Enable a disabled repository
+- `ins dot repo disable <name>`: Disable a repository temporarily
+- `ins dot repo subdirs list <name>`: List available subdirectories
+- `ins dot repo subdirs set <name> <subdirs...>`: Set active subdirectories
+
+### Game Save Management Commands
+- `ins game init`: Initialize restic repository for game saves
+- `ins game add`: Add a new game to track
+- `ins game list`: List all tracked games
+- `ins game remove <game>`: Remove a game from tracking
+- `ins game backup [<game>]`: Backup game saves
+- `ins game restore [<game>]`: Restore game saves from backup
+- `ins game launch <game>`: Launch a game
+- `ins game sync <game>`: Sync game saves (backup then restore latest)
+- `ins game setup`: Set up games that have been added but not configured
+- `ins game prune`: Clean up old backup snapshots
+
+### System Settings Commands
+- `ins settings`: Open interactive settings UI
+- `ins settings apply`: Reapply settings that don't persist across reboots
+- `ins settings list`: List available settings and categories
+
+### Interactive Menu Commands
+- `ins menu confirm --message "Are you sure?"`: Show confirmation dialog
+- `ins menu choice --prompt "Select an item:" --multi`: Show selection menu
+- `ins menu input --prompt "Type a value:"`: Show text input dialog
+- `ins menu password --prompt "Enter password:"`: Show password input dialog
+- `ins menu server launch`: Launch menu server
+- `ins menu server stop`: Stop menu server
+
+### Scratchpad Commands
+- `ins scratchpad toggle`: Toggle scratchpad terminal visibility
+- `ins scratchpad show`: Show scratchpad terminal
+- `ins scratchpad hide`: Hide scratchpad terminal
+- `ins scratchpad status`: Check if scratchpad terminal is currently visible
+
+### Application Launcher Commands
+- `ins launch`: Launch applications interactively
+- `ins launch --list`: List available applications
+
+### System Diagnostics Commands
+- `ins doctor`: Run system diagnostics and fixes
+
+### Development Commands
+- `ins dev clone`: Clone development repositories
+- `ins dev install`: Install development tools
+## Multiple Subdirectories Support
+
 InstantCLI repositories can declare multiple subdirectories containing dotfiles, with configurable active subdirectories per repository.
 
 ### Repository Structure
@@ -137,12 +277,6 @@ url = "https://github.com/user/dotfiles.git"
 name = "my-dotfiles"
 active_subdirs = ["dots", "themes"]
 ```
-
-### Subdirectory Management Commands
-
-- `ins dot list-subdirs <repo>`: List available subdirectories in a repository
-- `ins dot set-subdirs <repo> <subdirs...>`: Set active subdirectories for a repository
-- `ins dot show-subdirs <repo>`: Show currently active subdirectories for a repository
 
 ### Default Behavior
 

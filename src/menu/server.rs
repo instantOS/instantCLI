@@ -18,13 +18,13 @@ use std::thread;
 use std::time::Duration;
 use tokio::signal;
 
-/// Global registry for tracking active fzf processes that can be killed
+/// Global registry for tracking active menu processes (fzf, yazi, etc.) that can be cancelled
 /// when scratchpad becomes invisible
-static ACTIVE_FZF_PROCESSES: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+static ACTIVE_MENU_PROCESSES: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
-/// Register a process ID as an active fzf process
-pub fn register_fzf_process(pid: u32) -> Result<()> {
-    let mut processes = ACTIVE_FZF_PROCESSES
+/// Register a process ID as an active menu process
+pub fn register_menu_process(pid: u32) -> Result<()> {
+    let mut processes = ACTIVE_MENU_PROCESSES
         .lock()
         .map_err(|e| anyhow::anyhow!("Failed to acquire process lock: {}", e))?;
     processes.push(pid);
@@ -32,16 +32,16 @@ pub fn register_fzf_process(pid: u32) -> Result<()> {
 }
 
 /// Unregister a process ID (called when process completes normally)
-pub fn unregister_fzf_process(pid: u32) {
-    if let Ok(mut processes) = ACTIVE_FZF_PROCESSES.lock() {
+pub fn unregister_menu_process(pid: u32) {
+    if let Ok(mut processes) = ACTIVE_MENU_PROCESSES.lock() {
         processes.retain(|&p| p != pid);
     }
 }
 
-/// Kill all registered fzf processes (called when scratchpad becomes invisible)
+/// Kill all registered menu processes (called when scratchpad becomes invisible)
 /// Uses SIGINT to simulate the same behavior as pressing ESC
-pub fn kill_active_fzf_processes() -> Result<()> {
-    let processes = if let Ok(mut procs) = ACTIVE_FZF_PROCESSES.lock() {
+pub fn kill_active_menu_processes() -> Result<()> {
+    let processes = if let Ok(mut procs) = ACTIVE_MENU_PROCESSES.lock() {
         let current = procs.clone();
         procs.clear(); // Clear the list since we're killing them all
         current
@@ -256,7 +256,11 @@ impl MenuServer {
         // Show scratchpad if configured (for interactive requests only)
         let should_manage_scratchpad = matches!(
             request,
-            MenuRequest::Confirm { .. } | MenuRequest::Choice { .. } | MenuRequest::Input { .. }
+            MenuRequest::Confirm { .. }
+                | MenuRequest::Choice { .. }
+                | MenuRequest::Input { .. }
+                | MenuRequest::Password { .. }
+                | MenuRequest::FilePicker { .. }
         );
 
         if should_manage_scratchpad
@@ -326,7 +330,7 @@ impl MenuServer {
                             // Scratchpad became invisible, kill all fzf processes
                             println!("Scratchpad became invisible, cancelling menu operation");
                             was_killed_clone.store(true, Ordering::SeqCst);
-                            let _ = kill_active_fzf_processes();
+                            let _ = kill_active_menu_processes();
                             break;
                         }
                         Ok(true) => {

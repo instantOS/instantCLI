@@ -1,0 +1,2 @@
+package:dmenu
+command:dmenu_run

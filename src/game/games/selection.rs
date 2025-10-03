@@ -1,6 +1,6 @@
-use crate::fzf_wrapper::{FzfSelectable, FzfWrapper};
 use crate::game::config::{Game, InstantGameConfig};
 use crate::menu::protocol::FzfPreview;
+use crate::menu_utils::{FzfSelectable, FzfWrapper};
 use anyhow::{Context, Result};
 
 impl FzfSelectable for Game {

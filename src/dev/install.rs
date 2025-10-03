@@ -69,14 +69,14 @@ impl PackageRepo {
             "dev.install.local_changes",
             &format!(
                 "{} Local changes detected in package repository",
-                char::from(Fa::ExclamationCircle)
+                char::from(NerdFont::Warning)
             ),
             None,
         );
         emit(
             Level::Info,
             "dev.install.stash",
-            &format!("{} Stashing local changes...", char::from(Fa::InfoCircle)),
+            &format!("{} Stashing local changes...", char::from(NerdFont::Info)),
             None,
         );
 
@@ -95,13 +95,17 @@ impl PackageRepo {
 
 pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
     if debug {
-        let message = format!("{} Building package: {}", char::from(Fa::Bug), package.name);
+        let message = format!(
+            "{} Building package: {}",
+            char::from(NerdFont::Bug),
+            package.name
+        );
         emit(Level::Debug, "dev.install.build.start", &message, None);
     }
 
     let build_message = format!(
         "{} Building and installing {}... (This may be interactive)",
-        char::from(Fa::InfoCircle),
+        char::from(NerdFont::Info),
         package.name
     );
     emit(
@@ -119,7 +123,7 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
 
     let success_message = format!(
         "{} Successfully installed {}",
-        char::from(Fa::Check),
+        char::from(NerdFont::Check),
         package.name
     );
     emit(
@@ -134,7 +138,10 @@ pub fn build_and_install_package(package: &Package, debug: bool) -> Result<()> {
 
 pub async fn handle_install(debug: bool) -> Result<()> {
     if debug {
-        let start_message = format!("{} Starting package installation...", char::from(Fa::Bug));
+        let start_message = format!(
+            "{} Starting package installation...",
+            char::from(NerdFont::Bug)
+        );
         emit(Level::Debug, "dev.install.start", &start_message, None);
     }
 
@@ -147,7 +154,7 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     pb.finish_with_message("Package repository ready".to_string());
 
     if debug {
-        let discover_message = format!("{} Discovering packages...", char::from(Fa::Bug));
+        let discover_message = format!("{} Discovering packages...", char::from(NerdFont::Bug));
         emit(
             Level::Debug,
             "dev.install.discover",
@@ -164,7 +171,11 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     }
 
     if debug {
-        let count_message = format!("{} Found {} packages", char::from(Fa::Bug), packages.len());
+        let count_message = format!(
+            "{} Found {} packages",
+            char::from(NerdFont::Bug),
+            packages.len()
+        );
         emit(
             Level::Debug,
             "dev.install.packages.count",
@@ -174,7 +185,7 @@ pub async fn handle_install(debug: bool) -> Result<()> {
         for pkg in &packages {
             let item_message = format!(
                 "{}  - {} ({:?})",
-                char::from(Fa::Bug),
+                char::from(NerdFont::Bug),
                 pkg.name,
                 pkg.description
             );
@@ -193,7 +204,7 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     if debug {
         let selected_message = format!(
             "{} Selected package: {}",
-            char::from(Fa::Bug),
+            char::from(NerdFont::Bug),
             selected_package.name
         );
         emit(

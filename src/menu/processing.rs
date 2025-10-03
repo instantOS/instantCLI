@@ -1,5 +1,5 @@
 use super::protocol::*;
-use crate::fzf_wrapper::FzfWrapper;
+use crate::menu_utils::{FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper};
 use anyhow::Result;
 use std::sync::{
     Arc,
@@ -34,9 +34,36 @@ impl RequestProcessor {
                 multi,
             } => self.handle_choice_request(prompt, items, multi),
             MenuRequest::Input { prompt } => self.handle_input_request(prompt),
+            MenuRequest::Password { prompt } => self.handle_password_request(prompt),
+            MenuRequest::FilePicker {
+                start,
+                scope,
+                multi,
+            } => self.handle_file_picker_request(start, scope, multi),
             MenuRequest::Status => Ok(self.get_status_info()),
             MenuRequest::Stop => self.handle_stop_request(),
             MenuRequest::Show => Ok(MenuResponse::ShowResult),
+        }
+    }
+
+    /// Handle file picker request
+    fn handle_file_picker_request(
+        &self,
+        start: Option<String>,
+        scope: FilePickerScope,
+        multi: bool,
+    ) -> Result<MenuResponse> {
+        let mut builder = MenuWrapper::file_picker().scope(scope).multi(multi);
+
+        if let Some(start_dir) = start.as_ref().filter(|s| !s.is_empty()) {
+            builder = builder.start_dir(start_dir);
+        }
+
+        match builder.pick() {
+            Ok(FilePickerResult::Selected(path)) => Ok(MenuResponse::FilePickerResult(vec![path])),
+            Ok(FilePickerResult::MultiSelected(paths)) => Ok(MenuResponse::FilePickerResult(paths)),
+            Ok(FilePickerResult::Cancelled) => Ok(MenuResponse::Cancelled),
+            Err(e) => Ok(MenuResponse::Error(format!("File picker error: {e}"))),
         }
     }
 
@@ -66,14 +93,14 @@ impl RequestProcessor {
             .multi_select(multi)
             .select(items)
         {
-            Ok(crate::fzf_wrapper::FzfResult::Selected(item)) => {
+            Ok(crate::menu_utils::FzfResult::Selected(item)) => {
                 Ok(MenuResponse::ChoiceResult(vec![item]))
             }
-            Ok(crate::fzf_wrapper::FzfResult::MultiSelected(items)) => {
+            Ok(crate::menu_utils::FzfResult::MultiSelected(items)) => {
                 Ok(MenuResponse::ChoiceResult(items))
             }
-            Ok(crate::fzf_wrapper::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
-            Ok(crate::fzf_wrapper::FzfResult::Error(e)) => {
+            Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
+            Ok(crate::menu_utils::FzfResult::Error(e)) => {
                 Ok(MenuResponse::Error(format!("Selection error: {e}")))
             }
             Err(e) => Ok(MenuResponse::Error(format!("Selection error: {e}"))),
@@ -86,6 +113,16 @@ impl RequestProcessor {
             Ok(input) => Ok(MenuResponse::InputResult(input)),
             Err(e) => Ok(MenuResponse::Error(format!(
                 "Failed to show input dialog: {e}"
+            ))),
+        }
+    }
+
+    /// Handle password input request
+    fn handle_password_request(&self, prompt: String) -> Result<MenuResponse> {
+        match FzfWrapper::password(&prompt) {
+            Ok(password) => Ok(MenuResponse::PasswordResult(password)),
+            Err(e) => Ok(MenuResponse::Error(format!(
+                "Failed to show password dialog: {e}"
             ))),
         }
     }

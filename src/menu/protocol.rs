@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::SystemTime;
 
-use crate::fzf_wrapper::FzfSelectable;
+use crate::menu_utils::FzfSelectable;
 
 /// Serializable menu item with rich preview support
 ///
@@ -47,8 +48,8 @@ pub struct SerializableMenuItem {
     pub metadata: Option<HashMap<String, String>>,
 }
 
-/// Re-export FzfPreview from fzf_wrapper for use in protocol
-pub use crate::fzf_wrapper::FzfPreview;
+/// Re-export types from menu wrapper for use in protocol
+pub use crate::menu_utils::{FilePickerScope, FzfPreview};
 
 impl FzfSelectable for SerializableMenuItem {
     fn fzf_display_text(&self) -> String {
@@ -77,6 +78,14 @@ pub enum MenuRequest {
     },
     /// Show text input dialog
     Input { prompt: String },
+    /// Show password input dialog
+    Password { prompt: String },
+    /// Launch file picker dialog
+    FilePicker {
+        start: Option<String>,
+        scope: FilePickerScope,
+        multi: bool,
+    },
     /// Get server status information
     Status,
     /// Stop the server
@@ -94,6 +103,8 @@ pub enum MenuResponse {
     ChoiceResult(Vec<SerializableMenuItem>),
     /// Text input result
     InputResult(String),
+    /// Password input result
+    PasswordResult(String),
     /// Server status information
     StatusResult(StatusInfo),
     /// Server stop acknowledgment
@@ -102,6 +113,8 @@ pub enum MenuResponse {
     Error(String),
     /// Operation was cancelled
     Cancelled,
+    /// File picker result paths
+    FilePickerResult(Vec<PathBuf>),
     /// Show operation completed successfully
     ShowResult,
 }
@@ -199,12 +212,12 @@ pub fn generate_request_id() -> String {
 }
 
 /// Convert FZF confirmation result to protocol result
-impl From<crate::fzf_wrapper::ConfirmResult> for ConfirmResult {
-    fn from(result: crate::fzf_wrapper::ConfirmResult) -> Self {
+impl From<crate::menu_utils::ConfirmResult> for ConfirmResult {
+    fn from(result: crate::menu_utils::ConfirmResult) -> Self {
         match result {
-            crate::fzf_wrapper::ConfirmResult::Yes => ConfirmResult::Yes,
-            crate::fzf_wrapper::ConfirmResult::No => ConfirmResult::No,
-            crate::fzf_wrapper::ConfirmResult::Cancelled => ConfirmResult::Cancelled,
+            crate::menu_utils::ConfirmResult::Yes => ConfirmResult::Yes,
+            crate::menu_utils::ConfirmResult::No => ConfirmResult::No,
+            crate::menu_utils::ConfirmResult::Cancelled => ConfirmResult::Cancelled,
         }
     }
 }
@@ -223,7 +236,7 @@ impl From<ConfirmResult> for i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fzf_wrapper::FzfPreview;
+    use crate::menu_utils::FzfPreview;
 
     #[test]
     fn test_request_serialization() {

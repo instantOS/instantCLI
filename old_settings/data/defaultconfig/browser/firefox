@@ -1,0 +1,3 @@
+command:firefox
+package:firefox
+xdg:firefox

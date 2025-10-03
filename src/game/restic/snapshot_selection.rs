@@ -1,10 +1,10 @@
-use crate::fzf_wrapper::{FzfSelectable, FzfWrapper};
 use crate::game::config::InstantGameConfig;
 use crate::game::restic::tags;
 use crate::game::utils::save_files::{
     TimeComparison, compare_snapshot_vs_local, format_system_time_for_display,
     get_save_directory_info,
 };
+use crate::menu_utils::{FzfSelectable, FzfWrapper};
 use crate::restic::wrapper::Snapshot;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
@@ -85,7 +85,7 @@ fn create_preview_header(snapshot: &Snapshot, game_name: &str) -> String {
          Host:      {}\n\
          Created:   {}\n\
          Short ID:  {}\n\n",
-        char::from(Fa::Folder),
+        char::from(NerdFont::Folder),
         game_name,
         snapshot.hostname,
         formatted_time.lines().next().unwrap_or(""),
@@ -307,7 +307,7 @@ fn create_enhanced_snapshot_preview(
     } else {
         preview.push_str(&format!(
             "{} No detailed statistics available\n",
-            char::from(Fa::List)
+            char::from(NerdFont::List)
         ));
     }
 
@@ -404,7 +404,7 @@ pub fn select_snapshot_interactive_with_local_comparison(
             "game.snapshots.none",
             &format!(
                 "{} No snapshots found for game '{game_name}'.\n\nMake sure backups have been created for this game.",
-                char::from(Fa::ExclamationCircle)
+                char::from(NerdFont::Warning)
             ),
             None,
         );
@@ -438,7 +438,7 @@ pub fn select_snapshot_interactive_with_local_comparison(
             emit(
                 Level::Info,
                 "game.snapshots.cancelled",
-                &format!("{} No snapshot selected.", char::from(Fa::InfoCircle)),
+                &format!("{} No snapshot selected.", char::from(NerdFont::Info)),
                 None,
             );
             Ok(None)
@@ -471,10 +471,10 @@ impl FzfSelectable for EnhancedSnapshot {
                         Err(_) => " COMPARE ERROR",
                     }
                 } else {
-                    &format!("{}NO LOCAL TIME", char::from(Fa::ExclamationCircle))
+                    &format!("{}NO LOCAL TIME", char::from(NerdFont::Warning))
                 }
             } else {
-                &format!("{}NO LOCAL SAVES", char::from(Fa::Folder))
+                &format!("{}NO LOCAL SAVES", char::from(NerdFont::Folder))
             }
         } else {
             ""

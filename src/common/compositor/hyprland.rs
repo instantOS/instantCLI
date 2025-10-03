@@ -17,7 +17,8 @@ struct HyprlandClient {
     pub class: String,
     pub title: String,
     pub workspace: HyprlandWorkspace,
-    pub focusHistoryID: i32,
+    #[serde(rename = "focusHistoryID")]
+    pub focus_history_id: i32,
 }
 
 /// Workspace information from hyprctl clients -j
@@ -130,8 +131,10 @@ struct HyprlandWorkspaceInfo {
 /// Monitor information from hyprctl monitors -j
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct HyprlandMonitorInfo {
-    pub activeWorkspace: HyprlandWorkspace,
-    pub specialWorkspace: HyprlandWorkspace,
+    #[serde(rename = "activeWorkspace")]
+    pub active_workspace: HyprlandWorkspace,
+    #[serde(rename = "specialWorkspace")]
+    pub special_workspace: HyprlandWorkspace,
 }
 
 /// Check if special workspace is active using hyprctl
@@ -153,7 +156,7 @@ pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
     // Check if any monitor has the special workspace active
     let special_workspace_name = format!("special:{workspace_name}");
     for monitor in monitors.iter() {
-        if monitor.specialWorkspace.name == special_workspace_name {
+        if monitor.special_workspace.name == special_workspace_name {
             return Ok(true);
         }
     }
