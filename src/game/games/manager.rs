@@ -1,7 +1,9 @@
 use super::{selection::select_game_interactive, validation::*};
 use crate::dot::path_serde::TildePath;
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
-use crate::menu_utils::{ConfirmResult, FzfWrapper};
+use crate::menu_utils::{
+    ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
+};
 use anyhow::{Context, Result};
 
 /// Options for adding a game non-interactively
@@ -122,8 +124,12 @@ impl GameManager {
         installations.installations.push(installation);
         installations.save()?;
 
+        let save_path_display = save_path
+            .to_tilde_string()
+            .unwrap_or_else(|_| save_path.as_path().to_string_lossy().to_string());
+
         println!("✓ Game '{game_name}' added successfully!");
-        println!("Game configuration saved with save path: {save_path:?}");
+        println!("Game configuration saved with save path: {save_path_display}");
 
         Ok(())
     }
@@ -244,32 +250,44 @@ impl GameManager {
 
     /// Get save path from user input with validation
     fn get_save_path() -> Result<TildePath> {
-        let save_path_input = FzfWrapper::input(
-            "Enter path where save files are located (e.g., ~/.local/share/game-name/saves)",
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to get save path input: {}", e))?
-        .trim()
-        .to_string();
+        let selection = PathInputBuilder::new()
+            .header("How would you like to provide the save path?")
+            .manual_prompt(
+                "Enter path where save files are located (e.g., ~/.local/share/game-name/saves)",
+            )
+            .scope(FilePickerScope::Directories)
+            .picker_hint("Select the directory containing your save files")
+            .choose()?;
 
-        if !validate_non_empty(&save_path_input, "Save path")? {
-            return Err(anyhow::anyhow!("Save path cannot be empty"));
-        }
+        let save_path = match selection {
+            PathInputSelection::Manual(input) => {
+                if !validate_non_empty(&input, "Save path")? {
+                    return Err(anyhow::anyhow!("Save path cannot be empty"));
+                }
+                TildePath::from_str(&input)
+                    .map_err(|e| anyhow::anyhow!("Invalid save path: {}", e))?
+            }
+            PathInputSelection::Picker(path) => TildePath::new(path),
+            PathInputSelection::Cancelled => {
+                println!("Game addition cancelled: save path not provided.");
+                return Err(anyhow::anyhow!("Save path selection cancelled"));
+            }
+        };
 
-        // Convert the input path to a TildePath
-        let save_path = TildePath::from_str(&save_path_input)
-            .map_err(|e| anyhow::anyhow!("Invalid save path: {}", e))?;
+        let save_path_display = save_path
+            .to_tilde_string()
+            .unwrap_or_else(|_| save_path.as_path().to_string_lossy().to_string());
 
-        // Check if the save path exists
         if !save_path.as_path().exists() {
             match FzfWrapper::confirm(&format!(
-                "Save path '{save_path_input}' does not exist. Would you like to create it?"
+                "Save path '{save_path_display}' does not exist. Would you like to create it?"
             ))
             .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))?
             {
                 ConfirmResult::Yes => {
                     std::fs::create_dir_all(save_path.as_path())
                         .context("Failed to create save directory")?;
-                    println!("✓ Created save directory: {save_path_input}");
+                    println!("✓ Created save directory: {save_path_display}");
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {
                     println!("Game addition cancelled: save path does not exist.");

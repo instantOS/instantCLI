@@ -9,7 +9,9 @@ use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
 use crate::game::utils::save_files::get_save_directory_info;
 use crate::menu::protocol;
-use crate::menu_utils::{ConfirmResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{
+    ConfirmResult, FilePickerScope, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
+};
 
 /// Set up games that have been added but don't have installations configured on this device
 pub fn setup_uninstalled_games() -> Result<()> {
@@ -464,22 +466,47 @@ fn choose_installation_path(game_name: &str, paths: &[PathInfo]) -> Result<Optio
     match selected {
         Some(selection) => {
             if selection.value == "CUSTOM" {
-                // User wants to enter a custom path
-                let custom_path = FzfWrapper::input(&format!(
+                let prompt = format!(
                     "Enter custom save path for '{}' (e.g., ~/.local/share/{}/saves):",
                     game_name,
                     game_name.to_lowercase().replace(' ', "-")
-                ))
-                .map_err(|e| anyhow::anyhow!("Failed to get custom path input: {}", e))?
-                .trim()
-                .to_string();
+                );
 
-                if custom_path.is_empty() {
-                    println!("Empty path provided. Setup cancelled.");
-                    return Ok(None);
+                let path_selection = PathInputBuilder::new()
+                    .header(format!(
+                        "How would you like to provide the save path for '{game_name}'?"
+                    ))
+                    .manual_prompt(prompt)
+                    .scope(FilePickerScope::Directories)
+                    .picker_hint(format!(
+                        "Select the directory to use for {game_name} save files"
+                    ))
+                    .choose()?;
+
+                match path_selection {
+                    PathInputSelection::Manual(input) => {
+                        if input.is_empty() {
+                            println!("Empty path provided. Setup cancelled.");
+                            Ok(None)
+                        } else {
+                            let tilde = TildePath::from_str(&input)
+                                .map_err(|e| anyhow::anyhow!("Invalid save path: {}", e))?;
+                            Ok(Some(tilde.to_tilde_string().unwrap_or_else(|_| {
+                                tilde.as_path().to_string_lossy().to_string()
+                            })))
+                        }
+                    }
+                    PathInputSelection::Picker(path) => {
+                        let tilde = TildePath::new(path);
+                        Ok(Some(tilde.to_tilde_string().unwrap_or_else(|_| {
+                            tilde.as_path().to_string_lossy().to_string()
+                        })))
+                    }
+                    PathInputSelection::Cancelled => {
+                        println!("No path selected. Setup cancelled.");
+                        Ok(None)
+                    }
                 }
-
-                Ok(Some(custom_path))
             } else {
                 // User selected one of the existing paths
                 Ok(Some(selection.value))
