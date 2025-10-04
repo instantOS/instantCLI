@@ -131,6 +131,15 @@ pub enum NerdFont {
     Palette,
     Magic,
     Clipboard,
+
+    // File type icons
+    Image,
+    Video,
+    Music,
+    FilePdf,
+    FileWord,
+    FileExcel,
+    FilePresentation,
 }
 
 impl NerdFont {
@@ -262,6 +271,15 @@ impl NerdFont {
             Self::Palette => '󰏘',   // fa-palette
             Self::Magic => '',     // fa-magic
             Self::Clipboard => '', // fa-clipboard
+
+            // File type icons
+            Self::Image => '🖼',      // fa-image
+            Self::Video => '🎥',      // fa-video
+            Self::Music => '🎵',      // fa-music
+            Self::FilePdf => '📄',    // fa-file-pdf
+            Self::FileWord => '📝',   // fa-file-word
+            Self::FileExcel => '📊',  // fa-file-excel
+            Self::FilePresentation => '📊', // fa-file-powerpoint
         }
     }
 }

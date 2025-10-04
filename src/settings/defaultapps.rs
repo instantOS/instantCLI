@@ -1,14 +1,262 @@
 use anyhow::{Context, Result};
+use freedesktop_file_parser::parse;
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::menu_utils::FzfWrapper;
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 
 use super::context::SettingsContext;
+
+/// Information about a MIME type for display purposes
+#[derive(Debug, Clone)]
+struct MimeTypeInfo {
+    mime_type: String,
+    icon: NerdFont,
+    description: Option<String>,
+}
+
+impl FzfSelectable for MimeTypeInfo {
+    fn fzf_display_text(&self) -> String {
+        let icon = char::from(self.icon);
+        if let Some(desc) = &self.description {
+            format!("{} {} - {}", icon, self.mime_type, desc)
+        } else {
+            format!("{} {}", icon, self.mime_type)
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        self.mime_type.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let mut preview = String::new();
+        preview.push_str(&format!("MIME Type: {}\n", self.mime_type));
+        preview.push_str(&format!("Icon: {}\n", char::from(self.icon)));
+        if let Some(desc) = &self.description {
+            preview.push_str(&format!("\nDescription:\n{}\n", desc));
+        }
+        
+        // Show current default
+        if let Ok(Some(default)) = query_default_app(&self.mime_type) {
+            preview.push_str(&format!("\nCurrent Default:\n{}\n", default));
+        }
+        
+        FzfPreview::Text(preview)
+    }
+}
+
+/// Information about an application for display purposes
+#[derive(Debug, Clone)]
+struct ApplicationInfo {
+    desktop_id: String,
+    name: Option<String>,
+    comment: Option<String>,
+    icon: Option<String>,
+    exec: Option<String>,
+}
+
+impl FzfSelectable for ApplicationInfo {
+    fn fzf_display_text(&self) -> String {
+        if let Some(name) = &self.name {
+            format!("󰘔 {} ({})", name, self.desktop_id)
+        } else {
+            format!("󰘔 {}", self.desktop_id)
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        self.desktop_id.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let mut preview = String::new();
+        
+        if let Some(name) = &self.name {
+            preview.push_str(&format!("Application: {}\n", name));
+        } else {
+            preview.push_str(&format!("Desktop ID: {}\n", self.desktop_id));
+        }
+        
+        if let Some(comment) = &self.comment {
+            preview.push_str(&format!("\nDescription:\n{}\n", comment));
+        }
+        
+        if let Some(exec) = &self.exec {
+            preview.push_str(&format!("\nCommand:\n{}\n", exec));
+        }
+        
+        if let Some(icon) = &self.icon {
+            preview.push_str(&format!("\nIcon: {}\n", icon));
+        }
+        
+        preview.push_str(&format!("\nDesktop File:\n{}\n", self.desktop_id));
+        
+        FzfPreview::Text(preview)
+    }
+}
+
+/// Get application info by parsing its desktop file
+fn get_application_info(desktop_id: &str) -> ApplicationInfo {
+    // Try to find and parse the desktop file
+    let directories = [
+        format!("{}/.local/share/applications", std::env::var("HOME").unwrap_or_default()),
+        format!("{}/.local/share/flatpak/exports/share/applications", std::env::var("HOME").unwrap_or_default()),
+        "/var/lib/flatpak/exports/share/applications".to_string(),
+        "/usr/share/applications".to_string(),
+    ];
+
+    for dir in &directories {
+        let path = PathBuf::from(dir).join(desktop_id);
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(desktop_file) = parse(&content) {
+                    use freedesktop_file_parser::EntryType;
+                    
+                    let exec = match &desktop_file.entry.entry_type {
+                        EntryType::Application(app) => app.exec.clone(),
+                        _ => None,
+                    };
+                    
+                    return ApplicationInfo {
+                        desktop_id: desktop_id.to_string(),
+                        name: Some(desktop_file.entry.name.default.clone()),
+                        comment: desktop_file.entry.comment.as_ref().map(|c| c.default.clone()),
+                        icon: desktop_file.entry.icon.as_ref().map(|i| i.content.clone()),
+                        exec,
+                    };
+                }
+            }
+        }
+    }
+
+    // Fallback if desktop file not found or can't be parsed
+    ApplicationInfo {
+        desktop_id: desktop_id.to_string(),
+        name: None,
+        comment: None,
+        icon: None,
+        exec: None,
+    }
+}
+
+/// Get icon and description for a MIME type
+fn get_mime_type_info(mime_type: &str) -> MimeTypeInfo {
+    // Check for exact matches first
+    if let Some((icon, desc)) = get_exact_mime_info(mime_type) {
+        return MimeTypeInfo {
+            mime_type: mime_type.to_string(),
+            icon,
+            description: Some(desc.to_string()),
+        };
+    }
+
+    // Check for category matches (e.g., image/*, video/*)
+    if let Some((prefix, _)) = mime_type.split_once('/') {
+        let (icon, desc) = match prefix {
+            "image" => (NerdFont::Image, Some("Image file")),
+            "video" => (NerdFont::Video, Some("Video file")),
+            "audio" => (NerdFont::Music, Some("Audio file")),
+            "text" => (NerdFont::FileText, Some("Text file")),
+            "application" => (NerdFont::Package, Some("Application file")),
+            "inode" => (NerdFont::Folder, Some("Directory/Inode")),
+            _ => (NerdFont::File, None),
+        };
+        
+        return MimeTypeInfo {
+            mime_type: mime_type.to_string(),
+            icon,
+            description: desc.map(String::from),
+        };
+    }
+
+    // Default fallback
+    MimeTypeInfo {
+        mime_type: mime_type.to_string(),
+        icon: NerdFont::File,
+        description: None,
+    }
+}
+
+/// Exact mappings for common MIME types
+/// This makes it easy to add new specific mappings with nice DX
+fn get_exact_mime_info(mime_type: &str) -> Option<(NerdFont, &'static str)> {
+    let mapping = match mime_type {
+        // Images
+        "image/jpeg" | "image/jpg" => (NerdFont::Image, "JPEG image"),
+        "image/png" => (NerdFont::Image, "PNG image"),
+        "image/gif" => (NerdFont::Image, "GIF animation"),
+        "image/svg+xml" => (NerdFont::Image, "SVG vector image"),
+        "image/webp" => (NerdFont::Image, "WebP image"),
+        "image/bmp" => (NerdFont::Image, "Bitmap image"),
+        "image/tiff" => (NerdFont::Image, "TIFF image"),
+        
+        // Documents
+        "application/pdf" => (NerdFont::FilePdf, "PDF document"),
+        "application/vnd.oasis.opendocument.text" => (NerdFont::FileText, "OpenDocument text"),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => (NerdFont::FileWord, "Microsoft Word document"),
+        "application/msword" => (NerdFont::FileWord, "Microsoft Word document"),
+        "application/vnd.ms-excel" => (NerdFont::FileExcel, "Microsoft Excel spreadsheet"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => (NerdFont::FileExcel, "Excel spreadsheet"),
+        "application/vnd.ms-powerpoint" => (NerdFont::FilePresentation, "PowerPoint presentation"),
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => (NerdFont::FilePresentation, "PowerPoint presentation"),
+        
+        // Archives
+        "application/zip" => (NerdFont::Archive, "ZIP archive"),
+        "application/x-tar" => (NerdFont::Archive, "TAR archive"),
+        "application/x-7z-compressed" => (NerdFont::Archive, "7-Zip archive"),
+        "application/x-rar" => (NerdFont::Archive, "RAR archive"),
+        "application/gzip" => (NerdFont::Archive, "GZIP archive"),
+        "application/x-bzip2" => (NerdFont::Archive, "BZIP2 archive"),
+        "application/x-xz" => (NerdFont::Archive, "XZ archive"),
+        
+        // Video
+        "video/mp4" => (NerdFont::Video, "MP4 video"),
+        "video/x-matroska" => (NerdFont::Video, "Matroska video"),
+        "video/webm" => (NerdFont::Video, "WebM video"),
+        "video/mpeg" => (NerdFont::Video, "MPEG video"),
+        "video/x-msvideo" => (NerdFont::Video, "AVI video"),
+        
+        // Audio
+        "audio/mpeg" => (NerdFont::Music, "MP3 audio"),
+        "audio/ogg" => (NerdFont::Music, "OGG audio"),
+        "audio/flac" => (NerdFont::Music, "FLAC audio"),
+        "audio/x-wav" => (NerdFont::Music, "WAV audio"),
+        "audio/aac" => (NerdFont::Music, "AAC audio"),
+        
+        // Text
+        "text/plain" => (NerdFont::FileText, "Plain text"),
+        "text/html" => (NerdFont::Code, "HTML document"),
+        "text/css" => (NerdFont::Code, "CSS stylesheet"),
+        "text/javascript" => (NerdFont::Code, "JavaScript code"),
+        "application/json" => (NerdFont::Code, "JSON data"),
+        "application/xml" => (NerdFont::Code, "XML document"),
+        "text/x-python" => (NerdFont::Code, "Python script"),
+        "text/x-rust" => (NerdFont::Code, "Rust source code"),
+        "text/x-c" => (NerdFont::Code, "C source code"),
+        "text/x-c++" => (NerdFont::Code, "C++ source code"),
+        "text/markdown" => (NerdFont::FileText, "Markdown document"),
+        
+        // System
+        "application/x-executable" => (NerdFont::Gear, "Executable file"),
+        "application/x-sharedlib" => (NerdFont::Gear, "Shared library"),
+        "application/x-shellscript" => (NerdFont::Terminal, "Shell script"),
+        "inode/directory" => (NerdFont::Folder, "Directory"),
+        
+        // Special
+        "application/vnd.appimage" => (NerdFont::Package, "AppImage application"),
+        "application/vnd.flatpak.ref" => (NerdFont::Package, "Flatpak reference"),
+        "application/x-iso9660-image" => (NerdFont::Archive, "ISO disk image"),
+        
+        _ => return None,
+    };
+    
+    Some(mapping)
+}
 
 /// Get all XDG data directories where mimeinfo.cache files may be located
 fn get_mimeinfo_cache_paths() -> Vec<PathBuf> {
@@ -226,10 +474,10 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     // Build the MIME map once and reuse it
     let mime_map = build_mime_to_apps_map().context("Failed to build MIME type map")?;
 
-    // Get all MIME types
-    let mime_types = get_all_mime_types(&mime_map);
+    // Get all MIME types with enhanced info
+    let mime_type_strings = get_all_mime_types(&mime_map);
 
-    if mime_types.is_empty() {
+    if mime_type_strings.is_empty() {
         emit(
             Level::Warn,
             "settings.defaultapps.no_mime_types",
@@ -242,21 +490,25 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
         return Ok(());
     }
 
-    // Create preview command that shows current default
-    let preview_cmd = "echo 'Current default:'; xdg-mime query default {}";
+    // Convert to MimeTypeInfo with icons and descriptions
+    let mime_types: Vec<MimeTypeInfo> = mime_type_strings
+        .iter()
+        .map(|mt| get_mime_type_info(mt))
+        .collect();
 
-    // Let user select a MIME type
-    let selected_mime = match FzfWrapper::builder()
+    // Let user select a MIME type with enhanced display
+    let selected_mime_info = match FzfWrapper::builder()
         .prompt("Select MIME type: ")
-        .args(["--preview", preview_cmd])
         .select(mime_types)?
     {
-        FzfResult::Selected(mime) => mime,
+        FzfResult::Selected(info) => info,
         _ => {
             ctx.emit_info("settings.defaultapps.cancelled", "No MIME type selected.");
             return Ok(());
         }
     };
+    
+    let selected_mime = &selected_mime_info.mime_type;
 
     // Get applications for this MIME type
     let apps = get_apps_for_mime(&selected_mime, &mime_map);
@@ -277,34 +529,37 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
 
     // Show current default in header
     let current_default = query_default_app(&selected_mime)?;
-    let header = if let Some(ref default) = current_default {
-        format!("MIME type: {}\nCurrent default: {}", selected_mime, default)
+    let header_text = if let Some(ref default) = current_default {
+        format!("MIME type: {} {}\nCurrent default: {}", 
+                char::from(selected_mime_info.icon), 
+                selected_mime, 
+                default)
     } else {
-        format!("MIME type: {}\nCurrent default: (none)", selected_mime)
+        format!("MIME type: {} {}\nCurrent default: (none)", 
+                char::from(selected_mime_info.icon),
+                selected_mime)
     };
 
-    // Format apps with names
-    let app_choices: Vec<String> = apps.iter().map(|app| get_app_name(app)).collect();
+    // Convert desktop IDs to ApplicationInfo with enhanced display
+    let app_infos: Vec<ApplicationInfo> = apps
+        .iter()
+        .map(|desktop_id| get_application_info(desktop_id))
+        .collect();
 
-    // Let user select an application
-    let selected_app_display = match FzfWrapper::builder()
+    // Let user select an application with preview
+    let selected_app_info = match FzfWrapper::builder()
         .prompt("Select application: ")
-        .header(&header)
-        .select(app_choices.clone())?
+        .header(&header_text)
+        .select(app_infos)?
     {
-        FzfResult::Selected(app) => app,
+        FzfResult::Selected(app_info) => app_info,
         _ => {
             ctx.emit_info("settings.defaultapps.cancelled", "No application selected.");
             return Ok(());
         }
     };
 
-    // Find the original desktop file name
-    let app_index = app_choices
-        .iter()
-        .position(|a| a == &selected_app_display)
-        .context("Failed to find selected app")?;
-    let desktop_file = &apps[app_index];
+    let desktop_file = &selected_app_info.desktop_id;
 
     // Set the default application
     set_default_app(&selected_mime, desktop_file)
