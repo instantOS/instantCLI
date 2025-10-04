@@ -190,15 +190,15 @@ impl SetupCandidate {
 
         if let Some(game) = &self.game {
             let mut details = Vec::new();
-            if let Some(desc) = game.description.as_deref() {
-                if !desc.trim().is_empty() {
-                    details.push(format!("Description: {}", desc.trim()));
-                }
+            if let Some(desc) = game.description.as_deref()
+                && !desc.trim().is_empty()
+            {
+                details.push(format!("Description: {}", desc.trim()));
             }
-            if let Some(cmd) = game.launch_command.as_deref() {
-                if !cmd.trim().is_empty() {
-                    details.push(format!("Launch command: {}", cmd.trim()));
-                }
+            if let Some(cmd) = game.launch_command.as_deref()
+                && !cmd.trim().is_empty()
+            {
+                details.push(format!("Launch command: {}", cmd.trim()));
             }
             if !details.is_empty() {
                 sections.push(details.join("\n"));

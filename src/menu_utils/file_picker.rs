@@ -255,13 +255,13 @@ impl FilePickerBuilder {
 
         let mut current_dir = self.start_dir.clone();
 
-        if let Some(selection) = initial_selection {
-            if current_dir.is_none() {
-                current_dir = selection
-                    .is_dir()
-                    .then(|| selection.to_path_buf())
-                    .or_else(|| selection.parent().map(|parent| parent.to_path_buf()));
-            }
+        if let Some(selection) = initial_selection
+            && current_dir.is_none()
+        {
+            current_dir = selection
+                .is_dir()
+                .then(|| selection.to_path_buf())
+                .or_else(|| selection.parent().map(|parent| parent.to_path_buf()));
         }
 
         let launch_target = if let Some(selection) = initial_selection {

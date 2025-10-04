@@ -219,29 +219,28 @@ fn get_application_info(desktop_id: &str) -> ApplicationInfo {
 
     for dir in &directories {
         let path = PathBuf::from(dir).join(desktop_id);
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(desktop_file) = parse(&content) {
-                    use freedesktop_file_parser::EntryType;
+        if path.exists()
+            && let Ok(content) = std::fs::read_to_string(&path)
+            && let Ok(desktop_file) = parse(&content)
+        {
+            use freedesktop_file_parser::EntryType;
 
-                    let exec = match &desktop_file.entry.entry_type {
-                        EntryType::Application(app) => app.exec.clone(),
-                        _ => None,
-                    };
+            let exec = match &desktop_file.entry.entry_type {
+                EntryType::Application(app) => app.exec.clone(),
+                _ => None,
+            };
 
-                    return ApplicationInfo {
-                        desktop_id: desktop_id.to_string(),
-                        name: Some(desktop_file.entry.name.default.clone()),
-                        comment: desktop_file
-                            .entry
-                            .comment
-                            .as_ref()
-                            .map(|c| c.default.clone()),
-                        icon: desktop_file.entry.icon.as_ref().map(|i| i.content.clone()),
-                        exec,
-                    };
-                }
-            }
+            return ApplicationInfo {
+                desktop_id: desktop_id.to_string(),
+                name: Some(desktop_file.entry.name.default.clone()),
+                comment: desktop_file
+                    .entry
+                    .comment
+                    .as_ref()
+                    .map(|c| c.default.clone()),
+                icon: desktop_file.entry.icon.as_ref().map(|i| i.content.clone()),
+                exec,
+            };
         }
     }
 
@@ -440,17 +439,15 @@ fn parse_mimeinfo_cache(path: &Path) -> Result<HashMap<String, Vec<String>>> {
         }
 
         // Parse entries only if we're in the [MIME Cache] section
-        if in_mime_cache {
-            if let Some((mime_type, apps)) = line.split_once('=') {
-                let apps: Vec<String> = apps
-                    .split(';')
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_string())
-                    .collect();
+        if in_mime_cache && let Some((mime_type, apps)) = line.split_once('=') {
+            let apps: Vec<String> = apps
+                .split(';')
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
 
-                if !apps.is_empty() {
-                    map.entry(mime_type.to_string()).or_default().extend(apps);
-                }
+            if !apps.is_empty() {
+                map.entry(mime_type.to_string()).or_default().extend(apps);
             }
         }
     }
@@ -648,7 +645,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     let selected_mime = &selected_mime_info.mime_type;
 
     // Get applications for this MIME type
-    let apps = get_apps_for_mime(&selected_mime, &mime_map);
+    let apps = get_apps_for_mime(selected_mime, &mime_map);
 
     if apps.is_empty() {
         emit(
@@ -665,7 +662,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     }
 
     // Show current default in header
-    let current_default = query_default_app(&selected_mime)?;
+    let current_default = query_default_app(selected_mime)?;
     let header_text = if let Some(ref default) = current_default {
         format!(
             "MIME type: {} {}\nCurrent default: {}",
@@ -703,7 +700,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     let desktop_file = &selected_app_info.desktop_id;
 
     // Set the default application
-    set_default_app(&selected_mime, desktop_file).context("Failed to set default application")?;
+    set_default_app(selected_mime, desktop_file).context("Failed to set default application")?;
 
     ctx.notify(
         "Default application",
