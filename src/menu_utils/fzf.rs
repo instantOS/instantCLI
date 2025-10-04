@@ -166,8 +166,7 @@ impl FzfWrapper {
             None => None,
         };
 
-        let preview_map = PreviewUtils::build_preview_mapping(&items)?;
-        let has_previews = !preview_map.is_empty();
+        let preview_strategy = PreviewUtils::analyze_preview_strategy(&items)?;
 
         let mut cmd = Command::new("fzf");
         cmd.arg("--tiebreak=index");
@@ -184,12 +183,54 @@ impl FzfWrapper {
             cmd.arg("--header").arg(header);
         }
 
-        if has_previews {
-            cmd.arg("--delimiter=\t")
-                .arg("--with-nth=1")
-                .arg("--preview")
-                .arg("echo {} | cut -f2 | base64 -d");
-        }
+        // Configure preview based on strategy
+        let input_text = match preview_strategy {
+            PreviewStrategy::None => {
+                // No previews - simple display
+                display_lines.join("\n")
+            }
+            PreviewStrategy::Command(command) => {
+                // Single command for all items - optimal!
+                // Format: display\tkey, FZF executes command with key as $1
+                // Note: bash -c 'script' name arg1 arg2
+                //       where 'name' becomes $0, 'arg1' becomes $1, etc.
+                cmd.arg("--delimiter=\t")
+                    .arg("--with-nth=1")
+                    .arg("--preview")
+                    .arg(format!("{} bash \"$(echo {{}} | cut -f2)\"", command));
+
+                display_lines
+                    .iter()
+                    .map(|display| {
+                        // Get the key for this item
+                        if let Some(item) = item_map.get(display) {
+                            let key = item.fzf_key();
+                            format!("{display}\t{key}")
+                        } else {
+                            display.clone()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+            PreviewStrategy::Text(preview_map) | PreviewStrategy::Mixed(preview_map) => {
+                // Text previews or mixed - use base64 encoding
+                cmd.arg("--delimiter=\t")
+                    .arg("--with-nth=1")
+                    .arg("--preview")
+                    .arg("echo {} | cut -f2 | base64 -d");
+
+                display_lines
+                    .iter()
+                    .map(|display| {
+                        let preview = preview_map.get(display).cloned().unwrap_or_default();
+                        let encoded_preview = general_purpose::STANDARD.encode(preview.as_bytes());
+                        format!("{display}\t{encoded_preview}")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        };
 
         if let Some(position) = cursor_position {
             cmd.arg("--bind").arg(format!("load:pos({})", position + 1));
@@ -198,20 +239,6 @@ impl FzfWrapper {
         for arg in &self.additional_args {
             cmd.arg(arg);
         }
-
-        let input_text = if has_previews {
-            display_lines
-                .iter()
-                .map(|display| {
-                    let preview = preview_map.get(display).cloned().unwrap_or_default();
-                    let encoded_preview = general_purpose::STANDARD.encode(preview.as_bytes());
-                    format!("{display}\t{encoded_preview}")
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        } else {
-            display_lines.join("\n")
-        };
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -802,6 +829,17 @@ struct PreviewData {
 
 pub struct PreviewUtils;
 
+enum PreviewStrategy {
+    /// No previews
+    None,
+    /// Text previews embedded in input (base64)
+    Text(HashMap<String, String>),
+    /// Single command executed by FZF with key substitution
+    Command(String),
+    /// Mixed - each item has different preview (fallback to text encoding)
+    Mixed(HashMap<String, String>),
+}
+
 impl PreviewUtils {
     pub fn build_preview_mapping<T: FzfSelectable>(items: &[T]) -> Result<HashMap<String, String>> {
         let mut preview_map = HashMap::new();
@@ -820,5 +858,62 @@ impl PreviewUtils {
         }
 
         Ok(preview_map)
+    }
+
+    /// Analyze preview types and determine optimal strategy
+    pub fn analyze_preview_strategy<T: FzfSelectable>(items: &[T]) -> Result<PreviewStrategy> {
+        if items.is_empty() {
+            return Ok(PreviewStrategy::None);
+        }
+
+        let mut first_command: Option<String> = None;
+        let mut text_map = HashMap::new();
+        let mut has_text = false;
+        let mut has_command = false;
+        let mut all_same_command = true;
+
+        for item in items {
+            let display = item.fzf_display_text();
+            let key = item.fzf_key();
+            
+            match item.fzf_preview() {
+                FzfPreview::Text(text) => {
+                    has_text = true;
+                    text_map.insert(display.clone(), text);
+                }
+                FzfPreview::Command(cmd) => {
+                    has_command = true;
+                    if let Some(ref first) = first_command {
+                        if first != &cmd {
+                            all_same_command = false;
+                        }
+                    } else {
+                        first_command = Some(cmd.clone());
+                    }
+                    // For command previews, we'll pass the key (usually MIME type) to the command
+                    // The command should use $1 to reference it
+                    text_map.insert(display.clone(), key);
+                }
+                FzfPreview::None => {
+                    // No preview for this item
+                }
+            }
+        }
+
+        // Determine strategy
+        if !has_text && !has_command {
+            Ok(PreviewStrategy::None)
+        } else if has_command && !has_text && all_same_command {
+            // All items use the same command - optimal case!
+            // We can use a single --preview command with {} substitution
+            Ok(PreviewStrategy::Command(first_command.unwrap()))
+        } else if !has_command && has_text {
+            // All text previews - use existing base64 approach
+            Ok(PreviewStrategy::Text(text_map))
+        } else {
+            // Mixed or multiple different commands - fall back to text encoding
+            // For commands, we store the key to pass to a wrapper script
+            Ok(PreviewStrategy::Mixed(text_map))
+        }
     }
 }
