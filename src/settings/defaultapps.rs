@@ -34,19 +34,9 @@ impl FzfSelectable for MimeTypeInfo {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let mut preview = String::new();
-        preview.push_str(&format!("MIME Type: {}\n", self.mime_type));
-        preview.push_str(&format!("Icon: {}\n", char::from(self.icon)));
-        if let Some(desc) = &self.description {
-            preview.push_str(&format!("\nDescription:\n{}\n", desc));
-        }
-        
-        // Show current default
-        if let Ok(Some(default)) = query_default_app(&self.mime_type) {
-            preview.push_str(&format!("\nCurrent Default:\n{}\n", default));
-        }
-        
-        FzfPreview::Text(preview)
+        // Don't compute preview here - it would run for all items!
+        // Let FZF handle it with the fzf_key() which is the mime type
+        FzfPreview::None
     }
 }
 
@@ -74,6 +64,7 @@ impl FzfSelectable for ApplicationInfo {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
+        // Build preview text from already-loaded data (no external calls)
         let mut preview = String::new();
         
         if let Some(name) = &self.name {

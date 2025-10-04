@@ -96,27 +96,45 @@ pub fn run_settings_ui(
     loop {
         match initial_view {
             InitialView::MainMenu(cursor) => match run_main_menu(&mut ctx, cursor)? {
-                MenuAction::EnterCategory(category, cursor) => {
-                    initial_view = InitialView::Category(category, cursor);
+                MenuAction::EnterCategory {
+                    category,
+                    main_menu_cursor,
+                    category_cursor,
+                } => {
+                    // Enter category and handle navigation
+                    if handle_category(&mut ctx, category, category_cursor)? {
+                        // User selected Back or Esc, return to main menu at previous position
+                        initial_view = InitialView::MainMenu(main_menu_cursor);
+                    } else {
+                        // User exited (shouldn't happen with Back option, but handle it)
+                        break;
+                    }
                 }
-                MenuAction::EnterSearch(cursor) => {
-                    initial_view = InitialView::SearchAll(cursor);
+                MenuAction::EnterSearch(main_menu_cursor) => {
+                    // Enter search and handle navigation
+                    if handle_search_all(&mut ctx, None)? {
+                        // User exited search, return to main menu at previous position  
+                        initial_view = InitialView::MainMenu(main_menu_cursor);
+                    } else {
+                        break;
+                    }
                 }
                 MenuAction::Exit => break,
             },
             InitialView::Category(category, cursor) => {
+                // Handle direct navigation to category (e.g., via URL/command)
                 if handle_category(&mut ctx, category, cursor)? {
                     // User selected Back or Esc, return to main menu
                     initial_view = InitialView::MainMenu(None);
                 } else {
-                    // User exited (shouldn't happen with Back option, but handle it)
                     break;
                 }
             }
             InitialView::SearchAll(cursor) => {
+                // Handle direct navigation to search (e.g., via URL/command)
                 if handle_search_all(&mut ctx, cursor)? {
-                    // User exited search, return to main menu
-                    initial_view = InitialView::MainMenu(Some(0)); // Select "Search All" in main menu
+                    // User exited search, return to main menu at "Search All"
+                    initial_view = InitialView::MainMenu(Some(0));
                 } else {
                     break;
                 }
@@ -137,7 +155,16 @@ enum InitialView {
 
 /// Action to take after a menu interaction
 enum MenuAction {
-    EnterCategory(&'static registry::SettingCategory, Option<usize>),
+    /// Enter a category
+    /// First Option<usize> is the main menu cursor position (for back navigation)
+    /// Second Option<usize> is the initial cursor in the category page
+    EnterCategory {
+        category: &'static registry::SettingCategory,
+        main_menu_cursor: Option<usize>,
+        category_cursor: Option<usize>,
+    },
+    /// Enter search view
+    /// Option<usize> is the main menu cursor position (for back navigation)
     EnterSearch(Option<usize>),
     Exit,
 }
@@ -201,7 +228,12 @@ fn run_main_menu(ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Re
     let action = match selection {
         Some(CategoryMenuItem::SearchAll) => MenuAction::EnterSearch(selected_index),
         Some(CategoryMenuItem::Category(item)) => {
-            MenuAction::EnterCategory(item.category, selected_index)
+            // Save main menu position for back navigation, start category at first item
+            MenuAction::EnterCategory {
+                category: item.category,
+                main_menu_cursor: selected_index,
+                category_cursor: None,
+            }
         }
         None => MenuAction::Exit,
     };
