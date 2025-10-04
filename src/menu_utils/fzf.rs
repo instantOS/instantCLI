@@ -38,6 +38,12 @@ pub trait FzfSelectable {
     }
 }
 
+impl FzfSelectable for String {
+    fn fzf_display_text(&self) -> String {
+        self.clone()
+    }
+}
+
 pub struct FzfWrapper {
     pub(crate) multi_select: bool,
     pub(crate) prompt: Option<String>,
