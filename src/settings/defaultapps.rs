@@ -1,113 +1,117 @@
 use anyhow::{Context, Result};
-use freedesktop_file_parser::{parse, EntryType};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use walkdir::WalkDir;
 
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::*;
 
 use super::context::SettingsContext;
 
-/// Get all XDG data directories where desktop files may be located
-fn get_desktop_file_directories() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
+/// Get all XDG data directories where mimeinfo.cache files may be located
+fn get_mimeinfo_cache_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
 
     // User local applications (highest priority)
     if let Some(home) = std::env::var_os("HOME") {
         let home_path = PathBuf::from(home);
-        dirs.push(home_path.join(".local/share/applications"));
+        paths.push(home_path.join(".local/share/applications/mimeinfo.cache"));
         
         // User flatpak apps
-        dirs.push(home_path.join(".local/share/flatpak/exports/share/applications"));
+        paths.push(home_path.join(".local/share/flatpak/exports/share/applications/mimeinfo.cache"));
     }
 
     // System flatpak apps
-    dirs.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
+    paths.push(PathBuf::from("/var/lib/flatpak/exports/share/applications/mimeinfo.cache"));
 
     // System applications directory
-    dirs.push(PathBuf::from("/usr/share/applications"));
+    paths.push(PathBuf::from("/usr/share/applications/mimeinfo.cache"));
 
     // Additional XDG data dirs from environment
     if let Ok(xdg_dirs) = std::env::var("XDG_DATA_DIRS") {
         for dir in xdg_dirs.split(':') {
             if !dir.is_empty() {
-                dirs.push(PathBuf::from(dir).join("applications"));
+                paths.push(PathBuf::from(dir).join("applications/mimeinfo.cache"));
             }
         }
     }
 
-    // Filter to only existing directories
-    dirs.into_iter().filter(|d| d.exists()).collect()
+    // Filter to only existing files
+    paths.into_iter().filter(|p| p.exists()).collect()
 }
 
-/// Parse a desktop file and extract its supported MIME types
-fn parse_desktop_file_mime_types(path: &Path) -> Result<Vec<String>> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read desktop file: {}", path.display()))?;
-    
-    let desktop_file = parse(&content)
-        .with_context(|| format!("Failed to parse desktop file: {}", path.display()))?;
+/// Parse a mimeinfo.cache file and return a mapping of MIME types to desktop files
+fn parse_mimeinfo_cache(path: &Path) -> Result<HashMap<String, Vec<String>>> {
+    let file = File::open(path)
+        .with_context(|| format!("Failed to open mimeinfo.cache at {}", path.display()))?;
+    let reader = BufReader::new(file);
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
 
-    // Only look at Application entries
-    if let EntryType::Application(app) = &desktop_file.entry.entry_type {
-        if let Some(mime_types) = &app.mime_type {
-            return Ok(mime_types.clone());
+    let mut in_mime_cache = false;
+    for line in reader.lines() {
+        let line = line?;
+        let line = line.trim();
+
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        // Check for [MIME Cache] section header
+        if line == "[MIME Cache]" {
+            in_mime_cache = true;
+            continue;
+        }
+
+        // Check for other section headers
+        if line.starts_with('[') && line.ends_with(']') {
+            in_mime_cache = false;
+            continue;
+        }
+
+        // Parse entries only if we're in the [MIME Cache] section
+        if in_mime_cache {
+            if let Some((mime_type, apps)) = line.split_once('=') {
+                let apps: Vec<String> = apps
+                    .split(';')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect();
+
+                if !apps.is_empty() {
+                    map.entry(mime_type.to_string())
+                        .or_default()
+                        .extend(apps);
+                }
+            }
         }
     }
 
-    Ok(Vec::new())
+    Ok(map)
 }
 
-/// Build a mapping of MIME types to desktop files by scanning all desktop files
+/// Build a mapping of MIME types to desktop files by reading mimeinfo.cache files
+/// This is the fast approach that Thunar uses
 fn build_mime_to_apps_map() -> Result<HashMap<String, Vec<String>>> {
     let mut mime_map: HashMap<String, Vec<String>> = HashMap::new();
-    let directories = get_desktop_file_directories();
+    let cache_paths = get_mimeinfo_cache_paths();
 
-    for dir in directories {
-        // Walk through the directory looking for .desktop files
-        for entry in WalkDir::new(&dir)
-            .max_depth(1)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            
-            // Only process .desktop files
-            if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("desktop") {
-                continue;
+    for cache_path in cache_paths {
+        match parse_mimeinfo_cache(&cache_path) {
+            Ok(cache) => {
+                // Merge this cache into our map
+                for (mime_type, apps) in cache {
+                    mime_map
+                        .entry(mime_type)
+                        .or_default()
+                        .extend(apps);
+                }
             }
-
-            // Get the desktop file ID (filename)
-            let desktop_id = match path.file_name().and_then(|s| s.to_str()) {
-                Some(id) => id.to_string(),
-                None => continue,
-            };
-
-            // Parse the desktop file and get its MIME types
-            match parse_desktop_file_mime_types(path) {
-                Ok(mime_types) => {
-                    for mime_type in mime_types {
-                        mime_map
-                            .entry(mime_type)
-                            .or_default()
-                            .push(desktop_id.clone());
-                    }
-                }
-                Err(err) => {
-                    // Skip files we can't parse (they might be broken or have syntax errors)
-                    emit(
-                        Level::Debug,
-                        "settings.defaultapps.parse_failed",
-                        &format!(
-                            "{} Failed to parse {}: {err}",
-                            char::from(NerdFont::Warning),
-                            path.display()
-                        ),
-                        None,
-                    );
-                }
+            Err(_) => {
+                // Silently skip cache files we can't read
+                continue;
             }
         }
     }
@@ -115,24 +119,21 @@ fn build_mime_to_apps_map() -> Result<HashMap<String, Vec<String>>> {
     Ok(mime_map)
 }
 
-/// Get all available MIME types by scanning desktop files
-fn get_all_mime_types() -> Result<Vec<String>> {
-    let mime_map = build_mime_to_apps_map()?;
+/// Get all available MIME types from mimeinfo.cache files
+fn get_all_mime_types(mime_map: &HashMap<String, Vec<String>>) -> Vec<String> {
     let mime_types: BTreeSet<String> = mime_map.keys().cloned().collect();
-    Ok(mime_types.into_iter().collect())
+    mime_types.into_iter().collect()
 }
 
 /// Get applications for a specific MIME type
-fn get_apps_for_mime(mime_type: &str) -> Result<Vec<String>> {
-    let mime_map = build_mime_to_apps_map()?;
-    
+fn get_apps_for_mime(mime_type: &str, mime_map: &HashMap<String, Vec<String>>) -> Vec<String> {
     // Use BTreeSet to remove duplicates and sort
     let apps: BTreeSet<String> = mime_map
         .get(mime_type)
         .map(|apps| apps.iter().cloned().collect())
         .unwrap_or_default();
     
-    Ok(apps.into_iter().collect())
+    apps.into_iter().collect()
 }
 
 /// Query the current default application for a MIME type using xdg-mime
@@ -222,8 +223,11 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
         return Ok(());
     }
 
+    // Build the MIME map once and reuse it
+    let mime_map = build_mime_to_apps_map().context("Failed to build MIME type map")?;
+
     // Get all MIME types
-    let mime_types = get_all_mime_types().context("Failed to get MIME types")?;
+    let mime_types = get_all_mime_types(&mime_map);
 
     if mime_types.is_empty() {
         emit(
@@ -255,7 +259,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     };
 
     // Get applications for this MIME type
-    let apps = get_apps_for_mime(&selected_mime).context("Failed to get applications")?;
+    let apps = get_apps_for_mime(&selected_mime, &mime_map);
 
     if apps.is_empty() {
         emit(
