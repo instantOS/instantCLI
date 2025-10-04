@@ -292,6 +292,27 @@ impl GameManager {
             .to_tilde_string()
             .unwrap_or_else(|_| save_path.as_path().to_string_lossy().to_string());
 
+        // Confirm the selected save path with the user
+        match FzfWrapper::builder()
+            .confirm(format!(
+                "{} Are you sure you want to use '{save_path_display}' as the save path for '{game_name}'?\n\n\
+                This path will be used to store and sync save files for this game.",
+                char::from(NerdFont::Question)
+            ))
+            .yes_text("Use This Path")
+            .no_text("Choose Different Path")
+            .confirm_dialog()
+            .map_err(|e| anyhow::anyhow!("Failed to get path confirmation: {}", e))?
+        {
+            ConfirmResult::Yes => {
+                // Continue with the selected path
+            }
+            ConfirmResult::No | ConfirmResult::Cancelled => {
+                println!("{} Choosing different save path...", char::from(NerdFont::Info));
+                return Self::get_save_path(game_name);
+            }
+        }
+
         if !save_path.as_path().exists() {
             match FzfWrapper::confirm(&format!(
                 "{} Save path '{save_path_display}' does not exist. Create it?",
