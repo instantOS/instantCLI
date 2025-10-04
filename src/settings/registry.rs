@@ -252,6 +252,12 @@ pub const CATEGORIES: &[SettingCategory] = &[
         icon: NerdFont::Server,
     },
     SettingCategory {
+        id: "apps",
+        title: "Applications",
+        description: "Default applications and file associations.",
+        icon: NerdFont::Package,
+    },
+    SettingCategory {
         id: "connectivity",
         title: "Connectivity",
         description: "Bluetooth and wireless device access.",
@@ -487,6 +493,19 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: false,
         requirements: &[SettingRequirement::Package(FASTFETCH_PACKAGE)],
+    },
+    SettingDefinition {
+        id: "apps.default",
+        title: "Default applications",
+        category: "apps",
+        icon: NerdFont::Link,
+        breadcrumbs: &["Default applications"],
+        kind: SettingKind::Action {
+            summary: "Manage default applications for file types and MIME types.",
+            run: super::defaultapps::manage_default_apps,
+        },
+        requires_reapply: false,
+        requirements: &[],
     },
     SettingDefinition {
         id: "system.upgrade",
