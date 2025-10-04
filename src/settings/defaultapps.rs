@@ -468,10 +468,32 @@ fn build_mime_to_apps_map() -> Result<HashMap<String, Vec<String>>> {
     Ok(mime_map)
 }
 
-/// Get all available MIME types from mimeinfo.cache files
+/// Get all available MIME types from mimeinfo.cache files, sorted by priority
+/// Common MIME types (with manual descriptions) come first, then others alphabetically
 fn get_all_mime_types(mime_map: &HashMap<String, Vec<String>>) -> Vec<String> {
-    let mime_types: BTreeSet<String> = mime_map.keys().cloned().collect();
-    mime_types.into_iter().collect()
+    let mut mime_types: Vec<String> = mime_map.keys().cloned().collect();
+    
+    // Sort with custom comparator:
+    // 1. MIME types with exact descriptions (from get_exact_mime_info) come first
+    // 2. Within each group, sort alphabetically
+    mime_types.sort_by(|a, b| {
+        let a_has_exact = has_exact_mime_info(a);
+        let b_has_exact = has_exact_mime_info(b);
+        
+        match (a_has_exact, b_has_exact) {
+            (true, false) => std::cmp::Ordering::Less,    // a comes first
+            (false, true) => std::cmp::Ordering::Greater, // b comes first
+            _ => a.cmp(b),  // Both same priority, alphabetical
+        }
+    });
+    
+    mime_types
+}
+
+/// Check if a MIME type has an exact manual description mapping
+/// Single source of truth: delegates to get_exact_mime_info()
+fn has_exact_mime_info(mime_type: &str) -> bool {
+    get_exact_mime_info(mime_type).is_some()
 }
 
 /// Get applications for a specific MIME type
