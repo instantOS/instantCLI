@@ -483,9 +483,7 @@ fn prompt_custom_install_path(game_name: &str, dependency_id: &str) -> Result<St
     }
 }
 
-fn prepare_install_target(
-    path: &crate::dot::path_serde::TildePath,
-) -> Result<bool> {
+fn prepare_install_target(path: &crate::dot::path_serde::TildePath) -> Result<bool> {
     let display = path
         .to_tilde_string()
         .unwrap_or_else(|_| path.as_path().display().to_string());

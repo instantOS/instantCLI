@@ -875,7 +875,7 @@ impl PreviewUtils {
         for item in items {
             let display = item.fzf_display_text();
             let key = item.fzf_key();
-            
+
             match item.fzf_preview() {
                 FzfPreview::Text(text) => {
                     has_text = true;

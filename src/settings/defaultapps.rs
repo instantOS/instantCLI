@@ -176,27 +176,27 @@ impl FzfSelectable for ApplicationInfo {
     fn fzf_preview(&self) -> FzfPreview {
         // Build preview text from already-loaded data (no external calls)
         let mut preview = String::new();
-        
+
         if let Some(name) = &self.name {
             preview.push_str(&format!("Application: {}\n", name));
         } else {
             preview.push_str(&format!("Desktop ID: {}\n", self.desktop_id));
         }
-        
+
         if let Some(comment) = &self.comment {
             preview.push_str(&format!("\nDescription:\n{}\n", comment));
         }
-        
+
         if let Some(exec) = &self.exec {
             preview.push_str(&format!("\nCommand:\n{}\n", exec));
         }
-        
+
         if let Some(icon) = &self.icon {
             preview.push_str(&format!("\nIcon: {}\n", icon));
         }
-        
+
         preview.push_str(&format!("\nDesktop File:\n{}\n", self.desktop_id));
-        
+
         FzfPreview::Text(preview)
     }
 }
@@ -205,8 +205,14 @@ impl FzfSelectable for ApplicationInfo {
 fn get_application_info(desktop_id: &str) -> ApplicationInfo {
     // Try to find and parse the desktop file
     let directories = [
-        format!("{}/.local/share/applications", std::env::var("HOME").unwrap_or_default()),
-        format!("{}/.local/share/flatpak/exports/share/applications", std::env::var("HOME").unwrap_or_default()),
+        format!(
+            "{}/.local/share/applications",
+            std::env::var("HOME").unwrap_or_default()
+        ),
+        format!(
+            "{}/.local/share/flatpak/exports/share/applications",
+            std::env::var("HOME").unwrap_or_default()
+        ),
         "/var/lib/flatpak/exports/share/applications".to_string(),
         "/usr/share/applications".to_string(),
     ];
@@ -217,16 +223,20 @@ fn get_application_info(desktop_id: &str) -> ApplicationInfo {
             if let Ok(content) = std::fs::read_to_string(&path) {
                 if let Ok(desktop_file) = parse(&content) {
                     use freedesktop_file_parser::EntryType;
-                    
+
                     let exec = match &desktop_file.entry.entry_type {
                         EntryType::Application(app) => app.exec.clone(),
                         _ => None,
                     };
-                    
+
                     return ApplicationInfo {
                         desktop_id: desktop_id.to_string(),
                         name: Some(desktop_file.entry.name.default.clone()),
-                        comment: desktop_file.entry.comment.as_ref().map(|c| c.default.clone()),
+                        comment: desktop_file
+                            .entry
+                            .comment
+                            .as_ref()
+                            .map(|c| c.default.clone()),
                         icon: desktop_file.entry.icon.as_ref().map(|i| i.content.clone()),
                         exec,
                     };
@@ -267,7 +277,7 @@ fn get_mime_type_info(mime_type: &str) -> MimeTypeInfo {
             "inode" => (NerdFont::Folder, Some("Directory/Inode")),
             _ => (NerdFont::File, None),
         };
-        
+
         return MimeTypeInfo {
             mime_type: mime_type.to_string(),
             icon,
@@ -295,17 +305,23 @@ fn get_exact_mime_info(mime_type: &str) -> Option<(NerdFont, &'static str)> {
         "image/webp" => (NerdFont::Image, "WebP image"),
         "image/bmp" => (NerdFont::Image, "Bitmap image"),
         "image/tiff" => (NerdFont::Image, "TIFF image"),
-        
+
         // Documents
         "application/pdf" => (NerdFont::FilePdf, "PDF document"),
         "application/vnd.oasis.opendocument.text" => (NerdFont::FileText, "OpenDocument text"),
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => (NerdFont::FileWord, "Microsoft Word document"),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+            (NerdFont::FileWord, "Microsoft Word document")
+        }
         "application/msword" => (NerdFont::FileWord, "Microsoft Word document"),
         "application/vnd.ms-excel" => (NerdFont::FileExcel, "Microsoft Excel spreadsheet"),
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => (NerdFont::FileExcel, "Excel spreadsheet"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => {
+            (NerdFont::FileExcel, "Excel spreadsheet")
+        }
         "application/vnd.ms-powerpoint" => (NerdFont::FilePresentation, "PowerPoint presentation"),
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => (NerdFont::FilePresentation, "PowerPoint presentation"),
-        
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
+            (NerdFont::FilePresentation, "PowerPoint presentation")
+        }
+
         // Archives
         "application/zip" => (NerdFont::Archive, "ZIP archive"),
         "application/x-tar" => (NerdFont::Archive, "TAR archive"),
@@ -314,21 +330,21 @@ fn get_exact_mime_info(mime_type: &str) -> Option<(NerdFont, &'static str)> {
         "application/gzip" => (NerdFont::Archive, "GZIP archive"),
         "application/x-bzip2" => (NerdFont::Archive, "BZIP2 archive"),
         "application/x-xz" => (NerdFont::Archive, "XZ archive"),
-        
+
         // Video
         "video/mp4" => (NerdFont::Video, "MP4 video"),
         "video/x-matroska" => (NerdFont::Video, "Matroska video"),
         "video/webm" => (NerdFont::Video, "WebM video"),
         "video/mpeg" => (NerdFont::Video, "MPEG video"),
         "video/x-msvideo" => (NerdFont::Video, "AVI video"),
-        
+
         // Audio
         "audio/mpeg" => (NerdFont::Music, "MP3 audio"),
         "audio/ogg" => (NerdFont::Music, "OGG audio"),
         "audio/flac" => (NerdFont::Music, "FLAC audio"),
         "audio/x-wav" => (NerdFont::Music, "WAV audio"),
         "audio/aac" => (NerdFont::Music, "AAC audio"),
-        
+
         // Text
         "text/plain" => (NerdFont::FileText, "Plain text"),
         "text/html" => (NerdFont::Code, "HTML document"),
@@ -341,21 +357,21 @@ fn get_exact_mime_info(mime_type: &str) -> Option<(NerdFont, &'static str)> {
         "text/x-c" => (NerdFont::Code, "C source code"),
         "text/x-c++" => (NerdFont::Code, "C++ source code"),
         "text/markdown" => (NerdFont::FileText, "Markdown document"),
-        
+
         // System
         "application/x-executable" => (NerdFont::Gear, "Executable file"),
         "application/x-sharedlib" => (NerdFont::Gear, "Shared library"),
         "application/x-shellscript" => (NerdFont::Terminal, "Shell script"),
         "inode/directory" => (NerdFont::Folder, "Directory"),
-        
+
         // Special
         "application/vnd.appimage" => (NerdFont::Package, "AppImage application"),
         "application/vnd.flatpak.ref" => (NerdFont::Package, "Flatpak reference"),
         "application/x-iso9660-image" => (NerdFont::Archive, "ISO disk image"),
-        
+
         _ => return None,
     };
-    
+
     Some(mapping)
 }
 
@@ -367,13 +383,16 @@ fn get_mimeinfo_cache_paths() -> Vec<PathBuf> {
     if let Some(home) = std::env::var_os("HOME") {
         let home_path = PathBuf::from(home);
         paths.push(home_path.join(".local/share/applications/mimeinfo.cache"));
-        
+
         // User flatpak apps
-        paths.push(home_path.join(".local/share/flatpak/exports/share/applications/mimeinfo.cache"));
+        paths
+            .push(home_path.join(".local/share/flatpak/exports/share/applications/mimeinfo.cache"));
     }
 
     // System flatpak apps
-    paths.push(PathBuf::from("/var/lib/flatpak/exports/share/applications/mimeinfo.cache"));
+    paths.push(PathBuf::from(
+        "/var/lib/flatpak/exports/share/applications/mimeinfo.cache",
+    ));
 
     // System applications directory
     paths.push(PathBuf::from("/usr/share/applications/mimeinfo.cache"));
@@ -430,9 +449,7 @@ fn parse_mimeinfo_cache(path: &Path) -> Result<HashMap<String, Vec<String>>> {
                     .collect();
 
                 if !apps.is_empty() {
-                    map.entry(mime_type.to_string())
-                        .or_default()
-                        .extend(apps);
+                    map.entry(mime_type.to_string()).or_default().extend(apps);
                 }
             }
         }
@@ -452,10 +469,7 @@ fn build_mime_to_apps_map() -> Result<HashMap<String, Vec<String>>> {
             Ok(cache) => {
                 // Merge this cache into our map
                 for (mime_type, apps) in cache {
-                    mime_map
-                        .entry(mime_type)
-                        .or_default()
-                        .extend(apps);
+                    mime_map.entry(mime_type).or_default().extend(apps);
                 }
             }
             Err(_) => {
@@ -472,21 +486,21 @@ fn build_mime_to_apps_map() -> Result<HashMap<String, Vec<String>>> {
 /// Common MIME types (with manual descriptions) come first, then others alphabetically
 fn get_all_mime_types(mime_map: &HashMap<String, Vec<String>>) -> Vec<String> {
     let mut mime_types: Vec<String> = mime_map.keys().cloned().collect();
-    
+
     // Sort with custom comparator:
     // 1. MIME types with exact descriptions (from get_exact_mime_info) come first
     // 2. Within each group, sort alphabetically
     mime_types.sort_by(|a, b| {
         let a_has_exact = has_exact_mime_info(a);
         let b_has_exact = has_exact_mime_info(b);
-        
+
         match (a_has_exact, b_has_exact) {
-            (true, false) => std::cmp::Ordering::Less,    // a comes first
+            (true, false) => std::cmp::Ordering::Less, // a comes first
             (false, true) => std::cmp::Ordering::Greater, // b comes first
-            _ => a.cmp(b),  // Both same priority, alphabetical
+            _ => a.cmp(b),                             // Both same priority, alphabetical
         }
     });
-    
+
     mime_types
 }
 
@@ -503,7 +517,7 @@ fn get_apps_for_mime(mime_type: &str, mime_map: &HashMap<String, Vec<String>>) -
         .get(mime_type)
         .map(|apps| apps.iter().cloned().collect())
         .unwrap_or_default();
-    
+
     apps.into_iter().collect()
 }
 
@@ -630,7 +644,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
             return Ok(());
         }
     };
-    
+
     let selected_mime = &selected_mime_info.mime_type;
 
     // Get applications for this MIME type
@@ -653,14 +667,18 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     // Show current default in header
     let current_default = query_default_app(&selected_mime)?;
     let header_text = if let Some(ref default) = current_default {
-        format!("MIME type: {} {}\nCurrent default: {}", 
-                char::from(selected_mime_info.icon), 
-                selected_mime, 
-                default)
+        format!(
+            "MIME type: {} {}\nCurrent default: {}",
+            char::from(selected_mime_info.icon),
+            selected_mime,
+            default
+        )
     } else {
-        format!("MIME type: {} {}\nCurrent default: (none)", 
-                char::from(selected_mime_info.icon),
-                selected_mime)
+        format!(
+            "MIME type: {} {}\nCurrent default: (none)",
+            char::from(selected_mime_info.icon),
+            selected_mime
+        )
     };
 
     // Convert desktop IDs to ApplicationInfo with enhanced display
@@ -685,8 +703,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     let desktop_file = &selected_app_info.desktop_id;
 
     // Set the default application
-    set_default_app(&selected_mime, desktop_file)
-        .context("Failed to set default application")?;
+    set_default_app(&selected_mime, desktop_file).context("Failed to set default application")?;
 
     ctx.notify(
         "Default application",

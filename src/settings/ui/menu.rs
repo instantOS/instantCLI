@@ -113,7 +113,7 @@ pub fn run_settings_ui(
                 MenuAction::EnterSearch(main_menu_cursor) => {
                     // Enter search and handle navigation
                     if handle_search_all(&mut ctx, None)? {
-                        // User exited search, return to main menu at previous position  
+                        // User exited search, return to main menu at previous position
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                     } else {
                         break;

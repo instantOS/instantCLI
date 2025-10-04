@@ -404,5 +404,4 @@ mod tests {
         assert!(rules.contains(&("keep-last".to_string(), "5".to_string())));
         assert!(rules.contains(&("keep-yearly".to_string(), "13".to_string())));
     }
-
 }

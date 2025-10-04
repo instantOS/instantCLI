@@ -201,10 +201,7 @@ pub fn show_game_details(game_name: &str) -> Result<()> {
                 .map(|path| format!("Installed at {path}"))
                 .unwrap_or_else(|| "Not installed".to_string());
 
-            text_block.push_str(&format!(
-                "  • {} (Directory) — {}\n",
-                dependency.id, status
-            ));
+            text_block.push_str(&format!("  • {} (Directory) — {}\n", dependency.id, status));
         }
     }
 
