@@ -93,17 +93,15 @@ impl TitleCardGenerator {
         let heading_level = level.max(1);
         let hashes = "#".repeat(heading_level as usize);
         let content = format!("{hashes} {}\n", text.trim());
-        fs::write(path, content.as_bytes()).with_context(|| {
-            format!("Failed to write title card markdown to {}", path.display())
-        })
+        fs::write(path, content.as_bytes())
+            .with_context(|| format!("Failed to write title card markdown to {}", path.display()))
     }
 
     fn write_css(&self, path: &Path) -> Result<()> {
         let mut file = fs::File::create(path)
             .with_context(|| format!("Failed to create CSS file at {}", path.display()))?;
-        file.write_all(Self::default_css().as_bytes()).with_context(|| {
-            format!("Failed to write CSS to {}", path.display())
-        })
+        file.write_all(Self::default_css().as_bytes())
+            .with_context(|| format!("Failed to write CSS to {}", path.display()))
     }
 
     fn run_pandoc(&self, markdown: &Path, html: &Path, css: &Path) -> Result<()> {

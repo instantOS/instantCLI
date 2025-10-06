@@ -5,8 +5,8 @@ mod convert;
 mod document;
 mod markdown;
 mod render;
-mod title_card;
 mod srt;
+mod title_card;
 mod transcribe;
 mod utils;
 

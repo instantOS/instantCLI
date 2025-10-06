@@ -69,7 +69,10 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         emit(
             Level::Info,
             "video.render.title_cards",
-            &format!("Generated {count} title card(s)", count = timeline.heading_count),
+            &format!(
+                "Generated {count} title card(s)",
+                count = timeline.heading_count
+            ),
             None,
         );
     }
@@ -78,7 +81,10 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         emit(
             Level::Warn,
             "video.render.unhandled_blocks",
-            &format!("Ignored {count} markdown block(s) that are not yet supported", count = timeline.unhandled_count),
+            &format!(
+                "Ignored {count} markdown block(s) that are not yet supported",
+                count = timeline.unhandled_count
+            ),
             None,
         );
     }
@@ -389,9 +395,9 @@ fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
     let width_str = parts
         .next()
         .ok_or_else(|| anyhow!("ffprobe did not return width for {}", video_path.display()))?;
-    let height_str = parts.next().ok_or_else(|| {
-        anyhow!("ffprobe did not return height for {}", video_path.display())
-    })?;
+    let height_str = parts
+        .next()
+        .ok_or_else(|| anyhow!("ffprobe did not return height for {}", video_path.display()))?;
 
     let width: u32 = width_str.parse().with_context(|| {
         format!(

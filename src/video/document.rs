@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Deserialize;
 
@@ -146,7 +146,8 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
             }
             Event::End(TagEnd::Paragraph) => {
                 if let Some(state) = paragraph.take() {
-                    let mut paragraph_blocks = state.into_document_blocks(base_line_offset, &line_map)?;
+                    let mut paragraph_blocks =
+                        state.into_document_blocks(base_line_offset, &line_map)?;
                     blocks.append(&mut paragraph_blocks);
                 }
             }
@@ -312,20 +313,22 @@ impl ParagraphState {
         }
 
         if blocks.is_empty() {
-            let summary = InlineFragment::render_many(&leftover_text).trim().to_string();
+            let summary = InlineFragment::render_many(&leftover_text)
+                .trim()
+                .to_string();
             if !summary.is_empty() {
-                let line =
-                    base_line_offset + line_map.line_number(self.start_byte);
+                let line = base_line_offset + line_map.line_number(self.start_byte);
                 blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
                     description: summary,
                     line,
                 }));
             }
         } else {
-            let trailing = InlineFragment::render_many(&leftover_text).trim().to_string();
+            let trailing = InlineFragment::render_many(&leftover_text)
+                .trim()
+                .to_string();
             if !trailing.is_empty() {
-                let line =
-                    base_line_offset + line_map.line_number(self.start_byte);
+                let line = base_line_offset + line_map.line_number(self.start_byte);
                 blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
                     description: trailing,
                     line,
@@ -501,7 +504,8 @@ mod tests {
 
     #[test]
     fn parses_multiple_segments_within_single_paragraph() {
-        let markdown = "`00:00:00.000-00:00:01.000` first line\n`00:00:01.500-00:00:02.000` second line\n";
+        let markdown =
+            "`00:00:00.000-00:00:01.000` first line\n`00:00:01.500-00:00:02.000` second line\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
 
         assert_eq!(document.blocks.len(), 2);
@@ -535,7 +539,10 @@ mod tests {
         assert_eq!(document.blocks.len(), 1);
         match &document.blocks[0] {
             DocumentBlock::Unhandled(unhandled) => {
-                assert_eq!(unhandled.description, "This is an intro paragraph without timestamps.");
+                assert_eq!(
+                    unhandled.description,
+                    "This is an intro paragraph without timestamps."
+                );
             }
             other => panic!("Expected Unhandled block, got {:?}", other),
         }
