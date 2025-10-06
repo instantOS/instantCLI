@@ -62,7 +62,7 @@ pub fn handle_convert(args: ConvertArgs) -> Result<()> {
 
     let markdown = build_markdown(&cues, &metadata);
 
-    let output_path = determine_output_path(args.output, &project_paths)?;
+    let output_path = determine_output_path(args.out_file, &project_paths)?;
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create output directory {}", parent.display()))?;
