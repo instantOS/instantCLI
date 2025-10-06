@@ -20,7 +20,7 @@ pub struct ConvertArgs {
     pub transcript: Option<PathBuf>,
 
     /// Optional output file path; defaults to the project markdown file
-    #[arg(short, long, value_hint = ValueHint::FilePath)]
+    #[arg(short = 'o', long = "out-file", value_hint = ValueHint::FilePath)]
     pub output: Option<PathBuf>,
 }
 

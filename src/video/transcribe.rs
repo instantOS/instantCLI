@@ -38,7 +38,7 @@ pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
 
     let run_result = run_whisperx(&hashed_video_path, project_paths.transcript_dir(), &args);
 
-    // Clean up symlink or temporary copy regardless of success
+    // Clean up temporary copy regardless of success
     if let Err(err) = cleanup_hashed_video_input(&hashed_video_path) {
         emit(
             Level::Warn,
@@ -115,27 +115,13 @@ fn prepare_hashed_video_input(source: &Path, hashed_path: &Path) -> Result<()> {
         })?;
     }
 
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(source, hashed_path).with_context(|| {
-            format!(
-                "Failed to create symlink from {} to {}",
-                source.display(),
-                hashed_path.display()
-            )
-        })?;
-    }
-
-    #[cfg(not(unix))]
-    {
-        fs::copy(source, hashed_path).with_context(|| {
-            format!(
-                "Failed to copy {} to {}",
-                source.display(),
-                hashed_path.display()
-            )
-        })?;
-    }
+    fs::copy(source, hashed_path).with_context(|| {
+        format!(
+            "Failed to copy {} to {}",
+            source.display(),
+            hashed_path.display()
+        )
+    })?;
 
     Ok(())
 }

@@ -28,3 +28,5 @@ tags
 src/instantCLI-*
 src/*.tar.gz
 *.tar.gz
+
+*.webm
