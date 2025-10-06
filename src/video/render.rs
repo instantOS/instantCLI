@@ -123,7 +123,7 @@ fn resolve_output_path(
     video_path: &Path,
     markdown_dir: &Path,
 ) -> Result<PathBuf> {
-    if let Some(provided) = &args.output {
+    if let Some(provided) = &args.out_file {
         let resolved = if provided.is_absolute() {
             provided.clone()
         } else {

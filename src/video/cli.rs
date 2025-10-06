@@ -60,8 +60,8 @@ pub struct RenderArgs {
     pub markdown: PathBuf,
 
     /// Optional output path; defaults to <videoname>_edit.<ext>
-    #[arg(short = 'o', long = "output", value_hint = ValueHint::FilePath)]
-    pub output: Option<PathBuf>,
+    #[arg(short = 'o', long = "out-file", value_hint = ValueHint::FilePath)]
+    pub out_file: Option<PathBuf>,
 
     /// Overwrite an existing output file
     #[arg(long)]

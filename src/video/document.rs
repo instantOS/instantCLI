@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
-use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag};
+use anyhow::{anyhow, Context, Result};
+use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Deserialize;
 
 #[derive(Debug)]
@@ -144,7 +144,7 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
             Event::Start(Tag::Paragraph) => {
                 paragraph = Some(ParagraphState::new(range.start));
             }
-            Event::End(Tag::Paragraph) => {
+            Event::End(TagEnd::Paragraph) => {
                 if let Some(state) = paragraph.take() {
                     let line = base_line_offset + line_map.line_number(state.start_byte);
                     if let Some(block) = state.into_document_block(line)? {
@@ -152,7 +152,7 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
                     }
                 }
             }
-            Event::Start(Tag::Heading(level, _, _)) => {
+            Event::Start(Tag::Heading { level, .. }) => {
                 let numeric_level = match level {
                     HeadingLevel::H1 => 1,
                     HeadingLevel::H2 => 2,
@@ -163,18 +163,19 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
                 };
                 heading = Some(HeadingState::new(numeric_level, range.start));
             }
-            Event::End(Tag::Heading(_, _, _)) => {
+            Event::End(TagEnd::Heading(_)) => {
                 if let Some(state) = heading.take() {
                     let line = base_line_offset + line_map.line_number(state.start_byte);
                     blocks.push(DocumentBlock::Heading(state.into_block(line)));
                 }
             }
             Event::Text(text) => {
+                let text_string = text.into_string();
                 if let Some(state) = paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::Text(text.into_string()));
+                    state.push_fragment(InlineFragment::Text(text_string.clone()));
                 }
                 if let Some(state) = heading.as_mut() {
-                    state.push_text(text.into_string());
+                    state.push_text(text_string);
                 }
             }
             Event::Code(code) => {
@@ -400,7 +401,7 @@ fn parse_timestamp(value: &str) -> Result<Duration> {
     let (main, frac) = value
         .split_once('.')
         .ok_or_else(|| anyhow!("Timestamp must include milliseconds"))?;
-    let mut parts = main.split(':').collect::<Vec<_>>();
+    let parts = main.split(':').collect::<Vec<_>>();
     if parts.len() != 3 {
         return Err(anyhow!("Timestamp must be in HH:MM:SS.mmm format"));
     }
