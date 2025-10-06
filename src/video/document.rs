@@ -146,10 +146,8 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
             }
             Event::End(TagEnd::Paragraph) => {
                 if let Some(state) = paragraph.take() {
-                    let line = base_line_offset + line_map.line_number(state.start_byte);
-                    if let Some(block) = state.into_document_block(line)? {
-                        blocks.push(block);
-                    }
+                    let mut paragraph_blocks = state.into_document_blocks(base_line_offset, &line_map)?;
+                    blocks.append(&mut paragraph_blocks);
                 }
             }
             Event::Start(Tag::Heading { level, .. }) => {
@@ -172,7 +170,7 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
             Event::Text(text) => {
                 let text_string = text.into_string();
                 if let Some(state) = paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::Text(text_string.clone()));
+                    state.push_fragment(InlineFragment::text(range.start, text_string.clone()));
                 }
                 if let Some(state) = heading.as_mut() {
                     state.push_text(text_string);
@@ -180,12 +178,12 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
             }
             Event::Code(code) => {
                 if let Some(state) = paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::Code(code.into_string()));
+                    state.push_fragment(InlineFragment::code(range.start, code.into_string()));
                 }
             }
             Event::SoftBreak => {
                 if let Some(state) = paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::SoftBreak);
+                    state.push_fragment(InlineFragment::soft_break(range.start));
                 }
                 if let Some(state) = heading.as_mut() {
                     state.push_text(" ".to_string());
@@ -193,7 +191,7 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
             }
             Event::HardBreak => {
                 if let Some(state) = paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::HardBreak);
+                    state.push_fragment(InlineFragment::hard_break(range.start));
                 }
                 if let Some(state) = heading.as_mut() {
                     state.push_text(" ".to_string());
@@ -201,12 +199,12 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
             }
             Event::Html(text) => {
                 if let Some(state) = paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::Html(text.into_string()));
+                    state.push_fragment(InlineFragment::html(range.start, text.into_string()));
                 }
             }
             Event::FootnoteReference(reference) => {
                 if let Some(state) = paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::Text(reference.into_string()));
+                    state.push_fragment(InlineFragment::text(range.start, reference.into_string()));
                 }
             }
             _ => {}
@@ -268,68 +266,74 @@ impl ParagraphState {
         self.fragments.push(fragment);
     }
 
-    fn into_document_block(self, line: usize) -> Result<Option<DocumentBlock>> {
-        let mut fragments = self.fragments.into_iter();
+    fn into_document_blocks(
+        self,
+        base_line_offset: usize,
+        line_map: &LineMap,
+    ) -> Result<Vec<DocumentBlock>> {
+        if self.fragments.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        let first = match fragments.next() {
-            Some(fragment) => fragment,
-            None => return Ok(None),
-        };
+        let mut blocks = Vec::new();
+        let mut fragments = self.fragments.into_iter().peekable();
+        let mut leftover_text = Vec::new();
 
-        let code = match first {
-            InlineFragment::Code(code) => code,
-            InlineFragment::Text(text) if text.trim().is_empty() => match fragments.next() {
-                Some(InlineFragment::Code(code)) => code,
-                other => {
-                    let mut remaining = Vec::new();
-                    if let Some(fragment) = other {
-                        remaining.push(fragment);
+        while let Some(fragment) = fragments.next() {
+            match fragment.kind {
+                InlineFragmentKind::Code(code) => {
+                    let mut following = Vec::new();
+                    while let Some(next) = fragments.peek() {
+                        if matches!(next.kind, InlineFragmentKind::Code(_)) {
+                            break;
+                        }
+                        following.push(fragments.next().unwrap());
                     }
-                    remaining.extend(fragments);
-                    let summary = InlineFragment::render_many(remaining);
-                    if summary.trim().is_empty() {
-                        return Ok(None);
-                    }
-                    return Ok(Some(DocumentBlock::Unhandled(UnhandledBlock {
-                        description: summary.trim().to_string(),
+
+                    let text = InlineFragment::render_many(&following).trim().to_string();
+                    let line = base_line_offset + line_map.line_number(fragment.start_byte);
+                    let range = parse_time_range(&code).with_context(|| {
+                        format!("Invalid timestamp range `{}` at line {}", code, line)
+                    })?;
+                    let kind = if text.eq_ignore_ascii_case("silence") {
+                        SegmentKind::Silence
+                    } else {
+                        SegmentKind::Dialogue
+                    };
+                    blocks.push(DocumentBlock::Segment(SegmentBlock {
+                        range,
+                        text,
+                        kind,
                         line,
-                    })));
+                    }));
                 }
-            },
-            other => {
-                let mut all_fragments = vec![other];
-                all_fragments.extend(fragments);
-                let summary = InlineFragment::render_many(all_fragments);
-                if summary.trim().is_empty() {
-                    return Ok(None);
-                }
-                return Ok(Some(DocumentBlock::Unhandled(UnhandledBlock {
-                    description: summary.trim().to_string(),
-                    line,
-                })));
+                _ => leftover_text.push(fragment),
             }
-        };
+        }
 
-        let text_fragments = fragments.collect::<Vec<_>>();
-        let text = InlineFragment::render_many(text_fragments)
-            .trim()
-            .to_string();
-
-        let range = parse_time_range(&code)
-            .with_context(|| format!("Invalid timestamp range `{}` at line {}", code, line))?;
-
-        let kind = if text.eq_ignore_ascii_case("silence") {
-            SegmentKind::Silence
+        if blocks.is_empty() {
+            let summary = InlineFragment::render_many(&leftover_text).trim().to_string();
+            if !summary.is_empty() {
+                let line =
+                    base_line_offset + line_map.line_number(self.start_byte);
+                blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
+                    description: summary,
+                    line,
+                }));
+            }
         } else {
-            SegmentKind::Dialogue
-        };
+            let trailing = InlineFragment::render_many(&leftover_text).trim().to_string();
+            if !trailing.is_empty() {
+                let line =
+                    base_line_offset + line_map.line_number(self.start_byte);
+                blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
+                    description: trailing,
+                    line,
+                }));
+            }
+        }
 
-        Ok(Some(DocumentBlock::Segment(SegmentBlock {
-            range,
-            text,
-            kind,
-            line,
-        })))
+        Ok(blocks)
     }
 }
 
@@ -361,28 +365,68 @@ impl HeadingState {
     }
 }
 
-enum InlineFragment {
+struct InlineFragment {
+    start_byte: usize,
+    kind: InlineFragmentKind,
+}
+
+impl InlineFragment {
+    fn text(start: usize, text: String) -> Self {
+        Self {
+            start_byte: start,
+            kind: InlineFragmentKind::Text(text),
+        }
+    }
+
+    fn code(start: usize, code: String) -> Self {
+        Self {
+            start_byte: start,
+            kind: InlineFragmentKind::Code(code),
+        }
+    }
+
+    fn soft_break(start: usize) -> Self {
+        Self {
+            start_byte: start,
+            kind: InlineFragmentKind::SoftBreak,
+        }
+    }
+
+    fn hard_break(start: usize) -> Self {
+        Self {
+            start_byte: start,
+            kind: InlineFragmentKind::HardBreak,
+        }
+    }
+
+    fn html(start: usize, html: String) -> Self {
+        Self {
+            start_byte: start,
+            kind: InlineFragmentKind::Html(html),
+        }
+    }
+
+    fn render_many(fragments: &[InlineFragment]) -> String {
+        let mut output = String::new();
+        for fragment in fragments {
+            match &fragment.kind {
+                InlineFragmentKind::Text(text) => output.push_str(text),
+                InlineFragmentKind::Code(code) => output.push_str(code),
+                InlineFragmentKind::SoftBreak => output.push(' '),
+                InlineFragmentKind::HardBreak => output.push('\n'),
+                InlineFragmentKind::Html(html) => output.push_str(html),
+            }
+        }
+        output
+    }
+}
+
+enum InlineFragmentKind {
     Text(String),
     Code(String),
     SoftBreak,
     HardBreak,
     Html(String),
-}
-
-impl InlineFragment {
-    fn render_many(fragments: Vec<InlineFragment>) -> String {
-        let mut output = String::new();
-        for fragment in fragments {
-            match fragment {
-                InlineFragment::Text(text) => output.push_str(&text),
-                InlineFragment::Code(code) => output.push_str(&code),
-                InlineFragment::SoftBreak => output.push(' '),
-                InlineFragment::HardBreak => output.push('\n'),
-                InlineFragment::Html(html) => output.push_str(&html),
-            }
-        }
-        output
-    }
 }
 
 fn parse_time_range(input: &str) -> Result<TimeRange> {
@@ -448,6 +492,54 @@ fn parse_timestamp(value: &str) -> Result<Duration> {
 
 struct LineMap {
     offsets: Vec<usize>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn parses_multiple_segments_within_single_paragraph() {
+        let markdown = "`00:00:00.000-00:00:01.000` first line\n`00:00:01.500-00:00:02.000` second line\n";
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        assert_eq!(document.blocks.len(), 2);
+
+        match &document.blocks[0] {
+            DocumentBlock::Segment(segment) => {
+                assert!((segment.range.start_seconds() - 0.0).abs() < f64::EPSILON);
+                assert!((segment.range.end_seconds() - 1.0).abs() < f64::EPSILON);
+                assert_eq!(segment.text, "first line");
+                assert_eq!(segment.line, 1);
+            }
+            other => panic!("Expected first block to be Segment, got {:?}", other),
+        }
+
+        match &document.blocks[1] {
+            DocumentBlock::Segment(segment) => {
+                assert!((segment.range.start_seconds() - 1.5).abs() < f64::EPSILON);
+                assert!((segment.range.end_seconds() - 2.0).abs() < f64::EPSILON);
+                assert_eq!(segment.text, "second line");
+                assert_eq!(segment.line, 2);
+            }
+            other => panic!("Expected second block to be Segment, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn preserves_unhandled_text_when_no_segments() {
+        let markdown = "This is an intro paragraph without timestamps.";
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        assert_eq!(document.blocks.len(), 1);
+        match &document.blocks[0] {
+            DocumentBlock::Unhandled(unhandled) => {
+                assert_eq!(unhandled.description, "This is an intro paragraph without timestamps.");
+            }
+            other => panic!("Expected Unhandled block, got {:?}", other),
+        }
+    }
 }
 
 impl LineMap {
