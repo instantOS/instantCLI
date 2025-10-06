@@ -11,7 +11,7 @@ use super::document::{
     DocumentBlock, SegmentBlock, SegmentKind, VideoMetadata, VideoMetadataVideo,
     parse_video_document,
 };
-use super::utils::{canonicalize_existing, extension_or_default};
+use super::utils::canonicalize_existing;
 
 pub fn handle_render(args: RenderArgs) -> Result<()> {
     let markdown_path = canonicalize_existing(&args.markdown)?;
@@ -133,12 +133,11 @@ fn resolve_output_path(
     }
 
     let mut output = video_path.to_path_buf();
-    let ext = extension_or_default(video_path, "mp4");
     let stem = video_path
         .file_stem()
         .and_then(|stem| stem.to_str())
         .ok_or_else(|| anyhow!("Video path {} has no valid file name", video_path.display()))?;
-    output.set_file_name(format!("{stem}_edit.{ext}"));
+    output.set_file_name(format!("{stem}_edit.mp4"));
     Ok(output)
 }
 
