@@ -1,7 +1,5 @@
 use anyhow::{Context, Result};
-use sha2::{Digest, Sha256};
-use std::fs::{self, File};
-use std::io::Read;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::ui::prelude::{Level, emit};
@@ -10,18 +8,32 @@ use super::cli::ConvertArgs;
 use super::config::{VideoDirectories, VideoProjectPaths};
 use super::markdown::{MarkdownMetadata, build_markdown};
 use super::srt::parse_srt;
+use super::utils::{canonicalize_existing, compute_file_hash};
 
 pub fn handle_convert(args: ConvertArgs) -> Result<()> {
-    let video_path = canonicalize_file(&args.video)?;
-    let transcript_path = canonicalize_file(&args.transcript)?;
-
+    let video_path = canonicalize_existing(&args.video)?;
     let video_hash = compute_file_hash(&video_path)?;
 
     let directories = VideoDirectories::new()?;
     let project_paths = directories.project_paths(&video_hash);
     project_paths.ensure_directories()?;
 
-    copy_transcript(&transcript_path, project_paths.transcript_cache_path())?;
+    let cached_transcript_path = project_paths.transcript_cache_path().to_path_buf();
+    let cached_exists = cached_transcript_path.exists();
+
+    let transcript_path = if let Some(provided) = &args.transcript {
+        let provided_path = canonicalize_existing(provided)?;
+        copy_transcript(&provided_path, &cached_transcript_path)?;
+        cached_transcript_path.clone()
+    } else {
+        if !cached_exists {
+            anyhow::bail!(
+                "Transcript not found at {}. Run `ins video transcribe` or pass --transcript to provide one.",
+                cached_transcript_path.display()
+            );
+        }
+        cached_transcript_path.clone()
+    };
 
     let transcript_contents = fs::read_to_string(&transcript_path)
         .with_context(|| format!("Failed to read transcript at {}", transcript_path.display()))?;
@@ -77,32 +89,6 @@ pub fn handle_convert(args: ConvertArgs) -> Result<()> {
 
     Ok(())
 }
-
-fn canonicalize_file(path: &PathBuf) -> Result<PathBuf> {
-    if !path.exists() {
-        anyhow::bail!("{} does not exist", path.display());
-    }
-    path.canonicalize()
-        .with_context(|| format!("Failed to canonicalize path {}", path.display()))
-}
-
-fn compute_file_hash(path: &Path) -> Result<String> {
-    let mut file = File::open(path)
-        .with_context(|| format!("Failed to open {} for hashing", path.display()))?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 8192];
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .with_context(|| format!("Failed to read {} for hashing", path.display()))?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
 fn copy_transcript(src: &Path, dest: &Path) -> Result<()> {
     if src == dest {
         return Ok(());

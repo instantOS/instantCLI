@@ -43,6 +43,7 @@ impl VideoDirectories {
         let project_dir = self.data_root.join(video_hash);
         let transcript_dir = self.cache_root.join(video_hash);
         VideoProjectPaths {
+            video_hash: video_hash.to_string(),
             project_dir,
             transcript_dir,
             markdown_path: PathBuf::from("video.md"),
@@ -54,6 +55,7 @@ impl VideoDirectories {
 }
 
 pub struct VideoProjectPaths {
+    video_hash: String,
     project_dir: PathBuf,
     transcript_dir: PathBuf,
     markdown_path: PathBuf,
@@ -65,7 +67,7 @@ impl VideoProjectPaths {
     fn resolve(mut self) -> Self {
         self.markdown_path = self.project_dir.join(self.markdown_path);
         self.metadata_path = self.project_dir.join(self.metadata_path);
-        self.transcript_cache_file = self.transcript_dir.join(self.transcript_cache_file);
+        self.transcript_cache_file = self.transcript_dir.join(format!("{}.srt", self.video_hash));
         self
     }
 
@@ -85,6 +87,10 @@ impl VideoProjectPaths {
         Ok(())
     }
 
+    pub fn transcript_dir(&self) -> &Path {
+        &self.transcript_dir
+    }
+
     pub fn markdown_path(&self) -> &Path {
         &self.markdown_path
     }
@@ -95,5 +101,10 @@ impl VideoProjectPaths {
 
     pub fn transcript_cache_path(&self) -> &Path {
         &self.transcript_cache_file
+    }
+
+    pub fn hashed_video_input(&self, extension: &str) -> PathBuf {
+        self.transcript_dir
+            .join(format!("{}.{}", self.video_hash, extension))
     }
 }
