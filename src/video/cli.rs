@@ -7,6 +7,8 @@ pub enum VideoCommands {
     Convert(ConvertArgs),
     /// Generate a transcript for a video using WhisperX
     Transcribe(TranscribeArgs),
+    /// Render a video according to edits in a markdown file
+    Render(RenderArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -47,6 +49,21 @@ pub struct TranscribeArgs {
     pub model: Option<String>,
 
     /// Re-generate transcript even if cached
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct RenderArgs {
+    /// Markdown file describing the edited timeline
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub markdown: PathBuf,
+
+    /// Optional output path; defaults to <videoname>_edit.<ext>
+    #[arg(short = 'o', long = "output", value_hint = ValueHint::FilePath)]
+    pub output: Option<PathBuf>,
+
+    /// Overwrite an existing output file
     #[arg(long)]
     pub force: bool,
 }
