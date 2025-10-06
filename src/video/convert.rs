@@ -62,7 +62,16 @@ pub fn handle_convert(args: ConvertArgs) -> Result<()> {
 
     let markdown = build_markdown(&cues, &metadata);
 
-    let output_path = determine_output_path(args.out_file, &project_paths)?;
+    let output_path = determine_output_path(args.out_file, &video_path)?;
+
+    // Check if output file already exists
+    if output_path.exists() && !args.force {
+        anyhow::bail!(
+            "Markdown file already exists at {}. Use --force to overwrite.",
+            output_path.display()
+        );
+    }
+
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create output directory {}", parent.display()))?;
@@ -121,9 +130,21 @@ fn copy_transcript(src: &Path, dest: &Path) -> Result<()> {
 
 fn determine_output_path(
     output: Option<PathBuf>,
-    project_paths: &VideoProjectPaths,
+    video_path: &Path,
 ) -> Result<PathBuf> {
-    Ok(output.unwrap_or_else(|| project_paths.markdown_path().to_path_buf()))
+    match output {
+        Some(path) => Ok(path),
+        None => {
+            // Default to <videoname>.md next to the video file
+            let video_stem = video_path
+                .file_stem()
+                .context("Video file has no stem")?
+                .to_string_lossy();
+            let mut default_output = video_path.to_path_buf();
+            default_output.set_file_name(format!("{}.md", video_stem));
+            Ok(default_output)
+        }
+    }
 }
 
 fn write_metadata_file(

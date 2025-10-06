@@ -19,9 +19,13 @@ pub struct ConvertArgs {
     #[arg(short = 't', long = "transcript", value_hint = ValueHint::FilePath)]
     pub transcript: Option<PathBuf>,
 
-    /// Optional output file path; defaults to the project markdown file
+    /// Optional output file path; defaults to <videoname>.md next to the video
     #[arg(short = 'o', long = "out-file", value_hint = ValueHint::FilePath)]
     pub out_file: Option<PathBuf>,
+
+    /// Overwrite existing markdown file
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Args, Debug, Clone)]
