@@ -14,6 +14,7 @@ mod restic;
 mod scratchpad;
 mod settings;
 mod ui;
+mod video;
 
 use clap::{CommandFactory, Parser, Subcommand, ValueHint};
 
@@ -146,6 +147,11 @@ enum Commands {
         /// Start in search mode to browse all settings
         #[arg(long = "search", conflicts_with_all = ["setting", "category"])]
         search: bool,
+    },
+    /// Video transcription and editing utilities
+    Video {
+        #[command(subcommand)]
+        command: video::VideoCommands,
     },
     /// Debugging and diagnostic utilities
     Debug {
@@ -427,6 +433,13 @@ async fn main() -> Result<()> {
                     navigation,
                 ),
                 "Error running settings",
+                None,
+            )?;
+        }
+        Some(Commands::Video { command }) => {
+            execute_with_error_handling(
+                video::handle_video_command(command.clone(), cli.debug),
+                "Error handling video command",
                 None,
             )?;
         }
