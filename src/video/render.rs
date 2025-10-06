@@ -11,6 +11,7 @@ use super::document::{
     DocumentBlock, SegmentBlock, SegmentKind, VideoMetadata, VideoMetadataVideo,
     parse_video_document,
 };
+use super::title_card::TitleCardGenerator;
 use super::utils::canonicalize_existing;
 
 pub fn handle_render(args: RenderArgs) -> Result<()> {
@@ -53,35 +54,42 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
             .with_context(|| format!("Failed to create output directory {}", parent.display()))?;
     }
 
-    let (segments, heading_count, unhandled_count) = collect_timeline_items(&document);
-    if segments.is_empty() {
+    let (video_width, video_height) = probe_video_dimensions(&video_path)?;
+    let generator = TitleCardGenerator::new(video_width, video_height)?;
+    let timeline = collect_timeline_items(&document, &generator)?;
+
+    if timeline.items.is_empty() {
         anyhow::bail!(
-            "No timestamp segments found in {}. Ensure the markdown contains `HH:MM:SS.mmm-HH:MM:SS.mmm` code spans.",
+            "No renderable blocks found in {}. Ensure the markdown contains timestamp code spans or headings.",
             markdown_path.display()
         );
     }
 
-    if heading_count > 0 {
+    if timeline.heading_count > 0 {
         emit(
             Level::Info,
-            "video.render.headings_ignored",
-            &format!(
-                "Detected {heading_count} heading block(s); title card rendering is not implemented yet"
-            ),
+            "video.render.title_cards",
+            &format!("Generated {count} title card(s)", count = timeline.heading_count),
             None,
         );
     }
 
-    if unhandled_count > 0 {
+    if timeline.unhandled_count > 0 {
         emit(
             Level::Warn,
             "video.render.unhandled_blocks",
-            &format!("Ignored {unhandled_count} markdown block(s) that are not yet supported"),
+            &format!("Ignored {count} markdown block(s) that are not yet supported", count = timeline.unhandled_count),
             None,
         );
     }
 
-    let pipeline = RenderPipeline::new(video_path.clone(), output_path.clone(), segments);
+    let pipeline = RenderPipeline::new(
+        video_path.clone(),
+        output_path.clone(),
+        timeline.items,
+        video_width,
+        video_height,
+    );
     pipeline.execute()?;
 
     emit(
@@ -141,22 +149,45 @@ fn resolve_output_path(
     Ok(output)
 }
 
+struct TimelineCollection {
+    items: Vec<TimelineItem>,
+    heading_count: usize,
+    unhandled_count: usize,
+}
+
 fn collect_timeline_items(
     document: &super::document::VideoDocument,
-) -> (Vec<ClipSegment>, usize, usize) {
-    let mut segments = Vec::new();
+    generator: &TitleCardGenerator,
+) -> Result<TimelineCollection> {
+    let mut items = Vec::new();
     let mut heading_count = 0usize;
     let mut unhandled_count = 0usize;
 
     for block in &document.blocks {
         match block {
-            DocumentBlock::Segment(segment) => segments.push(ClipSegment::from_segment(segment)),
-            DocumentBlock::Heading(_) => heading_count += 1,
+            DocumentBlock::Segment(segment) => {
+                items.push(TimelineItem::Clip(ClipSegment::from_segment(segment)));
+            }
+            DocumentBlock::Heading(heading) => {
+                let asset = generator.generate(heading.level, &heading.text)?;
+                heading_count += 1;
+                items.push(TimelineItem::TitleCard(TitleCardSegment {
+                    path: asset.video_path,
+                    duration: asset.duration,
+                    level: heading.level,
+                    text: heading.text.clone(),
+                    line: heading.line,
+                }));
+            }
             DocumentBlock::Unhandled(_) => unhandled_count += 1,
         }
     }
 
-    (segments, heading_count, unhandled_count)
+    Ok(TimelineCollection {
+        items,
+        heading_count,
+        unhandled_count,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -180,18 +211,42 @@ impl ClipSegment {
     }
 }
 
+#[derive(Debug, Clone)]
+struct TitleCardSegment {
+    path: PathBuf,
+    duration: f64,
+    level: u32,
+    text: String,
+    line: usize,
+}
+
+enum TimelineItem {
+    Clip(ClipSegment),
+    TitleCard(TitleCardSegment),
+}
+
 struct RenderPipeline {
     input: PathBuf,
     output: PathBuf,
-    segments: Vec<ClipSegment>,
+    timeline: Vec<TimelineItem>,
+    target_width: u32,
+    target_height: u32,
 }
 
 impl RenderPipeline {
-    fn new(input: PathBuf, output: PathBuf, segments: Vec<ClipSegment>) -> Self {
+    fn new(
+        input: PathBuf,
+        output: PathBuf,
+        timeline: Vec<TimelineItem>,
+        target_width: u32,
+        target_height: u32,
+    ) -> Self {
         Self {
             input,
             output,
-            segments,
+            timeline,
+            target_width,
+            target_height,
         }
     }
 
@@ -199,8 +254,29 @@ impl RenderPipeline {
         let mut args = Vec::new();
         args.push("-i".to_string());
         args.push(self.input.to_string_lossy().into_owned());
+
+        let mut input_indices = Vec::with_capacity(self.timeline.len());
+        let mut additional_inputs = Vec::new();
+        let mut next_index = 1usize;
+
+        for item in &self.timeline {
+            match item {
+                TimelineItem::Clip(_) => input_indices.push(0),
+                TimelineItem::TitleCard(card) => {
+                    input_indices.push(next_index);
+                    additional_inputs.push(card.path.clone());
+                    next_index += 1;
+                }
+            }
+        }
+
+        for path in &additional_inputs {
+            args.push("-i".to_string());
+            args.push(path.to_string_lossy().into_owned());
+        }
+
         args.push("-filter_complex".to_string());
-        args.push(self.build_filter_complex());
+        args.push(self.build_filter_complex(&input_indices));
         args.push("-map".to_string());
         args.push("[outv]".to_string());
         args.push("-map".to_string());
@@ -231,30 +307,49 @@ impl RenderPipeline {
         Ok(())
     }
 
-    fn build_filter_complex(&self) -> String {
+    fn build_filter_complex(&self, input_indices: &[usize]) -> String {
         let mut filters: Vec<String> = Vec::new();
         let mut concat_inputs = String::new();
 
-        for (idx, segment) in self.segments.iter().enumerate() {
+        for (idx, item) in self.timeline.iter().enumerate() {
+            let input_index = input_indices[idx];
             let video_label = format!("v{idx}");
             let audio_label = format!("a{idx}");
-            filters.push(format!(
-                "[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{video_label}]",
-                start = format_time(segment.start),
-                end = format_time(segment.end),
-            ));
-            filters.push(format!(
-                "[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio_label}]",
-                start = format_time(segment.start),
-                end = format_time(segment.end),
-            ));
+
+            match item {
+                TimelineItem::Clip(segment) => {
+                    filters.push(format!(
+                        "[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{video_label}]",
+                        start = format_time(segment.start),
+                        end = format_time(segment.end),
+                    ));
+                    filters.push(format!(
+                        "[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio_label}]",
+                        start = format_time(segment.start),
+                        end = format_time(segment.end),
+                    ));
+                }
+                TimelineItem::TitleCard(_) => {
+                    filters.push(format!(
+                        "[{input}:v]scale={width}:{height},setsar=1,setpts=PTS-STARTPTS[{video_label}]",
+                        input = input_index,
+                        width = self.target_width,
+                        height = self.target_height,
+                    ));
+                    filters.push(format!(
+                        "[{input}:a]asetpts=PTS-STARTPTS[{audio_label}]",
+                        input = input_index,
+                    ));
+                }
+            }
+
             concat_inputs.push_str(&format!("[{video_label}][{audio_label}]"));
         }
 
         filters.push(format!(
             "{inputs}concat=n={segments}:v=1:a=1[outv][outa]",
             inputs = concat_inputs,
-            segments = self.segments.len()
+            segments = self.timeline.len()
         ));
 
         filters.join("; ")
@@ -263,4 +358,55 @@ impl RenderPipeline {
 
 fn format_time(value: f64) -> String {
     format!("{value:.6}")
+}
+
+fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
+    let output = Command::new("ffprobe")
+        .arg("-v")
+        .arg("error")
+        .arg("-select_streams")
+        .arg("v:0")
+        .arg("-show_entries")
+        .arg("stream=width,height")
+        .arg("-of")
+        .arg("csv=s=x:p=0")
+        .arg(video_path)
+        .output()
+        .with_context(|| "Failed to probe video dimensions with ffprobe")?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "ffprobe exited with status {:?} while probing {}",
+            output.status.code(),
+            video_path.display()
+        );
+    }
+
+    let stdout = String::from_utf8(output.stdout)
+        .context("ffprobe returned non-UTF8 output for video dimensions")?;
+    let value = stdout.trim();
+    let mut parts = value.split('x');
+    let width_str = parts
+        .next()
+        .ok_or_else(|| anyhow!("ffprobe did not return width for {}", video_path.display()))?;
+    let height_str = parts.next().ok_or_else(|| {
+        anyhow!("ffprobe did not return height for {}", video_path.display())
+    })?;
+
+    let width: u32 = width_str.parse().with_context(|| {
+        format!(
+            "Unable to parse ffprobe width '{}' for {}",
+            width_str,
+            video_path.display()
+        )
+    })?;
+    let height: u32 = height_str.parse().with_context(|| {
+        format!(
+            "Unable to parse ffprobe height '{}' for {}",
+            height_str,
+            video_path.display()
+        )
+    })?;
+
+    Ok((width, height))
 }
