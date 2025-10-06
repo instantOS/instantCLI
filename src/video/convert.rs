@@ -128,10 +128,7 @@ fn copy_transcript(src: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-fn determine_output_path(
-    output: Option<PathBuf>,
-    video_path: &Path,
-) -> Result<PathBuf> {
+fn determine_output_path(output: Option<PathBuf>, video_path: &Path) -> Result<PathBuf> {
     match output {
         Some(path) => Ok(path),
         None => {

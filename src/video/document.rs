@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag};
 use serde::Deserialize;
 
@@ -70,6 +70,16 @@ pub struct TimeRange {
     pub end: Duration,
 }
 
+impl TimeRange {
+    pub fn start_seconds(&self) -> f64 {
+        self.start.as_secs_f64()
+    }
+
+    pub fn end_seconds(&self) -> f64 {
+        self.end.as_secs_f64()
+    }
+}
+
 pub fn parse_video_document(content: &str, source_path: &Path) -> Result<VideoDocument> {
     let (front_matter, body, body_offset) = split_front_matter(content)?;
 
@@ -90,8 +100,12 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
                 generated_at: None,
             });
         }
-        let parsed: FrontMatter = serde_yaml::from_str(fm)
-            .with_context(|| format!("Failed to parse YAML front matter in {}", source_path.display()))?;
+        let parsed: FrontMatter = serde_yaml::from_str(fm).with_context(|| {
+            format!(
+                "Failed to parse YAML front matter in {}",
+                source_path.display()
+            )
+        })?;
 
         Ok(VideoMetadata {
             video: parsed.video.map(|video| VideoMetadataVideo {
@@ -263,26 +277,24 @@ impl ParagraphState {
 
         let code = match first {
             InlineFragment::Code(code) => code,
-            InlineFragment::Text(text) if text.trim().is_empty() => {
-                match fragments.next() {
-                    Some(InlineFragment::Code(code)) => code,
-                    other => {
-                        let mut remaining = Vec::new();
-                        if let Some(fragment) = other {
-                            remaining.push(fragment);
-                        }
-                        remaining.extend(fragments);
-                        let summary = InlineFragment::render_many(remaining);
-                        if summary.trim().is_empty() {
-                            return Ok(None);
-                        }
-                        return Ok(Some(DocumentBlock::Unhandled(UnhandledBlock {
-                            description: summary.trim().to_string(),
-                            line,
-                        })));
+            InlineFragment::Text(text) if text.trim().is_empty() => match fragments.next() {
+                Some(InlineFragment::Code(code)) => code,
+                other => {
+                    let mut remaining = Vec::new();
+                    if let Some(fragment) = other {
+                        remaining.push(fragment);
                     }
+                    remaining.extend(fragments);
+                    let summary = InlineFragment::render_many(remaining);
+                    if summary.trim().is_empty() {
+                        return Ok(None);
+                    }
+                    return Ok(Some(DocumentBlock::Unhandled(UnhandledBlock {
+                        description: summary.trim().to_string(),
+                        line,
+                    })));
                 }
-            }
+            },
             other => {
                 let mut all_fragments = vec![other];
                 all_fragments.extend(fragments);
@@ -298,11 +310,12 @@ impl ParagraphState {
         };
 
         let text_fragments = fragments.collect::<Vec<_>>();
-        let text = InlineFragment::render_many(text_fragments).trim().to_string();
+        let text = InlineFragment::render_many(text_fragments)
+            .trim()
+            .to_string();
 
-        let range = parse_time_range(&code).with_context(|| {
-            format!("Invalid timestamp range `{}` at line {}", code, line)
-        })?;
+        let range = parse_time_range(&code)
+            .with_context(|| format!("Invalid timestamp range `{}` at line {}", code, line))?;
 
         let kind = if text.eq_ignore_ascii_case("silence") {
             SegmentKind::Silence
@@ -356,16 +369,6 @@ enum InlineFragment {
 }
 
 impl InlineFragment {
-    fn render(self) -> String {
-        match self {
-            InlineFragment::Text(text) => text,
-            InlineFragment::Code(code) => code,
-            InlineFragment::SoftBreak => " ".to_string(),
-            InlineFragment::HardBreak => "\n".to_string(),
-            InlineFragment::Html(html) => html,
-        }
-    }
-
     fn render_many(fragments: Vec<InlineFragment>) -> String {
         let mut output = String::new();
         for fragment in fragments {
@@ -396,7 +399,7 @@ fn parse_time_range(input: &str) -> Result<TimeRange> {
 fn parse_timestamp(value: &str) -> Result<Duration> {
     let (main, frac) = value
         .split_once('.')
-        .ok_or_else(|| anyhow!("Timestamp must include milliseconds`"))?;
+        .ok_or_else(|| anyhow!("Timestamp must include milliseconds"))?;
     let mut parts = main.split(':').collect::<Vec<_>>();
     if parts.len() != 3 {
         return Err(anyhow!("Timestamp must be in HH:MM:SS.mmm format"));
@@ -426,10 +429,16 @@ fn parse_timestamp(value: &str) -> Result<Duration> {
     };
 
     if minutes >= 60 {
-        return Err(anyhow!("Minutes component must be less than 60 in `{}`", value));
+        return Err(anyhow!(
+            "Minutes component must be less than 60 in `{}`",
+            value
+        ));
     }
     if seconds >= 60 {
-        return Err(anyhow!("Seconds component must be less than 60 in `{}`", value));
+        return Err(anyhow!(
+            "Seconds component must be less than 60 in `{}`",
+            value
+        ));
     }
 
     let total_millis = hours * 3_600_000 + minutes * 60_000 + seconds * 1_000 + milliseconds;
