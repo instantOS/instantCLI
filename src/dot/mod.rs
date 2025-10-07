@@ -437,6 +437,16 @@ fn print_fetch_plan(
 fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -> Result<()> {
     for dotfile in dotfiles {
         dotfile.fetch(db)?;
+
+        // Print the full path where the file was fetched to
+        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let relative_path = dotfile.source_path.strip_prefix(&home).unwrap_or(&dotfile.source_path);
+        println!(
+            "{} Fetched {} to {}",
+            char::from(NerdFont::ArrowRight),
+            format!("~/{}", relative_path.display()).cyan(),
+            dotfile.source_path.display().to_string().green()
+        );
     }
     db.cleanup_hashes(hash_cleanup_days)?;
     emit(
