@@ -202,7 +202,6 @@ impl SettingsContext {
     //
     //     Ok(())
     // }
-
 }
 
 pub fn format_icon(icon: NerdFont) -> String {
