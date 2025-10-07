@@ -7,6 +7,7 @@ mod markdown;
 mod render;
 mod srt;
 mod title_card;
+mod titlecard;
 mod transcribe;
 mod utils;
 

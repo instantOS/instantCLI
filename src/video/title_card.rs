@@ -78,6 +78,38 @@ impl TitleCardGenerator {
         })
     }
 
+    pub fn generate_image(&self, level: u32, text: &str, output_path: &Path) -> Result<()> {
+        let cache_key = self.build_cache_key(level, text);
+        let card_dir = self.cache_dir.join(&cache_key);
+        let markdown_path = card_dir.join("input.md");
+        let css_path = card_dir.join("title.css");
+        let html_path = card_dir.join("title.html");
+        let image_path = card_dir.join("title.jpg");
+
+        fs::create_dir_all(&card_dir).with_context(|| {
+            format!(
+                "Failed to create title card cache entry at {}",
+                card_dir.display()
+            )
+        })?;
+
+        self.write_markdown(&markdown_path, level, text)?;
+        self.write_css(&css_path)?;
+        self.run_pandoc(&markdown_path, &html_path, &css_path)?;
+        self.capture_screenshot(&html_path, &image_path)?;
+
+        // Copy the generated image to the output path
+        fs::copy(&image_path, output_path).with_context(|| {
+            format!(
+                "Failed to copy title card image from {} to {}",
+                image_path.display(),
+                output_path.display()
+            )
+        })?;
+
+        Ok(())
+    }
+
     fn build_cache_key(&self, level: u32, text: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(level.to_le_bytes());

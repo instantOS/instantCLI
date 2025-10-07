@@ -9,6 +9,8 @@ pub enum VideoCommands {
     Transcribe(TranscribeArgs),
     /// Render a video according to edits in a markdown file
     Render(RenderArgs),
+    /// Generate a title card image from a markdown file
+    Titlecard(TitlecardArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -66,4 +68,15 @@ pub struct RenderArgs {
     /// Overwrite an existing output file
     #[arg(long)]
     pub force: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct TitlecardArgs {
+    /// Markdown file containing the title card text
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub markdown: PathBuf,
+
+    /// Optional output path; defaults to <markdownfilename>.jpg
+    #[arg(short = 'o', long = "out-file", value_hint = ValueHint::FilePath)]
+    pub out_file: Option<PathBuf>,
 }
