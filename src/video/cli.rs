@@ -11,6 +11,8 @@ pub enum VideoCommands {
     Render(RenderArgs),
     /// Generate a title card image from a markdown file
     Titlecard(TitlecardArgs),
+    /// Display statistics about how a markdown file will be rendered
+    Stats(StatsArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -68,6 +70,10 @@ pub struct RenderArgs {
     /// Overwrite an existing output file
     #[arg(long)]
     pub force: bool,
+
+    /// Pre-cache title cards without rendering the final video
+    #[arg(long = "precache-titlecards")]
+    pub precache_titlecards: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -79,4 +85,11 @@ pub struct TitlecardArgs {
     /// Optional output path; defaults to <markdownfilename>.jpg
     #[arg(short = 'o', long = "out-file", value_hint = ValueHint::FilePath)]
     pub out_file: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct StatsArgs {
+    /// Markdown file describing the edited timeline
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub markdown: PathBuf,
 }

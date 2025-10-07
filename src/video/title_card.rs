@@ -59,7 +59,10 @@ impl TitleCardGenerator {
             self.capture_screenshot(&html_path, &image_path)?;
         }
 
-        Ok(TitleCardAsset { card_dir, image_path })
+        Ok(TitleCardAsset {
+            card_dir,
+            image_path,
+        })
     }
 
     pub fn markdown_card(&self, markdown_content: &str) -> Result<TitleCardAsset> {
@@ -83,7 +86,10 @@ impl TitleCardGenerator {
             self.capture_screenshot(&html_path, &image_path)?;
         }
 
-        Ok(TitleCardAsset { card_dir, image_path })
+        Ok(TitleCardAsset {
+            card_dir,
+            image_path,
+        })
     }
 
     pub fn generate_image(&self, level: u32, text: &str, output_path: &Path) -> Result<()> {

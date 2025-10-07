@@ -7,63 +7,71 @@ use anyhow::{Context, Result, anyhow};
 use crate::ui::prelude::{Level, emit};
 
 use super::cli::RenderArgs;
-use super::document::{
-    DocumentBlock, SegmentBlock, SegmentKind, VideoMetadata, VideoMetadataVideo,
-    parse_video_document,
-};
+use super::document::{SegmentKind, VideoMetadata, VideoMetadataVideo, parse_video_document};
+use super::timeline::{StandalonePlan, TimelinePlan, TimelinePlanItem, plan_timeline};
 use super::title_card::{TitleCardAsset, TitleCardGenerator};
 use super::utils::canonicalize_existing;
 
 pub fn handle_render(args: RenderArgs) -> Result<()> {
+    let pre_cache_only = args.precache_titlecards;
     let markdown_path = canonicalize_existing(&args.markdown)?;
     let markdown_contents = fs::read_to_string(&markdown_path)
         .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
 
     let document = parse_video_document(&markdown_contents, &markdown_path)?;
+    let plan = plan_timeline(&document)?;
 
-    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
-    let video_path = resolve_video_path(&document.metadata, markdown_dir)?;
-    let video_path = canonicalize_existing(&video_path)?;
-
-    let output_path = resolve_output_path(&args, &video_path, markdown_dir)?;
-    if output_path == video_path {
-        return Err(anyhow!(
-            "Output path {} would overwrite the source video",
-            output_path.display()
-        ));
-    }
-
-    if output_path.exists() {
-        if args.force {
-            fs::remove_file(&output_path).with_context(|| {
-                format!(
-                    "Failed to remove existing output file {} before overwrite",
-                    output_path.display()
-                )
-            })?;
-        } else {
-            anyhow::bail!(
-                "Output file {} already exists. Use --force to overwrite.",
-                output_path.display()
-            );
-        }
-    }
-
-    if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create output directory {}", parent.display()))?;
-    }
-
-    let (video_width, video_height) = probe_video_dimensions(&video_path)?;
-    let generator = TitleCardGenerator::new(video_width, video_height)?;
-    let timeline = collect_timeline_items(&document, &generator)?;
-
-    if timeline.items.is_empty() {
+    if plan.items.is_empty() {
         anyhow::bail!(
             "No renderable blocks found in {}. Ensure the markdown contains timestamp code spans or headings.",
             markdown_path.display()
         );
     }
+
+    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    let video_path = resolve_video_path(&document.metadata, markdown_dir)?;
+    let video_path = canonicalize_existing(&video_path)?;
+
+    let output_path = if pre_cache_only {
+        None
+    } else {
+        Some(resolve_output_path(&args, &video_path, markdown_dir)?)
+    };
+
+    if let Some(output_path) = &output_path {
+        if output_path == &video_path {
+            return Err(anyhow!(
+                "Output path {} would overwrite the source video",
+                output_path.display()
+            ));
+        }
+
+        if output_path.exists() {
+            if args.force {
+                fs::remove_file(output_path).with_context(|| {
+                    format!(
+                        "Failed to remove existing output file {} before overwrite",
+                        output_path.display()
+                    )
+                })?;
+            } else {
+                anyhow::bail!(
+                    "Output file {} already exists. Use --force to overwrite.",
+                    output_path.display()
+                );
+            }
+        }
+
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create output directory {}", parent.display())
+            })?;
+        }
+    }
+
+    let (video_width, video_height) = probe_video_dimensions(&video_path)?;
+    let generator = TitleCardGenerator::new(video_width, video_height)?;
+    let timeline = materialize_timeline(plan, &generator)?;
 
     if timeline.standalone_count > 0 {
         emit(
@@ -101,6 +109,18 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         );
     }
 
+    if pre_cache_only {
+        emit(
+            Level::Success,
+            "video.render.precache_only",
+            "Prepared title cards and overlays in cache; skipping final render",
+            None,
+        );
+        return Ok(());
+    }
+
+    let output_path = output_path.expect("output path is required when not pre-caching");
+
     let pipeline = RenderPipeline::new(
         video_path.clone(),
         output_path.clone(),
@@ -120,7 +140,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
     Ok(())
 }
 
-fn resolve_video_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
+pub(super) fn resolve_video_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
     let video_meta: &VideoMetadataVideo = metadata
         .video
         .as_ref()
@@ -174,85 +194,69 @@ struct TimelineCollection {
     ignored_count: usize,
 }
 
-fn collect_timeline_items(
-    document: &super::document::VideoDocument,
+fn materialize_timeline(
+    plan: TimelinePlan,
     generator: &TitleCardGenerator,
 ) -> Result<TimelineCollection> {
     let mut items = Vec::new();
-    let mut standalone_count = 0usize;
-    let mut overlay_count = 0usize;
-    let mut ignored_count = 0usize;
-    let mut overlay_state: Option<OverlaySegment> = None;
-    let mut last_was_separator = false;
 
-    for (idx, block) in document.blocks.iter().enumerate() {
-        match block {
-            DocumentBlock::Segment(segment) => {
-                let clip = ClipSegment::from_segment(segment, overlay_state.clone());
-                items.push(TimelineItem::Clip(clip));
-                last_was_separator = false;
-            }
-            DocumentBlock::Heading(heading) => {
-                let asset = generator.heading_card(heading.level, &heading.text)?;
-                let video_path = generator.ensure_video_for_duration(&asset, 2.0)?;
-                standalone_count += 1;
-                items.push(TimelineItem::TitleCard(TitleCardSegment {
-                    path: video_path,
-                    duration: 2.0,
-                    text: heading.text.clone(),
-                    line: heading.line,
+    for item in plan.items {
+        match item {
+            TimelinePlanItem::Clip(clip_plan) => {
+                let overlay = match clip_plan.overlay {
+                    Some(overlay_plan) => {
+                        let asset = generator.markdown_card(&overlay_plan.markdown)?;
+                        Some(OverlaySegment {
+                            asset,
+                            line: overlay_plan.line,
+                        })
+                    }
+                    None => None,
+                };
+
+                items.push(TimelineItem::Clip(ClipSegment {
+                    start: clip_plan.start,
+                    end: clip_plan.end,
+                    kind: clip_plan.kind,
+                    text: clip_plan.text,
+                    line: clip_plan.line,
+                    overlay,
                 }));
-                last_was_separator = false;
             }
-            DocumentBlock::Separator(_) => {
-                overlay_state = None;
-                last_was_separator = true;
-            }
-            DocumentBlock::Unhandled(unhandled) => {
-                let raw_description = unhandled.description.as_str();
-                let trimmed = raw_description.trim();
-                if trimmed.is_empty() {
-                    ignored_count += 1;
-                    last_was_separator = false;
-                    continue;
+            TimelinePlanItem::Standalone(standalone_plan) => match standalone_plan {
+                StandalonePlan::Heading { level, text, line } => {
+                    let asset = generator.heading_card(level, &text)?;
+                    let video_path = generator.ensure_video_for_duration(&asset, 2.0)?;
+                    items.push(TimelineItem::TitleCard(TitleCardSegment {
+                        path: video_path,
+                        duration: 2.0,
+                        text,
+                        line,
+                    }));
                 }
-
-                let next_is_separator = document
-                    .blocks
-                    .get(idx + 1)
-                    .map(|next| matches!(next, DocumentBlock::Separator(_)))
-                    .unwrap_or(false);
-
-                if last_was_separator && next_is_separator {
-                    let asset = generator.markdown_card(raw_description)?;
+                StandalonePlan::Pause {
+                    markdown,
+                    display_text,
+                    line,
+                } => {
+                    let asset = generator.markdown_card(&markdown)?;
                     let video_path = generator.ensure_video_for_duration(&asset, 5.0)?;
-                    standalone_count += 1;
                     items.push(TimelineItem::TitleCard(TitleCardSegment {
                         path: video_path,
                         duration: 5.0,
-                        text: trimmed.to_string(),
-                        line: unhandled.line,
+                        text: display_text,
+                        line,
                     }));
-                    overlay_state = None;
-                    last_was_separator = false;
-                } else {
-                    let asset = generator.markdown_card(raw_description)?;
-                    overlay_state = Some(OverlaySegment {
-                        asset,
-                        line: unhandled.line,
-                    });
-                    overlay_count += 1;
-                    last_was_separator = false;
                 }
-            }
+            },
         }
     }
 
     Ok(TimelineCollection {
         items,
-        standalone_count,
-        overlay_count,
-        ignored_count,
+        standalone_count: plan.standalone_count,
+        overlay_count: plan.overlay_count,
+        ignored_count: plan.ignored_count,
     })
 }
 
@@ -264,19 +268,6 @@ struct ClipSegment {
     text: String,
     line: usize,
     overlay: Option<OverlaySegment>,
-}
-
-impl ClipSegment {
-    fn from_segment(segment: &SegmentBlock, overlay: Option<OverlaySegment>) -> Self {
-        Self {
-            start: segment.range.start_seconds(),
-            end: segment.range.end_seconds(),
-            kind: segment.kind,
-            text: segment.text.clone(),
-            line: segment.line,
-            overlay,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -349,7 +340,9 @@ impl RenderPipeline {
                         });
                         next_index += 1;
                     } else {
-                        bindings.push(TimelineBinding::Clip { overlay_input: None });
+                        bindings.push(TimelineBinding::Clip {
+                            overlay_input: None,
+                        });
                     }
                 }
                 TimelineItem::TitleCard(card) => {
@@ -440,7 +433,11 @@ impl RenderPipeline {
                         audio = audio_label,
                     ));
 
-                    concat_inputs.push_str(&format!("[{video}][{audio}]", video = final_label, audio = audio_label));
+                    concat_inputs.push_str(&format!(
+                        "[{video}][{audio}]",
+                        video = final_label,
+                        audio = audio_label
+                    ));
                 }
                 (TimelineItem::TitleCard(_), TimelineBinding::TitleCard { input_index }) => {
                     let video_label = format!("v{idx}");
@@ -456,7 +453,11 @@ impl RenderPipeline {
                         input = input_index,
                         audio = audio_label,
                     ));
-                    concat_inputs.push_str(&format!("[{video}][{audio}]", video = video_label, audio = audio_label));
+                    concat_inputs.push_str(&format!(
+                        "[{video}][{audio}]",
+                        video = video_label,
+                        audio = audio_label
+                    ));
                 }
                 _ => unreachable!("Timeline and bindings variant mismatch"),
             }

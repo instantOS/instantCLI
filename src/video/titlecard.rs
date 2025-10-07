@@ -7,7 +7,10 @@ use super::title_card::TitleCardGenerator;
 
 pub fn handle_titlecard(args: TitlecardArgs) -> Result<()> {
     let markdown_path = args.markdown.canonicalize().with_context(|| {
-        format!("Failed to resolve markdown path {}", args.markdown.display())
+        format!(
+            "Failed to resolve markdown path {}",
+            args.markdown.display()
+        )
     })?;
 
     let markdown_contents = fs::read_to_string(&markdown_path)
@@ -28,7 +31,7 @@ pub fn handle_titlecard(args: TitlecardArgs) -> Result<()> {
 
     // Use default 1920x1080 resolution for title cards
     let generator = TitleCardGenerator::new(1920, 1080)?;
-    
+
     generator.generate_image_from_markdown(content, &output_path)?;
 
     println!("Title card generated: {}", output_path.display());
@@ -45,7 +48,7 @@ fn strip_frontmatter(content: &str) -> &str {
         Some(n) => n,
         None => return content,
     };
-    
+
     let mut cursor = first_newline + 1;
 
     while cursor <= content.len() {
