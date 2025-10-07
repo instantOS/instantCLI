@@ -361,19 +361,32 @@ impl RenderPipeline {
 
         let mut bindings = Vec::with_capacity(self.timeline.len());
         let mut next_index = 1usize;
+        let mut overlay_input_map = std::collections::HashMap::new();
 
         for item in &self.timeline {
             match item {
                 TimelineItem::Clip(segment) => {
                     if let Some(overlay) = &segment.overlay {
-                        args.push("-loop".to_string());
-                        args.push("1".to_string());
-                        args.push("-i".to_string());
-                        args.push(overlay.asset.image_path.to_string_lossy().into_owned());
+                        let overlay_path = overlay.asset.image_path.to_string_lossy().into_owned();
+
+                        // Check if we've already loaded this overlay image
+                        let input_index = if let Some(&existing_index) = overlay_input_map.get(&overlay_path) {
+                            existing_index
+                        } else {
+                            // Load the overlay image for the first time
+                            args.push("-loop".to_string());
+                            args.push("1".to_string());
+                            args.push("-i".to_string());
+                            args.push(overlay_path.clone());
+                            overlay_input_map.insert(overlay_path, next_index);
+                            let current_index = next_index;
+                            next_index += 1;
+                            current_index
+                        };
+
                         bindings.push(TimelineBinding::Clip {
-                            overlay_input: Some(next_index),
+                            overlay_input: Some(input_index),
                         });
-                        next_index += 1;
                     } else {
                         bindings.push(TimelineBinding::Clip {
                             overlay_input: None,
@@ -392,7 +405,6 @@ impl RenderPipeline {
         }
 
         let filter_complex = self.build_filter_complex(&bindings);
-        eprintln!("DEBUG: Filter complex: {}", filter_complex);
         args.push("-filter_complex".to_string());
         args.push(filter_complex);
         args.push("-map".to_string());
@@ -444,7 +456,7 @@ impl RenderPipeline {
                         ));
                         let final_label = format!("v{idx}");
                         filters.push(format!(
-                            "[{base}][{overlay}]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1[{final}]",
+                            "[{base}][{overlay}]overlay=x=(W-w)/2:y=(H-h)/2[{final}]",
                             base = base_label,
                             overlay = overlay_label,
                             final = final_label,
