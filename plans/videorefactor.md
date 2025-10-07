@@ -1,22 +1,23 @@
-Refactor the video renderer according to this data structure
+Refactor the video renderer to be more like a non linear editor according to this data structure
+This needs a lot more research and thinking, but these are the basics
 
 
 ```
 TimeLine {
-    segments: vec<VideoSegment>
+    segments: vec<Segment>
 }
 
-VideoSegment {
+Segment {
     start_time
     duration
-    data: VideoSegmentData 
-    transform: Option<Transform>
+    data: SegmentData 
 }
 
 
-enum VideoSegmentData {
-    VideoSubset(start_time, source_video)
-    Image(sourceImage)
+enum SegmentData {
+    VideoSubset(start_time, source_video, transform)
+    Image(sourceImage, transform)
+    Music(audiosource)
 }
 
 
