@@ -498,8 +498,8 @@ fn parse_timestamp(value: &str) -> Result<Duration> {
         2 => raw_millis * 10,
         3 => raw_millis,
         len => {
-            let scaled = raw_millis / 10_u64.pow((len - 3) as u32);
-            scaled
+            
+            raw_millis / 10_u64.pow((len - 3) as u32)
         }
     };
 

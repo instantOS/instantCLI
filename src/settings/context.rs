@@ -1,6 +1,6 @@
-use std::{env, process::Command};
+use std::process::Command;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use duct::cmd;
 use sudo::RunningAs;
 
