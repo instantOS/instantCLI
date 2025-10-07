@@ -391,6 +391,7 @@ impl RenderPipeline {
     fn build_filter_complex(&self, bindings: &[TimelineBinding]) -> String {
         let mut filters: Vec<String> = Vec::new();
         let mut concat_inputs = String::new();
+        let overlay_scale_expr = format!("ceil({width}*0.6/2)*2", width = self.target_width);
 
         for (idx, (item, binding)) in self.timeline.iter().zip(bindings.iter()).enumerate() {
             let audio_label = format!("a{idx}");
@@ -408,15 +409,14 @@ impl RenderPipeline {
                     let final_label = if let Some(overlay_index) = overlay_input {
                         let overlay_label = format!("ov{idx}");
                         filters.push(format!(
-                            "[{input}:v]scale={width}:{height},setsar=1,format=rgba,setpts=PTS-STARTPTS[{overlay}]",
+                            "[{input}:v]scale=w={scale}:h=-1:flags=lanczos,setsar=1,format=rgba,colorchannelmixer=aa=0.85,setpts=PTS-STARTPTS[{overlay}]",
                             input = overlay_index,
-                            width = self.target_width,
-                            height = self.target_height,
+                            scale = overlay_scale_expr.as_str(),
                             overlay = overlay_label,
                         ));
                         let final_label = format!("v{idx}");
                         filters.push(format!(
-                            "[{base}][{overlay}]overlay=shortest=1[{final}]",
+                            "[{base}][{overlay}]overlay=x=(W-w)/2:y=(H-h)/2:shortest=1[{final}]",
                             base = base_label,
                             overlay = overlay_label,
                             final = final_label,

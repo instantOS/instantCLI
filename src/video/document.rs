@@ -497,10 +497,7 @@ fn parse_timestamp(value: &str) -> Result<Duration> {
         1 => raw_millis * 100,
         2 => raw_millis * 10,
         3 => raw_millis,
-        len => {
-            
-            raw_millis / 10_u64.pow((len - 3) as u32)
-        }
+        len => raw_millis / 10_u64.pow((len - 3) as u32),
     };
 
     if minutes >= 60 {
