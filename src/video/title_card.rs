@@ -15,7 +15,7 @@ pub struct TitleCardGenerator {
     height: u32,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TitleCardAsset {
     card_dir: PathBuf,
     pub image_path: PathBuf,
