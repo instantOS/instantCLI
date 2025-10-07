@@ -11,7 +11,7 @@ use super::document::{
     DocumentBlock, SegmentBlock, SegmentKind, VideoMetadata, VideoMetadataVideo,
     parse_video_document,
 };
-use super::title_card::TitleCardGenerator;
+use super::title_card::{TitleCardAsset, TitleCardGenerator};
 use super::utils::canonicalize_existing;
 
 pub fn handle_render(args: RenderArgs) -> Result<()> {
@@ -65,25 +65,37 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         );
     }
 
-    if timeline.heading_count > 0 {
+    if timeline.standalone_count > 0 {
         emit(
             Level::Info,
             "video.render.title_cards",
             &format!(
                 "Generated {count} title card(s)",
-                count = timeline.heading_count
+                count = timeline.standalone_count
             ),
             None,
         );
     }
 
-    if timeline.unhandled_count > 0 {
+    if timeline.overlay_count > 0 {
+        emit(
+            Level::Info,
+            "video.render.title_card_overlays",
+            &format!(
+                "Applied {count} overlay title card(s)",
+                count = timeline.overlay_count
+            ),
+            None,
+        );
+    }
+
+    if timeline.ignored_count > 0 {
         emit(
             Level::Warn,
             "video.render.unhandled_blocks",
             &format!(
                 "Ignored {count} markdown block(s) that are not yet supported",
-                count = timeline.unhandled_count
+                count = timeline.ignored_count
             ),
             None,
         );
@@ -157,8 +169,9 @@ fn resolve_output_path(
 
 struct TimelineCollection {
     items: Vec<TimelineItem>,
-    heading_count: usize,
-    unhandled_count: usize,
+    standalone_count: usize,
+    overlay_count: usize,
+    ignored_count: usize,
 }
 
 fn collect_timeline_items(
@@ -166,44 +179,79 @@ fn collect_timeline_items(
     generator: &TitleCardGenerator,
 ) -> Result<TimelineCollection> {
     let mut items = Vec::new();
-    let mut heading_count = 0usize;
-    let mut unhandled_count = 0usize;
+    let mut standalone_count = 0usize;
+    let mut overlay_count = 0usize;
+    let mut ignored_count = 0usize;
+    let mut overlay_state: Option<OverlaySegment> = None;
+    let mut last_was_separator = false;
 
-    for block in &document.blocks {
+    for (idx, block) in document.blocks.iter().enumerate() {
         match block {
             DocumentBlock::Segment(segment) => {
-                items.push(TimelineItem::Clip(ClipSegment::from_segment(segment)));
+                let clip = ClipSegment::from_segment(segment, overlay_state.clone());
+                items.push(TimelineItem::Clip(clip));
+                last_was_separator = false;
             }
             DocumentBlock::Heading(heading) => {
-                let asset = generator.generate(heading.level, &heading.text)?;
-                heading_count += 1;
+                let asset = generator.heading_card(heading.level, &heading.text)?;
+                let video_path = generator.ensure_video_for_duration(&asset, 2.0)?;
+                standalone_count += 1;
                 items.push(TimelineItem::TitleCard(TitleCardSegment {
-                    path: asset.video_path,
-                    duration: asset.duration,
-                    level: heading.level,
+                    path: video_path,
+                    duration: 2.0,
                     text: heading.text.clone(),
                     line: heading.line,
                 }));
+                last_was_separator = false;
+            }
+            DocumentBlock::Separator(_) => {
+                overlay_state = None;
+                last_was_separator = true;
             }
             DocumentBlock::Unhandled(unhandled) => {
-                // Render unhandled blocks (quotes, regular text, etc.) as title cards
-                let asset = generator.generate_from_markdown(&unhandled.description)?;
-                unhandled_count += 1;
-                items.push(TimelineItem::TitleCard(TitleCardSegment {
-                    path: asset.video_path,
-                    duration: asset.duration,
-                    level: 0,
-                    text: unhandled.description.clone(),
-                    line: unhandled.line,
-                }));
+                let description = unhandled.description.trim();
+                if description.is_empty() {
+                    ignored_count += 1;
+                    last_was_separator = false;
+                    continue;
+                }
+
+                let next_is_separator = document
+                    .blocks
+                    .get(idx + 1)
+                    .map(|next| matches!(next, DocumentBlock::Separator(_)))
+                    .unwrap_or(false);
+
+                if last_was_separator && next_is_separator {
+                    let asset = generator.markdown_card(description)?;
+                    let video_path = generator.ensure_video_for_duration(&asset, 5.0)?;
+                    standalone_count += 1;
+                    items.push(TimelineItem::TitleCard(TitleCardSegment {
+                        path: video_path,
+                        duration: 5.0,
+                        text: description.to_string(),
+                        line: unhandled.line,
+                    }));
+                    overlay_state = None;
+                    last_was_separator = false;
+                } else {
+                    let asset = generator.markdown_card(description)?;
+                    overlay_state = Some(OverlaySegment {
+                        asset,
+                        line: unhandled.line,
+                    });
+                    overlay_count += 1;
+                    last_was_separator = false;
+                }
             }
         }
     }
 
     Ok(TimelineCollection {
         items,
-        heading_count,
-        unhandled_count,
+        standalone_count,
+        overlay_count,
+        ignored_count,
     })
 }
 
@@ -214,16 +262,18 @@ struct ClipSegment {
     kind: SegmentKind,
     text: String,
     line: usize,
+    overlay: Option<OverlaySegment>,
 }
 
 impl ClipSegment {
-    fn from_segment(segment: &SegmentBlock) -> Self {
+    fn from_segment(segment: &SegmentBlock, overlay: Option<OverlaySegment>) -> Self {
         Self {
             start: segment.range.start_seconds(),
             end: segment.range.end_seconds(),
             kind: segment.kind,
             text: segment.text.clone(),
             line: segment.line,
+            overlay,
         }
     }
 }
@@ -232,8 +282,13 @@ impl ClipSegment {
 struct TitleCardSegment {
     path: PathBuf,
     duration: f64,
-    level: u32,
     text: String,
+    line: usize,
+}
+
+#[derive(Debug, Clone)]
+struct OverlaySegment {
+    asset: TitleCardAsset,
     line: usize,
 }
 
@@ -248,6 +303,11 @@ struct RenderPipeline {
     timeline: Vec<TimelineItem>,
     target_width: u32,
     target_height: u32,
+}
+
+enum TimelineBinding {
+    Clip { overlay_input: Option<usize> },
+    TitleCard { input_index: usize },
 }
 
 impl RenderPipeline {
@@ -272,28 +332,38 @@ impl RenderPipeline {
         args.push("-i".to_string());
         args.push(self.input.to_string_lossy().into_owned());
 
-        let mut input_indices = Vec::with_capacity(self.timeline.len());
-        let mut additional_inputs = Vec::new();
+        let mut bindings = Vec::with_capacity(self.timeline.len());
         let mut next_index = 1usize;
 
         for item in &self.timeline {
             match item {
-                TimelineItem::Clip(_) => input_indices.push(0),
+                TimelineItem::Clip(segment) => {
+                    if let Some(overlay) = &segment.overlay {
+                        args.push("-loop".to_string());
+                        args.push("1".to_string());
+                        args.push("-i".to_string());
+                        args.push(overlay.asset.image_path.to_string_lossy().into_owned());
+                        bindings.push(TimelineBinding::Clip {
+                            overlay_input: Some(next_index),
+                        });
+                        next_index += 1;
+                    } else {
+                        bindings.push(TimelineBinding::Clip { overlay_input: None });
+                    }
+                }
                 TimelineItem::TitleCard(card) => {
-                    input_indices.push(next_index);
-                    additional_inputs.push(card.path.clone());
+                    args.push("-i".to_string());
+                    args.push(card.path.to_string_lossy().into_owned());
+                    bindings.push(TimelineBinding::TitleCard {
+                        input_index: next_index,
+                    });
                     next_index += 1;
                 }
             }
         }
 
-        for path in &additional_inputs {
-            args.push("-i".to_string());
-            args.push(path.to_string_lossy().into_owned());
-        }
-
         args.push("-filter_complex".to_string());
-        args.push(self.build_filter_complex(&input_indices));
+        args.push(self.build_filter_complex(&bindings));
         args.push("-map".to_string());
         args.push("[outv]".to_string());
         args.push("-map".to_string());
@@ -324,43 +394,71 @@ impl RenderPipeline {
         Ok(())
     }
 
-    fn build_filter_complex(&self, input_indices: &[usize]) -> String {
+    fn build_filter_complex(&self, bindings: &[TimelineBinding]) -> String {
         let mut filters: Vec<String> = Vec::new();
         let mut concat_inputs = String::new();
 
-        for (idx, item) in self.timeline.iter().enumerate() {
-            let input_index = input_indices[idx];
-            let video_label = format!("v{idx}");
+        for (idx, (item, binding)) in self.timeline.iter().zip(bindings.iter()).enumerate() {
             let audio_label = format!("a{idx}");
 
-            match item {
-                TimelineItem::Clip(segment) => {
+            match (item, binding) {
+                (TimelineItem::Clip(segment), TimelineBinding::Clip { overlay_input }) => {
+                    let base_label = format!("v{idx}_base");
                     filters.push(format!(
-                        "[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{video_label}]",
+                        "[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{base}]",
                         start = format_time(segment.start),
                         end = format_time(segment.end),
+                        base = base_label,
                     ));
+
+                    let final_label = if let Some(overlay_index) = overlay_input {
+                        let overlay_label = format!("ov{idx}");
+                        filters.push(format!(
+                            "[{input}:v]scale={width}:{height},setsar=1,format=rgba,setpts=PTS-STARTPTS[{overlay}]",
+                            input = overlay_index,
+                            width = self.target_width,
+                            height = self.target_height,
+                            overlay = overlay_label,
+                        ));
+                        let final_label = format!("v{idx}");
+                        filters.push(format!(
+                            "[{base}][{overlay}]overlay=shortest=1[{final}]",
+                            base = base_label,
+                            overlay = overlay_label,
+                            final = final_label,
+                        ));
+                        final_label
+                    } else {
+                        base_label
+                    };
+
                     filters.push(format!(
-                        "[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio_label}]",
+                        "[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio}]",
                         start = format_time(segment.start),
                         end = format_time(segment.end),
+                        audio = audio_label,
                     ));
+
+                    concat_inputs.push_str(&format!("[{video}][{audio}]", video = final_label, audio = audio_label));
                 }
-                TimelineItem::TitleCard(_) => {
+                (TimelineItem::TitleCard(_), TimelineBinding::TitleCard { input_index }) => {
+                    let video_label = format!("v{idx}");
                     filters.push(format!(
-                        "[{input}:v]scale={width}:{height},setsar=1,setpts=PTS-STARTPTS[{video_label}]",
+                        "[{input}:v]scale={width}:{height},setsar=1,setpts=PTS-STARTPTS[{video}]",
                         input = input_index,
                         width = self.target_width,
                         height = self.target_height,
+                        video = video_label,
                     ));
                     filters.push(format!(
-                        "[{input}:a]asetpts=PTS-STARTPTS[{audio_label}]",
+                        "[{input}:a]asetpts=PTS-STARTPTS[{audio}]",
                         input = input_index,
+                        audio = audio_label,
                     ));
+                    concat_inputs.push_str(&format!("[{video}][{audio}]", video = video_label, audio = audio_label));
                 }
+                _ => unreachable!("Timeline and bindings variant mismatch"),
             }
-
-            concat_inputs.push_str(&format!("[{video_label}][{audio_label}]"));
         }
 
         filters.push(format!(
