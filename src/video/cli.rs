@@ -78,10 +78,6 @@ pub struct RenderArgs {
     /// Show the ffmpeg command that would be executed without running it
     #[arg(long)]
     pub dry_run: bool,
-
-    /// Use the new NLE-style timeline renderer (experimental)
-    #[arg(long)]
-    pub use_nle: bool,
 }
 
 #[derive(Args, Debug, Clone)]
