@@ -7,7 +7,8 @@ use anyhow::{Context, Result, anyhow};
 use crate::ui::prelude::{Level, emit};
 
 use super::cli::RenderArgs;
-use super::document::{SegmentKind, VideoMetadata, VideoMetadataVideo, parse_video_document};
+use super::document::{VideoMetadata, VideoMetadataVideo, parse_video_document};
+use super::nle_timeline::{Segment, SegmentData, Timeline, Transform};
 use super::timeline::{StandalonePlan, TimelinePlan, TimelinePlanItem, plan_timeline};
 use super::title_card::{TitleCardAsset, TitleCardGenerator};
 use super::utils::canonicalize_existing;
@@ -72,39 +73,41 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
 
     let (video_width, video_height) = probe_video_dimensions(&video_path)?;
     let generator = TitleCardGenerator::new(video_width, video_height)?;
-    let timeline = materialize_timeline(plan, &generator)?;
 
-    if timeline.standalone_count > 0 {
+    // Build NLE timeline from the plan
+    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &video_path)?;
+
+    if stats.standalone_count > 0 {
         emit(
             Level::Info,
             "video.render.title_cards",
             &format!(
                 "Generated {count} title card(s)",
-                count = timeline.standalone_count
+                count = stats.standalone_count
             ),
             None,
         );
     }
 
-    if timeline.overlay_count > 0 {
+    if stats.overlay_count > 0 {
         emit(
             Level::Info,
             "video.render.title_card_overlays",
             &format!(
                 "Applied {count} overlay title card(s)",
-                count = timeline.overlay_count
+                count = stats.overlay_count
             ),
             None,
         );
     }
 
-    if timeline.ignored_count > 0 {
+    if stats.ignored_count > 0 {
         emit(
             Level::Warn,
             "video.render.unhandled_blocks",
             &format!(
                 "Ignored {count} markdown block(s) that are not yet supported",
-                count = timeline.ignored_count
+                count = stats.ignored_count
             ),
             None,
         );
@@ -123,9 +126,8 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
     let output_path = output_path.expect("output path is required when not pre-caching");
 
     let pipeline = RenderPipeline::new(
-        video_path.clone(),
         output_path.clone(),
-        timeline.items,
+        nle_timeline,
         video_width,
         video_height,
     );
@@ -200,106 +202,100 @@ fn resolve_output_path(
     Ok(output)
 }
 
-struct TimelineCollection {
-    items: Vec<TimelineItem>,
+struct TimelineStats {
     standalone_count: usize,
     overlay_count: usize,
     ignored_count: usize,
 }
 
-fn materialize_timeline(
+/// Build an NLE timeline from the timeline plan
+fn build_nle_timeline(
     plan: TimelinePlan,
     generator: &TitleCardGenerator,
-) -> Result<TimelineCollection> {
-    let mut items = Vec::new();
+    source_video: &Path,
+) -> Result<(Timeline, TimelineStats)> {
+    let mut timeline = Timeline::new();
+    let mut current_time = 0.0;
 
     for item in plan.items {
         match item {
             TimelinePlanItem::Clip(clip_plan) => {
-                let overlay = match clip_plan.overlay {
-                    Some(overlay_plan) => {
-                        let asset = generator.markdown_card(&overlay_plan.markdown)?;
-                        Some(OverlaySegment {
-                            asset,
-                            line: overlay_plan.line,
-                        })
-                    }
-                    None => None,
-                };
+                let duration = clip_plan.end - clip_plan.start;
 
-                items.push(TimelineItem::Clip(ClipSegment {
-                    start: clip_plan.start,
-                    end: clip_plan.end,
-                    kind: clip_plan.kind,
-                    text: clip_plan.text,
-                    line: clip_plan.line,
-                    overlay,
-                }));
+                // Add the main video clip segment
+                let segment = Segment::new_video_subset(
+                    current_time,
+                    duration,
+                    clip_plan.start,
+                    source_video.to_path_buf(),
+                    None,
+                );
+                timeline.add_segment(segment);
+
+                // If there's an overlay, add it as an image segment at the same time
+                if let Some(overlay_plan) = clip_plan.overlay {
+                    let asset = generator.markdown_card(&overlay_plan.markdown)?;
+                    let overlay_segment = Segment::new_image(
+                        current_time,
+                        duration,
+                        asset.image_path.clone(),
+                        Some(Transform::with_scale(0.6)), // Default overlay scale
+                    );
+                    timeline.add_segment(overlay_segment);
+                }
+
+                current_time += duration;
             }
             TimelinePlanItem::Standalone(standalone_plan) => match standalone_plan {
-                StandalonePlan::Heading { level, text, line } => {
+                StandalonePlan::Heading { level, text, .. } => {
                     let asset = generator.heading_card(level, &text)?;
                     let video_path = generator.ensure_video_for_duration(&asset, 2.0)?;
-                    items.push(TimelineItem::TitleCard(TitleCardSegment {
-                        path: video_path,
-                        duration: 2.0,
-                        text,
-                        line,
-                    }));
+
+                    // Title cards are pre-rendered videos, treat as video segments
+                    let segment = Segment::new_video_subset(
+                        current_time,
+                        2.0,
+                        0.0, // Start from beginning of title card video
+                        video_path,
+                        None,
+                    );
+                    timeline.add_segment(segment);
+                    current_time += 2.0;
                 }
-                StandalonePlan::Pause {
-                    markdown,
-                    display_text,
-                    line,
-                } => {
+                StandalonePlan::Pause { markdown, .. } => {
                     let asset = generator.markdown_card(&markdown)?;
                     let video_path = generator.ensure_video_for_duration(&asset, 5.0)?;
-                    items.push(TimelineItem::TitleCard(TitleCardSegment {
-                        path: video_path,
-                        duration: 5.0,
-                        text: display_text,
-                        line,
-                    }));
+
+                    // Pause cards are pre-rendered videos
+                    let segment = Segment::new_video_subset(
+                        current_time,
+                        5.0,
+                        0.0, // Start from beginning of pause card video
+                        video_path,
+                        None,
+                    );
+                    timeline.add_segment(segment);
+                    current_time += 5.0;
                 }
             },
         }
     }
 
-    Ok(TimelineCollection {
-        items,
+    let stats = TimelineStats {
         standalone_count: plan.standalone_count,
         overlay_count: plan.overlay_count,
         ignored_count: plan.ignored_count,
-    })
+    };
+
+    Ok((timeline, stats))
 }
 
-#[derive(Debug, Clone)]
-struct ClipSegment {
-    start: f64,
-    end: f64,
-    kind: SegmentKind,
-    text: String,
-    line: usize,
-    overlay: Option<OverlaySegment>,
-}
-
-#[derive(Debug, Clone)]
-struct TitleCardSegment {
-    path: PathBuf,
-    duration: f64,
-    text: String,
-    line: usize,
-}
-
-#[derive(Debug, Clone)]
-struct OverlaySegment {
-    asset: TitleCardAsset,
-    line: usize,
-}
-
-enum TimelineItem {
-    Clip(ClipSegment),
-    TitleCard(TitleCardSegment),
+/// The new NLE-based render pipeline
+struct RenderPipeline {
+    output: PathBuf,
+    timeline: Timeline,
+    target_width: u32,
+    target_height: u32,
 }
 
 struct RenderPipeline {
@@ -786,6 +782,228 @@ impl RenderPipeline {
 
         // Final output
         filters.push(format!("[{}]copy[outv]", current_video_label));
+    }
+}
+
+/// New NLE-based render pipeline
+struct NleRenderPipeline {
+    output: PathBuf,
+    timeline: Timeline,
+    target_width: u32,
+    target_height: u32,
+}
+
+impl NleRenderPipeline {
+    fn new(
+        output: PathBuf,
+        timeline: Timeline,
+        target_width: u32,
+        target_height: u32,
+    ) -> Self {
+        Self {
+            output,
+            timeline,
+            target_width,
+            target_height,
+        }
+    }
+
+    fn print_command(&self) -> Result<()> {
+        let args = self.build_args()?;
+        println!("ffmpeg command that would be executed:");
+        println!("ffmpeg {}", args.join(" "));
+        Ok(())
+    }
+
+    fn execute(&self) -> Result<()> {
+        let args = self.build_args()?;
+
+        let status = Command::new("ffmpeg")
+            .args(&args)
+            .status()
+            .with_context(|| "Failed to spawn ffmpeg")?;
+
+        if !status.success() {
+            anyhow::bail!("ffmpeg exited with status {:?}", status.code());
+        }
+
+        Ok(())
+    }
+
+    fn build_args(&self) -> Result<Vec<String>> {
+        let mut args = Vec::new();
+
+        // Collect all unique source files and assign input indices
+        let mut source_map: std::collections::HashMap<PathBuf, usize> = std::collections::HashMap::new();
+        let mut next_index = 0;
+
+        // First pass: identify all unique sources
+        for segment in &self.timeline.segments {
+            if let Some(source) = segment.data.source_path() {
+                if !source_map.contains_key(source) {
+                    source_map.insert(source.clone(), next_index);
+                    next_index += 1;
+                }
+            }
+        }
+
+        // Add all input files
+        for (source, _) in source_map.iter() {
+            args.push("-i".to_string());
+            args.push(source.to_string_lossy().into_owned());
+        }
+
+        // Build filter complex
+        let filter_complex = self.build_filter_complex(&source_map)?;
+        args.push("-filter_complex".to_string());
+        args.push(filter_complex);
+
+        // Map outputs
+        args.push("-map".to_string());
+        args.push("[outv]".to_string());
+        args.push("-map".to_string());
+        args.push("[outa]".to_string());
+
+        // Encoding settings
+        args.push("-c:v".to_string());
+        args.push("libx264".to_string());
+        args.push("-preset".to_string());
+        args.push("medium".to_string());
+        args.push("-crf".to_string());
+        args.push("18".to_string());
+        args.push("-c:a".to_string());
+        args.push("aac".to_string());
+        args.push("-b:a".to_string());
+        args.push("192k".to_string());
+        args.push("-movflags".to_string());
+        args.push("+faststart".to_string());
+        args.push(self.output.to_string_lossy().into_owned());
+
+        Ok(args)
+    }
+
+    fn build_filter_complex(
+        &self,
+        source_map: &std::collections::HashMap<PathBuf, usize>,
+    ) -> Result<String> {
+        let mut filters: Vec<String> = Vec::new();
+
+        // Group segments by type: video clips and overlays
+        let mut video_segments: Vec<&Segment> = Vec::new();
+        let mut overlay_segments: Vec<&Segment> = Vec::new();
+
+        for segment in &self.timeline.segments {
+            match &segment.data {
+                SegmentData::VideoSubset { .. } => video_segments.push(segment),
+                SegmentData::Image { .. } => overlay_segments.push(segment),
+                SegmentData::Music { .. } => {
+                    // Music handling would go here
+                }
+            }
+        }
+
+        // Build video concatenation
+        let mut concat_inputs = String::new();
+        for (idx, segment) in video_segments.iter().enumerate() {
+            if let SegmentData::VideoSubset { start_time, source_video, .. } = &segment.data {
+                let input_index = source_map.get(source_video).unwrap();
+                let video_label = format!("v{idx}");
+                let audio_label = format!("a{idx}");
+
+                let end_time = start_time + segment.duration;
+
+                // Trim video segment
+                filters.push(format!(
+                    "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{video}]",
+                    input = input_index,
+                    start = format_time(*start_time),
+                    end = format_time(end_time),
+                    video = video_label,
+                ));
+
+                // Trim audio segment
+                filters.push(format!(
+                    "[{input}:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio}]",
+                    input = input_index,
+                    start = format_time(*start_time),
+                    end = format_time(end_time),
+                    audio = audio_label,
+                ));
+
+                concat_inputs.push_str(&format!("[{video}][{audio}]", video = video_label, audio = audio_label));
+            }
+        }
+
+        // Concatenate all video segments
+        if !video_segments.is_empty() {
+            filters.push(format!(
+                "{inputs}concat=n={count}:v=1:a=1[concat_v][concat_a]",
+                inputs = concat_inputs,
+                count = video_segments.len()
+            ));
+        }
+
+        // Apply overlays if any
+        if overlay_segments.is_empty() {
+            filters.push("[concat_v]copy[outv]".to_string());
+        } else {
+            // Build overlay application with time-based enabling
+            self.apply_overlays(&mut filters, &overlay_segments, source_map)?;
+        }
+
+        filters.push("[concat_a]anull[outa]".to_string());
+        Ok(filters.join("; "))
+    }
+
+    fn apply_overlays(
+        &self,
+        filters: &mut Vec<String>,
+        overlay_segments: &[&Segment],
+        source_map: &std::collections::HashMap<PathBuf, usize>,
+    ) -> Result<()> {
+        let mut current_video_label = "concat_v".to_string();
+
+        for (idx, segment) in overlay_segments.iter().enumerate() {
+            if let SegmentData::Image { source_image, transform } = &segment.data {
+                let input_index = source_map.get(source_image).unwrap();
+                let overlay_label = format!("overlay_{idx}");
+                let output_label = format!("overlaid_{idx}");
+
+                // Process the overlay image with transform
+                let scale_factor = transform.as_ref()
+                    .and_then(|t| t.scale)
+                    .unwrap_or(0.6);
+
+                filters.push(format!(
+                    "[{input}:v]scale=w=ceil({width}*{scale}/2)*2:h=-1:flags=lanczos,setsar=1,format=rgba,colorchannelmixer=aa=0.85[{overlay}]",
+                    input = input_index,
+                    width = self.target_width,
+                    scale = scale_factor,
+                    overlay = overlay_label,
+                ));
+
+                // Apply overlay with time-based enabling
+                let enable_condition = format!(
+                    "between(t,{},{})",
+                    segment.start_time,
+                    segment.end_time()
+                );
+
+                filters.push(format!(
+                    "[{video}][{overlay}]overlay=x=(W-w)/2:y=(H-h)/2:enable='{condition}'[{output}]",
+                    video = current_video_label,
+                    overlay = overlay_label,
+                    condition = enable_condition,
+                    output = output_label,
+                ));
+
+                current_video_label = output_label;
+            }
+        }
+
+        // Final output
+        filters.push(format!("[{}]copy[outv]", current_video_label));
+        Ok(())
     }
 }
 
