@@ -74,6 +74,10 @@ pub struct RenderArgs {
     /// Pre-cache title cards without rendering the final video
     #[arg(long = "precache-titlecards")]
     pub precache_titlecards: bool,
+
+    /// Show the ffmpeg command that would be executed without running it
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Args, Debug, Clone)]

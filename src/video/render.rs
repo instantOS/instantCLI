@@ -14,6 +14,7 @@ use super::utils::canonicalize_existing;
 
 pub fn handle_render(args: RenderArgs) -> Result<()> {
     let pre_cache_only = args.precache_titlecards;
+    let dry_run = args.dry_run;
     let markdown_path = canonicalize_existing(&args.markdown)?;
     let markdown_contents = fs::read_to_string(&markdown_path)
         .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
@@ -128,6 +129,18 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         video_width,
         video_height,
     );
+
+    if dry_run {
+        pipeline.print_command()?;
+        emit(
+            Level::Info,
+            "video.render.dry_run",
+            "Dry run completed - ffmpeg command printed above",
+            None,
+        );
+        return Ok(());
+    }
+
     pipeline.execute()?;
 
     emit(
@@ -319,7 +332,29 @@ impl RenderPipeline {
         }
     }
 
+    fn print_command(&self) -> Result<()> {
+        let args = self.build_args()?;
+        println!("ffmpeg command that would be executed:");
+        println!("ffmpeg {}", args.join(" "));
+        Ok(())
+    }
+
     fn execute(&self) -> Result<()> {
+        let args = self.build_args()?;
+
+        let status = Command::new("ffmpeg")
+            .args(&args)
+            .status()
+            .with_context(|| "Failed to spawn ffmpeg")?;
+
+        if !status.success() {
+            anyhow::bail!("ffmpeg exited with status {:?}", status.code());
+        }
+
+        Ok(())
+    }
+
+    fn build_args(&self) -> Result<Vec<String>> {
         let mut args = Vec::new();
         args.push("-i".to_string());
         args.push(self.input.to_string_lossy().into_owned());
@@ -356,8 +391,10 @@ impl RenderPipeline {
             }
         }
 
+        let filter_complex = self.build_filter_complex(&bindings);
+        eprintln!("DEBUG: Filter complex: {}", filter_complex);
         args.push("-filter_complex".to_string());
-        args.push(self.build_filter_complex(&bindings));
+        args.push(filter_complex);
         args.push("-map".to_string());
         args.push("[outv]".to_string());
         args.push("-map".to_string());
@@ -376,16 +413,7 @@ impl RenderPipeline {
         args.push("+faststart".to_string());
         args.push(self.output.to_string_lossy().into_owned());
 
-        let status = Command::new("ffmpeg")
-            .args(&args)
-            .status()
-            .with_context(|| "Failed to spawn ffmpeg")?;
-
-        if !status.success() {
-            anyhow::bail!("ffmpeg exited with status {:?}", status.code());
-        }
-
-        Ok(())
+        Ok(args)
     }
 
     fn build_filter_complex(&self, bindings: &[TimelineBinding]) -> String {
