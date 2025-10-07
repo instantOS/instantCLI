@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 use dirs::cache_dir;
 use sha2::{Digest, Sha256};
 
-const TITLE_CARD_DURATION_SECONDS: f64 = 3.0;
 const CSS_VERSION_TOKEN: &str = "2";
 
 pub struct TitleCardGenerator {
@@ -16,9 +15,10 @@ pub struct TitleCardGenerator {
     height: u32,
 }
 
+#[derive(Clone)]
 pub struct TitleCardAsset {
-    pub video_path: PathBuf,
-    pub duration: f64,
+    card_dir: PathBuf,
+    pub image_path: PathBuf,
 }
 
 impl TitleCardGenerator {
@@ -43,139 +43,95 @@ impl TitleCardGenerator {
         })
     }
 
-    pub fn generate(&self, level: u32, text: &str) -> Result<TitleCardAsset> {
+    pub fn heading_card(&self, level: u32, text: &str) -> Result<TitleCardAsset> {
         let cache_key = self.build_cache_key(level, text);
         let card_dir = self.cache_dir.join(&cache_key);
         let markdown_path = card_dir.join("input.md");
         let css_path = card_dir.join("title.css");
         let html_path = card_dir.join("title.html");
         let image_path = card_dir.join("title.jpg");
-        let video_path = card_dir.join("title.mp4");
 
-        if video_path.exists() {
-            return Ok(TitleCardAsset {
-                video_path,
-                duration: TITLE_CARD_DURATION_SECONDS,
-            });
+        self.ensure_card_dir(&card_dir)?;
+        if !image_path.exists() {
+            self.write_markdown(&markdown_path, level, text)?;
+            self.write_css(&css_path)?;
+            self.run_pandoc(&markdown_path, &html_path, &css_path)?;
+            self.capture_screenshot(&html_path, &image_path)?;
         }
 
-        fs::create_dir_all(&card_dir).with_context(|| {
-            format!(
-                "Failed to create title card cache entry at {}",
-                card_dir.display()
-            )
-        })?;
+        Ok(TitleCardAsset { card_dir, image_path })
+    }
 
-        self.write_markdown(&markdown_path, level, text)?;
-        self.write_css(&css_path)?;
-        self.run_pandoc(&markdown_path, &html_path, &css_path)?;
-        self.capture_screenshot(&html_path, &image_path)?;
-        self.render_video(&image_path, &video_path)?;
+    pub fn markdown_card(&self, markdown_content: &str) -> Result<TitleCardAsset> {
+        let cache_key = self.build_markdown_cache_key(markdown_content);
+        let card_dir = self.cache_dir.join(&cache_key);
+        let markdown_path = card_dir.join("input.md");
+        let css_path = card_dir.join("title.css");
+        let html_path = card_dir.join("title.html");
+        let image_path = card_dir.join("title.jpg");
 
-        Ok(TitleCardAsset {
-            video_path,
-            duration: TITLE_CARD_DURATION_SECONDS,
-        })
+        self.ensure_card_dir(&card_dir)?;
+        if !image_path.exists() {
+            fs::write(&markdown_path, markdown_content.as_bytes()).with_context(|| {
+                format!(
+                    "Failed to write title card markdown to {}",
+                    markdown_path.display()
+                )
+            })?;
+            self.write_css(&css_path)?;
+            self.run_pandoc(&markdown_path, &html_path, &css_path)?;
+            self.capture_screenshot(&html_path, &image_path)?;
+        }
+
+        Ok(TitleCardAsset { card_dir, image_path })
     }
 
     pub fn generate_image(&self, level: u32, text: &str, output_path: &Path) -> Result<()> {
-        let cache_key = self.build_cache_key(level, text);
-        let card_dir = self.cache_dir.join(&cache_key);
-        let markdown_path = card_dir.join("input.md");
-        let css_path = card_dir.join("title.css");
-        let html_path = card_dir.join("title.html");
-        let image_path = card_dir.join("title.jpg");
-
-        fs::create_dir_all(&card_dir).with_context(|| {
-            format!(
-                "Failed to create title card cache entry at {}",
-                card_dir.display()
-            )
-        })?;
-
-        self.write_markdown(&markdown_path, level, text)?;
-        self.write_css(&css_path)?;
-        self.run_pandoc(&markdown_path, &html_path, &css_path)?;
-        self.capture_screenshot(&html_path, &image_path)?;
-
-        // Copy the generated image to the output path
-        fs::copy(&image_path, output_path).with_context(|| {
-            format!(
-                "Failed to copy title card image from {} to {}",
-                image_path.display(),
-                output_path.display()
-            )
-        })?;
-
-        Ok(())
+        let asset = self.heading_card(level, text)?;
+        self.copy_image(&asset.image_path, output_path)
     }
 
-    pub fn generate_from_markdown(&self, markdown_content: &str) -> Result<TitleCardAsset> {
-        let cache_key = self.build_markdown_cache_key(markdown_content);
-        let card_dir = self.cache_dir.join(&cache_key);
-        let markdown_path = card_dir.join("input.md");
-        let css_path = card_dir.join("title.css");
-        let html_path = card_dir.join("title.html");
-        let image_path = card_dir.join("title.jpg");
-        let video_path = card_dir.join("title.mp4");
+    pub fn generate_image_from_markdown(
+        &self,
+        markdown_content: &str,
+        output_path: &Path,
+    ) -> Result<()> {
+        let asset = self.markdown_card(markdown_content)?;
+        self.copy_image(&asset.image_path, output_path)
+    }
 
+    pub fn ensure_video_for_duration(
+        &self,
+        asset: &TitleCardAsset,
+        duration: f64,
+    ) -> Result<PathBuf> {
+        let sanitized = (duration * 1000.0).round() as u64;
+        let video_path = asset.card_dir.join(format!("title_{sanitized}.mp4"));
         if video_path.exists() {
-            return Ok(TitleCardAsset {
-                video_path,
-                duration: TITLE_CARD_DURATION_SECONDS,
-            });
+            return Ok(video_path);
         }
 
-        fs::create_dir_all(&card_dir).with_context(|| {
+        self.render_video(&asset.image_path, &video_path, duration)?;
+        Ok(video_path)
+    }
+
+    fn ensure_card_dir(&self, card_dir: &Path) -> Result<()> {
+        fs::create_dir_all(card_dir).with_context(|| {
             format!(
                 "Failed to create title card cache entry at {}",
                 card_dir.display()
             )
-        })?;
-
-        fs::write(&markdown_path, markdown_content.as_bytes())
-            .with_context(|| format!("Failed to write title card markdown to {}", markdown_path.display()))?;
-        self.write_css(&css_path)?;
-        self.run_pandoc(&markdown_path, &html_path, &css_path)?;
-        self.capture_screenshot(&html_path, &image_path)?;
-        self.render_video(&image_path, &video_path)?;
-
-        Ok(TitleCardAsset {
-            video_path,
-            duration: TITLE_CARD_DURATION_SECONDS,
         })
     }
 
-    pub fn generate_image_from_markdown(&self, markdown_content: &str, output_path: &Path) -> Result<()> {
-        let cache_key = self.build_markdown_cache_key(markdown_content);
-        let card_dir = self.cache_dir.join(&cache_key);
-        let markdown_path = card_dir.join("input.md");
-        let css_path = card_dir.join("title.css");
-        let html_path = card_dir.join("title.html");
-        let image_path = card_dir.join("title.jpg");
-
-        fs::create_dir_all(&card_dir).with_context(|| {
-            format!(
-                "Failed to create title card cache entry at {}",
-                card_dir.display()
-            )
-        })?;
-
-        fs::write(&markdown_path, markdown_content.as_bytes())
-            .with_context(|| format!("Failed to write title card markdown to {}", markdown_path.display()))?;
-        self.write_css(&css_path)?;
-        self.run_pandoc(&markdown_path, &html_path, &css_path)?;
-        self.capture_screenshot(&html_path, &image_path)?;
-
-        // Copy the generated image to the output path
-        fs::copy(&image_path, output_path).with_context(|| {
+    fn copy_image(&self, source: &Path, dest: &Path) -> Result<()> {
+        fs::copy(source, dest).with_context(|| {
             format!(
                 "Failed to copy title card image from {} to {}",
-                image_path.display(),
-                output_path.display()
+                source.display(),
+                dest.display()
             )
         })?;
-
         Ok(())
     }
 
@@ -184,7 +140,6 @@ impl TitleCardGenerator {
         hasher.update(level.to_le_bytes());
         hasher.update(self.width.to_le_bytes());
         hasher.update(self.height.to_le_bytes());
-        hasher.update(TITLE_CARD_DURATION_SECONDS.to_le_bytes());
         hasher.update(CSS_VERSION_TOKEN.as_bytes());
         hasher.update(text.as_bytes());
         format!("{:x}", hasher.finalize())
@@ -194,7 +149,6 @@ impl TitleCardGenerator {
         let mut hasher = Sha256::new();
         hasher.update(self.width.to_le_bytes());
         hasher.update(self.height.to_le_bytes());
-        hasher.update(TITLE_CARD_DURATION_SECONDS.to_le_bytes());
         hasher.update(CSS_VERSION_TOKEN.as_bytes());
         hasher.update(markdown_content.as_bytes());
         format!("{:x}", hasher.finalize())
@@ -256,8 +210,8 @@ impl TitleCardGenerator {
         Ok(())
     }
 
-    fn render_video(&self, image: &Path, video: &Path) -> Result<()> {
-        let duration = format!("{:.3}", TITLE_CARD_DURATION_SECONDS);
+    fn render_video(&self, image: &Path, video: &Path, duration_secs: f64) -> Result<()> {
+        let duration = format!("{:.3}", duration_secs);
         let status = Command::new("ffmpeg")
             .arg("-y")
             .arg("-loop")
