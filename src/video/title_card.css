@@ -1,0 +1,242 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f0f0f;
+  color: #f8f8f8;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, Oxygen, Ubuntu, sans-serif;
+  line-height: 1.6;
+  padding: 4rem;
+  overflow: hidden;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Dynamic sizing based on content length */
+.content:has(h1:only-child) h1,
+.content:has(h2:only-child) h2,
+.content:has(h3:only-child) h3 {
+  font-size: clamp(4rem, 12vw, 10rem);
+}
+
+.content:has(p:only-child) p {
+  font-size: clamp(2.5rem, 6vw, 5rem);
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0 0 1.5rem 0;
+  padding: 0;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+h1 { font-size: clamp(4rem, 10vw, 9rem); }
+h2 { font-size: clamp(3.5rem, 8vw, 7rem); }
+h3 { font-size: clamp(3rem, 7vw, 6rem); }
+h4 { font-size: clamp(2.5rem, 6vw, 5rem); }
+h5 { font-size: clamp(2rem, 5vw, 4rem); }
+h6 { font-size: clamp(1.75rem, 4.5vw, 3.5rem); }
+
+/* Paragraphs */
+p {
+  font-size: clamp(2rem, 4.5vw, 4rem);
+  line-height: 1.5;
+  margin: 0 0 1.5rem 0;
+  color: #e5e5e5;
+  max-width: 90%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Blockquotes */
+blockquote {
+  border-left: 4px solid #3b82f6;
+  padding: 1.5rem 2rem;
+  margin: 2rem auto;
+  font-size: clamp(2rem, 5vw, 4.5rem);
+  font-style: italic;
+  color: #d1d5db;
+  background: rgba(59, 130, 246, 0.05);
+  border-radius: 0 8px 8px 0;
+  max-width: 85%;
+}
+
+blockquote p {
+  margin: 0;
+  color: inherit;
+  max-width: 100%;
+}
+
+/* Code */
+code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.2em 0.6em;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9em;
+  color: #60a5fa;
+}
+
+pre {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 2rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 2rem auto;
+  max-width: 90%;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  color: #93c5fd;
+}
+
+/* Lists */
+ul, ol {
+  text-align: left;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 1.6;
+  margin: 2rem auto;
+  max-width: 75%;
+  color: #e5e5e5;
+}
+
+li {
+  margin: 1rem 0;
+  padding-left: 0.5rem;
+}
+
+ul li::marker {
+  color: #3b82f6;
+}
+
+ol li::marker {
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+/* Text styling */
+strong, b {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+em, i {
+  font-style: italic;
+  color: #d1d5db;
+}
+
+/* Links */
+a {
+  color: #60a5fa;
+  text-decoration: none;
+  border-bottom: 2px solid #3b82f6;
+  transition: color 0.3s;
+}
+
+a:hover {
+  color: #93c5fd;
+}
+
+/* Horizontal rule */
+hr {
+  border: none;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+  margin: 3rem auto;
+  width: 60%;
+}
+
+/* Tables */
+table {
+  margin: 2rem auto;
+  border-collapse: collapse;
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  max-width: 90%;
+}
+
+th, td {
+  padding: 1rem 1.5rem;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+th {
+  background: rgba(59, 130, 246, 0.2);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+td {
+  background: rgba(0, 0, 0, 0.2);
+  color: #e5e5e5;
+}
+
+/* Responsive adjustments for content density */
+@container (max-width: 800px) {
+  body {
+    padding: 2rem;
+  }
+  
+  h1 { font-size: clamp(3rem, 8vw, 7rem); }
+  h2 { font-size: clamp(2.5rem, 7vw, 6rem); }
+  h3 { font-size: clamp(2rem, 6vw, 5rem); }
+  
+  p {
+    font-size: clamp(1.5rem, 4vw, 3rem);
+  }
+}
+
+/* Content length adaptations */
+.content:has(> *:nth-child(n+5)) h1,
+.content:has(> *:nth-child(n+5)) h2,
+.content:has(> *:nth-child(n+5)) h3 {
+  font-size: clamp(2.5rem, 6vw, 5rem);
+  margin-bottom: 1rem;
+}
+
+.content:has(> *:nth-child(n+5)) p {
+  font-size: clamp(1.5rem, 3.5vw, 3rem);
+  margin-bottom: 1rem;
+}
+
+.content:has(> *:nth-child(n+8)) h1,
+.content:has(> *:nth-child(n+8)) h2,
+.content:has(> *:nth-child(n+8)) h3 {
+  font-size: clamp(2rem, 5vw, 4rem);
+  margin-bottom: 0.75rem;
+}
+
+.content:has(> *:nth-child(n+8)) p {
+  font-size: clamp(1.25rem, 3vw, 2.5rem);
+  margin-bottom: 0.75rem;
+}
+

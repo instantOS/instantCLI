@@ -7,7 +7,8 @@ use anyhow::{Context, Result};
 use dirs::cache_dir;
 use sha2::{Digest, Sha256};
 
-const CSS_VERSION_TOKEN: &str = "2";
+const CSS_VERSION_TOKEN: &str = "3";
+const DEFAULT_CSS: &str = include_str!("title_card.css");
 
 pub struct TitleCardGenerator {
     cache_dir: PathBuf,
@@ -171,7 +172,7 @@ impl TitleCardGenerator {
     fn write_css(&self, path: &Path) -> Result<()> {
         let mut file = fs::File::create(path)
             .with_context(|| format!("Failed to create CSS file at {}", path.display()))?;
-        file.write_all(Self::default_css().as_bytes())
+        file.write_all(DEFAULT_CSS.as_bytes())
             .with_context(|| format!("Failed to write CSS to {}", path.display()))
     }
 
@@ -252,204 +253,5 @@ impl TitleCardGenerator {
         }
 
         Ok(())
-    }
-
-    fn default_css() -> String {
-        format!(
-            r#":root {{
-  color-scheme: dark;
-}}
-
-* {{
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}}
-
-body {{
-  margin: 0;
-  width: 100vw;
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0a0a0a 100%);
-  color: #f8f8f8;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, Oxygen, Ubuntu, sans-serif;
-  line-height: 1.6;
-  padding: 6rem;
-  overflow: hidden;
-}}
-
-body::before {{
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle at center, rgba(59, 130, 246, 0.08) 0%, transparent 60%);
-  animation: subtle-pulse 8s ease-in-out infinite;
-  pointer-events: none;
-}}
-
-@keyframes subtle-pulse {{
-  0%, 100% {{ opacity: 0.4; }}
-  50% {{ opacity: 0.6; }}
-}}
-
-.content {{
-  position: relative;
-  z-index: 1;
-  max-width: 90%;
-  text-align: center;
-}}
-
-h1, h2, h3, h4, h5, h6 {{
-  margin: 0 0 1.5rem 0;
-  padding: 0;
-  line-height: 1.2;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #ffffff;
-}}
-
-h1 {{ font-size: clamp(3rem, 8vw, 7rem); }}
-h2 {{ font-size: clamp(2.5rem, 6.5vw, 5.5rem); }}
-h3 {{ font-size: clamp(2rem, 5.5vw, 4.5rem); }}
-h4 {{ font-size: clamp(1.75rem, 4.5vw, 3.5rem); }}
-h5 {{ font-size: clamp(1.5rem, 4vw, 3rem); }}
-h6 {{ font-size: clamp(1.25rem, 3.5vw, 2.5rem); }}
-
-p {{
-  font-size: clamp(1.5rem, 3.5vw, 3rem);
-  line-height: 1.5;
-  margin: 0 0 1.5rem 0;
-  color: #e5e5e5;
-  max-width: 85%;
-  margin-left: auto;
-  margin-right: auto;
-}}
-
-blockquote {{
-  border-left: 4px solid #3b82f6;
-  padding: 1.5rem 2rem;
-  margin: 2rem auto;
-  font-size: clamp(1.75rem, 4vw, 3.5rem);
-  font-style: italic;
-  color: #d1d5db;
-  background: rgba(59, 130, 246, 0.05);
-  border-radius: 0 8px 8px 0;
-  max-width: 80%;
-}}
-
-blockquote p {{
-  margin: 0;
-  color: inherit;
-  max-width: 100%;
-}}
-
-code {{
-  background: rgba(255, 255, 255, 0.1);
-  padding: 0.2em 0.6em;
-  border-radius: 4px;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  font-size: 0.9em;
-  color: #60a5fa;
-}}
-
-pre {{
-  background: rgba(0, 0, 0, 0.4);
-  padding: 2rem;
-  border-radius: 8px;
-  overflow-x: auto;
-  margin: 2rem auto;
-  max-width: 85%;
-}}
-
-pre code {{
-  background: none;
-  padding: 0;
-  font-size: clamp(1.25rem, 2.5vw, 2rem);
-  color: #93c5fd;
-}}
-
-ul, ol {{
-  text-align: left;
-  font-size: clamp(1.5rem, 3vw, 2.5rem);
-  line-height: 1.6;
-  margin: 2rem auto;
-  max-width: 70%;
-  color: #e5e5e5;
-}}
-
-li {{
-  margin: 1rem 0;
-  padding-left: 0.5rem;
-}}
-
-ul li::marker {{
-  color: #3b82f6;
-}}
-
-ol li::marker {{
-  color: #3b82f6;
-  font-weight: 600;
-}}
-
-strong, b {{
-  font-weight: 700;
-  color: #ffffff;
-}}
-
-em, i {{
-  font-style: italic;
-  color: #d1d5db;
-}}
-
-a {{
-  color: #60a5fa;
-  text-decoration: none;
-  border-bottom: 2px solid #3b82f6;
-  transition: color 0.3s;
-}}
-
-a:hover {{
-  color: #93c5fd;
-}}
-
-hr {{
-  border: none;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #3b82f6, transparent);
-  margin: 3rem auto;
-  width: 60%;
-}}
-
-table {{
-  margin: 2rem auto;
-  border-collapse: collapse;
-  font-size: clamp(1.25rem, 2.5vw, 2rem);
-  max-width: 85%;
-}}
-
-th, td {{
-  padding: 1rem 1.5rem;
-  text-align: left;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}}
-
-th {{
-  background: rgba(59, 130, 246, 0.2);
-  color: #ffffff;
-  font-weight: 600;
-}}
-
-td {{
-  background: rgba(0, 0, 0, 0.2);
-  color: #e5e5e5;
-}}
-"#
-        )
     }
 }
