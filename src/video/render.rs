@@ -340,20 +340,22 @@ impl RenderPipeline {
 
         // Collect all unique source files and assign input indices
         let mut source_map: std::collections::HashMap<PathBuf, usize> = std::collections::HashMap::new();
+        let mut source_order: Vec<PathBuf> = Vec::new();
         let mut next_index = 0;
 
-        // First pass: identify all unique sources
+        // First pass: identify all unique sources in timeline order
         for segment in &self.timeline.segments {
             if let Some(source) = segment.data.source_path() {
                 if !source_map.contains_key(source) {
                     source_map.insert(source.clone(), next_index);
+                    source_order.push(source.clone());
                     next_index += 1;
                 }
             }
         }
 
-        // Add all input files
-        for (source, _) in source_map.iter() {
+        // Add all input files in the order they were discovered
+        for source in &source_order {
             args.push("-i".to_string());
             args.push(source.to_string_lossy().into_owned());
         }
@@ -393,7 +395,7 @@ impl RenderPipeline {
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();
 
-        // Group segments by type: video clips and overlays
+        // Process segments in timeline order, separating video/audio from overlays
         let mut video_segments: Vec<&Segment> = Vec::new();
         let mut overlay_segments: Vec<&Segment> = Vec::new();
 
@@ -407,9 +409,13 @@ impl RenderPipeline {
             }
         }
 
-        // Build video concatenation
+        // Sort video segments by start time to maintain timeline order
+        let mut sorted_video_segments = video_segments.clone();
+        sorted_video_segments.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
+
+        // Build video concatenation in timeline order
         let mut concat_inputs = String::new();
-        for (idx, segment) in video_segments.iter().enumerate() {
+        for (idx, segment) in sorted_video_segments.iter().enumerate() {
             if let SegmentData::VideoSubset { start_time, source_video, .. } = &segment.data {
                 let input_index = source_map.get(source_video).unwrap();
                 let video_label = format!("v{idx}");
@@ -440,11 +446,11 @@ impl RenderPipeline {
         }
 
         // Concatenate all video segments
-        if !video_segments.is_empty() {
+        if !sorted_video_segments.is_empty() {
             filters.push(format!(
                 "{inputs}concat=n={count}:v=1:a=1[concat_v][concat_a]",
                 inputs = concat_inputs,
-                count = video_segments.len()
+                count = sorted_video_segments.len()
             ));
         }
 
