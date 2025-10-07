@@ -185,7 +185,18 @@ fn collect_timeline_items(
                     line: heading.line,
                 }));
             }
-            DocumentBlock::Unhandled(_) => unhandled_count += 1,
+            DocumentBlock::Unhandled(unhandled) => {
+                // Render unhandled blocks (quotes, regular text, etc.) as title cards
+                let asset = generator.generate_from_markdown(&unhandled.description)?;
+                unhandled_count += 1;
+                items.push(TimelineItem::TitleCard(TitleCardSegment {
+                    path: asset.video_path,
+                    duration: asset.duration,
+                    level: 0,
+                    text: unhandled.description.clone(),
+                    line: unhandled.line,
+                }));
+            }
         }
     }
 
