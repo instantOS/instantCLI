@@ -209,8 +209,9 @@ fn collect_timeline_items(
                 last_was_separator = true;
             }
             DocumentBlock::Unhandled(unhandled) => {
-                let description = unhandled.description.trim();
-                if description.is_empty() {
+                let raw_description = unhandled.description.as_str();
+                let trimmed = raw_description.trim();
+                if trimmed.is_empty() {
                     ignored_count += 1;
                     last_was_separator = false;
                     continue;
@@ -223,19 +224,19 @@ fn collect_timeline_items(
                     .unwrap_or(false);
 
                 if last_was_separator && next_is_separator {
-                    let asset = generator.markdown_card(description)?;
+                    let asset = generator.markdown_card(raw_description)?;
                     let video_path = generator.ensure_video_for_duration(&asset, 5.0)?;
                     standalone_count += 1;
                     items.push(TimelineItem::TitleCard(TitleCardSegment {
                         path: video_path,
                         duration: 5.0,
-                        text: description.to_string(),
+                        text: trimmed.to_string(),
                         line: unhandled.line,
                     }));
                     overlay_state = None;
                     last_was_separator = false;
                 } else {
-                    let asset = generator.markdown_card(description)?;
+                    let asset = generator.markdown_card(raw_description)?;
                     overlay_state = Some(OverlaySegment {
                         asset,
                         line: unhandled.line,
