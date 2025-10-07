@@ -34,6 +34,7 @@ pub struct VideoMetadataTranscript {
 pub enum DocumentBlock {
     Segment(SegmentBlock),
     Heading(HeadingBlock),
+    Separator(SeparatorBlock),
     Unhandled(UnhandledBlock),
 }
 
@@ -61,6 +62,11 @@ pub struct HeadingBlock {
 #[derive(Debug)]
 pub struct UnhandledBlock {
     pub description: String,
+    pub line: usize,
+}
+
+#[derive(Debug)]
+pub struct SeparatorBlock {
     pub line: usize,
 }
 
@@ -207,6 +213,22 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
                 if let Some(state) = paragraph.as_mut() {
                     state.push_fragment(InlineFragment::text(range.start, reference.into_string()));
                 }
+            }
+            Event::Rule => {
+                // Flush any in-progress paragraph before recording the separator
+                if let Some(state) = paragraph.take() {
+                    let mut paragraph_blocks =
+                        state.into_document_blocks(base_line_offset, &line_map)?;
+                    blocks.append(&mut paragraph_blocks);
+                }
+                // Record heading if we somehow encountered a rule mid-heading
+                if let Some(state) = heading.take() {
+                    let line = base_line_offset + line_map.line_number(state.start_byte);
+                    blocks.push(DocumentBlock::Heading(state.into_block(line)));
+                }
+
+                let line = base_line_offset + line_map.line_number(range.start);
+                blocks.push(DocumentBlock::Separator(SeparatorBlock { line }));
             }
             _ => {}
         }
