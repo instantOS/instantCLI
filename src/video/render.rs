@@ -239,7 +239,7 @@ fn build_nle_timeline(
                         current_time,
                         duration,
                         asset.image_path.clone(),
-                        Some(Transform::with_scale(0.6)), // Default overlay scale
+                        Some(Transform::with_scale(0.8)), // Default overlay scale
                     );
                     timeline.add_segment(overlay_segment);
                 }
@@ -483,10 +483,10 @@ impl RenderPipeline {
                 // Process the overlay image with transform
                 let scale_factor = transform.as_ref()
                     .and_then(|t| t.scale)
-                    .unwrap_or(0.6);
+                    .unwrap_or(0.8);
 
                 filters.push(format!(
-                    "[{input}:v]scale=w=ceil({width}*{scale}/2)*2:h=-1:flags=lanczos,setsar=1,format=rgba,colorchannelmixer=aa=0.85[{overlay}]",
+                    "[{input}:v]scale=w=ceil({width}*{scale}/2)*2:h=-1:flags=lanczos,setsar=1,format=rgba[{overlay}]",
                     input = input_index,
                     width = self.target_width,
                     scale = scale_factor,

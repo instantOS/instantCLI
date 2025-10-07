@@ -273,7 +273,7 @@ pub mod conversion {
                             current_time,
                             duration,
                             overlay_path,
-                            Some(Transform::with_scale(0.6)), // Default overlay scale
+                            Some(Transform::with_scale(0.8)), // Default overlay scale
                         );
                         timeline.add_segment(overlay_segment);
                     }
