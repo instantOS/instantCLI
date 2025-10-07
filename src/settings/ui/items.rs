@@ -8,11 +8,12 @@ use super::super::registry::{SettingCategory, SettingDefinition, SettingKind, Se
 pub struct CategoryItem {
     pub category: &'static SettingCategory,
     pub total: usize,
+    pub highlights: [Option<&'static SettingDefinition>; 3],
+    //TODO: remove those fields
     pub toggles: usize,
     pub choices: usize,
     pub actions: usize,
     pub commands: usize,
-    pub highlights: [Option<&'static SettingDefinition>; 3],
 }
 
 #[derive(Clone, Copy)]

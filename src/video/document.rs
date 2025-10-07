@@ -305,9 +305,14 @@ impl ParagraphState {
         while let Some(fragment) = fragments.next() {
             match fragment.kind {
                 InlineFragmentKind::Code(code) => {
+                    let code_line = line_map.line_number(fragment.start_byte);
                     let mut following = Vec::new();
                     while let Some(next) = fragments.peek() {
                         if matches!(next.kind, InlineFragmentKind::Code(_)) {
+                            break;
+                        }
+                        let next_line = line_map.line_number(next.start_byte);
+                        if next_line != code_line {
                             break;
                         }
                         following.push(fragments.next().unwrap());

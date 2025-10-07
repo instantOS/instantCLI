@@ -124,14 +124,6 @@ impl SettingsContext {
         result
     }
 
-    pub fn request_privileged_bool(&mut self, value: bool) -> Result<()> {
-        self.invoke_privileged(PrivilegedValue::Bool(value))
-    }
-
-    pub fn request_privileged_choice<S: Into<String>>(&mut self, value: S) -> Result<()> {
-        self.invoke_privileged(PrivilegedValue::Choice(value.into()))
-    }
-
     pub fn run_command_as_root<I, S>(&self, program: S, args: I) -> Result<()>
     where
         I: IntoIterator,
@@ -161,68 +153,56 @@ impl SettingsContext {
         Ok(())
     }
 
-    fn invoke_privileged(&mut self, value: PrivilegedValue) -> Result<()> {
-        if self.privileged {
-            return Ok(());
-        }
+    // fn invoke_privileged(&mut self, value: PrivilegedValue) -> Result<()> {
+    //     if self.privileged {
+    //         return Ok(());
+    //     }
+    //
+    //     let definition = self.current_definition.ok_or_else(|| {
+    //         anyhow::anyhow!("no active setting definition for privilege escalation")
+    //     })?;
+    //
+    //     let exe = env::current_exe().context("locating executable")?;
+    //     let settings_path = self.store.path().to_path_buf();
+    //
+    //     let mut command = Command::new("/usr/bin/sudo");
+    //     command.arg(&exe);
+    //     if self.debug {
+    //         command.arg("--debug");
+    //     }
+    //     command.arg("--internal-privileged-mode");
+    //     command.arg("settings");
+    //     command.arg("internal-apply");
+    //     command.arg("--setting-id");
+    //     command.arg(definition.id);
+    //     command.arg("--settings-file");
+    //     command.arg(&settings_path);
+    //     match value {
+    //         PrivilegedValue::Bool(v) => {
+    //             command.arg("--bool-value");
+    //             command.arg(if v { "true" } else { "false" });
+    //         }
+    //         PrivilegedValue::Choice(v) => {
+    //             command.arg("--string-value");
+    //             command.arg(v);
+    //         }
+    //     }
+    //
+    //     let status = command
+    //         .status()
+    //         .with_context(|| format!("escalating setting {}", definition.id))?;
+    //
+    //     if !status.success() {
+    //         bail!(
+    //             "privileged apply for {} exited with status {:?}",
+    //             definition.id,
+    //             status.code()
+    //         );
+    //     }
+    //
+    //     Ok(())
+    // }
 
-        let definition = self.current_definition.ok_or_else(|| {
-            anyhow::anyhow!("no active setting definition for privilege escalation")
-        })?;
-
-        let exe = env::current_exe().context("locating executable")?;
-        let settings_path = self.store.path().to_path_buf();
-
-        let mut command = Command::new("/usr/bin/sudo");
-        command.arg(&exe);
-        if self.debug {
-            command.arg("--debug");
-        }
-        command.arg("--internal-privileged-mode");
-        command.arg("settings");
-        command.arg("internal-apply");
-        command.arg("--setting-id");
-        command.arg(definition.id);
-        command.arg("--settings-file");
-        command.arg(&settings_path);
-        match value {
-            PrivilegedValue::Bool(v) => {
-                command.arg("--bool-value");
-                command.arg(if v { "true" } else { "false" });
-            }
-            PrivilegedValue::Choice(v) => {
-                command.arg("--string-value");
-                command.arg(v);
-            }
-        }
-
-        let status = command
-            .status()
-            .with_context(|| format!("escalating setting {}", definition.id))?;
-
-        if !status.success() {
-            bail!(
-                "privileged apply for {} exited with status {:?}",
-                definition.id,
-                status.code()
-            );
-        }
-
-        Ok(())
-    }
-
-    pub fn store(&self) -> &SettingsStore {
-        &self.store
-    }
-
-    pub fn store_mut(&mut self) -> &mut SettingsStore {
-        &mut self.store
-    }
-}
-
-enum PrivilegedValue {
-    Bool(bool),
-    Choice(String),
 }
 
 pub fn format_icon(icon: NerdFont) -> String {
