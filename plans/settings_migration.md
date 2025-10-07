@@ -3,16 +3,6 @@
 This document keeps track of the migration effort from the legacy `settings.sh`
 implementation to the new `instant settings` Rust subcommand.
 
-## ✅ Done in this iteration
-
-- [x] Scaffolding for `instant settings` using the shared `FzfWrapper`
-- [x] Persist settings in `~/.config/instant/settings.toml`
-- [x] Added initial settings: autotheming toggle, animation toggle, clipboard
-  manager toggle (with background process management), default layout chooser
-- [x] Implemented launcher-style settings that can execute external TUI/GUI programs
-- [x] Added wiremix audio launcher with dependency checks
-- [x] Created reusable `RequiredPackage` and `InstallTest` helpers for dependency detection
-
 ## 🔄 Pending categories
 
 | Category | Status | Notes |

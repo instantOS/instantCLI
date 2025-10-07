@@ -8,13 +8,6 @@
 - **Impact**: Inconsistent user experience, harder debugging, maintenance complexity
 - **Fix**: Standardize on consistent error handling pattern with proper context
 
-### 2. **Configuration Management Duplication**
-DONE
-- **Issue**: `Config` and `ConfigManager` do similar things with overlapping responsibilities
-- **Location**: `src/dot/config.rs`
-- **Impact**: Confusion about which to use when, potential inconsistencies
-- **Fix**: Merge or clearly separate concerns - Config for data, ConfigManager for I/O operations
-
 ### 3. **Database Schema and Migration Complexity**
 - **Issue**: Complex migration logic with version jumps, inconsistent hash tracking
 - **Location**: `src/dot/db.rs` - schema migrations, hash management
