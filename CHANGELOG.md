@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11](https://github.com/instantOS/instantCLI/compare/v0.1.10...v0.1.11) - 2025-10-07
+
+### Added
+
+- change mimetype sorting to prioritize commonly used ones
+
+### Fixed
+
+- fix title cards
+- fix render format
+- fix out file
+- fix typo
+- fix fzf command previews and adjust defaultapps preview
+- fix stuff
+
+### Other
+
+- plan music
+- init title card generator
+- document state machine
+- init rendering
+- video render CLI
+- init video document parsing
+- ignore testing file
+- add output args
+- ignore webm
+- init whisper transcription
+- init video feature
+- video plans
+- init wineprefix plans
+- update plans
+- add confirm dialog for adding game save paths
+- clippy
+- format
+- refactor settings menu logic
+- init icons for default settings
+- make mime type settings faster
+- init default apps setting
+- make strings selectable
+- add new plan
+- remove
+- remove further
+- only dependency folders for now
+- more dependency stuff
+- deps display
+- game deps CLI
+- init deps
+- plans
+- remove old plans
+- remove old md
+- ensure restic package on ins game commands
+
 ## [0.1.10](https://github.com/instantOS/instantCLI/compare/v0.1.9...v0.1.10) - 2025-10-03
 
 ### Added
