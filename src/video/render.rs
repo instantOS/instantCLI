@@ -125,12 +125,8 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
 
     let output_path = output_path.expect("output path is required when not pre-caching");
 
-    let pipeline = RenderPipeline::new(
-        output_path.clone(),
-        nle_timeline,
-        video_width,
-        video_height,
-    );
+    let pipeline =
+        RenderPipeline::new(output_path.clone(), nle_timeline, video_width, video_height);
 
     if dry_run {
         pipeline.print_command()?;
@@ -299,12 +295,7 @@ struct RenderPipeline {
 }
 
 impl RenderPipeline {
-    fn new(
-        output: PathBuf,
-        timeline: Timeline,
-        target_width: u32,
-        target_height: u32,
-    ) -> Self {
+    fn new(output: PathBuf, timeline: Timeline, target_width: u32, target_height: u32) -> Self {
         Self {
             output,
             timeline,
@@ -339,7 +330,8 @@ impl RenderPipeline {
         let mut args = Vec::new();
 
         // Collect all unique source files and assign input indices
-        let mut source_map: std::collections::HashMap<PathBuf, usize> = std::collections::HashMap::new();
+        let mut source_map: std::collections::HashMap<PathBuf, usize> =
+            std::collections::HashMap::new();
         let mut source_order: Vec<PathBuf> = Vec::new();
         let mut next_index = 0;
 
@@ -416,7 +408,12 @@ impl RenderPipeline {
         // Build video concatenation in timeline order
         let mut concat_inputs = String::new();
         for (idx, segment) in sorted_video_segments.iter().enumerate() {
-            if let SegmentData::VideoSubset { start_time, source_video, .. } = &segment.data {
+            if let SegmentData::VideoSubset {
+                start_time,
+                source_video,
+                ..
+            } = &segment.data
+            {
                 let input_index = source_map.get(source_video).unwrap();
                 let video_label = format!("v{idx}");
                 let audio_label = format!("a{idx}");
@@ -441,7 +438,11 @@ impl RenderPipeline {
                     audio = audio_label,
                 ));
 
-                concat_inputs.push_str(&format!("[{video}][{audio}]", video = video_label, audio = audio_label));
+                concat_inputs.push_str(&format!(
+                    "[{video}][{audio}]",
+                    video = video_label,
+                    audio = audio_label
+                ));
             }
         }
 
@@ -475,15 +476,17 @@ impl RenderPipeline {
         let mut current_video_label = "concat_v".to_string();
 
         for (idx, segment) in overlay_segments.iter().enumerate() {
-            if let SegmentData::Image { source_image, transform } = &segment.data {
+            if let SegmentData::Image {
+                source_image,
+                transform,
+            } = &segment.data
+            {
                 let input_index = source_map.get(source_image).unwrap();
                 let overlay_label = format!("overlay_{idx}");
                 let output_label = format!("overlaid_{idx}");
 
                 // Process the overlay image with transform
-                let scale_factor = transform.as_ref()
-                    .and_then(|t| t.scale)
-                    .unwrap_or(0.8);
+                let scale_factor = transform.as_ref().and_then(|t| t.scale).unwrap_or(0.8);
 
                 filters.push(format!(
                     "[{input}:v]scale=w=ceil({width}*{scale}/2)*2:h=-1:flags=lanczos,setsar=1,format=rgba[{overlay}]",
@@ -494,11 +497,8 @@ impl RenderPipeline {
                 ));
 
                 // Apply overlay with time-based enabling
-                let enable_condition = format!(
-                    "between(t,{},{})",
-                    segment.start_time,
-                    segment.end_time()
-                );
+                let enable_condition =
+                    format!("between(t,{},{})", segment.start_time, segment.end_time());
 
                 filters.push(format!(
                     "[{video}][{overlay}]overlay=x=(W-w)/2:y=(H-h)/2:enable='{condition}'[{output}]",

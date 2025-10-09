@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use anyhow::Result;
+use std::path::PathBuf;
 
 /// Non-linear editor style timeline structure
 /// This represents a sequence of segments that will be rendered in order
@@ -241,9 +241,7 @@ pub mod conversion {
     }
 
     /// Convert a list of old timeline items to a new NLE Timeline
-    pub fn convert_to_nle_timeline(
-        items: Vec<OldTimelineItem>,
-    ) -> Result<Timeline> {
+    pub fn convert_to_nle_timeline(items: Vec<OldTimelineItem>) -> Result<Timeline> {
         let mut timeline = Timeline::new();
         let mut current_time = 0.0;
 
@@ -282,12 +280,7 @@ pub mod conversion {
                 }
                 OldTimelineItemKind::TitleCard { path, duration } => {
                     // Title cards are treated as image segments
-                    let segment = Segment::new_image(
-                        current_time,
-                        duration,
-                        path,
-                        None,
-                    );
+                    let segment = Segment::new_image(current_time, duration, path, None);
                     timeline.add_segment(segment);
                     current_time += duration;
                 }
@@ -312,13 +305,7 @@ mod tests {
     #[test]
     fn test_add_segment() {
         let mut timeline = Timeline::new();
-        let segment = Segment::new_video_subset(
-            0.0,
-            10.0,
-            5.0,
-            PathBuf::from("test.mp4"),
-            None,
-        );
+        let segment = Segment::new_video_subset(0.0, 10.0, 5.0, PathBuf::from("test.mp4"), None);
         timeline.add_segment(segment);
         assert_eq!(timeline.segments.len(), 1);
         assert_eq!(timeline.total_duration(), 10.0);
@@ -388,4 +375,3 @@ mod tests {
         assert_eq!(timeline.total_duration(), 12.0);
     }
 }
-
