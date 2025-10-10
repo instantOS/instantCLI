@@ -338,11 +338,12 @@ impl RenderPipeline {
         // First pass: identify all unique sources in timeline order
         for segment in &self.timeline.segments {
             if let Some(source) = segment.data.source_path()
-                && !source_map.contains_key(source) {
-                    source_map.insert(source.clone(), next_index);
-                    source_order.push(source.clone());
-                    next_index += 1;
-                }
+                && !source_map.contains_key(source)
+            {
+                source_map.insert(source.clone(), next_index);
+                source_order.push(source.clone());
+                next_index += 1;
+            }
         }
 
         // Add all input files in the order they were discovered
