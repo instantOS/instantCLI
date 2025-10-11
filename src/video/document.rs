@@ -198,7 +198,7 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
                     code_block = Some(CodeBlockState::music(range.start));
                 }
             }
-            Event::End(TagEnd::CodeBlock(CodeBlockKind::Fenced(_))) => {
+            Event::End(TagEnd::CodeBlock) => {
                 if let Some(state) = code_block.take() {
                     let line = base_line_offset + line_map.line_number(state.start_byte);
                     let directive = state.into_music_directive(line)?;
