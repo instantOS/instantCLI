@@ -8,6 +8,7 @@ use crate::ui::prelude::{Level, emit};
 
 use super::cli::RenderArgs;
 use super::document::{VideoMetadata, VideoMetadataVideo, parse_video_document};
+use super::music::MusicResolver;
 use super::nle_timeline::{Segment, SegmentData, Timeline, Transform};
 use super::timeline::{StandalonePlan, TimelinePlan, TimelinePlanItem, plan_timeline};
 use super::title_card::TitleCardGenerator;
@@ -75,7 +76,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
     let generator = TitleCardGenerator::new(video_width, video_height)?;
 
     // Build NLE timeline from the plan
-    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &video_path)?;
+    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &video_path, markdown_dir)?;
 
     if stats.standalone_count > 0 {
         emit(
@@ -209,9 +210,12 @@ fn build_nle_timeline(
     plan: TimelinePlan,
     generator: &TitleCardGenerator,
     source_video: &Path,
+    markdown_dir: &Path,
 ) -> Result<(Timeline, TimelineStats)> {
     let mut timeline = Timeline::new();
     let mut current_time = 0.0;
+    let mut music_resolver = MusicResolver::new(markdown_dir);
+    let mut active_music: Option<ActiveMusic> = None;
 
     for item in plan.items {
         match item {
@@ -274,8 +278,22 @@ fn build_nle_timeline(
                     current_time += 5.0;
                 }
             },
+            TimelinePlanItem::Music(music_plan) => {
+                finalize_music_segment(&mut timeline, &mut active_music, current_time);
+                let resolved = music_resolver.resolve(&music_plan.directive)?;
+                if let Some(path) = resolved {
+                    active_music = Some(ActiveMusic {
+                        path,
+                        start_time: current_time,
+                    });
+                } else {
+                    active_music = None;
+                }
+            }
         }
     }
+
+    finalize_music_segment(&mut timeline, &mut active_music, current_time);
 
     let stats = TimelineStats {
         standalone_count: plan.standalone_count,
@@ -284,6 +302,28 @@ fn build_nle_timeline(
     };
 
     Ok((timeline, stats))
+}
+
+struct ActiveMusic {
+    path: PathBuf,
+    start_time: f64,
+}
+
+fn finalize_music_segment(
+    timeline: &mut Timeline,
+    active: &mut Option<ActiveMusic>,
+    end_time: f64,
+) {
+    if let Some(state) = active.take() {
+        if end_time > state.start_time {
+            let duration = end_time - state.start_time;
+            timeline.add_segment(Segment::new_music(
+                state.start_time,
+                duration,
+                state.path,
+            ));
+        }
+    }
 }
 
 /// The NLE-based render pipeline
