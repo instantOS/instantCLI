@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12](https://github.com/instantOS/instantCLI/compare/v0.1.11...v0.1.12) - 2025-10-09
+
+### Fixed
+
+- fix sorting
+- fix overlay not appearing
+- fix some document stuff
+- fix typo
+- fix description
+- fix titlecard stuff
+
+### Other
+
+- clippy
+- format
+- move css to own file
+- do not make overlays transparent
+- init new NLE pipeline
+- init new NLE
+- add example to plan
+- better plan
+- hacky fix
+- init video render dry run
+- more wine plans
+- downscale overlays
+- clippy
+- init new stats command and prerendering
+- format
+- init timing plan
+- more planning
+- init overlay support
+- improve markdown card caching
+- parse separators
+- init titlecard command
+- new plans
+- improve fetch pring
+- remove old plans
+
 ## [0.1.11](https://github.com/instantOS/instantCLI/compare/v0.1.10...v0.1.11) - 2025-10-07
 
 ### Added
