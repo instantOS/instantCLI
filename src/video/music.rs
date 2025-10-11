@@ -192,3 +192,36 @@ fn is_url(value: &str) -> bool {
     let lower = value.trim().to_ascii_lowercase();
     lower.starts_with("http://") || lower.starts_with("https://")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::video::document::MusicDirective;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn resolves_music_from_markdown_music_directory() {
+        let temp = tempdir().unwrap();
+        let music_dir = temp.path().join("music");
+        fs::create_dir_all(&music_dir).unwrap();
+        let file = music_dir.join("track.mp3");
+        fs::write(&file, b"dummy").unwrap();
+
+        let mut resolver = MusicResolver::new(temp.path());
+        let resolved = resolver
+            .resolve(&MusicDirective::Source("track.mp3".to_string()))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(resolved, canonicalize_existing(&file).unwrap());
+    }
+
+    #[test]
+    fn returns_none_for_none_directive() {
+        let temp = tempdir().unwrap();
+        let mut resolver = MusicResolver::new(temp.path());
+        let resolved = resolver.resolve(&MusicDirective::None).unwrap();
+        assert!(resolved.is_none());
+    }
+}
