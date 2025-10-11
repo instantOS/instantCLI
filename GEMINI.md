@@ -4,7 +4,7 @@ This file provides guidance to Gemini when working with code in this repository.
 
 ## Project Overview
 
-InstantCLI is a Rust-based command-line tool (v0.1.9) for managing dotfiles, game saves, system settings, and instantOS configurations. It provides a decentralized approach to dotfile management that respects user modifications while enabling easy theme and configuration switching, along with comprehensive system management capabilities.
+InstantCLI is a Rust-based command-line tool (v0.1.10) for managing dotfiles, game saves, system settings, and instantOS configurations. It provides a decentralized approach to dotfile management that respects user modifications while enabling easy theme and configuration switching, along with comprehensive system management capabilities.
 
 ## Common Development Commands
 
@@ -62,7 +62,10 @@ cd ~ && ins dot reset .config
 
 1. **Main CLI** (`src/main.rs`): Command-line interface using clap, handles parsing and dispatching to subcommands
 
-2. **Dotfile Management** (`src/dot/`): Core dotfile functionality
+2. **Completions** (`src/completions/`): Shell completion generation
+   - `mod.rs`: Completion generation logic
+
+3. **Dotfile Management** (`src/dot/`): Core dotfile functionality
    - `mod.rs`: Main orchestration logic for dotfile operations
    - `config.rs`: Configuration management (TOML-based, stored in `~/.config/instant/instant.toml`)
    - `db.rs`: SQLite database for tracking file hashes and modifications
@@ -75,7 +78,7 @@ cd ~ && ins dot reset .config
      - `commands.rs`: Repository command handlers
      - `manager.rs`: Repository management logic
 
-3. **Game Save Management** (`src/game/`): Game save backup and synchronization using restic
+4. **Game Save Management** (`src/game/`): Game save backup and synchronization using restic
    - `cli.rs`: Game command definitions
    - `commands.rs`: Game command handlers
    - `config.rs`: Game configuration management
@@ -84,43 +87,50 @@ cd ~ && ins dot reset .config
    - `repository/`: Repository management for game saves
    - `restic/`: Restic wrapper for backup operations
 
-4. **System Settings** (`src/settings/`): System configuration management
+5. **System Settings** (`src/settings/`): System configuration management
    - `commands.rs`: Settings CLI command definitions
    - `registry.rs`: Settings definitions and metadata
    - `ui/`: Settings user interface components
    - `actions.rs`: Setting application logic
    - `store.rs`: Settings persistence
 
-5. **Interactive Menus** (`src/menu/`): FZF-based interactive menu system
+6. **Interactive Menus** (`src/menu/`): FZF-based interactive menu system
    - `mod.rs`: Menu command definitions and handlers
    - `server.rs`: Menu server for GUI integration
    - `client.rs`: Menu client for server communication
    - `protocol.rs`: Communication protocol definitions
 
-6. **System Diagnostics** (`src/doctor/`): System health checks and diagnostics
+7. **System Diagnostics** (`src/doctor/`): System health checks and diagnostics
    - `mod.rs`: Doctor trait definitions and orchestration
    - `checks.rs`: Individual health check implementations
    - `command.rs`: Doctor command handlers
 
-7. **Scratchpad Management** (`src/scratchpad/`): Terminal scratchpad functionality
+8. **Scratchpad Management** (`src/scratchpad/`): Terminal scratchpad functionality
    - `mod.rs`: Scratchpad command definitions
    - `operations.rs`: Scratchpad operations (show, hide, toggle)
    - `terminal.rs`: Terminal management
 
-8. **Application Launcher** (`src/launch/`): Desktop application launcher
+9. **Application Launcher** (`src/launch/`): Desktop application launcher
    - `mod.rs`: Launch command handlers
    - `desktop.rs`: Desktop file parsing
    - `execute.rs`: Application execution
 
-9. **Development Tools** (`src/dev/`): Development utilities
-   - `mod.rs`: Dev command definitions
-   - `clone.rs`: Repository cloning utilities
-   - `install.rs`: Installation helpers
+10. **Development Tools** (`src/dev/`): Development utilities
+    - `mod.rs`: Dev command definitions
+    - `clone.rs`: Repository cloning utilities
+    - `install.rs`: Installation helpers
 
-10. **Restic Wrapper** (`src/restic/`): Backup system integration
+11. **Restic Wrapper** (`src/restic/`): Backup system integration
     - `wrapper.rs`: Restic command wrapper
     - `error.rs`: Error handling for restic operations
     - `logging.rs`: Restic command logging
+
+12. **Video Editing** (`src/video/`): Video editing tools
+    - `cli.rs`: Video command definitions
+    - `commands.rs`: Video command handlers
+    - `convert.rs`: Transcript to markdown conversion
+    - `render.rs`: Markdown to video rendering
+    - `transcribe.rs`: Video to transcript generation
 
 ### Key Concepts
 
@@ -250,9 +260,21 @@ branch = "main"
 ### System Diagnostics Commands
 - `ins doctor`: Run system diagnostics and fixes
 
+### Completion Commands
+- `ins completion generate <shell>`: Generate shell completions for a given shell
+- `ins completion install <shell>`: Install shell completions for a given shell
+
 ### Development Commands
 - `ins dev clone`: Clone development repositories
 - `ins dev install`: Install development tools
+
+### Video Editing Commands
+- `ins video convert <video> [--transcript <transcript>] [--out-file <out-file>]`: Convert a timestamped transcript into editable video markdown
+- `ins video transcribe <video> [--compute-type <type>] [--device <device>] [--model <model>]`: Generate a transcript for a video using WhisperX
+- `ins video render <markdown> [--out-file <out-file>] [--force] [--precache-titlecards] [--dry-run]`: Render a video according to edits in a markdown file
+- `ins video titlecard <markdown> [--out-file <out-file>]`: Generate a title card image from a markdown file
+- `ins video stats <markdown>`: Display statistics about how a markdown file will be rendered
+
 ## Multiple Subdirectories Support
 
 InstantCLI repositories can declare multiple subdirectories containing dotfiles, with configurable active subdirectories per repository.

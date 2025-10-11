@@ -2,6 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use std::fs;
 
 use crate::dot::path_serde::TildePath;
+use crate::game::checkpoint;
 use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
@@ -137,10 +138,16 @@ pub(super) fn setup_single_game(
         let save_dir_info = get_save_directory_info(save_path.as_path())
             .with_context(|| format!("Failed to inspect save directory '{path_str}'"))?;
         let path_exists_after = save_path.as_path().exists();
-        let mut should_restore =
-            path_exists_after && (directory_created || save_dir_info.file_count == 0);
+        let has_existing_snapshot = latest_snapshot_id.is_some();
+        let decision = determine_restore_decision(
+            has_existing_snapshot,
+            path_exists_after,
+            directory_created,
+            save_dir_info.file_count,
+        );
+        let mut should_restore = decision.should_restore;
 
-        if path_exists_after && save_dir_info.file_count > 0 {
+        if decision.needs_confirmation {
             let overwrite_prompt = format!(
                 "{} The directory '{path_str}' already contains {} file{}.\nRestoring from backup will replace its contents. Proceed?",
                 char::from(NerdFont::Warning),
@@ -206,6 +213,57 @@ pub(super) fn setup_single_game(
             installation.update_checkpoint(snapshot_id.to_string());
         }
 
+        if !has_existing_snapshot {
+            if path_exists_after {
+                emit(
+                    Level::Info,
+                    "game.setup.initial_checkpoint.start",
+                    &format!(
+                        "{} No checkpoints found. Creating initial backup from '{path_str}'...",
+                        char::from(NerdFont::Upload)
+                    ),
+                    None,
+                );
+
+                let backup_handler = GameBackup::new(game_config.clone());
+                let backup_summary =
+                    backup_handler.backup_game(&installation).with_context(|| {
+                        format!("Failed to create initial checkpoint for game '{game_name}'")
+                    })?;
+
+                emit(
+                    Level::Success,
+                    "game.setup.initial_checkpoint.success",
+                    &format!(
+                        "{} Initial backup completed ({backup_summary}).",
+                        char::from(NerdFont::Check)
+                    ),
+                    None,
+                );
+
+                if let Some(snapshot_id) = checkpoint::extract_snapshot_id_from_backup_result(
+                    &backup_summary,
+                    game_name,
+                    game_config,
+                )? {
+                    installation.update_checkpoint(snapshot_id.clone());
+                }
+
+                let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
+                cache::invalidate_game_cache(game_name, &repo_path);
+            } else {
+                emit(
+                    Level::Warn,
+                    "game.setup.initial_checkpoint.skipped",
+                    &format!(
+                        "{} Cannot create initial checkpoint because '{path_str}' does not exist.",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
+            }
+        }
+
         installations.installations.push(installation);
         installations.save()?;
 
@@ -234,6 +292,38 @@ pub(super) fn setup_single_game(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RestoreDecision {
+    should_restore: bool,
+    needs_confirmation: bool,
+}
+
+fn determine_restore_decision(
+    has_existing_snapshot: bool,
+    path_exists: bool,
+    directory_created: bool,
+    file_count: u64,
+) -> RestoreDecision {
+    if !has_existing_snapshot || !path_exists {
+        return RestoreDecision {
+            should_restore: false,
+            needs_confirmation: false,
+        };
+    }
+
+    if directory_created || file_count == 0 {
+        return RestoreDecision {
+            should_restore: true,
+            needs_confirmation: false,
+        };
+    }
+
+    RestoreDecision {
+        should_restore: false,
+        needs_confirmation: true,
+    }
+}
+
 fn restore_latest_backup(
     game_name: &str,
     save_path: &TildePath,
@@ -249,4 +339,45 @@ fn restore_latest_backup(
     cache::invalidate_game_cache(game_name, &repo_path);
 
     Ok(summary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restore_not_attempted_without_snapshots() {
+        let decision = determine_restore_decision(false, true, false, 10);
+        assert_eq!(
+            decision,
+            RestoreDecision {
+                should_restore: false,
+                needs_confirmation: false
+            }
+        );
+    }
+
+    #[test]
+    fn restore_occurs_without_prompt_for_new_directories() {
+        let decision = determine_restore_decision(true, true, true, 0);
+        assert_eq!(
+            decision,
+            RestoreDecision {
+                should_restore: true,
+                needs_confirmation: false
+            }
+        );
+    }
+
+    #[test]
+    fn restore_requires_confirmation_when_files_exist() {
+        let decision = determine_restore_decision(true, true, false, 5);
+        assert_eq!(
+            decision,
+            RestoreDecision {
+                should_restore: false,
+                needs_confirmation: true
+            }
+        );
+    }
 }
