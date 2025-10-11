@@ -42,7 +42,7 @@ Third custom text
 `video segment`
 ```
 
-In this case I have multipla blocks of custom text between the video segments. 
+In this case I have multiple blocks of custom text between the video segments. 
 When rendering I want the editor to create a card for each of the custom text
 blocks and show the cards in a sequence, each for 5 seconds.
 
