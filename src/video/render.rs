@@ -317,11 +317,7 @@ fn finalize_music_segment(
     if let Some(state) = active.take() {
         if end_time > state.start_time {
             let duration = end_time - state.start_time;
-            timeline.add_segment(Segment::new_music(
-                state.start_time,
-                duration,
-                state.path,
-            ));
+            timeline.add_segment(Segment::new_music(state.start_time, duration, state.path));
         }
     }
 }
@@ -511,7 +507,8 @@ impl RenderPipeline {
         }
 
         if !music_segments.is_empty() {
-            let music_label = self.build_music_filters(&mut filters, &music_segments, source_map)?;
+            let music_label =
+                self.build_music_filters(&mut filters, &music_segments, source_map)?;
             audio_label = Some(match audio_label {
                 Some(base) => {
                     let mixed = "a_mix".to_string();

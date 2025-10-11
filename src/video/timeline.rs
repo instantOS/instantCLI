@@ -158,10 +158,14 @@ mod tests {
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let plan = plan_timeline(&document).unwrap();
 
-        assert!(matches!(plan.items.first(), Some(TimelinePlanItem::Music(_))));
-        assert!(plan
-            .items
-            .iter()
-            .any(|item| matches!(item, TimelinePlanItem::Clip(_))));
+        assert!(matches!(
+            plan.items.first(),
+            Some(TimelinePlanItem::Music(_))
+        ));
+        assert!(
+            plan.items
+                .iter()
+                .any(|item| matches!(item, TimelinePlanItem::Clip(_)))
+        );
     }
 }

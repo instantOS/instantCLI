@@ -116,7 +116,8 @@ impl MusicResolver {
         hasher.update(url.as_bytes());
         let hash = format!("{:x}", hasher.finalize());
 
-        let mut cache_path = cache_dir().context("Unable to resolve cache directory for music downloads")?;
+        let mut cache_path =
+            cache_dir().context("Unable to resolve cache directory for music downloads")?;
         cache_path.push("instant");
         cache_path.push("music");
         fs::create_dir_all(&cache_path).with_context(|| {
