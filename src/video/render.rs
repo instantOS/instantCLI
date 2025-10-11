@@ -314,11 +314,11 @@ fn finalize_music_segment(
     active: &mut Option<ActiveMusic>,
     end_time: f64,
 ) {
-    if let Some(state) = active.take() {
-        if end_time > state.start_time {
-            let duration = end_time - state.start_time;
-            timeline.add_segment(Segment::new_music(state.start_time, duration, state.path));
-        }
+    if let Some(state) = active.take()
+        && end_time > state.start_time
+    {
+        let duration = end_time - state.start_time;
+        timeline.add_segment(Segment::new_music(state.start_time, duration, state.path));
     }
 }
 

@@ -49,12 +49,12 @@ impl MusicResolver {
             bail!("Music reference must not be empty");
         }
 
-        if trimmed.starts_with("~/") {
-            if let Some(home) = home_dir() {
-                let candidate = home.join(trimmed.trim_start_matches("~/"));
-                if candidate.exists() {
-                    return Ok(candidate);
-                }
+        if trimmed.starts_with("~/")
+            && let Some(home) = home_dir()
+        {
+            let candidate = home.join(trimmed.trim_start_matches("~/"));
+            if candidate.exists() {
+                return Ok(candidate);
             }
         }
 
@@ -156,14 +156,13 @@ impl MusicResolver {
                     continue;
                 }
                 let file_name = entry.file_name();
-                if let Some(name) = file_name.to_str() {
-                    if name.starts_with(&hash)
-                        && !name.ends_with(".info.json")
-                        && !name.ends_with(".description")
-                    {
-                        resolved = Some(entry.path());
-                        break;
-                    }
+                if let Some(name) = file_name.to_str()
+                    && name.starts_with(&hash)
+                    && !name.ends_with(".info.json")
+                    && !name.ends_with(".description")
+                {
+                    resolved = Some(entry.path());
+                    break;
                 }
             }
 
