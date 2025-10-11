@@ -145,3 +145,23 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
         segment_count,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::video::document::parse_video_document;
+    use std::path::Path;
+
+    #[test]
+    fn includes_music_blocks_in_plan() {
+        let markdown = "```music\ntrack.mp3\n```\n`00:00:00.000-00:00:01.000` line";
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let plan = plan_timeline(&document).unwrap();
+
+        assert!(matches!(plan.items.first(), Some(TimelinePlanItem::Music(_))));
+        assert!(plan
+            .items
+            .iter()
+            .any(|item| matches!(item, TimelinePlanItem::Clip(_))));
+    }
+}
