@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 
 use crate::ui::prelude::{Level, emit};
 
@@ -426,18 +426,18 @@ impl RenderPipeline {
         source_map: &std::collections::HashMap<PathBuf, usize>,
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();
+        let total_duration = self.timeline.total_duration();
 
         // Process segments in timeline order, separating video/audio from overlays
         let mut video_segments: Vec<&Segment> = Vec::new();
         let mut overlay_segments: Vec<&Segment> = Vec::new();
+        let mut music_segments: Vec<&Segment> = Vec::new();
 
         for segment in &self.timeline.segments {
             match &segment.data {
                 SegmentData::VideoSubset { .. } => video_segments.push(segment),
                 SegmentData::Image { .. } => overlay_segments.push(segment),
-                SegmentData::Music { .. } => {
-                    // Music handling would go here
-                }
+                SegmentData::Music { .. } => music_segments.push(segment),
             }
         }
 
@@ -503,7 +503,41 @@ impl RenderPipeline {
             self.apply_overlays(&mut filters, &overlay_segments, source_map)?;
         }
 
-        filters.push("[concat_a]anull[outa]".to_string());
+        let mut audio_label: Option<String> = None;
+
+        if !sorted_video_segments.is_empty() {
+            filters.push("[concat_a]anull[a_base]".to_string());
+            audio_label = Some("a_base".to_string());
+        }
+
+        if !music_segments.is_empty() {
+            let music_label = self.build_music_filters(&mut filters, &music_segments, source_map)?;
+            audio_label = Some(match audio_label {
+                Some(base) => {
+                    let mixed = "a_mix".to_string();
+                    filters.push(format!(
+                        "[{base}][{music}]amix=inputs=2:normalize=0:dropout_transition=0[{mixed}]",
+                        base = base,
+                        music = music_label,
+                        mixed = mixed,
+                    ));
+                    mixed
+                }
+                None => music_label,
+            });
+        }
+
+        let final_audio = if let Some(label) = audio_label {
+            label
+        } else {
+            let duration = format_time(total_duration);
+            filters.push(format!(
+                "anullsrc=r=48000:cl=stereo,atrim=duration={duration}[a_silence]",
+            ));
+            "a_silence".to_string()
+        };
+
+        filters.push(format!("[{label}]anull[outa]", label = final_audio));
         Ok(filters.join("; "))
     }
 
@@ -555,6 +589,65 @@ impl RenderPipeline {
         // Final output
         filters.push(format!("[{}]copy[outv]", current_video_label));
         Ok(())
+    }
+
+    fn build_music_filters(
+        &self,
+        filters: &mut Vec<String>,
+        music_segments: &[&Segment],
+        source_map: &std::collections::HashMap<PathBuf, usize>,
+    ) -> Result<String> {
+        let mut labels = Vec::new();
+
+        for (idx, segment) in music_segments.iter().enumerate() {
+            if segment.duration <= 0.0 {
+                continue;
+            }
+
+            if let SegmentData::Music { audio_source } = &segment.data {
+                let input_index = source_map.get(audio_source).ok_or_else(|| {
+                    anyhow!(
+                        "No ffmpeg input available for background music {}",
+                        audio_source.display()
+                    )
+                })?;
+
+                let label = format!("music_{idx}");
+                let duration_str = format_time(segment.duration);
+                let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
+
+                filters.push(format!(
+                    "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay}[{label}]",
+                    input = input_index,
+                    duration = duration_str,
+                    delay = delay_ms,
+                    label = label,
+                ));
+
+                labels.push(label);
+            }
+        }
+
+        if labels.is_empty() {
+            bail!("No music segments available to build audio filters");
+        }
+
+        if labels.len() == 1 {
+            Ok(labels.into_iter().next().unwrap())
+        } else {
+            let mut inputs = String::new();
+            for label in &labels {
+                inputs.push_str(&format!("[{label}]"));
+            }
+            let output_label = "music_mix".to_string();
+            filters.push(format!(
+                "{inputs}amix=inputs={count}:normalize=0:dropout_transition=0[{output}]",
+                inputs = inputs,
+                count = labels.len(),
+                output = output_label,
+            ));
+            Ok(output_label)
+        }
     }
 }
 
