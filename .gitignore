@@ -34,3 +34,5 @@ src/*.tar.gz
 someone.md
 
 *.jpg
+
+insvideodata/*
