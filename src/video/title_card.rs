@@ -50,7 +50,7 @@ impl TitleCardGenerator {
         let markdown_path = card_dir.join("input.md");
         let css_path = card_dir.join("title.css");
         let html_path = card_dir.join("title.html");
-        let image_path = card_dir.join("title.jpg");
+        let image_path = card_dir.join("title.png");
 
         self.ensure_card_dir(&card_dir)?;
         if !image_path.exists() {
@@ -72,7 +72,7 @@ impl TitleCardGenerator {
         let markdown_path = card_dir.join("input.md");
         let css_path = card_dir.join("title.css");
         let html_path = card_dir.join("title.html");
-        let image_path = card_dir.join("title.jpg");
+        let image_path = card_dir.join("title.png");
 
         self.ensure_card_dir(&card_dir)?;
         if !image_path.exists() {
