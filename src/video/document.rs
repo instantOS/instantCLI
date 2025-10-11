@@ -558,20 +558,37 @@ fn parse_time_range(input: &str) -> Result<TimeRange> {
 fn parse_timestamp(value: &str) -> Result<Duration> {
     let (main, frac) = value
         .split_once('.')
-        .ok_or_else(|| anyhow!("Timestamp must include milliseconds"))?;
+        .ok_or_else(|| anyhow!("Timestamp must include fractional seconds"))?;
     let parts = main.split(':').collect::<Vec<_>>();
-    if parts.len() != 3 {
-        return Err(anyhow!("Timestamp must be in HH:MM:SS.mmm format"));
-    }
-    let hours: u64 = parts[0]
-        .parse()
-        .with_context(|| format!("Invalid hour component in timestamp `{}`", value))?;
-    let minutes: u64 = parts[1]
-        .parse()
-        .with_context(|| format!("Invalid minute component in timestamp `{}`", value))?;
-    let seconds: u64 = parts[2]
-        .parse()
-        .with_context(|| format!("Invalid second component in timestamp `{}`", value))?;
+
+    let (hours, minutes, seconds) = match parts.as_slice() {
+        [minutes, seconds] => {
+            let minutes: u64 = minutes
+                .parse()
+                .with_context(|| format!("Invalid minute component in timestamp `{}`", value))?;
+            let seconds: u64 = seconds
+                .parse()
+                .with_context(|| format!("Invalid second component in timestamp `{}`", value))?;
+            (0, minutes, seconds)
+        }
+        [hours, minutes, seconds] => {
+            let hours: u64 = hours
+                .parse()
+                .with_context(|| format!("Invalid hour component in timestamp `{}`", value))?;
+            let minutes: u64 = minutes
+                .parse()
+                .with_context(|| format!("Invalid minute component in timestamp `{}`", value))?;
+            let seconds: u64 = seconds
+                .parse()
+                .with_context(|| format!("Invalid second component in timestamp `{}`", value))?;
+            (hours, minutes, seconds)
+        }
+        _ => {
+            return Err(anyhow!(
+                "Timestamp must be in HH:MM:SS.xxx or MM:SS.xxx format"
+            ));
+        }
+    };
     let raw_millis: u64 = frac
         .parse()
         .with_context(|| format!("Invalid millisecond component in timestamp `{}`", value))?;
@@ -612,8 +629,7 @@ mod tests {
 
     #[test]
     fn parses_multiple_segments_within_single_paragraph() {
-        let markdown =
-            "`00:00:00.000-00:00:01.000` first line\n`00:00:01.500-00:00:02.000` second line\n";
+        let markdown = "`00:00.0-00:01.0` first line\n`00:01.5-00:02.0` second line\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
 
         assert_eq!(document.blocks.len(), 2);

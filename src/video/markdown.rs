@@ -82,7 +82,11 @@ fn format_timestamp(duration: Duration) -> String {
     let hours = total_secs / 3600;
     let minutes = (total_secs % 3600) / 60;
     let seconds = total_secs % 60;
-    format!("{hours:02}:{minutes:02}:{seconds:02}.{tenths}")
+    if hours == 0 {
+        format!("{minutes:02}:{seconds:02}.{tenths}")
+    } else {
+        format!("{hours:02}:{minutes:02}:{seconds:02}.{tenths}")
+    }
 }
 
 #[cfg(test)]
@@ -109,7 +113,7 @@ mod tests {
         };
 
         let output = build_markdown(&cues, &metadata);
-        assert!(output.contains("`00:00:04.0-00:00:09.0` SILENCE"));
-        assert!(output.contains("`00:00:09.0-00:00:11.0` SILENCE"));
+        assert!(output.contains("`00:04.0-00:09.0` SILENCE"));
+        assert!(output.contains("`00:09.0-00:11.0` SILENCE"));
     }
 }
