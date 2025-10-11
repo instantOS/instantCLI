@@ -464,9 +464,7 @@ impl CodeBlockState {
     }
 
     fn push_newline(&mut self) {
-        if !self.content.ends_with('\n') {
-            self.content.push('\n');
-        }
+        self.content.push('\n');
     }
 
     fn into_music_directive(self, line: usize) -> Result<MusicDirective> {
@@ -655,6 +653,21 @@ mod tests {
                 );
             }
             other => panic!("Expected Unhandled block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_music_blocks() {
+        let markdown = "```music\nbackground.mp3\n```";
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        assert_eq!(document.blocks.len(), 1);
+        match &document.blocks[0] {
+            DocumentBlock::Music(block) => match &block.directive {
+                MusicDirective::Source(value) => assert_eq!(value, "background.mp3"),
+                other => panic!("Expected music source directive, got {:?}", other),
+            },
+            other => panic!("Expected music block, got {:?}", other),
         }
     }
 }

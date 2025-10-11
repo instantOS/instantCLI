@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::document::{DocumentBlock, SegmentKind, VideoDocument};
+use super::document::{DocumentBlock, MusicDirective, SegmentKind, VideoDocument};
 
 #[derive(Debug, Clone)]
 pub struct TimelinePlan {
@@ -16,6 +16,7 @@ pub struct TimelinePlan {
 pub enum TimelinePlanItem {
     Clip(ClipPlan),
     Standalone(StandalonePlan),
+    Music(MusicPlan),
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +47,12 @@ pub enum StandalonePlan {
         display_text: String,
         line: usize,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct MusicPlan {
+    pub directive: MusicDirective,
+    pub line: usize,
 }
 
 pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
@@ -85,6 +92,13 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
             DocumentBlock::Separator(_) => {
                 overlay_state = None;
                 last_was_separator = true;
+            }
+            DocumentBlock::Music(music) => {
+                items.push(TimelinePlanItem::Music(MusicPlan {
+                    directive: music.directive.clone(),
+                    line: music.line,
+                }));
+                last_was_separator = false;
             }
             DocumentBlock::Unhandled(unhandled) => {
                 let raw_description = unhandled.description.as_str();
