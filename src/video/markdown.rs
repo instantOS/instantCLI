@@ -1,4 +1,5 @@
 use crate::video::srt::SrtCue;
+use crate::video::utils::duration_to_tenths;
 use chrono::Utc;
 use std::path::Path;
 use std::time::Duration;
@@ -75,12 +76,13 @@ fn yaml_quote(value: &str) -> String {
 }
 
 fn format_timestamp(duration: Duration) -> String {
-    let total_secs = duration.as_secs();
+    let total_tenths = duration_to_tenths(duration);
+    let total_secs = total_tenths / 10;
+    let tenths = total_tenths % 10;
     let hours = total_secs / 3600;
     let minutes = (total_secs % 3600) / 60;
     let seconds = total_secs % 60;
-    let millis = duration.subsec_millis();
-    format!("{hours:02}:{minutes:02}:{seconds:02}.{millis:03}")
+    format!("{hours:02}:{minutes:02}:{seconds:02}.{tenths}")
 }
 
 #[cfg(test)]
@@ -107,7 +109,7 @@ mod tests {
         };
 
         let output = build_markdown(&cues, &metadata);
-        assert!(output.contains("`00:00:04.000-00:00:09.000` SILENCE"));
-        assert!(output.contains("`00:00:09.000-00:00:11.000` SILENCE"));
+        assert!(output.contains("`00:00:04.0-00:00:09.0` SILENCE"));
+        assert!(output.contains("`00:00:09.0-00:00:11.0` SILENCE"));
     }
 }

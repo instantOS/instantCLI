@@ -19,6 +19,19 @@ pub fn handle_convert(args: ConvertArgs) -> Result<()> {
     let project_paths = directories.project_paths(&video_hash);
     project_paths.ensure_directories()?;
 
+    let output_path = determine_output_path(args.out_file.clone(), &video_path)?;
+    let markdown_dir = output_path.parent().unwrap_or_else(|| Path::new("."));
+    let subtitle_dir = markdown_dir.join("insvideodata");
+    let subtitle_output_path = subtitle_dir.join(format!("{video_hash}.srt"));
+    let relative_subtitle_path = Path::new("./insvideodata").join(format!("{video_hash}.srt"));
+
+    if output_path.exists() && !args.force {
+        anyhow::bail!(
+            "Markdown file already exists at {}. Use --force to overwrite.",
+            output_path.display()
+        );
+    }
+
     let cached_transcript_path = project_paths.transcript_cache_path().to_path_buf();
 
     if let Some(provided) = &args.transcript {
@@ -43,6 +56,8 @@ pub fn handle_convert(args: ConvertArgs) -> Result<()> {
         );
     }
 
+    copy_transcript(&transcript_path, &subtitle_output_path)?;
+
     let transcript_contents = fs::read_to_string(&transcript_path)
         .with_context(|| format!("Failed to read transcript at {}", transcript_path.display()))?;
 
@@ -57,20 +72,10 @@ pub fn handle_convert(args: ConvertArgs) -> Result<()> {
         video_hash: video_hash.as_str(),
         video_name: video_name.as_str(),
         video_source: &video_path,
-        transcript_source: &transcript_path,
+        transcript_source: &relative_subtitle_path,
     };
 
     let markdown = build_markdown(&cues, &metadata);
-
-    let output_path = determine_output_path(args.out_file, &video_path)?;
-
-    // Check if output file already exists
-    if output_path.exists() && !args.force {
-        anyhow::bail!(
-            "Markdown file already exists at {}. Use --force to overwrite.",
-            output_path.display()
-        );
-    }
 
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)
@@ -84,7 +89,7 @@ pub fn handle_convert(args: ConvertArgs) -> Result<()> {
         &project_paths,
         &video_hash,
         &video_path,
-        &transcript_path,
+        &subtitle_output_path,
         &output_path,
     )?;
 
@@ -96,11 +101,8 @@ pub fn handle_convert(args: ConvertArgs) -> Result<()> {
     );
     emit(
         Level::Info,
-        "video.convert.cached",
-        &format!(
-            "Cached transcript at {}",
-            project_paths.transcript_cache_path().display()
-        ),
+        "video.convert.subtitles",
+        &format!("Stored subtitles at {}", subtitle_output_path.display()),
         None,
     );
 
@@ -110,12 +112,12 @@ fn copy_transcript(src: &Path, dest: &Path) -> Result<()> {
     if src == dest {
         return Ok(());
     }
+    if dest.exists() {
+        return Ok(());
+    }
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "Failed to create transcript cache directory {}",
-                parent.display()
-            )
+            format!("Failed to create transcript directory {}", parent.display())
         })?;
     }
     fs::copy(src, dest).with_context(|| {

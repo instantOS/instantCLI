@@ -7,10 +7,14 @@ use anyhow::{Context, Result, anyhow, bail};
 use crate::ui::prelude::{Level, emit};
 
 use super::cli::RenderArgs;
+use super::config::VideoDirectories;
 use super::document::{VideoMetadata, VideoMetadataVideo, parse_video_document};
 use super::music::MusicResolver;
 use super::nle_timeline::{Segment, SegmentData, Timeline, Transform};
-use super::timeline::{StandalonePlan, TimelinePlan, TimelinePlanItem, plan_timeline};
+use super::srt::parse_srt;
+use super::timeline::{
+    StandalonePlan, TimelinePlan, TimelinePlanItem, align_plan_with_subtitles, plan_timeline,
+};
 use super::title_card::TitleCardGenerator;
 use super::utils::canonicalize_existing;
 
@@ -22,7 +26,19 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
 
     let document = parse_video_document(&markdown_contents, &markdown_path)?;
-    let plan = plan_timeline(&document)?;
+
+    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    let transcript_path = resolve_transcript_path(&document.metadata, markdown_dir)?;
+    let transcript_path = canonicalize_existing(&transcript_path)?;
+    let transcript_contents = fs::read_to_string(&transcript_path).with_context(|| {
+        format!(
+            "Failed to read transcript file {}",
+            transcript_path.display()
+        )
+    })?;
+    let cues = parse_srt(&transcript_contents)?;
+
+    let mut plan = plan_timeline(&document)?;
 
     if plan.items.is_empty() {
         anyhow::bail!(
@@ -31,7 +47,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         );
     }
 
-    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    align_plan_with_subtitles(&mut plan, &cues)?;
     let video_path = resolve_video_path(&document.metadata, markdown_dir)?;
     let video_path = canonicalize_existing(&video_path)?;
 
@@ -174,6 +190,57 @@ pub(super) fn resolve_video_path(metadata: &VideoMetadata, markdown_dir: &Path) 
     Err(anyhow!(
         "Front matter must include either `video.source` or `video.name` to locate the source video"
     ))
+}
+
+fn resolve_transcript_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
+    let transcript_meta = metadata
+        .transcript
+        .as_ref()
+        .ok_or_else(|| anyhow!("Front matter is missing `transcript` metadata"))?;
+
+    let source = transcript_meta
+        .source
+        .as_ref()
+        .ok_or_else(|| anyhow!("Front matter is missing `transcript.source`"))?;
+
+    let resolved = if source.is_absolute() {
+        source.clone()
+    } else {
+        markdown_dir.join(source)
+    };
+
+    if resolved.exists() {
+        return Ok(resolved);
+    }
+
+    let Some(video_meta) = metadata.video.as_ref() else {
+        return Ok(resolved);
+    };
+    let Some(hash) = video_meta.hash.as_ref() else {
+        return Ok(resolved);
+    };
+
+    let directories = VideoDirectories::new()?;
+    let project_paths = directories.project_paths(hash);
+    let cached_transcript = project_paths.transcript_cache_path();
+
+    if cached_transcript.exists() {
+        if let Some(parent) = resolved.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create transcript directory {}", parent.display())
+            })?;
+        }
+
+        fs::copy(cached_transcript, &resolved).with_context(|| {
+            format!(
+                "Failed to copy cached transcript from {} to {}",
+                cached_transcript.display(),
+                resolved.display()
+            )
+        })?;
+    }
+
+    Ok(resolved)
 }
 
 fn resolve_output_path(

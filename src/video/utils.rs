@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 pub fn canonicalize_existing(path: &Path) -> Result<PathBuf> {
     if !path.exists() {
@@ -34,4 +35,8 @@ pub fn extension_or_default(path: &Path, default: &str) -> String {
         .and_then(|ext| ext.to_str())
         .map(|ext| ext.to_string())
         .unwrap_or_else(|| default.to_string())
+}
+
+pub fn duration_to_tenths(duration: Duration) -> u64 {
+    ((duration.as_secs_f64() * 10.0).round()) as u64
 }
