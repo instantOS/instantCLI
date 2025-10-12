@@ -7,7 +7,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use crate::ui::prelude::{Level, emit};
 
 use super::cli::RenderArgs;
-use super::config::VideoDirectories;
+use super::config::{VideoConfig, VideoDirectories};
 use super::document::{VideoMetadata, VideoMetadataVideo, parse_video_document};
 use super::music::MusicResolver;
 use super::nle_timeline::{Segment, SegmentData, Timeline, Transform};
@@ -142,8 +142,15 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
 
     let output_path = output_path.expect("output path is required when not pre-caching");
 
-    let pipeline =
-        RenderPipeline::new(output_path.clone(), nle_timeline, video_width, video_height);
+    let video_config = VideoConfig::load()?;
+
+    let pipeline = RenderPipeline::new(
+        output_path.clone(),
+        nle_timeline,
+        video_width,
+        video_height,
+        video_config,
+    );
 
     if dry_run {
         pipeline.print_command()?;
@@ -395,15 +402,23 @@ struct RenderPipeline {
     timeline: Timeline,
     target_width: u32,
     target_height: u32,
+    config: VideoConfig,
 }
 
 impl RenderPipeline {
-    fn new(output: PathBuf, timeline: Timeline, target_width: u32, target_height: u32) -> Self {
+    fn new(
+        output: PathBuf,
+        timeline: Timeline,
+        target_width: u32,
+        target_height: u32,
+        config: VideoConfig,
+    ) -> Self {
         Self {
             output,
             timeline,
             target_width,
             target_height,
+            config,
         }
     }
 
@@ -662,6 +677,7 @@ impl RenderPipeline {
         source_map: &std::collections::HashMap<PathBuf, usize>,
     ) -> Result<String> {
         let mut labels = Vec::new();
+        let music_volume = self.config.music_volume();
 
         for (idx, segment) in music_segments.iter().enumerate() {
             if segment.duration <= 0.0 {
@@ -681,10 +697,11 @@ impl RenderPipeline {
                 let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
 
                 filters.push(format!(
-                    "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay}[{label}]",
+                    "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay},volume={volume}[{label}]",
                     input = input_index,
                     duration = duration_str,
                     delay = delay_ms,
+                    volume = format!("{:.6}", music_volume),
                     label = label,
                 ));
 
