@@ -7,6 +7,7 @@ use super::deps::{
     AddDependencyOptions, InstallDependencyOptions, UninstallDependencyOptions, add_dependency,
     install_dependency, list_dependencies as list_game_dependencies, uninstall_dependency,
 };
+use super::edit;
 use super::games::GameManager;
 use super::games::manager::AddGameOptions;
 use super::games::{display, selection};
@@ -53,6 +54,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         GameCommands::Launch { game_name } => handle_launch(game_name),
         GameCommands::List => handle_list(),
         GameCommands::Show { game_name } => handle_show(game_name),
+        GameCommands::Edit { game_name } => edit::edit_game(game_name),
         GameCommands::Remove { game_name, force } => handle_remove(game_name, force),
         GameCommands::Backup { game_name } => {
             ensure_restic_available()?;

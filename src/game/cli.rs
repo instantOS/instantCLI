@@ -54,6 +54,12 @@ pub enum GameCommands {
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
     },
+    /// Edit a game's configuration interactively
+    Edit {
+        /// Game name to edit (optional, will prompt if not specified)
+        #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
+        game_name: Option<String>,
+    },
     /// Remove a game from tracking
     Remove {
         /// Game name to remove (optional, will prompt if not specified)
