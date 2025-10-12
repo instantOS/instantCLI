@@ -7,8 +7,6 @@ use anyhow::{Context, Result, anyhow};
 
 use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
-use crate::ui::nerd_font::NerdFont;
-use crate::ui::prelude::*;
 
 use super::sync::sync_game_saves;
 
@@ -23,14 +21,8 @@ pub fn launch_game(game_name: Option<String>) -> Result<()> {
     let launchables = collect_launchable_games(&game_config.games, &installations.installations);
 
     if launchables.is_empty() {
-        emit(
-            Level::Warn,
-            "game.launch.none_available",
-            &format!(
-                "{} No launch commands configured. Add a launch command in games.toml or installations.toml.",
-                char::from(NerdFont::Warning)
-            ),
-            None,
+        println!(
+            "No launch commands are configured. Add a launch command in games.toml or installations.toml."
         );
         return Ok(());
     }
@@ -39,16 +31,7 @@ pub fn launch_game(game_name: Option<String>) -> Result<()> {
         match launchables.iter().find(|game| game.name == requested) {
             Some(game) => game.clone(),
             None => {
-                emit(
-                    Level::Error,
-                    "game.launch.not_found",
-                    &format!(
-                        "{} No launch command configured for '{}'.",
-                        char::from(NerdFont::CrossCircle),
-                        requested
-                    ),
-                    None,
-                );
+                eprintln!("No launch command configured for '{requested}'.");
                 return Err(anyhow!("No launch command configured for '{}'.", requested));
             }
         }
@@ -59,46 +42,25 @@ pub fn launch_game(game_name: Option<String>) -> Result<()> {
         }
     };
 
-    emit(
-        Level::Info,
-        "game.launch.selected",
-        &format!(
-            "{} Launching {} using {}",
-            char::from(NerdFont::Gamepad),
-            selected.name,
-            selected.source.label()
-        ),
-        None,
+    println!(
+        "Launching {} using {}",
+        selected.name,
+        selected.source.label()
     );
 
     sync_game_saves(None, false)?;
 
     run_launch_command(&selected)?;
 
-    emit(
-        Level::Info,
-        "game.launch.post_delay",
-        &format!(
-            "{} Waiting {} seconds before syncing saves...",
-            char::from(NerdFont::Timer),
-            POST_LAUNCH_SYNC_DELAY.as_secs()
-        ),
-        None,
+    println!(
+        "Waiting {} seconds before syncing saves...",
+        POST_LAUNCH_SYNC_DELAY.as_secs()
     );
     sleep(POST_LAUNCH_SYNC_DELAY);
 
     sync_game_saves(None, false)?;
 
-    emit(
-        Level::Success,
-        "game.launch.completed",
-        &format!(
-            "{} Finished launch workflow for {}",
-            char::from(NerdFont::Check),
-            selected.name
-        ),
-        None,
-    );
+    println!("Finished launch workflow for {}", selected.name);
 
     Ok(())
 }
@@ -230,16 +192,7 @@ fn select_launchable_game(launchables: &[LaunchableGame]) -> Result<Option<Launc
 }
 
 fn run_launch_command(game: &LaunchableGame) -> Result<()> {
-    emit(
-        Level::Info,
-        "game.launch.command_start",
-        &format!(
-            "{} Running launch command for {}",
-            char::from(NerdFont::Gamepad),
-            game.name
-        ),
-        None,
-    );
+    println!("Running launch command for {}", game.name);
 
     let status = Command::new("sh")
         .arg("-c")
@@ -253,6 +206,11 @@ fn run_launch_command(game: &LaunchableGame) -> Result<()> {
         })?;
 
     if !status.success() {
+        eprintln!(
+            "Launch command exited with status {:?} for '{}'",
+            status.code(),
+            game.name
+        );
         return Err(anyhow!(
             "Launch command exited with status {:?} for '{}'.",
             status.code(),
@@ -260,16 +218,7 @@ fn run_launch_command(game: &LaunchableGame) -> Result<()> {
         ));
     }
 
-    emit(
-        Level::Success,
-        "game.launch.command_finished",
-        &format!(
-            "{} Launch command completed for {}",
-            char::from(NerdFont::Check),
-            game.name
-        ),
-        None,
-    );
+    println!("Launch command completed for {}", game.name);
 
     Ok(())
 }
