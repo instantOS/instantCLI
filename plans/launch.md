@@ -10,7 +10,7 @@ installations toml have a launch command, then use the installations toml.
 
 # General behavior
 
-When I execute `ins game launch` I want it to show me a list of all games which
+When I execute `ins game launch` without a game argument I want it to show me a list of all games which
 have configured launch commands (in games toml or installations toml or both).
 Then I want it to sync the games just like if I did `ins game sync` (including
 all games, reuse the exact same behavior to keep things simple and

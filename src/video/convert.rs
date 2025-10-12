@@ -140,7 +140,7 @@ fn determine_output_path(output: Option<PathBuf>, video_path: &Path) -> Result<P
                 .context("Video file has no stem")?
                 .to_string_lossy();
             let mut default_output = video_path.to_path_buf();
-            default_output.set_file_name(format!("{}.md", video_stem));
+            default_output.set_file_name(format!("{}.video.md", video_stem));
             Ok(default_output)
         }
     }
