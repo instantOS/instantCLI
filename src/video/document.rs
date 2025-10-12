@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
-use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use anyhow::{Context, Result, anyhow, bail};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Deserialize;
 
 #[derive(Debug)]
@@ -36,6 +36,7 @@ pub enum DocumentBlock {
     Heading(HeadingBlock),
     Separator(SeparatorBlock),
     Unhandled(UnhandledBlock),
+    Music(MusicBlock),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +68,18 @@ pub struct UnhandledBlock {
 
 #[derive(Debug)]
 pub struct SeparatorBlock {
+    pub line: usize,
+}
+
+#[derive(Debug, Clone)]
+pub enum MusicDirective {
+    None,
+    Source(String),
+}
+
+#[derive(Debug)]
+pub struct MusicBlock {
+    pub directive: MusicDirective,
     pub line: usize,
 }
 
@@ -137,6 +150,7 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
     let mut blocks = Vec::new();
     let mut paragraph: Option<ParagraphState> = None;
     let mut heading: Option<HeadingState> = None;
+    let mut code_block: Option<CodeBlockState> = None;
 
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_TASKLISTS
@@ -174,12 +188,32 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
                     blocks.push(DocumentBlock::Heading(state.into_block(line)));
                 }
             }
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
+                if info
+                    .split(|c: char| c.is_whitespace())
+                    .next()
+                    .map(|lang| lang.eq_ignore_ascii_case("music"))
+                    .unwrap_or(false)
+                {
+                    code_block = Some(CodeBlockState::music(range.start));
+                }
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                if let Some(state) = code_block.take() {
+                    let line = base_line_offset + line_map.line_number(state.start_byte);
+                    let directive = state.into_music_directive(line)?;
+                    blocks.push(DocumentBlock::Music(MusicBlock { directive, line }));
+                }
+            }
             Event::Text(text) => {
                 let text_string = text.into_string();
                 if let Some(state) = paragraph.as_mut() {
                     state.push_fragment(InlineFragment::text(range.start, text_string.clone()));
                 }
                 if let Some(state) = heading.as_mut() {
+                    state.push_text(text_string.clone());
+                }
+                if let Some(state) = code_block.as_mut() {
                     state.push_text(text_string);
                 }
             }
@@ -195,6 +229,9 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
                 if let Some(state) = heading.as_mut() {
                     state.push_text(" ".to_string());
                 }
+                if let Some(state) = code_block.as_mut() {
+                    state.push_newline();
+                }
             }
             Event::HardBreak => {
                 if let Some(state) = paragraph.as_mut() {
@@ -202,6 +239,9 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
                 }
                 if let Some(state) = heading.as_mut() {
                     state.push_text(" ".to_string());
+                }
+                if let Some(state) = code_block.as_mut() {
+                    state.push_newline();
                 }
             }
             Event::Html(text) => {
@@ -400,6 +440,50 @@ struct InlineFragment {
     kind: InlineFragmentKind,
 }
 
+struct CodeBlockState {
+    kind: CodeBlockKindState,
+    start_byte: usize,
+    content: String,
+}
+
+enum CodeBlockKindState {
+    Music,
+}
+
+impl CodeBlockState {
+    fn music(start_byte: usize) -> Self {
+        Self {
+            kind: CodeBlockKindState::Music,
+            start_byte,
+            content: String::new(),
+        }
+    }
+
+    fn push_text(&mut self, text: String) {
+        self.content.push_str(&text);
+    }
+
+    fn push_newline(&mut self) {
+        self.content.push('\n');
+    }
+
+    fn into_music_directive(self, line: usize) -> Result<MusicDirective> {
+        match self.kind {
+            CodeBlockKindState::Music => {
+                let value = self.content.trim();
+                if value.is_empty() {
+                    bail!("Music block at line {} must not be empty", line);
+                }
+                if value.eq_ignore_ascii_case("none") {
+                    Ok(MusicDirective::None)
+                } else {
+                    Ok(MusicDirective::Source(value.to_string()))
+                }
+            }
+        }
+    }
+}
+
 impl InlineFragment {
     fn text(start: usize, text: String) -> Self {
         Self {
@@ -474,20 +558,37 @@ fn parse_time_range(input: &str) -> Result<TimeRange> {
 fn parse_timestamp(value: &str) -> Result<Duration> {
     let (main, frac) = value
         .split_once('.')
-        .ok_or_else(|| anyhow!("Timestamp must include milliseconds"))?;
+        .ok_or_else(|| anyhow!("Timestamp must include fractional seconds"))?;
     let parts = main.split(':').collect::<Vec<_>>();
-    if parts.len() != 3 {
-        return Err(anyhow!("Timestamp must be in HH:MM:SS.mmm format"));
-    }
-    let hours: u64 = parts[0]
-        .parse()
-        .with_context(|| format!("Invalid hour component in timestamp `{}`", value))?;
-    let minutes: u64 = parts[1]
-        .parse()
-        .with_context(|| format!("Invalid minute component in timestamp `{}`", value))?;
-    let seconds: u64 = parts[2]
-        .parse()
-        .with_context(|| format!("Invalid second component in timestamp `{}`", value))?;
+
+    let (hours, minutes, seconds) = match parts.as_slice() {
+        [minutes, seconds] => {
+            let minutes: u64 = minutes
+                .parse()
+                .with_context(|| format!("Invalid minute component in timestamp `{}`", value))?;
+            let seconds: u64 = seconds
+                .parse()
+                .with_context(|| format!("Invalid second component in timestamp `{}`", value))?;
+            (0, minutes, seconds)
+        }
+        [hours, minutes, seconds] => {
+            let hours: u64 = hours
+                .parse()
+                .with_context(|| format!("Invalid hour component in timestamp `{}`", value))?;
+            let minutes: u64 = minutes
+                .parse()
+                .with_context(|| format!("Invalid minute component in timestamp `{}`", value))?;
+            let seconds: u64 = seconds
+                .parse()
+                .with_context(|| format!("Invalid second component in timestamp `{}`", value))?;
+            (hours, minutes, seconds)
+        }
+        _ => {
+            return Err(anyhow!(
+                "Timestamp must be in HH:MM:SS.xxx or MM:SS.xxx format"
+            ));
+        }
+    };
     let raw_millis: u64 = frac
         .parse()
         .with_context(|| format!("Invalid millisecond component in timestamp `{}`", value))?;
@@ -528,8 +629,7 @@ mod tests {
 
     #[test]
     fn parses_multiple_segments_within_single_paragraph() {
-        let markdown =
-            "`00:00:00.000-00:00:01.000` first line\n`00:00:01.500-00:00:02.000` second line\n";
+        let markdown = "`00:00.0-00:01.0` first line\n`00:01.5-00:02.0` second line\n";
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
 
         assert_eq!(document.blocks.len(), 2);
@@ -569,6 +669,21 @@ mod tests {
                 );
             }
             other => panic!("Expected Unhandled block, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parses_music_blocks() {
+        let markdown = "```music\nbackground.mp3\n```";
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        assert_eq!(document.blocks.len(), 1);
+        match &document.blocks[0] {
+            DocumentBlock::Music(block) => match &block.directive {
+                MusicDirective::Source(value) => assert_eq!(value, "background.mp3"),
+                other => panic!("Expected music source directive, got {:?}", other),
+            },
+            other => panic!("Expected music block, got {:?}", other),
         }
     }
 }

@@ -216,7 +216,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - init settings
 - add old settings
 
-## [0.1.9](https://github.com/instantOS/instantCLI/compare/v0.1.8...v0.1.9) - 2025-09-30
+## [0.1.10] - 2025-10-11
+
+### Features
+
+- **(video)** Add video editing commands
+- **(completions)** Add shell completion commands
+
+## [0.1.9] - 2025-09-26
 
 ### Fixed
 

@@ -4,6 +4,7 @@ mod config;
 mod convert;
 mod document;
 mod markdown;
+mod music;
 mod nle_timeline;
 mod render;
 mod srt;

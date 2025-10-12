@@ -2,14 +2,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 
 use crate::ui::prelude::{Level, emit};
 
 use super::cli::RenderArgs;
+use super::config::VideoDirectories;
 use super::document::{VideoMetadata, VideoMetadataVideo, parse_video_document};
+use super::music::MusicResolver;
 use super::nle_timeline::{Segment, SegmentData, Timeline, Transform};
-use super::timeline::{StandalonePlan, TimelinePlan, TimelinePlanItem, plan_timeline};
+use super::srt::parse_srt;
+use super::timeline::{
+    StandalonePlan, TimelinePlan, TimelinePlanItem, align_plan_with_subtitles, plan_timeline,
+};
 use super::title_card::TitleCardGenerator;
 use super::utils::canonicalize_existing;
 
@@ -21,7 +26,19 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
 
     let document = parse_video_document(&markdown_contents, &markdown_path)?;
-    let plan = plan_timeline(&document)?;
+
+    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    let transcript_path = resolve_transcript_path(&document.metadata, markdown_dir)?;
+    let transcript_path = canonicalize_existing(&transcript_path)?;
+    let transcript_contents = fs::read_to_string(&transcript_path).with_context(|| {
+        format!(
+            "Failed to read transcript file {}",
+            transcript_path.display()
+        )
+    })?;
+    let cues = parse_srt(&transcript_contents)?;
+
+    let mut plan = plan_timeline(&document)?;
 
     if plan.items.is_empty() {
         anyhow::bail!(
@@ -30,7 +47,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         );
     }
 
-    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+    align_plan_with_subtitles(&mut plan, &cues)?;
     let video_path = resolve_video_path(&document.metadata, markdown_dir)?;
     let video_path = canonicalize_existing(&video_path)?;
 
@@ -75,7 +92,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
     let generator = TitleCardGenerator::new(video_width, video_height)?;
 
     // Build NLE timeline from the plan
-    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &video_path)?;
+    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &video_path, markdown_dir)?;
 
     if stats.standalone_count > 0 {
         emit(
@@ -175,6 +192,57 @@ pub(super) fn resolve_video_path(metadata: &VideoMetadata, markdown_dir: &Path) 
     ))
 }
 
+fn resolve_transcript_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
+    let transcript_meta = metadata
+        .transcript
+        .as_ref()
+        .ok_or_else(|| anyhow!("Front matter is missing `transcript` metadata"))?;
+
+    let source = transcript_meta
+        .source
+        .as_ref()
+        .ok_or_else(|| anyhow!("Front matter is missing `transcript.source`"))?;
+
+    let resolved = if source.is_absolute() {
+        source.clone()
+    } else {
+        markdown_dir.join(source)
+    };
+
+    if resolved.exists() {
+        return Ok(resolved);
+    }
+
+    let Some(video_meta) = metadata.video.as_ref() else {
+        return Ok(resolved);
+    };
+    let Some(hash) = video_meta.hash.as_ref() else {
+        return Ok(resolved);
+    };
+
+    let directories = VideoDirectories::new()?;
+    let project_paths = directories.project_paths(hash);
+    let cached_transcript = project_paths.transcript_cache_path();
+
+    if cached_transcript.exists() {
+        if let Some(parent) = resolved.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create transcript directory {}", parent.display())
+            })?;
+        }
+
+        fs::copy(cached_transcript, &resolved).with_context(|| {
+            format!(
+                "Failed to copy cached transcript from {} to {}",
+                cached_transcript.display(),
+                resolved.display()
+            )
+        })?;
+    }
+
+    Ok(resolved)
+}
+
 fn resolve_output_path(
     args: &RenderArgs,
     video_path: &Path,
@@ -209,9 +277,12 @@ fn build_nle_timeline(
     plan: TimelinePlan,
     generator: &TitleCardGenerator,
     source_video: &Path,
+    markdown_dir: &Path,
 ) -> Result<(Timeline, TimelineStats)> {
     let mut timeline = Timeline::new();
     let mut current_time = 0.0;
+    let mut music_resolver = MusicResolver::new(markdown_dir);
+    let mut active_music: Option<ActiveMusic> = None;
 
     for item in plan.items {
         match item {
@@ -274,8 +345,22 @@ fn build_nle_timeline(
                     current_time += 5.0;
                 }
             },
+            TimelinePlanItem::Music(music_plan) => {
+                finalize_music_segment(&mut timeline, &mut active_music, current_time);
+                let resolved = music_resolver.resolve(&music_plan.directive)?;
+                if let Some(path) = resolved {
+                    active_music = Some(ActiveMusic {
+                        path,
+                        start_time: current_time,
+                    });
+                } else {
+                    active_music = None;
+                }
+            }
         }
     }
+
+    finalize_music_segment(&mut timeline, &mut active_music, current_time);
 
     let stats = TimelineStats {
         standalone_count: plan.standalone_count,
@@ -284,6 +369,24 @@ fn build_nle_timeline(
     };
 
     Ok((timeline, stats))
+}
+
+struct ActiveMusic {
+    path: PathBuf,
+    start_time: f64,
+}
+
+fn finalize_music_segment(
+    timeline: &mut Timeline,
+    active: &mut Option<ActiveMusic>,
+    end_time: f64,
+) {
+    if let Some(state) = active.take()
+        && end_time > state.start_time
+    {
+        let duration = end_time - state.start_time;
+        timeline.add_segment(Segment::new_music(state.start_time, duration, state.path));
+    }
 }
 
 /// The NLE-based render pipeline
@@ -386,18 +489,18 @@ impl RenderPipeline {
         source_map: &std::collections::HashMap<PathBuf, usize>,
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();
+        let total_duration = self.timeline.total_duration();
 
         // Process segments in timeline order, separating video/audio from overlays
         let mut video_segments: Vec<&Segment> = Vec::new();
         let mut overlay_segments: Vec<&Segment> = Vec::new();
+        let mut music_segments: Vec<&Segment> = Vec::new();
 
         for segment in &self.timeline.segments {
             match &segment.data {
                 SegmentData::VideoSubset { .. } => video_segments.push(segment),
                 SegmentData::Image { .. } => overlay_segments.push(segment),
-                SegmentData::Music { .. } => {
-                    // Music handling would go here
-                }
+                SegmentData::Music { .. } => music_segments.push(segment),
             }
         }
 
@@ -463,7 +566,42 @@ impl RenderPipeline {
             self.apply_overlays(&mut filters, &overlay_segments, source_map)?;
         }
 
-        filters.push("[concat_a]anull[outa]".to_string());
+        let mut audio_label: Option<String> = None;
+
+        if !sorted_video_segments.is_empty() {
+            filters.push("[concat_a]anull[a_base]".to_string());
+            audio_label = Some("a_base".to_string());
+        }
+
+        if !music_segments.is_empty() {
+            let music_label =
+                self.build_music_filters(&mut filters, &music_segments, source_map)?;
+            audio_label = Some(match audio_label {
+                Some(base) => {
+                    let mixed = "a_mix".to_string();
+                    filters.push(format!(
+                        "[{base}][{music}]amix=inputs=2:normalize=0:dropout_transition=0[{mixed}]",
+                        base = base,
+                        music = music_label,
+                        mixed = mixed,
+                    ));
+                    mixed
+                }
+                None => music_label,
+            });
+        }
+
+        let final_audio = if let Some(label) = audio_label {
+            label
+        } else {
+            let duration = format_time(total_duration);
+            filters.push(format!(
+                "anullsrc=r=48000:cl=stereo,atrim=duration={duration}[a_silence]",
+            ));
+            "a_silence".to_string()
+        };
+
+        filters.push(format!("[{label}]anull[outa]", label = final_audio));
         Ok(filters.join("; "))
     }
 
@@ -515,6 +653,65 @@ impl RenderPipeline {
         // Final output
         filters.push(format!("[{}]copy[outv]", current_video_label));
         Ok(())
+    }
+
+    fn build_music_filters(
+        &self,
+        filters: &mut Vec<String>,
+        music_segments: &[&Segment],
+        source_map: &std::collections::HashMap<PathBuf, usize>,
+    ) -> Result<String> {
+        let mut labels = Vec::new();
+
+        for (idx, segment) in music_segments.iter().enumerate() {
+            if segment.duration <= 0.0 {
+                continue;
+            }
+
+            if let SegmentData::Music { audio_source } = &segment.data {
+                let input_index = source_map.get(audio_source).ok_or_else(|| {
+                    anyhow!(
+                        "No ffmpeg input available for background music {}",
+                        audio_source.display()
+                    )
+                })?;
+
+                let label = format!("music_{idx}");
+                let duration_str = format_time(segment.duration);
+                let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
+
+                filters.push(format!(
+                    "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay}[{label}]",
+                    input = input_index,
+                    duration = duration_str,
+                    delay = delay_ms,
+                    label = label,
+                ));
+
+                labels.push(label);
+            }
+        }
+
+        if labels.is_empty() {
+            bail!("No music segments available to build audio filters");
+        }
+
+        if labels.len() == 1 {
+            Ok(labels.into_iter().next().unwrap())
+        } else {
+            let mut inputs = String::new();
+            for label in &labels {
+                inputs.push_str(&format!("[{label}]"));
+            }
+            let output_label = "music_mix".to_string();
+            filters.push(format!(
+                "{inputs}amix=inputs={count}:normalize=0:dropout_transition=0[{output}]",
+                inputs = inputs,
+                count = labels.len(),
+                output = output_label,
+            ));
+            Ok(output_label)
+        }
     }
 }
 

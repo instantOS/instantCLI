@@ -35,8 +35,14 @@ https://lnk.to/mymusic.mp3
 
 
 A music statement should set the background music until the next `music`
-statement or until the next horizontal rule `---` (three or more dashes on a
-line, this is a known markdown syntax)
+statement.
+
+````
+```music
+none
+```
+````
+means no background music. 
 
 You might have to rearchitecture the rendering to get this done (or maybe not,
 investigate what is appropriate)

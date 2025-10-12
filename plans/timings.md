@@ -1,8 +1,7 @@
 
 
-
 improvement idea for the `ins video` command: right now, the timestamps are full
-precision, but this is not needed. a tenth of a second plus the content of a
+precision, but this is not needed. precision of a tenth of a second plus the content of a
 line should be enough to accurately map a line of the markdown video to a line
 in the subtitle, which then allows retrieving the exact timing of a line, even
 without storing it in the markdown document. This means the markdown document is
