@@ -42,9 +42,9 @@ pub enum GameCommands {
     },
     /// Launch a game with automatic save sync
     Launch {
-        /// Game name to launch
+        /// Game name to launch (optional, will prompt if not specified)
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
-        game_name: String,
+        game_name: Option<String>,
     },
     /// List all configured games
     List,

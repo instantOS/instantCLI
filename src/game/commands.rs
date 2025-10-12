@@ -99,7 +99,7 @@ fn handle_sync(game_name: Option<String>, force: bool) -> Result<()> {
     sync_game_saves(game_name, force)
 }
 
-fn handle_launch(game_name: String) -> Result<()> {
+fn handle_launch(game_name: Option<String>) -> Result<()> {
     launch_game(game_name)
 }
 

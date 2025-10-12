@@ -136,6 +136,8 @@ pub struct GameInstallation {
     pub game_name: GameName,
     pub save_path: TildePath,
     pub nearest_checkpoint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_command: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<InstalledDependency>,
 }
@@ -146,6 +148,7 @@ impl GameInstallation {
             game_name: game_name.into(),
             save_path: save_path.into(),
             nearest_checkpoint: None,
+            launch_command: None,
             dependencies: Vec::new(),
         }
     }
@@ -161,6 +164,11 @@ impl GameInstallation {
 
     pub fn clear_checkpoint(&mut self) {
         self.nearest_checkpoint = None;
+    }
+
+    pub fn with_launch_command(mut self, command: impl Into<String>) -> Self {
+        self.launch_command = Some(command.into());
+        self
     }
 }
 
@@ -294,6 +302,7 @@ mod tests {
 
         assert_eq!(installation.game_name.0, "test_game");
         assert_eq!(installation.nearest_checkpoint, None);
+        assert_eq!(installation.launch_command, None);
         assert!(installation.dependencies.is_empty());
     }
 
@@ -310,6 +319,7 @@ mod tests {
             installation.nearest_checkpoint,
             Some("checkpoint123".to_string())
         );
+        assert_eq!(installation.launch_command, None);
         assert!(installation.dependencies.is_empty());
     }
 
@@ -325,6 +335,7 @@ mod tests {
             installation.nearest_checkpoint,
             Some("checkpoint456".to_string())
         );
+        assert_eq!(installation.launch_command, None);
         assert!(installation.dependencies.is_empty());
 
         installation.update_checkpoint("checkpoint789");
@@ -332,6 +343,7 @@ mod tests {
             installation.nearest_checkpoint,
             Some("checkpoint789".to_string())
         );
+        assert_eq!(installation.launch_command, None);
     }
 
     #[test]
@@ -346,9 +358,11 @@ mod tests {
             installation.nearest_checkpoint,
             Some("checkpoint123".to_string())
         );
+        assert_eq!(installation.launch_command, None);
 
         installation.clear_checkpoint();
         assert_eq!(installation.nearest_checkpoint, None);
+        assert_eq!(installation.launch_command, None);
         assert!(installation.dependencies.is_empty());
     }
 
