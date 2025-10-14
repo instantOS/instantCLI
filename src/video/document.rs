@@ -686,6 +686,75 @@ mod tests {
             other => panic!("Expected music block, got {:?}", other),
         }
     }
+
+    #[test]
+    fn skips_html_comments() {
+        let markdown = r#"`00:00.0-00:01.0` This should appear
+
+<!-- This is a comment that should be skipped -->
+
+`00:01.0-00:02.0` This should also appear
+
+<!-- `00:02.0-00:03.0` This timestamp should be skipped -->
+
+`00:03.0-00:04.0` Final segment"#;
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        // Should have exactly 3 segments, not 4 (the commented one should be skipped)
+        assert_eq!(document.blocks.len(), 3);
+        
+        match &document.blocks[0] {
+            DocumentBlock::Segment(segment) => {
+                assert_eq!(segment.text, "This should appear");
+            }
+            other => panic!("Expected first block to be Segment, got {:?}", other),
+        }
+
+        match &document.blocks[1] {
+            DocumentBlock::Segment(segment) => {
+                assert_eq!(segment.text, "This should also appear");
+            }
+            other => panic!("Expected second block to be Segment, got {:?}", other),
+        }
+
+        match &document.blocks[2] {
+            DocumentBlock::Segment(segment) => {
+                assert_eq!(segment.text, "Final segment");
+            }
+            other => panic!("Expected third block to be Segment, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn skips_multiline_html_comments() {
+        let markdown = r#"`00:00.0-00:01.0` First segment
+
+<!-- 
+Multi-line comment
+that spans multiple lines
+with `00:01.0-00:02.0` embedded timestamp
+-->
+
+`00:02.0-00:03.0` Second segment"#;
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        // Should have exactly 2 segments, not 3 (the commented one should be skipped)
+        assert_eq!(document.blocks.len(), 2);
+        
+        match &document.blocks[0] {
+            DocumentBlock::Segment(segment) => {
+                assert_eq!(segment.text, "First segment");
+            }
+            other => panic!("Expected first block to be Segment, got {:?}", other),
+        }
+
+        match &document.blocks[1] {
+            DocumentBlock::Segment(segment) => {
+                assert_eq!(segment.text, "Second segment");
+            }
+            other => panic!("Expected second block to be Segment, got {:?}", other),
+        }
+    }
 }
 
 impl LineMap {
