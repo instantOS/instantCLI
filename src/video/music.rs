@@ -70,7 +70,7 @@ impl MusicResolver {
 
         let mut attempted = Vec::new();
 
-        let has_subdirs = relative.iter().skip(1).next().is_some();
+        let has_subdirs = relative.iter().nth(1).is_some();
         if !has_subdirs {
             attempted.push(self.markdown_dir.join("music").join(relative));
         }
