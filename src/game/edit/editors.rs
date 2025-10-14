@@ -1,7 +1,9 @@
 use anyhow::{Result, anyhow};
 
 use crate::dot::path_serde::TildePath;
-use crate::menu_utils::{FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection};
+use crate::menu_utils::{
+    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
+};
 use crate::ui::nerd_font::NerdFont;
 
 use super::state::EditState;
@@ -18,7 +20,10 @@ pub fn edit_name(state: &mut EditState) -> Result<bool> {
 
     let trimmed = new_name.trim();
     if trimmed.is_empty() {
-        println!("{} Name cannot be empty. No changes made.", char::from(NerdFont::Warning));
+        println!(
+            "{} Name cannot be empty. No changes made.",
+            char::from(NerdFont::Warning)
+        );
         return Ok(false);
     }
 
@@ -29,12 +34,20 @@ pub fn edit_name(state: &mut EditState) -> Result<bool> {
 
     // Check for duplicates
     if state.game_config.games.iter().any(|g| g.name.0 == trimmed) {
-        println!("{} A game with name '{}' already exists.", char::from(NerdFont::Warning), trimmed);
+        println!(
+            "{} A game with name '{}' already exists.",
+            char::from(NerdFont::Warning),
+            trimmed
+        );
         return Ok(false);
     }
 
     state.game_mut().name.0 = trimmed.to_string();
-    println!("{} Name updated to '{}'", char::from(NerdFont::Check), trimmed);
+    println!(
+        "{} Name updated to '{}'",
+        char::from(NerdFont::Check),
+        trimmed
+    );
     Ok(true)
 }
 
@@ -44,7 +57,14 @@ pub fn edit_description(state: &mut EditState) -> Result<bool> {
 
     let new_desc = FzfWrapper::builder()
         .prompt("Enter new description (leave empty to remove)")
-        .header(format!("Current description: {}", if current_desc.is_empty() { "<not set>" } else { current_desc }))
+        .header(format!(
+            "Current description: {}",
+            if current_desc.is_empty() {
+                "<not set>"
+            } else {
+                current_desc
+            }
+        ))
         .input()
         .input_dialog()?;
 
@@ -73,7 +93,9 @@ pub fn edit_description(state: &mut EditState) -> Result<bool> {
 /// Edit launch command (shows submenu for shared vs installation override)
 pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
     let game_cmd = state.game().launch_command.as_deref();
-    let inst_cmd = state.installation().and_then(|i| i.launch_command.as_deref());
+    let inst_cmd = state
+        .installation()
+        .and_then(|i| i.launch_command.as_deref());
 
     // Build submenu
     #[derive(Debug, Clone)]
@@ -104,20 +126,18 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
         }
     }
 
-    let mut options = vec![
-        LaunchCommandOption {
-            display: format!(
-                "{} Edit shared command (games.toml): {}",
-                char::from(NerdFont::Edit),
-                game_cmd.unwrap_or("<not set>")
-            ),
-            preview: format!(
-                "Edit the launch command in games.toml\n\nCurrent value: {}\n\nThis command is shared across all devices.",
-                game_cmd.unwrap_or("<not set>")
-            ),
-            target: LaunchCommandTarget::GameConfig,
-        },
-    ];
+    let mut options = vec![LaunchCommandOption {
+        display: format!(
+            "{} Edit shared command (games.toml): {}",
+            char::from(NerdFont::Edit),
+            game_cmd.unwrap_or("<not set>")
+        ),
+        preview: format!(
+            "Edit the launch command in games.toml\n\nCurrent value: {}\n\nThis command is shared across all devices.",
+            game_cmd.unwrap_or("<not set>")
+        ),
+        target: LaunchCommandTarget::GameConfig,
+    }];
 
     if state.installation_index.is_some() {
         options.push(LaunchCommandOption {
@@ -160,7 +180,14 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
 
     let new_cmd = FzfWrapper::builder()
         .prompt("Enter new launch command (leave empty to remove)")
-        .header(format!("Current command: {}", if current_cmd.is_empty() { "<not set>" } else { current_cmd }))
+        .header(format!(
+            "Current command: {}",
+            if current_cmd.is_empty() {
+                "<not set>"
+            } else {
+                current_cmd
+            }
+        ))
         .input()
         .input_dialog()?;
 
@@ -168,11 +195,17 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
 
     if trimmed.is_empty() {
         if state.game().launch_command.is_none() {
-            println!("{} Launch command already empty.", char::from(NerdFont::Info));
+            println!(
+                "{} Launch command already empty.",
+                char::from(NerdFont::Info)
+            );
             return Ok(false);
         }
         state.game_mut().launch_command = None;
-        println!("{} Launch command removed from games.toml", char::from(NerdFont::Check));
+        println!(
+            "{} Launch command removed from games.toml",
+            char::from(NerdFont::Check)
+        );
         return Ok(true);
     }
 
@@ -182,20 +215,31 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
     }
 
     state.game_mut().launch_command = Some(trimmed.to_string());
-    println!("{} Launch command updated in games.toml", char::from(NerdFont::Check));
+    println!(
+        "{} Launch command updated in games.toml",
+        char::from(NerdFont::Check)
+    );
     Ok(true)
 }
 
 /// Edit the installation-specific launch command override
 fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
-    let installation = state.installation_mut()
+    let installation = state
+        .installation_mut()
         .ok_or_else(|| anyhow!("No installation found for this game"))?;
 
     let current_cmd = installation.launch_command.as_deref().unwrap_or("");
 
     let new_cmd = FzfWrapper::builder()
         .prompt("Enter new launch command override (leave empty to remove override)")
-        .header(format!("Current override: {}", if current_cmd.is_empty() { "<not set>" } else { current_cmd }))
+        .header(format!(
+            "Current override: {}",
+            if current_cmd.is_empty() {
+                "<not set>"
+            } else {
+                current_cmd
+            }
+        ))
         .input()
         .input_dialog()?;
 
@@ -203,31 +247,45 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
 
     if trimmed.is_empty() {
         if installation.launch_command.is_none() {
-            println!("{} Launch command override already empty.", char::from(NerdFont::Info));
+            println!(
+                "{} Launch command override already empty.",
+                char::from(NerdFont::Info)
+            );
             return Ok(false);
         }
         installation.launch_command = None;
-        println!("{} Launch command override removed from installations.toml", char::from(NerdFont::Check));
+        println!(
+            "{} Launch command override removed from installations.toml",
+            char::from(NerdFont::Check)
+        );
         return Ok(true);
     }
 
     if trimmed == current_cmd {
-        println!("{} Launch command override unchanged.", char::from(NerdFont::Info));
+        println!(
+            "{} Launch command override unchanged.",
+            char::from(NerdFont::Info)
+        );
         return Ok(false);
     }
 
     installation.launch_command = Some(trimmed.to_string());
-    println!("{} Launch command override updated in installations.toml", char::from(NerdFont::Check));
+    println!(
+        "{} Launch command override updated in installations.toml",
+        char::from(NerdFont::Check)
+    );
     Ok(true)
 }
 
 /// Edit the save path
 pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
-    let installation = state.installation()
+    let installation = state
+        .installation()
         .ok_or_else(|| anyhow!("No installation found for this game on this device"))?;
 
     let current_path = &installation.save_path;
-    let current_path_str = current_path.to_tilde_string()
+    let current_path_str = current_path
+        .to_tilde_string()
         .unwrap_or_else(|_| current_path.as_path().to_string_lossy().to_string());
 
     let path_selection = PathInputBuilder::new()
@@ -256,11 +314,14 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
         PathInputSelection::Manual(input) => {
             let trimmed = input.trim();
             if trimmed.is_empty() {
-                println!("{} No path entered. Save path unchanged.", char::from(NerdFont::Warning));
+                println!(
+                    "{} No path entered. Save path unchanged.",
+                    char::from(NerdFont::Warning)
+                );
                 return Ok(false);
             }
-            let new_path = TildePath::from_str(trimmed)
-                .map_err(|e| anyhow!("Invalid save path: {}", e))?;
+            let new_path =
+                TildePath::from_str(trimmed).map_err(|e| anyhow!("Invalid save path: {}", e))?;
 
             if new_path.as_path() == current_path.as_path() {
                 println!("{} Save path unchanged.", char::from(NerdFont::Info));
@@ -297,4 +358,3 @@ pub fn launch_game(game_name: &str) -> Result<()> {
     println!("\n{} Launching game...\n", char::from(NerdFont::Rocket));
     launch_game(Some(game_name.to_string()))
 }
-

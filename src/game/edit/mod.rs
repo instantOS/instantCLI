@@ -22,7 +22,8 @@ pub fn edit_game(game_name: Option<String>) -> Result<()> {
 
     // Load configurations
     let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let installations = InstallationsConfig::load().context("Failed to load installations configuration")?;
+    let installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
 
     // Find the game and installation indices
     let game_index = game_config
@@ -40,4 +41,3 @@ pub fn edit_game(game_name: Option<String>) -> Result<()> {
     let mut state = EditState::new(game_config, installations, game_index, installation_index);
     menu::run_edit_menu(&game_name, &mut state)
 }
-

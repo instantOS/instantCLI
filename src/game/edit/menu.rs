@@ -121,7 +121,10 @@ fn handle_menu_action(game_name: &str, action: MenuAction, state: &mut EditState
         MenuAction::ExitWithoutSaving => {
             if state.is_dirty() {
                 if confirm_discard_changes()? {
-                    println!("{} Exited without saving changes.", char::from(NerdFont::Info));
+                    println!(
+                        "{} Exited without saving changes.",
+                        char::from(NerdFont::Info)
+                    );
                     return Ok(false);
                 }
             } else {
@@ -136,7 +139,10 @@ fn handle_menu_action(game_name: &str, action: MenuAction, state: &mut EditState
 fn handle_cancel(state: &EditState) -> Result<bool> {
     if state.is_dirty() {
         if confirm_discard_changes()? {
-            println!("{} Exited without saving changes.", char::from(NerdFont::Info));
+            println!(
+                "{} Exited without saving changes.",
+                char::from(NerdFont::Info)
+            );
             return Ok(false);
         }
     } else {
@@ -166,14 +172,21 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
     // Name
     items.push(MenuItem::new(
         format!("{} Name: {}", char::from(NerdFont::Edit), game.name.0),
-        format!("Current name: {}\n\nEdit the game's name in games.toml", game.name.0),
+        format!(
+            "Current name: {}\n\nEdit the game's name in games.toml",
+            game.name.0
+        ),
         MenuAction::EditName,
     ));
 
     // Description
     let desc_display = game.description.as_deref().unwrap_or("<not set>");
     items.push(MenuItem::new(
-        format!("{} Description: {}", char::from(NerdFont::Info), desc_display),
+        format!(
+            "{} Description: {}",
+            char::from(NerdFont::Info),
+            desc_display
+        ),
         format!(
             "Current description: {}\n\nEdit the game's description in games.toml",
             desc_display
@@ -207,7 +220,11 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
     } + "\nThe installation-specific command overrides the shared command if both are set.";
 
     items.push(MenuItem::new(
-        format!("{} Launch Command: {}", char::from(NerdFont::Rocket), effective_cmd),
+        format!(
+            "{} Launch Command: {}",
+            char::from(NerdFont::Rocket),
+            effective_cmd
+        ),
         launch_preview,
         MenuAction::EditLaunchCommand,
     ));
@@ -250,4 +267,3 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
 
     items
 }
-

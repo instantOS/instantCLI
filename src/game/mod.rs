@@ -1,9 +1,9 @@
 pub mod checkpoint;
 pub mod cli;
 pub mod commands;
-pub mod edit;
 pub mod config;
 pub mod deps;
+pub mod edit;
 pub mod games;
 pub mod operations;
 pub mod repository;

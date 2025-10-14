@@ -41,10 +41,17 @@ impl EditState {
 
     /// Save both configuration files
     pub fn save(&mut self) -> Result<()> {
-        self.game_config.save().context("Failed to save games.toml")?;
-        self.installations.save().context("Failed to save installations.toml")?;
+        self.game_config
+            .save()
+            .context("Failed to save games.toml")?;
+        self.installations
+            .save()
+            .context("Failed to save installations.toml")?;
         self.dirty = false;
-        println!("{} Changes saved successfully.", char::from(NerdFont::Check));
+        println!(
+            "{} Changes saved successfully.",
+            char::from(NerdFont::Check)
+        );
         Ok(())
     }
 
@@ -60,12 +67,13 @@ impl EditState {
 
     /// Get a reference to the current installation (if exists)
     pub fn installation(&self) -> Option<&crate::game::config::GameInstallation> {
-        self.installation_index.map(|idx| &self.installations.installations[idx])
+        self.installation_index
+            .map(|idx| &self.installations.installations[idx])
     }
 
     /// Get a mutable reference to the current installation (if exists)
     pub fn installation_mut(&mut self) -> Option<&mut crate::game::config::GameInstallation> {
-        self.installation_index.map(|idx| &mut self.installations.installations[idx])
+        self.installation_index
+            .map(|idx| &mut self.installations.installations[idx])
     }
 }
-
