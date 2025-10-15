@@ -5,6 +5,7 @@ edition = "2024"
 description = "Instant CLI - command-line utilities"
 license = "GPL-2.0-only"
 homepage = "https://instantos.io"
+repository = "https://github.com/instantOS/instantCLI"
 
 [dependencies]
 anyhow = "1.0.100"

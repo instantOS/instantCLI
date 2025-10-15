@@ -38,6 +38,16 @@ jobs:
           useradd -m builder
           chown -R builder:builder "$PWD"
 
+      - name: Determine target triple
+        id: target
+        run: |
+          target=$(rustc -vV | awk '/^host:/ {print $2}')
+          if [[ -z "$target" ]]; then
+            echo "Failed to determine host target triple" >&2
+            exit 1
+          fi
+          echo "triple=$target" >> "$GITHUB_OUTPUT"
+
       - name: Extract version
         id: vars
         run: |
@@ -71,15 +81,24 @@ jobs:
       - name: Collect artifacts
         env:
           VERSION: ${{ steps.vars.outputs.version }}
+          TARGET: ${{ steps.target.outputs.triple }}
         run: |
           mkdir -p artifacts
-          install -Dm0755 "target/release/ins" "artifacts/ins-${VERSION}-x86_64-unknown-linux-gnu"
+          pkg_dir="ins-${TARGET}-v${VERSION}"
+          tmpdir=$(mktemp -d)
+          mkdir -p "$tmpdir/$pkg_dir"
+          install -Dm0755 "target/release/ins" "$tmpdir/$pkg_dir/ins"
+          tar -czf "artifacts/${pkg_dir}.tgz" -C "$tmpdir" "$pkg_dir"
+          sha256sum "artifacts/${pkg_dir}.tgz" > "artifacts/${pkg_dir}.tgz.sha256"
+          rm -rf "$tmpdir"
 
-      - name: Upload compiled binary
+      - name: Upload release package
         uses: actions/upload-artifact@v4
         with:
-          name: ins-${{ steps.vars.outputs.version }}-x86_64-unknown-linux-gnu
-          path: artifacts/ins-${{ steps.vars.outputs.version }}-x86_64-unknown-linux-gnu
+          name: ins-${{ steps.vars.outputs.version }}-${{ steps.target.outputs.triple }}
+          path: |
+            artifacts/ins-${{ steps.target.outputs.triple }}-v${{ steps.vars.outputs.version }}.tgz
+            artifacts/ins-${{ steps.target.outputs.triple }}-v${{ steps.vars.outputs.version }}.tgz.sha256
 
   pkgbuild:
     name: Build Arch package
