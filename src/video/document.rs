@@ -702,7 +702,7 @@ mod tests {
 
         // Should have exactly 3 segments, not 4 (the commented one should be skipped)
         assert_eq!(document.blocks.len(), 3);
-        
+
         match &document.blocks[0] {
             DocumentBlock::Segment(segment) => {
                 assert_eq!(segment.text, "This should appear");
@@ -740,7 +740,7 @@ with `00:01.0-00:02.0` embedded timestamp
 
         // Should have exactly 2 segments, not 3 (the commented one should be skipped)
         assert_eq!(document.blocks.len(), 2);
-        
+
         match &document.blocks[0] {
             DocumentBlock::Segment(segment) => {
                 assert_eq!(segment.text, "First segment");
