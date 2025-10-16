@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/instantOS/instantCLI/compare/v0.2.0...v0.2.1) - 2025-10-14
+
+### Other
+
+- refactor edit
+- init edit implementation
+- init edit command
+- add cargo lock
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- Merge branch 'dev'
+
 ## [0.1.13](https://github.com/instantOS/instantCLI/compare/v0.1.12...v0.1.13) - 2025-10-10
 
 ### Other
