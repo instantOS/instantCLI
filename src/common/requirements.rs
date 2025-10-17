@@ -212,15 +212,136 @@ pub static RESTIC_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::WhichSucceeds("restic")],
 };
 
+/// Find packages that are not currently installed
+fn find_missing_packages(packages: &[RequiredPackage]) -> Vec<&RequiredPackage> {
+    packages
+        .iter()
+        .filter(|pkg| !pkg.is_installed())
+        .collect()
+}
+
+/// Get package names for the detected package manager
+fn get_package_names(packages: &[&RequiredPackage], package_manager: &PackageManager) -> Result<Vec<&'static str>> {
+    let mut names = Vec::new();
+    for pkg in packages {
+        let package_name = package_manager
+            .package_name(pkg)
+            .ok_or_else(|| anyhow::anyhow!("Package '{}' not available for this system", pkg.name))?;
+        names.push(package_name);
+    }
+    Ok(names)
+}
+
+/// Build a message listing packages with their system package names
+fn build_package_list_message(packages: &[&RequiredPackage], package_manager: &PackageManager) -> Result<String> {
+    let mut msg = String::from("The following packages are required:\n\n");
+
+    for pkg in packages {
+        let package_name = package_manager
+            .package_name(pkg)
+            .ok_or_else(|| anyhow::anyhow!("Package '{}' not available for this system", pkg.name))?;
+
+        msg.push_str(&format!("  • {} (package: {})\n", pkg.name, package_name));
+    }
+
+    Ok(msg)
+}
+
+/// Build a message showing failed installations
+fn build_failure_message(failed_packages: &[String]) -> String {
+    format!(
+        "Installation completed but the following packages failed verification:\n\n{}\n\nSome packages may require a system restart or PATH update.",
+        failed_packages.iter().map(|s| format!("  • {}", s)).collect::<Vec<_>>().join("\n")
+    )
+}
+
+/// Show installation success message
+fn show_success_message(count: usize) -> Result<()> {
+    let success_msg = format!(
+        "Successfully installed {} package{}!",
+        count,
+        if count == 1 { "" } else { "s" }
+    );
+    FzfWrapper::builder()
+        .message(&success_msg)
+        .title("Installation Complete")
+        .show_message()
+}
+
+/// Show installation cancelled message with hints
+fn show_cancelled_message(packages: &[&RequiredPackage]) -> Result<()> {
+    let mut cancel_msg = String::from("The following packages are required:\n\n");
+    for pkg in packages {
+        cancel_msg.push_str(&format!("  • {}\n", pkg.name));
+    }
+    cancel_msg.push_str(&format!("\n{}", packages[0].install_hint()));
+
+    FzfWrapper::builder()
+        .message(&cancel_msg)
+        .title("Packages Required")
+        .show_message()
+}
+
+/// Prompt user for batch installation confirmation
+fn prompt_batch_installation(packages: &[&RequiredPackage], package_manager: &PackageManager) -> Result<bool> {
+    let mut msg = build_package_list_message(packages, package_manager)?;
+    msg.push_str("\nDo you want to install all of them?");
+
+    let should_install = FzfWrapper::builder()
+        .confirm(&msg)
+        .yes_text("Install All")
+        .no_text("Cancel")
+        .show_confirmation()?;
+
+    Ok(matches!(should_install, crate::menu_utils::ConfirmResult::Yes))
+}
+
+/// Execute batch installation using the appropriate package manager
+fn execute_batch_installation(package_names: &[&'static str], package_manager: &PackageManager) -> Result<()> {
+    match package_manager {
+        PackageManager::Pacman => {
+            let mut args = vec!["pacman", "-S", "--noconfirm"];
+            for name in package_names {
+                args.push(name);
+            }
+            cmd("sudo", &args)
+                .run()
+                .context("Failed to install packages with pacman")?;
+        }
+        PackageManager::Apt => {
+            let mut args = vec!["apt", "install", "-y"];
+            for name in package_names {
+                args.push(name);
+            }
+            cmd("sudo", &args)
+                .run()
+                .context("Failed to install packages with apt")?;
+        }
+    }
+    Ok(())
+}
+
+/// Verify that all packages were installed successfully
+fn verify_installations(packages: &[&RequiredPackage], package_manager: &PackageManager) -> Result<Vec<String>> {
+    let mut failed = Vec::new();
+    for pkg in packages {
+        if !pkg.is_installed() {
+            if let Some(package_name) = package_manager.package_name(pkg) {
+                failed.push(format!("{} ({})", pkg.name, package_name));
+            } else {
+                failed.push(pkg.name.to_string());
+            }
+        }
+    }
+    Ok(failed)
+}
+
 /// Ensure multiple packages are installed with a single prompt for all missing packages.
 /// Returns Ok(true) if all packages are installed or were successfully installed.
 /// Returns Ok(false) if user cancelled or any installation failed.
 pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<bool> {
     // First, check which packages are missing
-    let missing: Vec<&RequiredPackage> = packages
-        .iter()
-        .filter(|pkg| !pkg.is_installed())
-        .collect();
+    let missing = find_missing_packages(packages);
 
     if missing.is_empty() {
         return Ok(true);
@@ -230,94 +351,35 @@ pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<bool> {
     let package_manager = PackageManager::detect()
         .ok_or_else(|| anyhow::anyhow!("No supported package manager found"))?;
 
-    // Build the prompt message with both human-readable names and package names
-    let mut msg = String::from("The following packages are required:\n\n");
-    let mut package_names = Vec::new();
-    
-    for pkg in &missing {
-        let package_name = package_manager
-            .package_name(pkg)
-            .ok_or_else(|| anyhow::anyhow!("Package '{}' not available for this system", pkg.name))?;
-        
-        msg.push_str(&format!("  • {} (package: {})\n", pkg.name, package_name));
-        package_names.push(package_name);
-    }
-    
-    msg.push_str("\nDo you want to install all of them?");
+    // Get package names for installation
+    let package_names = get_package_names(&missing, &package_manager)?;
 
-    // Show single confirmation for all packages
-    let should_install = FzfWrapper::builder()
-        .confirm(&msg)
-        .yes_text("Install All")
-        .no_text("Cancel")
-        .show_confirmation()?;
-
-    if !matches!(should_install, crate::menu_utils::ConfirmResult::Yes) {
-        // User declined, show what they need to install manually
-        let mut cancel_msg = String::from("The following packages are required:\n\n");
-        for pkg in &missing {
-            cancel_msg.push_str(&format!("  • {}\n", pkg.name));
-        }
-        cancel_msg.push_str(&format!("\n{}", missing[0].install_hint()));
-        
-        FzfWrapper::builder()
-            .message(&cancel_msg)
-            .title("Packages Required")
-            .show_message()?;
+    // Prompt user for installation
+    if !prompt_batch_installation(&missing, &package_manager)? {
+        show_cancelled_message(&missing)?;
         return Ok(false);
     }
 
-    // Install all packages in a single command for better performance
+    // Show installation progress message
     let installing_msg = format!(
         "Installing {} package{}...",
         package_names.len(),
         if package_names.len() == 1 { "" } else { "s" }
     );
-    
+
     FzfWrapper::builder()
         .message(&installing_msg)
         .title("Installing Packages")
         .show_message()?;
 
-    // Install all at once
-    match package_manager {
-        PackageManager::Pacman => {
-            let mut args = vec!["pacman", "-S", "--noconfirm"];
-            for name in &package_names {
-                args.push(name);
-            }
-            cmd("sudo", &args)
-                .run()
-                .context("Failed to install packages with pacman")?;
-        }
-        PackageManager::Apt => {
-            let mut args = vec!["apt", "install", "-y"];
-            for name in &package_names {
-                args.push(name);
-            }
-            cmd("sudo", &args)
-                .run()
-                .context("Failed to install packages with apt")?;
-        }
-    }
+    // Install all packages
+    execute_batch_installation(&package_names, &package_manager)?;
 
-    // Verify all installations succeeded
-    let mut failed = Vec::new();
-    for pkg in &missing {
-        if !pkg.is_installed() {
-            if let Some(package_name) = package_manager.package_name(pkg) {
-                failed.push(format!("{} ({})", pkg.name, package_name));
-            } else {
-                failed.push(pkg.name.to_string());
-            }
-        }
-    }
+    // Verify installations
+    let failed = verify_installations(&missing, &package_manager)?;
 
     if !failed.is_empty() {
-        let error_msg = format!(
-            "Installation completed but the following packages failed verification:\n\n{}\n\nSome packages may require a system restart or PATH update.",
-            failed.iter().map(|s| format!("  • {}", s)).collect::<Vec<_>>().join("\n")
-        );
+        let error_msg = build_failure_message(&failed);
         FzfWrapper::builder()
             .message(&error_msg)
             .title("Installation Warning")
@@ -325,16 +387,7 @@ pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<bool> {
         return Ok(false);
     }
 
-    let success_msg = format!(
-        "Successfully installed {} package{}!",
-        package_names.len(),
-        if package_names.len() == 1 { "" } else { "s" }
-    );
-    FzfWrapper::builder()
-        .message(&success_msg)
-        .title("Installation Complete")
-        .show_message()?;
-
+    show_success_message(package_names.len())?;
     Ok(true)
 }
 
