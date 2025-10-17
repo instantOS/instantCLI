@@ -157,11 +157,7 @@ impl RequiredPackage {
             .package_name(self)
             .ok_or_else(|| anyhow::anyhow!("Package not available for this system"))?;
 
-        let installing_msg = format!(
-            "Installing {} (package: {})...",
-            self.name,
-            package_name
-        );
+        let installing_msg = format!("Installing {} (package: {})...", self.name, package_name);
 
         // Show installation progress message
         FzfWrapper::builder()
@@ -214,32 +210,35 @@ pub static RESTIC_PACKAGE: RequiredPackage = RequiredPackage {
 
 /// Find packages that are not currently installed
 fn find_missing_packages(packages: &[RequiredPackage]) -> Vec<&RequiredPackage> {
-    packages
-        .iter()
-        .filter(|pkg| !pkg.is_installed())
-        .collect()
+    packages.iter().filter(|pkg| !pkg.is_installed()).collect()
 }
 
 /// Get package names for the detected package manager
-fn get_package_names(packages: &[&RequiredPackage], package_manager: &PackageManager) -> Result<Vec<&'static str>> {
+fn get_package_names(
+    packages: &[&RequiredPackage],
+    package_manager: &PackageManager,
+) -> Result<Vec<&'static str>> {
     let mut names = Vec::new();
     for pkg in packages {
-        let package_name = package_manager
-            .package_name(pkg)
-            .ok_or_else(|| anyhow::anyhow!("Package '{}' not available for this system", pkg.name))?;
+        let package_name = package_manager.package_name(pkg).ok_or_else(|| {
+            anyhow::anyhow!("Package '{}' not available for this system", pkg.name)
+        })?;
         names.push(package_name);
     }
     Ok(names)
 }
 
 /// Build a message listing packages with their system package names
-fn build_package_list_message(packages: &[&RequiredPackage], package_manager: &PackageManager) -> Result<String> {
+fn build_package_list_message(
+    packages: &[&RequiredPackage],
+    package_manager: &PackageManager,
+) -> Result<String> {
     let mut msg = String::from("The following packages are required:\n\n");
 
     for pkg in packages {
-        let package_name = package_manager
-            .package_name(pkg)
-            .ok_or_else(|| anyhow::anyhow!("Package '{}' not available for this system", pkg.name))?;
+        let package_name = package_manager.package_name(pkg).ok_or_else(|| {
+            anyhow::anyhow!("Package '{}' not available for this system", pkg.name)
+        })?;
 
         msg.push_str(&format!("  • {} (package: {})\n", pkg.name, package_name));
     }
@@ -251,7 +250,11 @@ fn build_package_list_message(packages: &[&RequiredPackage], package_manager: &P
 fn build_failure_message(failed_packages: &[String]) -> String {
     format!(
         "Installation completed but the following packages failed verification:\n\n{}\n\nSome packages may require a system restart or PATH update.",
-        failed_packages.iter().map(|s| format!("  • {}", s)).collect::<Vec<_>>().join("\n")
+        failed_packages
+            .iter()
+            .map(|s| format!("  • {}", s))
+            .collect::<Vec<_>>()
+            .join("\n")
     )
 }
 
@@ -283,7 +286,10 @@ fn show_cancelled_message(packages: &[&RequiredPackage]) -> Result<()> {
 }
 
 /// Prompt user for batch installation confirmation
-fn prompt_batch_installation(packages: &[&RequiredPackage], package_manager: &PackageManager) -> Result<bool> {
+fn prompt_batch_installation(
+    packages: &[&RequiredPackage],
+    package_manager: &PackageManager,
+) -> Result<bool> {
     let mut msg = build_package_list_message(packages, package_manager)?;
     msg.push_str("\nDo you want to install all of them?");
 
@@ -293,11 +299,17 @@ fn prompt_batch_installation(packages: &[&RequiredPackage], package_manager: &Pa
         .no_text("Cancel")
         .show_confirmation()?;
 
-    Ok(matches!(should_install, crate::menu_utils::ConfirmResult::Yes))
+    Ok(matches!(
+        should_install,
+        crate::menu_utils::ConfirmResult::Yes
+    ))
 }
 
 /// Execute batch installation using the appropriate package manager
-fn execute_batch_installation(package_names: &[&'static str], package_manager: &PackageManager) -> Result<()> {
+fn execute_batch_installation(
+    package_names: &[&'static str],
+    package_manager: &PackageManager,
+) -> Result<()> {
     match package_manager {
         PackageManager::Pacman => {
             let mut args = vec!["pacman", "-S", "--noconfirm"];
@@ -322,7 +334,10 @@ fn execute_batch_installation(package_names: &[&'static str], package_manager: &
 }
 
 /// Verify that all packages were installed successfully
-fn verify_installations(packages: &[&RequiredPackage], package_manager: &PackageManager) -> Result<Vec<String>> {
+fn verify_installations(
+    packages: &[&RequiredPackage],
+    package_manager: &PackageManager,
+) -> Result<Vec<String>> {
     let mut failed = Vec::new();
     for pkg in packages {
         if !pkg.is_installed() {
@@ -390,4 +405,3 @@ pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<bool> {
     show_success_message(package_names.len())?;
     Ok(true)
 }
-
