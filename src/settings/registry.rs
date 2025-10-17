@@ -542,7 +542,6 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[
             SettingRequirement::Package(printer::CUPS_PACKAGE),
             SettingRequirement::Package(printer::AVAHI_PACKAGE),
-            SettingRequirement::Package(printer::CUPS_BROWSED_PACKAGE),
             SettingRequirement::Package(printer::CUPS_FILTERS_PACKAGE),
             SettingRequirement::Package(printer::GHOSTSCRIPT_PACKAGE),
             SettingRequirement::Package(printer::NSS_MDNS_PACKAGE),

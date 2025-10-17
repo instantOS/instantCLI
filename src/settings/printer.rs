@@ -15,7 +15,6 @@ use super::context::SettingsContext;
 use super::store::BoolSettingKey;
 
 const CUPS_SERVICE: &str = "cups";
-const CUPS_BROWSED_SERVICE: &str = "cups-browsed";
 const AVAHI_SERVICE: &str = "avahi-daemon";
 
 pub const PRINTER_SERVICES_KEY: BoolSettingKey = BoolSettingKey::new("printers.services", false);
@@ -25,13 +24,6 @@ pub const CUPS_PACKAGE: RequiredPackage = RequiredPackage {
     arch_package_name: Some("cups"),
     ubuntu_package_name: Some("cups"),
     tests: &[InstallTest::WhichSucceeds("cupsd")],
-};
-
-pub const CUPS_BROWSED_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "cups-browsed printer discovery",
-    arch_package_name: Some("cups-browsed"),
-    ubuntu_package_name: Some("cups-browsed"),
-    tests: &[InstallTest::WhichSucceeds("cups-browsed")],
 };
 
 pub const CUPS_FILTERS_PACKAGE: RequiredPackage = RequiredPackage {
@@ -81,7 +73,6 @@ const LEGACY_HOSTS_PATTERNS: &[&str] = &["hosts:", " mdns"];
 pub fn ensure_printer_packages(ctx: &mut SettingsContext) -> Result<bool> {
     let required = [
         CUPS_PACKAGE,
-        CUPS_BROWSED_PACKAGE,
         CUPS_FILTERS_PACKAGE,
         GHOSTSCRIPT_PACKAGE,
         AVAHI_PACKAGE,
@@ -142,10 +133,6 @@ pub fn configure_printer_support(ctx: &mut SettingsContext, enabled: bool) -> Re
             systemd.enable_and_start(CUPS_SERVICE)?;
         }
 
-        if !systemd.is_enabled(CUPS_BROWSED_SERVICE) || !systemd.is_active(CUPS_BROWSED_SERVICE) {
-            systemd.enable_and_start(CUPS_BROWSED_SERVICE)?;
-        }
-
         if !systemd.is_enabled(AVAHI_SERVICE) || !systemd.is_active(AVAHI_SERVICE) {
             systemd.enable_and_start(AVAHI_SERVICE)?;
         }
@@ -172,10 +159,6 @@ pub fn configure_printer_support(ctx: &mut SettingsContext, enabled: bool) -> Re
 
         if systemd.is_enabled(CUPS_SERVICE) || systemd.is_active(CUPS_SERVICE) {
             systemd.disable_and_stop(CUPS_SERVICE)?;
-        }
-
-        if systemd.is_enabled(CUPS_BROWSED_SERVICE) || systemd.is_active(CUPS_BROWSED_SERVICE) {
-            systemd.disable_and_stop(CUPS_BROWSED_SERVICE)?;
         }
 
         if systemd.is_enabled(AVAHI_SERVICE) || systemd.is_active(AVAHI_SERVICE) {
