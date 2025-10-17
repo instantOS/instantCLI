@@ -205,37 +205,36 @@ fn update_nsswitch_if_needed(ctx: &mut SettingsContext) -> Result<()> {
         if let Some(hosts_line) = contents
             .lines()
             .find(|line| line.trim_start().starts_with("hosts:"))
+            && is_legacy_hosts_line(hosts_line)
         {
-            if is_legacy_hosts_line(hosts_line) {
-                let message = format!(
-                    "The current hosts line in {} may prevent driverless printer discovery.\n\n{} {}
+            let message = format!(
+                "The current hosts line in {} may prevent driverless printer discovery.\n\n{} {}
 Recommended replacement:\n{}",
-                    NSSWITCH_PATH,
-                    char::from(NerdFont::Info),
-                    hosts_line.trim(),
-                    RECOMMENDED_HOSTS_LINE
+                NSSWITCH_PATH,
+                char::from(NerdFont::Info),
+                hosts_line.trim(),
+                RECOMMENDED_HOSTS_LINE
+            );
+
+            let result = FzfWrapper::builder()
+                .confirm(&message)
+                .yes_text("Update")
+                .no_text("Skip")
+                .show_confirmation()?;
+
+            if result != ConfirmResult::Yes {
+                ctx.emit_info(
+                    "settings.printer.nsswitch.skipped",
+                    "Skipped updating mDNS hosts configuration.",
                 );
-
-                let result = FzfWrapper::builder()
-                    .confirm(&message)
-                    .yes_text("Update")
-                    .no_text("Skip")
-                    .show_confirmation()?;
-
-                if result != ConfirmResult::Yes {
-                    ctx.emit_info(
-                        "settings.printer.nsswitch.skipped",
-                        "Skipped updating mDNS hosts configuration.",
-                    );
-                    return Ok(());
-                }
-
-                apply_nsswitch_update(ctx, &contents)?;
-                ctx.notify(
-                    "Printer discovery",
-                    "Updated mDNS configuration for driverless printers.",
-                );
+                return Ok(());
             }
+
+            apply_nsswitch_update(ctx, &contents)?;
+            ctx.notify(
+                "Printer discovery",
+                "Updated mDNS configuration for driverless printers.",
+            );
         }
     }
 
