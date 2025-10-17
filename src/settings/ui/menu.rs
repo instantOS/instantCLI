@@ -255,6 +255,14 @@ pub fn handle_category(
         return Ok(true);
     }
 
+    if setting_defs.len() == 1 {
+        let definition = setting_defs[0];
+        let state = super::state::compute_setting_state(ctx, definition);
+        super::handlers::handle_setting(ctx, definition, state)?;
+        ctx.persist()?;
+        return Ok(true);
+    }
+
     let mut cursor = initial_cursor;
 
     loop {
