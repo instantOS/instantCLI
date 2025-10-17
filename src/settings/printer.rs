@@ -71,6 +71,8 @@ const NSSWITCH_PATH: &str = "/etc/nsswitch.conf";
 
 const RECOMMENDED_HOSTS_LINE: &str = "hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns";
 
+const ALTERNATIVE_RECOMMENDED_LINE: &str = "hosts: mymachines resolve [!UNAVAIL=return] mdns_minimal [NOTFOUND=return] files myhostname dns";
+
 const LEGACY_HOSTS_PATTERNS: &[&str] = &["hosts:", " mdns"];
 
 pub fn ensure_printer_packages(ctx: &mut SettingsContext) -> Result<bool> {
@@ -178,6 +180,93 @@ pub fn configure_printer_support(ctx: &mut SettingsContext, enabled: bool) -> Re
     Ok(())
 }
 
+/// Represents the result of analyzing nsswitch configuration
+#[derive(Debug, PartialEq)]
+pub enum NsswitchAnalysis {
+    /// No hosts line found
+    NoHostsLine,
+    /// Already configured correctly
+    AlreadyConfigured,
+    /// Needs mDNS configuration update
+    NeedsUpdate {
+        current_line: String,
+        recommended_line: String,
+    },
+    /// Has mDNS but may need improvement
+    HasMdns {
+        current_line: String,
+        can_improve: bool,
+    },
+}
+
+/// Analyze nsswitch configuration to determine if mDNS setup is needed
+pub fn analyze_nsswitch_config(contents: &str) -> NsswitchAnalysis {
+    let hosts_line = contents
+        .lines()
+        .find(|line| line.trim_start().starts_with("hosts:"));
+
+    let Some(hosts_line) = hosts_line else {
+        return NsswitchAnalysis::NoHostsLine;
+    };
+
+    let trimmed = hosts_line.trim();
+
+    // Check if already configured with our recommended line
+    if trimmed == RECOMMENDED_HOSTS_LINE || trimmed == ALTERNATIVE_RECOMMENDED_LINE {
+        return NsswitchAnalysis::AlreadyConfigured;
+    }
+
+    // Check if mDNS is already configured
+    if trimmed.contains("mdns") {
+        // Has mDNS but may not be optimal
+        let can_improve = is_legacy_hosts_line(trimmed);
+        return NsswitchAnalysis::HasMdns {
+            current_line: trimmed.to_string(),
+            can_improve,
+        };
+    }
+
+    // No mDNS configured - needs update
+    let recommended_line = if trimmed.contains("resolve [!UNAVAIL=return]") {
+        // User has systemd-resolved, put mdns after resolve
+        ALTERNATIVE_RECOMMENDED_LINE
+    } else {
+        // Standard recommendation
+        RECOMMENDED_HOSTS_LINE
+    };
+
+    NsswitchAnalysis::NeedsUpdate {
+        current_line: trimmed.to_string(),
+        recommended_line: recommended_line.to_string(),
+    }
+}
+
+/// Check if a hosts line uses legacy mDNS configuration
+fn is_legacy_hosts_line(line: &str) -> bool {
+    LEGACY_HOSTS_PATTERNS
+        .iter()
+        .all(|pattern| line.contains(pattern))
+        && !line.contains("resolve [!UNAVAIL=return]")
+        && !line.contains("mdns_minimal [NOTFOUND=return]")
+}
+
+/// Generate updated nsswitch content with mDNS configuration
+pub fn generate_nsswitch_update(current: &str, recommended_line: &str) -> Result<String> {
+    let mut result = String::new();
+
+    for line in current.lines() {
+        if line.trim_start().starts_with("hosts:") {
+            result.push_str(recommended_line);
+            result.push('\n');
+        } else {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+
+    Ok(result)
+}
+
 fn update_nsswitch_if_needed(ctx: &mut SettingsContext) -> Result<()> {
     let path = Path::new(NSSWITCH_PATH);
     if !path.exists() {
@@ -191,28 +280,39 @@ fn update_nsswitch_if_needed(ctx: &mut SettingsContext) -> Result<()> {
     let contents =
         fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
 
-    if contents
-        .lines()
-        .any(|line| line.trim_start().starts_with("hosts:"))
-    {
-        if contents
-            .lines()
-            .any(|line| line.trim() == RECOMMENDED_HOSTS_LINE)
-        {
+    let analysis = analyze_nsswitch_config(&contents);
+
+    match analysis {
+        NsswitchAnalysis::NoHostsLine => {
+            ctx.emit_info(
+                "settings.printer.nsswitch.no_hosts_line",
+                "No hosts line found in nsswitch.conf.",
+            );
+        }
+        NsswitchAnalysis::AlreadyConfigured => {
+            // Already configured correctly
             return Ok(());
         }
-
-        if let Some(hosts_line) = contents
-            .lines()
-            .find(|line| line.trim_start().starts_with("hosts:"))
-            && is_legacy_hosts_line(hosts_line)
-        {
+        NsswitchAnalysis::HasMdns {
+            current_line,
+            can_improve: false,
+        } => {
+            ctx.emit_info(
+                "settings.printer.nsswitch.already_configured",
+                &format!("mDNS already configured: {}", current_line),
+            );
+            return Ok(());
+        }
+        NsswitchAnalysis::HasMdns {
+            current_line,
+            can_improve: true,
+        } => {
             let message = format!(
-                "The current hosts line in {} may prevent driverless printer discovery.\n\n{} {}
-Recommended replacement:\n{}",
+                "The current hosts line in {} may not be optimal for printer discovery.\n\n{} {}
+Recommended improvement:\n{}",
                 NSSWITCH_PATH,
                 char::from(NerdFont::Info),
-                hosts_line.trim(),
+                current_line,
                 RECOMMENDED_HOSTS_LINE
             );
 
@@ -230,7 +330,40 @@ Recommended replacement:\n{}",
                 return Ok(());
             }
 
-            apply_nsswitch_update(ctx, &contents)?;
+            apply_nsswitch_update(ctx, &contents, RECOMMENDED_HOSTS_LINE)?;
+            ctx.notify(
+                "Printer discovery",
+                "Updated mDNS configuration for driverless printers.",
+            );
+        }
+        NsswitchAnalysis::NeedsUpdate {
+            current_line,
+            recommended_line,
+        } => {
+            let message = format!(
+                "The current hosts line in {} lacks mDNS support for printer discovery.\n\n{} {}
+Recommended replacement:\n{}",
+                NSSWITCH_PATH,
+                char::from(NerdFont::Info),
+                current_line,
+                recommended_line
+            );
+
+            let result = FzfWrapper::builder()
+                .confirm(&message)
+                .yes_text("Update")
+                .no_text("Skip")
+                .show_confirmation()?;
+
+            if result != ConfirmResult::Yes {
+                ctx.emit_info(
+                    "settings.printer.nsswitch.skipped",
+                    "Skipped updating mDNS hosts configuration.",
+                );
+                return Ok(());
+            }
+
+            apply_nsswitch_update(ctx, &contents, &recommended_line)?;
             ctx.notify(
                 "Printer discovery",
                 "Updated mDNS configuration for driverless printers.",
@@ -241,22 +374,12 @@ Recommended replacement:\n{}",
     Ok(())
 }
 
-fn is_legacy_hosts_line(line: &str) -> bool {
-    LEGACY_HOSTS_PATTERNS
-        .iter()
-        .all(|pattern| line.contains(pattern))
-        && !line.contains("resolve [!UNAVAIL=return]")
-}
+fn apply_nsswitch_update(ctx: &mut SettingsContext, current: &str, recommended_line: &str) -> Result<()> {
+    let updated_content = generate_nsswitch_update(current, recommended_line)?;
 
-fn apply_nsswitch_update(ctx: &mut SettingsContext, current: &str) -> Result<()> {
     let mut temp = NamedTempFile::new().context("creating temporary nsswitch copy")?;
-    for line in current.lines() {
-        if line.trim_start().starts_with("hosts:") {
-            writeln!(temp, "{}", RECOMMENDED_HOSTS_LINE).context("writing updated hosts line")?;
-        } else {
-            writeln!(temp, "{}", line).context("writing nsswitch line")?;
-        }
-    }
+    temp.write_all(updated_content.as_bytes())
+        .context("writing updated nsswitch")?;
 
     temp.flush().context("flushing updated nsswitch")?;
     temp.as_file()
@@ -275,4 +398,217 @@ fn apply_nsswitch_update(ctx: &mut SettingsContext, current: &str) -> Result<()>
     )?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_analyze_nsswitch_config_no_hosts_line() {
+        let config = r"# Test config
+passwd: files
+group: files";
+
+        assert_eq!(analyze_nsswitch_config(config), NsswitchAnalysis::NoHostsLine);
+    }
+
+    #[test]
+    fn test_analyze_nsswitch_config_already_configured() {
+        let config = r"# Test config
+passwd: files
+hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns
+group: files";
+
+        assert_eq!(analyze_nsswitch_config(config), NsswitchAnalysis::AlreadyConfigured);
+    }
+
+    #[test]
+    fn test_analyze_nsswitch_config_alternative_configured() {
+        let config = r"# Test config
+passwd: files
+hosts: mymachines resolve [!UNAVAIL=return] mdns_minimal [NOTFOUND=return] files myhostname dns
+group: files";
+
+        assert_eq!(analyze_nsswitch_config(config), NsswitchAnalysis::AlreadyConfigured);
+    }
+
+    #[test]
+    fn test_analyze_nsswitch_config_current_user_config() {
+        let config = r"# Name Service Switch configuration file.
+# See nsswitch.conf(5) for details.
+
+passwd: files systemd
+group: files [SUCCESS=merge] systemd
+shadow: files systemd
+gshadow: files systemd
+
+publickey: files
+
+hosts: mymachines resolve [!UNAVAIL=return] files myhostname dns
+networks: files
+
+protocols: files
+services: files
+ethers: files
+rpc: files
+
+netgroup: files";
+
+        let expected = NsswitchAnalysis::NeedsUpdate {
+            current_line: "hosts: mymachines resolve [!UNAVAIL=return] files myhostname dns".to_string(),
+            recommended_line: ALTERNATIVE_RECOMMENDED_LINE.to_string(),
+        };
+
+        assert_eq!(analyze_nsswitch_config(config), expected);
+    }
+
+    #[test]
+    fn test_analyze_nsswitch_config_basic_no_mdns() {
+        let config = r"# Test config
+passwd: files
+hosts: files dns
+group: files";
+
+        let expected = NsswitchAnalysis::NeedsUpdate {
+            current_line: "hosts: files dns".to_string(),
+            recommended_line: RECOMMENDED_HOSTS_LINE.to_string(),
+        };
+
+        assert_eq!(analyze_nsswitch_config(config), expected);
+    }
+
+    #[test]
+    fn test_analyze_nsswitch_config_has_legacy_mdns() {
+        let config = r"# Test config
+passwd: files
+hosts: files mdns dns
+group: files";
+
+        let expected = NsswitchAnalysis::HasMdns {
+            current_line: "hosts: files mdns dns".to_string(),
+            can_improve: true,
+        };
+
+        assert_eq!(analyze_nsswitch_config(config), expected);
+    }
+
+    #[test]
+    fn test_analyze_nsswitch_config_has_good_mdns() {
+        let config = r"# Test config
+passwd: files
+hosts: files mdns_minimal [NOTFOUND=return] dns
+group: files";
+
+        let expected = NsswitchAnalysis::HasMdns {
+            current_line: "hosts: files mdns_minimal [NOTFOUND=return] dns".to_string(),
+            can_improve: false,
+        };
+
+        assert_eq!(analyze_nsswitch_config(config), expected);
+    }
+
+    #[test]
+    fn test_generate_nsswitch_update_basic() {
+        let current = r"# Test config
+passwd: files
+hosts: files dns
+group: files";
+
+        let expected = r"# Test config
+passwd: files
+hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns
+group: files
+";
+
+        let result = generate_nsswitch_update(current, RECOMMENDED_HOSTS_LINE).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_generate_nsswitch_update_current_user() {
+        let current = r"# Name Service Switch configuration file.
+# See nsswitch.conf(5) for details.
+
+passwd: files systemd
+group: files [SUCCESS=merge] systemd
+shadow: files systemd
+gshadow: files systemd
+
+publickey: files
+
+hosts: mymachines resolve [!UNAVAIL=return] files myhostname dns
+networks: files
+
+protocols: files
+services: files
+ethers: files
+rpc: files
+
+netgroup: files";
+
+        let expected = r"# Name Service Switch configuration file.
+# See nsswitch.conf(5) for details.
+
+passwd: files systemd
+group: files [SUCCESS=merge] systemd
+shadow: files systemd
+gshadow: files systemd
+
+publickey: files
+
+hosts: mymachines resolve [!UNAVAIL=return] mdns_minimal [NOTFOUND=return] files myhostname dns
+networks: files
+
+protocols: files
+services: files
+ethers: files
+rpc: files
+
+netgroup: files
+";
+
+        let result = generate_nsswitch_update(current, ALTERNATIVE_RECOMMENDED_LINE).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_generate_nsswitch_update_preserves_comments() {
+        let current = r"# Test config
+# This is a comment
+passwd: files
+# Another comment before hosts
+hosts: files dns  # inline comment
+group: files";
+
+        let expected = r"# Test config
+# This is a comment
+passwd: files
+# Another comment before hosts
+hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns
+group: files
+";
+
+        let result = generate_nsswitch_update(current, RECOMMENDED_HOSTS_LINE).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_is_legacy_hosts_line() {
+        assert!(is_legacy_hosts_line("hosts: files mdns dns"));
+        assert!(is_legacy_hosts_line("hosts: mdns files dns"));
+        assert!(!is_legacy_hosts_line("hosts: files mdns_minimal [NOTFOUND=return] dns"));
+        assert!(!is_legacy_hosts_line("hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns"));
+        assert!(!is_legacy_hosts_line("hosts: files dns"));
+        assert!(!is_legacy_hosts_line("hosts: files"));
+    }
+
+    #[test]
+    fn test_recommended_lines() {
+        assert!(!RECOMMENDED_HOSTS_LINE.is_empty());
+        assert!(!ALTERNATIVE_RECOMMENDED_LINE.is_empty());
+        assert!(RECOMMENDED_HOSTS_LINE.contains("mdns_minimal"));
+        assert!(ALTERNATIVE_RECOMMENDED_LINE.contains("mdns_minimal"));
+        assert!(RECOMMENDED_HOSTS_LINE != ALTERNATIVE_RECOMMENDED_LINE);
+    }
 }
