@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 use crate::common::requirements::{InstallTest, RequiredPackage};
 use crate::common::systemd::SystemdManager;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
-use crate::ui::prelude::{emit, Level, NerdFont};
+use crate::ui::prelude::{Level, NerdFont, emit};
 
 use super::context::SettingsContext;
 use super::store::BoolSettingKey;
@@ -74,8 +74,7 @@ pub const NSS_MDNS_PACKAGE: RequiredPackage = RequiredPackage {
 
 const NSSWITCH_PATH: &str = "/etc/nsswitch.conf";
 
-const RECOMMENDED_HOSTS_LINE: &str =
-    "hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns";
+const RECOMMENDED_HOSTS_LINE: &str = "hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns";
 
 const LEGACY_HOSTS_PATTERNS: &[&str] = &["hosts:", " mdns"];
 
@@ -203,12 +202,13 @@ fn update_nsswitch_if_needed(ctx: &mut SettingsContext) -> Result<()> {
         return Ok(());
     }
 
-    let contents = fs::read_to_string(path).with_context(|| format!(
-        "Failed to read {}",
-        path.display()
-    ))?;
+    let contents =
+        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
 
-    if contents.lines().any(|line| line.trim_start().starts_with("hosts:")) {
+    if contents
+        .lines()
+        .any(|line| line.trim_start().starts_with("hosts:"))
+    {
         if contents
             .lines()
             .any(|line| line.trim() == RECOMMENDED_HOSTS_LINE)
@@ -257,7 +257,9 @@ Recommended replacement:\n{}",
 }
 
 fn is_legacy_hosts_line(line: &str) -> bool {
-    LEGACY_HOSTS_PATTERNS.iter().all(|pattern| line.contains(pattern))
+    LEGACY_HOSTS_PATTERNS
+        .iter()
+        .all(|pattern| line.contains(pattern))
         && !line.contains("resolve [!UNAVAIL=return]")
 }
 
@@ -265,8 +267,7 @@ fn apply_nsswitch_update(ctx: &mut SettingsContext, current: &str) -> Result<()>
     let mut temp = NamedTempFile::new().context("creating temporary nsswitch copy")?;
     for line in current.lines() {
         if line.trim_start().starts_with("hosts:") {
-            writeln!(temp, "{}", RECOMMENDED_HOSTS_LINE)
-                .context("writing updated hosts line")?;
+            writeln!(temp, "{}", RECOMMENDED_HOSTS_LINE).context("writing updated hosts line")?;
         } else {
             writeln!(temp, "{}", line).context("writing nsswitch line")?;
         }
