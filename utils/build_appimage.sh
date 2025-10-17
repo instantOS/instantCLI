@@ -26,7 +26,6 @@ BIN_DIR="${APPDIR}/usr/bin"
 rm -rf "${APPDIR}"
 mkdir -p "${BIN_DIR}" \
          "${APPDIR}/usr/share/applications" \
-         "${APPDIR}/usr/share/icons/hicolor/256x256/apps" \
          "${APPDIR}/usr/share/doc/ins" \
          "${DOWNLOAD_DIR}"
 
@@ -99,42 +98,23 @@ exec "${APPDIR}/usr/bin/ins" "$@"
 EOF
 chmod +x "${APPDIR}/AppRun"
 
-cat > "${APPDIR}/ins.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=InstantCLI
-Comment=InstantOS command-line utility suite
-Exec=ins
-Icon=instantcli
-Terminal=true
-Categories=Utility;
-X-AppImage-Name=ins
-X-AppImage-Version=${INS_VERSION}
-EOF
+DESKTOP_TEMPLATE="${ROOT_DIR}/utils/appimage/ins.desktop"
+if [[ ! -f "${DESKTOP_TEMPLATE}" ]]; then
+    echo "desktop template not found: ${DESKTOP_TEMPLATE}" >&2
+    exit 1
+fi
 
-install -Dm644 "${APPDIR}/ins.desktop" "${APPDIR}/usr/share/applications/ins.desktop"
-
-ICON_PATH="${APPDIR}/usr/share/icons/hicolor/256x256/apps/instantcli.png"
-python3 - "${ICON_PATH}" <<'PY'
-import struct
-import zlib
+python3 - "${DESKTOP_TEMPLATE}" "${APPDIR}/ins.desktop" "${INS_VERSION}" <<'PY'
 import sys
 
-path = sys.argv[1]
-size = 128
-color = (44, 107, 255, 255)
-scanline = bytes(color) * size
-raw = b''.join([b'\x00' + scanline for _ in range(size)])
-
-def chunk(kind, data):
-    return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xFFFFFFFF)
-
-with open(path, 'wb') as fh:
-    fh.write(b'\x89PNG\r\n\x1a\n')
-    fh.write(chunk(b'IHDR', struct.pack('>IIBBBBB', size, size, 8, 6, 0, 0, 0)))
-    fh.write(chunk(b'IDAT', zlib.compress(raw, 9)))
-    fh.write(chunk(b'IEND', b''))
+template, output, version = sys.argv[1:4]
+with open(template, 'r', encoding='utf-8') as src:
+    content = src.read().replace('@VERSION@', version)
+with open(output, 'w', encoding='utf-8') as dst:
+    dst.write(content)
 PY
+
+install -Dm644 "${APPDIR}/ins.desktop" "${APPDIR}/usr/share/applications/ins.desktop"
 
 install -Dm644 "LICENSE" "${APPDIR}/usr/share/doc/ins/LICENSE"
 
