@@ -1,6 +1,7 @@
 use crate::common::requirements::{InstallTest, RequiredPackage};
 use crate::ui::prelude::NerdFont;
 
+use super::printer;
 use super::store::{BoolSettingKey, StringSettingKey};
 use super::users;
 
@@ -269,6 +270,12 @@ pub const CATEGORIES: &[SettingCategory] = &[
         description: "Disk management and auto-mounting.",
         icon: NerdFont::Save,
     },
+    SettingCategory {
+        id: "printers",
+        title: "Printers",
+        description: "Discover, configure, and manage printers.",
+        icon: NerdFont::Printer,
+    },
 ];
 
 pub const SETTINGS: &[SettingDefinition] = &[
@@ -519,6 +526,35 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: false,
         requirements: &[SettingRequirement::Package(TOPGRADE_PACKAGE)],
+    },
+    SettingDefinition {
+        id: "printers.enable_services",
+        title: "Printer services",
+        category: "printers",
+        icon: NerdFont::Printer,
+        breadcrumbs: &["Printer support", "Services"],
+        kind: SettingKind::Toggle {
+            key: BoolSettingKey::new("printers.services", false),
+            summary: "Enable CUPS printing and Avahi discovery for network printers.",
+            apply: Some(super::printer::configure_printer_support),
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(printer::CUPS_PACKAGE)],
+    },
+    SettingDefinition {
+        id: "printers.open_manager",
+        title: "Open printer manager",
+        category: "printers",
+        icon: NerdFont::Printer,
+        breadcrumbs: &["Printer support", "Manage printers"],
+        kind: SettingKind::Action {
+            summary: "Launch the graphical printer setup utility.",
+            run: super::printer::launch_printer_manager,
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(
+            super::printer::SYSTEM_CONFIG_PRINTER_PACKAGE,
+        )],
     },
 ];
 
