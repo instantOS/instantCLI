@@ -99,7 +99,7 @@ exec "${APPDIR}/usr/bin/ins" "$@"
 EOF
 chmod +x "${APPDIR}/AppRun"
 
-cat > "${APPDIR}/usr/share/applications/ins.desktop" <<EOF
+cat > "${APPDIR}/ins.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=InstantCLI
@@ -111,6 +111,8 @@ Categories=Utility;
 X-AppImage-Name=ins
 X-AppImage-Version=${INS_VERSION}
 EOF
+
+install -Dm644 "${APPDIR}/ins.desktop" "${APPDIR}/usr/share/applications/ins.desktop"
 
 ICON_PATH="${APPDIR}/usr/share/icons/hicolor/256x256/apps/instantcli.png"
 python3 - "${ICON_PATH}" <<'PY'
