@@ -13,3 +13,5 @@ test:
 appimage:
     ./utils/build_appimage.sh
 
+format:
+    yamlfmt .github

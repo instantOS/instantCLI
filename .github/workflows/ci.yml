@@ -1,12 +1,10 @@
 name: CI
-
 on:
   push:
     branches:
       - main
       - release
   pull_request:
-
 jobs:
   test:
     name: Test and build on Arch Linux
@@ -18,17 +16,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Initialise pacman
         run: |
           pacman-key --init
           pacman-key --populate archlinux
           pacman -Syu --noconfirm
-
       - name: Install build dependencies
         run: |
           pacman -S --noconfirm --needed base-devel rust pkgconf openssl git cmake restic jq
-
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -38,32 +33,24 @@ jobs:
           prefix-key: arch-test
           # Cache validation ensures correctness across Rust versions
           cache-all-crates: true
-
       - name: Check code formatting
         run: cargo fmt -- --check
-
       - name: Run clippy lints
         run: cargo clippy --all-targets --all-features
-
       - name: Run unit tests
         run: cargo test --locked --verbose
-
       - name: Build debug binary for integration tests
         run: cargo build --locked
-
       - name: Run integration tests
         run: |
           # Make test scripts executable
           chmod +x tests/*.sh
           ./tests/run_all.sh
-
       - name: Build release binary
         run: cargo build --release --locked
-
       - name: Check binary functionality
         run: |
           # Test basic CLI functionality
           ./target/release/ins --help > /dev/null
           ./target/release/ins --version
           echo "✓ CLI binary basic functionality works"
-

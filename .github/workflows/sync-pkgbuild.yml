@@ -1,12 +1,10 @@
 name: Sync PKGBUILD version
-
 on:
   pull_request_target:
     types:
       - opened
       - synchronize
       - reopened
-
 jobs:
   sync:
     if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-plz-')
@@ -28,15 +26,15 @@ jobs:
           set -euo pipefail
           version="$(python3 - <<'PY'
           import sys
-          
+
           try:
               import tomllib  # Python 3.11+
           except ModuleNotFoundError:  # pragma: no cover - fallback for older interpreters
               import tomli as tomllib
-          
+
           with open("Cargo.toml", "rb") as f:
               data = tomllib.load(f)
-          
+
           print(data["package"]["version"])
           PY
           )"
