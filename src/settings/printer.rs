@@ -374,7 +374,11 @@ Recommended replacement:\n{}",
     Ok(())
 }
 
-fn apply_nsswitch_update(ctx: &mut SettingsContext, current: &str, recommended_line: &str) -> Result<()> {
+fn apply_nsswitch_update(
+    ctx: &mut SettingsContext,
+    current: &str,
+    recommended_line: &str,
+) -> Result<()> {
     let updated_content = generate_nsswitch_update(current, recommended_line)?;
 
     let mut temp = NamedTempFile::new().context("creating temporary nsswitch copy")?;
@@ -410,7 +414,10 @@ mod tests {
 passwd: files
 group: files";
 
-        assert_eq!(analyze_nsswitch_config(config), NsswitchAnalysis::NoHostsLine);
+        assert_eq!(
+            analyze_nsswitch_config(config),
+            NsswitchAnalysis::NoHostsLine
+        );
     }
 
     #[test]
@@ -420,7 +427,10 @@ passwd: files
 hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns
 group: files";
 
-        assert_eq!(analyze_nsswitch_config(config), NsswitchAnalysis::AlreadyConfigured);
+        assert_eq!(
+            analyze_nsswitch_config(config),
+            NsswitchAnalysis::AlreadyConfigured
+        );
     }
 
     #[test]
@@ -430,7 +440,10 @@ passwd: files
 hosts: mymachines resolve [!UNAVAIL=return] mdns_minimal [NOTFOUND=return] files myhostname dns
 group: files";
 
-        assert_eq!(analyze_nsswitch_config(config), NsswitchAnalysis::AlreadyConfigured);
+        assert_eq!(
+            analyze_nsswitch_config(config),
+            NsswitchAnalysis::AlreadyConfigured
+        );
     }
 
     #[test]
@@ -456,7 +469,8 @@ rpc: files
 netgroup: files";
 
         let expected = NsswitchAnalysis::NeedsUpdate {
-            current_line: "hosts: mymachines resolve [!UNAVAIL=return] files myhostname dns".to_string(),
+            current_line: "hosts: mymachines resolve [!UNAVAIL=return] files myhostname dns"
+                .to_string(),
             recommended_line: ALTERNATIVE_RECOMMENDED_LINE.to_string(),
         };
 
@@ -597,8 +611,12 @@ group: files
     fn test_is_legacy_hosts_line() {
         assert!(is_legacy_hosts_line("hosts: files mdns dns"));
         assert!(is_legacy_hosts_line("hosts: mdns files dns"));
-        assert!(!is_legacy_hosts_line("hosts: files mdns_minimal [NOTFOUND=return] dns"));
-        assert!(!is_legacy_hosts_line("hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns"));
+        assert!(!is_legacy_hosts_line(
+            "hosts: files mdns_minimal [NOTFOUND=return] dns"
+        ));
+        assert!(!is_legacy_hosts_line(
+            "hosts: mymachines mdns_minimal [NOTFOUND=return] resolve [!UNAVAIL=return] files myhostname dns"
+        ));
         assert!(!is_legacy_hosts_line("hosts: files dns"));
         assert!(!is_legacy_hosts_line("hosts: files"));
     }
@@ -610,5 +628,57 @@ group: files
         assert!(RECOMMENDED_HOSTS_LINE.contains("mdns_minimal"));
         assert!(ALTERNATIVE_RECOMMENDED_LINE.contains("mdns_minimal"));
         assert!(RECOMMENDED_HOSTS_LINE != ALTERNATIVE_RECOMMENDED_LINE);
+    }
+
+    #[test]
+    fn test_demo_current_user_analysis() {
+        // This test demonstrates what would happen with your current config
+        let your_config = r"# Name Service Switch configuration file.
+# See nsswitch.conf(5) for details.
+
+passwd: files systemd
+group: files [SUCCESS=merge] systemd
+shadow: files systemd
+gshadow: files systemd
+
+publickey: files
+
+hosts: mymachines resolve [!UNAVAIL=return] files myhostname dns
+networks: files
+
+protocols: files
+services: files
+ethers: files
+rpc: files
+
+netgroup: files";
+
+        let expected = NsswitchAnalysis::NeedsUpdate {
+            current_line: "hosts: mymachines resolve [!UNAVAIL=return] files myhostname dns"
+                .to_string(),
+            recommended_line: ALTERNATIVE_RECOMMENDED_LINE.to_string(),
+        };
+
+        assert_eq!(analyze_nsswitch_config(your_config), expected);
+
+        // Test what the updated config would look like
+        let result = generate_nsswitch_update(your_config, ALTERNATIVE_RECOMMENDED_LINE).unwrap();
+        assert!(result.contains("hosts: mymachines resolve [!UNAVAIL=return] mdns_minimal [NOTFOUND=return] files myhostname dns"));
+
+        // Verify only the hosts line changed
+        let lines_before: Vec<&str> = your_config.lines().collect();
+        let lines_after: Vec<&str> = result.lines().collect();
+
+        for (i, line_before) in lines_before.iter().enumerate() {
+            if i < lines_after.len() {
+                let line_after = lines_after[i];
+                if line_before.trim_start().starts_with("hosts:") {
+                    assert_ne!(*line_before, line_after); // Should have changed
+                    assert!(line_after.contains("mdns_minimal")); // Should contain mDNS
+                } else {
+                    assert_eq!(*line_before, line_after); // Should be unchanged
+                }
+            }
+        }
     }
 }
