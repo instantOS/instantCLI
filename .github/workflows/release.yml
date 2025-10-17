@@ -92,6 +92,16 @@ jobs:
           sha256sum "artifacts/${pkg_dir}.tgz" > "artifacts/${pkg_dir}.tgz.sha256"
           rm -rf "$tmpdir"
 
+      - name: Build AppImage
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          mkdir -p artifacts
+          WORKSPACE="$PWD"
+          su builder -c "cd '$WORKSPACE' && chmod +x utils/build_appimage.sh && ./utils/build_appimage.sh"
+          install -Dm0644 "target/appimage/InstantCLI-${VERSION}-x86_64.AppImage" "artifacts/ins-${VERSION}-x86_64.AppImage"
+          sha256sum "artifacts/ins-${VERSION}-x86_64.AppImage" > "artifacts/ins-${VERSION}-x86_64.AppImage.sha256"
+
       - name: Upload release package
         uses: actions/upload-artifact@v4
         with:
@@ -99,6 +109,8 @@ jobs:
           path: |
             artifacts/ins-${{ steps.target.outputs.triple }}-v${{ steps.vars.outputs.version }}.tgz
             artifacts/ins-${{ steps.target.outputs.triple }}-v${{ steps.vars.outputs.version }}.tgz.sha256
+            artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage
+            artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage.sha256
 
   pkgbuild:
     name: Build Arch package
