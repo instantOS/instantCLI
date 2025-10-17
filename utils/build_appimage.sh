@@ -116,6 +116,10 @@ PY
 
 install -Dm644 "${APPDIR}/ins.desktop" "${APPDIR}/usr/share/applications/ins.desktop"
 
+ICON_URL="https://github.com/instantOS.png"
+download "${ICON_URL}" "${DOWNLOAD_DIR}/instantcli.png"
+install -Dm644 "${DOWNLOAD_DIR}/instantcli.png" "${APPDIR}/instantcli.png"
+
 install -Dm644 "LICENSE" "${APPDIR}/usr/share/doc/ins/LICENSE"
 
 APPIMAGETOOL="${WORK_DIR}/appimagetool-x86_64.AppImage"
