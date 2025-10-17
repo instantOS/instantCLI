@@ -27,8 +27,8 @@ jobs:
           pacman -Syu --noconfirm
 
       - name: Install build dependencies
-      run: |
-      pacman -S --noconfirm --needed base-devel rust pkgconf openssl git pacman-contrib fzf cmake jq restic unzip
+        run: |
+          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git pacman-contrib fzf cmake jq restic unzip
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
