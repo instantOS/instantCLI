@@ -61,13 +61,7 @@ impl SettingsContext {
     }
 
     pub fn ensure_packages(&mut self, packages: &[RequiredPackage]) -> Result<bool> {
-        let mut all_installed = true;
-        for package in packages {
-            if !package.ensure()? {
-                all_installed = false;
-            }
-        }
-        Ok(all_installed)
+        crate::common::requirements::ensure_packages_batch(packages)
     }
 
     pub fn persist(&mut self) -> Result<()> {

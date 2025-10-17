@@ -23,7 +23,10 @@ pub const CUPS_PACKAGE: RequiredPackage = RequiredPackage {
     name: "CUPS print server",
     arch_package_name: Some("cups"),
     ubuntu_package_name: Some("cups"),
-    tests: &[InstallTest::WhichSucceeds("cupsd")],
+    tests: &[
+        InstallTest::FileExists("/usr/bin/cupsd"),
+        InstallTest::FileExists("/usr/sbin/cupsd"),
+    ],
 };
 
 pub const CUPS_FILTERS_PACKAGE: RequiredPackage = RequiredPackage {

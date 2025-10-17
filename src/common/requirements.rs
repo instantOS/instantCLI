@@ -141,6 +141,13 @@ impl RequiredPackage {
         }
     }
 
+    /// Get the package name for the current system
+    pub fn get_package_name(&self) -> Option<(&'static str, PackageManager)> {
+        let pm = PackageManager::detect()?;
+        let name = pm.package_name(self)?;
+        Some((name, pm))
+    }
+
     /// Attempt to install the package
     fn install_with_prompt(&self) -> Result<()> {
         let package_manager = PackageManager::detect()
@@ -151,12 +158,9 @@ impl RequiredPackage {
             .ok_or_else(|| anyhow::anyhow!("Package not available for this system"))?;
 
         let installing_msg = format!(
-            "Installing {} with {}...",
-            package_name,
-            match package_manager {
-                PackageManager::Pacman => "pacman",
-                PackageManager::Apt => "apt",
-            }
+            "Installing {} (package: {})...",
+            self.name,
+            package_name
         );
 
         // Show installation progress message
@@ -170,11 +174,12 @@ impl RequiredPackage {
         // Verify installation succeeded
         if !self.is_installed() {
             return Err(anyhow::anyhow!(
-                "Installation completed but package still not found"
+                "Installation of package '{}' completed but verification checks still failed",
+                package_name
             ));
         }
 
-        let success_msg = format!("Successfully installed {}!", package_name);
+        let success_msg = format!("Successfully installed {} ({})!", self.name, package_name);
         FzfWrapper::builder()
             .message(&success_msg)
             .title("Installation Complete")
@@ -206,3 +211,130 @@ pub static RESTIC_PACKAGE: RequiredPackage = RequiredPackage {
     ubuntu_package_name: Some("restic"),
     tests: &[InstallTest::WhichSucceeds("restic")],
 };
+
+/// Ensure multiple packages are installed with a single prompt for all missing packages.
+/// Returns Ok(true) if all packages are installed or were successfully installed.
+/// Returns Ok(false) if user cancelled or any installation failed.
+pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<bool> {
+    // First, check which packages are missing
+    let missing: Vec<&RequiredPackage> = packages
+        .iter()
+        .filter(|pkg| !pkg.is_installed())
+        .collect();
+
+    if missing.is_empty() {
+        return Ok(true);
+    }
+
+    // Detect package manager
+    let package_manager = PackageManager::detect()
+        .ok_or_else(|| anyhow::anyhow!("No supported package manager found"))?;
+
+    // Build the prompt message with both human-readable names and package names
+    let mut msg = String::from("The following packages are required:\n\n");
+    let mut package_names = Vec::new();
+    
+    for pkg in &missing {
+        let package_name = package_manager
+            .package_name(pkg)
+            .ok_or_else(|| anyhow::anyhow!("Package '{}' not available for this system", pkg.name))?;
+        
+        msg.push_str(&format!("  • {} (package: {})\n", pkg.name, package_name));
+        package_names.push(package_name);
+    }
+    
+    msg.push_str("\nDo you want to install all of them?");
+
+    // Show single confirmation for all packages
+    let should_install = FzfWrapper::builder()
+        .confirm(&msg)
+        .yes_text("Install All")
+        .no_text("Cancel")
+        .show_confirmation()?;
+
+    if !matches!(should_install, crate::menu_utils::ConfirmResult::Yes) {
+        // User declined, show what they need to install manually
+        let mut cancel_msg = String::from("The following packages are required:\n\n");
+        for pkg in &missing {
+            cancel_msg.push_str(&format!("  • {}\n", pkg.name));
+        }
+        cancel_msg.push_str(&format!("\n{}", missing[0].install_hint()));
+        
+        FzfWrapper::builder()
+            .message(&cancel_msg)
+            .title("Packages Required")
+            .show_message()?;
+        return Ok(false);
+    }
+
+    // Install all packages in a single command for better performance
+    let installing_msg = format!(
+        "Installing {} package{}...",
+        package_names.len(),
+        if package_names.len() == 1 { "" } else { "s" }
+    );
+    
+    FzfWrapper::builder()
+        .message(&installing_msg)
+        .title("Installing Packages")
+        .show_message()?;
+
+    // Install all at once
+    match package_manager {
+        PackageManager::Pacman => {
+            let mut args = vec!["pacman", "-S", "--noconfirm"];
+            for name in &package_names {
+                args.push(name);
+            }
+            cmd("sudo", &args)
+                .run()
+                .context("Failed to install packages with pacman")?;
+        }
+        PackageManager::Apt => {
+            let mut args = vec!["apt", "install", "-y"];
+            for name in &package_names {
+                args.push(name);
+            }
+            cmd("sudo", &args)
+                .run()
+                .context("Failed to install packages with apt")?;
+        }
+    }
+
+    // Verify all installations succeeded
+    let mut failed = Vec::new();
+    for pkg in &missing {
+        if !pkg.is_installed() {
+            if let Some(package_name) = package_manager.package_name(pkg) {
+                failed.push(format!("{} ({})", pkg.name, package_name));
+            } else {
+                failed.push(pkg.name.to_string());
+            }
+        }
+    }
+
+    if !failed.is_empty() {
+        let error_msg = format!(
+            "Installation completed but the following packages failed verification:\n\n{}\n\nSome packages may require a system restart or PATH update.",
+            failed.iter().map(|s| format!("  • {}", s)).collect::<Vec<_>>().join("\n")
+        );
+        FzfWrapper::builder()
+            .message(&error_msg)
+            .title("Installation Warning")
+            .show_message()?;
+        return Ok(false);
+    }
+
+    let success_msg = format!(
+        "Successfully installed {} package{}!",
+        package_names.len(),
+        if package_names.len() == 1 { "" } else { "s" }
+    );
+    FzfWrapper::builder()
+        .message(&success_msg)
+        .title("Installation Complete")
+        .show_message()?;
+
+    Ok(true)
+}
+
