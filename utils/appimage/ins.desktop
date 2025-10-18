@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=InstantCLI
+Comment=InstantOS command-line utility suite
+Exec=ins
+Icon=instantcli
+Terminal=true
+Categories=Utility;
+X-AppImage-Name=ins
+X-AppImage-Version=@VERSION@

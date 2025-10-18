@@ -4,6 +4,7 @@ pub mod commands;
 pub mod context;
 pub mod defaultapps;
 pub mod packages;
+pub mod printer;
 pub mod registry;
 pub mod store;
 pub mod ui;

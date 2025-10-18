@@ -126,6 +126,7 @@ pub enum NerdFont {
     Upgrade,
     About,
     Partition,
+    Printer,
 
     // Toggle-specific semantic icons
     Palette,
@@ -266,6 +267,7 @@ impl NerdFont {
             Self::Upgrade => '⬆',   // fa-arrow-circle-up
             Self::About => 'ℹ',     // fa-info-circle
             Self::Partition => '', // fa-partition
+            Self::Printer => '',   // fa-print
 
             // Toggle-specific semantic icons
             Self::Palette => '󰏘',   // fa-palette
@@ -274,12 +276,12 @@ impl NerdFont {
 
             // File type icons
             Self::Image => '🖼',             // fa-image
-            Self::Video => '🎥',            // fa-video
-            Self::Music => '🎵',            // fa-music
-            Self::FilePdf => '📄',          // fa-file-pdf
-            Self::FileWord => '📝',         // fa-file-word
-            Self::FileExcel => '📊',        // fa-file-excel
-            Self::FilePresentation => '📊', // fa-file-powerpoint
+            Self::Video => '',            // fa-video
+            Self::Music => '',            // fa-music
+            Self::FilePdf => '',          // fa-file-pdf
+            Self::FileWord => '',         // fa-file-word
+            Self::FileExcel => '',        // fa-file-excel
+            Self::FilePresentation => '󰐩', // fa-file-powerpoint
         }
     }
 }

@@ -10,3 +10,8 @@ rootinstall:
 test:
     ./tests/run_all.sh
 
+appimage:
+    ./utils/build_appimage.sh
+
+format:
+    yamlfmt .github
