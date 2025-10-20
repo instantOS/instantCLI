@@ -45,8 +45,8 @@ prepare_ins_binary() {
     export CARGO_BUILD_JOBS=$(nproc)
 
     # Only build the ins binary, skip all other dependencies and examples
-    # Suppress warnings to avoid interfering with JSON parsing in tests
-    cargo build --bin ins --message-format=human --quiet
+    # Suppress all output except errors to avoid interfering with tests
+    cargo build --bin ins --message-format=short --quiet 2>&1 | grep -E "^error" || true
 
     export INS_BIN="${REPO_ROOT}/target/debug/ins"
     export INS_PREPARED=1

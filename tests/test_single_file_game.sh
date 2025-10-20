@@ -60,7 +60,7 @@ main() {
     # Test 1: Verify restic only backed up the specific file, not the entire directory
     echo "Testing restic backup contents..."
     local restic_files
-    restic_files="$(RESTIC_PASSWORD=testpass restic -r "${restic_repo}" ls "${snapshot_id}" | grep -E '^\w+' | tail -n +2)"
+    restic_files="$(RESTIC_PASSWORD=testpass restic -r "${restic_repo}" ls "${snapshot_id}" 2>/dev/null | grep -E '^/' | tail -n +2)"
 
     echo "Restic files: ${restic_files}" >&2
 
