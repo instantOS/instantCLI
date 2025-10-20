@@ -559,7 +559,8 @@ fn sync_single_game(
     let local_save_info = crate::game::utils::save_files::get_save_directory_info(save_path)?;
 
     // Security check: ensure save directory is not empty before backing up
-    if local_save_info.file_count == 0 {
+    // For single files that don't exist, we'll handle this in the snapshot comparison logic
+    if local_save_info.file_count == 0 && save_path.exists() {
         return Ok(SyncAction::Error(
             "Save directory is empty - refusing to backup empty directory".to_string(),
         ));
