@@ -629,8 +629,15 @@ fn restore_game_from_snapshot(
     let backup_handler = GameBackup::new(game_config.clone());
     let save_path = installation.save_path.as_path();
 
+    // Use the appropriate restore method based on save path type
     backup_handler
-        .restore_game_backup(&installation.game_name.0, snapshot_id, save_path)
+        .restore_game_backup_with_type(
+            &installation.game_name.0,
+            snapshot_id,
+            save_path,
+            installation.save_path_type,
+            save_path,
+        )
         .context("Failed to restore from snapshot")?;
 
     // Update the installation with the checkpoint

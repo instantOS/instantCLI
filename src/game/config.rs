@@ -7,6 +7,40 @@ use std::{
 
 use crate::dot::path_serde::TildePath;
 
+/// Describes what kind of filesystem element a tracked path represents
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PathContentKind {
+    Directory,
+    File,
+}
+
+impl Default for PathContentKind {
+    fn default() -> Self {
+        PathContentKind::Directory
+    }
+}
+
+impl PathContentKind {
+    pub fn is_file(self) -> bool {
+        matches!(self, PathContentKind::File)
+    }
+
+    pub fn is_directory(self) -> bool {
+        matches!(self, PathContentKind::Directory)
+    }
+}
+
+impl From<std::fs::Metadata> for PathContentKind {
+    fn from(metadata: std::fs::Metadata) -> Self {
+        if metadata.is_file() {
+            PathContentKind::File
+        } else {
+            PathContentKind::Directory
+        }
+    }
+}
+
 /// Configurable restic retention policy values stored in games.toml
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -128,6 +162,8 @@ impl Game {
 pub struct GameDependency {
     pub id: String,
     pub source_path: String,
+    #[serde(default)]
+    pub source_type: PathContentKind,
 }
 
 /// Game installation - device-specific
@@ -135,6 +171,8 @@ pub struct GameDependency {
 pub struct GameInstallation {
     pub game_name: GameName,
     pub save_path: TildePath,
+    #[serde(default)]
+    pub save_path_type: PathContentKind,
     pub nearest_checkpoint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch_command: Option<String>,
@@ -144,9 +182,18 @@ pub struct GameInstallation {
 
 impl GameInstallation {
     pub fn new(game_name: impl Into<GameName>, save_path: impl Into<TildePath>) -> Self {
+        Self::with_kind(game_name, save_path, PathContentKind::Directory)
+    }
+
+    pub fn with_kind(
+        game_name: impl Into<GameName>,
+        save_path: impl Into<TildePath>,
+        kind: PathContentKind,
+    ) -> Self {
         Self {
             game_name: game_name.into(),
             save_path: save_path.into(),
+            save_path_type: kind,
             nearest_checkpoint: None,
             launch_command: None,
             dependencies: Vec::new(),
@@ -177,6 +224,8 @@ impl GameInstallation {
 pub struct InstalledDependency {
     pub dependency_id: String,
     pub install_path: TildePath,
+    #[serde(default)]
+    pub install_path_type: PathContentKind,
 }
 
 /// Main game configuration

@@ -203,7 +203,7 @@ pub(super) fn setup_single_game(
             );
 
             let restore_summary =
-                restore_latest_backup(game_name, &save_path, snapshot_id, game_config)?;
+                restore_latest_backup(game_name, &save_path, snapshot_id, game_config, installation.save_path_type)?;
             emit(
                 Level::Success,
                 "game.setup.restore_done",
@@ -329,10 +329,17 @@ fn restore_latest_backup(
     save_path: &TildePath,
     snapshot_id: &str,
     game_config: &InstantGameConfig,
+    save_path_type: crate::game::config::PathContentKind,
 ) -> Result<String> {
     let backup_handler = GameBackup::new(game_config.clone());
     let summary = backup_handler
-        .restore_game_backup(game_name, snapshot_id, save_path.as_path())
+        .restore_game_backup_with_type(
+            game_name,
+            snapshot_id,
+            save_path.as_path(),
+            save_path_type,
+            save_path.as_path(),
+        )
         .context("Failed to restore latest backup")?;
 
     let repo_path = game_config.repo.as_path().to_string_lossy().to_string();

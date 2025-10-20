@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::{fs, path::Path};
 
-use crate::game::config::{GameInstallation, InstantGameConfig};
+use crate::game::config::{GameInstallation, InstantGameConfig, PathContentKind};
 use crate::game::restic::{cache, tags};
 use crate::restic::ResticWrapper;
 
@@ -18,10 +18,25 @@ impl GameBackup {
     /// Create a backup of a specific game's save directory
     pub fn backup_game(&self, game_installation: &GameInstallation) -> Result<String> {
         // Validate that save path exists
-        if !game_installation.save_path.as_path().exists() {
+        let save_path_buf = game_installation.save_path.as_path();
+        if !save_path_buf.exists() {
             return Err(anyhow::anyhow!(
                 "Save path does not exist: {}",
-                game_installation.save_path.as_path().display()
+                save_path_buf.display()
+            ));
+        }
+
+        if game_installation.save_path_type.is_directory() && !save_path_buf.is_dir() {
+            return Err(anyhow::anyhow!(
+                "Configured save path '{}' is not a directory",
+                save_path_buf.display()
+            ));
+        }
+
+        if game_installation.save_path_type.is_file() && !save_path_buf.is_file() {
+            return Err(anyhow::anyhow!(
+                "Configured save path '{}' is not a file",
+                save_path_buf.display()
             ));
         }
 
@@ -34,8 +49,26 @@ impl GameBackup {
         // --skip-if-unchanged for backups.
         let tags = tags::create_game_tags(&game_installation.game_name.0);
 
+        let restic_paths: Vec<&Path> = match game_installation.save_path_type {
+            PathContentKind::Directory => vec![save_path_buf],
+            PathContentKind::File => {
+                let parent = save_path_buf
+                    .parent()
+                    .ok_or_else(|| anyhow::anyhow!("Cannot determine parent directory for save file"))?;
+                vec![parent]
+            }
+        };
+
+        let mut include_rel_path = None;
+        if game_installation.save_path_type.is_file() {
+            include_rel_path = save_path_buf
+                .parent()
+                .and_then(|parent| save_path_buf.strip_prefix(parent).ok())
+                .map(|p| p.to_string_lossy().to_string());
+        }
+
         let progress = restic
-            .backup(&[game_installation.save_path.as_path()], tags)
+            .backup_with_filter(&restic_paths, tags, include_rel_path.as_deref())
             .context("Failed to perform restic backup")?;
 
         if let Some(summary) = progress.summary {
@@ -86,9 +119,10 @@ impl GameBackup {
             })?;
         }
 
-        let snapshot_path = cache::get_snapshot_by_id(snapshot_id, game_name, &self.config)
-            .context("Failed to locate snapshot metadata")?
-            .and_then(|snapshot| snapshot.paths.first().cloned());
+        let snapshot = cache::get_snapshot_by_id(snapshot_id, game_name, &self.config)
+            .context("Failed to locate snapshot metadata")?;
+
+        let snapshot_path = snapshot.paths.first().cloned();
 
         let restic = ResticWrapper::new(
             self.config.repo.as_path().to_string_lossy().to_string(),
@@ -104,6 +138,49 @@ impl GameBackup {
         }
 
         Ok("restore completed".to_string())
+    }
+
+    /// Restore a game backup with single file support
+    pub fn restore_game_backup_with_type(
+        &self,
+        game_name: &str,
+        snapshot_id: &str,
+        target_path: &Path,
+        save_path_type: PathContentKind,
+        original_save_path: &Path,
+    ) -> Result<String> {
+        match save_path_type {
+            PathContentKind::Directory => {
+                // For directories, use the standard restore
+                self.restore_game_backup(game_name, snapshot_id, target_path)
+            }
+            PathContentKind::File => {
+                // For single files, we need to restore just the specific file
+                if !target_path.parent().exists() {
+                    if let Some(parent) = target_path.parent() {
+                        fs::create_dir_all(parent).with_context(|| {
+                            format!("Failed to create restore target parent: {}", parent.display())
+                        })?;
+                    }
+                }
+
+                let restic = ResticWrapper::new(
+                    self.config.repo.as_path().to_string_lossy().to_string(),
+                    self.config.repo_password.clone(),
+                );
+
+                // Use restore_single_file to restore just the specific file
+                let progress = restic
+                    .restore_single_file(snapshot_id, &original_save_path.to_string_lossy(), target_path.parent().unwrap_or(target_path))
+                    .context("Failed to restore single file from snapshot")?;
+
+                if let Some(summary) = progress.summary {
+                    return Ok(format!("restored {} files", summary.files_restored));
+                }
+
+                Ok("restore completed".to_string())
+            }
+        }
     }
 
     /// Check if restic is available on the system

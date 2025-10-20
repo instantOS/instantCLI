@@ -139,6 +139,56 @@ impl ResticWrapper {
         BackupProgress::parse(&stdout)
     }
 
+    /// Backup with include filter for single file support
+    pub fn backup_with_filter<P: AsRef<std::path::Path>>(
+        &self,
+        paths: &[P],
+        tags: Vec<String>,
+        include_filter: Option<&str>,
+    ) -> Result<BackupProgress, ResticError> {
+        let mut args: Vec<String> = vec![
+            "backup".to_string(),
+            "--skip-if-unchanged".to_string(),
+            "--json".to_string(),
+        ];
+
+        // Add required tags
+        for tag in tags {
+            args.push("--tag".to_string());
+            args.push(tag);
+        }
+
+        // Add include filter if specified (for single files)
+        if let Some(filter) = include_filter {
+            args.push("--include".to_string());
+            args.push(filter.to_string());
+        }
+
+        for path in paths {
+            args.push(
+                path.as_ref()
+                    .to_str()
+                    .ok_or_else(|| {
+                        ResticError::CommandFailed(format!("Invalid path: {:?}", path.as_ref()))
+                    })?
+                    .to_string(),
+            );
+        }
+
+        let mut cmd = self.base_command();
+        cmd.args(&args);
+        let output = self.execute_and_log_command(cmd, &args)?;
+
+        if !output.status.success() {
+            let code = output.status.code().unwrap_or(1);
+            let stderr = String::from_utf8(output.stderr)?;
+            return Err(ResticError::from_exit_code(code, &stderr));
+        }
+
+        let stdout = String::from_utf8(output.stdout)?;
+        BackupProgress::parse(&stdout)
+    }
+
     pub fn list_snapshots(&self) -> Result<Vec<Snapshot>, ResticError> {
         // Deprecated simple listing: delegate to the filtered listing with no tags
         let mut cmd = self.base_command();
@@ -285,6 +335,94 @@ impl ResticWrapper {
                 })?
                 .to_string(),
         );
+        args.push("--json".to_string());
+
+        let mut cmd = self.base_command();
+        cmd.args(&args);
+        let output = self.execute_and_log_command(cmd, &args)?;
+
+        if !output.status.success() {
+            let code = output.status.code().unwrap_or(1);
+            let stderr = String::from_utf8(output.stderr)?;
+            return Err(ResticError::from_exit_code(code, &stderr));
+        }
+
+        let stdout = String::from_utf8(output.stdout)?;
+        RestoreProgress::parse(&stdout)
+    }
+
+    /// Restore with include filter for selective file restoration
+    pub fn restore_with_filter(
+        &self,
+        snapshot_id: &str,
+        subpath: Option<&str>,
+        target_path: &std::path::Path,
+        include_filter: Option<&str>,
+    ) -> Result<RestoreProgress, ResticError> {
+        let mut args = vec!["restore".to_string()];
+
+        let mut snapshot_spec = snapshot_id.to_string();
+        if let Some(path) = subpath
+            && !path.is_empty()
+        {
+            snapshot_spec.push(':');
+            snapshot_spec.push_str(path);
+        }
+
+        args.push(snapshot_spec);
+        args.push("--target".to_string());
+        args.push(
+            target_path
+                .to_str()
+                .ok_or_else(|| {
+                    ResticError::CommandFailed(format!("Invalid target path: {target_path:?}"))
+                })?
+                .to_string(),
+        );
+
+        // Add include filter if specified (for single files)
+        if let Some(filter) = include_filter {
+            args.push("--include".to_string());
+            args.push(filter.to_string());
+        }
+
+        args.push("--json".to_string());
+
+        let mut cmd = self.base_command();
+        cmd.args(&args);
+        let output = self.execute_and_log_command(cmd, &args)?;
+
+        if !output.status.success() {
+            let code = output.status.code().unwrap_or(1);
+            let stderr = String::from_utf8(output.stderr)?;
+            return Err(ResticError::from_exit_code(code, &stderr));
+        }
+
+        let stdout = String::from_utf8(output.stdout)?;
+        RestoreProgress::parse(&stdout)
+    }
+
+    /// Restore a single file from a snapshot
+    pub fn restore_single_file(
+        &self,
+        snapshot_id: &str,
+        source_path: &str,
+        target_path: &std::path::Path,
+    ) -> Result<RestoreProgress, ResticError> {
+        let mut args = vec!["restore".to_string()];
+
+        args.push(snapshot_id.to_string());
+        args.push("--target".to_string());
+        args.push(
+            target_path
+                .to_str()
+                .ok_or_else(|| {
+                    ResticError::CommandFailed(format!("Invalid target path: {target_path:?}"))
+                })?
+                .to_string(),
+        );
+        args.push("--include".to_string());
+        args.push(source_path.to_string());
         args.push("--json".to_string());
 
         let mut cmd = self.base_command();

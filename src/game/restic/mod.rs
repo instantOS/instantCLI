@@ -487,7 +487,13 @@ pub fn restore_game_saves(
         })),
     );
 
-    match backup_handler.restore_game_backup(&game_selection.game_name, &snapshot_id, save_path) {
+    match backup_handler.restore_game_backup_with_type(
+            &game_selection.game_name,
+            &snapshot_id,
+            save_path,
+            game_selection.installation.save_path_type,
+            save_path,
+        ) {
         Ok(output) => {
             let output_clone = output.clone();
             emit_restic_event(

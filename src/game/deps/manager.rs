@@ -6,7 +6,7 @@ use anyhow::{Context, Result, anyhow};
 use crate::dot::path_serde::TildePath;
 use crate::game::config::{
     Game, GameDependency, GameInstallation, InstallationsConfig, InstalledDependency,
-    InstantGameConfig,
+    InstantGameConfig, PathContentKind,
 };
 use crate::game::deps::{display, selection};
 use crate::game::games::selection::select_game_interactive;
@@ -94,9 +94,13 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
 
     let backup = backup_dependency(&game_name, &dependency_id, &source_path_buf, &game_config)?;
 
+    let source_meta = std::fs::metadata(&source_path_buf)?;
+    let source_type = PathContentKind::from(source_meta);
+
     let dependency = GameDependency {
         id: dependency_id.clone(),
         source_path: source_path_buf.to_string_lossy().to_string(),
+        source_type,
     };
 
     if let Some(game) = game_config.games.get_mut(game_index) {
@@ -571,16 +575,25 @@ fn upsert_installed_dependency(
     dependency_id: &str,
     install_path: crate::dot::path_serde::TildePath,
 ) {
+    // Determine the path type by checking if it exists
+    let install_path_type = if let Ok(metadata) = std::fs::metadata(&install_path.as_path()) {
+        PathContentKind::from(metadata)
+    } else {
+        PathContentKind::Directory // Default to directory if we can't determine
+    };
+
     if let Some(existing) = installation
         .dependencies
         .iter_mut()
         .find(|dep| dep.dependency_id == dependency_id)
     {
         existing.install_path = install_path;
+        existing.install_path_type = install_path_type;
     } else {
         installation.dependencies.push(InstalledDependency {
             dependency_id: dependency_id.to_string(),
             install_path,
+            install_path_type,
         });
     }
 }

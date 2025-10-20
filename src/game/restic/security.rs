@@ -1,4 +1,4 @@
-use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind};
 use crate::game::games::selection;
 use crate::game::utils::save_files::{
     TimeComparison, compare_snapshot_vs_local, format_file_size, format_system_time_for_display,
@@ -46,6 +46,7 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
                     installation: GameInstallation {
                         game_name: crate::game::config::GameName(String::new()),
                         save_path: crate::dot::path_serde::TildePath::new(std::path::PathBuf::new()),
+                        save_path_type: crate::game::config::PathContentKind::Directory,
                         nearest_checkpoint: None,
                         launch_command: None,
                         dependencies: Vec::new(),

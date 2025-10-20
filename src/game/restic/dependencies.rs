@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::game::config::{GameDependency, InstantGameConfig};
+use crate::game::config::{GameDependency, InstantGameConfig, PathContentKind};
 use crate::game::restic::{cache, tags};
 use crate::restic::wrapper::{BackupProgress, ResticWrapper, Snapshot};
 use anyhow::{Context, Result, anyhow};
@@ -54,13 +54,40 @@ pub fn backup_dependency(
         ));
     }
 
+    let metadata = fs::metadata(source_path).with_context(|| {
+        format!(
+            "Failed to read metadata for dependency source path: {}",
+            source_path.display()
+        )
+    })?;
+    let source_kind: PathContentKind = metadata.into();
+
     let restic = ResticWrapper::new(
         config.repo.as_path().to_string_lossy().to_string(),
         config.repo_password.clone(),
     );
 
     let tags = tags::create_dependency_tags(game_name, dependency_id);
-    let progress = restic.backup(&[source_path], tags).with_context(|| {
+    let mut include_filter = None;
+    let mut backup_paths: Vec<&Path> = vec![source_path];
+
+    if source_kind.is_file() {
+        let parent = source_path.parent().ok_or_else(|| {
+            anyhow!(
+                "Cannot determine directory to snapshot for dependency '{}:{}'",
+                game_name, dependency_id
+            )
+        })?;
+        backup_paths = vec![parent];
+        include_filter = source_path
+            .strip_prefix(parent)
+            .ok()
+            .map(|p| p.to_string_lossy().to_string());
+    }
+
+    let progress = restic
+        .backup_with_filter(&backup_paths, tags, include_filter.as_deref())
+        .with_context(|| {
         format!(
             "Failed to backup dependency '{}:{}'",
             game_name, dependency_id
@@ -118,40 +145,48 @@ pub fn restore_dependency(
         config.repo_password.clone(),
     );
 
-    fs::create_dir_all(install_path).with_context(|| {
-        format!(
-            "Failed to create dependency install directory: {}",
-            install_path.display()
-        )
-    })?;
+    let source_kind = dependency.source_type;
 
-    let progress = restic
-        .restore(&snapshot_id, Some(&dependency.source_path), install_path)
-        .with_context(|| {
-            format!(
-                "Failed to restore dependency '{}:{}' from restic",
-                game_name, dependency.id
-            )
-        })?;
+    match source_kind {
+        PathContentKind::Directory => {
+            fs::create_dir_all(install_path).with_context(|| {
+                format!(
+                    "Failed to create dependency install directory: {}",
+                    install_path.display()
+                )
+            })?;
 
-    if !fs::metadata(install_path)
-        .map(|meta| meta.is_dir())
-        .unwrap_or(false)
-    {
-        return Err(anyhow!(
-            "Dependency '{}' ({}) did not restore as a directory; file dependencies are not supported",
-            dependency.id,
-            dependency.source_path
-        ));
-    }
+            restic
+                .restore_with_filter(&snapshot_id, Some(&dependency.source_path), install_path, None)
+                .with_context(|| {
+                    format!(
+                        "Failed to restore dependency '{}:{}' from restic",
+                        game_name, dependency.id
+                    )
+                })?
+        }
+        PathContentKind::File => {
+            if let Some(parent) = install_path.parent() {
+                fs::create_dir_all(parent).with_context(|| {
+                    format!(
+                        "Failed to create parent directory for dependency restore: {}",
+                        parent.display()
+                    )
+                })?;
+            }
 
-    let summary = Some(
-        progress
-            .summary
-            .as_ref()
-            .map(|restored| format!("restored {} files", restored.files_restored))
-            .unwrap_or_else(|| "restore completed".to_string()),
-    );
+            restic
+                .restore_single_file(&snapshot_id, &dependency.source_path, install_path)
+                .with_context(|| {
+                    format!(
+                        "Failed to restore dependency '{}:{}' file from restic",
+                        game_name, dependency.id
+                    )
+                })?
+        }
+    };
+
+    let summary = Some("restore completed".to_string());
 
     Ok(DependencyRestoreOutcome {
         snapshot_id,
