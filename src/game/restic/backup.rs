@@ -153,34 +153,70 @@ impl GameBackup {
                 self.restore_game_backup(game_name, snapshot_id, target_path)
             }
             PathContentKind::File => {
-                // For single files, we need to restore just the specific file
-                if let Some(parent) = target_path.parent()
-                    && !parent.exists()
-                {
-                    fs::create_dir_all(parent).with_context(|| {
-                        format!(
-                            "Failed to create restore target parent: {}",
-                            parent.display()
-                        )
-                    })?;
-                }
+                // For single files, restore to temp directory then move to final location
+                let temp_restore = std::env::temp_dir().join(format!(
+                    "ins-restore-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis()
+                ));
+                
+                fs::create_dir_all(&temp_restore).with_context(|| {
+                    format!("Failed to create temp restore directory: {}", temp_restore.display())
+                })?;
 
                 let restic = ResticWrapper::new(
                     self.config.repo.as_path().to_string_lossy().to_string(),
                     self.config.repo_password.clone(),
                 );
 
-                // Use restore_single_file to restore just the specific file
+                // Restore to temp directory
                 let progress = restic
                     .restore_single_file(
                         snapshot_id,
                         &original_save_path.to_string_lossy(),
-                        target_path.parent().unwrap_or(target_path),
+                        &temp_restore,
                     )
                     .context("Failed to restore single file from snapshot")?;
 
+                // Find the restored file in the temp directory
+                let restored_file = temp_restore.join(
+                    original_save_path
+                        .strip_prefix("/")
+                        .unwrap_or(original_save_path)
+                );
+
+                if !restored_file.exists() {
+                    // Cleanup temp directory
+                    let _ = fs::remove_dir_all(&temp_restore);
+                    return Err(anyhow::anyhow!(
+                        "Restored file not found at expected location: {}",
+                        restored_file.display()
+                    ));
+                }
+
+                // Ensure target parent directory exists
+                if let Some(parent) = target_path.parent() {
+                    fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create target directory: {}", parent.display())
+                    })?;
+                }
+
+                // Move the file to final location
+                fs::copy(&restored_file, target_path).with_context(|| {
+                    format!(
+                        "Failed to copy restored file from {} to {}",
+                        restored_file.display(),
+                        target_path.display()
+                    )
+                })?;
+
+                // Cleanup temp directory
+                let _ = fs::remove_dir_all(&temp_restore);
+
                 if let Some(summary) = progress.summary {
-                    return Ok(format!("restored {} files", summary.files_restored));
+                    return Ok(format!("restored 1 file"));
                 }
 
                 Ok("restore completed".to_string())
