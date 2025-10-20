@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
 
+use crate::dot::path_serde::TildePath;
 use crate::game::config::{
     Game, GameDependency, GameInstallation, InstallationsConfig, InstalledDependency,
     InstantGameConfig,
@@ -37,6 +38,8 @@ pub struct UninstallDependencyOptions {
 
 pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
     let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let mut installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
 
     validation::check_restic_and_game_manager(&game_config)?;
 
@@ -53,6 +56,8 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
         .iter()
         .position(|game| game.name.0 == game_name)
         .ok_or_else(|| anyhow!("Game '{}' not found in configuration", game_name))?;
+
+    ensure_local_installation_exists(&installations, &game_name)?;
 
     let dependency_id = {
         let game_ref = &game_config.games[game_index];
@@ -74,6 +79,13 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
         ));
     }
 
+    let install_path_tilde = TildePath::from_str(&source_path).with_context(|| {
+        format!(
+            "Failed to convert dependency path '{}' into a storable representation",
+            source_path
+        )
+    })?;
+
     println!(
         "{} Creating snapshot for '{}' dependency. This may take a while...",
         char::from(NerdFont::Info),
@@ -90,23 +102,38 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
     if let Some(game) = game_config.games.get_mut(game_index) {
         game.dependencies.push(dependency);
     }
+
+    {
+        let installation = find_installation_mut(&mut installations, &game_name)?;
+        upsert_installed_dependency(installation, &dependency_id, install_path_tilde.clone());
+    }
+
+    installations.save()?;
     game_config.save()?;
+
+    let install_path_display = install_path_tilde
+        .to_tilde_string()
+        .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string());
 
     emit(
         Level::Success,
         "game.deps.add",
         &format!(
-            "{} Added dependency '{}' for '{}' (snapshot: {}).",
+            "{} Added dependency '{}' for '{}' (snapshot: {}). Installed at {}.",
             char::from(NerdFont::Check),
             dependency_id,
             game_name,
-            backup.snapshot_id
+            backup.snapshot_id,
+            install_path_display
         ),
         Some(serde_json::json!({
             "game": game_name,
             "dependency": dependency_id,
             "snapshot": backup.snapshot_id,
-            "reused_existing": backup.reused_existing
+            "reused_existing": backup.reused_existing,
+            "install_path": install_path_tilde
+                .to_tilde_string()
+                .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string())
         })),
     );
 
@@ -556,6 +583,42 @@ fn upsert_installed_dependency(
             install_path,
         });
     }
+}
+
+fn ensure_local_installation_exists(
+    installations: &InstallationsConfig,
+    game_name: &str,
+) -> Result<()> {
+    if installations
+        .installations
+        .iter()
+        .any(|inst| inst.game_name.0 == game_name)
+    {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Game '{}' is not configured on this device. Run '{} game setup' to configure it before adding dependencies.",
+            game_name,
+            env!("CARGO_BIN_NAME")
+        ))
+    }
+}
+
+fn find_installation_mut<'a>(
+    installations: &'a mut InstallationsConfig,
+    game_name: &str,
+) -> Result<&'a mut GameInstallation> {
+    installations
+        .installations
+        .iter_mut()
+        .find(|inst| inst.game_name.0 == game_name)
+        .ok_or_else(|| {
+            anyhow!(
+                "Game '{}' is not configured on this device. Run '{} game setup' to configure it before adding dependencies.",
+                game_name,
+                env!("CARGO_BIN_NAME")
+            )
+        })
 }
 
 fn format_path_for_display(path: &str) -> String {
