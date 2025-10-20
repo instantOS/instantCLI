@@ -338,7 +338,7 @@ fn restore_latest_backup(
 ) -> Result<String> {
     let backup_handler = GameBackup::new(game_config.clone());
     let summary = backup_handler
-        .restore_game_backup_with_type(
+        .restore_backup(
             game_name,
             snapshot_id,
             save_path.as_path(),
