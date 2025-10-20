@@ -631,7 +631,7 @@ fn restore_game_from_snapshot(
 
     // Use the appropriate restore method based on save path type
     backup_handler
-        .restore_game_backup_with_type(
+        .restore_backup(
             &installation.game_name.0,
             snapshot_id,
             save_path,

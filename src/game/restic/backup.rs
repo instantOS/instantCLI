@@ -138,8 +138,8 @@ impl GameBackup {
         Ok("restore completed".to_string())
     }
 
-    /// Restore a game backup with single file support
-    pub fn restore_game_backup_with_type(
+    /// Restore a game backup (handles both files and directories)
+    pub fn restore_backup(
         &self,
         game_name: &str,
         snapshot_id: &str,

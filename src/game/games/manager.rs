@@ -278,14 +278,14 @@ impl GameManager {
                 char::from(NerdFont::Edit),
                 game_name.to_lowercase().replace(' ', "-")
             ))
-            .scope(FilePickerScope::Directories)
+            .scope(FilePickerScope::FilesAndDirectories)
             .picker_hint(format!(
-                "{} Select the directory that stores the save files",
+                "{} Select the file or directory that stores the save data",
                 char::from(NerdFont::Info)
             ))
             .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
             .picker_option_label(format!(
-                "{} Browse and choose a folder",
+                "{} Browse and choose a path",
                 char::from(NerdFont::FolderOpen)
             ))
             .choose()?;

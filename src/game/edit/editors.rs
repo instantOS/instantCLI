@@ -298,14 +298,14 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
             "{} Enter the new save path:",
             char::from(NerdFont::Edit)
         ))
-        .scope(FilePickerScope::Directories)
+        .scope(FilePickerScope::FilesAndDirectories)
         .picker_hint(format!(
-            "{} Select the directory to use for save files",
+            "{} Select the file or directory to use for save data",
             char::from(NerdFont::Info)
         ))
         .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
         .picker_option_label(format!(
-            "{} Browse and choose a folder",
+            "{} Browse and choose a path",
             char::from(NerdFont::FolderOpen)
         ))
         .choose()?;

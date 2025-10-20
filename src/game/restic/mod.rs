@@ -516,7 +516,7 @@ pub fn restore_game_saves(
         })),
     );
 
-    match backup_handler.restore_game_backup_with_type(
+    match backup_handler.restore_backup(
         &game_selection.game_name,
         &snapshot_id,
         save_path,

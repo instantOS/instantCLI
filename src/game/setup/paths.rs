@@ -63,14 +63,14 @@ pub(super) fn prompt_manual_save_path(game_name: &str) -> Result<Option<String>>
             char::from(NerdFont::Folder)
         ))
         .manual_prompt(prompt)
-        .scope(FilePickerScope::Directories)
+        .scope(FilePickerScope::FilesAndDirectories)
         .picker_hint(format!(
-            "{} Select the directory to use for {game_name} save files",
+            "{} Select the file or directory to use for {game_name} save data",
             char::from(NerdFont::Info)
         ))
         .manual_option_label(format!("{} Type an exact path", char::from(NerdFont::Edit)))
         .picker_option_label(format!(
-            "{} Browse and choose a folder",
+            "{} Browse and choose a path",
             char::from(NerdFont::FolderOpen)
         ))
         .choose()?;
