@@ -122,7 +122,7 @@ impl GameBackup {
         let snapshot = cache::get_snapshot_by_id(snapshot_id, game_name, &self.config)
             .context("Failed to locate snapshot metadata")?;
 
-        let snapshot_path = snapshot.paths.first().cloned();
+        let snapshot_path = snapshot.and_then(|s| s.paths.first().cloned());
 
         let restic = ResticWrapper::new(
             self.config.repo.as_path().to_string_lossy().to_string(),
@@ -156,8 +156,8 @@ impl GameBackup {
             }
             PathContentKind::File => {
                 // For single files, we need to restore just the specific file
-                if !target_path.parent().exists() {
-                    if let Some(parent) = target_path.parent() {
+                if let Some(parent) = target_path.parent() {
+                    if !parent.exists() {
                         fs::create_dir_all(parent).with_context(|| {
                             format!("Failed to create restore target parent: {}", parent.display())
                         })?;
