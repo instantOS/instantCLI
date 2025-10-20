@@ -531,14 +531,8 @@ fn sync_single_game(
         if installation.save_path_type.is_file() {
             let snapshots = cache::get_snapshots_for_game(game_name, game_config)?;
             if let Some(snapshot) = snapshots.first() {
-                // Check if restore should be skipped due to matching checkpoint
-                if !force
-                    && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
-                    && nearest_checkpoint == &snapshot.id
-                {
-                    return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
-                }
                 // Single file doesn't exist but snapshots exist - restore from latest
+                // Note: We don't check checkpoint matching here since the file is missing locally
                 return Ok(SyncAction::RestoreFromLatest(snapshot.id.clone()));
             } else {
                 // No local file and no snapshots
