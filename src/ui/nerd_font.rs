@@ -275,7 +275,7 @@ impl NerdFont {
             Self::Clipboard => '', // fa-clipboard
 
             // File type icons
-            Self::Image => '🖼',             // fa-image
+            Self::Image => '🖼',            // fa-image
             Self::Video => '',            // fa-video
             Self::Music => '',            // fa-music
             Self::FilePdf => '',          // fa-file-pdf

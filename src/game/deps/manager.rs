@@ -74,6 +74,12 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
         ));
     }
 
+    println!(
+        "{} Creating snapshot for '{}' dependency. This may take a while...",
+        char::from(NerdFont::Info),
+        dependency_id
+    );
+
     let backup = backup_dependency(&game_name, &dependency_id, &source_path_buf, &game_config)?;
 
     let dependency = GameDependency {
