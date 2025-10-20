@@ -525,11 +525,34 @@ fn sync_single_game(
     let save_path = installation.save_path.as_path();
 
     // Security check: ensure save directory exists
+    // For single files, the file may not exist locally but could be restored from snapshots
     if !save_path.exists() {
-        return Ok(SyncAction::Error(format!(
-            "Save path does not exist: {}",
-            save_path.display()
-        )));
+        // For single file saves, check if we can restore from snapshots
+        if installation.save_path_type.is_file() {
+            let snapshots = cache::get_snapshots_for_game(game_name, game_config)?;
+            if let Some(snapshot) = snapshots.first() {
+                // Check if restore should be skipped due to matching checkpoint
+                if !force
+                    && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
+                    && nearest_checkpoint == &snapshot.id
+                {
+                    return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
+                }
+                // Single file doesn't exist but snapshots exist - restore from latest
+                return Ok(SyncAction::RestoreFromLatest(snapshot.id.clone()));
+            } else {
+                // No local file and no snapshots
+                return Ok(SyncAction::Error(
+                    "Save file does not exist and no snapshots found - nothing to sync".to_string(),
+                ));
+            }
+        } else {
+            // For directories, require existence
+            return Ok(SyncAction::Error(format!(
+                "Save path does not exist: {}",
+                save_path.display()
+            )));
+        }
     }
 
     // Get local save information
