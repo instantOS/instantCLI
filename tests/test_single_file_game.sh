@@ -55,6 +55,7 @@ main() {
 
     if [[ -z "${snapshot_id:-}" ]]; then
         echo "Failed to determine snapshot id from backup output" >&2
+        echo "Backup output was: ${backup_output}" >&2
         exit 1
     fi
 
@@ -62,6 +63,8 @@ main() {
     echo "Testing restic backup contents..."
     local restic_files
     restic_files="$(RESTIC_PASSWORD=testpass restic -r "${restic_repo}" ls "${snapshot_id}" | grep -E '^\w+' | tail -n +2)"
+
+    echo "Restic files: ${restic_files}" >&2
 
     # Should contain the save file but not the other file
     if ! echo "${restic_files}" | grep -q "save.dat"; then
