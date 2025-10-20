@@ -307,7 +307,7 @@ pub fn list_dependencies(game_name: Option<String>) -> Result<()> {
     let installations =
         InstallationsConfig::load().context("Failed to load installations configuration")?;
 
-    let game_name = resolve_game_name(game_name, Some("Select game to list dependencies"))?;
+    let game_name = resolve_game_name(game_name, None)?;
 
     let game = game_config
         .games
