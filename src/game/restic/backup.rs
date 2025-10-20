@@ -52,24 +52,20 @@ impl GameBackup {
         let restic_paths: Vec<&Path> = match game_installation.save_path_type {
             PathContentKind::Directory => vec![save_path_buf],
             PathContentKind::File => {
-                let parent = save_path_buf
-                    .parent()
-                    .ok_or_else(|| anyhow::anyhow!("Cannot determine parent directory for save file"))?;
-                vec![parent]
+                // For single files, backup the file directly
+                vec![save_path_buf]
             }
         };
 
-        let mut include_rel_path = None;
-        if game_installation.save_path_type.is_file() {
-            include_rel_path = save_path_buf
-                .parent()
-                .and_then(|parent| save_path_buf.strip_prefix(parent).ok())
-                .map(|p| p.to_string_lossy().to_string());
-        }
-
-        let progress = restic
-            .backup_with_filter(&restic_paths, tags, include_rel_path.as_deref())
-            .context("Failed to perform restic backup")?;
+        let progress = if game_installation.save_path_type.is_file() {
+            // For single files, use standard backup (no include filter needed)
+            restic.backup(&restic_paths, tags)
+                .context("Failed to perform restic backup for single file")?
+        } else {
+            // For directories, use standard backup
+            restic.backup(&restic_paths, tags)
+                .context("Failed to perform restic backup for directory")?
+        };
 
         if let Some(summary) = progress.summary {
             let snapshot_id = summary.snapshot_id.clone();

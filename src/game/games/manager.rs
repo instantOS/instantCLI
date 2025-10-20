@@ -1,6 +1,6 @@
 use super::{selection::select_game_interactive, validation::*};
 use crate::dot::path_serde::TildePath;
-use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind};
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
@@ -121,7 +121,17 @@ impl GameManager {
         config.save()?;
 
         // Create the installation entry with the save path
-        let installation = GameInstallation::new(game_name.clone(), save_path.clone());
+        // Determine if save path is a file or directory
+        let save_path_type = if save_path.as_path().exists() {
+            let metadata = std::fs::metadata(&save_path.as_path())
+                .with_context(|| format!("Failed to read metadata for save path: {}", save_path.as_path().display()))?;
+            PathContentKind::from(metadata)
+        } else {
+            // If path doesn't exist, assume directory for backward compatibility
+            PathContentKind::Directory
+        };
+
+        let installation = GameInstallation::with_kind(game_name.clone(), save_path.clone(), save_path_type);
         installations.installations.push(installation);
         installations.save()?;
 
