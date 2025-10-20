@@ -709,25 +709,23 @@ impl RenderPipeline {
             }
         }
 
-        if labels.is_empty() {
-            bail!("No music segments available to build audio filters");
-        }
-
-        if labels.len() == 1 {
-            Ok(labels.into_iter().next().unwrap())
-        } else {
-            let mut inputs = String::new();
-            for label in &labels {
-                inputs.push_str(&format!("[{label}]"));
+        match labels.as_slice() {
+            [] => bail!("No music segments available to build audio filters"),
+            [label] => Ok(label.to_string()),
+            _ => {
+                let mut inputs = String::new();
+                for label in &labels {
+                    inputs.push_str(&format!("[{label}]"));
+                }
+                let output_label = "music_mix".to_string();
+                filters.push(format!(
+                    "{inputs}amix=inputs={count}:normalize=0:dropout_transition=0[{output}]",
+                    inputs = inputs,
+                    count = labels.len(),
+                    output = output_label,
+                ));
+                Ok(output_label)
             }
-            let output_label = "music_mix".to_string();
-            filters.push(format!(
-                "{inputs}amix=inputs={count}:normalize=0:dropout_transition=0[{output}]",
-                inputs = inputs,
-                count = labels.len(),
-                output = output_label,
-            ));
-            Ok(output_label)
         }
     }
 }

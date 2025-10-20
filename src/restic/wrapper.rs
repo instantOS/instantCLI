@@ -377,6 +377,7 @@ impl BackupProgress {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct BackupSummary {
     #[serde(default)]
     pub dry_run: bool,
@@ -399,6 +400,7 @@ pub struct BackupSummary {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct BackupError {
     pub message: String,
     pub during: String,
@@ -406,6 +408,7 @@ pub struct BackupError {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct Snapshot {
     pub time: String,
     pub parent: Option<String>,
@@ -424,6 +427,7 @@ pub struct Snapshot {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
 pub struct SnapshotSummary {
     pub backup_start: String,
     pub backup_end: String,
@@ -442,6 +446,7 @@ pub struct SnapshotSummary {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct RestoreProgress {
     pub summary: Option<RestoreSummary>,
     pub errors: Vec<RestoreError>,
@@ -516,6 +521,7 @@ impl RestoreProgress {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 //TODO: should all of these have a default value? Is this even necessary?
 pub struct RestoreSummary {
     #[serde(default)]
@@ -537,6 +543,7 @@ pub struct RestoreSummary {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct RestoreError {
     pub message: String,
     pub during: String,

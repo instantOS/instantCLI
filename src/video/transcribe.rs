@@ -72,17 +72,18 @@ pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
 }
 
 fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -> Result<()> {
-    let mut whisper_args: Vec<OsString> = Vec::new();
-    whisper_args.push(OsString::from("whisperx"));
-    whisper_args.push(hashed_video.as_os_str().to_os_string());
-    whisper_args.push(OsString::from("--output_format"));
-    whisper_args.push(OsString::from("srt"));
-    whisper_args.push(OsString::from("--output_dir"));
-    whisper_args.push(output_dir.as_os_str().to_os_string());
-    whisper_args.push(OsString::from("--compute_type"));
-    whisper_args.push(OsString::from(args.compute_type.clone()));
-    whisper_args.push(OsString::from("--device"));
-    whisper_args.push(OsString::from(args.device.clone()));
+    let mut whisper_args: Vec<OsString> = vec![
+        OsString::from("whisperx"),
+        hashed_video.as_os_str().to_os_string(),
+        OsString::from("--output_format"),
+        OsString::from("srt"),
+        OsString::from("--output_dir"),
+        output_dir.as_os_str().to_os_string(),
+        OsString::from("--compute_type"),
+        OsString::from(args.compute_type.clone()),
+        OsString::from("--device"),
+        OsString::from(args.device.clone()),
+    ];
 
     if let Some(model) = &args.model {
         whisper_args.push(OsString::from("--model"));

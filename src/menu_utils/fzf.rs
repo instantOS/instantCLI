@@ -325,10 +325,6 @@ impl FzfWrapper {
         Self::builder().confirm(message).confirm_dialog()
     }
 
-    pub fn input_dialog(prompt: &str) -> Result<String> {
-        Self::builder().prompt(prompt).input().input_dialog()
-    }
-
     pub fn password(prompt: &str) -> Result<String> {
         Self::builder().prompt(prompt).password().password_dialog()
     }
@@ -545,10 +541,6 @@ impl FzfBuilder {
 
     pub fn show_selection<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
         self.select(items)
-    }
-
-    pub fn show_input(self) -> Result<String> {
-        self.input_dialog()
     }
 
     pub fn show_password(self) -> Result<String> {

@@ -394,7 +394,7 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
     let username = FzfWrapper::builder()
         .prompt("New username")
         .input()
-        .show_input()?;
+        .input_dialog()?;
     let username = username.trim();
     if username.is_empty() {
         ctx.emit_info("settings.users.add.cancelled", "Creation cancelled.");
