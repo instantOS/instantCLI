@@ -392,13 +392,13 @@ fn resolve_source_path(path: Option<String>, game_name: &str) -> Result<String> 
 
     let selection = PathInputBuilder::new()
         .header(format!(
-            "{} Select the dependency path for '{}'",
+            "{} Select the dependency directory for '{}'",
             char::from(NerdFont::Package),
             game_name
         ))
-        .manual_prompt("Enter file or directory path:")
-        .scope(FilePickerScope::FilesAndDirectories)
-        .picker_hint("Select the file or directory to capture as a dependency")
+        .manual_prompt("Enter dependency directory path:")
+        .scope(FilePickerScope::Directories)
+        .picker_hint("Select the directory to capture as a dependency")
         .choose()?;
 
     match selection {
@@ -457,16 +457,16 @@ fn resolve_install_path(
 fn prompt_custom_install_path(game_name: &str, dependency_id: &str) -> Result<String> {
     let selection = PathInputBuilder::new()
         .header(format!(
-            "{} Choose install path for dependency '{}'",
+            "{} Choose install directory for dependency '{}'",
             char::from(NerdFont::Folder),
             dependency_id
         ))
         .manual_prompt(format!(
-            "Enter destination for '{}' dependency of '{}'",
+            "Enter destination directory for '{}' dependency of '{}'",
             dependency_id, game_name
         ))
-        .scope(FilePickerScope::FilesAndDirectories)
-        .picker_hint("Select where the dependency should be installed")
+        .scope(FilePickerScope::Directories)
+        .picker_hint("Select the directory where the dependency should be installed")
         .choose()?;
 
     match selection {
