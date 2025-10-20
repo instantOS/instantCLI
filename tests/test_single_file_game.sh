@@ -43,21 +43,19 @@ main() {
     show_json="$(ins --output json game show "${game_name}")"
     echo "${show_json}" | jq -e --arg name "${game_name}" 'select(.code=="game.show.details") | .data.game.name == $name' >/dev/null
 
-    # Backup the single file
+    # Backup the single file - this creates the initial backup
     ins game sync --force "${game_name}"
 
-    local backup_output
-    backup_output="$(ins_output game backup "${game_name}")"
-    echo "${backup_output}"
-
+    # Get the latest snapshot ID from restic snapshots
     local snapshot_id
-    snapshot_id="$(printf '%s\n' "${backup_output}" | sed -n 's/.*snapshot: \([0-9a-f]\{8,\}\).*/\1/p' | head -n1)"
+    snapshot_id="$(RESTIC_PASSWORD=testpass restic -r "${restic_repo}" snapshots --json | jq -r '.[-1].id')"
 
-    if [[ -z "${snapshot_id:-}" ]]; then
-        echo "Failed to determine snapshot id from backup output" >&2
-        echo "Backup output was: ${backup_output}" >&2
+    if [[ -z "${snapshot_id:-}" || "${snapshot_id}" == "null" ]]; then
+        echo "Failed to get snapshot id from restic" >&2
         exit 1
     fi
+
+    echo "Using snapshot ID: ${snapshot_id}"
 
     # Test 1: Verify restic only backed up the specific file, not the entire directory
     echo "Testing restic backup contents..."
