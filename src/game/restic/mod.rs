@@ -135,40 +135,61 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
         return Err(anyhow::anyhow!("save path does not exist"));
     }
 
-    // Check if save directory is empty
-    let mut is_empty = true;
-    if let Ok(mut entries) = std::fs::read_dir(save_path)
-        && let Some(entry) = entries.next()
-    {
-        // Only consider non-hidden files/directories
-        if let Ok(entry) = entry {
-            let file_name = entry.file_name();
-            let file_name_str = file_name.to_string_lossy();
-            if !file_name_str.starts_with('.') {
-                is_empty = false;
-            }
+    // Check if save path is empty based on type
+    let is_empty = match installation.save_path_type {
+        crate::game::config::PathContentKind::File => {
+            // For files, check if file is empty
+            save_path.metadata().map_or(true, |metadata| metadata.len() == 0)
         }
-    }
+        crate::game::config::PathContentKind::Directory => {
+            // For directories, check if directory is empty (ignoring hidden files)
+            let mut is_empty = true;
+            if let Ok(mut entries) = std::fs::read_dir(save_path)
+                && let Some(entry) = entries.next()
+            {
+                // Only consider non-hidden files/directories
+                if let Ok(entry) = entry {
+                    let file_name = entry.file_name();
+                    let file_name_str = file_name.to_string_lossy();
+                    if !file_name_str.starts_with('.') {
+                        is_empty = false;
+                    }
+                }
+            }
+            is_empty
+        }
+    };
 
     if is_empty {
         let path_display = save_path.display().to_string();
+        let (entity_type, error_msg) = match installation.save_path_type {
+            crate::game::config::PathContentKind::File => (
+                "save file",
+                "save file is empty - security precaution"
+            ),
+            crate::game::config::PathContentKind::Directory => (
+                "save directory",
+                "save directory is empty - security precaution"
+            ),
+        };
+
         emit_restic_event(
             Level::Error,
-            "game.backup.security.empty_dir",
+            "game.backup.security.empty_path",
             Some(char::from(NerdFont::CrossCircle)),
             format!(
-                "Security: Refusing to backup empty save directory for game '{}': {}",
-                game_name, path_display
+                "Security: Refusing to backup empty {} for game '{}': {}",
+                entity_type, game_name, path_display
             ),
             format!(
-                "Security: Refusing to backup empty save directory for game '{}': {}",
-                game_name.red(),
-                path_display
+                "Security: Refusing to backup empty {} for game '{}': {}",
+                entity_type, game_name.red(), path_display.red()
             ),
             Some(serde_json::json!({
                 "game": game_name.clone(),
-                "action": "empty_save_directory",
-                "path": path_display
+                "action": "empty_save_path",
+                "path": path_display,
+                "path_type": entity_type
             })),
         );
 
@@ -176,10 +197,17 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             Level::Info,
             "game.backup.security.context",
             Some(char::from(NerdFont::Info)),
-            "The save directory appears to be empty or contains only hidden files. This could indicate:".to_string(),
-            "The save directory appears to be empty or contains only hidden files. This could indicate:".to_string(),
+            format!(
+                "The {} appears to be empty or contains only hidden files. This could indicate:",
+                entity_type
+            ),
+            format!(
+                "The {} appears to be empty or contains only hidden files. This could indicate:",
+                entity_type
+            ),
             Some(serde_json::json!({
-                "context": "empty_save_directory"
+                "context": "empty_save_path",
+                "path_type": entity_type
             })),
         );
 
@@ -209,7 +237,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
                 text.to_string(),
                 format!("• {text}"),
                 Some(serde_json::json!({
-                    "context": "empty_save_directory",
+                    "context": "empty_save_path",
                     "detail": key
                 })),
             );
@@ -224,13 +252,11 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             "Please verify the save path configuration and ensure the game has created save files."
                 .to_string(),
             Some(serde_json::json!({
-                "context": "empty_save_directory",
+                "context": "empty_save_path",
                 "action": "verify_save_path"
             })),
         );
-        return Err(anyhow::anyhow!(
-            "save directory is empty - security precaution"
-        ));
+        return Err(anyhow::anyhow!(error_msg));
     }
 
     // Create backup
