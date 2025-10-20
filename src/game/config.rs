@@ -10,15 +10,11 @@ use crate::dot::path_serde::TildePath;
 /// Describes what kind of filesystem element a tracked path represents
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum PathContentKind {
+    #[default]
     Directory,
     File,
-}
-
-impl Default for PathContentKind {
-    fn default() -> Self {
-        PathContentKind::Directory
-    }
 }
 
 impl PathContentKind {

@@ -202,8 +202,13 @@ pub(super) fn setup_single_game(
                 None,
             );
 
-            let restore_summary =
-                restore_latest_backup(game_name, &save_path, snapshot_id, game_config, installation.save_path_type)?;
+            let restore_summary = restore_latest_backup(
+                game_name,
+                &save_path,
+                snapshot_id,
+                game_config,
+                installation.save_path_type,
+            )?;
             emit(
                 Level::Success,
                 "game.setup.restore_done",

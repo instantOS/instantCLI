@@ -75,7 +75,8 @@ pub fn backup_dependency(
         let parent = source_path.parent().ok_or_else(|| {
             anyhow!(
                 "Cannot determine directory to snapshot for dependency '{}:{}'",
-                game_name, dependency_id
+                game_name,
+                dependency_id
             )
         })?;
         backup_paths = vec![parent];
@@ -88,11 +89,11 @@ pub fn backup_dependency(
     let progress = restic
         .backup_with_filter(&backup_paths, tags, include_filter.as_deref())
         .with_context(|| {
-        format!(
-            "Failed to backup dependency '{}:{}'",
-            game_name, dependency_id
-        )
-    })?;
+            format!(
+                "Failed to backup dependency '{}:{}'",
+                game_name, dependency_id
+            )
+        })?;
 
     // Ensure cache is refreshed so we can discover new snapshots
     cache::invalidate_snapshot_cache();
@@ -157,7 +158,12 @@ pub fn restore_dependency(
             })?;
 
             restic
-                .restore_with_filter(&snapshot_id, Some(&dependency.source_path), install_path, None)
+                .restore_with_filter(
+                    &snapshot_id,
+                    Some(&dependency.source_path),
+                    install_path,
+                    None,
+                )
                 .with_context(|| {
                     format!(
                         "Failed to restore dependency '{}:{}' from restic",

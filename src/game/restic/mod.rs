@@ -139,7 +139,9 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     let is_empty = match installation.save_path_type {
         crate::game::config::PathContentKind::File => {
             // For files, check if file is empty
-            save_path.metadata().map_or(true, |metadata| metadata.len() == 0)
+            save_path
+                .metadata()
+                .map_or(true, |metadata| metadata.len() == 0)
         }
         crate::game::config::PathContentKind::Directory => {
             // For directories, check if directory is empty (ignoring hidden files)
@@ -163,13 +165,12 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     if is_empty {
         let path_display = save_path.display().to_string();
         let (entity_type, error_msg) = match installation.save_path_type {
-            crate::game::config::PathContentKind::File => (
-                "save file",
-                "save file is empty - security precaution"
-            ),
+            crate::game::config::PathContentKind::File => {
+                ("save file", "save file is empty - security precaution")
+            }
             crate::game::config::PathContentKind::Directory => (
                 "save directory",
-                "save directory is empty - security precaution"
+                "save directory is empty - security precaution",
             ),
         };
 
@@ -183,7 +184,9 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             ),
             format!(
                 "Security: Refusing to backup empty {} for game '{}': {}",
-                entity_type, game_name.red(), path_display.red()
+                entity_type,
+                game_name.red(),
+                path_display.red()
             ),
             Some(serde_json::json!({
                 "game": game_name.clone(),
@@ -514,12 +517,12 @@ pub fn restore_game_saves(
     );
 
     match backup_handler.restore_game_backup_with_type(
-            &game_selection.game_name,
-            &snapshot_id,
-            save_path,
-            game_selection.installation.save_path_type,
-            save_path,
-        ) {
+        &game_selection.game_name,
+        &snapshot_id,
+        save_path,
+        game_selection.installation.save_path_type,
+        save_path,
+    ) {
         Ok(output) => {
             let output_clone = output.clone();
             emit_restic_event(

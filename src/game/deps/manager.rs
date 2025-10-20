@@ -576,7 +576,7 @@ fn upsert_installed_dependency(
     install_path: crate::dot::path_serde::TildePath,
 ) {
     // Determine the path type by checking if it exists
-    let install_path_type = if let Ok(metadata) = std::fs::metadata(&install_path.as_path()) {
+    let install_path_type = if let Ok(metadata) = std::fs::metadata(install_path.as_path()) {
         PathContentKind::from(metadata)
     } else {
         PathContentKind::Directory // Default to directory if we can't determine

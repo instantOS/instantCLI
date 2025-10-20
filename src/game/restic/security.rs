@@ -1,4 +1,4 @@
-use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind};
+use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
 use crate::game::games::selection;
 use crate::game::utils::save_files::{
     TimeComparison, compare_snapshot_vs_local, format_file_size, format_system_time_for_display,

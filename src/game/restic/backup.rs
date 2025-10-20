@@ -59,11 +59,13 @@ impl GameBackup {
 
         let progress = if game_installation.save_path_type.is_file() {
             // For single files, use standard backup (no include filter needed)
-            restic.backup(&restic_paths, tags)
+            restic
+                .backup(&restic_paths, tags)
                 .context("Failed to perform restic backup for single file")?
         } else {
             // For directories, use standard backup
-            restic.backup(&restic_paths, tags)
+            restic
+                .backup(&restic_paths, tags)
                 .context("Failed to perform restic backup for directory")?
         };
 
@@ -152,12 +154,15 @@ impl GameBackup {
             }
             PathContentKind::File => {
                 // For single files, we need to restore just the specific file
-                if let Some(parent) = target_path.parent() {
-                    if !parent.exists() {
-                        fs::create_dir_all(parent).with_context(|| {
-                            format!("Failed to create restore target parent: {}", parent.display())
-                        })?;
-                    }
+                if let Some(parent) = target_path.parent()
+                    && !parent.exists()
+                {
+                    fs::create_dir_all(parent).with_context(|| {
+                        format!(
+                            "Failed to create restore target parent: {}",
+                            parent.display()
+                        )
+                    })?;
                 }
 
                 let restic = ResticWrapper::new(
@@ -167,7 +172,11 @@ impl GameBackup {
 
                 // Use restore_single_file to restore just the specific file
                 let progress = restic
-                    .restore_single_file(snapshot_id, &original_save_path.to_string_lossy(), target_path.parent().unwrap_or(target_path))
+                    .restore_single_file(
+                        snapshot_id,
+                        &original_save_path.to_string_lossy(),
+                        target_path.parent().unwrap_or(target_path),
+                    )
                     .context("Failed to restore single file from snapshot")?;
 
                 if let Some(summary) = progress.summary {
