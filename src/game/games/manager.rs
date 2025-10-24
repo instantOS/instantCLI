@@ -7,7 +7,7 @@ use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
 use crate::ui::nerd_font::NerdFont;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use std::fs;
 
 /// Options for adding a game non-interactively
@@ -18,108 +18,6 @@ pub struct AddGameOptions {
     pub launch_command: Option<String>,
     pub save_path: Option<String>,
     pub create_save_path: bool,
-}
-
-fn resolve_add_game_details(
-    options: AddGameOptions,
-    context: &GameCreationContext,
-) -> Result<ResolvedGameDetails> {
-    let AddGameOptions {
-        name,
-        description,
-        launch_command,
-        save_path,
-        create_save_path,
-    } = options;
-
-    let interactive_prompts = name.is_none();
-
-    let game_name = match name {
-        Some(raw_name) => {
-            let trimmed = raw_name.trim();
-            if !validate_non_empty(trimmed, "Game name")? {
-                return Err(anyhow!("Game name cannot be empty"));
-            }
-
-            if context.game_exists(trimmed) {
-                return Err(anyhow!("Game '{}' already exists", trimmed));
-            }
-
-            trimmed.to_string()
-        }
-        None => GameManager::get_game_name(context.config())?,
-    };
-
-    let description = match description {
-        Some(text) => some_if_not_empty(text),
-        None if interactive_prompts => some_if_not_empty(GameManager::get_game_description()?),
-        None => None,
-    };
-
-    let launch_command = match launch_command {
-        Some(command) => some_if_not_empty(command),
-        None if interactive_prompts => some_if_not_empty(GameManager::get_launch_command()?),
-        None => None,
-    };
-
-    let save_path = match save_path {
-        Some(path) => {
-            let trimmed = path.trim();
-            if !validate_non_empty(trimmed, "Save path")? {
-                return Err(anyhow!("Save path cannot be empty"));
-            }
-
-            let tilde_path = TildePath::from_str(trimmed)
-                .map_err(|e| anyhow!("Invalid save path: {}", e))?;
-
-            if !tilde_path.as_path().exists() {
-                if create_save_path {
-                    fs::create_dir_all(tilde_path.as_path())
-                        .context("Failed to create save directory")?;
-                    println!("{} Created save directory: {}", char::from(NerdFont::Check), trimmed);
-                } else {
-                    return Err(anyhow!(
-                        "Save path '{}' does not exist. Use --create-save-path to create it automatically or run '{} game add' without --save-path for interactive setup.",
-                        tilde_path.as_path().display(),
-                        env!("CARGO_BIN_NAME")
-                    ));
-                }
-            }
-
-            tilde_path
-        }
-        None => GameManager::get_save_path(&game_name)?,
-    };
-
-    let save_path_type = if save_path.as_path().exists() {
-        let metadata = fs::metadata(save_path.as_path()).with_context(|| {
-            format!(
-                "Failed to read metadata for save path: {}",
-                save_path.as_path().display()
-            )
-        })?;
-        PathContentKind::from(metadata)
-    } else {
-        PathContentKind::Directory
-    };
-
-    Ok(ResolvedGameDetails {
-        name: game_name,
-        description,
-        launch_command,
-        save_path,
-        save_path_type,
-    })
-}
-
-fn some_if_not_empty(value: impl Into<String>) -> Option<String> {
-    let text = value.into();
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
 }
 
 struct GameCreationContext {
@@ -420,5 +318,111 @@ impl GameManager {
         }
 
         Ok(save_path)
+    }
+}
+
+fn resolve_add_game_details(
+    options: AddGameOptions,
+    context: &GameCreationContext,
+) -> Result<ResolvedGameDetails> {
+    let AddGameOptions {
+        name,
+        description,
+        launch_command,
+        save_path,
+        create_save_path,
+    } = options;
+
+    let interactive_prompts = name.is_none();
+
+    let game_name = match name {
+        Some(raw_name) => {
+            let trimmed = raw_name.trim();
+            if !validate_non_empty(trimmed, "Game name")? {
+                return Err(anyhow!("Game name cannot be empty"));
+            }
+
+            if context.game_exists(trimmed) {
+                return Err(anyhow!("Game '{}' already exists", trimmed));
+            }
+
+            trimmed.to_string()
+        }
+        None => GameManager::get_game_name(context.config())?,
+    };
+
+    let description = match description {
+        Some(text) => some_if_not_empty(text),
+        None if interactive_prompts => some_if_not_empty(GameManager::get_game_description()?),
+        None => None,
+    };
+
+    let launch_command = match launch_command {
+        Some(command) => some_if_not_empty(command),
+        None if interactive_prompts => some_if_not_empty(GameManager::get_launch_command()?),
+        None => None,
+    };
+
+    let save_path = match save_path {
+        Some(path) => {
+            let trimmed = path.trim();
+            if !validate_non_empty(trimmed, "Save path")? {
+                return Err(anyhow!("Save path cannot be empty"));
+            }
+
+            let tilde_path = TildePath::from_str(trimmed)
+                .map_err(|e| anyhow!("Invalid save path: {}", e))?;
+
+            if !tilde_path.as_path().exists() {
+                if create_save_path {
+                    fs::create_dir_all(tilde_path.as_path())
+                        .context("Failed to create save directory")?;
+                    println!(
+                        "{} Created save directory: {}",
+                        char::from(NerdFont::Check),
+                        trimmed
+                    );
+                } else {
+                    return Err(anyhow!(
+                        "Save path '{}' does not exist. Use --create-save-path to create it automatically or run '{} game add' without --save-path for interactive setup.",
+                        tilde_path.as_path().display(),
+                        env!("CARGO_BIN_NAME")
+                    ));
+                }
+            }
+
+            tilde_path
+        }
+        None => GameManager::get_save_path(&game_name)?,
+    };
+
+    let save_path_type = if save_path.as_path().exists() {
+        let metadata = fs::metadata(save_path.as_path()).with_context(|| {
+            format!(
+                "Failed to read metadata for save path: {}",
+                save_path.as_path().display()
+            )
+        })?;
+        PathContentKind::from(metadata)
+    } else {
+        PathContentKind::Directory
+    };
+
+    Ok(ResolvedGameDetails {
+        name: game_name,
+        description,
+        launch_command,
+        save_path,
+        save_path_type,
+    })
+}
+
+fn some_if_not_empty(value: impl Into<String>) -> Option<String> {
+    let text = value.into();
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
