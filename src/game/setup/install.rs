@@ -152,37 +152,36 @@ pub(super) fn setup_single_game(
                 ));
             }
 
-            if !path_ref.exists() {
-                if let Some(parent) = path_ref.parent() {
-                    if !parent.exists() {
-                        match FzfWrapper::confirm(&format!(
-                            "Parent directory '{}' does not exist. Create it?",
-                            parent.display()
-                        ))
-                        .map_err(|e| anyhow!("Failed to confirm parent directory creation: {e}"))?
-                        {
-                            ConfirmResult::Yes => {
-                                fs::create_dir_all(parent).with_context(|| {
-                                    format!("Failed to create directory '{}'", parent.display())
-                                })?;
-                                path_created = true;
-                                emit(
-                                    Level::Success,
-                                    "game.setup.parent_created",
-                                    &format!(
-                                        "{} Created parent directory: {}",
-                                        char::from(NerdFont::Check),
-                                        parent.display()
-                                    ),
-                                    None,
-                                );
-                            }
-                            ConfirmResult::No | ConfirmResult::Cancelled => {
-                                println!(
-                                    "Parent directory not created. You can set it up later when needed."
-                                );
-                            }
-                        }
+            if !path_ref.exists()
+                && let Some(parent) = path_ref.parent()
+                && !parent.exists()
+            {
+                match FzfWrapper::confirm(&format!(
+                    "Parent directory '{}' does not exist. Create it?",
+                    parent.display()
+                ))
+                .map_err(|e| anyhow!("Failed to confirm parent directory creation: {e}"))?
+                {
+                    ConfirmResult::Yes => {
+                        fs::create_dir_all(parent).with_context(|| {
+                            format!("Failed to create directory '{}'", parent.display())
+                        })?;
+                        path_created = true;
+                        emit(
+                            Level::Success,
+                            "game.setup.parent_created",
+                            &format!(
+                                "{} Created parent directory: {}",
+                                char::from(NerdFont::Check),
+                                parent.display()
+                            ),
+                            None,
+                        );
+                    }
+                    ConfirmResult::No | ConfirmResult::Cancelled => {
+                        println!(
+                            "Parent directory not created. You can set it up later when needed."
+                        );
                     }
                 }
             }

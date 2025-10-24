@@ -44,8 +44,7 @@ struct DependencyContext {
 impl DependencyContext {
     fn load() -> Result<Self> {
         Ok(Self {
-            game_config: InstantGameConfig::load()
-                .context("Failed to load game configuration")?,
+            game_config: InstantGameConfig::load().context("Failed to load game configuration")?,
             installations: InstallationsConfig::load()
                 .context("Failed to load installations configuration")?,
         })
@@ -167,9 +166,8 @@ fn prepare_dependency_source(
 ) -> Result<DependencySource> {
     let raw = resolve_source_path(source_path, game_name)?;
     let expanded = PathBuf::from(shellexpand::tilde(&raw).to_string());
-    let metadata = fs::metadata(&expanded).with_context(|| {
-        format!("Failed to read metadata for dependency path: {}", raw)
-    })?;
+    let metadata = fs::metadata(&expanded)
+        .with_context(|| format!("Failed to read metadata for dependency path: {}", raw))?;
 
     let tilde = TildePath::from_str(&raw).with_context(|| {
         format!(
@@ -223,7 +221,11 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
     context.game_mut(&game_name)?.dependencies.push(dependency);
 
     let installation = context.installation_mut(&game_name)?;
-    DependencyContext::upsert_installed_dependency(installation, &dependency_id, source.tilde.clone());
+    DependencyContext::upsert_installed_dependency(
+        installation,
+        &dependency_id,
+        source.tilde.clone(),
+    );
 
     context.save_all()?;
 
@@ -495,12 +497,18 @@ fn select_dependency_for_install(
             .iter()
             .find(|dep| dep.id == trimmed)
             .cloned()
-            .ok_or_else(|| anyhow!("Dependency '{}' not found for game '{}'", trimmed, game_name));
+            .ok_or_else(|| {
+                anyhow!(
+                    "Dependency '{}' not found for game '{}'",
+                    trimmed,
+                    game_name
+                )
+            });
     }
 
     selection::select_dependency(game_name, &game.dependencies)?
         .ok_or_else(|| anyhow!("Dependency selection cancelled"))
-        .map(|dep| dep.clone())
+        .cloned()
 }
 
 fn resolve_source_path(path: Option<String>, game_name: &str) -> Result<String> {
@@ -710,22 +718,22 @@ fn prepare_install_target(
                     return Ok(false);
                 }
             }
-        } else if let Some(parent) = path_ref.parent() {
-            if !parent.exists() {
-                let parent_display = parent.display();
-                match FzfWrapper::confirm(&format!(
-                    "Parent directory '{}' does not exist. Create it?",
-                    parent_display
-                ))? {
-                    ConfirmResult::Yes => {
-                        fs::create_dir_all(parent).with_context(|| {
-                            format!("Failed to create parent directory '{}'.", parent_display)
-                        })?;
-                    }
-                    ConfirmResult::No | ConfirmResult::Cancelled => {
-                        println!("{} Installation cancelled.", char::from(NerdFont::Warning));
-                        return Ok(false);
-                    }
+        } else if let Some(parent) = path_ref.parent()
+            && !parent.exists()
+        {
+            let parent_display = parent.display();
+            match FzfWrapper::confirm(&format!(
+                "Parent directory '{}' does not exist. Create it?",
+                parent_display
+            ))? {
+                ConfirmResult::Yes => {
+                    fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create parent directory '{}'.", parent_display)
+                    })?;
+                }
+                ConfirmResult::No | ConfirmResult::Cancelled => {
+                    println!("{} Installation cancelled.", char::from(NerdFont::Warning));
+                    return Ok(false);
                 }
             }
         }

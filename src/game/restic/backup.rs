@@ -219,7 +219,7 @@ impl GameBackup {
                 let _ = fs::remove_dir_all(&temp_restore);
 
                 if let Some(summary) = progress.summary {
-                    return Ok(format!("restored 1 file"));
+                    return Ok("restored 1 file".to_string());
                 }
 
                 Ok("restore completed".to_string())
