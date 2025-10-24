@@ -19,11 +19,16 @@ pub struct AddGameOptions {
     pub create_save_path: bool,
 }
 
+
+//TODO: this module contains a lot of functions which have multiple responsibilities and are too
+//long. Also check if there is logic duplication going on and if some things should be extracted
+//into reusable utility functions
 /// Manage game CRUD operations
 pub struct GameManager;
 
 impl GameManager {
     /// Add a new game to the configuration
+    // TODO: this function is too long, refactor
     pub fn add_game(options: AddGameOptions) -> Result<()> {
         let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
@@ -35,6 +40,8 @@ impl GameManager {
             return Ok(());
         }
 
+        //TODO: should this just be a clone?
+        //Should AddGFameOptions implement clone?
         let AddGameOptions {
             name,
             description,

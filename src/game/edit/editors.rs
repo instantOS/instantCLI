@@ -91,6 +91,7 @@ pub fn edit_description(state: &mut EditState) -> Result<bool> {
 }
 
 /// Edit launch command (shows submenu for shared vs installation override)
+// TODO: this function is too long, refactor
 pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
     let game_cmd = state.game().launch_command.as_deref();
     let inst_cmd = state
@@ -223,6 +224,7 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
 }
 
 /// Edit the installation-specific launch command override
+// TODO: get rid of duplication between this and the function above
 fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
     let installation = state
         .installation_mut()

@@ -69,6 +69,8 @@ pub fn list_games() -> Result<()> {
 }
 
 /// Display detailed information about a specific game
+// TODO: this function is too long, refactor
+// As a first step, getting all the data and printing it should be separated
 pub fn show_game_details(game_name: &str) -> Result<()> {
     let config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let installations =
