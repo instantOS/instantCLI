@@ -36,18 +36,158 @@ pub struct UninstallDependencyOptions {
     pub dependency_id: Option<String>,
 }
 
-//TODO: this module contains a lot of functions which have multiple responsibilities and are too
-//long. Also check if there is logic duplication going on and if some things should be extracted
+struct DependencyContext {
+    game_config: InstantGameConfig,
+    installations: InstallationsConfig,
+}
 
-// TODO: this function is way too long, refactor
+impl DependencyContext {
+    fn load() -> Result<Self> {
+        Ok(Self {
+            game_config: InstantGameConfig::load()
+                .context("Failed to load game configuration")?,
+            installations: InstallationsConfig::load()
+                .context("Failed to load installations configuration")?,
+        })
+    }
+
+    fn load_with_validation() -> Result<Self> {
+        let context = Self::load()?;
+        validation::check_restic_and_game_manager(&context.game_config)?;
+        Ok(context)
+    }
+
+    fn game_config(&self) -> &InstantGameConfig {
+        &self.game_config
+    }
+
+    fn game_index(&self, game_name: &str) -> Result<usize> {
+        self.game_config
+            .games
+            .iter()
+            .position(|game| game.name.0 == game_name)
+            .ok_or_else(|| anyhow!("Game '{}' not found in configuration", game_name))
+    }
+
+    fn game(&self, game_name: &str) -> Result<&Game> {
+        let index = self.game_index(game_name)?;
+        Ok(&self.game_config.games[index])
+    }
+
+    fn game_mut(&mut self, game_name: &str) -> Result<&mut Game> {
+        let index = self.game_index(game_name)?;
+        Ok(&mut self.game_config.games[index])
+    }
+
+    fn ensure_local_installation_exists(&self, game_name: &str) -> Result<()> {
+        if self
+            .installations
+            .installations
+            .iter()
+            .any(|inst| inst.game_name.0 == game_name)
+        {
+            Ok(())
+        } else {
+            Err(anyhow!(
+                "Game '{}' is not configured on this device. Run '{} game setup' to configure it before adding dependencies.",
+                game_name,
+                env!("CARGO_BIN_NAME")
+            ))
+        }
+    }
+
+    fn installation_mut(&mut self, game_name: &str) -> Result<&mut GameInstallation> {
+        self.installations
+            .installations
+            .iter_mut()
+            .find(|inst| inst.game_name.0 == game_name)
+            .ok_or_else(|| {
+                anyhow!(
+                    "Game '{}' is not configured on this device. Run '{} game setup' to configure it before adding dependencies.",
+                    game_name,
+                    env!("CARGO_BIN_NAME")
+                )
+            })
+    }
+
+    fn upsert_installed_dependency(
+        installation: &mut GameInstallation,
+        dependency_id: &str,
+        install_path: TildePath,
+    ) {
+        let install_path_type = if let Ok(metadata) = fs::metadata(install_path.as_path()) {
+            PathContentKind::from(metadata)
+        } else {
+            PathContentKind::Directory
+        };
+
+        if let Some(existing) = installation
+            .dependencies
+            .iter_mut()
+            .find(|dep| dep.dependency_id == dependency_id)
+        {
+            existing.install_path = install_path;
+            existing.install_path_type = install_path_type;
+        } else {
+            installation.dependencies.push(InstalledDependency {
+                dependency_id: dependency_id.to_string(),
+                install_path,
+                install_path_type,
+            });
+        }
+    }
+
+    fn save_installations(&self) -> Result<()> {
+        self.installations.save()
+    }
+
+    fn save_all(&self) -> Result<()> {
+        self.installations.save()?;
+        self.game_config.save()
+    }
+}
+
+struct DependencySource {
+    expanded: PathBuf,
+    kind: PathContentKind,
+    tilde: TildePath,
+}
+
+impl DependencySource {
+    fn display_path(&self) -> String {
+        self.tilde
+            .to_tilde_string()
+            .unwrap_or_else(|_| self.tilde.as_path().display().to_string())
+    }
+}
+
+fn prepare_dependency_source(
+    game_name: &str,
+    source_path: Option<String>,
+) -> Result<DependencySource> {
+    let raw = resolve_source_path(source_path, game_name)?;
+    let expanded = PathBuf::from(shellexpand::tilde(&raw).to_string());
+    let metadata = fs::metadata(&expanded).with_context(|| {
+        format!("Failed to read metadata for dependency path: {}", raw)
+    })?;
+
+    let tilde = TildePath::from_str(&raw).with_context(|| {
+        format!(
+            "Failed to convert dependency path '{}' into a storable representation",
+            raw
+        )
+    })?;
+
+    Ok(DependencySource {
+        expanded,
+        kind: PathContentKind::from(metadata),
+        tilde,
+    })
+}
+
 pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
-    let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let mut installations =
-        InstallationsConfig::load().context("Failed to load installations configuration")?;
+    let mut context = DependencyContext::load_with_validation()?;
 
-    validation::check_restic_and_game_manager(&game_config)?;
-
-    // TODO: should this be a clone? Should it implement clone?
     let AddDependencyOptions {
         game_name: game_name_arg,
         dependency_id: dependency_id_arg,
@@ -55,47 +195,11 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
     } = options;
 
     let game_name = resolve_game_name(game_name_arg, Some("Select game to add dependency"))?;
+    context.ensure_local_installation_exists(&game_name)?;
 
-    let game_index = game_config
-        .games
-        .iter()
-        .position(|game| game.name.0 == game_name)
-        .ok_or_else(|| anyhow!("Game '{}' not found in configuration", game_name))?;
-
-    ensure_local_installation_exists(&installations, &game_name)?;
-
-    let dependency_id = {
-        let game_ref = &game_config.games[game_index];
-        resolve_dependency_id(dependency_id_arg, &game_name, game_ref)?
-    };
-
-    let source_path = resolve_source_path(source_path_arg, &game_name)?;
-    let expanded_source = shellexpand::tilde(&source_path).to_string();
-    let source_path_buf = PathBuf::from(&expanded_source);
-    let metadata = fs::metadata(&source_path_buf).with_context(|| {
-        format!(
-            "Failed to read metadata for dependency path: {}",
-            expanded_source
-        )
-    })?;
-
-    let source_type = if metadata.is_file() {
-        PathContentKind::File
-    } else if metadata.is_dir() {
-        PathContentKind::Directory
-    } else {
-        return Err(anyhow!(
-            "Dependency path must be a regular file or directory: {}",
-            expanded_source
-        ));
-    };
-
-    let install_path_tilde = TildePath::from_str(&source_path).with_context(|| {
-        format!(
-            "Failed to convert dependency path '{}' into a storable representation",
-            source_path
-        )
-    })?;
+    let game = context.game(&game_name)?;
+    let dependency_id = resolve_dependency_id(dependency_id_arg, &game_name, game)?;
+    let source = prepare_dependency_source(&game_name, source_path_arg)?;
 
     println!(
         "{} Creating snapshot for '{}' dependency. This may take a while...",
@@ -103,29 +207,25 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
         dependency_id
     );
 
-    let backup = backup_dependency(&game_name, &dependency_id, &source_path_buf, &game_config)?;
+    let backup = backup_dependency(
+        &game_name,
+        &dependency_id,
+        &source.expanded,
+        context.game_config(),
+    )?;
 
     let dependency = GameDependency {
         id: dependency_id.clone(),
-        source_path: source_path_buf.to_string_lossy().to_string(),
-        source_type,
+        source_path: source.expanded.to_string_lossy().to_string(),
+        source_type: source.kind,
     };
 
-    if let Some(game) = game_config.games.get_mut(game_index) {
-        game.dependencies.push(dependency);
-    }
+    context.game_mut(&game_name)?.dependencies.push(dependency);
 
-    {
-        let installation = find_installation_mut(&mut installations, &game_name)?;
-        upsert_installed_dependency(installation, &dependency_id, install_path_tilde.clone());
-    }
+    let installation = context.installation_mut(&game_name)?;
+    DependencyContext::upsert_installed_dependency(installation, &dependency_id, source.tilde.clone());
 
-    installations.save()?;
-    game_config.save()?;
-
-    let install_path_display = install_path_tilde
-        .to_tilde_string()
-        .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string());
+    context.save_all()?;
 
     emit(
         Level::Success,
@@ -136,16 +236,14 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
             dependency_id,
             game_name,
             backup.snapshot_id,
-            install_path_display
+            source.display_path()
         ),
         Some(serde_json::json!({
             "game": game_name,
             "dependency": dependency_id,
             "snapshot": backup.snapshot_id,
             "reused_existing": backup.reused_existing,
-            "install_path": install_path_tilde
-                .to_tilde_string()
-                .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string())
+            "install_path": source.display_path()
         })),
     );
 
@@ -153,11 +251,7 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
 }
 
 pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
-    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let mut installations =
-        InstallationsConfig::load().context("Failed to load installations configuration")?;
-
-    validation::check_restic_and_game_manager(&game_config)?;
+    let mut context = DependencyContext::load_with_validation()?;
 
     let InstallDependencyOptions {
         game_name: game_name_arg,
@@ -166,15 +260,9 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
     } = options;
 
     let game_name = resolve_game_name(game_name_arg, Some("Select game to install dependency"))?;
-    let game_index = game_config
-        .games
-        .iter()
-        .position(|game| game.name.0 == game_name)
-        .ok_or_else(|| anyhow!("Game '{}' not found in configuration", game_name))?;
+    let game = context.game(&game_name)?;
 
-    let game_ref = &game_config.games[game_index];
-
-    if game_ref.dependencies.is_empty() {
+    if game.dependencies.is_empty() {
         println!(
             "{} Game '{}' has no registered dependencies.",
             char::from(NerdFont::Info),
@@ -183,18 +271,7 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
         return Ok(());
     }
 
-    let selected_dependency = if let Some(id) = dependency_id_arg {
-        game_ref
-            .dependencies
-            .iter()
-            .find(|dep| dep.id == id)
-            .cloned()
-            .ok_or_else(|| anyhow!("Dependency '{}' not found for game '{}'", id, game_name))?
-    } else {
-        selection::select_dependency(&game_name, &game_ref.dependencies)?
-            .ok_or_else(|| anyhow!("Dependency selection cancelled"))?
-            .clone()
-    };
+    let selected_dependency = select_dependency_for_install(game, dependency_id_arg, &game_name)?;
 
     let dependency_id = selected_dependency.id.clone();
     let target_path_input = resolve_install_path(
@@ -205,13 +282,12 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
         selected_dependency.source_type,
     )?;
 
-    let install_path_tilde = crate::dot::path_serde::TildePath::from_str(&target_path_input)
-        .with_context(|| {
-            format!(
-                "Invalid install path provided for dependency '{}': {}",
-                dependency_id, target_path_input
-            )
-        })?;
+    let install_path_tilde = TildePath::from_str(&target_path_input).with_context(|| {
+        format!(
+            "Invalid install path provided for dependency '{}': {}",
+            dependency_id, target_path_input
+        )
+    })?;
 
     if !prepare_install_target(&install_path_tilde, selected_dependency.source_type)? {
         return Ok(());
@@ -220,24 +296,21 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
     let restore_outcome = restore_dependency(
         &game_name,
         &selected_dependency,
-        &game_config,
+        context.game_config(),
         install_path_tilde.as_path(),
     )?;
 
-    let installation = installations
-        .installations
-        .iter_mut()
-        .find(|inst| inst.game_name.0 == game_name)
-        .ok_or_else(|| {
-            anyhow!(
-                "Game '{}' is not configured on this device. Run '{} game setup' first.",
-                game_name,
-                env!("CARGO_BIN_NAME")
-            )
-        })?;
+    let installation = context.installation_mut(&game_name)?;
+    DependencyContext::upsert_installed_dependency(
+        installation,
+        &dependency_id,
+        install_path_tilde.clone(),
+    );
+    context.save_installations()?;
 
-    upsert_installed_dependency(installation, &dependency_id, install_path_tilde.clone());
-    installations.save()?;
+    let install_display = install_path_tilde
+        .to_tilde_string()
+        .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string());
 
     emit(
         Level::Success,
@@ -247,9 +320,7 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
             char::from(NerdFont::Check),
             dependency_id,
             game_name,
-            install_path_tilde
-                .to_tilde_string()
-                .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string()),
+            install_display,
             restore_outcome.snapshot_id
         ),
         Some(serde_json::json!({
@@ -257,9 +328,7 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
             "dependency": dependency_id,
             "snapshot": restore_outcome.snapshot_id,
             "summary": restore_outcome.summary,
-            "install_path": install_path_tilde
-                .to_tilde_string()
-                .unwrap_or_else(|_| install_path_tilde.as_path().display().to_string())
+            "install_path": install_display
         })),
     );
 
@@ -271,20 +340,16 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
 }
 
 pub fn uninstall_dependency(options: UninstallDependencyOptions) -> Result<()> {
-    let mut installations =
-        InstallationsConfig::load().context("Failed to load installations configuration")?;
-    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let mut context = DependencyContext::load()?;
 
     let game_name = resolve_game_name(
         options.game_name,
         Some("Select game to uninstall dependency"),
     )?;
 
-    let game = game_config
-        .games
-        .iter()
-        .find(|game| game.name.0 == game_name)
-        .ok_or_else(|| anyhow!("Game '{}' not found in configuration", game_name))?;
+    let game = context
+        .game(&game_name)
+        .with_context(|| format!("Game '{}' not found in configuration", game_name))?;
 
     if game.dependencies.is_empty() {
         println!(
@@ -304,11 +369,9 @@ pub fn uninstall_dependency(options: UninstallDependencyOptions) -> Result<()> {
             .clone()
     };
 
-    let installation = installations
-        .installations
-        .iter_mut()
-        .find(|inst| inst.game_name.0 == game_name)
-        .ok_or_else(|| anyhow!("Game '{}' is not configured on this device.", game_name))?;
+    let installation = context
+        .installation_mut(&game_name)
+        .map_err(|_| anyhow!("Game '{}' is not configured on this device.", game_name))?;
 
     if let Some(index) = installation
         .dependencies
@@ -316,7 +379,7 @@ pub fn uninstall_dependency(options: UninstallDependencyOptions) -> Result<()> {
         .position(|dep| dep.dependency_id == dependency_id)
     {
         let removed = installation.dependencies.remove(index);
-        installations.save()?;
+        context.save_installations()?;
 
         emit(
             Level::Success,
@@ -349,19 +412,12 @@ pub fn uninstall_dependency(options: UninstallDependencyOptions) -> Result<()> {
 }
 
 pub fn list_dependencies(game_name: Option<String>) -> Result<()> {
-    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let installations =
-        InstallationsConfig::load().context("Failed to load installations configuration")?;
+    let context = DependencyContext::load()?;
 
     let game_name = resolve_game_name(game_name, None)?;
-
-    let game = game_config
-        .games
-        .iter()
-        .find(|game| game.name.0 == game_name)
-        .ok_or_else(|| anyhow!("Game '{}' not found in configuration", game_name))?;
-
-    let installation = installations
+    let game = context.game(&game_name)?;
+    let installation = context
+        .installations
         .installations
         .iter()
         .find(|inst| inst.game_name.0 == game_name);
@@ -425,6 +481,26 @@ fn resolve_dependency_id(
     }
 
     Ok(trimmed.to_string())
+}
+
+fn select_dependency_for_install(
+    game: &Game,
+    dependency_id: Option<String>,
+    game_name: &str,
+) -> Result<GameDependency> {
+    if let Some(id) = dependency_id {
+        let trimmed = id.trim();
+        return game
+            .dependencies
+            .iter()
+            .find(|dep| dep.id == trimmed)
+            .cloned()
+            .ok_or_else(|| anyhow!("Dependency '{}' not found for game '{}'", trimmed, game_name));
+    }
+
+    selection::select_dependency(game_name, &game.dependencies)?
+        .ok_or_else(|| anyhow!("Dependency selection cancelled"))
+        .map(|dep| dep.clone())
 }
 
 fn resolve_source_path(path: Option<String>, game_name: &str) -> Result<String> {
@@ -656,70 +732,6 @@ fn prepare_install_target(
     }
 
     Ok(true)
-}
-
-fn upsert_installed_dependency(
-    installation: &mut GameInstallation,
-    dependency_id: &str,
-    install_path: crate::dot::path_serde::TildePath,
-) {
-    // Determine the path type by checking if it exists
-    let install_path_type = if let Ok(metadata) = std::fs::metadata(install_path.as_path()) {
-        PathContentKind::from(metadata)
-    } else {
-        PathContentKind::Directory // Default to directory if we can't determine
-    };
-
-    if let Some(existing) = installation
-        .dependencies
-        .iter_mut()
-        .find(|dep| dep.dependency_id == dependency_id)
-    {
-        existing.install_path = install_path;
-        existing.install_path_type = install_path_type;
-    } else {
-        installation.dependencies.push(InstalledDependency {
-            dependency_id: dependency_id.to_string(),
-            install_path,
-            install_path_type,
-        });
-    }
-}
-
-fn ensure_local_installation_exists(
-    installations: &InstallationsConfig,
-    game_name: &str,
-) -> Result<()> {
-    if installations
-        .installations
-        .iter()
-        .any(|inst| inst.game_name.0 == game_name)
-    {
-        Ok(())
-    } else {
-        Err(anyhow!(
-            "Game '{}' is not configured on this device. Run '{} game setup' to configure it before adding dependencies.",
-            game_name,
-            env!("CARGO_BIN_NAME")
-        ))
-    }
-}
-
-fn find_installation_mut<'a>(
-    installations: &'a mut InstallationsConfig,
-    game_name: &str,
-) -> Result<&'a mut GameInstallation> {
-    installations
-        .installations
-        .iter_mut()
-        .find(|inst| inst.game_name.0 == game_name)
-        .ok_or_else(|| {
-            anyhow!(
-                "Game '{}' is not configured on this device. Run '{} game setup' to configure it before adding dependencies.",
-                game_name,
-                env!("CARGO_BIN_NAME")
-            )
-        })
 }
 
 fn format_path_for_display(path: &str) -> String {
