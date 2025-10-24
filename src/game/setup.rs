@@ -621,24 +621,56 @@ fn handle_candidate(
     game_config: &mut InstantGameConfig,
     installations: &mut InstallationsConfig,
 ) -> Result<()> {
-    match candidate.kind {
-        CandidateKind::ResticOnly => {
-            ensure_game_entry(&candidate, game_config)?;
-            install::setup_single_game(
-                &candidate.name,
-                game_config,
-                installations,
-                candidate.snapshot.as_ref(),
-            )
-        }
-        CandidateKind::GameNeedsInstallation => install::setup_single_game(
-            &candidate.name,
-            game_config,
-            installations,
-            candidate.snapshot.as_ref(),
-        ),
-        CandidateKind::InstallationMissingGame => ensure_game_entry(&candidate, game_config),
+    let game_name = candidate.name.clone();
+
+    if candidate.game.is_none() {
+        ensure_game_entry(&candidate, game_config)?;
+        *game_config =
+            InstantGameConfig::load().context("Failed to reload game configuration")?;
     }
+
+    loop {
+        let tasks = gather_pending_tasks(&game_name, game_config, installations);
+        if tasks.is_empty() {
+            break;
+        }
+
+        let task = if tasks.len() == 1 {
+            tasks.into_iter().next().unwrap()
+        } else {
+            match prompt_task_choice(&game_name, &tasks)? {
+                Some(task) => task,
+                None => break,
+            }
+        };
+
+        match task {
+            SetupTask::ConfigureSavePath => {
+                let snapshot_map = restic::collect_snapshot_overview(game_config)?;
+                let snapshot = snapshot_map.get(&game_name).cloned();
+                install::setup_single_game(
+                    &game_name,
+                    game_config,
+                    installations,
+                    snapshot.as_ref(),
+                )?;
+            }
+            SetupTask::ConfigureDependency { id, .. } => {
+                install_dependency(InstallDependencyOptions {
+                    game_name: Some(game_name.clone()),
+                    dependency_id: Some(id),
+                    install_path: None,
+                })?;
+            }
+        }
+
+        *game_config =
+            InstantGameConfig::load().context("Failed to reload game configuration")?;
+        *installations = InstallationsConfig::load()
+            .context("Failed to reload installations configuration")?;
+    }
+
+    Ok(())
 }
 
 fn ensure_game_entry(
