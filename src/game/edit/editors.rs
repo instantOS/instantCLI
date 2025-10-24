@@ -215,10 +215,7 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
             NerdFont::Check,
             "Launch command override removed from installations.toml",
         ),
-        (
-            NerdFont::Info,
-            "Launch command override unchanged.",
-        ),
+        (NerdFont::Info, "Launch command override unchanged."),
         (
             NerdFont::Check,
             "Launch command override updated in installations.toml",
@@ -325,24 +322,16 @@ fn edit_launch_command_value(
 
     if trimmed.is_empty() {
         if current.is_none() {
-            println!(
-                "{} {}",
-                char::from(empty_feedback.0),
-                empty_feedback.1
-            );
+            println!("{} {}", char::from(empty_feedback.0), empty_feedback.1);
             return Ok(false);
         }
 
         setter(None);
-        println!(
-            "{} {}",
-            char::from(removed_feedback.0),
-            removed_feedback.1
-        );
+        println!("{} {}", char::from(removed_feedback.0), removed_feedback.1);
         return Ok(true);
     }
 
-    if current.map_or(false, |existing| existing == trimmed) {
+    if current == Some(trimmed) {
         println!(
             "{} {}",
             char::from(unchanged_feedback.0),
@@ -352,11 +341,7 @@ fn edit_launch_command_value(
     }
 
     setter(Some(trimmed.to_string()));
-    println!(
-        "{} {}",
-        char::from(updated_feedback.0),
-        updated_feedback.1
-    );
+    println!("{} {}", char::from(updated_feedback.0), updated_feedback.1);
     Ok(true)
 }
 
