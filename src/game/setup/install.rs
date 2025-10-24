@@ -9,7 +9,8 @@ use crate::game::config::{
 use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
 use crate::game::utils::save_files::{SaveDirectoryInfo, get_save_directory_info};
-use crate::menu_utils::{ConfirmResult, FzfWrapper};
+use crate::menu::protocol;
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 
@@ -170,11 +171,26 @@ fn finalize_game_setup(
 ) -> Result<()> {
     let save_path =
         TildePath::from_str(&path_str).map_err(|e| anyhow!("Invalid save path: {e}"))?;
-    let save_path_kind = detect_save_path_kind(
+    let save_path_kind = match detect_save_path_kind(
         &save_path,
         snapshot_selection.latest_snapshot_id(),
         game_config,
-    );
+        &path_str,
+    )? {
+        Some(kind) => kind,
+        None => {
+            emit(
+                Level::Warn,
+                "game.setup.cancelled",
+                &format!(
+                    "{} Setup cancelled for game '{game_name}'.",
+                    char::from(NerdFont::Warning)
+                ),
+                None,
+            );
+            return Ok(());
+        }
+    };
     let mut installation =
         GameInstallation::with_kind(game_name, save_path.clone(), save_path_kind);
 
@@ -576,14 +592,15 @@ fn detect_save_path_kind(
     save_path: &TildePath,
     latest_snapshot_id: Option<&str>,
     game_config: &InstantGameConfig,
-) -> PathContentKind {
+    display: &str,
+) -> Result<Option<PathContentKind>> {
     if let Ok(metadata) = fs::metadata(save_path.as_path()) {
-        return metadata.into();
+        return Ok(Some(metadata.into()));
     }
 
     if let Some(snapshot_id) = latest_snapshot_id {
         match infer_snapshot_kind(game_config, snapshot_id) {
-            Ok(kind) => return kind,
+            Ok(kind) => return Ok(Some(kind)),
             Err(error) => {
                 emit(
                     Level::Warn,
@@ -598,7 +615,70 @@ fn detect_save_path_kind(
         }
     }
 
-    PathContentKind::Directory
+    prompt_save_path_kind(display)
+}
+
+fn prompt_save_path_kind(display: &str) -> Result<Option<PathContentKind>> {
+    let options = vec![
+        SavePathKindOption::new(
+            format!(
+                "{} Directory containing multiple files",
+                char::from(NerdFont::Folder)
+            ),
+            format!(
+                "Choose this if '{display}' resolves to a folder of save data (multiple files or subdirectories)."
+            ),
+            PathContentKind::Directory,
+        ),
+        SavePathKindOption::new(
+            format!("{} Single save file", char::from(NerdFont::File)),
+            format!(
+                "Choose this if '{display}' is a single file created by the game (e.g., *.sav, *.slot)."
+            ),
+            PathContentKind::File,
+        ),
+    ];
+
+    match FzfWrapper::builder()
+        .prompt("save-type")
+        .header(format!(
+            "{} Unable to determine the save type for '{display}'.\nSelect the appropriate save type to continue.",
+            char::from(NerdFont::Question)
+        ))
+        .select(options)?
+    {
+        FzfResult::Selected(option) => Ok(Some(option.kind)),
+        FzfResult::MultiSelected(mut options) => Ok(options.pop().map(|opt| opt.kind)),
+        FzfResult::Cancelled => Ok(None),
+        FzfResult::Error(err) => Err(anyhow!(err)),
+    }
+}
+
+#[derive(Clone)]
+struct SavePathKindOption {
+    label: String,
+    description: String,
+    kind: PathContentKind,
+}
+
+impl SavePathKindOption {
+    fn new(label: String, description: String, kind: PathContentKind) -> Self {
+        Self {
+            label,
+            description,
+            kind,
+        }
+    }
+}
+
+impl FzfSelectable for SavePathKindOption {
+    fn fzf_display_text(&self) -> String {
+        self.label.clone()
+    }
+
+    fn fzf_preview(&self) -> protocol::FzfPreview {
+        protocol::FzfPreview::Text(self.description.clone())
+    }
 }
 
 #[cfg(test)]

@@ -95,6 +95,96 @@ pub(super) fn infer_snapshot_kind(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dot::path_serde::TildePath;
+    use tempfile::TempDir;
+
+    fn ensure_restic_available() -> bool {
+        which::which("restic").is_ok()
+    }
+
+    fn init_config(temp_dir: &TempDir, password: &str) -> InstantGameConfig {
+        let repo_dir = temp_dir.path().join("repo");
+        std::fs::create_dir_all(&repo_dir).expect("failed to create repo dir");
+
+        InstantGameConfig {
+            repo: TildePath::new(repo_dir.clone()),
+            repo_password: password.to_string(),
+            games: Vec::new(),
+            retention_policy: Default::default(),
+        }
+    }
+
+    fn restic_wrapper_for_config(
+        config: &InstantGameConfig,
+    ) -> crate::restic::wrapper::ResticWrapper {
+        crate::restic::wrapper::ResticWrapper::new(
+            config.repo.as_path().to_string_lossy().to_string(),
+            config.repo_password.clone(),
+        )
+    }
+
+    fn latest_snapshot_id(config: &InstantGameConfig) -> String {
+        crate::game::restic::cache::invalidate_snapshot_cache();
+        crate::game::restic::cache::get_repository_snapshots(config)
+            .expect("failed to list snapshots")
+            .first()
+            .expect("expected snapshot")
+            .id
+            .clone()
+    }
+
+    #[test]
+    fn infer_snapshot_kind_detects_single_file_save() -> anyhow::Result<()> {
+        if !ensure_restic_available() {
+            eprintln!("restic binary not available; skipping test");
+            return Ok(());
+        }
+
+        let temp_dir = tempfile::tempdir()?;
+        let config = init_config(&temp_dir, "testpass-file");
+        let restic = restic_wrapper_for_config(&config);
+        restic.init_repository()?;
+
+        let save_file = temp_dir.path().join("save.sav");
+        std::fs::write(&save_file, b"fusion")?;
+        restic.backup(&[&save_file], vec!["game:test".to_string()])?;
+
+        let snapshot_id = latest_snapshot_id(&config);
+        let kind = infer_snapshot_kind(&config, &snapshot_id)?;
+        assert_eq!(kind, PathContentKind::File);
+
+        Ok(())
+    }
+
+    #[test]
+    fn infer_snapshot_kind_detects_directory_save() -> anyhow::Result<()> {
+        if !ensure_restic_available() {
+            eprintln!("restic binary not available; skipping test");
+            return Ok(());
+        }
+
+        let temp_dir = tempfile::tempdir()?;
+        let config = init_config(&temp_dir, "testpass-dir");
+        let restic = restic_wrapper_for_config(&config);
+        restic.init_repository()?;
+
+        let save_dir = temp_dir.path().join("SaveData");
+        std::fs::create_dir_all(&save_dir)?;
+        std::fs::write(save_dir.join("slot1.dat"), b"slot")?;
+        std::fs::write(save_dir.join("slot2.dat"), b"slot")?;
+        restic.backup(&[&save_dir], vec!["game:test".to_string()])?;
+
+        let snapshot_id = latest_snapshot_id(&config);
+        let kind = infer_snapshot_kind(&config, &snapshot_id)?;
+        assert_eq!(kind, PathContentKind::Directory);
+
+        Ok(())
+    }
+}
+
 fn count_snapshot_files(game_config: &InstantGameConfig, snapshot_id: &str) -> Result<usize> {
     let restic = ResticWrapper::new(
         game_config.repo.as_path().to_string_lossy().to_string(),

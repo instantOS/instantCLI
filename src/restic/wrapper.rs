@@ -234,7 +234,25 @@ impl ResticWrapper {
                 continue;
             }
 
-            nodes.push(serde_json::from_str(trimmed)?);
+            let value: serde_json::Value = serde_json::from_str(trimmed)?;
+
+            let is_node = value
+                .get("struct_type")
+                .and_then(|kind| kind.as_str())
+                .map(|kind| kind == "node")
+                .unwrap_or_else(|| {
+                    value
+                        .get("message_type")
+                        .and_then(|kind| kind.as_str())
+                        .map(|kind| kind == "node")
+                        .unwrap_or(false)
+                });
+
+            if !is_node {
+                continue;
+            }
+
+            nodes.push(serde_json::from_value(value)?);
         }
 
         Ok(nodes)
