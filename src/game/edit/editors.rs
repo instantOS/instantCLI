@@ -91,7 +91,6 @@ pub fn edit_description(state: &mut EditState) -> Result<bool> {
 }
 
 /// Edit launch command (shows submenu for shared vs installation override)
-// TODO: this function is too long, refactor
 pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
     let game_cmd = state.game().launch_command.as_deref();
     let inst_cmd = state
@@ -177,106 +176,59 @@ pub fn edit_launch_command(state: &mut EditState) -> Result<bool> {
 
 /// Edit the shared launch command in games.toml
 fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
-    let current_cmd = state.game().launch_command.as_deref().unwrap_or("");
+    let current_owned = state.game().launch_command.clone();
+    let current = current_owned.as_deref();
+    let header = format!("Current command: {}", current.unwrap_or("<not set>"));
 
-    let new_cmd = FzfWrapper::builder()
-        .prompt("Enter new launch command (leave empty to remove)")
-        .header(format!(
-            "Current command: {}",
-            if current_cmd.is_empty() {
-                "<not set>"
-            } else {
-                current_cmd
-            }
-        ))
-        .input()
-        .input_dialog()?;
-
-    let trimmed = new_cmd.trim();
-
-    if trimmed.is_empty() {
-        if state.game().launch_command.is_none() {
-            println!(
-                "{} Launch command already empty.",
-                char::from(NerdFont::Info)
-            );
-            return Ok(false);
-        }
-        state.game_mut().launch_command = None;
-        println!(
-            "{} Launch command removed from games.toml",
-            char::from(NerdFont::Check)
-        );
-        return Ok(true);
-    }
-
-    if trimmed == current_cmd {
-        println!("{} Launch command unchanged.", char::from(NerdFont::Info));
-        return Ok(false);
-    }
-
-    state.game_mut().launch_command = Some(trimmed.to_string());
-    println!(
-        "{} Launch command updated in games.toml",
-        char::from(NerdFont::Check)
-    );
-    Ok(true)
+    edit_launch_command_value(
+        "Enter new launch command (leave empty to remove)",
+        header,
+        current,
+        (NerdFont::Info, "Launch command already empty."),
+        (NerdFont::Check, "Launch command removed from games.toml"),
+        (NerdFont::Info, "Launch command unchanged."),
+        (NerdFont::Check, "Launch command updated in games.toml"),
+        |value| {
+            state.game_mut().launch_command = value;
+        },
+    )
 }
 
 /// Edit the installation-specific launch command override
-// TODO: get rid of duplication between this and the function above
 fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
-    let installation = state
-        .installation_mut()
-        .ok_or_else(|| anyhow!("No installation found for this game"))?;
+    if state.installation().is_none() {
+        return Err(anyhow!("No installation found for this game"));
+    }
 
-    let current_cmd = installation.launch_command.as_deref().unwrap_or("");
+    let current_owned = state
+        .installation()
+        .and_then(|install| install.launch_command.clone());
+    let current = current_owned.as_deref();
+    let header = format!("Current override: {}", current.unwrap_or("<not set>"));
 
-    let new_cmd = FzfWrapper::builder()
-        .prompt("Enter new launch command override (leave empty to remove override)")
-        .header(format!(
-            "Current override: {}",
-            if current_cmd.is_empty() {
-                "<not set>"
-            } else {
-                current_cmd
+    edit_launch_command_value(
+        "Enter new launch command override (leave empty to remove override)",
+        header,
+        current,
+        (NerdFont::Info, "Launch command override already empty."),
+        (
+            NerdFont::Check,
+            "Launch command override removed from installations.toml",
+        ),
+        (
+            NerdFont::Info,
+            "Launch command override unchanged.",
+        ),
+        (
+            NerdFont::Check,
+            "Launch command override updated in installations.toml",
+        ),
+        |value| {
+            if let Some(installation) = state.installation_mut() {
+                installation.launch_command = value;
             }
-        ))
-        .input()
-        .input_dialog()?;
-
-    let trimmed = new_cmd.trim();
-
-    if trimmed.is_empty() {
-        if installation.launch_command.is_none() {
-            println!(
-                "{} Launch command override already empty.",
-                char::from(NerdFont::Info)
-            );
-            return Ok(false);
-        }
-        installation.launch_command = None;
-        println!(
-            "{} Launch command override removed from installations.toml",
-            char::from(NerdFont::Check)
-        );
-        return Ok(true);
-    }
-
-    if trimmed == current_cmd {
-        println!(
-            "{} Launch command override unchanged.",
-            char::from(NerdFont::Info)
-        );
-        return Ok(false);
-    }
-
-    installation.launch_command = Some(trimmed.to_string());
-    println!(
-        "{} Launch command override updated in installations.toml",
-        char::from(NerdFont::Check)
-    );
-    Ok(true)
+        },
+    )
 }
 
 /// Edit the save path
@@ -351,6 +303,61 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
             Ok(false)
         }
     }
+}
+
+fn edit_launch_command_value(
+    prompt: &str,
+    header: String,
+    current: Option<&str>,
+    empty_feedback: (NerdFont, &'static str),
+    removed_feedback: (NerdFont, &'static str),
+    unchanged_feedback: (NerdFont, &'static str),
+    updated_feedback: (NerdFont, &'static str),
+    mut setter: impl FnMut(Option<String>),
+) -> Result<bool> {
+    let input = FzfWrapper::builder()
+        .prompt(prompt)
+        .header(header)
+        .input()
+        .input_dialog()?;
+
+    let trimmed = input.trim();
+
+    if trimmed.is_empty() {
+        if current.is_none() {
+            println!(
+                "{} {}",
+                char::from(empty_feedback.0),
+                empty_feedback.1
+            );
+            return Ok(false);
+        }
+
+        setter(None);
+        println!(
+            "{} {}",
+            char::from(removed_feedback.0),
+            removed_feedback.1
+        );
+        return Ok(true);
+    }
+
+    if current.map_or(false, |existing| existing == trimmed) {
+        println!(
+            "{} {}",
+            char::from(unchanged_feedback.0),
+            unchanged_feedback.1
+        );
+        return Ok(false);
+    }
+
+    setter(Some(trimmed.to_string()));
+    println!(
+        "{} {}",
+        char::from(updated_feedback.0),
+        updated_feedback.1
+    );
+    Ok(true)
 }
 
 /// Launch the game
