@@ -208,6 +208,41 @@ impl ResticWrapper {
         Ok(snapshots)
     }
 
+    pub fn list_snapshot_nodes(
+        &self,
+        snapshot_id: &str,
+    ) -> Result<Vec<SnapshotNode>, ResticError> {
+        let mut cmd = self.base_command();
+        cmd.args(["ls", snapshot_id, "--json"]);
+        let args = vec![
+            "ls".to_string(),
+            snapshot_id.to_string(),
+            "--json".to_string(),
+        ];
+
+        let output = self.execute_and_log_command(cmd, &args)?;
+
+        if !output.status.success() {
+            let code = output.status.code().unwrap_or(1);
+            let stderr = String::from_utf8(output.stderr)?;
+            return Err(ResticError::from_exit_code(code, &stderr));
+        }
+
+        let stdout = String::from_utf8(output.stdout)?;
+        let mut nodes = Vec::new();
+
+        for line in stdout.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            nodes.push(serde_json::from_str(trimmed)?);
+        }
+
+        Ok(nodes)
+    }
+
     /// List snapshots with optional tag filtering. Returns raw JSON output.
     pub fn list_snapshots_filtered(
         &self,
@@ -562,6 +597,14 @@ pub struct Snapshot {
     pub summary: Option<SnapshotSummary>,
     pub id: String,
     pub short_id: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub struct SnapshotNode {
+    pub path: String,
+    #[serde(rename = "type")]
+    pub node_type: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]

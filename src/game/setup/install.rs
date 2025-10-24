@@ -3,7 +3,7 @@ use std::fs;
 
 use crate::dot::path_serde::TildePath;
 use crate::game::checkpoint;
-use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind};
 use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
 use crate::game::utils::save_files::get_save_directory_info;
@@ -14,7 +14,7 @@ use crate::ui::prelude::*;
 use super::paths::{
     choose_installation_path, extract_unique_paths_from_snapshots, prompt_manual_save_path,
 };
-use super::restic::SnapshotOverview;
+use super::restic::{infer_snapshot_kind, SnapshotOverview};
 
 /// Set up a single game by collecting paths from snapshots and letting the user choose one.
 pub(super) fn setup_single_game(
@@ -106,58 +106,110 @@ pub(super) fn setup_single_game(
     if let Some(path_str) = chosen_path {
         let save_path =
             TildePath::from_str(&path_str).map_err(|e| anyhow!("Invalid save path: {e}"))?;
-        let mut installation = GameInstallation::new(game_name, save_path.clone());
+        let save_path_kind =
+            detect_save_path_kind(&save_path, latest_snapshot_id.as_deref(), game_config);
+        let mut installation =
+            GameInstallation::with_kind(game_name, save_path.clone(), save_path_kind);
 
-        let mut directory_created = false;
-        if !save_path.as_path().exists() {
-            match FzfWrapper::confirm(&format!(
-                "Save path '{path_str}' does not exist. Would you like to create it?"
-            ))
-            .map_err(|e| anyhow!("Failed to get confirmation: {e}"))?
-            {
-                ConfirmResult::Yes => {
-                    fs::create_dir_all(save_path.as_path())
-                        .context("Failed to create save directory")?;
-                    emit(
-                        Level::Success,
-                        "game.setup.dir_created",
-                        &format!(
-                            "{} Created save directory: {path_str}",
-                            char::from(NerdFont::Check)
-                        ),
-                        None,
-                    );
-                    directory_created = true;
+        let mut path_created = false;
+
+        if save_path_kind.is_directory() {
+            if !save_path.as_path().exists() {
+                match FzfWrapper::confirm(&format!(
+                    "Save path '{path_str}' does not exist. Would you like to create it?"
+                ))
+                .map_err(|e| anyhow!("Failed to get confirmation: {e}"))?
+                {
+                    ConfirmResult::Yes => {
+                        fs::create_dir_all(save_path.as_path())
+                            .context("Failed to create save directory")?;
+                        emit(
+                            Level::Success,
+                            "game.setup.dir_created",
+                            &format!("{} Created save directory: {path_str}", char::from(NerdFont::Check)),
+                            None,
+                        );
+                        path_created = true;
+                    }
+                    ConfirmResult::No | ConfirmResult::Cancelled => {
+                        println!("Directory not created. You can create it later when needed.");
+                    }
                 }
-                ConfirmResult::No | ConfirmResult::Cancelled => {
-                    println!("Directory not created. You can create it later when needed.");
+            }
+        } else {
+            let path_ref = save_path.as_path();
+
+            if path_ref.exists() && path_ref.is_dir() {
+                return Err(anyhow!(
+                    "Save path '{path_str}' points to a directory, but the snapshot indicates a single file save."
+                ));
+            }
+
+            if !path_ref.exists() {
+                if let Some(parent) = path_ref.parent() {
+                    if !parent.exists() {
+                        match FzfWrapper::confirm(&format!(
+                            "Parent directory '{}' does not exist. Create it?",
+                            parent.display()
+                        ))
+                        .map_err(|e| anyhow!("Failed to confirm parent directory creation: {e}"))?
+                        {
+                            ConfirmResult::Yes => {
+                                fs::create_dir_all(parent).with_context(|| {
+                                    format!("Failed to create directory '{}'", parent.display())
+                                })?;
+                                path_created = true;
+                                emit(
+                                    Level::Success,
+                                    "game.setup.parent_created",
+                                    &format!("{} Created parent directory: {}", char::from(NerdFont::Check), parent.display()),
+                                    None,
+                                );
+                            }
+                            ConfirmResult::No | ConfirmResult::Cancelled => {
+                                println!("Parent directory not created. You can set it up later when needed.");
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        let save_dir_info = get_save_directory_info(save_path.as_path())
-            .with_context(|| format!("Failed to inspect save directory '{path_str}'"))?;
         let path_exists_after = save_path.as_path().exists();
         let has_existing_snapshot = latest_snapshot_id.is_some();
+
+        let (file_count, dir_info) = if save_path_kind.is_directory() {
+            let info = get_save_directory_info(save_path.as_path())
+                .with_context(|| format!("Failed to inspect save directory '{path_str}'"))?;
+            (info.file_count, Some(info))
+        } else {
+            (if path_exists_after { 1 } else { 0 }, None)
+        };
+
         let decision = determine_restore_decision(
             has_existing_snapshot,
             path_exists_after,
-            directory_created,
-            save_dir_info.file_count,
+            path_created,
+            file_count,
+            save_path_kind,
         );
         let mut should_restore = decision.should_restore;
 
         if decision.needs_confirmation {
-            let overwrite_prompt = format!(
-                "{} The directory '{path_str}' already contains {} file{}.\nRestoring from backup will replace its contents. Proceed?",
-                char::from(NerdFont::Warning),
-                save_dir_info.file_count,
-                if save_dir_info.file_count == 1 {
-                    ""
-                } else {
-                    "s"
-                }
-            );
+            let overwrite_prompt = if save_path_kind.is_directory() {
+                let info = dir_info.as_ref().expect("directory info missing");
+                format!(
+                    "{} The directory '{path_str}' already contains {} file{}.\nRestoring from backup will replace its contents. Proceed?",
+                    char::from(NerdFont::Warning),
+                    info.file_count,
+                    if info.file_count == 1 { "" } else { "s" }
+                )
+            } else {
+                format!(
+                    "{} The file '{path_str}' already exists. Restoring from backup will overwrite it. Proceed?",
+                    char::from(NerdFont::Warning)
+                )
+            };
 
             match FzfWrapper::builder()
                 .confirm(overwrite_prompt)
@@ -170,10 +222,17 @@ pub(super) fn setup_single_game(
                     should_restore = true;
                 }
                 ConfirmResult::No => {
-                    println!(
-                        "{} Keeping existing files in '{path_str}'. Restore skipped.",
-                        char::from(NerdFont::Info)
-                    );
+                    if save_path_kind.is_directory() {
+                        println!(
+                            "{} Keeping existing files in '{path_str}'. Restore skipped.",
+                            char::from(NerdFont::Info)
+                        );
+                    } else {
+                        println!(
+                            "{} Keeping existing file '{path_str}'. Restore skipped.",
+                            char::from(NerdFont::Info)
+                        );
+                    }
                     should_restore = false;
                 }
                 ConfirmResult::Cancelled => {
@@ -306,26 +365,51 @@ struct RestoreDecision {
 fn determine_restore_decision(
     has_existing_snapshot: bool,
     path_exists: bool,
-    directory_created: bool,
+    path_created: bool,
     file_count: u64,
+    save_kind: PathContentKind,
 ) -> RestoreDecision {
-    if !has_existing_snapshot || !path_exists {
+    if !has_existing_snapshot {
         return RestoreDecision {
             should_restore: false,
             needs_confirmation: false,
         };
     }
 
-    if directory_created || file_count == 0 {
-        return RestoreDecision {
-            should_restore: true,
-            needs_confirmation: false,
-        };
-    }
+    match save_kind {
+        PathContentKind::Directory => {
+            if !path_exists {
+                return RestoreDecision {
+                    should_restore: false,
+                    needs_confirmation: false,
+                };
+            }
 
-    RestoreDecision {
-        should_restore: false,
-        needs_confirmation: true,
+            if path_created || file_count == 0 {
+                return RestoreDecision {
+                    should_restore: true,
+                    needs_confirmation: false,
+                };
+            }
+
+            RestoreDecision {
+                should_restore: false,
+                needs_confirmation: true,
+            }
+        }
+        PathContentKind::File => {
+            if !path_exists || path_created {
+                return RestoreDecision {
+                    should_restore: true,
+                    needs_confirmation: false,
+                };
+            }
+
+            RestoreDecision {
+                should_restore: false,
+                needs_confirmation: true,
+            }
+        }
     }
 }
 
@@ -351,6 +435,35 @@ fn restore_latest_backup(
     cache::invalidate_game_cache(game_name, &repo_path);
 
     Ok(summary)
+}
+
+fn detect_save_path_kind(
+    save_path: &TildePath,
+    latest_snapshot_id: Option<&str>,
+    game_config: &InstantGameConfig,
+) -> PathContentKind {
+    if let Ok(metadata) = std::fs::metadata(save_path.as_path()) {
+        return metadata.into();
+    }
+
+    if let Some(snapshot_id) = latest_snapshot_id {
+        match infer_snapshot_kind(game_config, snapshot_id) {
+            Ok(kind) => return kind,
+            Err(error) => {
+                emit(
+                    Level::Warn,
+                    "game.setup.snapshot_inspect_failed",
+                    &format!(
+                        "{} Could not infer save type from snapshot: {error}",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
+            }
+        }
+    }
+
+    PathContentKind::Directory
 }
 
 #[cfg(test)]

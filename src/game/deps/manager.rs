@@ -36,6 +36,7 @@ pub struct UninstallDependencyOptions {
     pub dependency_id: Option<String>,
 }
 
+// TODO: this function is way too long, refactor
 pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
     let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let mut installations =
@@ -43,6 +44,7 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
 
     validation::check_restic_and_game_manager(&game_config)?;
 
+    // TODO: should this be a clone? Should it implement clone?
     let AddDependencyOptions {
         game_name: game_name_arg,
         dependency_id: dependency_id_arg,
@@ -73,11 +75,17 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
             expanded_source
         )
     })?;
-    if !metadata.is_dir() {
+
+    let source_type = if metadata.is_file() {
+        PathContentKind::File
+    } else if metadata.is_dir() {
+        PathContentKind::Directory
+    } else {
         return Err(anyhow!(
-            "Dependency path must be a directory (file dependencies are not supported)"
+            "Dependency path must be a regular file or directory: {}",
+            expanded_source
         ));
-    }
+    };
 
     let install_path_tilde = TildePath::from_str(&source_path).with_context(|| {
         format!(
@@ -93,9 +101,6 @@ pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
     );
 
     let backup = backup_dependency(&game_name, &dependency_id, &source_path_buf, &game_config)?;
-
-    let source_meta = std::fs::metadata(&source_path_buf)?;
-    let source_type = PathContentKind::from(source_meta);
 
     let dependency = GameDependency {
         id: dependency_id.clone(),
@@ -194,6 +199,7 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
         &game_name,
         &dependency_id,
         &selected_dependency,
+        selected_dependency.source_type,
     )?;
 
     let install_path_tilde = crate::dot::path_serde::TildePath::from_str(&target_path_input)
@@ -204,7 +210,7 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
             )
         })?;
 
-    if !prepare_install_target(&install_path_tilde)? {
+    if !prepare_install_target(&install_path_tilde, selected_dependency.source_type)? {
         return Ok(());
     }
 
@@ -429,13 +435,13 @@ fn resolve_source_path(path: Option<String>, game_name: &str) -> Result<String> 
 
     let selection = PathInputBuilder::new()
         .header(format!(
-            "{} Select the dependency directory for '{}'",
+            "{} Select the dependency path for '{}'",
             char::from(NerdFont::Package),
             game_name
         ))
-        .manual_prompt("Enter dependency directory path:")
-        .scope(FilePickerScope::Directories)
-        .picker_hint("Select the directory to capture as a dependency")
+        .manual_prompt("Enter dependency path (file or directory):")
+        .scope(FilePickerScope::FilesAndDirectories)
+        .picker_hint("Select the file or directory to capture as a dependency")
         .choose()?;
 
     match selection {
@@ -457,6 +463,7 @@ fn resolve_install_path(
     game_name: &str,
     dependency_id: &str,
     dependency: &GameDependency,
+    expected_kind: PathContentKind,
 ) -> Result<String> {
     if let Some(path) = path {
         let trimmed = path.trim();
@@ -485,25 +492,41 @@ fn resolve_install_path(
     match FzfWrapper::select_one(options)? {
         Some(selection) => match selection.value {
             Some(value) => Ok(value),
-            None => prompt_custom_install_path(game_name, dependency_id),
+            None => prompt_custom_install_path(game_name, dependency_id, expected_kind),
         },
         None => Err(anyhow!("Install path selection cancelled")),
     }
 }
 
-fn prompt_custom_install_path(game_name: &str, dependency_id: &str) -> Result<String> {
+fn prompt_custom_install_path(
+    game_name: &str,
+    dependency_id: &str,
+    expected_kind: PathContentKind,
+) -> Result<String> {
     let selection = PathInputBuilder::new()
         .header(format!(
-            "{} Choose install directory for dependency '{}'",
+            "{} Choose install {} for dependency '{}'",
             char::from(NerdFont::Folder),
+            if expected_kind.is_file() { "file" } else { "directory" },
             dependency_id
         ))
         .manual_prompt(format!(
-            "Enter destination directory for '{}' dependency of '{}'",
+            "Enter destination {} for '{}' dependency of '{}'",
+            if expected_kind.is_file() { "file" } else { "directory" },
             dependency_id, game_name
         ))
-        .scope(FilePickerScope::Directories)
-        .picker_hint("Select the directory where the dependency should be installed")
+        .scope(match expected_kind {
+            PathContentKind::File => FilePickerScope::FilesAndDirectories,
+            PathContentKind::Directory => FilePickerScope::Directories,
+        })
+        .picker_hint(match expected_kind {
+            PathContentKind::File => {
+                "Select the file location where the dependency should be restored"
+            }
+            PathContentKind::Directory => {
+                "Select the directory where the dependency should be installed"
+            }
+        })
         .choose()?;
 
     match selection {
@@ -520,30 +543,76 @@ fn prompt_custom_install_path(game_name: &str, dependency_id: &str) -> Result<St
     }
 }
 
-fn prepare_install_target(path: &crate::dot::path_serde::TildePath) -> Result<bool> {
+fn prepare_install_target(
+    path: &crate::dot::path_serde::TildePath,
+    expected_kind: PathContentKind,
+) -> Result<bool> {
     let display = path
         .to_tilde_string()
         .unwrap_or_else(|_| path.as_path().display().to_string());
 
-    if path.as_path().exists() {
-        if !path.as_path().is_dir() {
-            return Err(anyhow!(
-                "Target path {} exists but is not a directory",
-                display
-            ));
-        }
+    if expected_kind.is_directory() {
+        if path.as_path().exists() {
+            if !path.as_path().is_dir() {
+                return Err(anyhow!(
+                    "Target path {} exists but is not a directory",
+                    display
+                ));
+            }
 
-        let info = get_save_directory_info(path.as_path())?;
-        if info.file_count > 0 {
+            let info = get_save_directory_info(path.as_path())?;
+            if info.file_count > 0 {
+                let prompt = format!(
+                    "{} Directory '{}' contains {} file(s). Overwrite contents?",
+                    char::from(NerdFont::Warning),
+                    display,
+                    info.file_count
+                );
+                match FzfWrapper::builder()
+                    .confirm(prompt)
+                    .yes_text("Overwrite directory")
+                    .no_text("Cancel")
+                    .show_confirmation()?
+                {
+                    ConfirmResult::Yes => {}
+                    ConfirmResult::No | ConfirmResult::Cancelled => {
+                        println!("{} Installation cancelled.", char::from(NerdFont::Warning));
+                        return Ok(false);
+                    }
+                }
+            }
+        } else {
+            match FzfWrapper::confirm(&format!("Create directory '{}'?", display))? {
+                ConfirmResult::Yes => {
+                    fs::create_dir_all(path.as_path())
+                        .with_context(|| format!("Failed to create directory '{}'.", display))?;
+                }
+                ConfirmResult::No | ConfirmResult::Cancelled => {
+                    println!("{} Installation cancelled.", char::from(NerdFont::Warning));
+                    return Ok(false);
+                }
+            }
+        }
+    } else {
+        let path_ref = path.as_path();
+
+        if path_ref.exists() {
+            if path_ref.is_dir() {
+                return Err(anyhow!(
+                    "Target path {} exists but is a directory; expected a file",
+                    display
+                ));
+            }
+
             let prompt = format!(
-                "{} Directory '{}' contains {} file(s). Overwrite contents?",
+                "{} File '{}' already exists. Overwrite it?",
                 char::from(NerdFont::Warning),
-                display,
-                info.file_count
+                display
             );
+
             match FzfWrapper::builder()
                 .confirm(prompt)
-                .yes_text("Overwrite directory")
+                .yes_text("Overwrite file")
                 .no_text("Cancel")
                 .show_confirmation()?
             {
@@ -553,22 +622,33 @@ fn prepare_install_target(path: &crate::dot::path_serde::TildePath) -> Result<bo
                     return Ok(false);
                 }
             }
-        }
-    } else {
-        match FzfWrapper::confirm(&format!("Create directory '{}'?'", display))? {
-            ConfirmResult::Yes => {
-                fs::create_dir_all(path.as_path())
-                    .with_context(|| format!("Failed to create directory '{}'.", display))?;
-            }
-            ConfirmResult::No | ConfirmResult::Cancelled => {
-                println!("{} Installation cancelled.", char::from(NerdFont::Warning));
-                return Ok(false);
+        } else if let Some(parent) = path_ref.parent() {
+            if !parent.exists() {
+                let parent_display = parent.display();
+                match FzfWrapper::confirm(&format!(
+                    "Parent directory '{}' does not exist. Create it?",
+                    parent_display
+                ))? {
+                    ConfirmResult::Yes => {
+                        fs::create_dir_all(parent).with_context(|| {
+                            format!(
+                                "Failed to create parent directory '{}'.",
+                                parent_display
+                            )
+                        })?;
+                    }
+                    ConfirmResult::No | ConfirmResult::Cancelled => {
+                        println!("{} Installation cancelled.", char::from(NerdFont::Warning));
+                        return Ok(false);
+                    }
+                }
             }
         }
     }
 
     Ok(true)
 }
+
 
 fn upsert_installed_dependency(
     installation: &mut GameInstallation,

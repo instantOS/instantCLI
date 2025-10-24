@@ -2,9 +2,9 @@ use std::collections::{BTreeSet, HashMap};
 
 use anyhow::{Context, Result};
 
-use crate::game::config::InstantGameConfig;
+use crate::game::config::{InstantGameConfig, PathContentKind};
 use crate::game::restic::{cache, tags};
-use crate::restic::wrapper::Snapshot;
+use crate::restic::wrapper::{ResticWrapper, Snapshot};
 
 use super::paths::{PathInfo, extract_unique_paths_from_snapshots};
 
@@ -81,4 +81,32 @@ pub(super) fn format_snapshot_timestamp(iso: &str, host: Option<&str>) -> Option
     } else {
         Some(timestamp)
     }
+}
+
+pub(super) fn infer_snapshot_kind(
+    game_config: &InstantGameConfig,
+    snapshot_id: &str,
+) -> Result<PathContentKind> {
+    let file_count = count_snapshot_files(game_config, snapshot_id)?;
+    if file_count == 1 {
+        Ok(PathContentKind::File)
+    } else {
+        Ok(PathContentKind::Directory)
+    }
+}
+
+fn count_snapshot_files(
+    game_config: &InstantGameConfig,
+    snapshot_id: &str,
+) -> Result<usize> {
+    let restic = ResticWrapper::new(
+        game_config.repo.as_path().to_string_lossy().to_string(),
+        game_config.repo_password.clone(),
+    );
+
+    let nodes = restic
+        .list_snapshot_nodes(snapshot_id)
+        .context("Failed to inspect snapshot contents")?;
+
+    Ok(nodes.iter().filter(|node| node.node_type == "file").count())
 }
