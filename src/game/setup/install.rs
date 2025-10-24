@@ -3,7 +3,9 @@ use std::fs;
 
 use crate::dot::path_serde::TildePath;
 use crate::game::checkpoint;
-use crate::game::config::{GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind};
+use crate::game::config::{
+    GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,
+};
 use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
 use crate::game::utils::save_files::get_save_directory_info;
@@ -14,7 +16,7 @@ use crate::ui::prelude::*;
 use super::paths::{
     choose_installation_path, extract_unique_paths_from_snapshots, prompt_manual_save_path,
 };
-use super::restic::{infer_snapshot_kind, SnapshotOverview};
+use super::restic::{SnapshotOverview, infer_snapshot_kind};
 
 /// Set up a single game by collecting paths from snapshots and letting the user choose one.
 // TODO: this function is way too long, refactor and consider if things should be extracted into
@@ -128,7 +130,10 @@ pub(super) fn setup_single_game(
                         emit(
                             Level::Success,
                             "game.setup.dir_created",
-                            &format!("{} Created save directory: {path_str}", char::from(NerdFont::Check)),
+                            &format!(
+                                "{} Created save directory: {path_str}",
+                                char::from(NerdFont::Check)
+                            ),
                             None,
                         );
                         path_created = true;
@@ -164,12 +169,18 @@ pub(super) fn setup_single_game(
                                 emit(
                                     Level::Success,
                                     "game.setup.parent_created",
-                                    &format!("{} Created parent directory: {}", char::from(NerdFont::Check), parent.display()),
+                                    &format!(
+                                        "{} Created parent directory: {}",
+                                        char::from(NerdFont::Check),
+                                        parent.display()
+                                    ),
                                     None,
                                 );
                             }
                             ConfirmResult::No | ConfirmResult::Cancelled => {
-                                println!("Parent directory not created. You can set it up later when needed.");
+                                println!(
+                                    "Parent directory not created. You can set it up later when needed."
+                                );
                             }
                         }
                     }
@@ -444,7 +455,7 @@ fn detect_save_path_kind(
     latest_snapshot_id: Option<&str>,
     game_config: &InstantGameConfig,
 ) -> PathContentKind {
-    if let Ok(metadata) = std::fs::metadata(save_path.as_path()) {
+    if let Ok(metadata) = fs::metadata(save_path.as_path()) {
         return metadata.into();
     }
 
@@ -474,13 +485,8 @@ mod tests {
 
     #[test]
     fn restore_not_attempted_without_snapshots() {
-        let decision = determine_restore_decision(
-            false,
-            true,
-            false,
-            10,
-            PathContentKind::Directory,
-        );
+        let decision =
+            determine_restore_decision(false, true, false, 10, PathContentKind::Directory);
         assert_eq!(
             decision,
             RestoreDecision {
@@ -492,13 +498,7 @@ mod tests {
 
     #[test]
     fn restore_occurs_without_prompt_for_new_directories() {
-        let decision = determine_restore_decision(
-            true,
-            true,
-            true,
-            0,
-            PathContentKind::Directory,
-        );
+        let decision = determine_restore_decision(true, true, true, 0, PathContentKind::Directory);
         assert_eq!(
             decision,
             RestoreDecision {
@@ -510,13 +510,7 @@ mod tests {
 
     #[test]
     fn restore_requires_confirmation_when_files_exist() {
-        let decision = determine_restore_decision(
-            true,
-            true,
-            false,
-            5,
-            PathContentKind::Directory,
-        );
+        let decision = determine_restore_decision(true, true, false, 5, PathContentKind::Directory);
         assert_eq!(
             decision,
             RestoreDecision {
@@ -528,13 +522,7 @@ mod tests {
 
     #[test]
     fn restore_occurs_for_single_file_when_missing() {
-        let decision = determine_restore_decision(
-            true,
-            false,
-            false,
-            0,
-            PathContentKind::File,
-        );
+        let decision = determine_restore_decision(true, false, false, 0, PathContentKind::File);
         assert_eq!(
             decision,
             RestoreDecision {
@@ -546,13 +534,7 @@ mod tests {
 
     #[test]
     fn restore_prompts_when_single_file_exists() {
-        let decision = determine_restore_decision(
-            true,
-            true,
-            false,
-            1,
-            PathContentKind::File,
-        );
+        let decision = determine_restore_decision(true, true, false, 1, PathContentKind::File);
         assert_eq!(
             decision,
             RestoreDecision {

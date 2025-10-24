@@ -161,9 +161,12 @@ impl GameBackup {
                         .unwrap()
                         .as_millis()
                 ));
-                
+
                 fs::create_dir_all(&temp_restore).with_context(|| {
-                    format!("Failed to create temp restore directory: {}", temp_restore.display())
+                    format!(
+                        "Failed to create temp restore directory: {}",
+                        temp_restore.display()
+                    )
                 })?;
 
                 let restic = ResticWrapper::new(
@@ -184,7 +187,7 @@ impl GameBackup {
                 let restored_file = temp_restore.join(
                     original_save_path
                         .strip_prefix("/")
-                        .unwrap_or(original_save_path)
+                        .unwrap_or(original_save_path),
                 );
 
                 if !restored_file.exists() {

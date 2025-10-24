@@ -510,13 +510,22 @@ fn prompt_custom_install_path(
         .header(format!(
             "{} Choose install {} for dependency '{}'",
             char::from(NerdFont::Folder),
-            if expected_kind.is_file() { "file" } else { "directory" },
+            if expected_kind.is_file() {
+                "file"
+            } else {
+                "directory"
+            },
             dependency_id
         ))
         .manual_prompt(format!(
             "Enter destination {} for '{}' dependency of '{}'",
-            if expected_kind.is_file() { "file" } else { "directory" },
-            dependency_id, game_name
+            if expected_kind.is_file() {
+                "file"
+            } else {
+                "directory"
+            },
+            dependency_id,
+            game_name
         ))
         .scope(match expected_kind {
             PathContentKind::File => FilePickerScope::FilesAndDirectories,
@@ -634,10 +643,7 @@ fn prepare_install_target(
                 ))? {
                     ConfirmResult::Yes => {
                         fs::create_dir_all(parent).with_context(|| {
-                            format!(
-                                "Failed to create parent directory '{}'.",
-                                parent_display
-                            )
+                            format!("Failed to create parent directory '{}'.", parent_display)
                         })?;
                     }
                     ConfirmResult::No | ConfirmResult::Cancelled => {
@@ -651,7 +657,6 @@ fn prepare_install_target(
 
     Ok(true)
 }
-
 
 fn upsert_installed_dependency(
     installation: &mut GameInstallation,

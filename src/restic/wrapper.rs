@@ -208,10 +208,7 @@ impl ResticWrapper {
         Ok(snapshots)
     }
 
-    pub fn list_snapshot_nodes(
-        &self,
-        snapshot_id: &str,
-    ) -> Result<Vec<SnapshotNode>, ResticError> {
+    pub fn list_snapshot_nodes(&self, snapshot_id: &str) -> Result<Vec<SnapshotNode>, ResticError> {
         let mut cmd = self.base_command();
         cmd.args(["ls", snapshot_id, "--json"]);
         let args = vec![

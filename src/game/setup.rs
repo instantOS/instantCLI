@@ -3,14 +3,9 @@ use anyhow::{Context, Result, anyhow};
 use std::collections::BTreeSet;
 
 use crate::game::config::{
-    Game,
-    GameDependency,
-    GameInstallation,
-    InstallationsConfig,
-    InstantGameConfig,
-    PathContentKind,
+    Game, GameDependency, GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,
 };
-use crate::game::deps::manager::{install_dependency, InstallDependencyOptions};
+use crate::game::deps::manager::{InstallDependencyOptions, install_dependency};
 use crate::game::games::manager::{AddGameOptions, GameManager};
 use crate::game::games::validation::validate_game_manager_initialized;
 use crate::menu::protocol;
@@ -169,16 +164,25 @@ impl SetupCandidate {
         match self.category {
             CandidateCategory::MissingInstallation => {
                 if self.snapshot.is_some() {
-                    format!("{icon} {}  — Configure save path (backups available)", self.name)
+                    format!(
+                        "{icon} {}  — Configure save path (backups available)",
+                        self.name
+                    )
                 } else {
                     format!("{icon} {}  — Configure save path", self.name)
                 }
             }
             CandidateCategory::MissingDependencies => {
                 let missing = self.missing_dependencies.len();
-                format!("{icon} {}  — Install {missing} pending {}",
+                format!(
+                    "{icon} {}  — Install {missing} pending {}",
                     self.name,
-                    if missing == 1 { "dependency" } else { "dependencies" })
+                    if missing == 1 {
+                        "dependency"
+                    } else {
+                        "dependencies"
+                    }
+                )
             }
             CandidateCategory::SnapshotWithoutGame => {
                 let snapshot_count = self
@@ -186,8 +190,15 @@ impl SetupCandidate {
                     .as_ref()
                     .map(|overview| overview.snapshot_count)
                     .unwrap_or(0);
-                let snapshot_label = if snapshot_count == 1 { "snapshot" } else { "snapshots" };
-                format!("{icon} {}  — Backups detected ({snapshot_count} {snapshot_label})", self.name)
+                let snapshot_label = if snapshot_count == 1 {
+                    "snapshot"
+                } else {
+                    "snapshots"
+                };
+                format!(
+                    "{icon} {}  — Backups detected ({snapshot_count} {snapshot_label})",
+                    self.name
+                )
             }
             CandidateCategory::InstallationWithoutGame => {
                 format!("{icon} {}  — Add entry to games.toml", self.name)
@@ -215,7 +226,11 @@ impl SetupCandidate {
         if !self.missing_dependencies.is_empty() {
             let mut lines = vec!["• Missing dependencies:".to_string()];
             for dependency in &self.missing_dependencies {
-                let label = if dependency.source_type.is_file() { "file" } else { "directory" };
+                let label = if dependency.source_type.is_file() {
+                    "file"
+                } else {
+                    "directory"
+                };
                 lines.push(format!("  ◦ {} ({label})", dependency.id));
             }
             pending.push(lines.join("\n"));
@@ -346,8 +361,7 @@ fn missing_dependencies_for_game(
         })
         .unwrap_or_default();
 
-    game
-        .dependencies
+    game.dependencies
         .iter()
         .filter(|dependency| !installed.contains(&dependency.id))
         .cloned()
@@ -452,7 +466,10 @@ fn collect_setup_candidates(
 #[derive(Clone)]
 enum SetupTask {
     ConfigureSavePath,
-    ConfigureDependency { id: String, source_type: PathContentKind },
+    ConfigureDependency {
+        id: String,
+        source_type: PathContentKind,
+    },
 }
 
 impl SetupTask {
@@ -474,12 +491,16 @@ Selecting this will prompt for the correct save path and optionally restore the 
                 char::from(NerdFont::Folder)
             ),
             SetupTask::ConfigureDependency { id, source_type } => {
-                let kind = if source_type.is_file() { "file" } else { "directory" };
+                let kind = if source_type.is_file() {
+                    "file"
+                } else {
+                    "directory"
+                };
                 format!(
                     "{} Install dependency '{id}'.
 
 The dependency stores a {kind} and will be restored from the latest backup if available.",
-                    char::from(NerdFont::Package)
+                    char::from(NerdFont::Info)
                 )
             }
         }
@@ -491,7 +512,10 @@ fn gather_pending_tasks(
     game_config: &InstantGameConfig,
     installations: &InstallationsConfig,
 ) -> Vec<SetupTask> {
-    let game = game_config.games.iter().find(|game| game.name.0 == game_name);
+    let game = game_config
+        .games
+        .iter()
+        .find(|game| game.name.0 == game_name);
     let installation = installations
         .installations
         .iter()
@@ -552,7 +576,11 @@ impl TaskOption {
     fn new(game_name: &str, task: SetupTask) -> Self {
         let label = task.label(game_name);
         let preview = task.preview(game_name);
-        Self { label, preview, task }
+        Self {
+            label,
+            preview,
+            task,
+        }
     }
 }
 
@@ -625,8 +653,7 @@ fn handle_candidate(
 
     if candidate.game.is_none() {
         ensure_game_entry(&candidate, game_config)?;
-        *game_config =
-            InstantGameConfig::load().context("Failed to reload game configuration")?;
+        *game_config = InstantGameConfig::load().context("Failed to reload game configuration")?;
     }
 
     loop {
@@ -664,10 +691,9 @@ fn handle_candidate(
             }
         }
 
-        *game_config =
-            InstantGameConfig::load().context("Failed to reload game configuration")?;
-        *installations = InstallationsConfig::load()
-            .context("Failed to reload installations configuration")?;
+        *game_config = InstantGameConfig::load().context("Failed to reload game configuration")?;
+        *installations =
+            InstallationsConfig::load().context("Failed to reload installations configuration")?;
     }
 
     Ok(())

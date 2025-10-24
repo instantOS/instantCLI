@@ -95,10 +95,7 @@ pub(super) fn infer_snapshot_kind(
     }
 }
 
-fn count_snapshot_files(
-    game_config: &InstantGameConfig,
-    snapshot_id: &str,
-) -> Result<usize> {
+fn count_snapshot_files(game_config: &InstantGameConfig, snapshot_id: &str) -> Result<usize> {
     let restic = ResticWrapper::new(
         game_config.repo.as_path().to_string_lossy().to_string(),
         game_config.repo_password.clone(),

@@ -19,7 +19,6 @@ pub struct AddGameOptions {
     pub create_save_path: bool,
 }
 
-
 //TODO: this module contains a lot of functions which have multiple responsibilities and are too
 //long. Also check if there is logic duplication going on and if some things should be extracted
 //into reusable utility functions
