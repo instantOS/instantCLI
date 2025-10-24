@@ -35,8 +35,7 @@ pub(super) fn setup_single_game(
         None,
     );
 
-    let snapshot_selection =
-        gather_snapshot_selection(game_name, game_config, snapshot_context)?;
+    let snapshot_selection = gather_snapshot_selection(game_name, game_config, snapshot_context)?;
     snapshot_selection.announce(game_name);
 
     match snapshot_selection.select_path(game_name)? {
@@ -171,8 +170,11 @@ fn finalize_game_setup(
 ) -> Result<()> {
     let save_path =
         TildePath::from_str(&path_str).map_err(|e| anyhow!("Invalid save path: {e}"))?;
-    let save_path_kind =
-        detect_save_path_kind(&save_path, snapshot_selection.latest_snapshot_id(), game_config);
+    let save_path_kind = detect_save_path_kind(
+        &save_path,
+        snapshot_selection.latest_snapshot_id(),
+        game_config,
+    );
     let mut installation =
         GameInstallation::with_kind(game_name, save_path.clone(), save_path_kind);
 
@@ -199,33 +201,31 @@ fn finalize_game_setup(
         RestoreFlow::Proceed(value) => value,
     };
 
-    if should_restore {
-        if let Some(snapshot_id) = snapshot_selection.latest_snapshot_id() {
-            emit(
-                Level::Info,
-                "game.setup.restore_latest",
-                &format!(
-                    "{} Restoring latest backup ({snapshot_id}) into {path_str}...",
-                    char::from(NerdFont::Download)
-                ),
-                None,
-            );
+    if should_restore && let Some(snapshot_id) = snapshot_selection.latest_snapshot_id() {
+        emit(
+            Level::Info,
+            "game.setup.restore_latest",
+            &format!(
+                "{} Restoring latest backup ({snapshot_id}) into {path_str}...",
+                char::from(NerdFont::Download)
+            ),
+            None,
+        );
 
-            let restore_summary = restore_latest_backup(
-                game_name,
-                &save_path,
-                snapshot_id,
-                game_config,
-                installation.save_path_type,
-            )?;
-            emit(
-                Level::Success,
-                "game.setup.restore_done",
-                &format!("{} {restore_summary}", char::from(NerdFont::Check)),
-                None,
-            );
-            installation.update_checkpoint(snapshot_id.to_string());
-        }
+        let restore_summary = restore_latest_backup(
+            game_name,
+            &save_path,
+            snapshot_id,
+            game_config,
+            installation.save_path_type,
+        )?;
+        emit(
+            Level::Success,
+            "game.setup.restore_done",
+            &format!("{} {restore_summary}", char::from(NerdFont::Check)),
+            None,
+        );
+        installation.update_checkpoint(snapshot_id.to_string());
     }
 
     if !has_existing_snapshot {
@@ -312,8 +312,9 @@ fn prepare_save_path(
             .map_err(|e| anyhow!("Failed to confirm parent directory creation: {e}"))?
             {
                 ConfirmResult::Yes => {
-                    fs::create_dir_all(parent)
-                        .with_context(|| format!("Failed to create directory '{}'", parent.display()))?;
+                    fs::create_dir_all(parent).with_context(|| {
+                        format!("Failed to create directory '{}'", parent.display())
+                    })?;
                     path_created = true;
                     emit(
                         Level::Success,
@@ -327,9 +328,7 @@ fn prepare_save_path(
                     );
                 }
                 ConfirmResult::No | ConfirmResult::Cancelled => {
-                    println!(
-                        "Parent directory not created. You can set it up later when needed."
-                    );
+                    println!("Parent directory not created. You can set it up later when needed.");
                 }
             }
         }
@@ -466,9 +465,9 @@ fn handle_initial_checkpoint(
     );
 
     let backup_handler = GameBackup::new(game_config.clone());
-    let backup_summary = backup_handler.backup_game(installation).with_context(|| {
-        format!("Failed to create initial checkpoint for game '{game_name}'")
-    })?;
+    let backup_summary = backup_handler
+        .backup_game(installation)
+        .with_context(|| format!("Failed to create initial checkpoint for game '{game_name}'"))?;
 
     emit(
         Level::Success,
@@ -480,11 +479,9 @@ fn handle_initial_checkpoint(
         None,
     );
 
-    if let Some(snapshot_id) = checkpoint::extract_snapshot_id_from_backup_result(
-        &backup_summary,
-        game_name,
-        game_config,
-    )? {
+    if let Some(snapshot_id) =
+        checkpoint::extract_snapshot_id_from_backup_result(&backup_summary, game_name, game_config)?
+    {
         installation.update_checkpoint(snapshot_id.clone());
     }
 
