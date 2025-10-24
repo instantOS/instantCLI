@@ -7,7 +7,8 @@ use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
 use crate::ui::nerd_font::NerdFont;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
+use std::fs;
 
 /// Options for adding a game non-interactively
 #[derive(Debug, Default)]
@@ -19,141 +20,96 @@ pub struct AddGameOptions {
     pub create_save_path: bool,
 }
 
-//TODO: this module contains a lot of functions which have multiple responsibilities and are too
-//long. Also check if there is logic duplication going on and if some things should be extracted
-//into reusable utility functions
+struct GameCreationContext {
+    config: InstantGameConfig,
+    installations: InstallationsConfig,
+}
+
+impl GameCreationContext {
+    fn load() -> Result<Self> {
+        Ok(Self {
+            config: InstantGameConfig::load().context("Failed to load game configuration")?,
+            installations: InstallationsConfig::load()
+                .context("Failed to load installations configuration")?,
+        })
+    }
+
+    fn config(&self) -> &InstantGameConfig {
+        &self.config
+    }
+
+    fn config_mut(&mut self) -> &mut InstantGameConfig {
+        &mut self.config
+    }
+
+    fn installations_mut(&mut self) -> &mut InstallationsConfig {
+        &mut self.installations
+    }
+
+    fn game_exists(&self, name: &str) -> bool {
+        self.config.games.iter().any(|g| g.name.0 == name)
+    }
+
+    fn save(&self) -> Result<()> {
+        self.config.save()?;
+        self.installations.save()?;
+        Ok(())
+    }
+}
+
+struct ResolvedGameDetails {
+    name: String,
+    description: Option<String>,
+    launch_command: Option<String>,
+    save_path: TildePath,
+    save_path_type: PathContentKind,
+}
+
 /// Manage game CRUD operations
 pub struct GameManager;
 
 impl GameManager {
     /// Add a new game to the configuration
-    // TODO: this function is too long, refactor
     pub fn add_game(options: AddGameOptions) -> Result<()> {
-        let mut config = InstantGameConfig::load().context("Failed to load game configuration")?;
+        let mut context = GameCreationContext::load()?;
 
-        let mut installations =
-            InstallationsConfig::load().context("Failed to load installations configuration")?;
-
-        // Check if game manager is initialized
         if !validate_game_manager_initialized()? {
             return Ok(());
         }
 
-        //TODO: should this just be a clone?
-        //Should AddGFameOptions implement clone?
-        let AddGameOptions {
-            name,
-            description,
-            launch_command,
-            save_path,
-            create_save_path,
-        } = options;
+        let details = resolve_add_game_details(options, &context)?;
 
-        let interactive_prompts = name.is_none();
-
-        // Get and validate game name
-        let game_name = match name {
-            Some(name) => {
-                let trimmed = name.trim().to_string();
-                if !validate_non_empty(&trimmed, "Game name")? {
-                    return Err(anyhow::anyhow!("Game name cannot be empty"));
-                }
-
-                if config.games.iter().any(|g| g.name.0 == trimmed) {
-                    eprintln!("Game '{trimmed}' already exists!");
-                    return Err(anyhow::anyhow!("Game already exists"));
-                }
-
-                trimmed
-            }
-            None => Self::get_game_name(&config)?,
-        };
-
-        // Get optional description
-        let description = match description {
-            Some(description) => description.trim().to_string(),
-            None if interactive_prompts => Self::get_game_description()?,
-            None => String::new(),
-        };
-
-        // Get optional launch command
-        let launch_command = match launch_command {
-            Some(command) => command.trim().to_string(),
-            None if interactive_prompts => Self::get_launch_command()?,
-            None => String::new(),
-        };
-
-        // Create the game configuration
-        let mut game = Game::new(game_name.clone());
-
-        if !description.is_empty() {
-            game.description = Some(description);
+        let mut game = Game::new(details.name.clone());
+        if let Some(description) = &details.description {
+            game.description = Some(description.clone());
+        }
+        if let Some(command) = &details.launch_command {
+            game.launch_command = Some(command.clone());
         }
 
-        if !launch_command.is_empty() {
-            game.launch_command = Some(launch_command);
-        }
+        context.config_mut().games.push(game);
 
-        // Get save path
-        let save_path = match save_path {
-            Some(path) => {
-                let trimmed = path.trim().to_string();
-                if !validate_non_empty(&trimmed, "Save path")? {
-                    return Err(anyhow::anyhow!("Save path cannot be empty"));
-                }
+        context
+            .installations_mut()
+            .installations
+            .push(GameInstallation::with_kind(
+                details.name.clone(),
+                details.save_path.clone(),
+                details.save_path_type,
+            ));
 
-                let tilde_path = TildePath::from_str(&trimmed)
-                    .map_err(|e| anyhow::anyhow!("Invalid save path: {}", e))?;
+        context.save()?;
 
-                if !tilde_path.as_path().exists() {
-                    if create_save_path {
-                        std::fs::create_dir_all(tilde_path.as_path())
-                            .context("Failed to create save directory")?;
-                        println!("✓ Created save directory: {trimmed}");
-                    } else {
-                        return Err(anyhow::anyhow!(
-                            "Save path '{}' does not exist. Use --create-save-path to create it automatically or run '{} game add' without --save-path for interactive setup.",
-                            tilde_path.as_path().display(),
-                            env!("CARGO_BIN_NAME")
-                        ));
-                    }
-                }
-
-                tilde_path
-            }
-            None => Self::get_save_path(&game_name)?,
-        };
-
-        // Add the game to the configuration
-        config.games.push(game);
-        config.save()?;
-
-        // Create the installation entry with the save path
-        // Determine if save path is a file or directory
-        let save_path_type = if save_path.as_path().exists() {
-            let metadata = std::fs::metadata(save_path.as_path()).with_context(|| {
-                format!(
-                    "Failed to read metadata for save path: {}",
-                    save_path.as_path().display()
-                )
-            })?;
-            PathContentKind::from(metadata)
-        } else {
-            // If path doesn't exist, assume directory for backward compatibility
-            PathContentKind::Directory
-        };
-
-        let installation =
-            GameInstallation::with_kind(game_name.clone(), save_path.clone(), save_path_type);
-        installations.installations.push(installation);
-        installations.save()?;
-
-        let save_path_display = save_path
+        let save_path_display = details
+            .save_path
             .to_tilde_string()
-            .unwrap_or_else(|_| save_path.as_path().to_string_lossy().to_string());
+            .unwrap_or_else(|_| details.save_path.as_path().to_string_lossy().to_string());
 
-        println!("✓ Game '{game_name}' added successfully!");
-        println!("Game configuration saved with save path: {save_path_display}");
+        println!("✓ Game '{}' added successfully!", details.name);
+        println!(
+            "Game configuration saved with save path: {}",
+            save_path_display
+        );
 
         Ok(())
     }
