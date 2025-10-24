@@ -2,7 +2,15 @@ use crate::ui::prelude::*;
 use anyhow::{Context, Result, anyhow};
 use std::collections::BTreeSet;
 
-use crate::game::config::{Game, GameInstallation, InstallationsConfig, InstantGameConfig};
+use crate::game::config::{
+    Game,
+    GameDependency,
+    GameInstallation,
+    InstallationsConfig,
+    InstantGameConfig,
+    PathContentKind,
+};
+use crate::game::deps::manager::{install_dependency, InstallDependencyOptions};
 use crate::game::games::manager::{AddGameOptions, GameManager};
 use crate::game::games::validation::validate_game_manager_initialized;
 use crate::menu::protocol;
@@ -158,34 +166,30 @@ impl FzfSelectable for CandidateOption {
 impl SetupCandidate {
     fn summary_line(&self) -> String {
         let icon = char::from(NerdFont::Gamepad);
-        match self.kind {
-            CandidateKind::ResticOnly => {
+        match self.category {
+            CandidateCategory::MissingInstallation => {
+                if self.snapshot.is_some() {
+                    format!("{icon} {}  — Configure save path (backups available)", self.name)
+                } else {
+                    format!("{icon} {}  — Configure save path", self.name)
+                }
+            }
+            CandidateCategory::MissingDependencies => {
+                let missing = self.missing_dependencies.len();
+                format!("{icon} {}  — Install {missing} pending {}",
+                    self.name,
+                    if missing == 1 { "dependency" } else { "dependencies" })
+            }
+            CandidateCategory::SnapshotWithoutGame => {
                 let snapshot_count = self
                     .snapshot
                     .as_ref()
                     .map(|overview| overview.snapshot_count)
                     .unwrap_or(0);
-                let snapshot_label = if snapshot_count == 1 {
-                    "snapshot"
-                } else {
-                    "snapshots"
-                };
-                format!(
-                    "{icon} {}  — Backups detected ({snapshot_count} {snapshot_label})",
-                    self.name
-                )
+                let snapshot_label = if snapshot_count == 1 { "snapshot" } else { "snapshots" };
+                format!("{icon} {}  — Backups detected ({snapshot_count} {snapshot_label})", self.name)
             }
-            CandidateKind::GameNeedsInstallation => {
-                if self.snapshot.is_some() {
-                    format!(
-                        "{icon} {}  — Configure save path (backups available)",
-                        self.name
-                    )
-                } else {
-                    format!("{icon} {}  — Configure save path", self.name)
-                }
-            }
-            CandidateKind::InstallationMissingGame => {
+            CandidateCategory::InstallationWithoutGame => {
                 format!("{icon} {}  — Add entry to games.toml", self.name)
             }
         }
@@ -200,6 +204,29 @@ impl SetupCandidate {
             self.name,
             self.status_text()
         ));
+
+        let mut pending = Vec::new();
+        if self.game.is_none() {
+            pending.push("• Missing games.toml entry".to_string());
+        }
+        if self.installation.is_none() {
+            pending.push("• Save path not configured on this device".to_string());
+        }
+        if !self.missing_dependencies.is_empty() {
+            let mut lines = vec!["• Missing dependencies:".to_string()];
+            for dependency in &self.missing_dependencies {
+                let label = if dependency.source_type.is_file() { "file" } else { "directory" };
+                lines.push(format!("  ◦ {} ({label})", dependency.id));
+            }
+            pending.push(lines.join("\n"));
+        }
+        if !pending.is_empty() {
+            sections.push(format!(
+                "{} PENDING TASKS\n\n{}",
+                char::from(NerdFont::Info),
+                pending.join("\n")
+            ));
+        }
 
         if let Some(game) = &self.game {
             let mut details = Vec::new();
@@ -227,6 +254,15 @@ impl SetupCandidate {
             ));
             if let Some(checkpoint) = installation.nearest_checkpoint.as_deref() {
                 info.push(format!("Nearest checkpoint: {}", checkpoint));
+            }
+            if !installation.dependencies.is_empty() {
+                let deps = installation
+                    .dependencies
+                    .iter()
+                    .map(|dep| format!("  • {}", dep.dependency_id))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                info.push(format!("Installed dependencies:\n{deps}"));
             }
             sections.push(info.join("\n"));
         }
@@ -275,18 +311,47 @@ impl SetupCandidate {
     }
 
     fn status_text(&self) -> String {
-        match self.kind {
-            CandidateKind::ResticOnly => {
-                "Backups detected (needs game and installation)".to_string()
-            }
-            CandidateKind::GameNeedsInstallation => {
+        match self.category {
+            CandidateCategory::MissingInstallation => {
                 "Game registered (needs installation on this device)".to_string()
             }
-            CandidateKind::InstallationMissingGame => {
-                "Save path mapped locally but missing global configuration".to_string()
+            CandidateCategory::MissingDependencies => {
+                let missing = self.missing_dependencies.len();
+                if missing == 1 {
+                    "One dependency still needs installation".to_string()
+                } else {
+                    format!("{missing} dependencies still need installation")
+                }
+            }
+            CandidateCategory::SnapshotWithoutGame => {
+                "Backups detected (needs game entry and installation)".to_string()
+            }
+            CandidateCategory::InstallationWithoutGame => {
+                "Save path mapped locally but missing games.toml entry".to_string()
             }
         }
     }
+}
+
+fn missing_dependencies_for_game(
+    game: &Game,
+    installation: Option<&GameInstallation>,
+) -> Vec<GameDependency> {
+    let installed: BTreeSet<String> = installation
+        .map(|inst| {
+            inst.dependencies
+                .iter()
+                .map(|dep| dep.dependency_id.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    game
+        .dependencies
+        .iter()
+        .filter(|dependency| !installed.contains(&dependency.id))
+        .cloned()
+        .collect()
 }
 
 fn collect_setup_candidates(
@@ -294,58 +359,211 @@ fn collect_setup_candidates(
     installations: &InstallationsConfig,
     snapshot_overview: &std::collections::HashMap<String, restic::SnapshotOverview>,
 ) -> Vec<SetupCandidate> {
-    let mut names = BTreeSet::new();
-    for game in &game_config.games {
-        names.insert(game.name.0.clone());
-    }
-    for installation in &installations.installations {
-        names.insert(installation.game_name.0.clone());
-    }
-    for name in snapshot_overview.keys() {
-        names.insert(name.clone());
-    }
-
     let mut candidates = Vec::new();
+    let mut seen = BTreeSet::new();
 
-    for name in names {
-        let game = game_config
-            .games
-            .iter()
-            .find(|game| game.name.0 == name)
-            .cloned();
+    for game in &game_config.games {
+        let name = game.name.0.clone();
         let installation = installations
             .installations
             .iter()
             .find(|inst| inst.game_name.0 == name)
             .cloned();
         let snapshot = snapshot_overview.get(&name).cloned();
+        let missing_dependencies = missing_dependencies_for_game(game, installation.as_ref());
 
-        let has_game = game.is_some();
-        let has_installation = installation.is_some();
-        let has_snapshot = snapshot.is_some();
+        if installation.is_none() {
+            candidates.push(SetupCandidate {
+                name: name.clone(),
+                category: CandidateCategory::MissingInstallation,
+                game: Some(game.clone()),
+                installation: None,
+                snapshot,
+                missing_dependencies: missing_dependencies.clone(),
+            });
+            seen.insert(name);
+            continue;
+        }
 
-        let kind = if has_game && has_installation {
+        if !missing_dependencies.is_empty() {
+            candidates.push(SetupCandidate {
+                name: name.clone(),
+                category: CandidateCategory::MissingDependencies,
+                game: Some(game.clone()),
+                installation: installation.clone(),
+                snapshot: snapshot.clone(),
+                missing_dependencies,
+            });
+        }
+
+        seen.insert(name);
+    }
+
+    for (name, snapshot) in snapshot_overview {
+        if seen.contains(name) {
             continue;
-        } else if has_installation && !has_game {
-            CandidateKind::InstallationMissingGame
-        } else if has_game && !has_installation {
-            CandidateKind::GameNeedsInstallation
-        } else if has_snapshot {
-            CandidateKind::ResticOnly
-        } else {
+        }
+
+        if game_config.games.iter().any(|game| &game.name.0 == name) {
             continue;
-        };
+        }
 
         candidates.push(SetupCandidate {
-            name,
-            kind,
-            game,
-            installation,
-            snapshot,
+            name: name.clone(),
+            category: CandidateCategory::SnapshotWithoutGame,
+            game: None,
+            installation: None,
+            snapshot: Some(snapshot.clone()),
+            missing_dependencies: Vec::new(),
+        });
+        seen.insert(name.clone());
+    }
+
+    for installation in &installations.installations {
+        let name = installation.game_name.0.clone();
+        if seen.contains(&name) {
+            continue;
+        }
+
+        if game_config.games.iter().any(|game| game.name.0 == name) {
+            continue;
+        }
+
+        candidates.push(SetupCandidate {
+            name: name.clone(),
+            category: CandidateCategory::InstallationWithoutGame,
+            game: None,
+            installation: Some(installation.clone()),
+            snapshot: snapshot_overview.get(&name).cloned(),
+            missing_dependencies: Vec::new(),
         });
     }
 
+    candidates.sort_by(|a, b| {
+        a.category
+            .priority()
+            .cmp(&b.category.priority())
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
     candidates
+}
+
+#[derive(Clone)]
+enum SetupTask {
+    ConfigureSavePath,
+    ConfigureDependency { id: String, source_type: PathContentKind },
+}
+
+impl SetupTask {
+    fn label(&self, game_name: &str) -> String {
+        match self {
+            SetupTask::ConfigureSavePath => format!("Configure save path for '{game_name}'"),
+            SetupTask::ConfigureDependency { id, .. } => {
+                format!("Install dependency '{id}'")
+            }
+        }
+    }
+
+    fn preview(&self, game_name: &str) -> String {
+        match self {
+            SetupTask::ConfigureSavePath => format!(
+                "{} Configure the save location for '{game_name}'.
+
+Selecting this will prompt for the correct save path and optionally restore the latest backup.",
+                char::from(NerdFont::Folder)
+            ),
+            SetupTask::ConfigureDependency { id, source_type } => {
+                let kind = if source_type.is_file() { "file" } else { "directory" };
+                format!(
+                    "{} Install dependency '{id}'.
+
+The dependency stores a {kind} and will be restored from the latest backup if available.",
+                    char::from(NerdFont::Package)
+                )
+            }
+        }
+    }
+}
+
+fn gather_pending_tasks(
+    game_name: &str,
+    game_config: &InstantGameConfig,
+    installations: &InstallationsConfig,
+) -> Vec<SetupTask> {
+    let game = game_config.games.iter().find(|game| game.name.0 == game_name);
+    let installation = installations
+        .installations
+        .iter()
+        .find(|inst| inst.game_name.0 == game_name);
+
+    let mut tasks = Vec::new();
+
+    if installation.is_none() {
+        if game.is_some() {
+            tasks.push(SetupTask::ConfigureSavePath);
+        }
+        return tasks;
+    }
+
+    if let Some(game) = game {
+        let missing = missing_dependencies_for_game(game, installation);
+        for dependency in missing {
+            tasks.push(SetupTask::ConfigureDependency {
+                id: dependency.id.clone(),
+                source_type: dependency.source_type,
+            });
+        }
+    }
+
+    tasks
+}
+
+fn prompt_task_choice(game_name: &str, tasks: &[SetupTask]) -> Result<Option<SetupTask>> {
+    let options: Vec<TaskOption> = tasks
+        .iter()
+        .cloned()
+        .map(|task| TaskOption::new(game_name, task))
+        .collect();
+
+    match FzfWrapper::builder()
+        .prompt("step")
+        .header(format!(
+            "{} Select the next setup step for '{game_name}'.",
+            char::from(NerdFont::Info)
+        ))
+        .select(options)?
+    {
+        FzfResult::Selected(option) => Ok(Some(option.task)),
+        FzfResult::MultiSelected(mut options) => Ok(options.pop().map(|opt| opt.task)),
+        FzfResult::Cancelled => Ok(None),
+        FzfResult::Error(err) => Err(anyhow!(err)),
+    }
+}
+
+#[derive(Clone)]
+struct TaskOption {
+    label: String,
+    preview: String,
+    task: SetupTask,
+}
+
+impl TaskOption {
+    fn new(game_name: &str, task: SetupTask) -> Self {
+        let label = task.label(game_name);
+        let preview = task.preview(game_name);
+        Self { label, preview, task }
+    }
+}
+
+impl FzfSelectable for TaskOption {
+    fn fzf_display_text(&self) -> String {
+        self.label.clone()
+    }
+
+    fn fzf_preview(&self) -> protocol::FzfPreview {
+        protocol::FzfPreview::Text(self.preview.clone())
+    }
 }
 
 fn prompt_installation_choice(candidates: &[SetupCandidate]) -> Result<Selection> {
