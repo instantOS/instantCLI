@@ -8,7 +8,7 @@ use crate::game::config::{
 };
 use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
-use crate::game::utils::save_files::get_save_directory_info;
+use crate::game::utils::save_files::{SaveDirectoryInfo, get_save_directory_info};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;

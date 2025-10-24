@@ -262,10 +262,7 @@ impl InstallationDetails {
             (Some(stats), _) => {
                 if stats.file_count > 0 {
                     text.push_str("   Local Saves:\n");
-                    text.push_str(&format!(
-                        "     • Last modified: {}\n",
-                        stats.last_modified
-                    ));
+                    text.push_str(&format!("     • Last modified: {}\n", stats.last_modified));
                     text.push_str(&format!("     • Files: {}\n", stats.file_count));
                     text.push_str(&format!("     • Total size: {}\n", stats.total_size));
                 } else {
@@ -316,8 +313,7 @@ impl DependencyDetails {
     }
 
     fn status_text(&self) -> String {
-        self
-            .installed_path
+        self.installed_path
             .as_ref()
             .map(|path| format!("Installed at {path}"))
             .unwrap_or_else(|| "Not installed".to_string())

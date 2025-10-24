@@ -7,7 +7,7 @@ use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
 use crate::ui::nerd_font::NerdFont;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::fs;
 
 /// Options for adding a game non-interactively
@@ -370,8 +370,8 @@ fn resolve_add_game_details(
                 return Err(anyhow!("Save path cannot be empty"));
             }
 
-            let tilde_path = TildePath::from_str(trimmed)
-                .map_err(|e| anyhow!("Invalid save path: {}", e))?;
+            let tilde_path =
+                TildePath::from_str(trimmed).map_err(|e| anyhow!("Invalid save path: {}", e))?;
 
             if !tilde_path.as_path().exists() {
                 if create_save_path {
