@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 
-use crate::settings::registry::{self, CATEGORIES, SettingKind};
+use crate::settings::registry::{self, CATEGORIES};
 
 use super::super::commands::SettingsNavigation;
 use super::super::context::{SettingsContext, select_one_with_style_at};
@@ -179,20 +179,9 @@ fn run_main_menu(ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Re
         let definitions = registry::settings_for_category(category.id);
         total_settings += definitions.len();
 
-        let mut toggles = 0usize;
-        let mut choices = 0usize;
-        let mut actions = 0usize;
-        let mut commands = 0usize;
         let mut highlights = [None, None, None];
 
         for (idx, definition) in definitions.iter().enumerate() {
-            match definition.kind {
-                SettingKind::Toggle { .. } => toggles += 1,
-                SettingKind::Choice { .. } => choices += 1,
-                SettingKind::Action { .. } => actions += 1,
-                SettingKind::Command { .. } => commands += 1,
-            }
-
             if idx < highlights.len() {
                 highlights[idx] = Some(*definition);
             }
@@ -201,10 +190,6 @@ fn run_main_menu(ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Re
         menu_items.push(CategoryMenuItem::Category(CategoryItem {
             category,
             total: definitions.len(),
-            toggles,
-            choices,
-            actions,
-            commands,
             highlights,
         }));
     }
