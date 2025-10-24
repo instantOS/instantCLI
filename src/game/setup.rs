@@ -62,17 +62,30 @@ pub fn setup_uninstalled_games() -> Result<()> {
 #[derive(Clone)]
 struct SetupCandidate {
     name: String,
-    kind: CandidateKind,
+    category: CandidateCategory,
     game: Option<Game>,
     installation: Option<GameInstallation>,
     snapshot: Option<restic::SnapshotOverview>,
+    missing_dependencies: Vec<GameDependency>,
 }
 
-#[derive(Clone, Copy)]
-enum CandidateKind {
-    ResticOnly,
-    GameNeedsInstallation,
-    InstallationMissingGame,
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum CandidateCategory {
+    MissingInstallation,
+    MissingDependencies,
+    SnapshotWithoutGame,
+    InstallationWithoutGame,
+}
+
+impl CandidateCategory {
+    fn priority(self) -> u8 {
+        match self {
+            CandidateCategory::MissingInstallation => 0,
+            CandidateCategory::MissingDependencies => 1,
+            CandidateCategory::SnapshotWithoutGame => 2,
+            CandidateCategory::InstallationWithoutGame => 3,
+        }
+    }
 }
 
 #[derive(Clone)]

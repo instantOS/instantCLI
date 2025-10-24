@@ -17,6 +17,8 @@ use super::paths::{
 use super::restic::{infer_snapshot_kind, SnapshotOverview};
 
 /// Set up a single game by collecting paths from snapshots and letting the user choose one.
+// TODO: this function is way too long, refactor and consider if things should be extracted into
+// general utils or if these already exist
 pub(super) fn setup_single_game(
     game_name: &str,
     game_config: &InstantGameConfig,
@@ -472,7 +474,13 @@ mod tests {
 
     #[test]
     fn restore_not_attempted_without_snapshots() {
-        let decision = determine_restore_decision(false, true, false, 10);
+        let decision = determine_restore_decision(
+            false,
+            true,
+            false,
+            10,
+            PathContentKind::Directory,
+        );
         assert_eq!(
             decision,
             RestoreDecision {
@@ -484,7 +492,13 @@ mod tests {
 
     #[test]
     fn restore_occurs_without_prompt_for_new_directories() {
-        let decision = determine_restore_decision(true, true, true, 0);
+        let decision = determine_restore_decision(
+            true,
+            true,
+            true,
+            0,
+            PathContentKind::Directory,
+        );
         assert_eq!(
             decision,
             RestoreDecision {
@@ -496,7 +510,49 @@ mod tests {
 
     #[test]
     fn restore_requires_confirmation_when_files_exist() {
-        let decision = determine_restore_decision(true, true, false, 5);
+        let decision = determine_restore_decision(
+            true,
+            true,
+            false,
+            5,
+            PathContentKind::Directory,
+        );
+        assert_eq!(
+            decision,
+            RestoreDecision {
+                should_restore: false,
+                needs_confirmation: true
+            }
+        );
+    }
+
+    #[test]
+    fn restore_occurs_for_single_file_when_missing() {
+        let decision = determine_restore_decision(
+            true,
+            false,
+            false,
+            0,
+            PathContentKind::File,
+        );
+        assert_eq!(
+            decision,
+            RestoreDecision {
+                should_restore: true,
+                needs_confirmation: false
+            }
+        );
+    }
+
+    #[test]
+    fn restore_prompts_when_single_file_exists() {
+        let decision = determine_restore_decision(
+            true,
+            true,
+            false,
+            1,
+            PathContentKind::File,
+        );
         assert_eq!(
             decision,
             RestoreDecision {

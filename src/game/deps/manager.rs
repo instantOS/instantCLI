@@ -36,6 +36,9 @@ pub struct UninstallDependencyOptions {
     pub dependency_id: Option<String>,
 }
 
+//TODO: this module contains a lot of functions which have multiple responsibilities and are too
+//long. Also check if there is logic duplication going on and if some things should be extracted
+
 // TODO: this function is way too long, refactor
 pub fn add_dependency(options: AddDependencyOptions) -> Result<()> {
     let mut game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
