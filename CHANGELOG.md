@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7](https://github.com/instantOS/instantCLI/compare/v0.2.6...v0.2.7) - 2025-10-25
+
+### Fixed
+
+- fix snapshot inference
+- fix compilation
+- fix non-existent thing
+- fix typo
+- fix prompts
+- fix tests
+- fix single file security
+- fix single file backup
+- fix compilation
+- *(game)* picker scope for ins game deps
+
+### Other
+
+- clippy
+- remove old fields
+- add bug md
+- init editor refactor
+- clippy
+- refactor game install
+- format
+- refactor game display
+- resolve game add details
+- init game manager refactor
+- clippy
+- init refactor
+- fmt
+- more setup flow
+- tests and further implementation
+- init better setup
+- add TODO comments
+- new plan
+- more filegone
+- init filegone
+- filegone
+- hacky single file fix
+- make tests more silent
+- debug
+- clippy
+- init single file tests
+- init supporting files as saves and deps
+- fetchadd plans
+- file support plans
+- better deps flow
+- plans
+- cleanup
+- add message
+- new plans
+- add plans
+
 ## [0.2.6](https://github.com/instantOS/instantCLI/compare/v0.2.5...v0.2.6) - 2025-10-17
 
 ### Fixed
