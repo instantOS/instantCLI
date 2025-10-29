@@ -503,7 +503,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::network::launch_speed_test,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(super::network::CHROMIUM_PACKAGE)],
+        requirements: &[SettingRequirement::Package(
+            super::network::CHROMIUM_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "network.edit_connections",
@@ -516,7 +518,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::network::edit_connections,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(super::network::NM_CONNECTION_EDITOR_PACKAGE)],
+        requirements: &[SettingRequirement::Package(
+            super::network::NM_CONNECTION_EDITOR_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "storage.automount",

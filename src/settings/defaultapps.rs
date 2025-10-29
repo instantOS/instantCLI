@@ -327,10 +327,14 @@ fn get_exact_mime_info(mime_type: &str) -> Option<(NerdFont, &'static str)> {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => {
             (NerdFont::FileExcel, "Spreadsheet Editor (Excel)")
         }
-        "application/vnd.ms-powerpoint" => (NerdFont::FilePresentation, "Presentation Editor (PowerPoint)"),
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
-            (NerdFont::FilePresentation, "Presentation Editor (PowerPoint)")
-        }
+        "application/vnd.ms-powerpoint" => (
+            NerdFont::FilePresentation,
+            "Presentation Editor (PowerPoint)",
+        ),
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => (
+            NerdFont::FilePresentation,
+            "Presentation Editor (PowerPoint)",
+        ),
 
         // Archives
         "application/zip" => (NerdFont::Archive, "Archive Manager (ZIP)"),
@@ -720,7 +724,11 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
 }
 
 /// Helper function to manage default app for a specific MIME type
-fn manage_default_app_for_mime(ctx: &mut SettingsContext, mime_type: &str, app_name: &str) -> Result<()> {
+fn manage_default_app_for_mime(
+    ctx: &mut SettingsContext,
+    mime_type: &str,
+    app_name: &str,
+) -> Result<()> {
     use crate::menu_utils::FzfResult;
 
     // Build the MIME map
@@ -732,7 +740,10 @@ fn manage_default_app_for_mime(ctx: &mut SettingsContext, mime_type: &str, app_n
     if app_desktop_ids.is_empty() {
         ctx.emit_info(
             "settings.defaultapps.no_apps",
-            &format!("No applications found for {}. Install an application first.", app_name),
+            &format!(
+                "No applications found for {}. Install an application first.",
+                app_name
+            ),
         );
         return Ok(());
     }
@@ -754,7 +765,7 @@ fn manage_default_app_for_mime(ctx: &mut SettingsContext, mime_type: &str, app_n
 
     // Let user select an application
     let selected_app_info = match FzfWrapper::builder()
-        .prompt(&format!("Select {}: ", app_name))
+        .prompt(format!("Select {}: ", app_name))
         .header(&header_text)
         .select(app_infos)?
     {
@@ -772,7 +783,10 @@ fn manage_default_app_for_mime(ctx: &mut SettingsContext, mime_type: &str, app_n
 
     ctx.notify(
         &format!("Default {}", app_name),
-        &format!("Set {} as default", selected_app_info.name.as_deref().unwrap_or(desktop_file)),
+        &format!(
+            "Set {} as default",
+            selected_app_info.name.as_deref().unwrap_or(desktop_file)
+        ),
     );
 
     Ok(())
