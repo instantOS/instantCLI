@@ -272,6 +272,12 @@ pub const CATEGORIES: &[SettingCategory] = &[
         icon: NerdFont::Package,
     },
     SettingCategory {
+        id: "network",
+        title: "Network",
+        description: "Internet connection and network settings.",
+        icon: NerdFont::Wifi,
+    },
+    SettingCategory {
         id: "bluetooth",
         title: "Bluetooth",
         description: "Pair and manage Bluetooth devices.",
