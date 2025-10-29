@@ -268,12 +268,14 @@ fn get_mime_type_info(mime_type: &str) -> MimeTypeInfo {
     // Check for category matches (e.g., image/*, video/*)
     if let Some((prefix, _)) = mime_type.split_once('/') {
         let (icon, desc) = match prefix {
-            "image" => (NerdFont::Image, Some("Image file")),
-            "video" => (NerdFont::Video, Some("Video file")),
-            "audio" => (NerdFont::Music, Some("Audio file")),
-            "text" => (NerdFont::FileText, Some("Text file")),
-            "application" => (NerdFont::Package, Some("Application file")),
-            "inode" => (NerdFont::Folder, Some("Directory/Inode")),
+            "image" => (NerdFont::Image, Some("Image Viewer")),
+            "video" => (NerdFont::Video, Some("Video Player")),
+            "audio" => (NerdFont::Music, Some("Music Player")),
+            "text" => (NerdFont::FileText, Some("Text Editor")),
+            "application" => (NerdFont::Package, Some("Application")),
+            "inode" => (NerdFont::Folder, Some("File Manager")),
+            "x-scheme-handler" => (NerdFont::Link, Some("URL Handler")),
+            "message" => (NerdFont::ExternalLink, Some("Email Client")),
             _ => (NerdFont::File, None),
         };
 
@@ -294,79 +296,86 @@ fn get_mime_type_info(mime_type: &str) -> MimeTypeInfo {
 
 /// Exact mappings for common MIME types
 /// This makes it easy to add new specific mappings with nice DX
+/// Uses user-friendly names that non-technical users would search for
 fn get_exact_mime_info(mime_type: &str) -> Option<(NerdFont, &'static str)> {
     let mapping = match mime_type {
+        // Common applications - what users actually search for
+        "inode/directory" => (NerdFont::Folder, "File Manager"),
+        "text/html" => (NerdFont::Globe, "Web Browser"),
+        "x-scheme-handler/http" => (NerdFont::Globe, "Web Browser (HTTP)"),
+        "x-scheme-handler/https" => (NerdFont::Globe, "Web Browser (HTTPS)"),
+        "x-scheme-handler/mailto" => (NerdFont::ExternalLink, "Email Client"),
+        "message/rfc822" => (NerdFont::ExternalLink, "Email Client"),
+
         // Images
-        "image/jpeg" | "image/jpg" => (NerdFont::Image, "JPEG image"),
-        "image/png" => (NerdFont::Image, "PNG image"),
-        "image/gif" => (NerdFont::Image, "GIF animation"),
-        "image/svg+xml" => (NerdFont::Image, "SVG vector image"),
-        "image/webp" => (NerdFont::Image, "WebP image"),
-        "image/bmp" => (NerdFont::Image, "Bitmap image"),
-        "image/tiff" => (NerdFont::Image, "TIFF image"),
+        "image/jpeg" | "image/jpg" => (NerdFont::Image, "Image Viewer (JPEG)"),
+        "image/png" => (NerdFont::Image, "Image Viewer (PNG)"),
+        "image/gif" => (NerdFont::Image, "Image Viewer (GIF)"),
+        "image/svg+xml" => (NerdFont::Image, "Image Viewer (SVG)"),
+        "image/webp" => (NerdFont::Image, "Image Viewer (WebP)"),
+        "image/bmp" => (NerdFont::Image, "Image Viewer (BMP)"),
+        "image/tiff" => (NerdFont::Image, "Image Viewer (TIFF)"),
 
         // Documents
-        "application/pdf" => (NerdFont::FilePdf, "PDF document"),
-        "application/vnd.oasis.opendocument.text" => (NerdFont::FileText, "OpenDocument text"),
+        "application/pdf" => (NerdFont::FilePdf, "PDF Viewer"),
+        "application/vnd.oasis.opendocument.text" => (NerdFont::FileText, "Document Editor (ODT)"),
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
-            (NerdFont::FileWord, "Microsoft Word document")
+            (NerdFont::FileWord, "Document Editor (Word)")
         }
-        "application/msword" => (NerdFont::FileWord, "Microsoft Word document"),
-        "application/vnd.ms-excel" => (NerdFont::FileExcel, "Microsoft Excel spreadsheet"),
+        "application/msword" => (NerdFont::FileWord, "Document Editor (Word)"),
+        "application/vnd.ms-excel" => (NerdFont::FileExcel, "Spreadsheet Editor (Excel)"),
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => {
-            (NerdFont::FileExcel, "Excel spreadsheet")
+            (NerdFont::FileExcel, "Spreadsheet Editor (Excel)")
         }
-        "application/vnd.ms-powerpoint" => (NerdFont::FilePresentation, "PowerPoint presentation"),
+        "application/vnd.ms-powerpoint" => (NerdFont::FilePresentation, "Presentation Editor (PowerPoint)"),
         "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
-            (NerdFont::FilePresentation, "PowerPoint presentation")
+            (NerdFont::FilePresentation, "Presentation Editor (PowerPoint)")
         }
 
         // Archives
-        "application/zip" => (NerdFont::Archive, "ZIP archive"),
-        "application/x-tar" => (NerdFont::Archive, "TAR archive"),
-        "application/x-7z-compressed" => (NerdFont::Archive, "7-Zip archive"),
-        "application/x-rar" => (NerdFont::Archive, "RAR archive"),
-        "application/gzip" => (NerdFont::Archive, "GZIP archive"),
-        "application/x-bzip2" => (NerdFont::Archive, "BZIP2 archive"),
-        "application/x-xz" => (NerdFont::Archive, "XZ archive"),
+        "application/zip" => (NerdFont::Archive, "Archive Manager (ZIP)"),
+        "application/x-tar" => (NerdFont::Archive, "Archive Manager (TAR)"),
+        "application/x-7z-compressed" => (NerdFont::Archive, "Archive Manager (7-Zip)"),
+        "application/x-rar" => (NerdFont::Archive, "Archive Manager (RAR)"),
+        "application/gzip" => (NerdFont::Archive, "Archive Manager (GZIP)"),
+        "application/x-bzip2" => (NerdFont::Archive, "Archive Manager (BZIP2)"),
+        "application/x-xz" => (NerdFont::Archive, "Archive Manager (XZ)"),
 
         // Video
-        "video/mp4" => (NerdFont::Video, "MP4 video"),
-        "video/x-matroska" => (NerdFont::Video, "Matroska video"),
-        "video/webm" => (NerdFont::Video, "WebM video"),
-        "video/mpeg" => (NerdFont::Video, "MPEG video"),
-        "video/x-msvideo" => (NerdFont::Video, "AVI video"),
+        "video/mp4" => (NerdFont::Video, "Video Player (MP4)"),
+        "video/x-matroska" => (NerdFont::Video, "Video Player (MKV)"),
+        "video/webm" => (NerdFont::Video, "Video Player (WebM)"),
+        "video/mpeg" => (NerdFont::Video, "Video Player (MPEG)"),
+        "video/x-msvideo" => (NerdFont::Video, "Video Player (AVI)"),
 
         // Audio
-        "audio/mpeg" => (NerdFont::Music, "MP3 audio"),
-        "audio/ogg" => (NerdFont::Music, "OGG audio"),
-        "audio/flac" => (NerdFont::Music, "FLAC audio"),
-        "audio/x-wav" => (NerdFont::Music, "WAV audio"),
-        "audio/aac" => (NerdFont::Music, "AAC audio"),
+        "audio/mpeg" => (NerdFont::Music, "Music Player (MP3)"),
+        "audio/ogg" => (NerdFont::Music, "Music Player (OGG)"),
+        "audio/flac" => (NerdFont::Music, "Music Player (FLAC)"),
+        "audio/x-wav" => (NerdFont::Music, "Music Player (WAV)"),
+        "audio/aac" => (NerdFont::Music, "Music Player (AAC)"),
 
         // Text
-        "text/plain" => (NerdFont::FileText, "Plain text"),
-        "text/html" => (NerdFont::Code, "HTML document"),
-        "text/css" => (NerdFont::Code, "CSS stylesheet"),
-        "text/javascript" => (NerdFont::Code, "JavaScript code"),
-        "application/json" => (NerdFont::Code, "JSON data"),
-        "application/xml" => (NerdFont::Code, "XML document"),
-        "text/x-python" => (NerdFont::Code, "Python script"),
-        "text/x-rust" => (NerdFont::Code, "Rust source code"),
-        "text/x-c" => (NerdFont::Code, "C source code"),
-        "text/x-c++" => (NerdFont::Code, "C++ source code"),
-        "text/markdown" => (NerdFont::FileText, "Markdown document"),
+        "text/plain" => (NerdFont::FileText, "Text Editor"),
+        "text/css" => (NerdFont::Code, "Code Editor (CSS)"),
+        "text/javascript" => (NerdFont::Code, "Code Editor (JavaScript)"),
+        "application/json" => (NerdFont::Code, "Code Editor (JSON)"),
+        "application/xml" => (NerdFont::Code, "Code Editor (XML)"),
+        "text/x-python" => (NerdFont::Code, "Code Editor (Python)"),
+        "text/x-rust" => (NerdFont::Code, "Code Editor (Rust)"),
+        "text/x-c" => (NerdFont::Code, "Code Editor (C)"),
+        "text/x-c++" => (NerdFont::Code, "Code Editor (C++)"),
+        "text/markdown" => (NerdFont::FileText, "Text Editor (Markdown)"),
 
         // System
-        "application/x-executable" => (NerdFont::Gear, "Executable file"),
-        "application/x-sharedlib" => (NerdFont::Gear, "Shared library"),
-        "application/x-shellscript" => (NerdFont::Terminal, "Shell script"),
-        "inode/directory" => (NerdFont::Folder, "Directory"),
+        "application/x-executable" => (NerdFont::Gear, "Executable Program"),
+        "application/x-sharedlib" => (NerdFont::Gear, "Shared Library"),
+        "application/x-shellscript" => (NerdFont::Terminal, "Terminal (Shell Script)"),
 
         // Special
-        "application/vnd.appimage" => (NerdFont::Package, "AppImage application"),
-        "application/vnd.flatpak.ref" => (NerdFont::Package, "Flatpak reference"),
-        "application/x-iso9660-image" => (NerdFont::Archive, "ISO disk image"),
+        "application/vnd.appimage" => (NerdFont::Package, "AppImage Launcher"),
+        "application/vnd.flatpak.ref" => (NerdFont::Package, "Flatpak Installer"),
+        "application/x-iso9660-image" => (NerdFont::Archive, "Disk Image Viewer (ISO)"),
 
         _ => return None,
     };
@@ -708,4 +717,108 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     );
 
     Ok(())
+}
+
+/// Helper function to manage default app for a specific MIME type
+fn manage_default_app_for_mime(ctx: &mut SettingsContext, mime_type: &str, app_name: &str) -> Result<()> {
+    use crate::menu_utils::FzfResult;
+
+    // Build the MIME map
+    let mime_map = build_mime_to_apps_map().context("Failed to build MIME type map")?;
+
+    // Get applications for this MIME type
+    let app_desktop_ids = mime_map.get(mime_type).cloned().unwrap_or_default();
+
+    if app_desktop_ids.is_empty() {
+        ctx.emit_info(
+            "settings.defaultapps.no_apps",
+            &format!("No applications found for {}. Install an application first.", app_name),
+        );
+        return Ok(());
+    }
+
+    // Get current default
+    let current_default = query_default_app(mime_type).ok().flatten();
+
+    // Convert to ApplicationInfo with preview data
+    let app_infos: Vec<ApplicationInfo> = app_desktop_ids
+        .iter()
+        .map(|desktop_id| get_application_info(desktop_id))
+        .collect();
+
+    let header_text = format!(
+        "Select default {} application\nCurrent: {}",
+        app_name,
+        current_default.as_deref().unwrap_or("(none)")
+    );
+
+    // Let user select an application
+    let selected_app_info = match FzfWrapper::builder()
+        .prompt(&format!("Select {}: ", app_name))
+        .header(&header_text)
+        .select(app_infos)?
+    {
+        FzfResult::Selected(app_info) => app_info,
+        _ => {
+            ctx.emit_info("settings.defaultapps.cancelled", "No changes made.");
+            return Ok(());
+        }
+    };
+
+    let desktop_file = &selected_app_info.desktop_id;
+
+    // Set the default application
+    set_default_app(mime_type, desktop_file).context("Failed to set default application")?;
+
+    ctx.notify(
+        &format!("Default {}", app_name),
+        &format!("Set {} as default", selected_app_info.name.as_deref().unwrap_or(desktop_file)),
+    );
+
+    Ok(())
+}
+
+/// Set default web browser
+pub fn set_default_browser(ctx: &mut SettingsContext) -> Result<()> {
+    manage_default_app_for_mime(ctx, "text/html", "Web Browser")
+}
+
+/// Set default email client
+pub fn set_default_email(ctx: &mut SettingsContext) -> Result<()> {
+    manage_default_app_for_mime(ctx, "x-scheme-handler/mailto", "Email Client")
+}
+
+/// Set default file manager
+pub fn set_default_file_manager(ctx: &mut SettingsContext) -> Result<()> {
+    manage_default_app_for_mime(ctx, "inode/directory", "File Manager")
+}
+
+/// Set default text editor
+pub fn set_default_text_editor(ctx: &mut SettingsContext) -> Result<()> {
+    manage_default_app_for_mime(ctx, "text/plain", "Text Editor")
+}
+
+/// Set default image viewer
+pub fn set_default_image_viewer(ctx: &mut SettingsContext) -> Result<()> {
+    manage_default_app_for_mime(ctx, "image/png", "Image Viewer")
+}
+
+/// Set default video player
+pub fn set_default_video_player(ctx: &mut SettingsContext) -> Result<()> {
+    manage_default_app_for_mime(ctx, "video/mp4", "Video Player")
+}
+
+/// Set default music player
+pub fn set_default_music_player(ctx: &mut SettingsContext) -> Result<()> {
+    manage_default_app_for_mime(ctx, "audio/mpeg", "Music Player")
+}
+
+/// Set default PDF viewer
+pub fn set_default_pdf_viewer(ctx: &mut SettingsContext) -> Result<()> {
+    manage_default_app_for_mime(ctx, "application/pdf", "PDF Viewer")
+}
+
+/// Set default archive manager
+pub fn set_default_archive_manager(ctx: &mut SettingsContext) -> Result<()> {
+    manage_default_app_for_mime(ctx, "application/zip", "Archive Manager")
 }
