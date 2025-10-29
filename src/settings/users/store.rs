@@ -68,4 +68,3 @@ fn users_file_path() -> Result<PathBuf> {
         .with_context(|| format!("creating config directory {}", config_dir.display()))?;
     Ok(config_dir.join("users.toml"))
 }
-

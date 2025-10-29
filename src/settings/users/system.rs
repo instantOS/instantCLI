@@ -2,7 +2,7 @@ use std::{fs, process::Command};
 
 use anyhow::{Context, Result};
 
-use super::models::{default_shell, UserInfo};
+use super::models::{UserInfo, default_shell};
 
 /// Get information about a system user
 pub(super) fn get_user_info(username: &str) -> Result<Option<UserInfo>> {
@@ -182,4 +182,3 @@ pub(super) fn partition_groups(groups: &[String]) -> Result<(Vec<String>, Vec<St
 
     Ok((valid, missing))
 }
-

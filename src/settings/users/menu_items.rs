@@ -207,4 +207,3 @@ impl FzfSelectable for ShellItem {
         FzfPreview::Text(format!("Shell: {}", self.path))
     }
 }
-

@@ -23,4 +23,3 @@ pub(super) struct UserInfo {
     pub primary_group: Option<String>,
     pub groups: Vec<String>,
 }
-

@@ -21,4 +21,3 @@ mod utils;
 
 // Re-export the public API
 pub(super) use handlers::manage_users;
-

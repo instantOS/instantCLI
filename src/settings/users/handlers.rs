@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::menu_utils::{FzfResult, FzfWrapper};
 
-use super::super::context::{select_one_with_style, SettingsContext};
+use super::super::context::{SettingsContext, select_one_with_style};
 use super::menu_items::{
     GroupActionItem, GroupItem, GroupMenuItem, ManageMenuItem, UserActionItem,
 };
@@ -112,7 +112,8 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
     }
 
     let shell = select_shell(ctx, "Select shell")?.unwrap_or_else(super::models::default_shell);
-    let selected_groups = select_groups("Use Tab to select multiple, Enter to confirm, Esc to skip")?;
+    let selected_groups =
+        select_groups("Use Tab to select multiple, Enter to confirm, Esc to skip")?;
 
     // Create the user on the system
     create_user(ctx, &username, &shell, &selected_groups)?;
@@ -341,4 +342,3 @@ fn manage_single_group(
         _ => Ok(false),
     }
 }
-
