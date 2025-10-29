@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::fmt;
 
 use crate::menu_utils::{FzfResult, FzfWrapper};
 
@@ -201,4 +202,106 @@ pub(super) fn select_groups(header: &str) -> Result<Vec<String>> {
     }
 
     Ok(selected_groups)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum UsernameValidationError {
+    Empty,
+    TooLong,
+    InvalidStart,
+    InvalidChar,
+}
+
+impl fmt::Display for UsernameValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UsernameValidationError::Empty => write!(f, "Username cannot be empty."),
+            UsernameValidationError::TooLong => {
+                write!(f, "Username must be at most 32 characters long.")
+            }
+            UsernameValidationError::InvalidStart => {
+                write!(f, "Username must start with a lowercase letter.")
+            }
+            UsernameValidationError::InvalidChar => write!(
+                f,
+                "Username may only contain lowercase letters, digits, hyphens, or underscores."
+            ),
+        }
+    }
+}
+
+pub(super) fn validate_username(username: &str) -> Result<(), UsernameValidationError> {
+    if username.is_empty() {
+        return Err(UsernameValidationError::Empty);
+    }
+
+    if username.chars().count() > 32 {
+        return Err(UsernameValidationError::TooLong);
+    }
+
+    let mut chars = username.chars();
+    let first = chars.next().ok_or(UsernameValidationError::Empty)?;
+    if !first.is_ascii_lowercase() {
+        return Err(UsernameValidationError::InvalidStart);
+    }
+
+    if chars.any(|c| !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_') {
+        return Err(UsernameValidationError::InvalidChar);
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UsernameValidationError, validate_username};
+
+    #[test]
+    fn accepts_valid_username() {
+        assert!(validate_username("alice").is_ok());
+        assert!(validate_username("alice1").is_ok());
+        assert!(validate_username("a_l-i_c-e").is_ok());
+    }
+
+    #[test]
+    fn rejects_empty_username() {
+        assert_eq!(validate_username(""), Err(UsernameValidationError::Empty));
+    }
+
+    #[test]
+    fn rejects_too_long_username() {
+        let long = "a".repeat(33);
+        assert_eq!(
+            validate_username(&long),
+            Err(UsernameValidationError::TooLong)
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_start() {
+        assert_eq!(
+            validate_username("1alice"),
+            Err(UsernameValidationError::InvalidStart)
+        );
+        assert_eq!(
+            validate_username("-alice"),
+            Err(UsernameValidationError::InvalidStart)
+        );
+        assert_eq!(
+            validate_username("Alice"),
+            Err(UsernameValidationError::InvalidStart)
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_chars() {
+        assert_eq!(
+            validate_username("alice!"),
+            Err(UsernameValidationError::InvalidChar)
+        );
+        assert_eq!(
+            validate_username("alice."),
+            Err(UsernameValidationError::InvalidChar)
+        );
+    }
 }

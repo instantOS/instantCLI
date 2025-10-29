@@ -12,7 +12,7 @@ use super::store::UserStore;
 use super::system::{get_all_system_groups, get_system_users_with_home, get_user_info};
 use super::utils::{
     add_user_to_group, change_user_shell, create_user, prompt_password_with_confirmation,
-    remove_user_from_group, select_groups, select_shell, set_user_password,
+    remove_user_from_group, select_groups, select_shell, set_user_password, validate_username,
 };
 
 /// Main entry point for user management
@@ -100,6 +100,14 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
     let username = prompt_username()?;
     if username.is_empty() {
         ctx.emit_info("settings.users.add.cancelled", "Creation cancelled.");
+        return Ok(false);
+    }
+
+    if let Err(err) = validate_username(&username) {
+        ctx.emit_info(
+            "settings.users.add.invalid",
+            &format!("Invalid username: {}", err),
+        );
         return Ok(false);
     }
 
