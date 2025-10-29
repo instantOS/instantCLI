@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
@@ -8,46 +8,16 @@ pub(super) fn default_shell() -> String {
 }
 
 /// Root structure for the users.toml file
+/// This file only tracks which users are managed by ins.
+/// The actual user state (shell, groups, etc.) is always read from the system.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(super) struct UsersFile {
     #[serde(default)]
-    pub users: BTreeMap<String, UserSpec>,
+    pub managed_users: BTreeSet<String>,
 }
 
-/// Specification for a managed user
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(super) struct UserSpec {
-    #[serde(default = "default_shell")]
-    pub shell: String,
-    #[serde(default)]
-    pub groups: Vec<String>,
-}
-
-impl UserSpec {
-    /// Returns a sanitized copy of this spec with normalized values
-    pub fn sanitized(&self) -> UserSpec {
-        let shell = if self.shell.trim().is_empty() {
-            default_shell()
-        } else {
-            self.shell.clone()
-        };
-
-        let mut groups: Vec<String> = self
-            .groups
-            .iter()
-            .map(|group| group.trim().to_string())
-            .filter(|group| !group.is_empty())
-            .collect();
-
-        groups.sort();
-        groups.dedup();
-
-        UserSpec { shell, groups }
-    }
-}
-
-/// Information about a system user
-#[derive(Debug)]
+/// Information about a system user (read from the system)
+#[derive(Debug, Clone)]
 pub(super) struct UserInfo {
     pub shell: String,
     pub primary_group: Option<String>,

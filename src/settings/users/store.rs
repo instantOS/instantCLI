@@ -2,9 +2,10 @@ use std::{fs, path::PathBuf};
 
 use anyhow::{Context, Result};
 
-use super::models::{UserSpec, UsersFile};
+use super::models::UsersFile;
 
-/// Persistent storage for user configurations
+/// Persistent storage for tracking which users are managed by ins.
+/// The actual user state is always read from the system.
 pub(super) struct UserStore {
     path: PathBuf,
     data: UsersFile,
@@ -37,24 +38,24 @@ impl UserStore {
             .with_context(|| format!("writing user settings to {}", self.path.display()))
     }
 
-    /// Iterate over all users in the store
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &UserSpec)> {
-        self.data.users.iter()
+    /// Iterate over all managed usernames
+    pub fn iter(&self) -> impl Iterator<Item = &String> {
+        self.data.managed_users.iter()
     }
 
-    /// Get a user spec by username
-    pub fn get(&self, username: &str) -> Option<&UserSpec> {
-        self.data.users.get(username)
+    /// Check if a user is managed
+    pub fn is_managed(&self, username: &str) -> bool {
+        self.data.managed_users.contains(username)
     }
 
-    /// Insert or update a user spec
-    pub fn insert(&mut self, username: &str, spec: UserSpec) {
-        self.data.users.insert(username.to_string(), spec);
+    /// Add a user to the managed set
+    pub fn add(&mut self, username: &str) {
+        self.data.managed_users.insert(username.to_string());
     }
 
-    /// Remove a user from the store
+    /// Remove a user from the managed set
     pub fn remove(&mut self, username: &str) {
-        self.data.users.remove(username);
+        self.data.managed_users.remove(username);
     }
 }
 

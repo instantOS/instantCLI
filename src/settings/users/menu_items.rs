@@ -83,7 +83,6 @@ impl FzfSelectable for ManageMenuItem {
 /// Actions available for a specific user
 #[derive(Clone)]
 pub(super) enum UserActionItem {
-    Apply,
     ChangeShell,
     ChangePassword,
     ManageGroups,
@@ -94,7 +93,6 @@ pub(super) enum UserActionItem {
 impl FzfSelectable for UserActionItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            UserActionItem::Apply => format!("{} Apply changes", format_icon(NerdFont::Check)),
             UserActionItem::ChangeShell => {
                 format!("{} Change shell", format_icon(NerdFont::Terminal))
             }
@@ -111,8 +109,7 @@ impl FzfSelectable for UserActionItem {
 
     fn fzf_preview(&self) -> FzfPreview {
         let text = match self {
-            UserActionItem::Apply => "Apply the stored configuration to the system",
-            UserActionItem::ChangeShell => "Update the user's default shell",
+            UserActionItem::ChangeShell => "Update the user's default shell on the system",
             UserActionItem::ChangePassword => "Change the user's password",
             UserActionItem::ManageGroups => "Add or remove supplementary groups",
             UserActionItem::Remove => "Stop managing this user (does not delete the account)",

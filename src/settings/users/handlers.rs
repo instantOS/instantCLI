@@ -8,12 +8,11 @@ use super::super::context::{select_one_with_style, SettingsContext};
 use super::menu_items::{
     GroupActionItem, GroupItem, GroupMenuItem, ManageMenuItem, UserActionItem,
 };
-use super::models::UserSpec;
 use super::store::UserStore;
 use super::system::{get_all_system_groups, get_system_users_with_home, get_user_info};
 use super::utils::{
-    apply_user_spec, get_or_init_user_spec, prompt_password_with_confirmation, select_groups,
-    select_shell, set_user_password,
+    add_user_to_group, change_user_shell, create_user, prompt_password_with_confirmation,
+    remove_user_from_group, select_groups, select_shell, set_user_password,
 };
 
 /// Main entry point for user management
@@ -54,9 +53,9 @@ fn build_user_menu_items(store: &UserStore) -> Result<Vec<ManageMenuItem>> {
     let system_users = get_system_users_with_home()?;
     let mut all_usernames = BTreeSet::new();
 
-    // Add users from TOML
-    for username in store.iter().map(|(name, _)| name.clone()) {
-        all_usernames.insert(username);
+    // Add managed users from TOML
+    for username in store.iter() {
+        all_usernames.insert(username.clone());
     }
 
     // Add system users with home directories
@@ -67,22 +66,16 @@ fn build_user_menu_items(store: &UserStore) -> Result<Vec<ManageMenuItem>> {
     let mut items: Vec<ManageMenuItem> = all_usernames
         .into_iter()
         .filter_map(|username| {
-            let in_toml = store.get(&username).is_some();
+            let is_managed = store.is_managed(&username);
 
-            // Try to get info from store first, then from system
-            let (shell, groups) = if let Some(spec) = store.get(&username) {
-                (spec.shell.clone(), spec.groups.clone())
-            } else if let Ok(Some(info)) = get_user_info(&username) {
-                (info.shell, info.groups)
-            } else {
-                return None;
-            };
+            // Always read current state from system
+            let info = get_user_info(&username).ok()??;
 
             Some(ManageMenuItem::User {
                 username,
-                shell,
-                groups,
-                in_toml,
+                shell: info.shell,
+                groups: info.groups,
+                in_toml: is_managed,
             })
         })
         .collect();
@@ -110,7 +103,7 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
         return Ok(false);
     }
 
-    if store.get(&username).is_some() {
+    if store.is_managed(&username) {
         ctx.emit_info(
             "settings.users.add.exists",
             &format!("{} already managed.", username),
@@ -121,14 +114,11 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
     let shell = select_shell(ctx, "Select shell")?.unwrap_or_else(super::models::default_shell);
     let selected_groups = select_groups("Use Tab to select multiple, Enter to confirm, Esc to skip")?;
 
-    let spec = UserSpec {
-        shell,
-        groups: selected_groups,
-    }
-    .sanitized();
+    // Create the user on the system
+    create_user(ctx, &username, &shell, &selected_groups)?;
 
-    store.insert(&username, spec.clone());
-    apply_user_spec(ctx, &username, &spec)?;
+    // Mark as managed
+    store.add(&username);
 
     // Prompt for password
     if let Some(password) = prompt_password_with_confirmation(ctx, "Set password for user")? {
@@ -155,11 +145,9 @@ fn prompt_username() -> Result<String> {
 /// Handle actions for a specific user
 fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str) -> Result<bool> {
     let mut changed = false;
-    let mut current_spec = get_or_init_user_spec(store, username);
 
     loop {
         let actions = vec![
-            UserActionItem::Apply,
             UserActionItem::ChangeShell,
             UserActionItem::ChangePassword,
             UserActionItem::ManageGroups,
@@ -168,18 +156,14 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
         ];
 
         match select_one_with_style(actions)? {
-            Some(UserActionItem::Apply) => {
-                apply_user_spec(ctx, username, &current_spec)?;
-                store.insert(username, current_spec.clone());
-                changed = true;
-            }
             Some(UserActionItem::ChangeShell) => {
                 if let Some(new_shell) = select_shell(ctx, "Select shell")? {
-                    current_spec.shell = new_shell;
-                    current_spec = current_spec.sanitized();
-                    store.insert(username, current_spec.clone());
-                    apply_user_spec(ctx, username, &current_spec)?;
-                    changed = true;
+                    change_user_shell(ctx, username, &new_shell)?;
+                    // Mark as managed if not already
+                    if !store.is_managed(username) {
+                        store.add(username);
+                        changed = true;
+                    }
                 }
             }
             Some(UserActionItem::ChangePassword) => {
@@ -188,7 +172,7 @@ fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str)
                 }
             }
             Some(UserActionItem::ManageGroups) => {
-                if manage_user_groups(ctx, store, username, &mut current_spec)? {
+                if manage_user_groups(ctx, store, username)? {
                     changed = true;
                 }
             }
@@ -213,21 +197,29 @@ fn manage_user_groups(
     ctx: &mut SettingsContext,
     store: &mut UserStore,
     username: &str,
-    spec: &mut UserSpec,
 ) -> Result<bool> {
     let mut changed = false;
 
     loop {
-        let items = build_group_menu_items(spec);
+        // Always read current groups from system
+        let user_info = match get_user_info(username)? {
+            Some(info) => info,
+            None => {
+                ctx.emit_info("settings.users.groups", "User not found on system.");
+                return Ok(false);
+            }
+        };
+
+        let items = build_group_menu_items(&user_info.groups);
 
         match select_one_with_style(items)? {
             Some(GroupMenuItem::ExistingGroup(group_name)) => {
-                if manage_single_group(ctx, store, username, spec, &group_name)? {
+                if manage_single_group(ctx, store, username, &group_name, &user_info)? {
                     changed = true;
                 }
             }
             Some(GroupMenuItem::AddGroup) => {
-                if add_groups_to_user(ctx, store, username, spec)? {
+                if add_groups_to_user(ctx, store, username, &user_info.groups)? {
                     changed = true;
                 }
             }
@@ -239,9 +231,8 @@ fn manage_user_groups(
 }
 
 /// Build menu items for group management
-fn build_group_menu_items(spec: &UserSpec) -> Vec<GroupMenuItem> {
-    let mut items: Vec<GroupMenuItem> = spec
-        .groups
+fn build_group_menu_items(current_groups: &[String]) -> Vec<GroupMenuItem> {
+    let mut items: Vec<GroupMenuItem> = current_groups
         .iter()
         .map(|name| GroupMenuItem::ExistingGroup(name.clone()))
         .collect();
@@ -256,7 +247,7 @@ fn add_groups_to_user(
     ctx: &mut SettingsContext,
     store: &mut UserStore,
     username: &str,
-    spec: &mut UserSpec,
+    current_groups: &[String],
 ) -> Result<bool> {
     let all_groups = get_all_system_groups()?;
     if all_groups.is_empty() {
@@ -265,10 +256,10 @@ fn add_groups_to_user(
     }
 
     // Filter out groups already assigned
-    let current_groups: BTreeSet<_> = spec.groups.iter().cloned().collect();
+    let current_set: BTreeSet<_> = current_groups.iter().cloned().collect();
     let available_groups: Vec<GroupItem> = all_groups
         .into_iter()
-        .filter(|g| !current_groups.contains(g))
+        .filter(|g| !current_set.contains(g))
         .map(|name| GroupItem { name })
         .collect();
 
@@ -287,32 +278,29 @@ fn add_groups_to_user(
         .args(["--multi"])
         .select(available_groups)?;
 
-    let mut added = false;
+    let mut groups_to_add = Vec::new();
     match selected {
         FzfResult::Selected(item) => {
-            if !spec.groups.contains(&item.name) {
-                spec.groups.push(item.name);
-                added = true;
-            }
+            groups_to_add.push(item.name);
         }
         FzfResult::MultiSelected(group_items) => {
-            for item in group_items {
-                if !spec.groups.contains(&item.name) {
-                    spec.groups.push(item.name);
-                    added = true;
-                }
-            }
+            groups_to_add.extend(group_items.into_iter().map(|item| item.name));
         }
         _ => {}
     }
 
-    if added {
-        *spec = spec.sanitized();
-        store.insert(username, spec.clone());
-        apply_user_spec(ctx, username, spec)?;
+    if !groups_to_add.is_empty() {
+        for group in &groups_to_add {
+            add_user_to_group(ctx, username, group)?;
+        }
+        // Mark as managed if not already
+        if !store.is_managed(username) {
+            store.add(username);
+        }
+        return Ok(true);
     }
 
-    Ok(added)
+    Ok(false)
 }
 
 /// Manage a single group for a user
@@ -320,18 +308,15 @@ fn manage_single_group(
     ctx: &mut SettingsContext,
     store: &mut UserStore,
     username: &str,
-    spec: &mut UserSpec,
     group_name: &str,
+    user_info: &super::models::UserInfo,
 ) -> Result<bool> {
     let actions = vec![GroupActionItem::RemoveGroup, GroupActionItem::Back];
 
     match select_one_with_style(actions)? {
         Some(GroupActionItem::RemoveGroup) => {
-            // Get primary group to prevent removal
-            let primary_group = get_user_info(username)?.and_then(|info| info.primary_group);
-
             // Don't remove primary group
-            if Some(group_name) == primary_group.as_deref() {
+            if Some(group_name) == user_info.primary_group.as_deref() {
                 ctx.emit_info(
                     "settings.users.groups",
                     &format!("Cannot remove primary group: {}", group_name),
@@ -339,10 +324,12 @@ fn manage_single_group(
                 return Ok(false);
             }
 
-            spec.groups.retain(|g| g != group_name);
-            *spec = spec.sanitized();
-            store.insert(username, spec.clone());
-            apply_user_spec(ctx, username, spec)?;
+            remove_user_from_group(ctx, username, group_name)?;
+
+            // Mark as managed if not already
+            if !store.is_managed(username) {
+                store.add(username);
+            }
 
             ctx.emit_success(
                 "settings.users.groups",

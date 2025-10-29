@@ -1,15 +1,11 @@
-use std::collections::BTreeSet;
-
 use anyhow::Result;
 
 use crate::menu_utils::{FzfResult, FzfWrapper};
-use crate::ui::prelude::*;
 
 use super::super::context::SettingsContext;
 use super::menu_items::{GroupItem, ShellItem};
-use super::models::{default_shell, UserSpec};
-use super::store::UserStore;
-use super::system::{get_all_system_groups, get_available_shells, get_user_info, partition_groups};
+use super::models::default_shell;
+use super::system::{get_all_system_groups, get_available_shells, partition_groups};
 
 /// Prompt for a password with confirmation
 pub(super) fn prompt_password_with_confirmation(
@@ -76,55 +72,27 @@ pub(super) fn set_user_password(
     Ok(())
 }
 
-/// Apply a user specification to the system
-pub(super) fn apply_user_spec(
+/// Create a new system user
+pub(super) fn create_user(
     ctx: &mut SettingsContext,
     username: &str,
-    spec: &UserSpec,
+    shell: &str,
+    groups: &[String],
 ) -> Result<()> {
-    let desired = spec.sanitized();
-    let (valid_groups, missing_groups) = partition_groups(&desired.groups)?;
+    let (valid_groups, missing_groups) = partition_groups(groups)?;
 
     if !missing_groups.is_empty() {
-        let arch_hint = if missing_groups.iter().any(|group| group == "sudo") {
-            " Arch-based systems typically use the 'wheel' group for sudo access."
-        } else {
-            ""
-        };
-
-        let message = format!(
-            "{} Skipping unknown group(s): {}.{arch_hint}",
-            char::from(NerdFont::Warning),
-            missing_groups.join(", ")
+        ctx.emit_info(
+            "settings.users.groups",
+            &format!("Skipping unknown group(s): {}", missing_groups.join(", ")),
         );
-        emit(Level::Warn, "settings.users.missing_groups", &message, None);
     }
 
-    let info = get_user_info(username)?;
-
-    if info.is_none() {
-        create_new_user(ctx, username, &desired, &valid_groups)?;
-        return Ok(());
-    }
-
-    let info = info.unwrap();
-    update_existing_user(ctx, username, &desired, &valid_groups, &info)?;
-
-    Ok(())
-}
-
-/// Create a new system user
-fn create_new_user(
-    ctx: &mut SettingsContext,
-    username: &str,
-    spec: &UserSpec,
-    valid_groups: &[String],
-) -> Result<()> {
     ctx.emit_info(
         "settings.users.create",
         &format!("Creating system user {}", username),
     );
-    ctx.run_command_as_root("useradd", ["-m", "-s", spec.shell.as_str(), username])?;
+    ctx.run_command_as_root("useradd", ["-m", "-s", shell, username])?;
 
     if !valid_groups.is_empty() {
         let joined = valid_groups.join(",");
@@ -134,40 +102,45 @@ fn create_new_user(
     Ok(())
 }
 
-/// Update an existing system user
-fn update_existing_user(
+/// Change a user's shell
+pub(super) fn change_user_shell(
     ctx: &mut SettingsContext,
     username: &str,
-    spec: &UserSpec,
-    valid_groups: &[String],
-    info: &super::models::UserInfo,
+    shell: &str,
 ) -> Result<()> {
-    // Update shell if different
-    if info.shell != spec.shell {
-        ctx.emit_info(
-            "settings.users.shell",
-            &format!("Setting shell for {} to {}", username, spec.shell),
-        );
-        ctx.run_command_as_root("chsh", ["-s", spec.shell.as_str(), username])?;
-    }
+    ctx.emit_info(
+        "settings.users.shell",
+        &format!("Setting shell for {} to {}", username, shell),
+    );
+    ctx.run_command_as_root("chsh", ["-s", shell, username])?;
+    ctx.emit_success(
+        "settings.users.shell",
+        &format!("Shell updated for {}", username),
+    );
+    Ok(())
+}
 
-    // Update groups
-    let desired_set: BTreeSet<_> = valid_groups.iter().cloned().collect();
-    let current_set: BTreeSet<_> = info.groups.iter().cloned().collect();
+/// Add a user to a group
+pub(super) fn add_user_to_group(
+    ctx: &mut SettingsContext,
+    username: &str,
+    group: &str,
+) -> Result<()> {
+    ctx.run_command_as_root("usermod", ["-a", "-G", group, username])?;
+    ctx.emit_success(
+        "settings.users.groups",
+        &format!("Added {} to group {}", username, group),
+    );
+    Ok(())
+}
 
-    // Add missing groups
-    for group in desired_set.difference(&current_set) {
-        ctx.run_command_as_root("usermod", ["-a", "-G", group, username])?;
-    }
-
-    // Remove extra groups (except primary group)
-    for group in current_set.difference(&desired_set) {
-        if Some(group.as_str()) == info.primary_group.as_deref() {
-            continue;
-        }
-        ctx.run_command_as_root("gpasswd", ["-d", username, group])?;
-    }
-
+/// Remove a user from a group
+pub(super) fn remove_user_from_group(
+    ctx: &mut SettingsContext,
+    username: &str,
+    group: &str,
+) -> Result<()> {
+    ctx.run_command_as_root("gpasswd", ["-d", username, group])?;
     Ok(())
 }
 
@@ -229,20 +202,3 @@ pub(super) fn select_groups(header: &str) -> Result<Vec<String>> {
 
     Ok(selected_groups)
 }
-
-/// Get or initialize a user spec from the store or system
-pub(super) fn get_or_init_user_spec(store: &UserStore, username: &str) -> UserSpec {
-    if let Some(spec) = store.get(username) {
-        spec.clone()
-    } else if let Ok(Some(info)) = get_user_info(username) {
-        // User exists on system but not in TOML - create initial spec from system
-        UserSpec {
-            shell: info.shell,
-            groups: info.groups,
-        }
-    } else {
-        // User doesn't exist anywhere - use defaults
-        UserSpec::default()
-    }
-}
-
