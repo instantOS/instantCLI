@@ -97,25 +97,16 @@ pub fn launch_printer_manager(ctx: &mut SettingsContext) -> Result<()> {
         return Ok(());
     }
 
-    match Command::new("system-config-printer").status() {
-        Ok(status) if status.success() => ctx.emit_success(
-            "settings.printer.manager.launched",
-            "Opened system-config-printer.",
-        ),
-        Ok(status) => {
-            emit(
-                Level::Warn,
-                "settings.printer.manager.exit_status",
-                &format!(
-                    "{} system-config-printer exited with status {:?}",
-                    char::from(NerdFont::Warning),
-                    status.code()
-                ),
-                None,
-            );
-        }
-        Err(err) => anyhow::bail!("Failed to start system-config-printer: {err}"),
-    }
+    // Launch in detached mode (non-blocking)
+    Command::new("system-config-printer")
+        .spawn()
+        .context("Failed to launch system-config-printer")?;
+
+    ctx.emit_success(
+        "settings.printer.manager.launched",
+        "Opened system-config-printer.",
+    );
+
     Ok(())
 }
 

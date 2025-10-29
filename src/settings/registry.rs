@@ -498,9 +498,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
         category: "network",
         icon: NerdFont::Rocket,
         breadcrumbs: &["Internet Speed Test"],
-        kind: SettingKind::Action {
+        kind: SettingKind::Command {
             summary: "Test your internet connection speed using fast.com.\n\nMeasures download speed from Netflix servers.",
-            run: super::network::launch_speed_test,
+            command: CommandSpec::detached("chromium", &["--app=https://fast.com"]),
         },
         requires_reapply: false,
         requirements: &[SettingRequirement::Package(
@@ -513,9 +513,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
         category: "network",
         icon: NerdFont::Settings,
         breadcrumbs: &["Edit Connections"],
-        kind: SettingKind::Action {
+        kind: SettingKind::Command {
             summary: "Manage WiFi, Ethernet, VPN, and other network connections.\n\nConfigure connection settings, passwords, and advanced options.",
-            run: super::network::edit_connections,
+            command: CommandSpec::detached("nm-connection-editor", &[]),
         },
         requires_reapply: false,
         requirements: &[SettingRequirement::Package(

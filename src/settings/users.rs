@@ -311,6 +311,7 @@ impl FzfSelectable for ShellItem {
     }
 }
 
+//TODO: this is very long, refactor
 pub(super) fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
     let mut store = UserStore::load()?;
     let mut dirty = false;
@@ -390,6 +391,7 @@ pub(super) fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
     Ok(())
 }
 
+//TODO: this is very long, refactor
 fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
     let username = FzfWrapper::builder()
         .prompt("New username")
@@ -482,6 +484,7 @@ fn add_user(ctx: &mut SettingsContext, store: &mut UserStore) -> Result<bool> {
     Ok(true)
 }
 
+//TODO: this is very long, refactor
 fn handle_user(ctx: &mut SettingsContext, store: &mut UserStore, username: &str) -> Result<bool> {
     let mut changed = false;
 
@@ -655,6 +658,7 @@ fn manage_user_groups(
     Ok(changed)
 }
 
+//TODO: this is very long, refactor
 fn manage_single_group(
     ctx: &mut SettingsContext,
     store: &mut UserStore,
