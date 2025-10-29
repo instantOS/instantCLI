@@ -11,6 +11,22 @@ use super::super::context::{
 use super::super::registry::CommandStyle;
 use super::items::{ChoiceItem, ChoiceMenuItem, SettingState};
 
+/// Find the index of a choice menu item in the list
+fn choice_menu_index(items: &[ChoiceMenuItem], selected: ChoiceMenuItem) -> Option<usize> {
+    items
+        .iter()
+        .enumerate()
+        .find_map(|(idx, item)| match (item, selected) {
+            (ChoiceMenuItem::Back, ChoiceMenuItem::Back) => Some(idx),
+            (ChoiceMenuItem::Option(lhs), ChoiceMenuItem::Option(rhs))
+                if lhs.option.value == rhs.option.value =>
+            {
+                Some(idx)
+            }
+            _ => None,
+        })
+}
+
 /// Check and handle requirements for a setting
 fn ensure_requirements(
     ctx: &mut SettingsContext,
@@ -93,6 +109,8 @@ pub fn handle_setting(
             apply,
         } => {
             // Loop to allow user to try different values and see the changes
+            let mut cursor = None;
+
             loop {
                 // Get current value to mark it in the menu
                 let current_value = ctx.string(*key);
@@ -114,24 +132,37 @@ pub fn handle_setting(
                 // Add Back option
                 items.push(ChoiceMenuItem::Back);
 
-                match select_one_with_style(items)? {
-                    Some(ChoiceMenuItem::Option(choice)) => {
-                        ctx.set_string(*key, choice.option.value);
-                        if apply.is_some() {
-                            apply_definition(
-                                ctx,
-                                definition,
-                                Some(ApplyOverride::Choice(choice.option)),
-                            )?;
+                match select_one_with_style_at(items.clone(), cursor)? {
+                    Some(selected) => {
+                        // Update cursor to maintain position
+                        if let Some(index) = choice_menu_index(&items, selected) {
+                            cursor = Some(index);
                         }
-                        ctx.emit_success(
-                            "settings.choice.updated",
-                            &format!("{} set to {}", definition.title, choice.option.label),
-                        );
-                        // Continue loop to show updated menu
+
+                        match selected {
+                            ChoiceMenuItem::Option(choice) => {
+                                ctx.set_string(*key, choice.option.value);
+                                if apply.is_some() {
+                                    apply_definition(
+                                        ctx,
+                                        definition,
+                                        Some(ApplyOverride::Choice(choice.option)),
+                                    )?;
+                                }
+                                ctx.emit_success(
+                                    "settings.choice.updated",
+                                    &format!("{} set to {}", definition.title, choice.option.label),
+                                );
+                                // Continue loop to show updated menu
+                            }
+                            ChoiceMenuItem::Back => {
+                                // User selected Back, exit the loop
+                                break;
+                            }
+                        }
                     }
-                    Some(ChoiceMenuItem::Back) | None => {
-                        // User selected Back or cancelled, exit the loop
+                    None => {
+                        // User cancelled, exit the loop
                         break;
                     }
                 }
