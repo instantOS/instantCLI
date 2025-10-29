@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7](https://github.com/instantOS/instantCLI/compare/v0.2.6...v0.2.7) - 2025-10-29
+
+### Fixed
+
+- fix multiple choiec cursor position
+- fix snapshot inference
+- fix compilation
+- fix non-existent thing
+- fix typo
+- fix prompts
+- fix tests
+- fix single file security
+- fix single file backup
+- fix compilation
+- *(game)* picker scope for ins game deps
+
+### Other
+
+- validate usernames
+- clippy
+- make system the single source of truth for user settings
+- refactor users module
+- clippy
+- unify launch settings
+- prettier settings
+- clippy fix
+- implement network settings
+- init network settings
+- add plans
+- rename more settings
+- more friendly setting names
+- new plans
+- refactor handle_settings
+- better multiple choice settings
+- better settings serialization
+- init cockpit settings
+- clippy
+- remove old fields
+- add bug md
+- init editor refactor
+- clippy
+- refactor game install
+- format
+- refactor game display
+- resolve game add details
+- init game manager refactor
+- clippy
+- init refactor
+- fmt
+- more setup flow
+- tests and further implementation
+- init better setup
+- add TODO comments
+- new plan
+- more filegone
+- init filegone
+- filegone
+- hacky single file fix
+- make tests more silent
+- debug
+- clippy
+- init single file tests
+- init supporting files as saves and deps
+- fetchadd plans
+- file support plans
+- better deps flow
+- plans
+- cleanup
+- add message
+- new plans
+- add plans
+
 ## [0.2.6](https://github.com/instantOS/instantCLI/compare/v0.2.5...v0.2.6) - 2025-10-17
 
 ### Fixed
