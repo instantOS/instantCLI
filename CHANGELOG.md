@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- fix multiple choiec cursor position
 - fix snapshot inference
 - fix compilation
 - fix non-existent thing
