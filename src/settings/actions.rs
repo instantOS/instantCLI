@@ -8,11 +8,12 @@ use crate::ui::prelude::*;
 use super::context::SettingsContext;
 use super::registry::{
     BLUETOOTH_CORE_PACKAGES, BLUETOOTH_HARDWARE_OVERRIDE_KEY, BLUETOOTH_SERVICE_KEY,
-    UDISKIE_AUTOMOUNT_KEY, UDISKIE_PACKAGE,
+    COCKPIT_PACKAGES, UDISKIE_AUTOMOUNT_KEY, UDISKIE_PACKAGE,
 };
 
 const BLUETOOTH_SERVICE_NAME: &str = "bluetooth";
 const UDISKIE_SERVICE_NAME: &str = "udiskie";
+const COCKPIT_SOCKET_NAME: &str = "cockpit.socket";
 
 pub fn apply_clipboard_manager(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let is_running = std::process::Command::new("pgrep")
@@ -227,6 +228,38 @@ pub fn apply_udiskie_automount(ctx: &mut SettingsContext, enabled: bool) -> Resu
 
         ctx.notify("Auto-mount", "udiskie service disabled");
     }
+
+    Ok(())
+}
+
+/// Launch Cockpit web-based system management interface
+pub fn launch_cockpit(ctx: &mut SettingsContext) -> Result<()> {
+    // Ensure required packages are installed
+    if !ctx.ensure_packages(COCKPIT_PACKAGES.as_slice())? {
+        return Ok(());
+    }
+
+    let systemd = SystemdManager::system_with_sudo();
+
+    // Check if cockpit.socket is enabled, if not enable it
+    if !systemd.is_enabled(COCKPIT_SOCKET_NAME) {
+        systemd.enable_and_start(COCKPIT_SOCKET_NAME)?;
+
+        // Give cockpit a moment to start up
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        // Show login hint
+        let username = std::env::var("USER").unwrap_or_else(|_| "your username".to_string());
+        FzfWrapper::builder()
+            .message(&format!("Cockpit is starting...\n\nSign in with '{}' in the browser window.", username))
+            .title("Cockpit")
+            .show_message()?;
+    }
+
+    // Launch chromium in app mode
+    std::process::Command::new("chromium")
+        .arg("--app=http://localhost:9090")
+        .spawn()?;
 
     Ok(())
 }

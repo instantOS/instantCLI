@@ -200,6 +200,25 @@ pub const BLUEMAN_PACKAGE: RequiredPackage = RequiredPackage {
 
 pub const BLUETOOTH_CORE_PACKAGES: [RequiredPackage; 2] = [BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE];
 
+pub const COCKPIT_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Cockpit",
+    arch_package_name: Some("cockpit"),
+    ubuntu_package_name: Some("cockpit"),
+    tests: &[
+        InstallTest::FileExists("/usr/lib/systemd/system/cockpit.socket"),
+        InstallTest::WhichSucceeds("cockpit-bridge"),
+    ],
+};
+
+pub const CHROMIUM_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Chromium browser",
+    arch_package_name: Some("chromium"),
+    ubuntu_package_name: Some("chromium-browser"),
+    tests: &[InstallTest::WhichSucceeds("chromium")],
+};
+
+pub const COCKPIT_PACKAGES: [RequiredPackage; 2] = [COCKPIT_PACKAGE, CHROMIUM_PACKAGE];
+
 /// Check if the bluetooth service is currently active
 fn bluetooth_service_active() -> bool {
     crate::common::systemd::SystemdManager::system().is_active("bluetooth")
@@ -500,6 +519,19 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: false,
         requirements: &[SettingRequirement::Package(FASTFETCH_PACKAGE)],
+    },
+    SettingDefinition {
+        id: "system.cockpit",
+        title: "Systemd manager (Cockpit)",
+        category: "system",
+        icon: NerdFont::Server,
+        breadcrumbs: &["Systemd manager"],
+        kind: SettingKind::Action {
+            summary: "Launch Cockpit web interface for managing systemd services, logs, and system resources.",
+            run: super::actions::launch_cockpit,
+        },
+        requires_reapply: false,
+        requirements: &[],
     },
     SettingDefinition {
         id: "apps.default",
