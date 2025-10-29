@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 use crate::common::requirements::{InstallTest, RequiredPackage};
 use crate::common::systemd::SystemdManager;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
-use crate::ui::prelude::{Level, NerdFont, emit};
+use crate::ui::prelude::NerdFont;
 
 use super::context::SettingsContext;
 use super::store::BoolSettingKey;

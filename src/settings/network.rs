@@ -188,5 +188,3 @@ fn check_internet() -> bool {
         .map(|output| output.status.success())
         .unwrap_or(false)
 }
-
-
