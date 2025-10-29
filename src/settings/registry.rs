@@ -230,7 +230,7 @@ pub const WIREMIX_REQUIREMENT: SettingRequirement = SettingRequirement::Package(
 pub const BLUETOOTH_SERVICE_REQUIREMENT: SettingRequirement = SettingRequirement::Condition {
     description: "Bluetooth service must be running",
     check: bluetooth_service_active,
-    resolve_hint: "Enable the Bluetooth service in Settings > Connectivity > Bluetooth",
+    resolve_hint: "Enable Bluetooth in Settings > Bluetooth > Enable Bluetooth",
 };
 
 pub const BLUETOOTH_MANAGER_REQUIREMENTS: [SettingRequirement; 4] = [
@@ -266,21 +266,15 @@ pub const CATEGORIES: &[SettingCategory] = &[
         icon: NerdFont::VolumeUp,
     },
     SettingCategory {
-        id: "system",
-        title: "System",
-        description: "System administration and user management.",
-        icon: NerdFont::Server,
-    },
-    SettingCategory {
         id: "apps",
         title: "Applications",
         description: "Default applications and file associations.",
         icon: NerdFont::Package,
     },
     SettingCategory {
-        id: "connectivity",
-        title: "Connectivity",
-        description: "Bluetooth and wireless device access.",
+        id: "bluetooth",
+        title: "Bluetooth",
+        description: "Pair and manage Bluetooth devices.",
         icon: NerdFont::Bluetooth,
     },
     SettingCategory {
@@ -294,6 +288,18 @@ pub const CATEGORIES: &[SettingCategory] = &[
         title: "Printers",
         description: "Discover, configure, and manage printers.",
         icon: NerdFont::Printer,
+    },
+    SettingCategory {
+        id: "users",
+        title: "Users",
+        description: "Create and manage user accounts.",
+        icon: NerdFont::Users,
+    },
+    SettingCategory {
+        id: "system",
+        title: "System",
+        description: "System administration and maintenance.",
+        icon: NerdFont::Server,
     },
 ];
 
@@ -415,13 +421,13 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[WIREMIX_REQUIREMENT],
     },
     SettingDefinition {
-        id: "system.user_management",
-        title: "User management",
-        category: "system",
-        icon: NerdFont::Users2,
-        breadcrumbs: &["User management"],
+        id: "users.manage",
+        title: "Manage Users",
+        category: "users",
+        icon: NerdFont::Users,
+        breadcrumbs: &["Manage Users"],
         kind: SettingKind::Action {
-            summary: "Create and update Linux users, groups, and shells.",
+            summary: "Create, modify, and delete user accounts.\n\nManage user groups, shells, and permissions.",
             run: users::manage_users,
         },
         requires_reapply: false,
@@ -441,27 +447,27 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[],
     },
     SettingDefinition {
-        id: "connectivity.bluetooth.service",
-        title: "Bluetooth service",
-        category: "connectivity",
+        id: "bluetooth.service",
+        title: "Enable Bluetooth",
+        category: "bluetooth",
         icon: NerdFont::Bluetooth,
-        breadcrumbs: &["Bluetooth", "Service"],
+        breadcrumbs: &["Enable Bluetooth"],
         kind: SettingKind::Toggle {
             key: BLUETOOTH_SERVICE_KEY,
-            summary: "Enable the system Bluetooth service and keep it running.",
+            summary: "Turn Bluetooth on or off.\n\nWhen enabled, you can connect wireless devices like headphones, keyboards, and mice.",
             apply: Some(super::actions::apply_bluetooth_service),
         },
         requires_reapply: false,
         requirements: &[],
     },
     SettingDefinition {
-        id: "connectivity.bluetooth.manager",
-        title: "Manage devices",
-        category: "connectivity",
-        icon: NerdFont::Bluetooth,
-        breadcrumbs: &["Bluetooth", "Manage devices"],
+        id: "bluetooth.manager",
+        title: "Manage Devices",
+        category: "bluetooth",
+        icon: NerdFont::Settings,
+        breadcrumbs: &["Manage Devices"],
         kind: SettingKind::Command {
-            summary: "Launch Blueman manager to pair and manage Bluetooth devices.",
+            summary: "Pair new devices and manage connected Bluetooth devices.\n\nUse this to connect headphones, speakers, keyboards, mice, and other wireless devices.",
             command: CommandSpec::detached("blueman-manager", &[]),
         },
         requires_reapply: false,
