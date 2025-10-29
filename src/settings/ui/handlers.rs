@@ -73,6 +73,151 @@ fn ensure_requirements(
     Ok(true)
 }
 
+/// Handle a toggle setting
+fn handle_toggle(
+    ctx: &mut SettingsContext,
+    definition: &'static SettingDefinition,
+    key: &super::super::store::BoolSettingKey,
+    apply: &Option<fn(&mut SettingsContext, bool) -> Result<()>>,
+    state: SettingState,
+) -> Result<()> {
+    let current = matches!(state, SettingState::Toggle { enabled: true });
+    let target = !current;
+
+    ctx.set_bool(*key, target);
+    if apply.is_some() {
+        apply_definition(ctx, definition, Some(ApplyOverride::Bool(target)))?;
+    }
+
+    ctx.emit_success(
+        "settings.toggle.updated",
+        &format!(
+            "{} {}",
+            definition.title,
+            if target { "enabled" } else { "disabled" }
+        ),
+    );
+
+    Ok(())
+}
+
+/// Handle a choice setting with interactive menu
+fn handle_choice(
+    ctx: &mut SettingsContext,
+    definition: &'static SettingDefinition,
+    key: &super::super::store::StringSettingKey,
+    options: &'static [super::super::registry::SettingOption],
+    summary: &'static str,
+    apply: &Option<fn(&mut SettingsContext, &super::super::registry::SettingOption) -> Result<()>>,
+) -> Result<()> {
+    let mut cursor = None;
+
+    loop {
+        // Get current value to mark it in the menu
+        let current_value = ctx.string(*key);
+        let current_index = options.iter().position(|opt| opt.value == current_value);
+
+        // Build menu items with current selection marked
+        let mut items: Vec<ChoiceMenuItem> = options
+            .iter()
+            .enumerate()
+            .map(|(index, option)| {
+                ChoiceMenuItem::Option(ChoiceItem {
+                    option,
+                    is_current: current_index == Some(index),
+                    summary,
+                })
+            })
+            .collect();
+
+        // Add Back option
+        items.push(ChoiceMenuItem::Back);
+
+        match select_one_with_style_at(items.clone(), cursor)? {
+            Some(selected) => {
+                // Update cursor to maintain position
+                if let Some(index) = choice_menu_index(&items, selected) {
+                    cursor = Some(index);
+                }
+
+                match selected {
+                    ChoiceMenuItem::Option(choice) => {
+                        ctx.set_string(*key, choice.option.value);
+                        if apply.is_some() {
+                            apply_definition(
+                                ctx,
+                                definition,
+                                Some(ApplyOverride::Choice(choice.option)),
+                            )?;
+                        }
+                        ctx.emit_success(
+                            "settings.choice.updated",
+                            &format!("{} set to {}", definition.title, choice.option.label),
+                        );
+                        // Continue loop to show updated menu
+                    }
+                    ChoiceMenuItem::Back => {
+                        // User selected Back, exit the loop
+                        break;
+                    }
+                }
+            }
+            None => {
+                // User cancelled, exit the loop
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle an action setting
+fn handle_action(
+    ctx: &mut SettingsContext,
+    definition: &'static SettingDefinition,
+    summary: &'static str,
+    run: fn(&mut SettingsContext) -> Result<()>,
+) -> Result<()> {
+    ctx.emit_info("settings.action.running", summary);
+    ctx.with_definition(definition, run)?;
+    Ok(())
+}
+
+/// Handle a command setting
+fn handle_command(
+    ctx: &mut SettingsContext,
+    definition: &'static SettingDefinition,
+    summary: &'static str,
+    command: &super::super::registry::CommandSpec,
+) -> Result<()> {
+    ctx.emit_info("settings.command.launching", summary);
+
+    ctx.with_definition(definition, |_ctx| {
+        match command.style {
+            CommandStyle::Terminal => {
+                cmd(command.program, command.args)
+                    .run()
+                    .with_context(|| format!("running {}", command.program))?;
+            }
+            CommandStyle::Detached => {
+                Command::new(command.program)
+                    .args(command.args)
+                    .spawn()
+                    .with_context(|| format!("spawning {}", command.program))?;
+            }
+        }
+        Ok(())
+    })?;
+
+    ctx.emit_success(
+        "settings.command.completed",
+        &format!("Launched {}", definition.title),
+    );
+
+    Ok(())
+}
+
 pub fn handle_setting(
     ctx: &mut SettingsContext,
     definition: &'static SettingDefinition,
@@ -85,22 +230,7 @@ pub fn handle_setting(
 
     match &definition.kind {
         SettingKind::Toggle { key, apply, .. } => {
-            let current = matches!(state, SettingState::Toggle { enabled: true });
-            let target = !current;
-
-            ctx.set_bool(*key, target);
-            if apply.is_some() {
-                apply_definition(ctx, definition, Some(ApplyOverride::Bool(target)))?;
-            }
-
-            ctx.emit_success(
-                "settings.toggle.updated",
-                &format!(
-                    "{} {}",
-                    definition.title,
-                    if target { "enabled" } else { "disabled" }
-                ),
-            );
+            handle_toggle(ctx, definition, key, apply, state)?;
         }
         SettingKind::Choice {
             key,
@@ -108,94 +238,13 @@ pub fn handle_setting(
             summary,
             apply,
         } => {
-            // Loop to allow user to try different values and see the changes
-            let mut cursor = None;
-
-            loop {
-                // Get current value to mark it in the menu
-                let current_value = ctx.string(*key);
-                let current_index = options.iter().position(|opt| opt.value == current_value);
-
-                // Build menu items with current selection marked
-                let mut items: Vec<ChoiceMenuItem> = options
-                    .iter()
-                    .enumerate()
-                    .map(|(index, option)| {
-                        ChoiceMenuItem::Option(ChoiceItem {
-                            option,
-                            is_current: current_index == Some(index),
-                            summary,
-                        })
-                    })
-                    .collect();
-
-                // Add Back option
-                items.push(ChoiceMenuItem::Back);
-
-                match select_one_with_style_at(items.clone(), cursor)? {
-                    Some(selected) => {
-                        // Update cursor to maintain position
-                        if let Some(index) = choice_menu_index(&items, selected) {
-                            cursor = Some(index);
-                        }
-
-                        match selected {
-                            ChoiceMenuItem::Option(choice) => {
-                                ctx.set_string(*key, choice.option.value);
-                                if apply.is_some() {
-                                    apply_definition(
-                                        ctx,
-                                        definition,
-                                        Some(ApplyOverride::Choice(choice.option)),
-                                    )?;
-                                }
-                                ctx.emit_success(
-                                    "settings.choice.updated",
-                                    &format!("{} set to {}", definition.title, choice.option.label),
-                                );
-                                // Continue loop to show updated menu
-                            }
-                            ChoiceMenuItem::Back => {
-                                // User selected Back, exit the loop
-                                break;
-                            }
-                        }
-                    }
-                    None => {
-                        // User cancelled, exit the loop
-                        break;
-                    }
-                }
-            }
+            handle_choice(ctx, definition, key, options, summary, apply)?;
         }
         SettingKind::Action { summary, run } => {
-            ctx.emit_info("settings.action.running", summary.as_ref());
-            ctx.with_definition(definition, run)?;
+            handle_action(ctx, definition, summary, *run)?;
         }
         SettingKind::Command { summary, command } => {
-            ctx.emit_info("settings.command.launching", summary.as_ref());
-
-            ctx.with_definition(definition, |ctx| {
-                match command.style {
-                    CommandStyle::Terminal => {
-                        cmd(command.program, command.args)
-                            .run()
-                            .with_context(|| format!("running {}", command.program))?;
-                    }
-                    CommandStyle::Detached => {
-                        Command::new(command.program)
-                            .args(command.args)
-                            .spawn()
-                            .with_context(|| format!("spawning {}", command.program))?;
-                    }
-                }
-                Ok(())
-            })?;
-
-            ctx.emit_success(
-                "settings.command.completed",
-                &format!("Launched {}", definition.title),
-            );
+            handle_command(ctx, definition, summary, command)?;
         }
     }
 
