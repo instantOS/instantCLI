@@ -35,8 +35,11 @@ pub fn show_ip_info(ctx: &mut SettingsContext) -> Result<()> {
     // Get local IP address
     let local_ip = get_local_ip();
 
-    // Get public IP address
-    let public_ip = if check_internet() {
+    // Check internet connectivity
+    let has_internet = check_internet();
+
+    // Get public IP address (only if internet is available)
+    let public_ip = if has_internet {
         get_public_ip().ok()
     } else {
         None
@@ -48,6 +51,22 @@ pub fn show_ip_info(ctx: &mut SettingsContext) -> Result<()> {
     message.push_str("         Network Information\n");
     message.push_str("═══════════════════════════════════════\n\n");
 
+    // Internet status
+    if has_internet {
+        message.push_str(&format!(
+            "{}  Internet:  Connected\n",
+            char::from(NerdFont::CheckCircle)
+        ));
+    } else {
+        message.push_str(&format!(
+            "{}  Internet:  Not connected\n",
+            char::from(NerdFont::CrossCircle)
+        ));
+    }
+
+    message.push('\n');
+
+    // Local IP
     if let Some(ref local) = local_ip {
         message.push_str(&format!(
             "{}  Local IP:  {}\n",
@@ -61,25 +80,37 @@ pub fn show_ip_info(ctx: &mut SettingsContext) -> Result<()> {
         ));
     }
 
+    // Public IP
     if let Some(ref public) = public_ip {
         message.push_str(&format!(
             "{}  Public IP: {}\n",
             char::from(NerdFont::Globe),
             public
         ));
+    } else if has_internet {
+        message.push_str(&format!(
+            "{}  Public IP: Unable to retrieve\n",
+            char::from(NerdFont::Warning)
+        ));
     } else {
         message.push_str(&format!(
-            "{}  Public IP: Not found\n",
+            "{}  Public IP: Not available (no internet)\n",
             char::from(NerdFont::Warning)
         ));
     }
 
     message.push('\n');
 
-    if local_ip.is_none() && public_ip.is_none() {
+    // Additional status message
+    if local_ip.is_none() && !has_internet {
         message.push_str(&format!(
             "{} No network connection detected\n",
             char::from(NerdFont::CrossCircle)
+        ));
+    } else if local_ip.is_some() && !has_internet {
+        message.push_str(&format!(
+            "{} Local network only (no internet access)\n",
+            char::from(NerdFont::Info)
         ));
     }
 
