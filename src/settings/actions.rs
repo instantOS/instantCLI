@@ -251,7 +251,10 @@ pub fn launch_cockpit(ctx: &mut SettingsContext) -> Result<()> {
         // Show login hint
         let username = std::env::var("USER").unwrap_or_else(|_| "your username".to_string());
         FzfWrapper::builder()
-            .message(&format!("Cockpit is starting...\n\nSign in with '{}' in the browser window.", username))
+            .message(format!(
+                "Cockpit is starting...\n\nSign in with '{}' in the browser window.",
+                username
+            ))
             .title("Cockpit")
             .show_message()?;
     }
