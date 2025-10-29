@@ -6,10 +6,10 @@ use crate::menu_utils::FzfWrapper;
 use crate::settings::registry::{SettingDefinition, SettingKind, SettingRequirement};
 
 use super::super::context::{
-    ApplyOverride, SettingsContext, apply_definition, select_one_with_style,
+    ApplyOverride, SettingsContext, apply_definition, select_one_with_style_at,
 };
 use super::super::registry::CommandStyle;
-use super::items::{ChoiceItem, SettingState};
+use super::items::{ChoiceItem, ChoiceMenuItem, SettingState};
 
 /// Check and handle requirements for a setting
 fn ensure_requirements(
@@ -92,37 +92,49 @@ pub fn handle_setting(
             summary,
             apply,
         } => {
-            let items: Vec<ChoiceItem> = options
-                .iter()
-                .enumerate()
-                .map(|(index, option)| ChoiceItem {
-                    option,
-                    is_current: matches!(
-                        state,
-                        SettingState::Choice {
-                            current_index: Some(current)
-                        } if current == index
-                    ),
-                    summary,
-                })
-                .collect();
+            // Loop to allow user to try different values and see the changes
+            loop {
+                // Get current value to mark it in the menu
+                let current_value = ctx.string(*key);
+                let current_index = options.iter().position(|opt| opt.value == current_value);
 
-            match select_one_with_style(items)? {
-                Some(choice) => {
-                    ctx.set_string(*key, choice.option.value);
-                    if apply.is_some() {
-                        apply_definition(
-                            ctx,
-                            definition,
-                            Some(ApplyOverride::Choice(choice.option)),
-                        )?;
+                // Build menu items with current selection marked
+                let mut items: Vec<ChoiceMenuItem> = options
+                    .iter()
+                    .enumerate()
+                    .map(|(index, option)| {
+                        ChoiceMenuItem::Option(ChoiceItem {
+                            option,
+                            is_current: current_index == Some(index),
+                            summary,
+                        })
+                    })
+                    .collect();
+
+                // Add Back option
+                items.push(ChoiceMenuItem::Back);
+
+                match select_one_with_style(items)? {
+                    Some(ChoiceMenuItem::Option(choice)) => {
+                        ctx.set_string(*key, choice.option.value);
+                        if apply.is_some() {
+                            apply_definition(
+                                ctx,
+                                definition,
+                                Some(ApplyOverride::Choice(choice.option)),
+                            )?;
+                        }
+                        ctx.emit_success(
+                            "settings.choice.updated",
+                            &format!("{} set to {}", definition.title, choice.option.label),
+                        );
+                        // Continue loop to show updated menu
                     }
-                    ctx.emit_success(
-                        "settings.choice.updated",
-                        &format!("{} set to {}", definition.title, choice.option.label),
-                    );
+                    Some(ChoiceMenuItem::Back) | None => {
+                        // User selected Back or cancelled, exit the loop
+                        break;
+                    }
                 }
-                None => ctx.emit_info("settings.choice.cancelled", "No changes made."),
             }
         }
         SettingKind::Action { summary, run } => {

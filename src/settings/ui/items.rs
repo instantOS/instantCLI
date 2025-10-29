@@ -45,6 +45,12 @@ pub struct ChoiceItem {
 }
 
 #[derive(Clone, Copy)]
+pub enum ChoiceMenuItem {
+    Option(ChoiceItem),
+    Back,
+}
+
+#[derive(Clone, Copy)]
 pub struct SearchItem {
     pub category: &'static SettingCategory,
     pub definition: &'static SettingDefinition,
@@ -236,6 +242,24 @@ impl FzfSelectable for ChoiceItem {
             "{}\n\n{}",
             self.option.description, self.summary
         ))
+    }
+}
+
+impl FzfSelectable for ChoiceMenuItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            ChoiceMenuItem::Option(item) => item.fzf_display_text(),
+            ChoiceMenuItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
+        }
+    }
+
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        match self {
+            ChoiceMenuItem::Option(item) => item.fzf_preview(),
+            ChoiceMenuItem::Back => {
+                crate::menu_utils::FzfPreview::Text("Return to settings".to_string())
+            }
+        }
     }
 }
 
