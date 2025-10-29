@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.7](https://github.com/instantOS/instantCLI/compare/v0.2.6...v0.2.7) - 2025-10-25
+## [0.2.7](https://github.com/instantOS/instantCLI/compare/v0.2.6...v0.2.7) - 2025-10-29
 
 ### Fixed
 
@@ -24,6 +24,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
+- validate usernames
+- clippy
+- make system the single source of truth for user settings
+- refactor users module
+- clippy
+- unify launch settings
+- prettier settings
+- clippy fix
+- implement network settings
+- init network settings
+- add plans
+- rename more settings
+- more friendly setting names
+- new plans
+- refactor handle_settings
+- better multiple choice settings
+- better settings serialization
+- init cockpit settings
 - clippy
 - remove old fields
 - add bug md
