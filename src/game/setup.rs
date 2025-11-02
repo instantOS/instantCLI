@@ -207,6 +207,7 @@ impl SetupCandidate {
         }
     }
 
+    //TODO: this function is way too long, refactor
     fn preview(&self) -> protocol::FzfPreview {
         let mut sections = Vec::new();
 
@@ -369,6 +370,7 @@ fn missing_dependencies_for_game(
         .collect()
 }
 
+//TODO: this function is getting quite long, refactor
 fn collect_setup_candidates(
     game_config: &InstantGameConfig,
     installations: &InstallationsConfig,
