@@ -1,11 +1,9 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use std::{fs, path::Path};
-use walkdir::WalkDir;
 
 use crate::game::config::{GameInstallation, InstantGameConfig, PathContentKind};
-use crate::game::restic::{cache, tags};
+use crate::game::restic::{cache, single_file, tags};
 use crate::restic::ResticWrapper;
-use crate::restic::wrapper::{RestoreProgress, SnapshotNode};
 
 /// Backup game saves to restic repository with proper tagging
 pub struct GameBackup {
@@ -153,7 +151,8 @@ impl GameBackup {
         match save_path_type {
             PathContentKind::Directory => {
                 // For directories, use the standard restore
-                self.restore_game_backup(game_name, snapshot_id, target_path)
+                let summary = self.restore_game_backup(game_name, snapshot_id, target_path)?;
+                Ok(summary)
             }
             PathContentKind::File => {
                 let restic = ResticWrapper::new(
@@ -177,15 +176,20 @@ impl GameBackup {
                     )
                 })?;
 
-                let resolved_snapshot_path = Self::resolve_snapshot_file_path(
+                let mut candidate_paths = Vec::new();
+                if let Some(source_path) = snapshot_source_path {
+                    candidate_paths.push(source_path.to_string());
+                }
+
+                let resolved_snapshot_path = single_file::resolve_snapshot_file_path(
                     &restic,
                     snapshot_id,
-                    snapshot_source_path,
-                    original_save_path,
+                    &candidate_paths,
+                    Some(original_save_path),
                 )?;
 
                 // Restore to temp directory
-                let (restored_file, progress) = Self::restore_single_file_into_temp(
+                let (restored_file, progress) = single_file::restore_single_file_into_temp(
                     &restic,
                     snapshot_id,
                     &resolved_snapshot_path,
@@ -212,158 +216,8 @@ impl GameBackup {
                 // Cleanup temp directory
                 let _ = fs::remove_dir_all(&temp_restore);
 
-                let restored_files = progress
-                    .summary
-                    .as_ref()
-                    .map(|summary| summary.files_restored)
-                    .unwrap_or(1);
-
-                Ok(format!(
-                    "restored {restored_files} file{}",
-                    if restored_files == 1 { "" } else { "s" }
-                ))
-            }
-        }
-    }
-
-    fn restore_single_file_into_temp(
-        restic: &ResticWrapper,
-        snapshot_id: &str,
-        snapshot_path: &str,
-        temp_restore: &Path,
-        original_save_path: &Path,
-    ) -> Result<(std::path::PathBuf, RestoreProgress)> {
-        let progress = restic
-            .restore_single_file(snapshot_id, snapshot_path, temp_restore)
-            .with_context(|| {
-                format!(
-                    "Failed to restore single file '{snapshot_path}' from snapshot '{snapshot_id}'"
-                )
-            })?;
-
-        let restored_file =
-            Self::find_restored_file(temp_restore, original_save_path).map_err(|err| {
-                anyhow!(
-                    "restic restored '{snapshot_path}' but no files were written to {}: {err}",
-                    temp_restore.display()
-                )
-            })?;
-
-        Ok((restored_file, progress))
-    }
-
-    fn resolve_snapshot_file_path(
-        restic: &ResticWrapper,
-        snapshot_id: &str,
-        snapshot_source_path: Option<&str>,
-        original_save_path: &Path,
-    ) -> Result<String> {
-        let nodes = restic
-            .list_snapshot_nodes(snapshot_id)
-            .context("Failed to inspect snapshot contents")?;
-
-        let mut candidates: Vec<String> = Vec::new();
-        if let Some(path) = snapshot_source_path {
-            candidates.push(path.to_string());
-        }
-
-        let original_string = original_save_path.to_string_lossy().into_owned();
-        if !candidates
-            .iter()
-            .any(|candidate| candidate == &original_string)
-        {
-            candidates.push(original_string);
-        }
-
-        let file_nodes: Vec<&SnapshotNode> = nodes
-            .iter()
-            .filter(|node| node.node_type == "file")
-            .collect();
-
-        for candidate in &candidates {
-            if file_nodes.iter().any(|node| node.path == *candidate) {
-                return Ok(candidate.clone());
-            }
-        }
-
-        let mut best: Option<(usize, &str)> = None;
-
-        for node in file_nodes {
-            let node_path = node.path.as_str();
-            for candidate in &candidates {
-                let score = Self::component_suffix_match(node_path, candidate);
-                if score == 0 {
-                    continue;
-                }
-
-                match &mut best {
-                    Some((best_score, best_path)) => {
-                        if score > *best_score
-                            || (score == *best_score && node_path.len() > best_path.len())
-                        {
-                            *best_score = score;
-                            *best_path = node_path;
-                        }
-                    }
-                    None => best = Some((score, node_path)),
-                }
-            }
-        }
-
-        if let Some((_, matched)) = best {
-            return Ok(matched.to_string());
-        }
-
-        Err(anyhow!(
-            "Snapshot '{}' does not contain a file matching '{}'",
-            snapshot_id,
-            original_save_path.display()
-        ))
-    }
-
-    fn component_suffix_match(candidate: &str, reference: &str) -> usize {
-        let candidate_parts: Vec<&str> = candidate.trim_matches('/').split('/').collect();
-        let reference_parts: Vec<&str> = reference.trim_matches('/').split('/').collect();
-
-        candidate_parts
-            .iter()
-            .rev()
-            .zip(reference_parts.iter().rev())
-            .take_while(|(a, b)| a == b)
-            .count()
-    }
-
-    fn find_restored_file(
-        temp_dir: &Path,
-        original_save_path: &Path,
-    ) -> Result<std::path::PathBuf> {
-        let original_name = original_save_path.file_name();
-        let mut candidates = Vec::new();
-
-        for entry in WalkDir::new(temp_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|entry| entry.file_type().is_file())
-        {
-            let path = entry.into_path();
-            if original_name.is_some() && path.file_name() == original_name {
-                return Ok(path);
-            }
-            candidates.push(path);
-        }
-
-        match candidates.len() {
-            0 => Err(anyhow!(
-                "restic restore did not produce any files under {}",
-                temp_dir.display()
-            )),
-            1 => Ok(candidates.into_iter().next().unwrap()),
-            _ => {
-                // Prefer the shallowest path (closest to the root)
-                candidates
-                    .into_iter()
-                    .min_by_key(|path| path.components().count())
-                    .ok_or_else(|| anyhow!("restic restore produced multiple files unexpectedly"))
+                Ok(single_file::summarize_restore(&progress)
+                    .unwrap_or_else(|| "restore completed".to_string()))
             }
         }
     }

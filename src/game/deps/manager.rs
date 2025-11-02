@@ -639,7 +639,6 @@ fn prompt_custom_install_path(
     }
 }
 
-//TODO: this is too long, refactor
 fn prepare_install_target(
     path: &crate::dot::path_serde::TildePath,
     expected_kind: PathContentKind,
