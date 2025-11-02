@@ -5,7 +5,7 @@ use walkdir::WalkDir;
 use crate::game::config::{GameInstallation, InstantGameConfig, PathContentKind};
 use crate::game::restic::{cache, tags};
 use crate::restic::ResticWrapper;
-use crate::restic::wrapper::RestoreProgress;
+use crate::restic::wrapper::{RestoreProgress, SnapshotNode};
 
 /// Backup game saves to restic repository with proper tagging
 pub struct GameBackup {
@@ -161,10 +161,6 @@ impl GameBackup {
                     self.config.repo_password.clone(),
                 );
 
-                let include_path = snapshot_source_path
-                    .map(|path| path.to_string())
-                    .unwrap_or_else(|| original_save_path.to_string_lossy().into_owned());
-
                 // For single files, restore to temp directory then move to final location
                 let temp_restore = std::env::temp_dir().join(format!(
                     "ins-restore-{}",
@@ -181,11 +177,18 @@ impl GameBackup {
                     )
                 })?;
 
-                // Restore to temp directory
-                let (restored_file, progress) = Self::restore_single_file_with_fallback(
+                let resolved_snapshot_path = Self::resolve_snapshot_file_path(
                     &restic,
                     snapshot_id,
-                    &include_path,
+                    snapshot_source_path,
+                    original_save_path,
+                )?;
+
+                // Restore to temp directory
+                let (restored_file, progress) = Self::restore_single_file_into_temp(
+                    &restic,
+                    snapshot_id,
+                    &resolved_snapshot_path,
                     &temp_restore,
                     original_save_path,
                 )?;
@@ -223,120 +226,99 @@ impl GameBackup {
         }
     }
 
-    fn restore_single_file_with_fallback(
+    fn restore_single_file_into_temp(
         restic: &ResticWrapper,
         snapshot_id: &str,
-        include_path: &str,
+        snapshot_path: &str,
         temp_restore: &Path,
         original_save_path: &Path,
     ) -> Result<(std::path::PathBuf, RestoreProgress)> {
-        let mut progress = restic
-            .restore_single_file(snapshot_id, include_path, temp_restore)
-            .context("Failed to restore single file from snapshot")?;
+        let progress = restic
+            .restore_single_file(snapshot_id, snapshot_path, temp_restore)
+            .with_context(|| {
+                format!(
+                    "Failed to restore single file '{snapshot_path}' from snapshot '{snapshot_id}'"
+                )
+            })?;
 
-        match Self::find_restored_file(temp_restore, original_save_path) {
-            Ok(path) => Ok((path, progress)),
-            Err(primary_err) => {
-                let fallback_path = match Self::resolve_snapshot_file_path(
-                    restic,
-                    snapshot_id,
-                    include_path,
-                    original_save_path,
-                ) {
-                    Ok(Some(path)) => path,
-                    Ok(None) => {
-                        return Err(primary_err.context(
-                            "Restic restore did not produce any files and no matching snapshot path could be inferred",
-                        ))
-                    }
-                    Err(inspect_err) => {
-                        return Err(primary_err.context(format!(
-                            "Failed to inspect snapshot contents for fallback restore: {inspect_err}"
-                        )))
-                    }
-                };
+        let restored_file =
+            Self::find_restored_file(temp_restore, original_save_path).map_err(|err| {
+                anyhow!(
+                    "restic restored '{snapshot_path}' but no files were written to {}: {err}",
+                    temp_restore.display()
+                )
+            })?;
 
-                if fallback_path == include_path {
-                    return Err(primary_err);
-                }
-
-                fs::remove_dir_all(temp_restore).ok();
-                fs::create_dir_all(temp_restore)
-                    .context("Failed to prepare temporary restore directory for fallback")?;
-
-                progress = restic
-                    .restore_single_file(snapshot_id, &fallback_path, temp_restore)
-                    .with_context(|| {
-                        format!(
-                            "Failed to restore single file using resolved snapshot path '{fallback_path}'"
-                        )
-                    })?;
-
-                let restored_file = Self::find_restored_file(temp_restore, original_save_path)
-                    .map_err(|fallback_err| {
-                        primary_err.context(format!(
-                            "Fallback restore using '{fallback_path}' still produced no files: {fallback_err}"
-                        ))
-                    })?;
-
-                Ok((restored_file, progress))
-            }
-        }
+        Ok((restored_file, progress))
     }
 
     fn resolve_snapshot_file_path(
         restic: &ResticWrapper,
         snapshot_id: &str,
-        include_path: &str,
+        snapshot_source_path: Option<&str>,
         original_save_path: &Path,
-    ) -> Result<Option<String>> {
+    ) -> Result<String> {
         let nodes = restic
             .list_snapshot_nodes(snapshot_id)
             .context("Failed to inspect snapshot contents")?;
 
-        let file_name = original_save_path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string());
+        let mut candidates: Vec<String> = Vec::new();
+        if let Some(path) = snapshot_source_path {
+            candidates.push(path.to_string());
+        }
 
-        let mut best: Option<(usize, String)> = None;
+        let original_string = original_save_path.to_string_lossy().into_owned();
+        if !candidates
+            .iter()
+            .any(|candidate| candidate == &original_string)
+        {
+            candidates.push(original_string);
+        }
 
-        for node in nodes {
-            if node.node_type != "file" {
-                continue;
-            }
+        let file_nodes: Vec<&SnapshotNode> = nodes
+            .iter()
+            .filter(|node| node.node_type == "file")
+            .collect();
 
-            if node.path == include_path {
-                return Ok(Some(node.path));
-            }
-
-            let mut score = Self::component_suffix_match(&node.path, include_path);
-
-            if score == 0 {
-                if let Some(filename) = &file_name {
-                    if node.path.ends_with(filename) {
-                        score = 1;
-                    }
-                }
-            }
-
-            if score == 0 {
-                continue;
-            }
-
-            match &mut best {
-                Some((best_score, best_path)) => {
-                    if score > *best_score
-                        || (score == *best_score && node.path.len() > best_path.len())
-                    {
-                        *best_score = score;
-                        *best_path = node.path.clone();
-                    }
-                }
-                None => best = Some((score, node.path.clone())),
+        for candidate in &candidates {
+            if file_nodes.iter().any(|node| node.path == *candidate) {
+                return Ok(candidate.clone());
             }
         }
 
-        Ok(best.map(|(_, path)| path))
+        let mut best: Option<(usize, &str)> = None;
+
+        for node in file_nodes {
+            let node_path = node.path.as_str();
+            for candidate in &candidates {
+                let score = Self::component_suffix_match(node_path, candidate);
+                if score == 0 {
+                    continue;
+                }
+
+                match &mut best {
+                    Some((best_score, best_path)) => {
+                        if score > *best_score
+                            || (score == *best_score && node_path.len() > best_path.len())
+                        {
+                            *best_score = score;
+                            *best_path = node_path;
+                        }
+                    }
+                    None => best = Some((score, node_path)),
+                }
+            }
+        }
+
+        if let Some((_, matched)) = best {
+            return Ok(matched.to_string());
+        }
+
+        Err(anyhow!(
+            "Snapshot '{}' does not contain a file matching '{}'",
+            snapshot_id,
+            original_save_path.display()
+        ))
     }
 
     fn component_suffix_match(candidate: &str, reference: &str) -> usize {
