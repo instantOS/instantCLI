@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use std::fs;
+use std::path::Path;
 
 use crate::dot::path_serde::TildePath;
 use crate::game::checkpoint;
@@ -170,14 +171,14 @@ fn finalize_game_setup(
     installations: &mut InstallationsConfig,
     snapshot_selection: &SnapshotSelection,
 ) -> Result<()> {
-    let path_str = selected_path.display_path.clone();
-    let save_path =
-        TildePath::from_str(&path_str).map_err(|e| anyhow!("Invalid save path: {e}"))?;
+    let original_selection = selected_path.display_path.clone();
+    let mut save_path =
+        TildePath::from_str(&original_selection).map_err(|e| anyhow!("Invalid save path: {e}"))?;
     let save_path_kind = match detect_save_path_kind(
         &save_path,
         snapshot_selection.latest_snapshot_id(),
         game_config,
-        &path_str,
+        &original_selection,
     )? {
         Some(kind) => kind,
         None => {
@@ -193,11 +194,19 @@ fn finalize_game_setup(
             return Ok(());
         }
     };
+    if save_path_kind == PathContentKind::File {
+        save_path = resolve_single_file_save_path(save_path, &selected_path)?;
+    }
+
+    let path_display = save_path
+        .to_tilde_string()
+        .unwrap_or_else(|_| save_path.as_path().to_string_lossy().to_string());
+
     let mut installation =
         GameInstallation::with_kind(game_name, save_path.clone(), save_path_kind);
 
-    let path_prep = prepare_save_path(&save_path, save_path_kind, &path_str)?;
-    let state = capture_path_state(&save_path, save_path_kind, &path_str)?;
+    let path_prep = prepare_save_path(&save_path, save_path_kind, &path_display)?;
+    let state = capture_path_state(&save_path, save_path_kind, &path_display)?;
 
     let has_existing_snapshot = snapshot_selection.latest_snapshot_id().is_some();
     let decision = determine_restore_decision(
@@ -210,7 +219,7 @@ fn finalize_game_setup(
 
     let should_restore = match resolve_restore_decision(
         game_name,
-        &path_str,
+        &path_display,
         save_path_kind,
         decision,
         state.directory_info.as_ref(),
@@ -224,7 +233,7 @@ fn finalize_game_setup(
             Level::Info,
             "game.setup.restore_latest",
             &format!(
-                "{} Restoring latest backup ({snapshot_id}) into {path_str}...",
+                "{} Restoring latest backup ({snapshot_id}) into {path_display}...",
                 char::from(NerdFont::Download)
             ),
             None,
@@ -250,7 +259,7 @@ fn finalize_game_setup(
     if !has_existing_snapshot {
         handle_initial_checkpoint(
             game_name,
-            &path_str,
+            &path_display,
             game_config,
             &mut installation,
             path_prep.exists_after,
@@ -264,7 +273,7 @@ fn finalize_game_setup(
         Level::Success,
         "game.setup.success",
         &format!(
-            "{} Game '{game_name}' set up successfully with save path: {path_str}",
+            "{} Game '{game_name}' set up successfully with save path: {path_display}",
             char::from(NerdFont::Check)
         ),
         None,
@@ -381,6 +390,32 @@ fn capture_path_state(
             file_count: if save_path.as_path().exists() { 1 } else { 0 },
             directory_info: None,
         })
+    }
+}
+
+fn resolve_single_file_save_path(
+    save_path: TildePath,
+    selected_path: &SelectedSavePath,
+) -> Result<TildePath> {
+    if save_path.as_path().is_dir() {
+        let dir = save_path.as_path();
+        let file_name = selected_path
+            .snapshot_path
+            .as_deref()
+            .and_then(|snapshot| Path::new(snapshot).file_name())
+            .map(|name| name.to_os_string())
+            .ok_or_else(|| {
+                let display = save_path
+                    .to_tilde_string()
+                    .unwrap_or_else(|_| dir.to_string_lossy().to_string());
+                anyhow!(
+                    "The selected path '{display}' is a directory. Please provide a full file path for single-file saves."
+                )
+            })?;
+        let final_path = dir.join(file_name);
+        Ok(TildePath::new(final_path))
+    } else {
+        Ok(save_path)
     }
 }
 
