@@ -22,12 +22,18 @@ use super::paths::{
 use super::restic::{SnapshotOverview, infer_snapshot_kind};
 
 /// Set up a single game by collecting paths from snapshots and letting the user choose one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetupStepOutcome {
+    Completed,
+    Cancelled,
+}
+
 pub(super) fn setup_single_game(
     game_name: &str,
     game_config: &InstantGameConfig,
     installations: &mut InstallationsConfig,
     snapshot_context: Option<&SnapshotOverview>,
-) -> Result<()> {
+) -> Result<SetupStepOutcome> {
     emit(
         Level::Info,
         "game.setup.start",
@@ -41,16 +47,14 @@ pub(super) fn setup_single_game(
     let snapshot_selection = gather_snapshot_selection(game_name, game_config, snapshot_context)?;
     snapshot_selection.announce(game_name);
 
-    match snapshot_selection.select_path(game_name)? {
-        Some(selected_path) => {
-            finalize_game_setup(
-                game_name,
-                selected_path,
-                game_config,
-                installations,
-                &snapshot_selection,
-            )?;
-        }
+    let outcome = match snapshot_selection.select_path(game_name)? {
+        Some(selected_path) => finalize_game_setup(
+            game_name,
+            selected_path,
+            game_config,
+            installations,
+            &snapshot_selection,
+        )?,
         None => {
             emit(
                 Level::Warn,
@@ -61,11 +65,12 @@ pub(super) fn setup_single_game(
                 ),
                 None,
             );
+            SetupStepOutcome::Cancelled
         }
-    }
+    };
 
     println!();
-    Ok(())
+    Ok(outcome)
 }
 
 struct SnapshotSelection {
@@ -170,7 +175,7 @@ fn finalize_game_setup(
     game_config: &InstantGameConfig,
     installations: &mut InstallationsConfig,
     snapshot_selection: &SnapshotSelection,
-) -> Result<()> {
+) -> Result<SetupStepOutcome> {
     let original_selection = selected_path.display_path.clone();
     let mut save_path =
         TildePath::from_str(&original_selection).map_err(|e| anyhow!("Invalid save path: {e}"))?;
@@ -191,7 +196,7 @@ fn finalize_game_setup(
                 ),
                 None,
             );
-            return Ok(());
+            return Ok(SetupStepOutcome::Cancelled);
         }
     };
     if save_path_kind == PathContentKind::File {
@@ -224,7 +229,7 @@ fn finalize_game_setup(
         decision,
         state.directory_info.as_ref(),
     )? {
-        RestoreFlow::Cancelled => return Ok(()),
+        RestoreFlow::Cancelled => return Ok(SetupStepOutcome::Cancelled),
         RestoreFlow::Proceed(value) => value,
     };
 
@@ -279,7 +284,7 @@ fn finalize_game_setup(
         None,
     );
 
-    Ok(())
+    Ok(SetupStepOutcome::Completed)
 }
 
 struct PathPreparation {
