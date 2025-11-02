@@ -240,8 +240,7 @@ impl FzfSelectable for PathInfo {
 
 impl PathInfo {
     pub fn preferred_snapshot_path(&self) -> Option<&str> {
-        self
-            .snapshot_paths
+        self.snapshot_paths
             .iter()
             .find(|path| path.starts_with('/'))
             .map(|p| p.as_str())

@@ -646,15 +646,10 @@ fn restore_game_from_snapshot(
 ) -> Result<()> {
     let backup_handler = GameBackup::new(game_config.clone());
     let save_path = installation.save_path.as_path();
-    let snapshot_hint = cache::get_snapshot_by_id(
-        snapshot_id,
-        &installation.game_name.0,
-        game_config,
-    )
-    .ok()
-    .and_then(|snapshot| {
-        snapshot.and_then(|snap| snap.paths.first().cloned())
-    });
+    let snapshot_hint =
+        cache::get_snapshot_by_id(snapshot_id, &installation.game_name.0, game_config)
+            .ok()
+            .and_then(|snapshot| snapshot.and_then(|snap| snap.paths.first().cloned()));
 
     // Use the appropriate restore method based on save path type
     backup_handler

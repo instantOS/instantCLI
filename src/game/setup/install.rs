@@ -15,8 +15,8 @@ use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
 
 use super::paths::{
-    choose_installation_path, extract_unique_paths_from_snapshots, prompt_manual_save_path,
-    SelectedSavePath,
+    SelectedSavePath, choose_installation_path, extract_unique_paths_from_snapshots,
+    prompt_manual_save_path,
 };
 use super::restic::{SnapshotOverview, infer_snapshot_kind};
 

@@ -1,5 +1,6 @@
-use anyhow::{Context, Result};
-use std::{fs, path::{Path, PathBuf}};
+use anyhow::{Context, Result, anyhow};
+use std::{fs, path::Path};
+use walkdir::WalkDir;
 
 use crate::game::config::{GameInstallation, InstantGameConfig, PathContentKind};
 use crate::game::restic::{cache, tags};
@@ -154,10 +155,14 @@ impl GameBackup {
                 self.restore_game_backup(game_name, snapshot_id, target_path)
             }
             PathContentKind::File => {
-                let preferred_source: PathBuf = snapshot_source_path
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| original_save_path.to_path_buf());
-                let source_path_str = preferred_source.to_string_lossy().to_string();
+                let restic = ResticWrapper::new(
+                    self.config.repo.as_path().to_string_lossy().to_string(),
+                    self.config.repo_password.clone(),
+                );
+
+                let include_path = snapshot_source_path
+                    .map(|path| path.to_string())
+                    .unwrap_or_else(|| original_save_path.to_string_lossy().into_owned());
 
                 // For single files, restore to temp directory then move to final location
                 let temp_restore = std::env::temp_dir().join(format!(
@@ -175,53 +180,13 @@ impl GameBackup {
                     )
                 })?;
 
-                let restic = ResticWrapper::new(
-                    self.config.repo.as_path().to_string_lossy().to_string(),
-                    self.config.repo_password.clone(),
-                );
-
                 // Restore to temp directory
                 let progress = restic
-                    .restore_single_file(
-                        snapshot_id,
-                        &source_path_str,
-                        &temp_restore,
-                    )
+                    .restore_single_file(snapshot_id, &include_path, &temp_restore)
                     .context("Failed to restore single file from snapshot")?;
 
                 // Find the restored file in the temp directory
-                let mut relative_source = preferred_source.to_string_lossy().to_string();
-                while relative_source.starts_with('/') || relative_source.starts_with('\\') {
-                    relative_source.remove(0);
-                }
-
-                let mut restored_file = temp_restore.join(&relative_source);
-
-                if !restored_file.exists() && snapshot_source_path.is_some() {
-                    let mut fallback_relative = original_save_path.to_string_lossy().to_string();
-                    while fallback_relative.starts_with('/')
-                        || fallback_relative.starts_with('\\')
-                    {
-                        fallback_relative.remove(0);
-                    }
-                    let fallback_path = temp_restore.join(&fallback_relative);
-                    if fallback_path.exists() {
-                        restored_file = fallback_path;
-                    }
-                }
-
-                if !restored_file.exists() {
-                    // Cleanup temp directory
-                    let _ = fs::remove_dir_all(&temp_restore);
-                    let mut error = format!(
-                        "Restored file not found at expected location: {}",
-                        restored_file.display()
-                    );
-                    if snapshot_source_path.is_some() {
-                        error.push_str(" (snapshot path mismatch)");
-                    }
-                    return Err(anyhow::anyhow!(error));
-                }
+                let restored_file = Self::find_restored_file(&temp_restore, original_save_path)?;
 
                 // Ensure target parent directory exists
                 if let Some(parent) = target_path.parent() {
@@ -242,15 +207,52 @@ impl GameBackup {
                 // Cleanup temp directory
                 let _ = fs::remove_dir_all(&temp_restore);
 
-                if let Some(summary) = progress.summary {
-                    return Ok("restored 1 file".to_string());
-                }
+                let restored_files = progress
+                    .summary
+                    .map(|summary| summary.files_restored)
+                    .unwrap_or(1);
 
-                Ok("restore completed".to_string())
+                Ok(format!(
+                    "restored {restored_files} file{}",
+                    if restored_files == 1 { "" } else { "s" }
+                ))
             }
         }
     }
+    fn find_restored_file(
+        temp_dir: &Path,
+        original_save_path: &Path,
+    ) -> Result<std::path::PathBuf> {
+        let original_name = original_save_path.file_name();
+        let mut candidates = Vec::new();
 
+        for entry in WalkDir::new(temp_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|entry| entry.file_type().is_file())
+        {
+            let path = entry.into_path();
+            if original_name.is_some() && path.file_name() == original_name {
+                return Ok(path);
+            }
+            candidates.push(path);
+        }
+
+        match candidates.len() {
+            0 => Err(anyhow!(
+                "restic restore did not produce any files under {}",
+                temp_dir.display()
+            )),
+            1 => Ok(candidates.into_iter().next().unwrap()),
+            _ => {
+                // Prefer the shallowest path (closest to the root)
+                candidates
+                    .into_iter()
+                    .min_by_key(|path| path.components().count())
+                    .ok_or_else(|| anyhow!("restic restore produced multiple files unexpectedly"))
+            }
+        }
+    }
     /// Check if restic is available on the system
     pub fn check_restic_availability() -> Result<bool> {
         // Use the wrapper to query version
