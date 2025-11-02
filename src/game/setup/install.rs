@@ -179,7 +179,11 @@ fn finalize_game_setup(
     let original_selection = selected_path.display_path.clone();
     let mut save_path =
         TildePath::from_str(&original_selection).map_err(|e| anyhow!("Invalid save path: {e}"))?;
-    let save_path_kind = match detect_save_path_kind(
+    let snapshot_kind = snapshot_selection
+        .latest_snapshot_id()
+        .and_then(|id| infer_snapshot_kind(game_config, id).ok());
+
+    let mut save_path_kind = match detect_save_path_kind(
         &save_path,
         snapshot_selection.latest_snapshot_id(),
         game_config,
@@ -199,6 +203,11 @@ fn finalize_game_setup(
             return Ok(SetupStepOutcome::Cancelled);
         }
     };
+    if save_path_kind == PathContentKind::Directory
+        && matches!(snapshot_kind, Some(PathContentKind::File))
+    {
+        save_path_kind = PathContentKind::File;
+    }
     if save_path_kind == PathContentKind::File {
         save_path = resolve_single_file_save_path(save_path, &selected_path)?;
     }
