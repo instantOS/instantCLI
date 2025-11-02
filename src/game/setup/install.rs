@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, anyhow};
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 
@@ -138,6 +139,17 @@ impl SnapshotSelection {
     fn latest_snapshot_id(&self) -> Option<&str> {
         self.latest_snapshot_id.as_deref()
     }
+
+    fn snapshot_file_name(&self) -> Option<OsString> {
+        for path_info in &self.unique_paths {
+            for snapshot_path in &path_info.snapshot_paths {
+                if let Some(name) = Path::new(snapshot_path).file_name() {
+                    return Some(name.to_os_string());
+                }
+            }
+        }
+        None
+    }
 }
 
 fn gather_snapshot_selection(
@@ -209,7 +221,8 @@ fn finalize_game_setup(
         save_path_kind = PathContentKind::File;
     }
     if save_path_kind == PathContentKind::File {
-        save_path = resolve_single_file_save_path(save_path, &selected_path)?;
+        let snapshot_file_name = snapshot_selection.snapshot_file_name();
+        save_path = resolve_single_file_save_path(save_path, &selected_path, snapshot_file_name)?;
     }
 
     let path_display = save_path
@@ -410,14 +423,17 @@ fn capture_path_state(
 fn resolve_single_file_save_path(
     save_path: TildePath,
     selected_path: &SelectedSavePath,
+    snapshot_file_name: Option<OsString>,
 ) -> Result<TildePath> {
     if save_path.as_path().is_dir() {
         let dir = save_path.as_path();
+        let mut fallback = snapshot_file_name;
         let file_name = selected_path
             .snapshot_path
             .as_deref()
             .and_then(|snapshot| Path::new(snapshot).file_name())
             .map(|name| name.to_os_string())
+            .or_else(|| fallback.take())
             .ok_or_else(|| {
                 let display = save_path
                     .to_tilde_string()
