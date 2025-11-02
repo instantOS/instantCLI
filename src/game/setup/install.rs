@@ -16,6 +16,7 @@ use crate::ui::prelude::*;
 
 use super::paths::{
     choose_installation_path, extract_unique_paths_from_snapshots, prompt_manual_save_path,
+    SelectedSavePath,
 };
 use super::restic::{SnapshotOverview, infer_snapshot_kind};
 
@@ -40,10 +41,10 @@ pub(super) fn setup_single_game(
     snapshot_selection.announce(game_name);
 
     match snapshot_selection.select_path(game_name)? {
-        Some(path_str) => {
+        Some(selected_path) => {
             finalize_game_setup(
                 game_name,
-                path_str,
+                selected_path,
                 game_config,
                 installations,
                 &snapshot_selection,
@@ -120,7 +121,7 @@ impl SnapshotSelection {
         }
     }
 
-    fn select_path(&self, game_name: &str) -> Result<Option<String>> {
+    fn select_path(&self, game_name: &str) -> Result<Option<SelectedSavePath>> {
         if self.unique_paths.is_empty() {
             prompt_manual_save_path(game_name)
         } else {
@@ -164,11 +165,12 @@ fn gather_snapshot_selection(
 
 fn finalize_game_setup(
     game_name: &str,
-    path_str: String,
+    selected_path: SelectedSavePath,
     game_config: &InstantGameConfig,
     installations: &mut InstallationsConfig,
     snapshot_selection: &SnapshotSelection,
 ) -> Result<()> {
+    let path_str = selected_path.display_path.clone();
     let save_path =
         TildePath::from_str(&path_str).map_err(|e| anyhow!("Invalid save path: {e}"))?;
     let save_path_kind = match detect_save_path_kind(
@@ -234,6 +236,7 @@ fn finalize_game_setup(
             snapshot_id,
             game_config,
             installation.save_path_type,
+            selected_path.snapshot_path.as_deref(),
         )?;
         emit(
             Level::Success,
@@ -570,6 +573,7 @@ fn restore_latest_backup(
     snapshot_id: &str,
     game_config: &InstantGameConfig,
     save_path_type: crate::game::config::PathContentKind,
+    snapshot_source_path: Option<&str>,
 ) -> Result<String> {
     let backup_handler = GameBackup::new(game_config.clone());
     let summary = backup_handler
@@ -579,6 +583,7 @@ fn restore_latest_backup(
             save_path.as_path(),
             save_path_type,
             save_path.as_path(),
+            snapshot_source_path,
         )
         .context("Failed to restore latest backup")?;
 

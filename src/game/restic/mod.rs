@@ -522,6 +522,10 @@ pub fn restore_game_saves(
         save_path,
         game_selection.installation.save_path_type,
         save_path,
+        snapshot
+            .paths
+            .first()
+            .map(|path| path.as_str()),
     ) {
         Ok(output) => {
             let output_clone = output.clone();

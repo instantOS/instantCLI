@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::{fs, path::Path};
+use std::{fs, path::{Path, PathBuf}};
 
 use crate::game::config::{GameInstallation, InstantGameConfig, PathContentKind};
 use crate::game::restic::{cache, tags};
@@ -146,6 +146,7 @@ impl GameBackup {
         target_path: &Path,
         save_path_type: PathContentKind,
         original_save_path: &Path,
+        snapshot_source_path: Option<&str>,
     ) -> Result<String> {
         match save_path_type {
             PathContentKind::Directory => {
@@ -153,6 +154,11 @@ impl GameBackup {
                 self.restore_game_backup(game_name, snapshot_id, target_path)
             }
             PathContentKind::File => {
+                let preferred_source: PathBuf = snapshot_source_path
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| original_save_path.to_path_buf());
+                let source_path_str = preferred_source.to_string_lossy().to_string();
+
                 // For single files, restore to temp directory then move to final location
                 let temp_restore = std::env::temp_dir().join(format!(
                     "ins-restore-{}",
@@ -178,25 +184,43 @@ impl GameBackup {
                 let progress = restic
                     .restore_single_file(
                         snapshot_id,
-                        &original_save_path.to_string_lossy(),
+                        &source_path_str,
                         &temp_restore,
                     )
                     .context("Failed to restore single file from snapshot")?;
 
                 // Find the restored file in the temp directory
-                let restored_file = temp_restore.join(
-                    original_save_path
-                        .strip_prefix("/")
-                        .unwrap_or(original_save_path),
-                );
+                let mut relative_source = preferred_source.to_string_lossy().to_string();
+                while relative_source.starts_with('/') || relative_source.starts_with('\\') {
+                    relative_source.remove(0);
+                }
+
+                let mut restored_file = temp_restore.join(&relative_source);
+
+                if !restored_file.exists() && snapshot_source_path.is_some() {
+                    let mut fallback_relative = original_save_path.to_string_lossy().to_string();
+                    while fallback_relative.starts_with('/')
+                        || fallback_relative.starts_with('\\')
+                    {
+                        fallback_relative.remove(0);
+                    }
+                    let fallback_path = temp_restore.join(&fallback_relative);
+                    if fallback_path.exists() {
+                        restored_file = fallback_path;
+                    }
+                }
 
                 if !restored_file.exists() {
                     // Cleanup temp directory
                     let _ = fs::remove_dir_all(&temp_restore);
-                    return Err(anyhow::anyhow!(
+                    let mut error = format!(
                         "Restored file not found at expected location: {}",
                         restored_file.display()
-                    ));
+                    );
+                    if snapshot_source_path.is_some() {
+                        error.push_str(" (snapshot path mismatch)");
+                    }
+                    return Err(anyhow::anyhow!(error));
                 }
 
                 // Ensure target parent directory exists

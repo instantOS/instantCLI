@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::dot::path_serde::TildePath;
 use crate::menu::protocol;
@@ -19,7 +19,8 @@ pub(super) fn extract_unique_paths_from_snapshots(snapshots: &[Snapshot]) -> Res
             let entry = path_frequency
                 .entry(normalized_path.clone())
                 .or_insert_with(|| PathInfo {
-                    path: normalized_path.clone(),
+                    display_path: normalized_path.clone(),
+                    snapshot_paths: BTreeSet::new(),
                     frequency: 0,
                     devices: HashSet::new(),
                     first_seen: snapshot.time.clone(),
@@ -28,6 +29,7 @@ pub(super) fn extract_unique_paths_from_snapshots(snapshots: &[Snapshot]) -> Res
 
             entry.frequency += 1;
             entry.devices.insert(snapshot.hostname.clone());
+            entry.snapshot_paths.insert(path.clone());
 
             if snapshot.time < entry.first_seen {
                 entry.first_seen = snapshot.time.clone();
@@ -49,7 +51,26 @@ pub(super) fn extract_unique_paths_from_snapshots(snapshots: &[Snapshot]) -> Res
     Ok(paths)
 }
 
-pub(super) fn prompt_manual_save_path(game_name: &str) -> Result<Option<String>> {
+#[derive(Debug, Clone)]
+pub(super) struct SelectedSavePath {
+    pub display_path: String,
+    pub snapshot_path: Option<String>,
+}
+
+impl SelectedSavePath {
+    fn from_path_info(path_info: &PathInfo) -> Self {
+        let snapshot_path = path_info
+            .preferred_snapshot_path()
+            .map(|path| path.to_string());
+
+        Self {
+            display_path: path_info.display_path.clone(),
+            snapshot_path,
+        }
+    }
+}
+
+pub(super) fn prompt_manual_save_path(game_name: &str) -> Result<Option<SelectedSavePath>> {
     let prompt = format!(
         "{} Enter the save path for '{}' (e.g., ~/.local/share/{}/saves):",
         char::from(NerdFont::Edit),
@@ -84,12 +105,20 @@ pub(super) fn prompt_manual_save_path(game_name: &str) -> Result<Option<String>>
             } else {
                 let tilde =
                     TildePath::from_str(trimmed).map_err(|e| anyhow!("Invalid save path: {e}"))?;
-                Ok(Some(tilde_display_string(&tilde)))
+                let display_path = tilde_display_string(&tilde);
+                Ok(Some(SelectedSavePath {
+                    display_path,
+                    snapshot_path: None,
+                }))
             }
         }
         PathInputSelection::Picker(path) => {
             let tilde = TildePath::new(path);
-            Ok(Some(tilde_display_string(&tilde)))
+            let display_path = tilde_display_string(&tilde);
+            Ok(Some(SelectedSavePath {
+                display_path,
+                snapshot_path: None,
+            }))
         }
         PathInputSelection::Cancelled => {
             println!(
@@ -104,35 +133,28 @@ pub(super) fn prompt_manual_save_path(game_name: &str) -> Result<Option<String>>
 pub(super) fn choose_installation_path(
     game_name: &str,
     paths: &[PathInfo],
-) -> Result<Option<String>> {
+) -> Result<Option<SelectedSavePath>> {
     println!(
         "\n{} Select the save path for '{game_name}':",
         char::from(NerdFont::Folder)
     );
 
-    let mut options = vec![StringOption::new(
-        format!("{} Enter a different path", char::from(NerdFont::Edit)),
-        "CUSTOM".to_string(),
-    )];
+    let mut options = vec![SavePathOption::custom()];
 
     for path_info in paths {
-        options.push(StringOption::new(
-            path_info.fzf_display_text(),
-            path_info.path.clone(),
-        ));
+        options.push(SavePathOption::snapshot(path_info.clone()));
     }
 
     let selected = FzfWrapper::select_one(options)
         .map_err(|e| anyhow!("Failed to select path option: {e}"))?;
 
     match selected {
-        Some(selection) => {
-            if selection.value == "CUSTOM" {
-                prompt_manual_save_path(game_name)
-            } else {
-                Ok(Some(selection.value))
+        Some(option) => match option.kind {
+            SavePathOptionKind::Custom => prompt_manual_save_path(game_name),
+            SavePathOptionKind::Snapshot(path_info) => {
+                Ok(Some(SelectedSavePath::from_path_info(&path_info)))
             }
-        }
+        },
         None => {
             println!(
                 "{} No path selected. Setup cancelled.",
@@ -145,7 +167,8 @@ pub(super) fn choose_installation_path(
 
 #[derive(Debug, Clone)]
 pub(super) struct PathInfo {
-    pub path: String,
+    pub display_path: String,
+    pub snapshot_paths: BTreeSet<String>,
     frequency: usize,
     devices: HashSet<String>,
     first_seen: String,
@@ -166,12 +189,12 @@ impl FzfSelectable for PathInfo {
 
         format!(
             "{} (used {} times on {})",
-            self.path, self.frequency, devices_str
+            self.display_path, self.frequency, devices_str
         )
     }
 
     fn fzf_key(&self) -> String {
-        self.path.clone()
+        self.display_path.clone()
     }
 
     fn fzf_preview(&self) -> protocol::FzfPreview {
@@ -180,12 +203,16 @@ impl FzfSelectable for PathInfo {
             "{} SAVE PATH DETAILS\n\n",
             char::from(NerdFont::Folder)
         ));
-        preview.push_str(&format!("Path:           {}\n", self.path));
+        preview.push_str(&format!("Path:           {}\n", self.display_path));
         preview.push_str(&format!("Usage Count:    {} snapshots\n", self.frequency));
         preview.push_str(&format!(
             "Device Count:   {} unique devices\n",
             self.devices.len()
         ));
+
+        if let Some(original) = self.preferred_snapshot_path() {
+            preview.push_str(&format!("Stored As:      {}\n", original));
+        }
 
         preview.push_str(&format!(
             "\n{}  DEVICES USING THIS PATH:\n",
@@ -211,6 +238,17 @@ impl FzfSelectable for PathInfo {
     }
 }
 
+impl PathInfo {
+    pub fn preferred_snapshot_path(&self) -> Option<&str> {
+        self
+            .snapshot_paths
+            .iter()
+            .find(|path| path.starts_with('/'))
+            .map(|p| p.as_str())
+            .or_else(|| self.snapshot_paths.iter().next().map(|p| p.as_str()))
+    }
+}
+
 fn normalize_path_for_cross_device(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("/home/") {
         if let Some(slash_pos) = rest.find('/') {
@@ -230,25 +268,56 @@ fn tilde_display_string(tilde: &TildePath) -> String {
         .unwrap_or_else(|_| tilde.as_path().to_string_lossy().to_string())
 }
 
-#[derive(Debug, Clone)]
-struct StringOption {
-    text: String,
-    value: String,
+#[derive(Clone)]
+struct SavePathOption {
+    kind: SavePathOptionKind,
 }
 
-impl StringOption {
-    fn new(text: String, value: String) -> Self {
-        Self { text, value }
+#[derive(Clone)]
+enum SavePathOptionKind {
+    Custom,
+    Snapshot(PathInfo),
+}
+
+impl SavePathOption {
+    fn custom() -> Self {
+        Self {
+            kind: SavePathOptionKind::Custom,
+        }
+    }
+
+    fn snapshot(path: PathInfo) -> Self {
+        Self {
+            kind: SavePathOptionKind::Snapshot(path),
+        }
     }
 }
 
-impl FzfSelectable for StringOption {
+impl FzfSelectable for SavePathOption {
     fn fzf_display_text(&self) -> String {
-        self.text.clone()
+        match &self.kind {
+            SavePathOptionKind::Custom => {
+                format!("{} Enter a different path", char::from(NerdFont::Edit))
+            }
+            SavePathOptionKind::Snapshot(info) => info.fzf_display_text(),
+        }
+    }
+
+    fn fzf_preview(&self) -> protocol::FzfPreview {
+        match &self.kind {
+            SavePathOptionKind::Custom => protocol::FzfPreview::Text(format!(
+                "{} Provide a custom path for the game's save data.",
+                char::from(NerdFont::Info)
+            )),
+            SavePathOptionKind::Snapshot(info) => info.fzf_preview(),
+        }
     }
 
     fn fzf_key(&self) -> String {
-        self.value.clone()
+        match &self.kind {
+            SavePathOptionKind::Custom => "CUSTOM".to_string(),
+            SavePathOptionKind::Snapshot(info) => info.fzf_key(),
+        }
     }
 }
 #[cfg(test)]
