@@ -44,7 +44,12 @@ pub fn show_dependency_list(
             })
             .and_then(|installed| installed.install_path.to_tilde_string().ok());
 
-        text.push_str("   • Kind: Directory\n");
+        let kind_label = if dependency.source_type.is_file() {
+            "File"
+        } else {
+            "Directory"
+        };
+        text.push_str(&format!("   • Kind: {kind_label}\n"));
         if let Some(path) = &installed_path {
             text.push_str(&format!("   • Installed at: {}\n", path));
         } else {
@@ -55,7 +60,7 @@ pub fn show_dependency_list(
         data.push(json!({
             "id": dependency.id,
             "source_path": dependency.source_path,
-            "kind": "Directory",
+            "kind": kind_label,
             "installed_path": installed_path,
         }));
     }
