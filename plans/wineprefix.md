@@ -56,6 +56,12 @@ machine for the folder path, instead I can select
 `/home/otheruser/Games/SomeGame` as the save directory, and then the setup
 should detect that `SomeGame` is a different name than the `superlong_named_folder_name_with_lots_of_characters_and_which_contains_the_save_game` name (we ignore that the location of the folder is different, we only care about the folder name itself) and then give a choice between the chosen folder path with the name appended to it (meaning `.../SomeGame/superlong_named_folder_name_with_lots_of_characters_and_which_contains_the_save_game`, or the chosen folder path as is. This sould only pop up if the chosen folder name is different.
 
+The user should be informed that this is just a nicety with a message of "Chosen
+directory name (name here) is different than the original save folder name
+(other name here). Do you want to use the original folder name appended to the chosen
+path, or use the chosen path as is? selected path (path here) 
+alternative path (alternative path here)" 
+
 Pay attention to when this data is getting fetched, how it is getting passed and
 the DX. Restic operations are expensive, but for snapshots there is a caching
 system. Ensure it is being used if not already done. 
