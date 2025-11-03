@@ -3,6 +3,9 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use crate::dot::path_serde::TildePath;
+use crate::game::utils::path::{
+    is_valid_wine_prefix, is_wine_prefix_path, path_selection_to_tilde, tilde_display_string,
+};
 use crate::menu::protocol;
 use crate::menu_utils::{
     FilePickerScope, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
@@ -109,21 +112,13 @@ pub(super) fn prompt_manual_save_path(
 
     let path_selection = path_builder.choose()?;
 
-    match path_selection {
+    let tilde_path = match path_selection {
         PathInputSelection::Manual(input) => {
-            let trimmed = input.trim();
-            if trimmed.is_empty() {
+            if input.trim().is_empty() {
                 println!("Empty path provided. Setup cancelled.");
-                Ok(None)
-            } else {
-                let tilde =
-                    TildePath::from_str(trimmed).map_err(|e| anyhow!("Invalid save path: {e}"))?;
-                let display_path = tilde_display_string(&tilde);
-                Ok(Some(SelectedSavePath {
-                    display_path,
-                    snapshot_path: None,
-                }))
+                return Ok(None);
             }
+            path_selection_to_tilde(PathInputSelection::Manual(input))?
         }
         PathInputSelection::Picker(path) => {
             let final_path = if let Some(original) = original_save_path {
@@ -131,13 +126,7 @@ pub(super) fn prompt_manual_save_path(
             } else {
                 path
             };
-
-            let tilde = TildePath::new(final_path);
-            let display_path = tilde_display_string(&tilde);
-            Ok(Some(SelectedSavePath {
-                display_path,
-                snapshot_path: None,
-            }))
+            Some(TildePath::new(final_path))
         }
         PathInputSelection::WinePrefix(prefix_path) => {
             if !is_valid_wine_prefix(&prefix_path) {
@@ -147,22 +136,21 @@ pub(super) fn prompt_manual_save_path(
                 );
                 return Ok(None);
             }
-
-            let tilde = TildePath::new(prefix_path);
-            let display_path = tilde_display_string(&tilde);
-            Ok(Some(SelectedSavePath {
-                display_path,
-                snapshot_path: None,
-            }))
+            Some(TildePath::new(prefix_path))
         }
         PathInputSelection::Cancelled => {
             println!(
                 "{} No path selected. Setup cancelled.",
                 char::from(NerdFont::Warning)
             );
-            Ok(None)
+            return Ok(None);
         }
-    }
+    };
+
+    Ok(tilde_path.map(|tilde| SelectedSavePath {
+        display_path: tilde_display_string(&tilde),
+        snapshot_path: None,
+    }))
 }
 
 pub(super) fn choose_installation_path(
@@ -306,12 +294,6 @@ fn normalize_path_for_cross_device(path: &str) -> String {
     path.to_string()
 }
 
-fn tilde_display_string(tilde: &TildePath) -> String {
-    tilde
-        .to_tilde_string()
-        .unwrap_or_else(|_| tilde.as_path().to_string_lossy().to_string())
-}
-
 #[derive(Clone)]
 struct SavePathOption {
     kind: SavePathOptionKind,
@@ -453,32 +435,4 @@ fn handle_differently_named_folders(
     } else {
         Ok(None)
     }
-}
-
-/// Validates that a path is a valid Wine prefix by checking for the presence of a drive_c directory
-pub fn is_valid_wine_prefix(path: &Path) -> bool {
-    let drive_c_path = path.join("drive_c");
-    drive_c_path.exists() && drive_c_path.is_dir()
-}
-
-/// Converts a Wine prefix path and a relative path within the prefix to a full path
-/// For example, given prefix "/home/user/.wine" and relative path "users/user/AppData/Local/LOA/Saved",
-/// this would return "/home/user/.wine/drive_c/users/user/AppData/Local/LOA/Saved"
-pub fn wine_prefix_path(prefix: &Path, relative_path: &str) -> std::path::PathBuf {
-    prefix.join("drive_c").join(relative_path)
-}
-
-/// Checks if a path appears to be from a Wine prefix
-/// Looks for common Wine directory patterns
-fn is_wine_prefix_path(path: &str) -> bool {
-    // Check for drive_c in the path (case-insensitive for robustness)
-    let path_lower = path.to_lowercase();
-    if !path_lower.contains("/drive_c/") {
-        return false;
-    }
-    
-    // Common Wine directory patterns
-    path_lower.contains("/appdata/") 
-        || path_lower.contains("/users/") 
-        || path_lower.contains("/program files")
 }
