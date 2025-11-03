@@ -1,11 +1,11 @@
 use anyhow::{Result, anyhow};
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::dot::path_serde::TildePath;
 use crate::menu::protocol;
 use crate::menu_utils::{
-    ConfirmResult, FilePickerScope, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
+    FilePickerScope, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
 use crate::restic::wrapper::Snapshot;
 use crate::ui::nerd_font::NerdFont;
@@ -71,7 +71,11 @@ impl SelectedSavePath {
     }
 }
 
-pub(super) fn prompt_manual_save_path(game_name: &str, original_save_path: Option<&str>) -> Result<Option<SelectedSavePath>> {
+pub(super) fn prompt_manual_save_path(
+    game_name: &str,
+    original_save_path: Option<&str>,
+    enable_wine_prefix: bool,
+) -> Result<Option<SelectedSavePath>> {
     let prompt = format!(
         "{} Enter the save path for '{}' (e.g., ~/.local/share/{}/saves):",
         char::from(NerdFont::Edit),
@@ -79,7 +83,7 @@ pub(super) fn prompt_manual_save_path(game_name: &str, original_save_path: Optio
         game_name.to_lowercase().replace(' ', "-")
     );
 
-    let path_selection = PathInputBuilder::new()
+    let mut path_builder = PathInputBuilder::new()
         .header(format!(
             "{} Choose the save path for '{game_name}'",
             char::from(NerdFont::Folder)
@@ -94,8 +98,16 @@ pub(super) fn prompt_manual_save_path(game_name: &str, original_save_path: Optio
         .picker_option_label(format!(
             "{} Browse and choose a path",
             char::from(NerdFont::FolderOpen)
-        ))
-        .choose()?;
+        ));
+
+    if enable_wine_prefix {
+        path_builder = path_builder.wine_prefix_option_label(format!(
+            "{} Select a Wine prefix",
+            char::from(NerdFont::Wine)
+        ));
+    }
+
+    let path_selection = path_builder.choose()?;
 
     match path_selection {
         PathInputSelection::Manual(input) => {
@@ -114,17 +126,12 @@ pub(super) fn prompt_manual_save_path(game_name: &str, original_save_path: Optio
             }
         }
         PathInputSelection::Picker(path) => {
-            // Handle differently named folders if we have an original save path
             let final_path = if let Some(original) = original_save_path {
-                if let Some(adjusted_path) = handle_differently_named_folders(&path, original)? {
-                    adjusted_path
-                } else {
-                    path
-                }
+                handle_differently_named_folders(&path, original)?.unwrap_or(path)
             } else {
                 path
             };
-            
+
             let tilde = TildePath::new(final_path);
             let display_path = tilde_display_string(&tilde);
             Ok(Some(SelectedSavePath {
@@ -133,7 +140,6 @@ pub(super) fn prompt_manual_save_path(game_name: &str, original_save_path: Optio
             }))
         }
         PathInputSelection::WinePrefix(prefix_path) => {
-            // For wine prefix selection, we need to validate it and then construct the path
             if !is_valid_wine_prefix(&prefix_path) {
                 println!(
                     "{} Selected path is not a valid Wine prefix (missing drive_c directory).",
@@ -141,7 +147,7 @@ pub(super) fn prompt_manual_save_path(game_name: &str, original_save_path: Optio
                 );
                 return Ok(None);
             }
-            
+
             let tilde = TildePath::new(prefix_path);
             let display_path = tilde_display_string(&tilde);
             Ok(Some(SelectedSavePath {
@@ -170,18 +176,6 @@ pub(super) fn choose_installation_path(
     );
 
     let mut options = vec![SavePathOption::custom()];
-    
-    // Check if any of the paths are from wine prefixes
-    let mut wine_prefix_paths = Vec::new();
-    for path_info in paths {
-        if let Some(snapshot_path) = path_info.preferred_snapshot_path() {
-            if is_wine_prefix_path(snapshot_path) {
-                if let Some(relative_path) = extract_wine_relative_path(snapshot_path) {
-                    wine_prefix_paths.push((path_info.clone(), relative_path));
-                }
-            }
-        }
-    }
 
     for path_info in paths {
         options.push(SavePathOption::snapshot(path_info.clone()));
@@ -192,106 +186,17 @@ pub(super) fn choose_installation_path(
 
     match selected {
         Some(option) => match option.kind {
-            SavePathOptionKind::Custom => prompt_manual_save_path(game_name, None),
+            SavePathOptionKind::Custom => {
+                // Enable wine prefix support if any snapshot paths are from wine prefixes
+                let enable_wine_prefix = paths.iter().any(|path_info| {
+                    path_info
+                        .preferred_snapshot_path()
+                        .map(is_wine_prefix_path)
+                        .unwrap_or(false)
+                });
+                prompt_manual_save_path(game_name, original_save_path, enable_wine_prefix)
+            }
             SavePathOptionKind::Snapshot(path_info) => {
-                // Check if this is a wine prefix path and offer the wine prefix option
-                if let Some(snapshot_path) = path_info.preferred_snapshot_path() {
-                    if is_wine_prefix_path(snapshot_path) {
-                        if let Some(relative_path) = extract_wine_relative_path(snapshot_path) {
-                            // Offer wine prefix option
-                            let prompt = format!(
-                                "{} This path appears to be from a Wine prefix. Would you like to select a Wine prefix instead?",
-                                char::from(NerdFont::Wine)
-                            );
-                            
-                            let confirm = FzfWrapper::builder()
-                                .confirm(&prompt)
-                                .yes_text("Select Wine Prefix")
-                                .no_text("Use Path As Is")
-                                .confirm_dialog()?;
-                            
-                            match confirm {
-                                ConfirmResult::Yes => {
-                                    // Prompt for wine prefix selection
-                                    let wine_prefix_selection = PathInputBuilder::new()
-                                        .header(format!(
-                                            "{} Select Wine prefix for '{game_name}'",
-                                            char::from(NerdFont::Wine)
-                                        ))
-                                        .manual_prompt(format!(
-                                            "{} Enter the Wine prefix path:",
-                                            char::from(NerdFont::Edit)
-                                        ))
-                                        .scope(FilePickerScope::Directories)
-                                        .picker_hint(format!(
-                                            "{} Select the Wine prefix directory (should contain drive_c)",
-                                            char::from(NerdFont::Info)
-                                        ))
-                                        .manual_option_label(format!("{} Type Wine prefix path", char::from(NerdFont::Edit)))
-                                        .picker_option_label(format!(
-                                            "{} Browse for Wine prefix",
-                                            char::from(NerdFont::FolderOpen)
-                                        ))
-                                        .wine_prefix_option_label(format!(
-                                            "{} Select Wine prefix",
-                                            char::from(NerdFont::Wine)
-                                        ))
-                                        .choose()?;
-                                        
-                                    match wine_prefix_selection {
-                                        PathInputSelection::Manual(input) => {
-                                            let prefix_path = PathBuf::from(input);
-                                            if !is_valid_wine_prefix(&prefix_path) {
-                                                println!(
-                                                    "{} Selected path is not a valid Wine prefix (missing drive_c directory).",
-                                                    char::from(NerdFont::Warning)
-                                                );
-                                                return Ok(None);
-                                            }
-                                            
-                                            let full_path = wine_prefix_path(&prefix_path, &relative_path);
-                                            let tilde = TildePath::new(full_path);
-                                            let display_path = tilde_display_string(&tilde);
-                                            return Ok(Some(SelectedSavePath {
-                                                display_path,
-                                                snapshot_path: Some(snapshot_path.to_string()),
-                                            }));
-                                        }
-                                        PathInputSelection::Picker(prefix_path) |
-                                        PathInputSelection::WinePrefix(prefix_path) => {
-                                            if !is_valid_wine_prefix(&prefix_path) {
-                                                println!(
-                                                    "{} Selected path is not a valid Wine prefix (missing drive_c directory).",
-                                                    char::from(NerdFont::Warning)
-                                                );
-                                                return Ok(None);
-                                            }
-                                            
-                                            let full_path = wine_prefix_path(&prefix_path, &relative_path);
-                                            let tilde = TildePath::new(full_path);
-                                            let display_path = tilde_display_string(&tilde);
-                                            return Ok(Some(SelectedSavePath {
-                                                display_path,
-                                                snapshot_path: Some(snapshot_path.to_string()),
-                                            }));
-                                        }
-                                        PathInputSelection::Cancelled => {
-                                            println!(
-                                                "{} No path selected. Setup cancelled.",
-                                                char::from(NerdFont::Warning)
-                                            );
-                                            return Ok(None);
-                                        }
-                                    }
-                                }
-                                ConfirmResult::No | ConfirmResult::Cancelled => {
-                                    // Continue with normal path selection
-                                }
-                            }
-                        }
-                    }
-                }
-                
                 Ok(Some(SelectedSavePath::from_path_info(&path_info)))
             }
         },
@@ -508,33 +413,33 @@ fn handle_differently_named_folders(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("");
-        
+
     if original_folder_name.is_empty() {
         return Ok(None);
     }
-    
+
     // Get the selected path's folder name
     let selected_folder_name = selected_path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("");
-        
+
     // If the folder names are different, offer the user a choice
     if selected_folder_name != original_folder_name {
         let alternative_path = selected_path.join(original_folder_name);
-        
-        let prompt = format!(
+
+        let _prompt = format!(
             "{} Chosen directory name ({}) is different than the original save folder name ({}). Do you want to use the original folder name appended to the chosen path, or use the chosen path as is?",
             char::from(NerdFont::Info),
             selected_folder_name,
             original_folder_name
         );
-        
+
         let options = vec![
             format!("Use selected path as is: {}", selected_path.display()),
             format!("Use alternative path: {}", alternative_path.display()),
         ];
-        
+
         match FzfWrapper::select_one(options)? {
             Some(selected) => {
                 if selected.contains("Use selected path as is") {
@@ -550,19 +455,6 @@ fn handle_differently_named_folders(
     }
 }
 
-/// Extracts the relative path from a Wine prefix path
-/// For example, given "/home/user/.wine/drive_c/users/user/AppData/Local/LOA/Saved",
-/// this would return "users/user/AppData/Local/LOA/Saved"
-fn extract_wine_relative_path(path: &str) -> Option<String> {
-    if let Some(pos) = path.find("/drive_c/") {
-        let after_drive_c = &path[pos + "/drive_c/".len()..];
-        if !after_drive_c.is_empty() {
-            return Some(after_drive_c.to_string());
-        }
-    }
-    None
-}
-
 /// Validates that a path is a valid Wine prefix by checking for the presence of a drive_c directory
 pub fn is_valid_wine_prefix(path: &Path) -> bool {
     let drive_c_path = path.join("drive_c");
@@ -576,7 +468,17 @@ pub fn wine_prefix_path(prefix: &Path, relative_path: &str) -> std::path::PathBu
     prefix.join("drive_c").join(relative_path)
 }
 
-/// Checks if a path appears to be from a Wine prefix by looking for the AppData pattern
+/// Checks if a path appears to be from a Wine prefix
+/// Looks for common Wine directory patterns
 fn is_wine_prefix_path(path: &str) -> bool {
-    path.contains("/AppData/") || (path.contains("/users/") && path.contains("/drive_c/"))
+    // Check for drive_c in the path (case-insensitive for robustness)
+    let path_lower = path.to_lowercase();
+    if !path_lower.contains("/drive_c/") {
+        return false;
+    }
+    
+    // Common Wine directory patterns
+    path_lower.contains("/appdata/") 
+        || path_lower.contains("/users/") 
+        || path_lower.contains("/program files")
 }

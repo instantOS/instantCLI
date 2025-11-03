@@ -45,14 +45,13 @@ pub struct PathInputBuilder {
     picker_hint: Option<String>,
     manual_option_label: String,
     picker_option_label: String,
-    wine_prefix_option_label: String,
+    wine_prefix_option_label: Option<String>,
 }
 
 impl PathInputBuilder {
     pub fn new() -> Self {
         let manual_icon = char::from(NerdFont::Edit);
         let picker_icon = char::from(NerdFont::FolderOpen);
-        let wine_icon = char::from(NerdFont::Wine);
         Self {
             header: format!(
                 "{} Choose the path you want to use",
@@ -64,7 +63,7 @@ impl PathInputBuilder {
             picker_hint: None,
             manual_option_label: format!("{manual_icon} Enter a specific path"),
             picker_option_label: format!("{picker_icon} Browse with the picker"),
-            wine_prefix_option_label: format!("{wine_icon} Select a Wine prefix"),
+            wine_prefix_option_label: None,
         }
     }
 
@@ -104,16 +103,33 @@ impl PathInputBuilder {
     }
 
     pub fn wine_prefix_option_label<S: Into<String>>(mut self, label: S) -> Self {
-        self.wine_prefix_option_label = label.into();
+        self.wine_prefix_option_label = Some(label.into());
         self
     }
 
+    fn wine_prefix_enabled(&self) -> bool {
+        self.wine_prefix_option_label.is_some()
+    }
+
+    fn wine_prefix_label(&self) -> String {
+        self.wine_prefix_option_label.clone().unwrap_or_else(|| {
+            format!("{} Select a Wine prefix", char::from(NerdFont::Wine))
+        })
+    }
+
     pub fn choose(self) -> Result<PathInputSelection> {
-        let options = vec![
+        let mut options = vec![
             PathInputOption::new(self.manual_option_label.clone(), PathInputChoice::Manual),
             PathInputOption::new(self.picker_option_label.clone(), PathInputChoice::Picker),
-            PathInputOption::new(self.wine_prefix_option_label.clone(), PathInputChoice::WinePrefix),
         ];
+
+        // Only add wine prefix option if explicitly configured
+        if self.wine_prefix_enabled() {
+            options.push(PathInputOption::new(
+                self.wine_prefix_label(),
+                PathInputChoice::WinePrefix,
+            ));
+        }
 
         loop {
             let selection = FzfWrapper::builder()
