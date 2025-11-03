@@ -33,6 +33,9 @@ typing one manually. Maybe this can be expanded to add new options? (Keep in
 mind emulated or native games do not work using wine prefixes) check and see
 what's appropriate. 
 
+Only bring up the wine options if the snapshot indicates that the save is in a
+wine prefix, meaning the snapshot path contains `drive_c/` in it.
+
 ## Differently named folders
 
 In some cases, the folder the save is in is pretty long and hard to type. For
