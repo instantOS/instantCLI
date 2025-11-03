@@ -1,8 +1,9 @@
 use std::fs;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::game::config::{GameDependency, InstantGameConfig, PathContentKind};
-use crate::game::restic::{cache, tags};
+use crate::game::restic::{cache, single_file, tags};
 use crate::restic::wrapper::{BackupProgress, ResticWrapper, Snapshot};
 use anyhow::{Context, Result, anyhow};
 
@@ -148,7 +149,7 @@ pub fn restore_dependency(
 
     let source_kind = dependency.source_type;
 
-    match source_kind {
+    let summary = match source_kind {
         PathContentKind::Directory => {
             fs::create_dir_all(install_path).with_context(|| {
                 format!(
@@ -157,7 +158,7 @@ pub fn restore_dependency(
                 )
             })?;
 
-            restic
+            let progress = restic
                 .restore_with_filter(
                     &snapshot_id,
                     Some(&dependency.source_path),
@@ -169,7 +170,9 @@ pub fn restore_dependency(
                         "Failed to restore dependency '{}:{}' from restic",
                         game_name, dependency.id
                     )
-                })?
+                })?;
+
+            single_file::summarize_restore(&progress)
         }
         PathContentKind::File => {
             if let Some(parent) = install_path.parent() {
@@ -181,18 +184,51 @@ pub fn restore_dependency(
                 })?;
             }
 
-            restic
-                .restore_single_file(&snapshot_id, &dependency.source_path, install_path)
-                .with_context(|| {
-                    format!(
-                        "Failed to restore dependency '{}:{}' file from restic",
-                        game_name, dependency.id
-                    )
-                })?
-        }
-    };
+            let candidate_paths = vec![dependency.source_path.clone()];
+            let resolved_snapshot_path = single_file::resolve_snapshot_file_path(
+                &restic,
+                &snapshot_id,
+                &candidate_paths,
+                Some(Path::new(&dependency.source_path)),
+            )?;
 
-    let summary = Some("restore completed".to_string());
+            let temp_restore = std::env::temp_dir().join(format!(
+                "ins-dep-restore-{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis()
+            ));
+
+            fs::create_dir_all(&temp_restore).with_context(|| {
+                format!(
+                    "Failed to create temporary directory for dependency restore: {}",
+                    temp_restore.display()
+                )
+            })?;
+
+            let (restored_file, progress) = single_file::restore_single_file_into_temp(
+                &restic,
+                &snapshot_id,
+                &resolved_snapshot_path,
+                &temp_restore,
+                Path::new(&dependency.source_path),
+            )?;
+
+            fs::copy(&restored_file, install_path).with_context(|| {
+                format!(
+                    "Failed to copy restored dependency file from {} to {}",
+                    restored_file.display(),
+                    install_path.display()
+                )
+            })?;
+
+            let _ = fs::remove_dir_all(&temp_restore);
+
+            single_file::summarize_restore(&progress)
+        }
+    }
+    .or_else(|| Some("restore completed".to_string()));
 
     Ok(DependencyRestoreOutcome {
         snapshot_id,
