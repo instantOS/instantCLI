@@ -541,6 +541,7 @@ fn resolve_source_path(path: Option<String>, game_name: &str) -> Result<String> 
             }
         }
         PathInputSelection::Picker(path) => Ok(path.display().to_string()),
+        PathInputSelection::WinePrefix(path) => Ok(path.display().to_string()),
         PathInputSelection::Cancelled => Err(anyhow!("Dependency path selection cancelled")),
     }
 }
@@ -635,6 +636,7 @@ fn prompt_custom_install_path(
             }
         }
         PathInputSelection::Picker(path) => Ok(path.display().to_string()),
+        PathInputSelection::WinePrefix(path) => Ok(path.display().to_string()),
         PathInputSelection::Cancelled => Err(anyhow!("Install path selection cancelled")),
     }
 }

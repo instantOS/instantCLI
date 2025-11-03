@@ -295,6 +295,18 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
             println!("{} Save path updated", char::from(NerdFont::Check));
             Ok(true)
         }
+        PathInputSelection::WinePrefix(path) => {
+            let new_path = TildePath::new(path);
+
+            if new_path.as_path() == current_path.as_path() {
+                println!("{} Save path unchanged.", char::from(NerdFont::Info));
+                return Ok(false);
+            }
+
+            state.installation_mut().unwrap().save_path = new_path;
+            println!("{} Save path updated", char::from(NerdFont::Check));
+            Ok(true)
+        }
         PathInputSelection::Cancelled => {
             println!("{} Save path unchanged.", char::from(NerdFont::Info));
             Ok(false)

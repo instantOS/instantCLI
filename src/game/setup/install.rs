@@ -130,9 +130,9 @@ impl SnapshotSelection {
 
     fn select_path(&self, game_name: &str) -> Result<Option<SelectedSavePath>> {
         if self.unique_paths.is_empty() {
-            prompt_manual_save_path(game_name)
+            prompt_manual_save_path(game_name, None)
         } else {
-            choose_installation_path(game_name, &self.unique_paths)
+            choose_installation_path(game_name, &self.unique_paths, None)
         }
     }
 

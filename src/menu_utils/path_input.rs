@@ -11,6 +11,7 @@ use crate::ui::nerd_font::NerdFont;
 enum PathInputChoice {
     Manual,
     Picker,
+    WinePrefix,
 }
 
 #[derive(Debug, Clone)]
@@ -44,12 +45,14 @@ pub struct PathInputBuilder {
     picker_hint: Option<String>,
     manual_option_label: String,
     picker_option_label: String,
+    wine_prefix_option_label: String,
 }
 
 impl PathInputBuilder {
     pub fn new() -> Self {
         let manual_icon = char::from(NerdFont::Edit);
         let picker_icon = char::from(NerdFont::FolderOpen);
+        let wine_icon = char::from(NerdFont::Wine);
         Self {
             header: format!(
                 "{} Choose the path you want to use",
@@ -61,6 +64,7 @@ impl PathInputBuilder {
             picker_hint: None,
             manual_option_label: format!("{manual_icon} Enter a specific path"),
             picker_option_label: format!("{picker_icon} Browse with the picker"),
+            wine_prefix_option_label: format!("{wine_icon} Select a Wine prefix"),
         }
     }
 
@@ -99,10 +103,16 @@ impl PathInputBuilder {
         self
     }
 
+    pub fn wine_prefix_option_label<S: Into<String>>(mut self, label: S) -> Self {
+        self.wine_prefix_option_label = label.into();
+        self
+    }
+
     pub fn choose(self) -> Result<PathInputSelection> {
         let options = vec![
             PathInputOption::new(self.manual_option_label.clone(), PathInputChoice::Manual),
             PathInputOption::new(self.picker_option_label.clone(), PathInputChoice::Picker),
+            PathInputOption::new(self.wine_prefix_option_label.clone(), PathInputChoice::WinePrefix),
         ];
 
         loop {
@@ -144,6 +154,27 @@ impl PathInputBuilder {
                             }
                         }
                     }
+                    PathInputChoice::WinePrefix => {
+                        // For wine prefix selection, we'll use the picker but with a hint about wine prefixes
+                        let mut picker = MenuWrapper::file_picker().scope(self.scope);
+
+                        if let Some(dir) = &self.start_dir {
+                            picker = picker.start_dir(dir.clone());
+                        }
+
+                        if let Some(hint) = &self.picker_hint {
+                            picker = picker.hint(hint.clone());
+                        }
+
+                        match picker.pick_one() {
+                            Ok(Some(path)) => return Ok(PathInputSelection::WinePrefix(path)),
+                            Ok(None) => return Ok(PathInputSelection::Cancelled),
+                            Err(err) => {
+                                eprintln!("Failed to launch file picker: {err}");
+                                continue;
+                            }
+                        }
+                    }
                 },
                 FzfResult::Cancelled => return Ok(PathInputSelection::Cancelled),
                 FzfResult::MultiSelected(_) => return Ok(PathInputSelection::Cancelled),
@@ -157,6 +188,7 @@ impl PathInputBuilder {
 pub enum PathInputSelection {
     Manual(String),
     Picker(PathBuf),
+    WinePrefix(PathBuf),
     Cancelled,
 }
 
@@ -170,6 +202,7 @@ impl PathInputSelection {
                 Ok(Some(TildePath::from_str(input)?))
             }
             PathInputSelection::Picker(path) => Ok(Some(TildePath::new(path.clone()))),
+            PathInputSelection::WinePrefix(path) => Ok(Some(TildePath::new(path.clone()))),
             PathInputSelection::Cancelled => Ok(None),
         }
     }

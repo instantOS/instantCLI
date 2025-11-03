@@ -261,6 +261,7 @@ impl GameManager {
                     .map_err(|e| anyhow::anyhow!("Invalid save path: {}", e))?
             }
             PathInputSelection::Picker(path) => TildePath::new(path),
+            PathInputSelection::WinePrefix(path) => TildePath::new(path),
             PathInputSelection::Cancelled => {
                 println!("Game addition cancelled: save path not provided.");
                 return Err(anyhow::anyhow!("Save path selection cancelled"));
