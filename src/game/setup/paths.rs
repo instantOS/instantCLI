@@ -8,7 +8,7 @@ use crate::game::utils::path::{
 };
 use crate::menu::protocol;
 use crate::menu_utils::{
-    FilePickerScope, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
+    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
 use crate::restic::wrapper::Snapshot;
 use crate::ui::nerd_font::NerdFont;
@@ -182,7 +182,14 @@ pub(super) fn choose_installation_path(
                         .map(is_wine_prefix_path)
                         .unwrap_or(false)
                 });
-                prompt_manual_save_path(game_name, original_save_path, enable_wine_prefix)
+                
+                // Use the most common snapshot path as reference for directory name handling
+                let reference_path = paths
+                    .first()
+                    .and_then(|p| p.preferred_snapshot_path())
+                    .or(original_save_path);
+                
+                prompt_manual_save_path(game_name, reference_path, enable_wine_prefix)
             }
             SavePathOptionKind::Snapshot(path_info) => {
                 Ok(Some(SelectedSavePath::from_path_info(&path_info)))
@@ -390,7 +397,12 @@ fn handle_differently_named_folders(
     selected_path: &Path,
     original_save_path: &str,
 ) -> Result<Option<std::path::PathBuf>> {
-    // Extract the folder name from the original save path
+    // Only handle this for directory saves, not files
+    if selected_path.is_file() {
+        return Ok(None);
+    }
+
+    // Extract the folder/file name from the original save path
     let original_folder_name = Path::new(original_save_path)
         .file_name()
         .and_then(|name| name.to_str())
@@ -410,27 +422,31 @@ fn handle_differently_named_folders(
     if selected_folder_name != original_folder_name {
         let alternative_path = selected_path.join(original_folder_name);
 
-        let _prompt = format!(
-            "{} Chosen directory name ({}) is different than the original save folder name ({}). Do you want to use the original folder name appended to the chosen path, or use the chosen path as is?",
+        let header = format!(
+            "{} Directory name mismatch detected\n\nSelected: {} (ends with '{}')\nSnapshot: (ends with '{}')",
             char::from(NerdFont::Info),
+            selected_path.display(),
             selected_folder_name,
             original_folder_name
         );
 
         let options = vec![
             format!("Use selected path as is: {}", selected_path.display()),
-            format!("Use alternative path: {}", alternative_path.display()),
+            format!("Append original directory name: {}", alternative_path.display()),
         ];
 
-        match FzfWrapper::select_one(options)? {
-            Some(selected) => {
-                if selected.contains("Use selected path as is") {
+        match FzfWrapper::builder()
+            .header(header)
+            .select(options)?
+        {
+            FzfResult::Selected(option) => {
+                if option.contains("as is") {
                     Ok(Some(selected_path.to_path_buf()))
                 } else {
                     Ok(Some(alternative_path))
                 }
             }
-            None => Ok(None),
+            _ => Ok(None),
         }
     } else {
         Ok(None)
