@@ -112,9 +112,9 @@ impl PathInputBuilder {
     }
 
     fn wine_prefix_label(&self) -> String {
-        self.wine_prefix_option_label.clone().unwrap_or_else(|| {
-            format!("{} Select a Wine prefix", char::from(NerdFont::Wine))
-        })
+        self.wine_prefix_option_label
+            .clone()
+            .unwrap_or_else(|| format!("{} Select a Wine prefix", char::from(NerdFont::Wine)))
     }
 
     pub fn choose(self) -> Result<PathInputSelection> {

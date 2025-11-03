@@ -59,9 +59,9 @@ pub fn is_wine_prefix_path(path: &str) -> bool {
     if !path_lower.contains("/drive_c/") {
         return false;
     }
-    
+
     // Common Wine directory patterns
-    path_lower.contains("/appdata/") 
-        || path_lower.contains("/users/") 
+    path_lower.contains("/appdata/")
+        || path_lower.contains("/users/")
         || path_lower.contains("/program files")
 }

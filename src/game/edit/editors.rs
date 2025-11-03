@@ -1,9 +1,7 @@
 use anyhow::{Result, anyhow};
 
 use crate::game::utils::path::{path_selection_to_tilde, tilde_display_string};
-use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder,
-};
+use crate::menu_utils::{FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder};
 use crate::ui::nerd_font::NerdFont;
 
 use super::state::EditState;
