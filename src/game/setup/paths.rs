@@ -182,13 +182,13 @@ pub(super) fn choose_installation_path(
                         .map(is_wine_prefix_path)
                         .unwrap_or(false)
                 });
-                
+
                 // Use the most common snapshot path as reference for directory name handling
                 let reference_path = paths
                     .first()
                     .and_then(|p| p.preferred_snapshot_path())
                     .or(original_save_path);
-                
+
                 prompt_manual_save_path(game_name, reference_path, enable_wine_prefix)
             }
             SavePathOptionKind::Snapshot(path_info) => {
@@ -432,13 +432,13 @@ fn handle_differently_named_folders(
 
         let options = vec![
             format!("Use selected path as is: {}", selected_path.display()),
-            format!("Append original directory name: {}", alternative_path.display()),
+            format!(
+                "Append original directory name: {}",
+                alternative_path.display()
+            ),
         ];
 
-        match FzfWrapper::builder()
-            .header(header)
-            .select(options)?
-        {
+        match FzfWrapper::builder().header(header).select(options)? {
             FzfResult::Selected(option) => {
                 if option.contains("as is") {
                     Ok(Some(selected_path.to_path_buf()))
