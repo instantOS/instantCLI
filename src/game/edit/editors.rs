@@ -1,9 +1,7 @@
 use anyhow::{Result, anyhow};
 
-use crate::dot::path_serde::TildePath;
-use crate::menu_utils::{
-    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
-};
+use crate::game::utils::path::{path_selection_to_tilde, tilde_display_string};
+use crate::menu_utils::{FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder};
 use crate::ui::nerd_font::NerdFont;
 
 use super::state::EditState;
@@ -235,9 +233,7 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
         .ok_or_else(|| anyhow!("No installation found for this game on this device"))?;
 
     let current_path = &installation.save_path;
-    let current_path_str = current_path
-        .to_tilde_string()
-        .unwrap_or_else(|_| current_path.as_path().to_string_lossy().to_string());
+    let current_path_str = tilde_display_string(current_path);
 
     let path_selection = PathInputBuilder::new()
         .header(format!(
@@ -261,41 +257,18 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
         ))
         .choose()?;
 
-    match path_selection {
-        PathInputSelection::Manual(input) => {
-            let trimmed = input.trim();
-            if trimmed.is_empty() {
-                println!(
-                    "{} No path entered. Save path unchanged.",
-                    char::from(NerdFont::Warning)
-                );
-                return Ok(false);
-            }
-            let new_path =
-                TildePath::from_str(trimmed).map_err(|e| anyhow!("Invalid save path: {}", e))?;
-
+    match path_selection_to_tilde(path_selection)? {
+        Some(new_path) => {
             if new_path.as_path() == current_path.as_path() {
                 println!("{} Save path unchanged.", char::from(NerdFont::Info));
-                return Ok(false);
+                Ok(false)
+            } else {
+                state.installation_mut().unwrap().save_path = new_path;
+                println!("{} Save path updated", char::from(NerdFont::Check));
+                Ok(true)
             }
-
-            state.installation_mut().unwrap().save_path = new_path;
-            println!("{} Save path updated", char::from(NerdFont::Check));
-            Ok(true)
         }
-        PathInputSelection::Picker(path) => {
-            let new_path = TildePath::new(path);
-
-            if new_path.as_path() == current_path.as_path() {
-                println!("{} Save path unchanged.", char::from(NerdFont::Info));
-                return Ok(false);
-            }
-
-            state.installation_mut().unwrap().save_path = new_path;
-            println!("{} Save path updated", char::from(NerdFont::Check));
-            Ok(true)
-        }
-        PathInputSelection::Cancelled => {
+        None => {
             println!("{} Save path unchanged.", char::from(NerdFont::Info));
             Ok(false)
         }

@@ -379,28 +379,15 @@ impl ParagraphState {
             }
         }
 
-        if blocks.is_empty() {
-            let summary = InlineFragment::render_many(&leftover_text)
-                .trim()
-                .to_string();
-            if !summary.is_empty() {
-                let line = base_line_offset + line_map.line_number(self.start_byte);
-                blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
-                    description: summary,
-                    line,
-                }));
-            }
-        } else {
-            let trailing = InlineFragment::render_many(&leftover_text)
-                .trim()
-                .to_string();
-            if !trailing.is_empty() {
-                let line = base_line_offset + line_map.line_number(self.start_byte);
-                blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
-                    description: trailing,
-                    line,
-                }));
-            }
+        let leftover_content = InlineFragment::render_many(&leftover_text)
+            .trim()
+            .to_string();
+        if !leftover_content.is_empty() {
+            let line = base_line_offset + line_map.line_number(self.start_byte);
+            blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
+                description: leftover_content,
+                line,
+            }));
         }
 
         Ok(blocks)

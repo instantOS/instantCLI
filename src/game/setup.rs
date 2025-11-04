@@ -8,6 +8,7 @@ use crate::game::config::{
 use crate::game::deps::manager::{InstallDependencyOptions, install_dependency};
 use crate::game::games::manager::{AddGameOptions, GameManager};
 use crate::game::games::validation::validate_game_manager_initialized;
+use crate::game::utils::path::tilde_display_string;
 use crate::menu::protocol;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
@@ -541,19 +542,6 @@ fn ensure_game_entry(
     Ok(())
 }
 
-fn format_installation_path(installation: &GameInstallation) -> String {
-    installation
-        .save_path
-        .to_tilde_string()
-        .unwrap_or_else(|_| {
-            installation
-                .save_path
-                .as_path()
-                .to_string_lossy()
-                .to_string()
-        })
-}
-
 struct SetupPreview<'a> {
     candidate: &'a SetupCandidate,
     sections: Vec<String>,
@@ -661,7 +649,7 @@ impl<'a> SetupPreview<'a> {
         info.push(format!(
             "{} Existing save path: {}",
             char::from(NerdFont::Folder),
-            format_installation_path(installation)
+            tilde_display_string(&installation.save_path)
         ));
 
         if let Some(checkpoint) = installation.nearest_checkpoint.as_deref() {

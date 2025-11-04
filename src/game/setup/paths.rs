@@ -1,10 +1,14 @@
 use anyhow::{Result, anyhow};
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::path::Path;
 
 use crate::dot::path_serde::TildePath;
+use crate::game::utils::path::{
+    is_valid_wine_prefix, is_wine_prefix_path, path_selection_to_tilde, tilde_display_string,
+};
 use crate::menu::protocol;
 use crate::menu_utils::{
-    FilePickerScope, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
+    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
 use crate::restic::wrapper::Snapshot;
 use crate::ui::nerd_font::NerdFont;
@@ -70,7 +74,11 @@ impl SelectedSavePath {
     }
 }
 
-pub(super) fn prompt_manual_save_path(game_name: &str) -> Result<Option<SelectedSavePath>> {
+pub(super) fn prompt_manual_save_path(
+    game_name: &str,
+    original_save_path: Option<&str>,
+    enable_wine_prefix: bool,
+) -> Result<Option<SelectedSavePath>> {
     let prompt = format!(
         "{} Enter the save path for '{}' (e.g., ~/.local/share/{}/saves):",
         char::from(NerdFont::Edit),
@@ -78,7 +86,7 @@ pub(super) fn prompt_manual_save_path(game_name: &str) -> Result<Option<Selected
         game_name.to_lowercase().replace(' ', "-")
     );
 
-    let path_selection = PathInputBuilder::new()
+    let mut path_builder = PathInputBuilder::new()
         .header(format!(
             "{} Choose the save path for '{game_name}'",
             char::from(NerdFont::Folder)
@@ -93,46 +101,62 @@ pub(super) fn prompt_manual_save_path(game_name: &str) -> Result<Option<Selected
         .picker_option_label(format!(
             "{} Browse and choose a path",
             char::from(NerdFont::FolderOpen)
-        ))
-        .choose()?;
+        ));
 
-    match path_selection {
+    if enable_wine_prefix {
+        path_builder = path_builder.wine_prefix_option_label(format!(
+            "{} Select a Wine prefix",
+            char::from(NerdFont::Wine)
+        ));
+    }
+
+    let path_selection = path_builder.choose()?;
+
+    let tilde_path = match path_selection {
         PathInputSelection::Manual(input) => {
-            let trimmed = input.trim();
-            if trimmed.is_empty() {
+            if input.trim().is_empty() {
                 println!("Empty path provided. Setup cancelled.");
-                Ok(None)
-            } else {
-                let tilde =
-                    TildePath::from_str(trimmed).map_err(|e| anyhow!("Invalid save path: {e}"))?;
-                let display_path = tilde_display_string(&tilde);
-                Ok(Some(SelectedSavePath {
-                    display_path,
-                    snapshot_path: None,
-                }))
+                return Ok(None);
             }
+            path_selection_to_tilde(PathInputSelection::Manual(input))?
         }
         PathInputSelection::Picker(path) => {
-            let tilde = TildePath::new(path);
-            let display_path = tilde_display_string(&tilde);
-            Ok(Some(SelectedSavePath {
-                display_path,
-                snapshot_path: None,
-            }))
+            let final_path = if let Some(original) = original_save_path {
+                handle_differently_named_folders(&path, original)?.unwrap_or(path)
+            } else {
+                path
+            };
+            Some(TildePath::new(final_path))
+        }
+        PathInputSelection::WinePrefix(prefix_path) => {
+            if !is_valid_wine_prefix(&prefix_path) {
+                println!(
+                    "{} Selected path is not a valid Wine prefix (missing drive_c directory).",
+                    char::from(NerdFont::Warning)
+                );
+                return Ok(None);
+            }
+            Some(TildePath::new(prefix_path))
         }
         PathInputSelection::Cancelled => {
             println!(
                 "{} No path selected. Setup cancelled.",
                 char::from(NerdFont::Warning)
             );
-            Ok(None)
+            return Ok(None);
         }
-    }
+    };
+
+    Ok(tilde_path.map(|tilde| SelectedSavePath {
+        display_path: tilde_display_string(&tilde),
+        snapshot_path: None,
+    }))
 }
 
 pub(super) fn choose_installation_path(
     game_name: &str,
     paths: &[PathInfo],
+    original_save_path: Option<&str>,
 ) -> Result<Option<SelectedSavePath>> {
     println!(
         "\n{} Select the save path for '{game_name}':",
@@ -150,7 +174,23 @@ pub(super) fn choose_installation_path(
 
     match selected {
         Some(option) => match option.kind {
-            SavePathOptionKind::Custom => prompt_manual_save_path(game_name),
+            SavePathOptionKind::Custom => {
+                // Enable wine prefix support if any snapshot paths are from wine prefixes
+                let enable_wine_prefix = paths.iter().any(|path_info| {
+                    path_info
+                        .preferred_snapshot_path()
+                        .map(is_wine_prefix_path)
+                        .unwrap_or(false)
+                });
+
+                // Use the most common snapshot path as reference for directory name handling
+                let reference_path = paths
+                    .first()
+                    .and_then(|p| p.preferred_snapshot_path())
+                    .or(original_save_path);
+
+                prompt_manual_save_path(game_name, reference_path, enable_wine_prefix)
+            }
             SavePathOptionKind::Snapshot(path_info) => {
                 Ok(Some(SelectedSavePath::from_path_info(&path_info)))
             }
@@ -261,12 +301,6 @@ fn normalize_path_for_cross_device(path: &str) -> String {
     path.to_string()
 }
 
-fn tilde_display_string(tilde: &TildePath) -> String {
-    tilde
-        .to_tilde_string()
-        .unwrap_or_else(|_| tilde.as_path().to_string_lossy().to_string())
-}
-
 #[derive(Clone)]
 struct SavePathOption {
     kind: SavePathOptionKind,
@@ -353,5 +387,68 @@ mod tests {
             normalize_path_for_cross_device("/home/user.name/.local/share/Steam/steamapps"),
             "~/.local/share/Steam/steamapps"
         );
+    }
+}
+
+/// Checks if the selected path has a different folder name than the original save folder
+/// and offers the user a choice between using the original folder name appended to the chosen path
+/// or using the chosen path as is
+fn handle_differently_named_folders(
+    selected_path: &Path,
+    original_save_path: &str,
+) -> Result<Option<std::path::PathBuf>> {
+    // Only handle this for directory saves, not files
+    if selected_path.is_file() {
+        return Ok(None);
+    }
+
+    // Extract the folder/file name from the original save path
+    let original_folder_name = Path::new(original_save_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+
+    if original_folder_name.is_empty() {
+        return Ok(None);
+    }
+
+    // Get the selected path's folder name
+    let selected_folder_name = selected_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+
+    // If the folder names are different, offer the user a choice
+    if selected_folder_name != original_folder_name {
+        let alternative_path = selected_path.join(original_folder_name);
+
+        let header = format!(
+            "{} Directory name mismatch detected\n\nSelected: {} (ends with '{}')\nSnapshot: (ends with '{}')",
+            char::from(NerdFont::Info),
+            selected_path.display(),
+            selected_folder_name,
+            original_folder_name
+        );
+
+        let options = vec![
+            format!("Use selected path as is: {}", selected_path.display()),
+            format!(
+                "Append original directory name: {}",
+                alternative_path.display()
+            ),
+        ];
+
+        match FzfWrapper::builder().header(header).select(options)? {
+            FzfResult::Selected(option) => {
+                if option.contains("as is") {
+                    Ok(Some(selected_path.to_path_buf()))
+                } else {
+                    Ok(Some(alternative_path))
+                }
+            }
+            _ => Ok(None),
+        }
+    } else {
+        Ok(None)
     }
 }

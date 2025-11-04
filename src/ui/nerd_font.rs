@@ -115,6 +115,7 @@ pub enum NerdFont {
     Sync,
     Home,
     Settings,
+    Wine,
 
     // Additional icons for better semantics
     Users2,
@@ -256,6 +257,7 @@ impl NerdFont {
             Self::Sync => '',      // fa-sync
             Self::Home => '',      // fa-home
             Self::Settings => '',  // fa-settings
+            Self::Wine => '󰡶',      // fa-wine
 
             // Additional icons for better semantics
             Self::Users2 => '',    // fa-users (alternative)
