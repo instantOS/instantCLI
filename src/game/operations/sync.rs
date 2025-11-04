@@ -569,7 +569,16 @@ fn sync_single_game(
         (Some(local_time), Some(snapshot)) => {
             // Both local saves and snapshots exist - compare timestamps
             match compare_snapshot_vs_local(&snapshot.time, local_time) {
-                Ok(TimeComparison::LocalNewer) => Ok(SyncAction::CreateBackup),
+                Ok(TimeComparison::LocalNewer) => {
+                    // Check if checkpoint matches - if so, skip backup unless forced
+                    if !force
+                        && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
+                        && nearest_checkpoint == &snapshot.id
+                    {
+                        return Ok(SyncAction::NoActionNeeded);
+                    }
+                    Ok(SyncAction::CreateBackup)
+                }
                 Ok(TimeComparison::SnapshotNewer) => {
                     if !force
                         && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
