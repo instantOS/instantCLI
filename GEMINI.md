@@ -206,12 +206,13 @@ branch = "main"
 
 ### Dotfile Commands
 - `ins dot apply`: Apply all dotfiles from configured repos
-- `ins dot fetch [<path>]`: Fetch modified files from home directory back to repos
+- `ins dot add <path>`: Add or update dotfiles
+  - For a single file: If tracked, update the source file. If untracked, prompt to add it.
+  - For a directory: Update all tracked files. Use `--all` to also add untracked files.
 - `ins dot reset <path>`: Reset modified files to original state
 - `ins dot update`: Update all configured repositories
 - `ins dot status [<path>]`: Check repository status
 - `ins dot init`: Initialize current directory as a dotfile repo
-- `ins dot add <path>`: Add new dotfiles to tracking
 - `ins dot diff [<path>]`: Show differences between source and target files
 - `ins dot repo add <url>`: Add a new dotfile repository
 - `ins dot repo list`: List all configured repositories

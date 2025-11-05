@@ -193,20 +193,17 @@ enum DotCommands {
     },
     /// Apply dotfiles
     Apply,
-    /// Fetch modified dotfiles from home directory back to repository
-    Fetch {
-        /// Path to fetch (relative to ~)
-        #[arg(value_hint = ValueHint::AnyPath)]
-        path: Option<String>,
-        /// Perform a dry run, showing which files would be fetched
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Add new dotfiles to tracking
+    /// Add or update dotfiles
+    ///
+    /// For a single file: If tracked, update the source file. If untracked, prompt to add it.
+    /// For a directory: Update all tracked files. Use --all to also add untracked files.
     Add {
-        /// Path to add (relative to ~)
+        /// Path to add or update (relative to ~)
         #[arg(value_hint = ValueHint::AnyPath)]
         path: String,
+        /// Recursively add all files in directory, including untracked ones
+        #[arg(long)]
+        all: bool,
     },
     /// Pull updates for all configured repos and apply changes
     Update,
@@ -332,18 +329,11 @@ async fn main() -> Result<()> {
                         Some("Applied dotfiles"),
                     )?;
                 }
-                DotCommands::Fetch { path, dry_run } => {
+                DotCommands::Add { path, all } => {
                     execute_with_error_handling(
-                        dot::fetch_modified(&config, &db, path.as_deref(), *dry_run),
-                        "Error fetching dotfiles",
-                        Some("Fetched modified dotfiles"),
-                    )?;
-                }
-                DotCommands::Add { path } => {
-                    execute_with_error_handling(
-                        dot::add_dotfile(&config, &db, path),
-                        "Error adding dotfile",
-                        Some(&format!("Added dotfile {}", path.green())),
+                        dot::add_dotfile(&config, &db, path, *all),
+                        "Error adding/updating dotfile",
+                        None, // Success messages are handled within add_dotfile
                     )?;
                 }
                 DotCommands::Update => {

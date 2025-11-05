@@ -272,194 +272,6 @@ pub fn get_all_dotfiles(config: &Config, db: &Database) -> Result<HashMap<PathBu
     Ok(merge_dotfiles(all_dotfiles))
 }
 
-pub fn fetch_modified(
-    config: &Config,
-    db: &Database,
-    path: Option<&str>,
-    dry_run: bool,
-) -> Result<()> {
-    let modified_dotfiles = get_modified_dotfiles(config, db, path)?;
-
-    if modified_dotfiles.is_empty() {
-        emit(
-            Level::Info,
-            "dot.fetch.no_modified",
-            &format!(
-                "{} No modified dotfiles to fetch.",
-                char::from(NerdFont::Info)
-            ),
-            None,
-        );
-        return Ok(());
-    }
-
-    let grouped_by_repo = group_dotfiles_by_repo(&modified_dotfiles, config)?;
-
-    print_fetch_plan(&grouped_by_repo, dry_run)?;
-
-    if !dry_run {
-        fetch_dotfiles(&modified_dotfiles, db, config.hash_cleanup_days)?;
-    }
-
-    Ok(())
-}
-
-fn get_modified_dotfiles(
-    config: &Config,
-    db: &Database,
-    path: Option<&str>,
-) -> Result<Vec<Dotfile>> {
-    let all_dotfiles = get_all_dotfiles(config, db)?;
-    let mut modified_dotfiles = Vec::new();
-
-    if let Some(p) = path {
-        let full_path = resolve_dotfile_path(p)?;
-
-        for (target_path, dotfile) in all_dotfiles {
-            if target_path.starts_with(&full_path) && !dotfile.is_target_unmodified(db)? {
-                modified_dotfiles.push(dotfile);
-            }
-        }
-    } else {
-        for (_, dotfile) in all_dotfiles {
-            if !dotfile.is_target_unmodified(db)? {
-                modified_dotfiles.push(dotfile);
-            }
-        }
-    }
-
-    Ok(modified_dotfiles)
-}
-
-/// Helper function to find which repository contains a dotfile
-fn find_repo_for_dotfile(dotfile: &Dotfile, config: &Config) -> Result<Option<RepoName>> {
-    for repo in &config.repos {
-        let local_repo = LocalRepo::new(config, repo.name.clone())?;
-        if dotfile
-            .source_path
-            .starts_with(local_repo.local_path(config)?)
-        {
-            return Ok(Some(RepoName::new(repo.name.clone())));
-        }
-    }
-    Ok(None)
-}
-
-fn group_dotfiles_by_repo<'a>(
-    dotfiles: &'a [Dotfile],
-    config: &Config,
-) -> Result<HashMap<RepoName, Vec<&'a Dotfile>>> {
-    let mut grouped_by_repo: HashMap<RepoName, Vec<&Dotfile>> = HashMap::new();
-
-    for dotfile in dotfiles {
-        if let Some(repo_name) = find_repo_for_dotfile(dotfile, config)? {
-            grouped_by_repo.entry(repo_name).or_default().push(dotfile);
-        }
-    }
-
-    Ok(grouped_by_repo)
-}
-
-fn print_fetch_plan(
-    grouped_by_repo: &HashMap<RepoName, Vec<&Dotfile>>,
-    dry_run: bool,
-) -> Result<()> {
-    match get_output_format() {
-        OutputFormat::Json => {
-            let fetch_data: Vec<_> = grouped_by_repo
-                .iter()
-                .map(|(repo_name, dotfiles)| {
-                    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-                    let files: Vec<String> = dotfiles
-                        .iter()
-                        .filter_map(|dotfile| {
-                            dotfile
-                                .target_path
-                                .strip_prefix(&home)
-                                .ok()
-                                .map(|path| format!("~/{}", path.display()))
-                        })
-                        .collect();
-
-                    serde_json::json!({
-                        "repo": repo_name.as_str(),
-                        "files": files,
-                        "count": files.len(),
-                    })
-                })
-                .collect();
-
-            let message = if dry_run {
-                "Dry run: The following files would be fetched"
-            } else {
-                "Fetching the following modified files"
-            };
-
-            emit(
-                Level::Info,
-                "dot.fetch.plan",
-                &format!("{} {}", char::from(NerdFont::Info), message),
-                Some(serde_json::json!({
-                    "dry_run": dry_run,
-                    "repos": fetch_data,
-                })),
-            );
-        }
-        OutputFormat::Text => {
-            if dry_run {
-                println!(
-                    "{}",
-                    "Dry run: The following files would be fetched:".yellow()
-                );
-            } else {
-                println!("{}", "Fetching the following modified files:".yellow());
-            }
-
-            let home = PathBuf::from(shellexpand::tilde("~").to_string());
-            for (repo_name, dotfiles) in grouped_by_repo {
-                println!("  Repo: {}", repo_name.as_str().bold());
-                for dotfile in dotfiles {
-                    let relative_path = dotfile.target_path.strip_prefix(&home).map_err(|e| {
-                        anyhow::anyhow!(
-                            "Failed to strip prefix from path {}: {}",
-                            dotfile.target_path.display(),
-                            e
-                        )
-                    })?;
-                    println!("    - ~/{}", relative_path.display());
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn fetch_dotfiles(dotfiles: &[Dotfile], db: &Database, hash_cleanup_days: u32) -> Result<()> {
-    for dotfile in dotfiles {
-        dotfile.fetch(db)?;
-
-        // Print the full path where the file was fetched to
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
-        let relative_path = dotfile
-            .source_path
-            .strip_prefix(&home)
-            .unwrap_or(&dotfile.source_path);
-        println!(
-            "{} Fetched {} to {}",
-            char::from(NerdFont::ArrowRight),
-            format!("~/{}", relative_path.display()).cyan(),
-            dotfile.source_path.display().to_string().green()
-        );
-    }
-    db.cleanup_hashes(hash_cleanup_days)?;
-    emit(
-        Level::Success,
-        "dot.fetch.complete",
-        &format!("{} Fetch complete.", char::from(NerdFont::Check)),
-        None,
-    );
-    Ok(())
-}
 
 pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
     let filemap = get_all_dotfiles(config, db)?;
@@ -601,11 +413,98 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
     }
 }
 
-/// Add a new dotfile to tracking
-pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
-    // Resolve the path using git-style resolution
+/// Add dotfiles to tracking or update existing tracked files
+///
+/// Behavior:
+/// - For a single file: If tracked, update the source file. If untracked, prompt to add it.
+/// - For a directory without --all: Update all tracked files, skip untracked files with info message.
+/// - For a directory with --all: Recursively add all files, including untracked ones.
+pub fn add_dotfile(config: &Config, db: &Database, path: &str, add_all: bool) -> Result<()> {
     let full_path = resolve_dotfile_path(path)?;
 
+    if full_path.is_file() {
+        add_single_file(config, db, &full_path)?;
+    } else if full_path.is_dir() {
+        add_directory(config, db, &full_path, add_all)?;
+    } else {
+        return Err(anyhow::anyhow!(
+            "Path '{}' is neither a file nor a directory",
+            path
+        ));
+    }
+
+    Ok(())
+}
+
+/// Add or update a single file
+fn add_single_file(config: &Config, db: &Database, full_path: &Path) -> Result<()> {
+    let all_dotfiles = get_all_dotfiles(config, db)?;
+
+    // Check if this file is already tracked
+    if let Some(dotfile) = all_dotfiles.get(full_path) {
+        // File is tracked - update it (fetch behavior)
+        update_tracked_file(dotfile, db)?;
+    } else {
+        // File is not tracked - add it (old add behavior)
+        add_new_file(config, db, full_path)?;
+    }
+
+    Ok(())
+}
+
+/// Update a tracked file by copying from target to source
+fn update_tracked_file(dotfile: &Dotfile, db: &Database) -> Result<()> {
+    let was_modified = !dotfile.is_target_unmodified(db)?;
+
+    if was_modified {
+        // Compute hashes before and after to detect changes
+        let old_source_hash = if dotfile.source_path.exists() {
+            Some(Dotfile::compute_hash(&dotfile.source_path)?)
+        } else {
+            None
+        };
+
+        dotfile.fetch(db)?;
+
+        let new_source_hash = Dotfile::compute_hash(&dotfile.source_path)?;
+
+        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let relative_path = dotfile
+            .target_path
+            .strip_prefix(&home)
+            .unwrap_or(&dotfile.target_path);
+
+        if old_source_hash.as_ref() != Some(&new_source_hash) {
+            println!(
+                "{} Updated ~/{} (changes detected)",
+                char::from(NerdFont::Check),
+                relative_path.display().to_string().green()
+            );
+        } else {
+            println!(
+                "{} ~/{} (no changes)",
+                char::from(NerdFont::Info),
+                relative_path.display().to_string().dimmed()
+            );
+        }
+    } else {
+        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        let relative_path = dotfile
+            .target_path
+            .strip_prefix(&home)
+            .unwrap_or(&dotfile.target_path);
+        println!(
+            "{} ~/{} (already in sync)",
+            char::from(NerdFont::Info),
+            relative_path.display().to_string().dimmed()
+        );
+    }
+
+    Ok(())
+}
+
+/// Add a new untracked file
+fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<()> {
     // Repository selection
     let repo_config = select_repo(config)?;
     let local_repo = LocalRepo::new(config, repo_config.name.clone())?;
@@ -619,16 +518,15 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
 
     // Compute relative path from home and final destination
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let relative = full_path.strip_prefix(&home).unwrap_or(&full_path);
+    let relative = full_path.strip_prefix(&home).unwrap_or(full_path);
     let dest_path = dest_base.join(relative);
 
     // Use Dotfile methods to perform the copy and DB registration
     let dotfile = Dotfile {
         source_path: dest_path.clone(),
-        target_path: full_path.clone(),
+        target_path: full_path.to_path_buf(),
     };
-    // If the source already exists, treat as overwrite; Dotfile methods may be extended
-    // later to prompt or handle conflicts more gracefully.
+
     dotfile.create_source_from_target(db)?;
 
     let chosen_dir_name = chosen_dir
@@ -637,10 +535,140 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| chosen_dir.path.display().to_string());
 
+    let relative_display = relative.display().to_string();
     println!(
-        "Added {} to repo '{}' in directory '{}'",
-        path, local_repo.name, chosen_dir_name
+        "{} Added ~/{} to repo '{}' in directory '{}'",
+        char::from(NerdFont::Check),
+        relative_display.green(),
+        local_repo.name,
+        chosen_dir_name
     );
+
+    Ok(())
+}
+
+/// Add or update files in a directory
+fn add_directory(config: &Config, db: &Database, dir_path: &Path, add_all: bool) -> Result<()> {
+    let all_dotfiles = get_all_dotfiles(config, db)?;
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+
+    let mut tracked_files = Vec::new();
+    let mut untracked_files = Vec::new();
+
+    // Scan directory for files
+    for entry in WalkDir::new(dir_path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|entry| {
+            let path_str = entry.path().to_string_lossy();
+            !path_str.contains("/.git/")
+        })
+    {
+        if entry.file_type().is_file() {
+            let file_path = entry.path();
+
+            if all_dotfiles.contains_key(file_path) {
+                tracked_files.push(file_path.to_path_buf());
+            } else {
+                untracked_files.push(file_path.to_path_buf());
+            }
+        }
+    }
+
+    // Update tracked files
+    let mut updated_count = 0;
+    let mut unchanged_count = 0;
+
+    for file_path in &tracked_files {
+        if let Some(dotfile) = all_dotfiles.get(file_path) {
+            let was_modified = !dotfile.is_target_unmodified(db)?;
+
+            if was_modified {
+                let old_source_hash = if dotfile.source_path.exists() {
+                    Some(Dotfile::compute_hash(&dotfile.source_path)?)
+                } else {
+                    None
+                };
+
+                dotfile.fetch(db)?;
+
+                let new_source_hash = Dotfile::compute_hash(&dotfile.source_path)?;
+
+                if old_source_hash.as_ref() != Some(&new_source_hash) {
+                    let relative_path = dotfile
+                        .target_path
+                        .strip_prefix(&home)
+                        .unwrap_or(&dotfile.target_path);
+                    println!(
+                        "{} Updated ~/{} (changes detected)",
+                        char::from(NerdFont::Check),
+                        relative_path.display().to_string().green()
+                    );
+                    updated_count += 1;
+                } else {
+                    unchanged_count += 1;
+                }
+            } else {
+                unchanged_count += 1;
+            }
+        }
+    }
+
+    // Handle untracked files
+    if add_all && !untracked_files.is_empty() {
+        println!(
+            "\n{} Adding {} untracked file(s)...",
+            char::from(NerdFont::Info),
+            untracked_files.len()
+        );
+
+        for file_path in &untracked_files {
+            add_new_file(config, db, file_path)?;
+        }
+    } else if !untracked_files.is_empty() {
+        let relative_dir = dir_path.strip_prefix(&home).unwrap_or(dir_path);
+        emit(
+            Level::Info,
+            "dot.add.untracked_skipped",
+            &format!(
+                "{} Skipped {} untracked file(s) in ~/{}\n  Use 'ins dot add --all ~/{} to add them",
+                char::from(NerdFont::Info),
+                untracked_files.len(),
+                relative_dir.display(),
+                relative_dir.display()
+            ),
+            None,
+        );
+    }
+
+    // Summary
+    db.cleanup_hashes(config.hash_cleanup_days)?;
+
+    if updated_count > 0 || unchanged_count > 0 || (add_all && !untracked_files.is_empty()) {
+        emit(
+            Level::Success,
+            "dot.add.complete",
+            &format!(
+                "{} Complete: {} updated, {} unchanged{}",
+                char::from(NerdFont::Check),
+                updated_count,
+                unchanged_count,
+                if add_all && !untracked_files.is_empty() {
+                    format!(", {} added", untracked_files.len())
+                } else {
+                    String::new()
+                }
+            ),
+            None,
+        );
+    } else {
+        emit(
+            Level::Info,
+            "dot.add.no_changes",
+            &format!("{} No changes to process", char::from(NerdFont::Info)),
+            None,
+        );
+    }
 
     Ok(())
 }
