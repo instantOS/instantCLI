@@ -547,15 +547,35 @@ fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<()> 
     Ok(())
 }
 
-/// Add or update files in a directory
-fn add_directory(config: &Config, db: &Database, dir_path: &Path, add_all: bool) -> Result<()> {
-    let all_dotfiles = get_all_dotfiles(config, db)?;
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+/// Statistics for directory add operation
+struct DirectoryAddStats {
+    updated_count: usize,
+    unchanged_count: usize,
+    added_count: usize,
+}
 
+impl DirectoryAddStats {
+    fn new() -> Self {
+        Self {
+            updated_count: 0,
+            unchanged_count: 0,
+            added_count: 0,
+        }
+    }
+
+    fn has_changes(&self) -> bool {
+        self.updated_count > 0 || self.unchanged_count > 0 || self.added_count > 0
+    }
+}
+
+/// Scan directory and categorize files as tracked or untracked
+fn scan_and_categorize_files(
+    dir_path: &Path,
+    all_dotfiles: &HashMap<PathBuf, Dotfile>,
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut tracked_files = Vec::new();
     let mut untracked_files = Vec::new();
 
-    // Scan directory for files
     for entry in WalkDir::new(dir_path)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -575,86 +595,129 @@ fn add_directory(config: &Config, db: &Database, dir_path: &Path, add_all: bool)
         }
     }
 
-    // Update tracked files
-    let mut updated_count = 0;
-    let mut unchanged_count = 0;
+    (tracked_files, untracked_files)
+}
 
-    for file_path in &tracked_files {
+/// Get tracked dotfiles within a directory (without filesystem traversal)
+fn get_tracked_files_in_dir<'a>(
+    dir_path: &Path,
+    all_dotfiles: &'a HashMap<PathBuf, Dotfile>,
+) -> Vec<&'a Dotfile> {
+    all_dotfiles
+        .values()
+        .filter(|dotfile| dotfile.target_path.starts_with(dir_path))
+        .collect()
+}
+
+/// Update a single tracked dotfile and return whether it was updated or unchanged
+fn update_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<bool> {
+    let was_modified = !dotfile.is_target_unmodified(db)?;
+
+    if !was_modified {
+        return Ok(false); // unchanged
+    }
+
+    let old_source_hash = if dotfile.source_path.exists() {
+        Some(Dotfile::compute_hash(&dotfile.source_path)?)
+    } else {
+        None
+    };
+
+    dotfile.fetch(db)?;
+
+    let new_source_hash = Dotfile::compute_hash(&dotfile.source_path)?;
+    let has_changes = old_source_hash.as_ref() != Some(&new_source_hash);
+
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let relative_path = dotfile
+        .target_path
+        .strip_prefix(&home)
+        .unwrap_or(&dotfile.target_path);
+
+    if has_changes {
+        println!(
+            "{} Updated ~/{} (changes detected)",
+            char::from(NerdFont::Check),
+            relative_path.display().to_string().green()
+        );
+    }
+
+    Ok(has_changes)
+}
+
+/// Update multiple tracked dotfiles
+fn update_tracked_dotfiles(
+    dotfiles: &[&Dotfile],
+    db: &Database,
+    stats: &mut DirectoryAddStats,
+) -> Result<()> {
+    for dotfile in dotfiles {
+        let was_updated = update_single_dotfile(dotfile, db)?;
+        if was_updated {
+            stats.updated_count += 1;
+        } else {
+            stats.unchanged_count += 1;
+        }
+    }
+    Ok(())
+}
+
+/// Update tracked dotfiles from a list of file paths
+fn update_tracked_files_by_path(
+    file_paths: &[PathBuf],
+    all_dotfiles: &HashMap<PathBuf, Dotfile>,
+    db: &Database,
+    stats: &mut DirectoryAddStats,
+) -> Result<()> {
+    for file_path in file_paths {
         if let Some(dotfile) = all_dotfiles.get(file_path) {
-            let was_modified = !dotfile.is_target_unmodified(db)?;
-
-            if was_modified {
-                let old_source_hash = if dotfile.source_path.exists() {
-                    Some(Dotfile::compute_hash(&dotfile.source_path)?)
-                } else {
-                    None
-                };
-
-                dotfile.fetch(db)?;
-
-                let new_source_hash = Dotfile::compute_hash(&dotfile.source_path)?;
-
-                if old_source_hash.as_ref() != Some(&new_source_hash) {
-                    let relative_path = dotfile
-                        .target_path
-                        .strip_prefix(&home)
-                        .unwrap_or(&dotfile.target_path);
-                    println!(
-                        "{} Updated ~/{} (changes detected)",
-                        char::from(NerdFont::Check),
-                        relative_path.display().to_string().green()
-                    );
-                    updated_count += 1;
-                } else {
-                    unchanged_count += 1;
-                }
+            let was_updated = update_single_dotfile(dotfile, db)?;
+            if was_updated {
+                stats.updated_count += 1;
             } else {
-                unchanged_count += 1;
+                stats.unchanged_count += 1;
             }
         }
     }
+    Ok(())
+}
 
-    // Handle untracked files
-    if add_all && !untracked_files.is_empty() {
-        println!(
-            "\n{} Adding {} untracked file(s)...",
-            char::from(NerdFont::Info),
-            untracked_files.len()
-        );
-
-        for file_path in &untracked_files {
-            add_new_file(config, db, file_path)?;
-        }
-    } else if !untracked_files.is_empty() {
-        let relative_dir = dir_path.strip_prefix(&home).unwrap_or(dir_path);
-        emit(
-            Level::Info,
-            "dot.add.untracked_skipped",
-            &format!(
-                "{} Skipped {} untracked file(s) in ~/{}\n  Use 'ins dot add --all ~/{} to add them",
-                char::from(NerdFont::Info),
-                untracked_files.len(),
-                relative_dir.display(),
-                relative_dir.display()
-            ),
-            None,
-        );
+/// Add multiple untracked files
+fn add_untracked_files(
+    file_paths: &[PathBuf],
+    config: &Config,
+    db: &Database,
+) -> Result<usize> {
+    if file_paths.is_empty() {
+        return Ok(0);
     }
 
-    // Summary
-    db.cleanup_hashes(config.hash_cleanup_days)?;
+    println!(
+        "\n{} Adding {} untracked file(s)...",
+        char::from(NerdFont::Info),
+        file_paths.len()
+    );
 
-    if updated_count > 0 || unchanged_count > 0 || (add_all && !untracked_files.is_empty()) {
+    for file_path in file_paths {
+        add_new_file(config, db, file_path)?;
+    }
+
+    Ok(file_paths.len())
+}
+
+/// Print summary of directory add operation
+fn print_directory_add_summary(stats: &DirectoryAddStats) {
+    if stats.has_changes() {
         emit(
             Level::Success,
             "dot.add.complete",
             &format!(
                 "{} Complete: {} updated, {} unchanged{}",
                 char::from(NerdFont::Check),
-                updated_count,
-                unchanged_count,
-                if add_all && !untracked_files.is_empty() {
-                    format!(", {} added", untracked_files.len())
+                stats.updated_count,
+                stats.unchanged_count,
+                if stats.added_count > 0 {
+                    format!(", {} added", stats.added_count)
                 } else {
                     String::new()
                 }
@@ -669,6 +732,49 @@ fn add_directory(config: &Config, db: &Database, dir_path: &Path, add_all: bool)
             None,
         );
     }
+}
+
+/// Add or update files in a directory
+fn add_directory(config: &Config, db: &Database, dir_path: &Path, add_all: bool) -> Result<()> {
+    let all_dotfiles = get_all_dotfiles(config, db)?;
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let mut stats = DirectoryAddStats::new();
+
+    if add_all {
+        // With --all: Do full directory traversal to find both tracked and untracked files
+        let (tracked_files, untracked_files) = scan_and_categorize_files(dir_path, &all_dotfiles);
+
+        // Update tracked files
+        update_tracked_files_by_path(&tracked_files, &all_dotfiles, db, &mut stats)?;
+
+        // Add untracked files
+        stats.added_count = add_untracked_files(&untracked_files, config, db)?;
+    } else {
+        // Without --all: Only process tracked files (no expensive directory traversal)
+        let tracked_in_dir = get_tracked_files_in_dir(dir_path, &all_dotfiles);
+
+        if tracked_in_dir.is_empty() {
+            let relative_dir = dir_path.strip_prefix(&home).unwrap_or(dir_path);
+            emit(
+                Level::Info,
+                "dot.add.no_tracked",
+                &format!(
+                    "{} No tracked files found in ~/{}\n  Use 'ins dot add --all ~/{} to add untracked files",
+                    char::from(NerdFont::Info),
+                    relative_dir.display(),
+                    relative_dir.display()
+                ),
+                None,
+            );
+            return Ok(());
+        }
+
+        // Update tracked files
+        update_tracked_dotfiles(&tracked_in_dir, db, &mut stats)?;
+    }
+
+    db.cleanup_hashes(config.hash_cleanup_days)?;
+    print_directory_add_summary(&stats);
 
     Ok(())
 }
