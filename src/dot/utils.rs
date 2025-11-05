@@ -146,9 +146,6 @@ pub fn scan_directory_for_dotfiles(dir_path: &Path, home_path: &Path) -> Result<
     Ok(dotfiles)
 }
 
-
-
-
 /// Helper function to merge dotfiles with later repos overriding earlier ones
 pub fn merge_dotfiles(dotfiles_list: Vec<Vec<Dotfile>>) -> HashMap<PathBuf, Dotfile> {
     let mut filemap = HashMap::new();

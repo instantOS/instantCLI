@@ -6,4 +6,3 @@ pub mod reset;
 pub use add::add_dotfile;
 pub use apply::apply_all;
 pub use reset::reset_modified;
-

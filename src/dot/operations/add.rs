@@ -155,9 +155,6 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str, add_all: bool) ->
     Ok(())
 }
 
-
-
-
 /// Update a tracked file by copying from target to source
 fn update_tracked_file(dotfile: &Dotfile, db: &Database) -> Result<()> {
     let was_modified = !dotfile.is_target_unmodified(db)?;
@@ -283,9 +280,6 @@ fn scan_and_categorize_files(
     (tracked_files, untracked_files)
 }
 
-
-
-
 /// Update a single tracked dotfile and return whether it was updated or unchanged
 fn update_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<bool> {
     let was_modified = !dotfile.is_target_unmodified(db)?;
@@ -339,14 +333,8 @@ fn update_tracked_dotfiles(
     Ok(())
 }
 
-
-
 /// Add multiple untracked files
-fn add_untracked_files(
-    file_paths: &[PathBuf],
-    config: &Config,
-    db: &Database,
-) -> Result<usize> {
+fn add_untracked_files(file_paths: &[PathBuf], config: &Config, db: &Database) -> Result<usize> {
     if file_paths.is_empty() {
         return Ok(0);
     }
@@ -392,6 +380,3 @@ fn print_directory_add_summary(stats: &DirectoryAddStats) {
         );
     }
 }
-
-
-

@@ -81,4 +81,3 @@ pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> 
 
     Ok(())
 }
-

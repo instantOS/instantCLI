@@ -23,4 +23,4 @@ pub use operations::{add_dotfile, apply_all, reset_modified};
 pub use types::RepoName;
 
 // Re-export utility functions
-pub use utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
+pub use utils::{get_all_dotfiles, resolve_dotfile_path};

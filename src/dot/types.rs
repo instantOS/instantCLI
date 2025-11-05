@@ -77,4 +77,3 @@ impl FzfSelectable for DotsDirSelectItem {
         ))
     }
 }
-
