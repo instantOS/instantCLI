@@ -2,6 +2,7 @@ use std::{fs, path::PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::common::paths;
 use super::models::UsersFile;
 
 /// Persistent storage for tracking which users are managed by ins.
@@ -61,10 +62,5 @@ impl UserStore {
 
 /// Get the path to the users.toml file
 fn users_file_path() -> Result<PathBuf> {
-    let config_dir = dirs::config_dir()
-        .context("unable to determine user config directory")?
-        .join("instant");
-    fs::create_dir_all(&config_dir)
-        .with_context(|| format!("creating config directory {}", config_dir.display()))?;
-    Ok(config_dir.join("users.toml"))
+    paths::users_config_file()
 }

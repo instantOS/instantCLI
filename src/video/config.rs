@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
-use dirs::{cache_dir, config_dir, data_dir};
+use dirs::{cache_dir, config_dir};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use crate::common::paths;
 
 pub struct VideoDirectories {
     data_root: PathBuf,
@@ -11,10 +13,7 @@ pub struct VideoDirectories {
 
 impl VideoDirectories {
     pub fn new() -> Result<Self> {
-        let data_root = data_dir()
-            .context("Unable to determine data directory for video projects")?
-            .join("instant")
-            .join("video");
+        let data_root = paths::instant_video_dir()?;
 
         let cache_root = cache_dir()
             .context("Unable to determine cache directory for video projects")?
@@ -130,10 +129,7 @@ impl VideoConfig {
 }
 
 fn video_config_path() -> Result<PathBuf> {
-    let config_root = config_dir()
-        .context("Unable to determine config directory")?
-        .join("instant");
-    Ok(config_root.join("video.toml"))
+    paths::video_config_file()
 }
 
 impl VideoProjectPaths {

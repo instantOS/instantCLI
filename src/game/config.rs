@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::common::paths;
 use crate::dot::path_serde::TildePath;
 
 /// Describes what kind of filesystem element a tracked path represents
@@ -252,13 +253,7 @@ pub struct InstallationsConfig {
 }
 
 pub fn games_config_dir() -> Result<PathBuf> {
-    let config_dir = dirs::config_dir()
-        .context("Unable to determine config directory")?
-        .join("instant")
-        .join("games");
-
-    fs::create_dir_all(&config_dir).context("creating games config directory")?;
-    Ok(config_dir)
+    paths::games_config_dir()
 }
 
 pub fn games_config_path() -> Result<PathBuf> {

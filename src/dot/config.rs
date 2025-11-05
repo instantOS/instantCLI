@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::common::paths;
 use crate::dot::path_serde::TildePath;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -36,19 +37,19 @@ fn default_hash_cleanup_days() -> u32 {
 }
 
 fn default_repos_dir() -> TildePath {
-    let default_path = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("instant")
-        .join("dots");
-    TildePath::new(default_path)
+    TildePath::new(paths::dots_repo_dir().unwrap_or_else(|_| {
+        PathBuf::from("~/.local/share")
+            .join("instant")
+            .join("dots")
+    }))
 }
 
 fn default_database_dir() -> TildePath {
-    let default_path = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("instant")
-        .join("instant.db");
-    TildePath::new(default_path)
+    TildePath::new(paths::instant_database_file().unwrap_or_else(|_| {
+        PathBuf::from("~/.local/share")
+            .join("instant")
+            .join("instant.db")
+    }))
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -82,12 +83,7 @@ pub fn config_file_path(custom_path: Option<&str>) -> Result<PathBuf> {
         return Ok(PathBuf::from(path));
     }
 
-    let config_dir = dirs::config_dir()
-        .context("Unable to determine config directory")?
-        .join("instant");
-
-    fs::create_dir_all(&config_dir).context("creating config directory")?;
-    Ok(config_dir.join("dots.toml"))
+    paths::dots_config_file()
 }
 
 impl Config {

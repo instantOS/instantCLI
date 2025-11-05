@@ -6,6 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::common::paths;
+
 /// Represents the hierarchical settings structure.
 /// Settings are organized into nested tables based on their dotted keys.
 /// For example, "appearance.autotheming" becomes appearance.autotheming in TOML.
@@ -167,14 +169,7 @@ impl SettingsStore {
 }
 
 fn settings_file_path() -> Result<PathBuf> {
-    let config_dir = dirs::config_dir()
-        .context("unable to determine user config directory")?
-        .join("instant");
-
-    fs::create_dir_all(&config_dir)
-        .with_context(|| format!("creating config directory at {}", config_dir.display()))?;
-
-    Ok(config_dir.join("settings.toml"))
+    paths::settings_config_file()
 }
 
 #[cfg(test)]

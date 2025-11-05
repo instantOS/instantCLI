@@ -1,4 +1,5 @@
 use super::init::initialize_restic_repo;
+use crate::common::paths;
 use crate::dot::path_serde::TildePath;
 use crate::game::config::InstantGameConfig;
 use crate::menu_utils::FzfWrapper;
@@ -391,14 +392,7 @@ impl RepositoryManager {
 
         // Use default if empty
         if repo_input.is_empty() {
-            let default_path = dirs::data_dir()
-                .unwrap_or_else(|| {
-                    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("~"));
-                    home.join(".local/share")
-                })
-                .join("instant")
-                .join("games")
-                .join("repo");
+            let default_path = paths::default_games_repo_path();
             println!(
                 "Using default local repository: {}",
                 default_path.to_string_lossy()
