@@ -38,7 +38,7 @@ fn default_hash_cleanup_days() -> u32 {
 fn default_repos_dir() -> TildePath {
     let default_path = dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("instantos")
+        .join("instant")
         .join("dots");
     TildePath::new(default_path)
 }
@@ -46,7 +46,7 @@ fn default_repos_dir() -> TildePath {
 fn default_database_dir() -> TildePath {
     let default_path = dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("instantos")
+        .join("instant")
         .join("instant.db");
     TildePath::new(default_path)
 }
@@ -87,7 +87,7 @@ pub fn config_file_path(custom_path: Option<&str>) -> Result<PathBuf> {
         .join("instant");
 
     fs::create_dir_all(&config_dir).context("creating config directory")?;
-    Ok(config_dir.join("instant.toml"))
+    Ok(config_dir.join("dots.toml"))
 }
 
 impl Config {

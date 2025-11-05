@@ -17,7 +17,7 @@ impl PackageRepo {
     pub fn new() -> Result<Self> {
         let cache_dir = dirs::cache_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not find cache directory"))?
-            .join("instantos");
+            .join("instant");
 
         std::fs::create_dir_all(&cache_dir).context("Failed to create cache directory")?;
 

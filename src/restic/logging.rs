@@ -55,7 +55,7 @@ impl ResticCommandLogger {
     fn get_log_dir() -> Result<PathBuf> {
         let mut path = dirs::data_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
-        path.push("instantos");
+        path.push("instant");
         path.push("restic_logs");
         Ok(path)
     }
