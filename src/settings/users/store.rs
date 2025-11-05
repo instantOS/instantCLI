@@ -62,5 +62,5 @@ impl UserStore {
 
 /// Get the path to the users.toml file
 fn users_file_path() -> Result<PathBuf> {
-    paths::users_config_file()
+    Ok(paths::instant_config_dir()?.join("users.toml"))
 }

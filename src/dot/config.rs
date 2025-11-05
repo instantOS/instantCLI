@@ -45,11 +45,10 @@ fn default_repos_dir() -> TildePath {
 }
 
 fn default_database_dir() -> TildePath {
-    TildePath::new(paths::instant_database_file().unwrap_or_else(|_| {
+    TildePath::new(paths::instant_data_dir().unwrap_or_else(|_| {
         PathBuf::from("~/.local/share")
             .join("instant")
-            .join("instant.db")
-    }))
+    }).join("instant.db"))
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -83,7 +82,7 @@ pub fn config_file_path(custom_path: Option<&str>) -> Result<PathBuf> {
         return Ok(PathBuf::from(path));
     }
 
-    paths::dots_config_file()
+    Ok(paths::instant_config_dir()?.join("dots.toml"))
 }
 
 impl Config {

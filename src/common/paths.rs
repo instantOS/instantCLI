@@ -28,32 +28,12 @@ pub fn instant_data_dir() -> Result<PathBuf> {
     Ok(data_dir)
 }
 
-/// Get the instant dots configuration file path
-pub fn dots_config_file() -> Result<PathBuf> {
-    Ok(instant_config_dir()?.join("dots.toml"))
-}
-
-/// Get the instant settings configuration file path
-pub fn settings_config_file() -> Result<PathBuf> {
-    Ok(instant_config_dir()?.join("settings.toml"))
-}
-
-/// Get the instant users configuration file path
-pub fn users_config_file() -> Result<PathBuf> {
-    Ok(instant_config_dir()?.join("users.toml"))
-}
-
 /// Get the instant games config directory
 pub fn games_config_dir() -> Result<PathBuf> {
     let games_dir = instant_config_dir()?.join("games");
     std::fs::create_dir_all(&games_dir)
         .with_context(|| format!("creating games config directory at {}", games_dir.display()))?;
     Ok(games_dir)
-}
-
-/// Get the instant games configuration file path
-pub fn games_config_file() -> Result<PathBuf> {
-    Ok(games_config_dir()?.join("games.toml"))
 }
 
 /// Get the instant dots repository directory
@@ -64,10 +44,6 @@ pub fn dots_repo_dir() -> Result<PathBuf> {
     Ok(dots_dir)
 }
 
-/// Get the instant database directory and file
-pub fn instant_database_file() -> Result<PathBuf> {
-    Ok(instant_data_dir()?.join("instant.db"))
-}
 
 /// Get the instant video data directory
 pub fn instant_video_dir() -> Result<PathBuf> {
@@ -77,13 +53,6 @@ pub fn instant_video_dir() -> Result<PathBuf> {
     Ok(video_dir)
 }
 
-/// Get the instant games repository directory (for restic)
-pub fn instant_games_repo_dir() -> Result<PathBuf> {
-    let games_repo_dir = instant_data_dir()?.join("games").join("repo");
-    std::fs::create_dir_all(&games_repo_dir)
-        .with_context(|| format!("creating games repo directory at {}", games_repo_dir.display()))?;
-    Ok(games_repo_dir)
-}
 
 /// Get the instant restic logs directory
 pub fn instant_restic_logs_dir() -> Result<PathBuf> {
@@ -93,10 +62,6 @@ pub fn instant_restic_logs_dir() -> Result<PathBuf> {
     Ok(logs_dir)
 }
 
-/// Get the instant video configuration file path
-pub fn video_config_file() -> Result<PathBuf> {
-    Ok(instant_config_dir()?.join("video.toml"))
-}
 
 /// Get the default local repository path for games (fallback)
 pub fn default_games_repo_path() -> PathBuf {

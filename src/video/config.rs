@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use dirs::{cache_dir, config_dir};
+use dirs::cache_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -129,7 +129,7 @@ impl VideoConfig {
 }
 
 fn video_config_path() -> Result<PathBuf> {
-    paths::video_config_file()
+    Ok(paths::instant_config_dir()?.join("video.toml"))
 }
 
 impl VideoProjectPaths {

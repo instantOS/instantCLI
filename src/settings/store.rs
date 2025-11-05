@@ -169,7 +169,7 @@ impl SettingsStore {
 }
 
 fn settings_file_path() -> Result<PathBuf> {
-    paths::settings_config_file()
+    Ok(paths::instant_config_dir()?.join("settings.toml"))
 }
 
 #[cfg(test)]
