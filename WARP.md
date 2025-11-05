@@ -88,7 +88,7 @@ High-level architecture and structure
 - Dotfile management (src/dot)
   - Responsibilities: manage dotfile repositories, track file hashes, apply/fetch/reset files, and handle multi-repo overlays and subdirectory activation.
   - Key pieces:
-    - config.rs: loads and manages TOML config at ~/.config/instant/instant.toml
+    - config.rs: loads and manages TOML config at ~/.config/instant/dots.toml
     - db.rs: SQLite-backed hash store to protect user modifications (source vs target file distinction)
     - dotfile.rs: core apply/fetch/reset logic with safety checks
     - git.rs, localrepo.rs, meta.rs, repo/: plumbing for cloning/updating repos and subdir management
@@ -116,9 +116,9 @@ High-level architecture and structure
 
 Data/config locations (source of truth in code and CLAUDE.md)
 
-- Config: ~/.config/instant/instant.toml
-- Database: ~/.local/share/instantos/instant.db
-- Dot repos: ~/.local/share/instantos/dots/
+- Config: ~/.config/instant/dots.toml
+- Database: ~/.local/share/instant/instant.db
+- Dot repos: ~/.local/share/instant/dots/
 
 Agent-focused rules and notes (adapted from CLAUDE.md and CI)
 

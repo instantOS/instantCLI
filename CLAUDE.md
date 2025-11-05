@@ -101,7 +101,7 @@ let result = FzfWrapper::builder()
 
 2. **Dotfile Management** (`src/dot/`): Core dotfile functionality
    - `mod.rs`: Main orchestration logic for dotfile operations
-   - `config.rs`: Configuration management (TOML-based, stored in `~/.config/instant/instant.toml`)
+   - `config.rs`: Configuration management (TOML-based, stored in `~/.config/instant/dots.toml`)
    - `db.rs`: SQLite database for tracking file hashes and modifications
    - `dotfile.rs`: Core `Dotfile` struct with apply/fetch/reset operations
    - `git.rs`: Git repository operations (cloning, updating, status checking)
@@ -201,11 +201,11 @@ CREATE TABLE file_hashes (
 ```
 
 **DotFileType Enum**:
-- `SourceFile` (serializes as `true`): Files in the dotfile repository (`~/.local/share/instantos/dots/`)
+- `SourceFile` (serializes as `true`): Files in the dotfile repository (`~/.local/share/instant/dots/`)
 - `TargetFile` (serializes as `false`): Files in the home directory (`~/`)
 
 **Key Concepts**:
-- **Source Files**: Files in the dotfile repository (`~/.local/share/instantos/dots/`)
+- **Source Files**: Files in the dotfile repository (`~/.local/share/instant/dots/`)
 - **Target Files**: Files in the home directory (`~/`)
 - **DotFileType Enum**: Explicitly tracks hash origin with clear semantics
 - **Lazy Hash Computation**: Hashes are computed on-demand and cached with timestamp validation
@@ -231,7 +231,7 @@ The `is_target_unmodified()` function determines if a target file can be safely 
 
 ### Configuration Structure
 
-TOML config at `~/.config/instant/instant.toml`:
+TOML config at `~/.config/instant/dots.toml`:
 ```toml
 clone_depth = 1  # Default git clone depth
 
@@ -253,9 +253,9 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 **Web serach** always use firecrawl or fetch to do research on the web. 
 
 **Config Locations**: 
-- Config: `~/.config/instant/instant.toml`
-- Database: `~/.local/share/instantos/instant.db` 
-- Repos: `~/.local/share/instantos/dots/`
+- Config: `~/.config/instant/dots.toml`
+- Database: `~/.local/share/instant/instant.db`
+- Repos: `~/.local/share/instant/dots/`
 
 ## Key Commands
 

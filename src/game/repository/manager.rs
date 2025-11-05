@@ -396,7 +396,7 @@ impl RepositoryManager {
                     let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("~"));
                     home.join(".local/share")
                 })
-                .join("instantos")
+                .join("instant")
                 .join("games")
                 .join("repo");
             println!(

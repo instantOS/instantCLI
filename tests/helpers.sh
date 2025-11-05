@@ -17,7 +17,7 @@ setup_test_env() {
     mkdir -p "${HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
 
     mkdir -p "${XDG_CONFIG_HOME}/instant"
-    cat > "${XDG_CONFIG_HOME}/instant/instant.toml" <<'EOF'
+    cat > "${XDG_CONFIG_HOME}/instant/dots.toml" <<'EOF'
 clone_depth = 0
 EOF
 }
