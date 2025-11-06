@@ -37,18 +37,18 @@ fn default_hash_cleanup_days() -> u32 {
 }
 
 fn default_repos_dir() -> TildePath {
-    TildePath::new(paths::dots_repo_dir().unwrap_or_else(|_| {
-        PathBuf::from("~/.local/share")
-            .join("instant")
-            .join("dots")
-    }))
+    TildePath::new(
+        paths::dots_repo_dir()
+            .unwrap_or_else(|_| PathBuf::from("~/.local/share").join("instant").join("dots")),
+    )
 }
 
 fn default_database_dir() -> TildePath {
-    TildePath::new(paths::instant_data_dir().unwrap_or_else(|_| {
-        PathBuf::from("~/.local/share")
-            .join("instant")
-    }).join("instant.db"))
+    TildePath::new(
+        paths::instant_data_dir()
+            .unwrap_or_else(|_| PathBuf::from("~/.local/share").join("instant"))
+            .join("instant.db"),
+    )
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

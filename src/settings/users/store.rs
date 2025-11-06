@@ -2,8 +2,8 @@ use std::{fs, path::PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::common::paths;
 use super::models::UsersFile;
+use crate::common::paths;
 
 /// Persistent storage for tracking which users are managed by ins.
 /// The actual user state is always read from the system.

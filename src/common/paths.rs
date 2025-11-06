@@ -44,7 +44,6 @@ pub fn dots_repo_dir() -> Result<PathBuf> {
     Ok(dots_dir)
 }
 
-
 /// Get the instant video data directory
 pub fn instant_video_dir() -> Result<PathBuf> {
     let video_dir = instant_data_dir()?.join("video");
@@ -53,7 +52,6 @@ pub fn instant_video_dir() -> Result<PathBuf> {
     Ok(video_dir)
 }
 
-
 /// Get the instant restic logs directory
 pub fn instant_restic_logs_dir() -> Result<PathBuf> {
     let logs_dir = instant_data_dir()?.join("restic_logs");
@@ -61,7 +59,6 @@ pub fn instant_restic_logs_dir() -> Result<PathBuf> {
         .with_context(|| format!("creating restic logs directory at {}", logs_dir.display()))?;
     Ok(logs_dir)
 }
-
 
 /// Get the default local repository path for games (fallback)
 pub fn default_games_repo_path() -> PathBuf {
