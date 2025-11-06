@@ -117,7 +117,7 @@ fn handle_enable_locales(ctx: &mut SettingsContext, state: &LocaleState) -> Resu
 
     let mut items: Vec<LocaleToggleItem> = disabled
         .into_iter()
-        .map(|entry| LocaleToggleItem::from_entry(entry))
+        .map(LocaleToggleItem::from_entry)
         .collect();
 
     items.sort();
@@ -171,7 +171,7 @@ fn handle_disable_locales(ctx: &mut SettingsContext, state: &LocaleState) -> Res
 
     let mut items: Vec<LocaleToggleItem> = enabled
         .into_iter()
-        .map(|entry| LocaleToggleItem::from_entry(entry))
+        .map(LocaleToggleItem::from_entry)
         .collect();
     items.sort();
 
@@ -468,7 +468,7 @@ impl LocaleToggleItem {
 
 impl FzfSelectable for LocaleToggleItem {
     fn fzf_display_text(&self) -> String {
-        format!("{}", self.label)
+        self.label.to_string()
     }
 }
 
@@ -537,10 +537,10 @@ impl LocaleState {
         let enabled_set = enabled_locales()?;
         let mut entries = load_available_locales(&enabled_set)?;
 
-        if let Some(current) = &current_locale {
-            if !entries.iter().any(|entry| entry.locale == *current) {
-                entries.push(LocaleEntry::fallback(current.clone(), true));
-            }
+        if let Some(current) = &current_locale
+            && !entries.iter().any(|entry| entry.locale == *current)
+        {
+            entries.push(LocaleEntry::fallback(current.clone(), true));
         }
 
         entries.sort();
@@ -650,10 +650,10 @@ fn enabled_locales() -> Result<HashSet<String>> {
 
     let mut set = HashSet::new();
     for line in contents.lines() {
-        if let Some(parsed) = LocaleGenLine::parse(line) {
-            if !parsed.commented {
-                set.insert(parsed.locale.to_string());
-            }
+        if let Some(parsed) = LocaleGenLine::parse(line)
+            && !parsed.commented
+        {
+            set.insert(parsed.locale.to_string());
         }
     }
     Ok(set)

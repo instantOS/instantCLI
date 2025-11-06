@@ -321,7 +321,6 @@ fn current_timezone() -> Result<Option<String>> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout)
-        .trim()
         .split_whitespace()
         .next()
         .map(|s| s.to_string()))
