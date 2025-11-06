@@ -4,6 +4,7 @@ pub mod commands;
 pub mod context;
 pub mod defaultapps;
 pub mod firmware;
+pub mod language;
 pub mod network;
 pub mod packages;
 pub mod printer;
