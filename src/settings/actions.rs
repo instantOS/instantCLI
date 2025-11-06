@@ -3,7 +3,7 @@ use duct::cmd;
 use std::process::Command;
 
 use crate::common::systemd::{SystemdManager, UserServiceConfig};
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 
 use super::context::SettingsContext;
@@ -274,6 +274,41 @@ struct TimezoneChoice {
     is_current: bool,
 }
 
+fn timezone_preview_command() -> String {
+    r#"bash -c '
+tz="$1"
+
+if [ -z "$tz" ]; then
+  exit 0
+fi
+
+printf "═══════════════════════════════════════════════════\n"
+printf "Timezone: %s\n" "$tz"
+printf "═══════════════════════════════════════════════════\n\n"
+
+current_local=$(TZ="$tz" date +"%Y-%m-%d %H:%M:%S %Z")
+day_line=$(TZ="$tz" date +"%A, %d %B %Y")
+twelve_hour=$(TZ="$tz" date +"%I:%M %p")
+twenty_four=$(TZ="$tz" date +"%H:%M")
+local_system=$(date +"%Y-%m-%d %H:%M:%S %Z")
+
+printf "Current time:\n  %s\n  %s\n\n" "$current_local" "$day_line"
+
+offset=$(TZ="$tz" date +%z)
+sign=${offset:0:1}
+hours=${offset:1:2}
+mins=${offset:3:2}
+
+printf "UTC offset:\n  UTC%s%s:%s\n\n" "$sign" "$hours" "$mins"
+
+printf "12-hour clock:\n  %s\n" "$twelve_hour"
+printf "24-hour clock:\n  %s\n\n" "$twenty_four"
+
+printf "Local system time:\n  %s\n" "$local_system"
+'"#
+    .to_string()
+}
+
 impl FzfSelectable for TimezoneChoice {
     fn fzf_display_text(&self) -> String {
         let marker = if self.is_current {
@@ -286,6 +321,10 @@ impl FzfSelectable for TimezoneChoice {
 
     fn fzf_key(&self) -> String {
         self.value.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Command(timezone_preview_command())
     }
 }
 
@@ -355,11 +394,13 @@ pub fn configure_timezone(ctx: &mut SettingsContext) -> Result<()> {
 
     let mut builder = FzfWrapper::builder()
         .prompt("Timezone")
-        .header("Select a timezone (timedatectl set-timezone)");
+        .header("Select a timezone (preview shows current time)");
 
     if let Some(index) = initial_index {
         builder = builder.initial_index(index);
     }
+
+    builder = builder.args(["--preview-window=right:50%:wrap"]);
 
     match builder.select(choices)? {
         FzfResult::Selected(choice) => {
