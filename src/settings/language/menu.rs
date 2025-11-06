@@ -57,10 +57,8 @@ impl LocaleMenuEntry {
     fn fzf_display_text(&self) -> String {
         let marker = if self.is_current {
             format!("{} ", char::from(NerdFont::Check))
-        } else if self.enabled {
-            format!("{} ", char::from(NerdFont::CircleCheck))
         } else {
-            format!("{} ", char::from(NerdFont::Circle))
+            "- ".to_string()
         };
 
         format!("{marker}{}", self.label)
