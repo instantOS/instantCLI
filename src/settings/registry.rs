@@ -1,6 +1,7 @@
 use crate::common::requirements::{InstallTest, RequiredPackage};
 use crate::ui::prelude::NerdFont;
 
+use super::firmware;
 use super::printer;
 use super::store::{BoolSettingKey, StringSettingKey};
 use super::users;
@@ -587,6 +588,21 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: false,
         requirements: &[],
+    },
+    SettingDefinition {
+        id: "system.firmware",
+        title: "Firmware Manager",
+        category: "system",
+        icon: NerdFont::Cpu,
+        breadcrumbs: &["Firmware Manager"],
+        kind: SettingKind::Command {
+            summary: "Launch GNOME Firmware manager to view and update device firmware.\n\nManage firmware for BIOS/UEFI, devices, and peripherals.",
+            command: CommandSpec::detached("gnome-firmware", &[]),
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(
+            firmware::GNOME_FIRMWARE_PACKAGE,
+        )],
     },
     // Quick access settings for common applications
     SettingDefinition {
