@@ -66,7 +66,7 @@ impl Game {
 
         // Game name
         text.push_str(&format!("{}\n", self.name.0.cyan().bold()));
-        text.push_str(&"\n".to_string());
+        text.push_str("\n");
 
         // Description
         if let Some(desc) = description {

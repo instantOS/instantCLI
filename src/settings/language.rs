@@ -2,16 +2,18 @@ use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
+use std::iter;
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use tempfile::NamedTempFile;
 
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 
 use super::SettingsContext;
+use super::context::{format_icon, select_one_with_style};
 
 const LOCALE_GEN_PATH: &str = "/etc/locale.gen";
 const LOCALE_DATA_DIR: &str = "/usr/share/i18n/locales";
@@ -28,226 +30,186 @@ pub fn configure_system_language(ctx: &mut SettingsContext) -> Result<()> {
             return Ok(());
         }
 
-        match select_language_action(&state)? {
-            None | Some(LanguageMenuAction::Exit) => return Ok(()),
-            Some(LanguageMenuAction::SetDefault) => {
-                handle_set_default(ctx, &state)?;
+        let menu_items = build_language_menu_items(&state);
+
+        match select_one_with_style(menu_items)? {
+            Some(LanguageMenuItem::Locale(locale_item)) => {
+                if handle_locale_entry(ctx, &state, locale_item.locale.clone())? {
+                    continue;
+                }
             }
-            Some(LanguageMenuAction::EnableLocales) => {
-                handle_enable_locales(ctx, &state)?;
+            Some(LanguageMenuItem::Add) => {
+                if handle_add_locale(ctx, &state)? {
+                    continue;
+                }
             }
-            Some(LanguageMenuAction::DisableLocales) => {
-                handle_disable_locales(ctx, &state)?;
-            }
+            _ => return Ok(()),
         }
     }
 }
 
-fn handle_set_default(ctx: &mut SettingsContext, state: &LocaleState) -> Result<()> {
-    let enabled_locales: Vec<_> = state.entries.iter().filter(|entry| entry.enabled).collect();
-
-    if enabled_locales.is_empty() {
-        ctx.emit_info(
-            "settings.language.no_enabled",
-            "No locales are currently generated. Enable locales first.",
-        );
-        return Ok(());
-    }
-
-    let current = state.current_locale.as_deref();
-    let mut items: Vec<LocaleSelectionItem> = enabled_locales
-        .into_iter()
-        .map(|entry| LocaleSelectionItem::from_entry(entry, current))
+fn build_language_menu_items(state: &LocaleState) -> Vec<LanguageMenuItem> {
+    let mut entries: Vec<LocaleMenuEntry> = state
+        .entries
+        .iter()
+        .filter(|&entry| {
+            entry.enabled
+                || state
+                    .current_locale
+                    .as_deref()
+                    .map(|locale| locale == entry.locale)
+                    .unwrap_or(false)
+        })
+        .cloned()
+        .map(|entry| LocaleMenuEntry::from_entry(entry, state.current_locale.as_deref()))
         .collect();
 
-    items.sort();
+    entries.sort();
 
-    let mut builder = FzfWrapper::builder()
-        .prompt("System language")
-        .header("Select the default system language (LANG)");
+    let mut items: Vec<LanguageMenuItem> =
+        entries.into_iter().map(LanguageMenuItem::Locale).collect();
 
-    if let Some(index) = items.iter().position(|item| item.is_current) {
-        builder = builder.initial_index(index);
+    items.push(LanguageMenuItem::Add);
+    items.push(LanguageMenuItem::Back);
+
+    items
+}
+
+fn handle_locale_entry(
+    ctx: &mut SettingsContext,
+    state: &LocaleState,
+    locale: String,
+) -> Result<bool> {
+    let entry = match state.entry(&locale) {
+        Some(entry) => entry.clone(),
+        None => {
+            ctx.emit_info(
+                "settings.language.missing",
+                "Locale no longer available. Refreshing list.",
+            );
+            return Ok(true);
+        }
+    };
+
+    let is_current = state.current_locale.as_deref() == Some(entry.locale.as_str());
+    let multiple_enabled = state.enabled_count() > 1;
+    let can_remove = entry.enabled && multiple_enabled && !is_current;
+
+    let mut actions = Vec::new();
+
+    if !is_current {
+        actions.push(LocaleActionItem::SetDefault {
+            locale: entry.locale.clone(),
+            label: entry.label.clone(),
+        });
     }
 
-    match builder.select(items)? {
-        FzfResult::Selected(item) => {
-            if Some(item.locale.as_str()) == current {
-                ctx.emit_info(
-                    "settings.language.unchanged",
-                    "System language already set to the selected locale.",
-                );
-                return Ok(());
-            }
+    if can_remove {
+        actions.push(LocaleActionItem::Remove {
+            locale: entry.locale.clone(),
+            label: entry.label.clone(),
+        });
+    }
 
-            let lang_arg = format!("LANG={}", item.locale);
-            ctx.run_command_as_root(
-                "localectl",
-                [OsStr::new("set-locale"), OsStr::new(&lang_arg)],
-            )?;
-            ctx.emit_success(
-                "settings.language.updated",
-                &format!("System language set to {}.", item.label),
-            );
-            ctx.notify(
-                "System language",
-                "Log out or reboot for all applications to pick up the new locale.",
-            );
-            Ok(())
+    actions.push(LocaleActionItem::Back);
+
+    match select_one_with_style(actions)? {
+        Some(LocaleActionItem::SetDefault { locale, label }) => {
+            set_system_language(ctx, &locale, &label)?;
+            Ok(true)
         }
-        FzfResult::Error(err) => bail!("fzf error: {err}"),
-        _ => Ok(()),
+        Some(LocaleActionItem::Remove { locale, label }) => {
+            disable_locale(ctx, &locale, &label)?;
+            Ok(true)
+        }
+        _ => Ok(false),
     }
 }
 
-fn handle_enable_locales(ctx: &mut SettingsContext, state: &LocaleState) -> Result<()> {
-    let disabled: Vec<_> = state
+fn handle_add_locale(ctx: &mut SettingsContext, state: &LocaleState) -> Result<bool> {
+    let mut candidates: Vec<LocaleToggleItem> = state
         .entries
         .iter()
         .filter(|entry| !entry.enabled)
-        .collect();
-
-    if disabled.is_empty() {
-        ctx.emit_info(
-            "settings.language.enable.none",
-            "All available locales are already enabled.",
-        );
-        return Ok(());
-    }
-
-    let mut items: Vec<LocaleToggleItem> = disabled
-        .into_iter()
+        .cloned()
         .map(LocaleToggleItem::from_entry)
         .collect();
 
-    items.sort();
+    if candidates.is_empty() {
+        ctx.emit_info(
+            "settings.language.add.none",
+            "All locales reported by localectl are already enabled.",
+        );
+        return Ok(false);
+    }
+
+    candidates.sort();
 
     let selection = FzfWrapper::builder()
         .multi_select(true)
-        .prompt("Enable locales")
-        .header("Select additional locales to generate (locale-gen)")
-        .select(items)?;
+        .prompt("Add locale")
+        .header("Select locales to enable (locale-gen)")
+        .select(candidates)?;
 
     let selected = match selection {
         FzfResult::MultiSelected(items) => items,
         FzfResult::Selected(item) => vec![item],
         FzfResult::Error(err) => bail!("fzf error: {err}"),
-        _ => return Ok(()),
+        _ => return Ok(false),
     };
 
     if selected.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
 
     let locales: Vec<String> = selected.into_iter().map(|item| item.locale).collect();
-    apply_locale_gen_updates(ctx, &locales, &[])?;
-    ctx.run_command_as_root("locale-gen", std::iter::empty::<&OsStr>())?;
+    enable_locales(ctx, &locales)?;
+    Ok(true)
+}
+
+fn set_system_language(ctx: &mut SettingsContext, locale: &str, label: &str) -> Result<()> {
+    let lang_arg = format!("LANG={locale}");
+    ctx.run_command_as_root(
+        "localectl",
+        [OsStr::new("set-locale"), OsStr::new(&lang_arg)],
+    )?;
+    ctx.emit_success(
+        "settings.language.updated",
+        &format!("System language set to {label}."),
+    );
+    ctx.notify(
+        "System language",
+        "Log out or reboot for applications to use the new locale.",
+    );
+    Ok(())
+}
+
+fn enable_locales(ctx: &mut SettingsContext, locales: &[String]) -> Result<()> {
+    apply_locale_gen_updates(ctx, locales, &[])?;
+    ctx.run_command_as_root("locale-gen", iter::empty::<&OsStr>())?;
     ctx.emit_success(
         "settings.language.enabled",
-        "Selected locales enabled and locale-gen completed.",
+        "Selected locales were generated successfully.",
     );
     ctx.notify(
         "Locales",
-        "New locales generated. You can now set one as the system language.",
+        "Locales are ready. Set one as the default language if desired.",
     );
     Ok(())
 }
 
-fn handle_disable_locales(ctx: &mut SettingsContext, state: &LocaleState) -> Result<()> {
-    let current = state.current_locale.as_deref();
-    let enabled: Vec<_> = state
-        .entries
-        .iter()
-        .filter(|entry| entry.enabled && Some(entry.locale.as_str()) != current)
-        .collect();
-
-    if enabled.is_empty() {
-        ctx.emit_info(
-            "settings.language.disable.none",
-            "No additional locales can be disabled.",
-        );
-        return Ok(());
-    }
-
-    let mut items: Vec<LocaleToggleItem> = enabled
-        .into_iter()
-        .map(LocaleToggleItem::from_entry)
-        .collect();
-    items.sort();
-
-    let selection = FzfWrapper::builder()
-        .multi_select(true)
-        .prompt("Disable locales")
-        .header("Select locales to remove from /etc/locale.gen")
-        .select(items)?;
-
-    let selected = match selection {
-        FzfResult::MultiSelected(items) => items,
-        FzfResult::Selected(item) => vec![item],
-        FzfResult::Error(err) => bail!("fzf error: {err}"),
-        _ => return Ok(()),
-    };
-
-    if selected.is_empty() {
-        return Ok(());
-    }
-
-    let locales: Vec<String> = selected.into_iter().map(|item| item.locale).collect();
-    apply_locale_gen_updates(ctx, &[], &locales)?;
-    ctx.run_command_as_root("locale-gen", std::iter::empty::<&OsStr>())?;
+fn disable_locale(ctx: &mut SettingsContext, locale: &str, label: &str) -> Result<()> {
+    apply_locale_gen_updates(ctx, &[], &[locale.to_string()])?;
+    ctx.run_command_as_root("locale-gen", iter::empty::<&OsStr>())?;
     ctx.emit_success(
         "settings.language.disabled",
-        "Selected locales disabled and locale-gen completed.",
+        &format!("{label} removed from generated locales."),
     );
     ctx.notify(
         "Locales",
-        "Locales removed. Applications using them may need to restart.",
+        "Locale removed. Restart applications that used it.",
     );
     Ok(())
-}
-
-fn select_language_action(state: &LocaleState) -> Result<Option<LanguageMenuAction>> {
-    let mut options = Vec::new();
-
-    if !state.entries.is_empty() {
-        let label = state
-            .current_locale
-            .as_ref()
-            .and_then(|locale| state.entries.iter().find(|entry| entry.locale == *locale))
-            .map(|entry| entry.label.clone())
-            .unwrap_or_else(|| "Not set".to_string());
-        options.push(LanguageMenuOption::new(
-            LanguageMenuAction::SetDefault,
-            format!("Set system language (current: {label})"),
-        ));
-    }
-
-    if state.entries.iter().any(|entry| !entry.enabled) {
-        options.push(LanguageMenuOption::new(
-            LanguageMenuAction::EnableLocales,
-            "Enable additional locales",
-        ));
-    }
-
-    if state.entries.iter().filter(|entry| entry.enabled).count() > 1 {
-        options.push(LanguageMenuOption::new(
-            LanguageMenuAction::DisableLocales,
-            "Disable locales",
-        ));
-    }
-
-    options.push(LanguageMenuOption::new(LanguageMenuAction::Exit, "Back"));
-
-    let result = FzfWrapper::builder()
-        .prompt("System language")
-        .header("Manage system locales")
-        .select(options)?;
-
-    Ok(match result {
-        FzfResult::Selected(option) => Some(option.action),
-        FzfResult::Error(err) => bail!("fzf error: {err}"),
-        _ => None,
-    })
 }
 
 fn apply_locale_gen_updates(
@@ -262,7 +224,6 @@ fn apply_locale_gen_updates(
     let disable_set: HashSet<_> = disable.iter().cloned().collect();
 
     let mut seen_enabled = HashSet::new();
-    let mut seen_disabled = HashSet::new();
     let mut changed = false;
     let mut new_lines = Vec::with_capacity(original.lines().count());
 
@@ -280,7 +241,6 @@ fn apply_locale_gen_updates(
             }
 
             if disable_set.contains(parsed.locale) {
-                seen_disabled.insert(parsed.locale.to_string());
                 if !parsed.commented {
                     changed = true;
                     new_lines.push(parsed.with_comment(true));
@@ -306,9 +266,7 @@ fn apply_locale_gen_updates(
     }
 
     let mut updated = new_lines.join("\n");
-    if original.ends_with('\n') {
-        updated.push('\n');
-    } else {
+    if !updated.ends_with('\n') {
         updated.push('\n');
     }
 
@@ -396,56 +354,150 @@ impl<'a> LocaleGenLine<'a> {
 }
 
 #[derive(Clone)]
-struct LocaleSelectionItem {
-    locale: String,
-    label: String,
-    is_current: bool,
-    has_human_name: bool,
+enum LanguageMenuItem {
+    Locale(LocaleMenuEntry),
+    Add,
+    Back,
 }
 
-impl LocaleSelectionItem {
-    fn from_entry(entry: &LocaleEntry, current: Option<&str>) -> Self {
-        Self {
-            locale: entry.locale.clone(),
-            label: entry.label.clone(),
-            is_current: current == Some(entry.locale.as_str()),
-            has_human_name: entry.has_human_name,
+impl FzfSelectable for LanguageMenuItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            LanguageMenuItem::Locale(entry) => entry.fzf_display_text(),
+            LanguageMenuItem::Add => format!("{} Add locale", format_icon(NerdFont::Plus)),
+            LanguageMenuItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            LanguageMenuItem::Locale(entry) => entry.fzf_preview(),
+            LanguageMenuItem::Add => FzfPreview::Text(
+                "Enable additional locales by writing to /etc/locale.gen and running locale-gen"
+                    .to_string(),
+            ),
+            LanguageMenuItem::Back => FzfPreview::Text("Return to settings".to_string()),
         }
     }
 }
 
-impl FzfSelectable for LocaleSelectionItem {
+#[derive(Clone)]
+struct LocaleMenuEntry {
+    locale: String,
+    label: String,
+    is_current: bool,
+    has_human_name: bool,
+    enabled: bool,
+}
+
+impl LocaleMenuEntry {
+    fn from_entry(entry: LocaleEntry, current: Option<&str>) -> Self {
+        Self {
+            is_current: current == Some(entry.locale.as_str()),
+            has_human_name: entry.has_human_name,
+            enabled: entry.enabled,
+            locale: entry.locale,
+            label: entry.label,
+        }
+    }
+
     fn fzf_display_text(&self) -> String {
         let marker = if self.is_current {
             format!("{} ", char::from(NerdFont::Check))
+        } else if self.enabled {
+            format!("{} ", char::from(NerdFont::CircleCheck))
         } else {
-            "   ".to_string()
+            format!("{} ", char::from(NerdFont::Circle))
         };
+
         format!("{marker}{}", self.label)
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let mut lines = vec![format!(
+            "{} Locale: {}",
+            char::from(NerdFont::Info),
+            self.locale
+        )];
+
+        if self.is_current {
+            lines.push(format!(
+                "{} This is the current system language (LANG).",
+                char::from(NerdFont::Check)
+            ));
+        }
+
+        lines.push(if self.enabled {
+            format!(
+                "{} Generated locale present in /etc/locale.gen",
+                char::from(NerdFont::CheckCircle)
+            )
+        } else {
+            format!(
+                "{} Locale not yet generated; add it to /etc/locale.gen",
+                char::from(NerdFont::Warning)
+            )
+        });
+
+        FzfPreview::Text(lines.join("\n"))
     }
 }
 
-impl PartialEq for LocaleSelectionItem {
+impl PartialEq for LocaleMenuEntry {
     fn eq(&self, other: &Self) -> bool {
         self.locale == other.locale
     }
 }
 
-impl Eq for LocaleSelectionItem {}
+impl Eq for LocaleMenuEntry {}
 
-impl PartialOrd for LocaleSelectionItem {
+impl PartialOrd for LocaleMenuEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for LocaleSelectionItem {
+impl Ord for LocaleMenuEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self.has_human_name, other.has_human_name) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
             _ => self.label.cmp(&other.label),
         }
+    }
+}
+
+#[derive(Clone)]
+enum LocaleActionItem {
+    SetDefault { locale: String, label: String },
+    Remove { locale: String, label: String },
+    Back,
+}
+
+impl FzfSelectable for LocaleActionItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            LocaleActionItem::SetDefault { .. } => {
+                format!("{} Set as default language", format_icon(NerdFont::Check))
+            }
+            LocaleActionItem::Remove { .. } => {
+                format!("{} Remove locale", format_icon(NerdFont::Trash))
+            }
+            LocaleActionItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let text = match self {
+            LocaleActionItem::SetDefault { label, .. } => {
+                format!("Set LANG to use {label} as the system language.")
+            }
+            LocaleActionItem::Remove { label, .. } => {
+                format!("Comment {label} out of /etc/locale.gen and regenerate locales.")
+            }
+            LocaleActionItem::Back => "Return to the locale list".to_string(),
+        };
+        FzfPreview::Text(text)
     }
 }
 
@@ -457,10 +509,10 @@ struct LocaleToggleItem {
 }
 
 impl LocaleToggleItem {
-    fn from_entry(entry: &LocaleEntry) -> Self {
+    fn from_entry(entry: LocaleEntry) -> Self {
         Self {
-            locale: entry.locale.clone(),
-            label: entry.label.clone(),
+            locale: entry.locale,
+            label: entry.label,
             has_human_name: entry.has_human_name,
         }
     }
@@ -468,7 +520,7 @@ impl LocaleToggleItem {
 
 impl FzfSelectable for LocaleToggleItem {
     fn fzf_display_text(&self) -> String {
-        self.label.to_string()
+        self.label.clone()
     }
 }
 
@@ -496,35 +548,6 @@ impl Ord for LocaleToggleItem {
     }
 }
 
-#[derive(Clone, Copy)]
-enum LanguageMenuAction {
-    SetDefault,
-    EnableLocales,
-    DisableLocales,
-    Exit,
-}
-
-#[derive(Clone)]
-struct LanguageMenuOption {
-    action: LanguageMenuAction,
-    label: String,
-}
-
-impl LanguageMenuOption {
-    fn new(action: LanguageMenuAction, label: impl Into<String>) -> Self {
-        Self {
-            action,
-            label: label.into(),
-        }
-    }
-}
-
-impl FzfSelectable for LanguageMenuOption {
-    fn fzf_display_text(&self) -> String {
-        self.label.clone()
-    }
-}
-
 struct LocaleState {
     entries: Vec<LocaleEntry>,
     current_locale: Option<String>,
@@ -533,14 +556,14 @@ struct LocaleState {
 impl LocaleState {
     fn load() -> Result<Self> {
         let current_locale = current_system_locale()?;
-
-        let enabled_set = enabled_locales()?;
-        let mut entries = load_available_locales(&enabled_set)?;
+        let enabled = enabled_locales()?;
+        let mut entries = load_available_locales(&enabled)?;
 
         if let Some(current) = &current_locale
             && !entries.iter().any(|entry| entry.locale == *current)
         {
-            entries.push(LocaleEntry::fallback(current.clone(), true));
+            let is_enabled = enabled.contains(current);
+            entries.push(LocaleEntry::fallback(current.clone(), is_enabled));
         }
 
         entries.sort();
@@ -549,6 +572,14 @@ impl LocaleState {
             entries,
             current_locale,
         })
+    }
+
+    fn entry(&self, locale: &str) -> Option<&LocaleEntry> {
+        self.entries.iter().find(|entry| entry.locale == locale)
+    }
+
+    fn enabled_count(&self) -> usize {
+        self.entries.iter().filter(|entry| entry.enabled).count()
     }
 }
 
