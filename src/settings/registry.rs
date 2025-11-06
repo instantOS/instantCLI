@@ -303,6 +303,12 @@ pub const CATEGORIES: &[SettingCategory] = &[
         icon: NerdFont::Users,
     },
     SettingCategory {
+        id: "language",
+        title: "Language",
+        description: "Manage system locales and language defaults.",
+        icon: NerdFont::Globe,
+    },
+    SettingCategory {
         id: "system",
         title: "System",
         description: "System administration and maintenance.",
@@ -454,11 +460,11 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[],
     },
     SettingDefinition {
-        id: "system.language",
-        title: "System Language",
-        category: "system",
+        id: "language.main",
+        title: "Language",
+        category: "language",
         icon: NerdFont::Globe,
-        breadcrumbs: &["Language", "System Language"],
+        breadcrumbs: &["Language"],
         kind: SettingKind::Action {
             summary: "Manage system locales and choose the default language.\n\nEnable or disable locales in /etc/locale.gen and set LANG via localectl.",
             run: super::language::configure_system_language,

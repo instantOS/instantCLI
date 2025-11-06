@@ -146,10 +146,10 @@ fn set_system_language(ctx: &mut SettingsContext, locale: &str, label: &str) -> 
     )?;
     ctx.emit_success(
         "settings.language.updated",
-        &format!("System language set to {label}."),
+        &format!("Language set to {label}."),
     );
     ctx.notify(
-        "System language",
+        "Language",
         "Log out or reboot for applications to use the new locale.",
     );
     Ok(())
