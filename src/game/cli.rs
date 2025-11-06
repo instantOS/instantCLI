@@ -49,7 +49,7 @@ pub enum GameCommands {
     /// List all configured games
     List,
     /// Show detailed information about a game
-    Show {
+    Info {
         /// Game name to show (optional, will prompt if not specified)
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,

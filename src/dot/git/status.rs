@@ -462,7 +462,7 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
                         "Use '{bin} dot apply' to apply changes from repositories"
                     ));
                     suggestions.push(format!(
-                        "Use '{bin} dot fetch' to save your modifications to repositories"
+                        "Use '{bin} dot add' to save your modifications to repositories"
                     ));
                 }
                 if outdated_count > 0 {
@@ -508,7 +508,7 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
                 println!("{}", "Suggested actions:".bold());
                 if modified_count > 0 {
                     println!("  Use '{bin} dot apply' to apply changes from repositories");
-                    println!("  Use '{bin} dot fetch' to save your modifications to repositories");
+                    println!("  Use '{bin} dot add' to save your modifications to repositories");
                 }
                 if outdated_count > 0 {
                     println!(

@@ -6,6 +6,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+use crate::common::paths;
+
 // Global debug state
 static DEBUG_MODE: OnceLock<bool> = OnceLock::new();
 
@@ -53,11 +55,7 @@ impl ResticCommandLogger {
     }
 
     fn get_log_dir() -> Result<PathBuf> {
-        let mut path = dirs::data_dir()
-            .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
-        path.push("instantos");
-        path.push("restic_logs");
-        Ok(path)
+        paths::instant_restic_logs_dir()
     }
 
     pub fn log_command(

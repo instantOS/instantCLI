@@ -53,7 +53,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
         }
         GameCommands::Launch { game_name } => handle_launch(game_name),
         GameCommands::List => handle_list(),
-        GameCommands::Show { game_name } => handle_show(game_name),
+        GameCommands::Info { game_name } => handle_info(game_name),
         GameCommands::Edit { game_name } => edit::edit_game(game_name),
         GameCommands::Remove { game_name, force } => handle_remove(game_name, force),
         GameCommands::Backup { game_name } => {
@@ -113,7 +113,7 @@ fn handle_list() -> Result<()> {
     display::list_games()
 }
 
-fn handle_show(game_name: Option<String>) -> Result<()> {
+fn handle_info(game_name: Option<String>) -> Result<()> {
     let game_name = match game_name {
         Some(name) => name,
         None => match selection::select_game_interactive(None)? {

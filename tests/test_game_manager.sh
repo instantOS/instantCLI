@@ -33,9 +33,9 @@ main() {
     echo "${list_json}" | jq -e '.code == "game.list" and (.data.count | tonumber) >= 1' >/dev/null
     echo "${list_json}" | jq -e --arg name "${game_name}" '.data.games[].name == $name' >/dev/null
 
-    # Verify show uses JSON and returns correct game name
-    show_json="$(ins --output json game show "${game_name}")"
-    echo "${show_json}" | jq -e --arg name "${game_name}" 'select(.code=="game.show.details") | .data.game.name == $name' >/dev/null
+    # Verify info uses JSON and returns correct game name
+    info_json="$(ins --output json game info "${game_name}")"
+    echo "${info_json}" | jq -e --arg name "${game_name}" 'select(.code=="game.show.details") | .data.game.name == $name' >/dev/null
 
     ins game sync --force "${game_name}"
 
