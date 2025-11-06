@@ -13,10 +13,7 @@ mod menu;
 mod state;
 
 use locale_gen::apply_locale_gen_updates;
-use menu::{
-    LanguageMenuItem, LocaleActionItem, LocaleMenuEntry, LocaleToggleItem,
-    build_language_menu_items,
-};
+use menu::{LanguageMenuItem, LocaleActionItem, LocaleToggleItem, build_language_menu_items};
 use state::LocaleState;
 
 pub fn configure_system_language(ctx: &mut SettingsContext) -> Result<()> {
