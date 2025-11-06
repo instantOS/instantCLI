@@ -1,8 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use duct::cmd;
+use std::process::Command;
 
 use crate::common::systemd::{SystemdManager, UserServiceConfig};
-use crate::menu_utils::{ConfirmResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 
 use super::context::SettingsContext;
@@ -263,6 +264,239 @@ pub fn launch_cockpit(ctx: &mut SettingsContext) -> Result<()> {
     std::process::Command::new("chromium")
         .arg("--app=http://localhost:9090")
         .spawn()?;
+
+    Ok(())
+}
+
+#[derive(Clone)]
+struct LocaleChoice {
+    value: String,
+    is_current: bool,
+}
+
+impl FzfSelectable for LocaleChoice {
+    fn fzf_display_text(&self) -> String {
+        let marker = if self.is_current {
+            format!("{} ", char::from(NerdFont::Check))
+        } else {
+            "   ".to_string()
+        };
+        format!("{marker}{}", self.value)
+    }
+
+    fn fzf_key(&self) -> String {
+        self.value.clone()
+    }
+}
+
+#[derive(Clone)]
+struct TimezoneChoice {
+    value: String,
+    is_current: bool,
+}
+
+impl FzfSelectable for TimezoneChoice {
+    fn fzf_display_text(&self) -> String {
+        let marker = if self.is_current {
+            format!("{} ", char::from(NerdFont::Check))
+        } else {
+            "   ".to_string()
+        };
+        format!("{marker}{}", self.value)
+    }
+
+    fn fzf_key(&self) -> String {
+        self.value.clone()
+    }
+}
+
+fn read_command_lines(mut command: Command) -> Result<Vec<String>> {
+    let program = command.get_program().to_owned();
+    let output = command
+        .output()
+        .with_context(|| format!("running {:?}", program))?;
+
+    if !output.status.success() {
+        bail!(
+            "command {:?} exited with status {:?}",
+            program,
+            output.status.code()
+        );
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect())
+}
+
+fn current_system_locale() -> Result<Option<String>> {
+    let output = Command::new("localectl")
+        .arg("status")
+        .output()
+        .context("running localectl status")?;
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("System Locale:") {
+            for part in rest.split_whitespace() {
+                if let Some(lang) = part.strip_prefix("LANG=") {
+                    return Ok(Some(lang.to_string()));
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn current_timezone() -> Result<Option<String>> {
+    let output = Command::new("timedatectl")
+        .args(["show", "--property=Timezone", "--value"])
+        .output()
+        .context("running timedatectl show")?;
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .split_whitespace()
+        .next()
+        .map(|s| s.to_string()))
+}
+
+pub fn configure_system_locale(ctx: &mut SettingsContext) -> Result<()> {
+    let locales = read_command_lines({
+        let mut command = Command::new("localectl");
+        command.arg("list-locales");
+        command
+    })?
+    .into_iter()
+    .filter(|locale| locale.contains("UTF-8"))
+    .collect::<Vec<_>>();
+
+    if locales.is_empty() {
+        ctx.emit_info(
+            "settings.locale.none",
+            "No generated locales detected. Update /etc/locale.gen and run locale-gen.",
+        );
+        return Ok(());
+    }
+
+    let current = current_system_locale()?.unwrap_or_default();
+
+    let choices: Vec<LocaleChoice> = locales
+        .into_iter()
+        .map(|value| LocaleChoice {
+            is_current: value == current,
+            value,
+        })
+        .collect();
+
+    let initial_index = choices.iter().position(|choice| choice.is_current);
+
+    let mut builder = FzfWrapper::builder()
+        .prompt("Locale")
+        .header("Select a system locale (localectl set-locale)");
+
+    if let Some(index) = initial_index {
+        builder = builder.initial_index(index);
+    }
+
+    match builder.select(choices)? {
+        FzfResult::Selected(choice) => {
+            if choice.value == current {
+                ctx.emit_info(
+                    "settings.locale.unchanged",
+                    "System locale already set to the selected value.",
+                );
+                return Ok(());
+            }
+
+            let lang_arg = format!("LANG={}", choice.value);
+            ctx.run_command_as_root("localectl", ["set-locale", lang_arg.as_str()])?;
+            ctx.emit_success(
+                "settings.locale.updated",
+                &format!("System locale set to {}.", choice.value),
+            );
+            ctx.notify(
+                "System locale",
+                "Log out or reboot to ensure language changes take effect.",
+            );
+        }
+        FzfResult::Error(err) => {
+            bail!("fzf error: {err}");
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+pub fn configure_timezone(ctx: &mut SettingsContext) -> Result<()> {
+    let timezones = read_command_lines({
+        let mut command = Command::new("timedatectl");
+        command.arg("list-timezones");
+        command
+    })?;
+
+    if timezones.is_empty() {
+        ctx.emit_info(
+            "settings.timezone.none",
+            "No timezones detected. Ensure tzdata is installed.",
+        );
+        return Ok(());
+    }
+
+    let current = current_timezone()?.unwrap_or_default();
+
+    let choices: Vec<TimezoneChoice> = timezones
+        .into_iter()
+        .map(|value| TimezoneChoice {
+            is_current: value == current,
+            value,
+        })
+        .collect();
+
+    let initial_index = choices.iter().position(|choice| choice.is_current);
+
+    let mut builder = FzfWrapper::builder()
+        .prompt("Timezone")
+        .header("Select a timezone (timedatectl set-timezone)");
+
+    if let Some(index) = initial_index {
+        builder = builder.initial_index(index);
+    }
+
+    match builder.select(choices)? {
+        FzfResult::Selected(choice) => {
+            if choice.value == current {
+                ctx.emit_info(
+                    "settings.timezone.unchanged",
+                    "Timezone already set to the selected value.",
+                );
+                return Ok(());
+            }
+
+            ctx.run_command_as_root("timedatectl", ["set-timezone", choice.value.as_str()])?;
+            ctx.emit_success(
+                "settings.timezone.updated",
+                &format!("Timezone set to {}.", choice.value),
+            );
+            ctx.notify("Timezone", "System clock updated to the selected timezone.");
+        }
+        FzfResult::Error(err) => {
+            bail!("fzf error: {err}");
+        }
+        _ => {}
+    }
 
     Ok(())
 }

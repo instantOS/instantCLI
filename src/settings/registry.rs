@@ -454,6 +454,32 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[],
     },
     SettingDefinition {
+        id: "system.locale",
+        title: "System Locale",
+        category: "system",
+        icon: NerdFont::Globe,
+        breadcrumbs: &["Language", "System Locale"],
+        kind: SettingKind::Action {
+            summary: "Configure the system default language using localectl set-locale.\n\nChoose from the locales generated in /etc/locale.gen.",
+            run: super::actions::configure_system_locale,
+        },
+        requires_reapply: true,
+        requirements: &[],
+    },
+    SettingDefinition {
+        id: "system.timezone",
+        title: "Timezone",
+        category: "system",
+        icon: NerdFont::Clock,
+        breadcrumbs: &["Language", "Timezone"],
+        kind: SettingKind::Action {
+            summary: "Select the system timezone via timedatectl set-timezone.",
+            run: super::actions::configure_timezone,
+        },
+        requires_reapply: false,
+        requirements: &[],
+    },
+    SettingDefinition {
         id: "bluetooth.service",
         title: "Enable Bluetooth",
         category: "bluetooth",
