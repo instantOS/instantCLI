@@ -11,6 +11,7 @@ use crate::game::config::{
 use crate::game::deps::{display, selection};
 use crate::game::games::selection::select_game_interactive;
 use crate::game::restic::dependencies::{backup_dependency, restore_dependency};
+use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::game::utils::save_files::get_save_directory_info;
 use crate::game::utils::validation;
 use crate::menu_utils::{
@@ -166,6 +167,7 @@ fn prepare_dependency_source(
 ) -> Result<DependencySource> {
     let raw = resolve_source_path(source_path, game_name)?;
     let expanded = PathBuf::from(shellexpand::tilde(&raw).to_string());
+    ensure_safe_path(&expanded, PathUsage::DependencySource)?;
     let metadata = fs::metadata(&expanded)
         .with_context(|| format!("Failed to read metadata for dependency path: {}", raw))?;
 
@@ -290,6 +292,8 @@ pub fn install_dependency(options: InstallDependencyOptions) -> Result<()> {
             dependency_id, target_path_input
         )
     })?;
+
+    ensure_safe_path(install_path_tilde.as_path(), PathUsage::DependencyInstall)?;
 
     if !prepare_install_target(&install_path_tilde, selected_dependency.source_type)? {
         return Ok(());

@@ -10,6 +10,7 @@ use crate::game::config::{
 };
 use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
+use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::game::utils::save_files::{SaveDirectoryInfo, get_save_directory_info};
 use crate::menu::protocol;
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper};
@@ -224,6 +225,8 @@ fn finalize_game_setup(
         let snapshot_file_name = snapshot_selection.snapshot_file_name();
         save_path = resolve_single_file_save_path(save_path, &selected_path, snapshot_file_name)?;
     }
+
+    ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory)?;
 
     let path_display = save_path
         .to_tilde_string()

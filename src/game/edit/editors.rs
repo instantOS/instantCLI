@@ -1,6 +1,7 @@
 use anyhow::{Result, anyhow};
 
 use crate::game::utils::path::{path_selection_to_tilde, tilde_display_string};
+use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder};
 use crate::ui::nerd_font::NerdFont;
 
@@ -263,6 +264,10 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
                 println!("{} Save path unchanged.", char::from(NerdFont::Info));
                 Ok(false)
             } else {
+                if let Err(err) = ensure_safe_path(new_path.as_path(), PathUsage::SaveDirectory) {
+                    println!("{} {}", char::from(NerdFont::CrossCircle), err);
+                    return Ok(false);
+                }
                 state.installation_mut().unwrap().save_path = new_path;
                 println!("{} Save path updated", char::from(NerdFont::Check));
                 Ok(true)

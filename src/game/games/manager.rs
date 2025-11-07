@@ -3,6 +3,7 @@ use crate::dot::path_serde::TildePath;
 use crate::game::config::{
     Game, GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,
 };
+use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
     ConfirmResult, FilePickerScope, FzfWrapper, PathInputBuilder, PathInputSelection,
 };
@@ -268,6 +269,11 @@ impl GameManager {
             }
         };
 
+        if let Err(err) = ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory) {
+            println!("{} {}", char::from(NerdFont::CrossCircle), err);
+            return Self::get_save_path(game_name);
+        }
+
         let save_path_display = save_path
             .to_tilde_string()
             .unwrap_or_else(|_| save_path.as_path().to_string_lossy().to_string());
@@ -374,6 +380,8 @@ fn resolve_add_game_details(
             let tilde_path =
                 TildePath::from_str(trimmed).map_err(|e| anyhow!("Invalid save path: {}", e))?;
 
+            ensure_safe_path(tilde_path.as_path(), PathUsage::SaveDirectory)?;
+
             if !tilde_path.as_path().exists() {
                 if create_save_path {
                     fs::create_dir_all(tilde_path.as_path())
@@ -396,6 +404,8 @@ fn resolve_add_game_details(
         }
         None => GameManager::get_save_path(&game_name)?,
     };
+
+    ensure_safe_path(save_path.as_path(), PathUsage::SaveDirectory)?;
 
     let save_path_type = if save_path.as_path().exists() {
         let metadata = fs::metadata(save_path.as_path()).with_context(|| {

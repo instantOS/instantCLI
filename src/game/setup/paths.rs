@@ -6,6 +6,7 @@ use crate::dot::path_serde::TildePath;
 use crate::game::utils::path::{
     is_valid_wine_prefix, is_wine_prefix_path, path_selection_to_tilde, tilde_display_string,
 };
+use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu::protocol;
 use crate::menu_utils::{
     FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, PathInputSelection,
@@ -146,6 +147,13 @@ pub(super) fn prompt_manual_save_path(
             return Ok(None);
         }
     };
+
+    if let Some(ref tilde) = tilde_path {
+        if let Err(err) = ensure_safe_path(tilde.as_path(), PathUsage::SaveDirectory) {
+            println!("{} {}", char::from(NerdFont::CrossCircle), err);
+            return prompt_manual_save_path(game_name, original_save_path, enable_wine_prefix);
+        }
+    }
 
     Ok(tilde_path.map(|tilde| SelectedSavePath {
         display_path: tilde_display_string(&tilde),
