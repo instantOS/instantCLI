@@ -665,9 +665,7 @@ fn sync_single_game(
         (Some(local_time), Some(snapshot)) => {
             // Both local saves and snapshots exist - compare timestamps
             match compare_snapshot_vs_local(&snapshot.time, local_time) {
-                Ok(TimeComparison::LocalNewer) => {
-                    Ok(SyncAction::CreateBackup)
-                }
+                Ok(TimeComparison::LocalNewer) => Ok(SyncAction::CreateBackup),
                 Ok(TimeComparison::LocalNewerWithinTolerance(delta)) => {
                     if force {
                         return Ok(SyncAction::CreateBackup);

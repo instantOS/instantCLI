@@ -131,10 +131,8 @@ fn normalize_components(path: &Path) -> PathBuf {
             Component::RootDir => normalized.push(component.as_os_str()),
             Component::CurDir => {}
             Component::ParentDir => {
-                if !normalized.pop() {
-                    if !is_absolute {
-                        normalized.push("..");
-                    }
+                if !normalized.pop() && !is_absolute {
+                    normalized.push("..");
                 }
             }
             Component::Normal(part) => normalized.push(part),

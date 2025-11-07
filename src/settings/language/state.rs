@@ -21,11 +21,11 @@ impl LocaleState {
         let enabled = locale_gen::enabled_locales()?;
         let mut entries = load_available_locales(&enabled)?;
 
-        if let Some(current) = &current_locale {
-            if !entries.iter().any(|entry| entry.locale == *current) {
-                let is_enabled = enabled.contains(current);
-                entries.push(LocaleEntry::fallback(current.clone(), is_enabled));
-            }
+        if let Some(current) = &current_locale
+            && !entries.iter().any(|entry| entry.locale == *current)
+        {
+            let is_enabled = enabled.contains(current);
+            entries.push(LocaleEntry::fallback(current.clone(), is_enabled));
         }
 
         entries.sort();

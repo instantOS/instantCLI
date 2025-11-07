@@ -15,10 +15,10 @@ pub(super) fn enabled_locales() -> Result<HashSet<String>> {
 
     let mut set = HashSet::new();
     for line in contents.lines() {
-        if let Some(parsed) = LocaleGenLine::parse(line) {
-            if !parsed.commented {
-                set.insert(parsed.locale.to_string());
-            }
+        if let Some(parsed) = LocaleGenLine::parse(line)
+            && !parsed.commented
+        {
+            set.insert(parsed.locale.to_string());
         }
     }
     Ok(set)

@@ -148,11 +148,11 @@ pub(super) fn prompt_manual_save_path(
         }
     };
 
-    if let Some(ref tilde) = tilde_path {
-        if let Err(err) = ensure_safe_path(tilde.as_path(), PathUsage::SaveDirectory) {
-            println!("{} {}", char::from(NerdFont::CrossCircle), err);
-            return prompt_manual_save_path(game_name, original_save_path, enable_wine_prefix);
-        }
+    if let Some(ref tilde) = tilde_path
+        && let Err(err) = ensure_safe_path(tilde.as_path(), PathUsage::SaveDirectory)
+    {
+        println!("{} {}", char::from(NerdFont::CrossCircle), err);
+        return prompt_manual_save_path(game_name, original_save_path, enable_wine_prefix);
     }
 
     Ok(tilde_path.map(|tilde| SelectedSavePath {
