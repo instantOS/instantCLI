@@ -170,11 +170,13 @@ fn create_preview_local_comparison(
 
                 // Add comparison result with clear status indication
                 match compare_snapshot_vs_local(snapshot_time, local_time) {
-                    Ok(TimeComparison::LocalNewer) => {
+                    Ok(TimeComparison::LocalNewer)
+                    | Ok(TimeComparison::LocalNewerWithinTolerance(_)) => {
                         comparison.push_str("\n STATUS: LOCAL SAVES ARE NEWER\n");
                         comparison.push_str("     Restoring would overwrite newer local saves\n");
                     }
-                    Ok(TimeComparison::SnapshotNewer) => {
+                    Ok(TimeComparison::SnapshotNewer)
+                    | Ok(TimeComparison::SnapshotNewerWithinTolerance(_)) => {
                         comparison.push_str("\n STATUS: SNAPSHOT IS NEWER\n");
                         comparison.push_str("     Safe to restore (backup contains newer data)\n");
                     }
@@ -464,8 +466,10 @@ impl FzfSelectable for EnhancedSnapshot {
             if local_info.file_count > 0 {
                 if let Some(local_time) = local_info.last_modified {
                     match compare_snapshot_vs_local(&self.snapshot.time, local_time) {
-                        Ok(TimeComparison::LocalNewer) => " LOCAL NEWER",
-                        Ok(TimeComparison::SnapshotNewer) => " SNAPSHOT NEWER",
+                        Ok(TimeComparison::LocalNewer)
+                        | Ok(TimeComparison::LocalNewerWithinTolerance(_)) => " LOCAL NEWER",
+                        Ok(TimeComparison::SnapshotNewer)
+                        | Ok(TimeComparison::SnapshotNewerWithinTolerance(_)) => " SNAPSHOT NEWER",
                         Ok(TimeComparison::Same) => " =SAME TIME",
                         Ok(TimeComparison::Error(_)) => " COMPARE ERROR",
                         Err(_) => " COMPARE ERROR",

@@ -16,10 +16,15 @@ pub struct SaveDirectoryInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeComparison {
     LocalNewer,
+    LocalNewerWithinTolerance(i64),
     SnapshotNewer,
+    SnapshotNewerWithinTolerance(i64),
     Same,
     Error(String),
 }
+
+/// How close the comparison should treat timestamps as effectively identical (in seconds)
+pub const SYNC_TOLERANCE_SECONDS: i64 = 300;
 
 /// Get comprehensive information about a save directory
 pub fn get_save_directory_info(save_path: &Path) -> Result<SaveDirectoryInfo> {
@@ -119,17 +124,25 @@ pub fn compare_snapshot_vs_local(
     let snapshot_dt = parse_snapshot_time(snapshot_time_str)?;
     let local_dt = system_time_to_datetime(local_time);
 
-    // Calculate the time difference
+    if local_dt == snapshot_dt {
+        return Ok(TimeComparison::Same);
+    }
+
+    // Calculate the absolute time difference
     let duration = if local_dt > snapshot_dt {
         local_dt.signed_duration_since(snapshot_dt)
     } else {
         snapshot_dt.signed_duration_since(local_dt)
     };
 
-    // If the difference is less than 5 minutes, consider them the same
-    // (losing 5 minutes of progress is acceptable)
-    if duration.num_seconds() <= 300 {
-        return Ok(TimeComparison::Same);
+    let delta_seconds = duration.num_seconds().abs();
+
+    if delta_seconds <= SYNC_TOLERANCE_SECONDS {
+        if local_dt > snapshot_dt {
+            return Ok(TimeComparison::LocalNewerWithinTolerance(delta_seconds));
+        } else {
+            return Ok(TimeComparison::SnapshotNewerWithinTolerance(delta_seconds));
+        }
     }
 
     if local_dt > snapshot_dt {

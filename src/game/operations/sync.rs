@@ -6,7 +6,9 @@ use crate::game::checkpoint;
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
 use crate::game::restic::backup::GameBackup;
 use crate::game::restic::cache;
-use crate::game::utils::save_files::{TimeComparison, compare_snapshot_vs_local};
+use crate::game::utils::save_files::{
+    SYNC_TOLERANCE_SECONDS, TimeComparison, compare_snapshot_vs_local,
+};
 use crate::game::utils::validation;
 
 /// Sync decision result
@@ -24,8 +26,19 @@ enum SyncAction {
     CreateInitialBackup,
     /// Restore skipped due to matching checkpoint
     RestoreSkipped(String),
+    /// Skipped due to being within tolerance window
+    WithinTolerance {
+        direction: ToleranceDirection,
+        delta_seconds: i64,
+    },
     /// Error condition
     Error(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToleranceDirection {
+    LocalNewer,
+    SnapshotNewer,
 }
 
 fn emit_with_icon(
@@ -54,6 +67,36 @@ fn emit_separator() {
     };
     let line: String = std::iter::repeat_n(ch, 80).collect();
     emit(Level::Info, "separator", &line, None);
+}
+
+fn format_delta(delta_seconds: i64) -> String {
+    let secs = delta_seconds.unsigned_abs();
+    if secs < 60 {
+        format!("{} seconds", secs)
+    } else {
+        let minutes = secs / 60;
+        let seconds = secs % 60;
+        if seconds == 0 {
+            format!("{} minutes", minutes)
+        } else {
+            format!("{} minutes {} seconds", minutes, seconds)
+        }
+    }
+}
+
+fn format_tolerance_window() -> String {
+    let secs = SYNC_TOLERANCE_SECONDS.unsigned_abs();
+    if secs < 60 {
+        format!("{} seconds", secs)
+    } else {
+        let minutes = secs / 60;
+        let seconds = secs % 60;
+        if seconds == 0 {
+            format!("{} minutes", minutes)
+        } else {
+            format!("{} minutes {} seconds", minutes, seconds)
+        }
+    }
 }
 
 /// Handle game save synchronization
@@ -155,6 +198,59 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     Some(serde_json::json!({
                         "game": game_name_plain,
                         "action": "already_in_sync"
+                    })),
+                );
+                total_skipped += 1;
+            }
+            Ok(SyncAction::WithinTolerance {
+                direction,
+                delta_seconds,
+            }) => {
+                let delta_str = format_delta(delta_seconds);
+                let tolerance_str = format_tolerance_window();
+                let (plain_msg, text_msg, code, direction_value) = match direction {
+                    ToleranceDirection::LocalNewer => (
+                        format!(
+                            "{}: Local saves are newer by {}, within the {} safety window (use --force to back up immediately)",
+                            game_name_plain, delta_str, tolerance_str
+                        ),
+                        format!(
+                            "{}: Local saves are newer by {} within the {} safety window (use --force to back up immediately)",
+                            installation.game_name.0.yellow(),
+                            delta_str,
+                            tolerance_str
+                        ),
+                        "game.sync.within_tolerance.local_newer",
+                        "local_newer",
+                    ),
+                    ToleranceDirection::SnapshotNewer => (
+                        format!(
+                            "{}: Latest snapshot is newer by {}, within the {} safety window (use --force to restore immediately)",
+                            game_name_plain, delta_str, tolerance_str
+                        ),
+                        format!(
+                            "{}: Latest snapshot is newer by {} within the {} safety window (use --force to restore immediately)",
+                            installation.game_name.0.yellow(),
+                            delta_str,
+                            tolerance_str
+                        ),
+                        "game.sync.within_tolerance.snapshot_newer",
+                        "snapshot_newer",
+                    ),
+                };
+
+                emit_with_icon(
+                    Level::Info,
+                    code,
+                    char::from(NerdFont::Info),
+                    plain_msg,
+                    text_msg,
+                    Some(serde_json::json!({
+                        "game": game_name_plain,
+                        "action": "within_tolerance",
+                        "direction": direction_value,
+                        "delta_seconds": delta_seconds,
+                        "tolerance_window_seconds": SYNC_TOLERANCE_SECONDS,
                     })),
                 );
                 total_skipped += 1;
@@ -579,6 +675,15 @@ fn sync_single_game(
                     }
                     Ok(SyncAction::CreateBackup)
                 }
+                Ok(TimeComparison::LocalNewerWithinTolerance(delta)) => {
+                    if force {
+                        return Ok(SyncAction::CreateBackup);
+                    }
+                    Ok(SyncAction::WithinTolerance {
+                        direction: ToleranceDirection::LocalNewer,
+                        delta_seconds: delta,
+                    })
+                }
                 Ok(TimeComparison::SnapshotNewer) => {
                     if !force
                         && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
@@ -587,6 +692,21 @@ fn sync_single_game(
                         return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
                     }
                     Ok(SyncAction::RestoreFromSnapshot(snapshot.id.clone()))
+                }
+                Ok(TimeComparison::SnapshotNewerWithinTolerance(delta)) => {
+                    if force {
+                        return Ok(SyncAction::RestoreFromSnapshot(snapshot.id.clone()));
+                    }
+                    if !force
+                        && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
+                        && nearest_checkpoint == &snapshot.id
+                    {
+                        return Ok(SyncAction::RestoreSkipped(snapshot.id.clone()));
+                    }
+                    Ok(SyncAction::WithinTolerance {
+                        direction: ToleranceDirection::SnapshotNewer,
+                        delta_seconds: delta,
+                    })
                 }
                 Ok(TimeComparison::Same) => Ok(SyncAction::NoActionNeeded),
                 Ok(TimeComparison::Error(e)) => {

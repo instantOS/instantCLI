@@ -153,7 +153,7 @@ pub fn check_snapshot_vs_local_saves(
         .context("Failed to compare snapshot and local save times")?;
 
     match time_comparison {
-        TimeComparison::LocalNewer => {
+        TimeComparison::LocalNewer | TimeComparison::LocalNewerWithinTolerance(_) => {
             // Local saves are newer - this is potentially dangerous
             let local_time_str = format_system_time_for_display(Some(local_modified_time));
             let snapshot_time_str = format_snapshot_time_for_display(&snapshot.time);
@@ -169,7 +169,7 @@ pub fn check_snapshot_vs_local_saves(
 
             Ok(confirmed == ConfirmResult::Yes)
         }
-        TimeComparison::SnapshotNewer => {
+        TimeComparison::SnapshotNewer | TimeComparison::SnapshotNewerWithinTolerance(_) => {
             // Snapshot is newer - this is safe, but still inform user
             let local_time_str = format_system_time_for_display(Some(local_modified_time));
             let snapshot_time_str = format_snapshot_time_for_display(&snapshot.time);
