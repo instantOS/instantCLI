@@ -1,7 +1,7 @@
 use crate::menu_utils::{
     ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfWrapper, MenuWrapper,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use protocol::SerializableMenuItem;
 use std::path::PathBuf;
 
@@ -91,7 +91,27 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             }
         }
-        MenuCommands::Chord { ref chords } => chord::run_chord_command(chords),
+        MenuCommands::Chord { ref chords, stdin } => {
+            let mut combined = chords.clone();
+
+            if stdin {
+                use std::io::{self, Read};
+
+                let mut buffer = String::new();
+                io::stdin()
+                    .read_to_string(&mut buffer)
+                    .context("Failed to read chords from stdin")?;
+
+                for line in buffer.lines() {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        combined.push(trimmed.to_string());
+                    }
+                }
+            }
+
+            chord::run_chord_command(&combined)
+        }
         MenuCommands::Pick {
             ref start,
             dirs,
@@ -306,8 +326,11 @@ pub enum MenuCommands {
     /// Show chord navigator for provided chords and print the selected sequence
     Chord {
         /// Chord definitions in the form `keys:description`
-        #[arg(value_name = "CHORD:DESCRIPTION", required = true)]
+        #[arg(value_name = "CHORD:DESCRIPTION")]
         chords: Vec<String>,
+        /// Read additional chord definitions from stdin (one per line)
+        #[arg(long)]
+        stdin: bool,
     },
     /// Menu server management commands
     Server {
