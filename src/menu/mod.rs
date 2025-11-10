@@ -2,6 +2,7 @@ use crate::menu_utils::{
     ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfWrapper, MenuWrapper,
 };
 use anyhow::{Context, Result, anyhow};
+use clap::ValueEnum;
 use protocol::SerializableMenuItem;
 use std::path::PathBuf;
 
@@ -15,6 +16,52 @@ pub mod server;
 pub mod slide;
 pub mod tui;
 use client::MenuClient;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum SliderPreset {
+    #[value(alias = "volume")]
+    Audio,
+}
+
+struct PresetConfig {
+    min: i64,
+    max: i64,
+    value: Option<i64>,
+    step: Option<i64>,
+    big_step: Option<i64>,
+    label: Option<String>,
+    command: Vec<String>,
+}
+
+const AUDIO_COMMAND_SCRIPT: &str = r#"pamixer --set-volume "$1" \
+    || amixer -q set Master "$1%" \
+    || amixer -D pulse set Master "$1%" \
+    || pactl set-sink-volume @DEFAULT_SINK@ "$1%"; \
+if command -v dunstify >/dev/null 2>&1; then \
+    dunstify -a instantCLI -i audio-volume-medium-symbolic \
+        -h int:value:"$1" -r 7368551 "Volume [$1%]"; \
+fi"#;
+
+impl SliderPreset {
+    fn config(self) -> PresetConfig {
+        match self {
+            SliderPreset::Audio => PresetConfig {
+                min: 0,
+                max: 100,
+                value: None,
+                step: Some(1),
+                big_step: Some(5),
+                label: Some("Audio Volume".to_string()),
+                command: vec![
+                    "sh".to_string(),
+                    "-c".to_string(),
+                    AUDIO_COMMAND_SCRIPT.to_string(),
+                    "ins-menu-slide-audio".to_string(),
+                ],
+            },
+        }
+    }
+}
 
 /// Handle menu commands for shell scripts
 pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
@@ -150,17 +197,39 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             label,
             command,
             gui,
+            preset,
         } => {
+            let mut min_value = min;
+            let mut max_value = max;
+            let mut initial_value = value;
+            let mut step_value = step;
+            let mut big_step_value = big_step;
+            let mut label_value = label;
+            let mut command_args = command;
+
+            if let Some(preset_kind) = preset {
+                let preset_config = preset_kind.config();
+                min_value = preset_config.min;
+                max_value = preset_config.max;
+                initial_value = initial_value.or(preset_config.value);
+                step_value = step_value.or(preset_config.step);
+                big_step_value = big_step_value.or(preset_config.big_step);
+                label_value = label_value.or(preset_config.label);
+                if command_args.is_empty() {
+                    command_args = preset_config.command;
+                }
+            }
+
             if gui {
                 let client = MenuClient::new();
                 match client.slide(protocol::SliderRequest {
-                    min,
-                    max,
-                    value,
-                    step,
-                    big_step,
-                    label,
-                    command,
+                    min: min_value,
+                    max: max_value,
+                    value: initial_value,
+                    step: step_value,
+                    big_step: big_step_value,
+                    label: label_value.clone(),
+                    command: command_args.clone(),
                 }) {
                     Ok(Some(result)) => {
                         println!("{result}");
@@ -173,7 +242,15 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                     }
                 }
             } else {
-                match slide::run_slider_command(min, max, value, step, big_step, label, command) {
+                match slide::run_slider_command(
+                    min_value,
+                    max_value,
+                    initial_value,
+                    step_value,
+                    big_step_value,
+                    label_value,
+                    command_args,
+                ) {
                     Ok(Some(result)) => {
                         println!("{result}");
                         Ok(0)
@@ -459,6 +536,9 @@ pub enum MenuCommands {
         /// Command to execute on value changes (value appended as final arg)
         #[arg(long = "command", value_name = "CMD", num_args = 1..)]
         command: Vec<String>,
+        /// Use a preconfigured slider preset
+        #[arg(long, value_enum)]
+        preset: Option<SliderPreset>,
         /// Use GUI menu server instead of local slider
         #[arg(long)]
         gui: bool,
