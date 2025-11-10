@@ -22,6 +22,7 @@ pub enum LaunchCommands {
 }
 
 /// Handle launch command
+// TODO: this is very long and might have mulptiple responsibilities, refactor
 pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
     // Initialize cache
     let mut cache = LaunchCache::new()?;
@@ -101,29 +102,6 @@ pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
                 eprintln!("Error showing menu: {e}");
                 Ok(2) // Error
             }
-        }
-    }
-}
-
-/// Execute an application by name using PATH resolution
-fn execute_application(app_name: &str) -> Result<()> {
-    // Use Command::new() with just the executable name (let PATH resolve it)
-    let mut cmd = Command::new(app_name);
-
-    // Redirect stdout/stderr to /dev/null for clean background execution
-    cmd.stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .stdin(std::process::Stdio::null());
-
-    // Spawn process in background with detachment
-    match cmd.spawn() {
-        Ok(_) => {
-            println!("Launched: {app_name}");
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("Failed to launch {app_name}: {e}");
-            Err(anyhow::anyhow!("Failed to launch application: {}", e))
         }
     }
 }
