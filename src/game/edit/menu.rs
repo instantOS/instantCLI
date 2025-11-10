@@ -6,6 +6,12 @@ use crate::ui::nerd_font::NerdFont;
 use super::editors;
 use super::state::EditState;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Flow {
+    Continue,
+    Exit,
+}
+
 /// Menu action types
 #[derive(Debug, Clone)]
 pub enum MenuAction {
@@ -62,12 +68,12 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
 
         match selection {
             FzfResult::Selected(item) => {
-                if !handle_menu_action(game_name, item.action, state)? {
+                if handle_menu_action(game_name, item.action, state)? == Flow::Exit {
                     return Ok(());
                 }
             }
             FzfResult::Cancelled => {
-                if !handle_cancel(state)? {
+                if handle_cancel(state)? == Flow::Exit {
                     return Ok(());
                 }
             }
@@ -76,8 +82,7 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
     }
 }
 
-/// Handle a menu action, returns true to continue, false to exit
-fn handle_menu_action(game_name: &str, action: MenuAction, state: &mut EditState) -> Result<bool> {
+fn handle_menu_action(game_name: &str, action: MenuAction, state: &mut EditState) -> Result<Flow> {
     match action {
         MenuAction::EditName => {
             if editors::edit_name(state)? {
@@ -116,7 +121,7 @@ fn handle_menu_action(game_name: &str, action: MenuAction, state: &mut EditState
             if state.is_dirty() {
                 state.save()?;
             }
-            return Ok(false);
+            return Ok(Flow::Exit);
         }
         MenuAction::ExitWithoutSaving => {
             if state.is_dirty() {
@@ -125,30 +130,30 @@ fn handle_menu_action(game_name: &str, action: MenuAction, state: &mut EditState
                         "{} Exited without saving changes.",
                         char::from(NerdFont::Info)
                     );
-                    return Ok(false);
+                    return Ok(Flow::Exit);
                 }
             } else {
-                return Ok(false);
+                return Ok(Flow::Exit);
             }
         }
     }
-    Ok(true)
+    Ok(Flow::Continue)
 }
 
 /// Handle cancel/escape from main menu
-fn handle_cancel(state: &EditState) -> Result<bool> {
+fn handle_cancel(state: &EditState) -> Result<Flow> {
     if state.is_dirty() {
         if confirm_discard_changes()? {
             println!(
                 "{} Exited without saving changes.",
                 char::from(NerdFont::Info)
             );
-            return Ok(false);
+            return Ok(Flow::Exit);
         }
     } else {
-        return Ok(false);
+        return Ok(Flow::Exit);
     }
-    Ok(true)
+    Ok(Flow::Continue)
 }
 
 /// Confirm discarding unsaved changes
