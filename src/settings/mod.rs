@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod apply;
 pub mod commands;
+pub mod constants;
 pub mod context;
 pub mod defaultapps;
 pub mod firmware;
@@ -9,6 +10,7 @@ pub mod network;
 pub mod packages;
 pub mod printer;
 pub mod registry;
+pub mod sources;
 pub mod store;
 pub mod ui;
 pub mod users;

@@ -8,6 +8,7 @@ use crate::common::requirements::RequiredPackage;
 use crate::ui::prelude::*;
 
 use super::registry::{SettingDefinition, SettingKind, SettingOption};
+use super::sources;
 use super::store::{BoolSettingKey, SettingsStore, StringSettingKey};
 
 #[derive(Debug)]
@@ -21,13 +22,16 @@ pub struct SettingsContext {
 
 impl SettingsContext {
     pub fn new(store: SettingsStore, debug: bool, privileged_flag: bool) -> Self {
-        Self {
+        let mut ctx = Self {
             store,
             dirty: false,
             debug,
             privileged: privileged_flag || matches!(sudo::check(), RunningAs::Root),
             current_definition: None,
-        }
+        };
+
+        ctx.sync_external_states();
+        ctx
     }
 
     pub fn debug(&self) -> bool {
@@ -39,7 +43,26 @@ impl SettingsContext {
     }
 
     pub fn bool(&self, key: BoolSettingKey) -> bool {
-        self.store.bool(key)
+        if let Some(source) = sources::source_for(&key) {
+            match source.current() {
+                Ok(value) => value,
+                Err(err) => {
+                    emit(
+                        Level::Warn,
+                        "settings.state.read_failed",
+                        &format!(
+                            "{} Failed to read state for '{}': {err}",
+                            char::from(NerdFont::Warning),
+                            key.key
+                        ),
+                        None,
+                    );
+                    self.store.bool(key)
+                }
+            }
+        } else {
+            self.store.bool(key)
+        }
     }
 
     pub fn set_bool(&mut self, key: BoolSettingKey, value: bool) {
@@ -57,6 +80,59 @@ impl SettingsContext {
         if self.store.string(key) != value {
             self.store.set_string(key, value);
             self.dirty = true;
+        }
+    }
+
+    fn sync_external_states(&mut self) {
+        for (key, source) in sources::all_bool_sources() {
+            if let Err(err) = self.update_bool_from_source(*key, *source) {
+                emit(
+                    Level::Warn,
+                    "settings.state.sync_failed",
+                    &format!(
+                        "{} Failed to synchronize state for '{}': {err}",
+                        char::from(NerdFont::Warning),
+                        key.key
+                    ),
+                    None,
+                );
+            }
+        }
+    }
+
+    fn update_bool_from_source(
+        &mut self,
+        key: BoolSettingKey,
+        source: &'static dyn sources::BoolStateSource,
+    ) -> Result<bool> {
+        let current = source.current()?;
+        if self.store.bool(key) != current {
+            self.store.set_bool(key, current);
+            self.dirty = true;
+        }
+        Ok(current)
+    }
+
+    pub fn refresh_bool_source(&mut self, key: BoolSettingKey) -> Result<bool> {
+        if let Some(source) = sources::source_for(&key) {
+            match self.update_bool_from_source(key, source) {
+                Ok(value) => Ok(value),
+                Err(err) => {
+                    emit(
+                        Level::Warn,
+                        "settings.state.refresh_failed",
+                        &format!(
+                            "{} Failed to refresh state for '{}': {err}",
+                            char::from(NerdFont::Warning),
+                            key.key
+                        ),
+                        None,
+                    );
+                    Ok(self.store.bool(key))
+                }
+            }
+        } else {
+            Ok(self.store.bool(key))
         }
     }
 
