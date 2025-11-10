@@ -25,7 +25,7 @@ struct ChordSpec {
     description: String,
 }
 
-pub fn run_chord_command(chord_specs: &[String]) -> Result<i32> {
+pub fn run_chord_selection(chord_specs: &[String]) -> Result<Option<String>> {
     if chord_specs.is_empty() {
         return Err(anyhow!("Provide at least one chord specification"));
     }
@@ -34,12 +34,16 @@ pub fn run_chord_command(chord_specs: &[String]) -> Result<i32> {
     let tree = build_chord_tree(&parsed_specs)?;
 
     let mut navigator = KeyChordNavigator::new(tree)?;
-    let action = navigator.run()?;
-    if let Some(sequence) = action {
-        println!("{sequence}");
-        Ok(0)
-    } else {
-        Ok(1)
+    navigator.run()
+}
+
+pub fn run_chord_command(chord_specs: &[String]) -> Result<i32> {
+    match run_chord_selection(chord_specs)? {
+        Some(sequence) => {
+            println!("{sequence}");
+            Ok(0)
+        }
+        None => Ok(1),
     }
 }
 

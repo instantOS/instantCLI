@@ -1,7 +1,7 @@
 use crate::menu_utils::{
     ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfWrapper, MenuWrapper,
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use protocol::SerializableMenuItem;
 use std::path::PathBuf;
 
@@ -91,7 +91,11 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             }
         }
-        MenuCommands::Chord { ref chords, stdin } => {
+        MenuCommands::Chord {
+            ref chords,
+            stdin,
+            gui,
+        } => {
             let mut combined = chords.clone();
 
             if stdin {
@@ -110,7 +114,26 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             }
 
-            chord::run_chord_command(&combined)
+            if combined.is_empty() {
+                return Err(anyhow!("Provide at least one chord specification"));
+            }
+
+            if gui {
+                let client = MenuClient::new();
+                match client.chord(combined) {
+                    Ok(Some(sequence)) => {
+                        println!("{sequence}");
+                        Ok(0)
+                    }
+                    Ok(None) => Ok(1),
+                    Err(e) => {
+                        eprintln!("GUI menu error: {e}");
+                        Ok(3)
+                    }
+                }
+            } else {
+                chord::run_chord_command(&combined)
+            }
         }
         MenuCommands::Pick {
             ref start,
@@ -331,6 +354,9 @@ pub enum MenuCommands {
         /// Read additional chord definitions from stdin (one per line)
         #[arg(long)]
         stdin: bool,
+        /// Use GUI menu server instead of local chord picker
+        #[arg(long)]
+        gui: bool,
     },
     /// Menu server management commands
     Server {

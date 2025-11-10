@@ -76,6 +76,8 @@ pub enum MenuRequest {
         items: Vec<SerializableMenuItem>,
         multi: bool,
     },
+    /// Show chord navigator using provided chord definitions
+    Chord { chords: Vec<String> },
     /// Show text input dialog
     Input { prompt: String },
     /// Show password input dialog
@@ -101,6 +103,8 @@ pub enum MenuResponse {
     ConfirmResult(ConfirmResult),
     /// Selection menu result(s) with rich item metadata
     ChoiceResult(Vec<SerializableMenuItem>),
+    /// Chord selection result
+    ChordResult(String),
     /// Text input result
     InputResult(String),
     /// Password input result

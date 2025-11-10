@@ -258,6 +258,7 @@ impl MenuServer {
             request,
             MenuRequest::Confirm { .. }
                 | MenuRequest::Choice { .. }
+                | MenuRequest::Chord { .. }
                 | MenuRequest::Input { .. }
                 | MenuRequest::Password { .. }
                 | MenuRequest::FilePicker { .. }

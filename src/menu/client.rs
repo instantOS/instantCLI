@@ -183,6 +183,20 @@ impl MenuClient {
         }
     }
 
+    /// Show chord navigator via server
+    pub fn chord(&self, chords: Vec<String>) -> Result<Option<String>> {
+        if chords.is_empty() {
+            anyhow::bail!("Chord request must include at least one chord");
+        }
+
+        match self.send_request(MenuRequest::Chord { chords })? {
+            MenuResponse::ChordResult(sequence) => Ok(Some(sequence)),
+            MenuResponse::Cancelled => Ok(None),
+            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
+            _ => anyhow::bail!("Unexpected response type for chord request"),
+        }
+    }
+
     /// Show the scratchpad without any other action
     pub fn show(&self) -> Result<()> {
         match self.send_request(MenuRequest::Show)? {

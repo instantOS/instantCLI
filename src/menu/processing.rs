@@ -1,3 +1,4 @@
+use super::chord;
 use super::protocol::*;
 use crate::menu_utils::{FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper};
 use anyhow::Result;
@@ -33,6 +34,7 @@ impl RequestProcessor {
                 items,
                 multi,
             } => self.handle_choice_request(prompt, items, multi),
+            MenuRequest::Chord { chords } => self.handle_chord_request(chords),
             MenuRequest::Input { prompt } => self.handle_input_request(prompt),
             MenuRequest::Password { prompt } => self.handle_password_request(prompt),
             MenuRequest::FilePicker {
@@ -43,6 +45,21 @@ impl RequestProcessor {
             MenuRequest::Status => Ok(self.get_status_info()),
             MenuRequest::Stop => self.handle_stop_request(),
             MenuRequest::Show => Ok(MenuResponse::ShowResult),
+        }
+    }
+
+    /// Handle chord request
+    fn handle_chord_request(&self, chords: Vec<String>) -> Result<MenuResponse> {
+        if chords.is_empty() {
+            return Ok(MenuResponse::Error(
+                "Chord request must include at least one chord".to_string(),
+            ));
+        }
+
+        match chord::run_chord_selection(&chords) {
+            Ok(Some(sequence)) => Ok(MenuResponse::ChordResult(sequence)),
+            Ok(None) => Ok(MenuResponse::Cancelled),
+            Err(e) => Ok(MenuResponse::Error(format!("Chord error: {e}"))),
         }
     }
 
