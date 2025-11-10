@@ -9,12 +9,14 @@ use crate::ui::prelude::*;
 use super::context::SettingsContext;
 use super::registry::{
     BLUETOOTH_CORE_PACKAGES, BLUETOOTH_HARDWARE_OVERRIDE_KEY, BLUETOOTH_SERVICE_KEY,
-    COCKPIT_PACKAGES, UDISKIE_AUTOMOUNT_KEY, UDISKIE_PACKAGE,
+    COCKPIT_PACKAGES, PACMAN_AUTOCLEAN_KEY, PACMAN_CONTRIB_PACKAGE, UDISKIE_AUTOMOUNT_KEY,
+    UDISKIE_PACKAGE,
 };
 
 const BLUETOOTH_SERVICE_NAME: &str = "bluetooth";
 const UDISKIE_SERVICE_NAME: &str = "udiskie";
 const COCKPIT_SOCKET_NAME: &str = "cockpit.socket";
+const PACCACHE_TIMER_NAME: &str = "paccache.timer";
 
 pub fn apply_clipboard_manager(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let is_running = std::process::Command::new("pgrep")
@@ -423,6 +425,36 @@ pub fn configure_timezone(ctx: &mut SettingsContext) -> Result<()> {
             bail!("fzf error: {err}");
         }
         _ => {}
+    }
+
+    Ok(())
+}
+
+pub fn apply_pacman_autoclean(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+    let systemd = SystemdManager::system_with_sudo();
+
+    if enabled {
+        if !ctx.ensure_packages(&[PACMAN_CONTRIB_PACKAGE])? {
+            ctx.set_bool(PACMAN_AUTOCLEAN_KEY, false);
+            ctx.emit_info(
+                "settings.system.paccache.cancelled",
+                "pacman-contrib installation cancelled; leaving automatic cleanup disabled.",
+            );
+            return Ok(());
+        }
+
+        systemd.enable_and_start(PACCACHE_TIMER_NAME)?;
+
+        ctx.notify(
+            "Pacman cache",
+            "Automatic weekly pacman cache cleanup enabled.",
+        );
+    } else {
+        if systemd.is_enabled(PACCACHE_TIMER_NAME) || systemd.is_active(PACCACHE_TIMER_NAME) {
+            systemd.disable_and_stop(PACCACHE_TIMER_NAME)?;
+        }
+
+        ctx.notify("Pacman cache", "Automatic pacman cache cleanup disabled.");
     }
 
     Ok(())

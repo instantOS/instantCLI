@@ -162,6 +162,13 @@ pub const FASTFETCH_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::WhichSucceeds("fastfetch")],
 };
 
+pub const PACMAN_CONTRIB_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "pacman-contrib",
+    arch_package_name: Some("pacman-contrib"),
+    ubuntu_package_name: None,
+    tests: &[InstallTest::WhichSucceeds("paccache")],
+};
+
 pub const TOPGRADE_PACKAGE: RequiredPackage = RequiredPackage {
     name: "topgrade",
     arch_package_name: Some("topgrade"),
@@ -174,6 +181,9 @@ pub const BLUETOOTH_HARDWARE_OVERRIDE_KEY: BoolSettingKey =
     BoolSettingKey::new("bluetooth.hardware_override", false);
 
 pub const UDISKIE_AUTOMOUNT_KEY: BoolSettingKey = BoolSettingKey::new("storage.udiskie", false);
+
+pub const PACMAN_AUTOCLEAN_KEY: BoolSettingKey =
+    BoolSettingKey::new("system.pacman_autoclean", false);
 
 pub const BLUEZ_PACKAGE: RequiredPackage = RequiredPackage {
     name: "BlueZ bluetooth daemon",
@@ -484,6 +494,20 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: false,
         requirements: &[],
+    },
+    SettingDefinition {
+        id: "system.pacman_autoclean",
+        title: "Pacman cache autoclean",
+        category: "system",
+        icon: NerdFont::Trash,
+        breadcrumbs: &["Maintenance", "Pacman cache"],
+        kind: SettingKind::Toggle {
+            key: PACMAN_AUTOCLEAN_KEY,
+            summary: "Run paccache weekly to keep only the latest pacman packages.",
+            apply: Some(super::actions::apply_pacman_autoclean),
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(PACMAN_CONTRIB_PACKAGE)],
     },
     SettingDefinition {
         id: "bluetooth.service",
