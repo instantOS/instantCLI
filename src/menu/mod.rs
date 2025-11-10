@@ -68,10 +68,10 @@ impl SliderPreset {
 
     fn wpctl_volume() -> Option<i64> {
         let output = Self::command_output("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"])?;
+        let fraction = output.split_whitespace().find_map(|token| {
             let sanitized = token.trim_matches(|c: char| matches!(c, '[' | ']' | ',' | ':'));
             sanitized.parse::<f64>().ok()
         })?;
-
 
         let percent = (fraction * 100.0).trunc().clamp(0.0, 100.0);
         Some(percent as i64)
@@ -89,7 +89,6 @@ impl SliderPreset {
             Some(stdout)
         }
     }
-
 }
 
 /// Handle menu commands for shell scripts

@@ -146,7 +146,7 @@ impl SliderApp {
             Span::styled("Enter", Style::default().fg(Color::Green)),
             Span::raw(" accept  •  "),
             Span::styled("Esc/q", Style::default().fg(Color::Red)),
-            Span::raw(" cancel  •  "),
+            Span::raw(" quit  •  "),
             Span::styled("h/l", Style::default().fg(Color::Cyan)),
             Span::raw(" ±step  •  "),
             Span::styled("j/k", Style::default().fg(Color::Cyan)),
