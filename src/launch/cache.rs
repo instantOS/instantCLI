@@ -443,7 +443,7 @@ impl LaunchCache {
     /// Trigger background refresh of launch items cache
     fn trigger_background_refresh(&self) {
         let cache_path = self.launch_items_path.clone();
-        task::spawn(async move {
+        task::spawn_blocking(move || {
             let items = Self::build_item_list_simple();
             if let Err(e) = Self::save_launch_items_cache_simple(cache_path, items) {
                 eprintln!("Warning: Failed to refresh launch items cache: {e}");
@@ -457,7 +457,7 @@ impl LaunchCache {
         let frecency_cache_path = self.frecency_sorted_path.clone();
         let frecency_store_path = self.frecency_path.clone();
 
-        task::spawn(async move {
+        task::spawn_blocking(move || {
             // Refresh the base launch items cache
             let items = Self::build_item_list_simple();
             if let Err(e) =

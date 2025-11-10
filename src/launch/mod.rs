@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Subcommand;
+use std::collections::HashMap;
 use std::process::Command;
 
 pub mod cache;
@@ -30,34 +31,31 @@ pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
 
     if list_only {
         // Print launch items instead of showing menu
-        for item in launch_items {
+        for item in &launch_items {
             println!("{}", item.display_name());
         }
         Ok(0)
     } else {
-        // Convert to menu items with metadata for execution
-        let menu_items: Vec<SerializableMenuItem> = launch_items
-            .into_iter()
-            .map(|item| {
-                let display_text = item.display_name().to_string();
-                // Add metadata to distinguish item types for execution
-                let mut metadata = std::collections::HashMap::new();
-                match item {
-                    LaunchItem::DesktopApp(_) => {
-                        metadata.insert("type".to_string(), "desktop".to_string());
-                    }
-                    LaunchItem::PathExecutable(_) => {
-                        metadata.insert("type".to_string(), "path".to_string());
-                    }
-                }
+        let mut item_lookup: HashMap<String, LaunchItem> =
+            HashMap::with_capacity(launch_items.len());
 
-                SerializableMenuItem {
-                    display_text,
-                    preview: FzfPreview::None,
-                    metadata: Some(metadata),
-                }
-            })
-            .collect();
+        // Convert to menu items with metadata for execution
+        let mut menu_items = Vec::with_capacity(launch_items.len());
+
+        for item in &launch_items {
+            let key = item.metadata_key();
+            item_lookup.insert(key.clone(), item.clone());
+
+            let mut metadata = HashMap::new();
+            metadata.insert("type".to_string(), item.metadata_type().to_string());
+            metadata.insert("key".to_string(), key);
+
+            menu_items.push(SerializableMenuItem {
+                display_text: item.display_name().to_string(),
+                preview: FzfPreview::None,
+                metadata: Some(metadata),
+            });
+        }
 
         // Use GUI menu to select application
         let client = client::MenuClient::new();
@@ -74,51 +72,19 @@ pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
                 if selected.is_empty() {
                     Ok(1) // Cancelled
                 } else {
-                    let item_name = &selected[0].display_text;
-                    let item_type = &selected[0].metadata;
-
-                    // Reconstruct the launch item based on selection
-                    let launch_item = match item_type
+                    let selected_metadata = selected[0]
+                        .metadata
                         .as_ref()
-                        .and_then(|m| m.get("type"))
-                        .map(|s| s.as_str())
-                    {
-                        Some("desktop") => {
-                            // Find the desktop app
-                            let items = cache.get_launch_items().await?;
-                            items.into_iter()
-                                .find(|item| {
-                                    matches!(item, LaunchItem::DesktopApp(id) if id.starts_with(item_name) || id.strip_suffix(".desktop") == Some(item_name))
-                                })
-                                .ok_or_else(|| anyhow::anyhow!("Desktop app not found: {}", item_name))?
-                        }
-                        Some("path") => {
-                            // Find the path executable
-                            let items = cache.get_launch_items().await?;
-                            items
-                                .into_iter()
-                                .find(|item| match item {
-                                    LaunchItem::PathExecutable(name) => {
-                                        name.strip_prefix("path:").unwrap_or(name) == item_name
-                                            || name == item_name
-                                    }
-                                    _ => false,
-                                })
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!("Path executable not found: {}", item_name)
-                                })?
-                        }
-                        _ => {
-                            // Fallback: try to find by display name
-                            let items = cache.get_launch_items().await?;
-                            items
-                                .into_iter()
-                                .find(|item| item.display_name() == item_name)
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!("Launch item not found: {}", item_name)
-                                })?
-                        }
-                    };
+                        .ok_or_else(|| anyhow::anyhow!("Selection metadata missing"))?;
+
+                    let key = selected_metadata
+                        .get("key")
+                        .ok_or_else(|| anyhow::anyhow!("Selection key missing"))?;
+
+                    let launch_item = item_lookup
+                        .get(key)
+                        .cloned()
+                        .ok_or_else(|| anyhow::anyhow!("Launch item not found for key: {}", key))?;
 
                     // Execute the selected item
                     execute::execute_launch_item(&launch_item).await?;

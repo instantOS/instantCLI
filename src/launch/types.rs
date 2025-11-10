@@ -38,4 +38,24 @@ impl LaunchItem {
     pub fn sort_key(&self) -> String {
         self.display_name().to_lowercase()
     }
+
+    pub fn metadata_type(&self) -> &'static str {
+        match self {
+            LaunchItem::DesktopApp(_) => "desktop",
+            LaunchItem::PathExecutable(_) => "path",
+        }
+    }
+
+    pub fn metadata_key(&self) -> String {
+        match self {
+            LaunchItem::DesktopApp(id) => format!("desktop:{id}"),
+            LaunchItem::PathExecutable(name) => {
+                if name.starts_with("path:") {
+                    name.clone()
+                } else {
+                    format!("path:{name}")
+                }
+            }
+        }
+    }
 }
