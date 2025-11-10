@@ -38,7 +38,7 @@ impl BoolStateSource for SystemdUnitSource {
 
 static PACCACHE_SOURCE: SystemdUnitSource = SystemdUnitSource::new(PACCACHE_TIMER_UNIT);
 
-static BOOL_SOURCES: [(&'static BoolSettingKey, &'static dyn BoolStateSource); 1] =
+static BOOL_SOURCES: [(&BoolSettingKey, &'static dyn BoolStateSource); 1] =
     [(&PACMAN_AUTOCLEAN_KEY, &PACCACHE_SOURCE)];
 
 pub fn source_for(key: &BoolSettingKey) -> Option<&'static dyn BoolStateSource> {
