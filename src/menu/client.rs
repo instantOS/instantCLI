@@ -25,10 +25,10 @@ fn transport_override() -> &'static RwLock<Option<MenuTransport>> {
 
 impl MenuTransport {
     fn detect() -> Self {
-        if let Ok(guard) = transport_override().read() {
-            if let Some(override_transport) = *guard {
-                return override_transport;
-            }
+        if let Ok(guard) = transport_override().read()
+            && let Some(override_transport) = *guard
+        {
+            return override_transport;
         }
 
         match CompositorType::detect() {
