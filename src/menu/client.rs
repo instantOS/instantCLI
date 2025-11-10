@@ -8,6 +8,7 @@ use std::io::{self, BufRead, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
 use tempfile::tempdir;
 
@@ -17,13 +18,16 @@ enum MenuTransport {
     KittyTransient,
 }
 
+fn transport_override() -> &'static RwLock<Option<MenuTransport>> {
+    static MENU_TRANSPORT_OVERRIDE: OnceLock<RwLock<Option<MenuTransport>>> = OnceLock::new();
+    MENU_TRANSPORT_OVERRIDE.get_or_init(|| RwLock::new(None))
+}
+
 impl MenuTransport {
     fn detect() -> Self {
-        if let Ok(mode) = std::env::var("INS_MENU_FORCE_MODE") {
-            match mode.to_lowercase().as_str() {
-                "fallback" | "kitty" => return MenuTransport::KittyTransient,
-                "scratchpad" | "server" => return MenuTransport::ScratchpadServer,
-                _ => {}
+        if let Ok(guard) = transport_override().read() {
+            if let Some(override_transport) = *guard {
+                return override_transport;
             }
         }
 
@@ -378,6 +382,20 @@ impl Default for MenuClient {
     }
 }
 
+/// Force all future menu clients to run in fallback mode.
+pub fn force_fallback_mode() {
+    if let Ok(mut guard) = transport_override().write() {
+        *guard = Some(MenuTransport::KittyTransient);
+    }
+}
+
+/// Clear any forced transport mode override.
+pub fn reset_forced_transport() {
+    if let Ok(mut guard) = transport_override().write() {
+        *guard = None;
+    }
+}
+
 /// Handle GUI menu requests by routing through client
 pub fn handle_gui_request(command: &MenuCommands) -> Result<i32> {
     let client = MenuClient::new();
@@ -547,10 +565,7 @@ mod tests {
 
     #[test]
     fn test_fallback_status_info() {
-        let previous = std::env::var("INS_MENU_FORCE_MODE").ok();
-        unsafe {
-            std::env::set_var("INS_MENU_FORCE_MODE", "fallback");
-        }
+        force_fallback_mode();
 
         let client = MenuClient::new();
         assert!(client.is_fallback());
@@ -558,11 +573,6 @@ mod tests {
         let status = client.status().expect("fallback status should succeed");
         assert_eq!(status.socket_path, "N/A (fallback)");
 
-        match previous {
-            Some(value) => unsafe {
-                std::env::set_var("INS_MENU_FORCE_MODE", value);
-            },
-            None => std::env::remove_var("INS_MENU_FORCE_MODE"),
-        }
+        reset_forced_transport();
     }
 }

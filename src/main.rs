@@ -277,9 +277,7 @@ async fn main() -> Result<()> {
     ui::init(format, !cli.no_color);
 
     if cli.menu_fallback {
-        unsafe {
-            std::env::set_var("INS_MENU_FORCE_MODE", "fallback");
-        }
+        menu::client::force_fallback_mode();
     }
 
     if cli.debug {
