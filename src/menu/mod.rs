@@ -34,10 +34,7 @@ struct PresetConfig {
     command: Vec<String>,
 }
 
-const AUDIO_COMMAND_SCRIPT: &str = r#"pamixer --set-volume "$1" \
-    || amixer -q set Master "$1%" \
-    || amixer -D pulse set Master "$1%" \
-    || pactl set-sink-volume @DEFAULT_SINK@ "$1%";
+const AUDIO_COMMAND_SCRIPT: &str = r#"wpctl set-volume @DEFAULT_AUDIO_SINK@ "$1%";
 
 dunstify --appname instantCLI \
     -h string:x-dunst-stack-tag:instantcli-volume \
@@ -66,26 +63,19 @@ impl SliderPreset {
     }
 
     fn detect_audio_volume() -> Option<i64> {
-        let volume = Self::pamixer_volume()
-            .or_else(|| {
-                Self::percentage_from_command("pactl", &["get-sink-volume", "@DEFAULT_SINK@"])
-            })
-            .or_else(|| Self::percentage_from_command("amixer", &["-D", "pulse", "get", "Master"]))
-            .or_else(|| Self::percentage_from_command("amixer", &["sget", "Master"]))?;
-
-        Some(volume.clamp(0, 100))
+        Self::wpctl_volume()
     }
 
-    fn pamixer_volume() -> Option<i64> {
-        let output = Self::command_output("pamixer", &["--get-volume"])?;
-        output.trim().parse::<i64>().ok()
-    }
+    fn wpctl_volume() -> Option<i64> {
+        let output = Self::command_output("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"])?;
+            let sanitized = token.trim_matches(|c: char| matches!(c, '[' | ']' | ',' | ':'));
+            sanitized.parse::<f64>().ok()
+        })?;
 
-    fn percentage_from_command(program: &str, args: &[&str]) -> Option<i64> {
-        let output = Self::command_output(program, args)?;
-        Self::extract_percentage(&output)
-    }
 
+        let percent = (fraction * 100.0).trunc().clamp(0.0, 100.0);
+        Some(percent as i64)
+    }
     fn command_output(program: &str, args: &[&str]) -> Option<String> {
         let output = Command::new(program).args(args).output().ok()?;
         if !output.status.success() {
@@ -100,27 +90,6 @@ impl SliderPreset {
         }
     }
 
-    fn extract_percentage(text: &str) -> Option<i64> {
-        let bytes = text.as_bytes();
-        let mut idx = 0;
-        while idx < bytes.len() {
-            if bytes[idx] == b'%' {
-                let mut start = idx;
-                while start > 0 && bytes[start - 1].is_ascii_digit() {
-                    start -= 1;
-                }
-
-                if start != idx {
-                    if let Ok(value) = text[start..idx].parse::<i64>() {
-                        return Some(value);
-                    }
-                }
-            }
-            idx += 1;
-        }
-
-        None
-    }
 }
 
 /// Handle menu commands for shell scripts
