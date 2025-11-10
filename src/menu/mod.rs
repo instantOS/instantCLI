@@ -5,6 +5,7 @@ use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
 use protocol::SerializableMenuItem;
 use std::path::PathBuf;
+use std::process::Command;
 
 pub mod chord;
 pub mod client;
@@ -50,7 +51,7 @@ impl SliderPreset {
             SliderPreset::Audio => PresetConfig {
                 min: 0,
                 max: 100,
-                value: None,
+                value: Self::detect_audio_volume(),
                 step: Some(1),
                 big_step: Some(5),
                 label: Some("Audio Volume".to_string()),
@@ -62,6 +63,63 @@ impl SliderPreset {
                 ],
             },
         }
+    }
+
+    fn detect_audio_volume() -> Option<i64> {
+        let volume = Self::pamixer_volume()
+            .or_else(|| {
+                Self::percentage_from_command("pactl", &["get-sink-volume", "@DEFAULT_SINK@"])
+            })
+            .or_else(|| Self::percentage_from_command("amixer", &["-D", "pulse", "get", "Master"]))
+            .or_else(|| Self::percentage_from_command("amixer", &["sget", "Master"]))?;
+
+        Some(volume.clamp(0, 100))
+    }
+
+    fn pamixer_volume() -> Option<i64> {
+        let output = Self::command_output("pamixer", &["--get-volume"])?;
+        output.trim().parse::<i64>().ok()
+    }
+
+    fn percentage_from_command(program: &str, args: &[&str]) -> Option<i64> {
+        let output = Self::command_output(program, args)?;
+        Self::extract_percentage(&output)
+    }
+
+    fn command_output(program: &str, args: &[&str]) -> Option<String> {
+        let output = Command::new(program).args(args).output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if stdout.is_empty() {
+            None
+        } else {
+            Some(stdout)
+        }
+    }
+
+    fn extract_percentage(text: &str) -> Option<i64> {
+        let bytes = text.as_bytes();
+        let mut idx = 0;
+        while idx < bytes.len() {
+            if bytes[idx] == b'%' {
+                let mut start = idx;
+                while start > 0 && bytes[start - 1].is_ascii_digit() {
+                    start -= 1;
+                }
+
+                if start != idx {
+                    if let Ok(value) = text[start..idx].parse::<i64>() {
+                        return Some(value);
+                    }
+                }
+            }
+            idx += 1;
+        }
+
+        None
     }
 }
 
