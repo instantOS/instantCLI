@@ -833,24 +833,6 @@ enum PreviewStrategy {
 }
 
 impl PreviewUtils {
-    pub fn build_preview_mapping<T: FzfSelectable>(items: &[T]) -> Result<HashMap<String, String>> {
-        let mut preview_map = HashMap::new();
-
-        for item in items {
-            let display_text = item.fzf_display_text();
-            match item.fzf_preview() {
-                FzfPreview::Text(text) => {
-                    preview_map.insert(display_text, text);
-                }
-                FzfPreview::Command(cmd) => {
-                    preview_map.insert(display_text, cmd);
-                }
-                FzfPreview::None => {}
-            }
-        }
-
-        Ok(preview_map)
-    }
 
     /// Analyze preview types and determine optimal strategy
     pub fn analyze_preview_strategy<T: FzfSelectable>(items: &[T]) -> Result<PreviewStrategy> {
