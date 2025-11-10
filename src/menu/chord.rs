@@ -1,17 +1,19 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::stdout;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
-use ratatui::Terminal;
 
 use crate::menu_utils::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 
@@ -43,7 +45,7 @@ pub fn run_chord_command(chord_specs: &[String]) -> Result<i32> {
 
 fn parse_chord_specs(raw: &[String]) -> Result<Vec<ChordSpec>> {
     let mut specs = Vec::with_capacity(raw.len());
-    let mut seen = BTreeMap::<String, ()>::new();
+    let mut seen = BTreeSet::new();
 
     for entry in raw {
         let (sequence, description) = entry
@@ -68,7 +70,7 @@ fn parse_chord_specs(raw: &[String]) -> Result<Vec<ChordSpec>> {
             ));
         }
 
-        if seen.insert(sequence.to_string(), ()).is_some() {
+        if !seen.insert(sequence.to_string()) {
             return Err(anyhow!("Chord '{sequence}' provided multiple times"));
         }
 
@@ -451,7 +453,9 @@ mod tests {
                     .chords()
                     .iter()
                     .filter_map(|c| match &c.child {
-                        KeyChordChild::Leaf(action) => Some((c.description.clone(), action.id.clone())),
+                        KeyChordChild::Leaf(action) => {
+                            Some((c.description.clone(), action.id.clone()))
+                        }
                         _ => None,
                     })
                     .collect();
@@ -498,10 +502,7 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_sequences() {
-        let specs = vec![
-            "aa:First".to_string(),
-            "aa:Second".to_string(),
-        ];
+        let specs = vec!["aa:First".to_string(), "aa:Second".to_string()];
         assert!(parse_chord_specs(&specs).is_err());
     }
 }
