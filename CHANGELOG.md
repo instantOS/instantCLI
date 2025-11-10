@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/instantOS/instantCLI/compare/v0.4.0...v0.4.1) - 2025-11-10
+
+### Other
+
+- clippy
+- replace unsafe usage
+- add menu fallback
+- init fallback plans
+- remove old function
+- add chord support to menu server
+- clippy
+- add chords ability from stdin
+- some fixes
+- init more generic chords
+- init keychords
+
 ## [0.2.10](https://github.com/instantOS/instantCLI/compare/v0.2.9...v0.2.10) - 2025-11-03
 
 ### Other
