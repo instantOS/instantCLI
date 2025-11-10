@@ -1,5 +1,5 @@
-use super::chord;
 use super::protocol::*;
+use super::{chord, slide};
 use crate::menu_utils::{FilePickerResult, FilePickerScope, FzfWrapper, MenuWrapper};
 use anyhow::Result;
 use std::sync::{
@@ -42,6 +42,7 @@ impl RequestProcessor {
                 scope,
                 multi,
             } => self.handle_file_picker_request(start, scope, multi),
+            MenuRequest::Slide(request) => self.handle_slider_request(request),
             MenuRequest::Status => Ok(self.get_status_info()),
             MenuRequest::Stop => self.handle_stop_request(),
             MenuRequest::Show => Ok(MenuResponse::ShowResult),
@@ -141,6 +142,23 @@ impl RequestProcessor {
             Err(e) => Ok(MenuResponse::Error(format!(
                 "Failed to show password dialog: {e}"
             ))),
+        }
+    }
+
+    /// Handle slider request
+    fn handle_slider_request(&self, request: SliderRequest) -> Result<MenuResponse> {
+        match slide::run_slider_command(
+            request.min,
+            request.max,
+            request.value,
+            request.step,
+            request.big_step,
+            request.label,
+            request.command,
+        ) {
+            Ok(Some(value)) => Ok(MenuResponse::SlideResult(value)),
+            Ok(None) => Ok(MenuResponse::Cancelled),
+            Err(e) => Ok(MenuResponse::Error(format!("Slider error: {e}"))),
         }
     }
 

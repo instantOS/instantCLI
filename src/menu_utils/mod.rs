@@ -1,8 +1,8 @@
 mod file_picker;
 mod fzf;
 mod keychord;
-mod slider;
 mod path_input;
+mod slider;
 
 #[allow(unused_imports)]
 pub use file_picker::{FilePickerBuilder, FilePickerResult, FilePickerScope, MenuWrapper};

@@ -65,6 +65,25 @@ impl FzfSelectable for SerializableMenuItem {
     }
 }
 
+/// Slider configuration transmitted between client and server
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SliderRequest {
+    /// Minimum slider value
+    pub min: i64,
+    /// Maximum slider value
+    pub max: i64,
+    /// Optional initial value
+    pub value: Option<i64>,
+    /// Small step increment
+    pub step: Option<i64>,
+    /// Large step increment
+    pub big_step: Option<i64>,
+    /// Optional label to display above the slider
+    pub label: Option<String>,
+    /// Command argv to execute on change (value appended)
+    pub command: Vec<String>,
+}
+
 /// Menu request types sent from client to server
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MenuRequest {
@@ -88,6 +107,8 @@ pub enum MenuRequest {
         scope: FilePickerScope,
         multi: bool,
     },
+    /// Show slider interface
+    Slide(SliderRequest),
     /// Get server status information
     Status,
     /// Stop the server
@@ -121,6 +142,8 @@ pub enum MenuResponse {
     FilePickerResult(Vec<PathBuf>),
     /// Show operation completed successfully
     ShowResult,
+    /// Slider result value
+    SlideResult(i64),
 }
 
 /// Confirmation dialog result
@@ -376,5 +399,27 @@ mod tests {
         let metadata = item.metadata.unwrap();
         assert_eq!(metadata.get("file"), Some(&"/path/to/file".to_string()));
         assert_eq!(metadata.get("type"), Some(&"config".to_string()));
+    }
+
+    #[test]
+    fn test_slider_request_serialization() {
+        let request = SliderRequest {
+            min: 0,
+            max: 100,
+            value: Some(42),
+            step: Some(1),
+            big_step: Some(10),
+            label: Some("Volume".to_string()),
+            command: vec!["pactl".to_string(), "set-sink-volume".to_string()],
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        let deserialized: SliderRequest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.min, 0);
+        assert_eq!(deserialized.max, 100);
+        assert_eq!(deserialized.value, Some(42));
+        assert_eq!(deserialized.label.as_deref(), Some("Volume"));
+        assert_eq!(deserialized.command.len(), 2);
     }
 }

@@ -74,7 +74,9 @@ impl SliderConfig {
         command: Option<SliderCommand>,
     ) -> Result<Self> {
         if min >= max {
-            return Err(anyhow!("Slider minimum ({min}) must be less than maximum ({max})"));
+            return Err(anyhow!(
+                "Slider minimum ({min}) must be less than maximum ({max})"
+            ));
         }
 
         let range = max - min;

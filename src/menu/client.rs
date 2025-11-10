@@ -304,6 +304,16 @@ impl MenuClient {
         }
     }
 
+    /// Show slider dialog via server
+    pub fn slide(&self, request: SliderRequest) -> Result<Option<i64>> {
+        match self.send_request(MenuRequest::Slide(request))? {
+            MenuResponse::SlideResult(value) => Ok(Some(value)),
+            MenuResponse::Cancelled => Ok(None),
+            MenuResponse::Error(error) => anyhow::bail!("Server error: {}", error),
+            _ => anyhow::bail!("Unexpected response type for slide request"),
+        }
+    }
+
     /// Show the scratchpad without any other action
     pub fn show(&self) -> Result<()> {
         match self.send_request(MenuRequest::Show)? {

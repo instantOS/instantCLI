@@ -12,6 +12,7 @@ pub mod processing;
 pub mod protocol;
 pub mod scratchpad_manager;
 pub mod server;
+pub mod slide;
 pub mod tui;
 use client::MenuClient;
 
@@ -138,6 +139,51 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             } else {
                 chord::run_chord_command(&combined)
+            }
+        }
+        MenuCommands::Slide {
+            min,
+            max,
+            value,
+            step,
+            big_step,
+            label,
+            command,
+            gui,
+        } => {
+            if gui {
+                let client = MenuClient::new();
+                match client.slide(protocol::SliderRequest {
+                    min,
+                    max,
+                    value,
+                    step,
+                    big_step,
+                    label,
+                    command,
+                }) {
+                    Ok(Some(result)) => {
+                        println!("{result}");
+                        Ok(0)
+                    }
+                    Ok(None) => Ok(1),
+                    Err(e) => {
+                        eprintln!("GUI menu error: {e}");
+                        Ok(3)
+                    }
+                }
+            } else {
+                match slide::run_slider_command(min, max, value, step, big_step, label, command) {
+                    Ok(Some(result)) => {
+                        println!("{result}");
+                        Ok(0)
+                    }
+                    Ok(None) => Ok(1),
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        Ok(2)
+                    }
+                }
             }
         }
         MenuCommands::Pick {
@@ -389,6 +435,33 @@ pub enum MenuCommands {
     Server {
         #[command(subcommand)]
         command: ServerCommands,
+    },
+    /// Show a slider prompt similar to the legacy islide utility
+    Slide {
+        /// Minimum slider value
+        #[arg(long, default_value_t = 0)]
+        min: i64,
+        /// Maximum slider value
+        #[arg(long, default_value_t = 100)]
+        max: i64,
+        /// Initial slider value
+        #[arg(long = "value")]
+        value: Option<i64>,
+        /// Small step increment for h/l and arrow keys
+        #[arg(long = "step")]
+        step: Option<i64>,
+        /// Large step increment for j/k and vertical arrows
+        #[arg(long = "big-step")]
+        big_step: Option<i64>,
+        /// Optional label displayed above the slider
+        #[arg(long)]
+        label: Option<String>,
+        /// Command to execute on value changes (value appended as final arg)
+        #[arg(long = "command", value_name = "CMD", num_args = 1..)]
+        command: Vec<String>,
+        /// Use GUI menu server instead of local slider
+        #[arg(long)]
+        gui: bool,
     },
 }
 
