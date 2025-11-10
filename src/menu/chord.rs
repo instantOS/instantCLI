@@ -104,7 +104,7 @@ fn build_chord_tree(specs: &[ChordSpec]) -> Result<KeyChordNode> {
 
     let mut has_leaf = false;
     for spec in specs {
-        let mut node = nodes
+        let node = nodes
             .get_mut(&spec.sequence)
             .context("Internal error creating chord tree")?;
         node.description = Some(spec.description.clone());
@@ -130,7 +130,7 @@ fn build_chord_tree(specs: &[ChordSpec]) -> Result<KeyChordNode> {
         }
     }
 
-    Ok(build_node(&String::new(), &nodes))
+    Ok(build_node("", &nodes))
 }
 
 #[derive(Default, Debug, Clone)]
@@ -238,26 +238,24 @@ impl KeyChordNavigator {
                         }
                         KeyCode::Char('q') if key_event.modifiers.is_empty() => break,
                         code => {
-                            if key_event.modifiers.is_empty() {
-                                if let Some(chord) = self.current_node.find_chord(&code).cloned() {
-                                    let label = key_label(&chord.key);
-                                    match chord.child {
-                                        KeyChordChild::Leaf(action) => {
-                                            let action_id = action.id;
-                                            self.cleanup()?;
-                                            return Ok(Some(action_id));
-                                        }
-                                        KeyChordChild::Node(node) => {
-                                            let breadcrumb =
-                                                format!("{} ({})", label, chord.description);
-                                            self.history.push((
-                                                self.current_node.clone(),
-                                                self.path.clone(),
-                                            ));
-                                            self.current_node = node;
-                                            self.path.push(breadcrumb);
-                                            needs_redraw = true;
-                                        }
+                            if key_event.modifiers.is_empty()
+                                && let Some(chord) = self.current_node.find_chord(&code).cloned()
+                            {
+                                let label = key_label(&chord.key);
+                                match chord.child {
+                                    KeyChordChild::Leaf(action) => {
+                                        let action_id = action.id;
+                                        self.cleanup()?;
+                                        return Ok(Some(action_id));
+                                    }
+                                    KeyChordChild::Node(node) => {
+                                        let breadcrumb =
+                                            format!("{} ({})", label, chord.description);
+                                        self.history
+                                            .push((self.current_node.clone(), self.path.clone()));
+                                        self.current_node = node;
+                                        self.path.push(breadcrumb);
+                                        needs_redraw = true;
                                     }
                                 }
                             }
