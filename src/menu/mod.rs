@@ -5,6 +5,7 @@ use anyhow::Result;
 use protocol::SerializableMenuItem;
 use std::path::PathBuf;
 
+pub mod chord_demo;
 pub mod client;
 pub mod processing;
 pub mod protocol;
@@ -90,6 +91,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             }
         }
+        MenuCommands::ChordDemo => chord_demo::run_chord_demo(),
         MenuCommands::Pick {
             ref start,
             dirs,
@@ -301,6 +303,8 @@ pub enum MenuCommands {
     Show,
     /// Get menu server status information
     Status,
+    /// Explore a demo of key chord navigation
+    ChordDemo,
     /// Menu server management commands
     Server {
         #[command(subcommand)]
