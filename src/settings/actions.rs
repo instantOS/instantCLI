@@ -9,13 +9,14 @@ use crate::ui::prelude::*;
 use super::context::SettingsContext;
 use super::registry::{
     BLUETOOTH_CORE_PACKAGES, BLUETOOTH_HARDWARE_OVERRIDE_KEY, BLUETOOTH_SERVICE_KEY,
-    COCKPIT_PACKAGES, PACCACHE_TIMER_UNIT, PACMAN_AUTOCLEAN_KEY, UDISKIE_AUTOMOUNT_KEY,
-    UDISKIE_PACKAGE,
+    COCKPIT_PACKAGES, PACMAN_AUTOCLEAN_KEY, UDISKIE_AUTOMOUNT_KEY, UDISKIE_PACKAGE,
 };
+use super::sources;
 
 const BLUETOOTH_SERVICE_NAME: &str = "bluetooth";
 const UDISKIE_SERVICE_NAME: &str = "udiskie";
 const COCKPIT_SOCKET_NAME: &str = "cockpit.socket";
+
 pub fn apply_clipboard_manager(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let is_running = std::process::Command::new("pgrep")
         .arg("-f")
@@ -429,25 +430,28 @@ pub fn configure_timezone(ctx: &mut SettingsContext) -> Result<()> {
 }
 
 pub fn apply_pacman_autoclean(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    let systemd = SystemdManager::system_with_sudo();
+    if let Some(source) = sources::source_for(&PACMAN_AUTOCLEAN_KEY) {
+        source.apply(enabled)?;
+        let active = ctx.refresh_bool_source(PACMAN_AUTOCLEAN_KEY)?;
 
-    if enabled {
-        systemd.enable_and_start(PACCACHE_TIMER_UNIT)?;
-
+        if active {
+            ctx.notify(
+                "Pacman cache",
+                "Automatic weekly pacman cache cleanup enabled.",
+            );
+        } else {
+            ctx.notify("Pacman cache", "Automatic pacman cache cleanup disabled.");
+        }
+    } else {
+        ctx.set_bool(PACMAN_AUTOCLEAN_KEY, enabled);
         ctx.notify(
             "Pacman cache",
-            "Automatic weekly pacman cache cleanup enabled.",
+            if enabled {
+                "Automatic weekly pacman cache cleanup enabled."
+            } else {
+                "Automatic pacman cache cleanup disabled."
+            },
         );
-
-        ctx.set_bool(PACMAN_AUTOCLEAN_KEY, true);
-    } else {
-        if systemd.is_enabled(PACCACHE_TIMER_UNIT) || systemd.is_active(PACCACHE_TIMER_UNIT) {
-            systemd.disable_and_stop(PACCACHE_TIMER_UNIT)?;
-        }
-
-        ctx.notify("Pacman cache", "Automatic pacman cache cleanup disabled.");
-
-        ctx.set_bool(PACMAN_AUTOCLEAN_KEY, false);
     }
 
     Ok(())

@@ -84,8 +84,9 @@ impl SettingsContext {
     }
 
     fn sync_external_states(&mut self) {
-        for (key, source) in sources::all_bool_sources() {
-            if let Err(err) = self.update_bool_from_source(*key, *source) {
+        for &(key_ref, source) in sources::all_bool_sources() {
+            let key = *key_ref;
+            if let Err(err) = self.update_bool_from_source(key, source) {
                 emit(
                     Level::Warn,
                     "settings.state.sync_failed",

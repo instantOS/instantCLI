@@ -1,7 +1,6 @@
 use anyhow::Result;
 use clap::Subcommand;
 use std::collections::HashMap;
-use std::process::Command;
 
 pub mod cache;
 pub mod desktop;
