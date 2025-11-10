@@ -84,6 +84,10 @@ struct Cli {
     #[arg(long = "no-color", global = true)]
     no_color: bool,
 
+    /// Force menu fallback mode using transient kitty terminals
+    #[arg(long = "menu-fallback", global = true)]
+    menu_fallback: bool,
+
     /// Internal flag set when restarted with sudo
     #[arg(long, hide = true)]
     internal_privileged_mode: bool,
@@ -271,6 +275,12 @@ async fn main() -> Result<()> {
         OutputFormatArg::Json => ui::OutputFormat::Json,
     };
     ui::init(format, !cli.no_color);
+
+    if cli.menu_fallback {
+        unsafe {
+            std::env::set_var("INS_MENU_FORCE_MODE", "fallback");
+        }
+    }
 
     if cli.debug {
         eprintln!("Debug mode is on");

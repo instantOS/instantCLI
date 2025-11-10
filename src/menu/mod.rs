@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 pub mod chord;
 pub mod client;
+mod fallback;
 pub mod processing;
 pub mod protocol;
 pub mod scratchpad_manager;
@@ -17,6 +18,10 @@ use client::MenuClient;
 /// Handle menu commands for shell scripts
 pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<i32> {
     match command {
+        MenuCommands::FallbackWorker {
+            request_file,
+            response_file,
+        } => fallback::run_worker(&request_file, &response_file),
         MenuCommands::Confirm { ref message, gui } => {
             if gui {
                 client::handle_gui_request(&command)
@@ -207,7 +212,22 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
         }
         MenuCommands::Status => {
             let client = client::MenuClient::new();
-            if client.is_server_running() {
+            if client.is_fallback() {
+                match client.status() {
+                    Ok(status_info) => {
+                        client::print_status_info(&status_info);
+                        println!();
+                        println!(
+                            "Fallback mode: interactive dialogs run in transient kitty terminals."
+                        );
+                        Ok(0)
+                    }
+                    Err(e) => {
+                        eprintln!("Error getting fallback status: {e}");
+                        Ok(2)
+                    }
+                }
+            } else if client.is_server_running() {
                 match client.status() {
                     Ok(status_info) => {
                         client::print_status_info(&status_info);
@@ -282,6 +302,13 @@ pub async fn handle_server_command(command: ServerCommands) -> Result<i32> {
 
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum MenuCommands {
+    #[command(hide = true)]
+    FallbackWorker {
+        #[arg(long = "request-file", value_hint = clap::ValueHint::FilePath)]
+        request_file: String,
+        #[arg(long = "response-file", value_hint = clap::ValueHint::FilePath)]
+        response_file: String,
+    },
     /// Show confirmation dialog and exit with code 0 for Yes, 1 for No, 2 for Cancelled
     Confirm {
         /// Confirmation message to display

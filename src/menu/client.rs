@@ -1,23 +1,53 @@
 use super::MenuCommands;
 use super::protocol::*;
+use crate::common::compositor::CompositorType;
 use anyhow::{Context, Result};
 use colored::*;
+use std::fs;
 use std::io::{self, BufRead, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
+use tempfile::tempdir;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MenuTransport {
+    ScratchpadServer,
+    KittyTransient,
+}
+
+impl MenuTransport {
+    fn detect() -> Self {
+        if let Ok(mode) = std::env::var("INS_MENU_FORCE_MODE") {
+            match mode.to_lowercase().as_str() {
+                "fallback" | "kitty" => return MenuTransport::KittyTransient,
+                "scratchpad" | "server" => return MenuTransport::ScratchpadServer,
+                _ => {}
+            }
+        }
+
+        match CompositorType::detect() {
+            CompositorType::Sway | CompositorType::Hyprland => MenuTransport::ScratchpadServer,
+            _ => MenuTransport::KittyTransient,
+        }
+    }
+}
 
 /// Menu client for communicating with the menu server
 pub struct MenuClient {
     socket_path: String,
+    transport: MenuTransport,
 }
 
 impl MenuClient {
     /// Create a new menu client
     pub fn new() -> Self {
+        let transport = MenuTransport::detect();
+
         Self {
             socket_path: default_socket_path(),
+            transport,
         }
     }
 
@@ -40,8 +70,16 @@ impl MenuClient {
         self.connect().is_ok()
     }
 
+    pub fn is_fallback(&self) -> bool {
+        self.transport == MenuTransport::KittyTransient
+    }
+
     /// Spawn server if not running using scratchpad architecture
     pub fn ensure_server_running(&self) -> Result<()> {
+        if self.transport != MenuTransport::ScratchpadServer {
+            return Ok(());
+        }
+
         if self.is_server_running() {
             return Ok(());
         }
@@ -73,27 +111,29 @@ impl MenuClient {
 
     /// Send a request and receive response
     pub fn send_request(&self, request: MenuRequest) -> Result<MenuResponse> {
-        // Ensure server is running
+        match self.transport {
+            MenuTransport::ScratchpadServer => self.send_request_via_server(request),
+            MenuTransport::KittyTransient => self.send_request_via_fallback(request),
+        }
+    }
+
+    fn send_request_via_server(&self, request: MenuRequest) -> Result<MenuResponse> {
         self.ensure_server_running()?;
 
-        // Connect to server
         let mut stream = self.connect()?;
 
-        // Create message envelope
         let message = MenuMessage {
             request_id: generate_request_id(),
             payload: request,
             timestamp: std::time::SystemTime::now(),
         };
 
-        // Serialize and send request
         let request_json =
             serde_json::to_string(&message).context("Failed to serialize request")?;
 
         stream.write_all(request_json.as_bytes())?;
-        stream.write_all(b"\n")?; // Message delimiter
+        stream.write_all(b"\n")?;
 
-        // Read response
         let mut response_json = String::new();
         let mut reader = io::BufReader::new(&stream);
 
@@ -103,16 +143,79 @@ impl MenuClient {
             anyhow::bail!("Received empty response from server");
         }
 
-        // Deserialize response
         let response_message: MenuResponseMessage =
             serde_json::from_str(response_json.trim()).context("Failed to deserialize response")?;
 
-        // Verify request ID matches
         if response_message.request_id != message.request_id {
             anyhow::bail!("Request ID mismatch in response");
         }
 
         Ok(response_message.payload)
+    }
+
+    fn send_request_via_fallback(&self, request: MenuRequest) -> Result<MenuResponse> {
+        match request {
+            MenuRequest::Show => Ok(MenuResponse::ShowResult),
+            MenuRequest::Status => Ok(MenuResponse::StatusResult(self.fallback_status_info())),
+            MenuRequest::Stop => Ok(MenuResponse::Error(
+                "Menu server is not running in fallback mode".to_string(),
+            )),
+            _ => self.invoke_kitty_worker(request),
+        }
+    }
+
+    fn fallback_status_info(&self) -> StatusInfo {
+        let compositor_name = CompositorType::detect().name();
+
+        StatusInfo {
+            status: ServerStatus::Ready,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            protocol_version: PROTOCOL_VERSION.to_string(),
+            uptime_seconds: 0,
+            socket_path: "N/A (fallback)".to_string(),
+            requests_processed: 0,
+            start_time: "N/A (fallback)".to_string(),
+            compositor: format!("Fallback ({compositor_name})"),
+        }
+    }
+
+    fn invoke_kitty_worker(&self, request: MenuRequest) -> Result<MenuResponse> {
+        let current_exe = std::env::current_exe()
+            .context("Failed to determine current executable for menu fallback")?;
+
+        let temp_dir = tempdir().context("Failed to create fallback menu temp directory")?;
+        let request_path = temp_dir.path().join("request.json");
+        let response_path = temp_dir.path().join("response.json");
+
+        let request_json =
+            serde_json::to_string(&request).context("Failed to serialize fallback menu request")?;
+        fs::write(&request_path, request_json)
+            .context("Failed to write fallback menu request file")?;
+
+        let status = Command::new("kitty")
+            .arg("--class")
+            .arg("insmenu-fallback")
+            .arg("--title")
+            .arg("InstantCLI Menu")
+            .arg("--")
+            .arg(&current_exe)
+            .arg("menu")
+            .arg("fallback-worker")
+            .arg("--request-file")
+            .arg(&request_path)
+            .arg("--response-file")
+            .arg(&response_path)
+            .status()
+            .context("Failed to launch kitty fallback terminal")?;
+
+        if !status.success() {
+            anyhow::bail!("Fallback menu terminal exited with status {status}");
+        }
+
+        let response_json = fs::read_to_string(&response_path)
+            .context("Fallback menu did not produce a response")?;
+
+        serde_json::from_str(&response_json).context("Failed to deserialize fallback menu response")
     }
 
     /// Show confirmation dialog via server
@@ -217,6 +320,10 @@ impl MenuClient {
 
     /// Stop the server
     pub fn stop(&self) -> Result<()> {
+        if self.transport != MenuTransport::ScratchpadServer {
+            anyhow::bail!("Menu server is not active in fallback mode");
+        }
+
         // Check if server is running first
         if !self.is_server_running() {
             anyhow::bail!("Server is not running");
@@ -436,5 +543,26 @@ mod tests {
         let id2 = generate_request_id();
         assert_ne!(id1, id2);
         assert!(id1.starts_with("req_"));
+    }
+
+    #[test]
+    fn test_fallback_status_info() {
+        let previous = std::env::var("INS_MENU_FORCE_MODE").ok();
+        unsafe {
+            std::env::set_var("INS_MENU_FORCE_MODE", "fallback");
+        }
+
+        let client = MenuClient::new();
+        assert!(client.is_fallback());
+
+        let status = client.status().expect("fallback status should succeed");
+        assert_eq!(status.socket_path, "N/A (fallback)");
+
+        match previous {
+            Some(value) => unsafe {
+                std::env::set_var("INS_MENU_FORCE_MODE", value);
+            },
+            None => std::env::remove_var("INS_MENU_FORCE_MODE"),
+        }
     }
 }

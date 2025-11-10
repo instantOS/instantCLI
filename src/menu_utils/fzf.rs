@@ -833,7 +833,6 @@ enum PreviewStrategy {
 }
 
 impl PreviewUtils {
-
     /// Analyze preview types and determine optimal strategy
     pub fn analyze_preview_strategy<T: FzfSelectable>(items: &[T]) -> Result<PreviewStrategy> {
         if items.is_empty() {
