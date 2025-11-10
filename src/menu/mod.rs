@@ -36,11 +36,13 @@ struct PresetConfig {
 const AUDIO_COMMAND_SCRIPT: &str = r#"pamixer --set-volume "$1" \
     || amixer -q set Master "$1%" \
     || amixer -D pulse set Master "$1%" \
-    || pactl set-sink-volume @DEFAULT_SINK@ "$1%"; \
-if command -v dunstify >/dev/null 2>&1; then \
-    dunstify -a instantCLI -i audio-volume-medium-symbolic \
-        -h int:value:"$1" -r 7368551 "Volume [$1%]"; \
-fi"#;
+    || pactl set-sink-volume @DEFAULT_SINK@ "$1%";
+
+dunstify --appname instantCLI \
+    -h string:x-dunst-stack-tag:instantcli-volume \
+    -h int:value:"$1" \
+    -i audio-volume-medium-symbolic \
+    "Volume [$1%]""#;
 
 impl SliderPreset {
     fn config(self) -> PresetConfig {
