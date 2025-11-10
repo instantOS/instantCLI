@@ -10,33 +10,22 @@ while enabling easy theme and configuration switching.
 
 ## Features
 
-### 🗂️ **Dotfile Management**
+### **Dotfile Management**
 - **Multi-repository support** with priority-based overlaying
 - **Smart modification detection** using hashes to protect user changes
 - **Subdirectory management** for organizing different configuration sets like themes
 
-### 🎮 **Game Save Management**
+### **Game Save Management**
 - Centralized game save backup and restore
+- Support for popular free cloud storage services
 - Automatic save location detection
 
-### 🩺 **System Diagnostics**
-- Comprehensive system health checks
-- Automated fixes for common issues
-- InstantOS-specific optimizations
+### **Application Launcher**
+- Launch desktop applications
+- Fuzzy finding
+- Frecency (Higher ranking for frequently and recently used apps)
+- Based on reusing Terminal windows using scratchpads
 
-### 🚀 **Application Launcher**
-- Fast application discovery and launching
-- Integration with system applications
-
-### 📋 **Interactive Menus**
-- FZF-powered interactive dialogs
-- Confirmation prompts and selection menus
-- Shell script integration utilities
-
-### 🖥️ **Scratchpad Terminal**
-- Toggle-able floating terminal windows
-- Named scratchpads for different workflows
-- Custom terminal and sizing options
 
 ## Installation
 
@@ -74,11 +63,11 @@ just rootinstall
 - Restic
 - SQLite3
 
-## How It Works
+## Dotfile Management
 
 ### Dotfile Structure
 
-InstantCLI expects dotfile repositories to have a specific structure:
+`ins` expects dotfile repositories to have a specific structure:
 
 ```
 your-dotfiles-repo/
@@ -90,11 +79,11 @@ your-dotfiles-repo/
 │   │   └── nvim/
 │   │       └── init.vim
 │   └── .bashrc
-├── themes/                   # Optional: theme-specific configs
+├── mytheme/                   # Optional: theme-specific configs
 │   └── .config/
 │       └── kitty/
 │           └── theme.conf
-└── configs/                  # Optional: additional configurations
+└── myothertheme/              # Optional: theme-specific configs
     └── ...
 ```
 
