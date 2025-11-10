@@ -1,6 +1,7 @@
 mod file_picker;
 mod fzf;
 mod keychord;
+mod slider;
 mod path_input;
 
 #[allow(unused_imports)]
@@ -13,3 +14,5 @@ pub use fzf::{
 pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 #[allow(unused_imports)]
 pub use path_input::{PathInputBuilder, PathInputSelection};
+#[allow(unused_imports)]
+pub use slider::{SliderCommand, SliderConfig};
