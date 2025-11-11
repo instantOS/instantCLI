@@ -1,6 +1,7 @@
 use anyhow::Result;
 use colored::*;
 
+mod assist;
 mod common;
 mod completions;
 mod dev;
@@ -127,6 +128,11 @@ enum Commands {
         /// List available applications instead of launching
         #[arg(long)]
         list: bool,
+    },
+    /// Quick assist actions
+    Assist {
+        #[command(subcommand)]
+        command: Option<assist::AssistCommands>,
     },
     /// Interactive menu commands for shell scripts
     Menu {
@@ -393,6 +399,13 @@ async fn main() -> Result<()> {
         Some(Commands::Launch { list }) => {
             let exit_code = launch::handle_launch_command(*list).await?;
             std::process::exit(exit_code);
+        }
+        Some(Commands::Assist { command }) => {
+            execute_with_error_handling(
+                assist::dispatch_assist_command(cli.debug, command.clone()),
+                "Error handling assist command",
+                None,
+            )?;
         }
         Some(Commands::Doctor { command }) => {
             doctor::command::handle_doctor_command(command.clone()).await?;
