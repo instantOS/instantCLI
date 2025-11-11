@@ -177,45 +177,5 @@ fn expand_exec_field_codes(exec: &str) -> Result<String> {
 
 /// Wrap command with terminal
 fn wrap_with_terminal(cmd: &mut std::process::Command) -> Result<()> {
-    // Try to find a terminal emulator
-    let terminal = std::env::var("TERMINAL").unwrap_or_else(|_| {
-        // Common terminal emulators in order of preference
-        for term in ["kitty", "alacritty", "gnome-terminal", "xterm"] {
-            if which::which(term).is_ok() {
-                return term.to_string();
-            }
-        }
-        "xterm".to_string() // Fallback
-    });
-
-    // Build the terminal command
-    let mut term_cmd = std::process::Command::new(&terminal);
-
-    // Add terminal-specific arguments
-    match terminal.as_str() {
-        "kitty" | "alacritty" => {
-            term_cmd.arg("--");
-        }
-        "gnome-terminal" => {
-            term_cmd.arg("--");
-        }
-        _ => {}
-    }
-
-    // Add the original command as arguments to the terminal
-    let program = cmd.get_program().to_string_lossy().to_string();
-    let args: Vec<String> = cmd
-        .get_args()
-        .map(|arg| arg.to_string_lossy().to_string())
-        .collect();
-
-    term_cmd.arg(program);
-    for arg in args {
-        term_cmd.arg(arg);
-    }
-
-    // Replace the original command with the terminal-wrapped version
-    *cmd = term_cmd;
-
-    Ok(())
+    crate::common::terminal::wrap_with_terminal(cmd)
 }

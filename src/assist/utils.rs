@@ -36,21 +36,8 @@ pub fn menu_command(args: &[&str]) -> Result<()> {
 }
 
 /// Get the preferred terminal emulator
-pub fn get_terminal() -> &'static str {
-    // Check for common terminals in order of preference
-    const TERMINALS: &[&str] = &["kitty", "alacritty", "wezterm", "foot", "gnome-terminal", "konsole", "xterm"];
-    
-    for terminal in TERMINALS {
-        if Command::new("which")
-            .arg(terminal)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return terminal;
-        }
-    }
-    
-    // Default fallback
-    "xterm"
+/// 
+/// This is a convenience wrapper around the common terminal detection.
+pub fn get_terminal() -> String {
+    crate::common::terminal::detect_terminal()
 }
