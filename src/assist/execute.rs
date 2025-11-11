@@ -1,6 +1,6 @@
-use anyhow::{Context, Result};
 use crate::common::requirements::ensure_packages_batch;
 use crate::ui::prelude::*;
+use anyhow::{Context, Result};
 
 use super::registry::AssistAction;
 
@@ -19,8 +19,8 @@ pub fn execute_assist(assist: &AssistAction) -> Result<()> {
             None,
         );
 
-        let all_satisfied = ensure_packages_batch(assist.requirements)
-            .context("Failed to ensure requirements")?;
+        let all_satisfied =
+            ensure_packages_batch(assist.requirements).context("Failed to ensure requirements")?;
 
         if !all_satisfied {
             emit(
@@ -41,11 +41,7 @@ pub fn execute_assist(assist: &AssistAction) -> Result<()> {
     emit(
         Level::Info,
         "assist.executing",
-        &format!(
-            "{} Executing {}...",
-            char::from(assist.icon),
-            assist.title
-        ),
+        &format!("{} Executing {}...", char::from(assist.icon), assist.title),
         None,
     );
 

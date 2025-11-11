@@ -88,7 +88,7 @@ fn run_assist_selector() -> Result<()> {
         Ok(None) => Ok(()), // Cancelled
         Err(e) => {
             eprintln!("Error showing chord menu: {e}");
-            Err(e.into())
+            Err(e)
         }
     }
 }
@@ -96,12 +96,8 @@ fn run_assist_selector() -> Result<()> {
 /// Build chord specifications from the assist tree structure
 fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
     let mut specs = Vec::new();
-    
-    fn add_entry_specs(
-        specs: &mut Vec<String>,
-        entry: &registry::AssistEntry,
-        prefix: &str,
-    ) {
+
+    fn add_entry_specs(specs: &mut Vec<String>, entry: &registry::AssistEntry, prefix: &str) {
         match entry {
             registry::AssistEntry::Action(action) => {
                 let key = format!("{}{}", prefix, action.key);
@@ -115,7 +111,7 @@ fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
             }
             registry::AssistEntry::Group(group) => {
                 let key = format!("{}{}", prefix, group.key);
-                
+
                 // Add the group itself
                 specs.push(format!(
                     "{}:{} {}",
@@ -123,7 +119,7 @@ fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
                     char::from(group.icon),
                     group.title
                 ));
-                
+
                 // Add all children with the group key as prefix
                 for child in group.children {
                     add_entry_specs(specs, child, &key);
@@ -131,10 +127,10 @@ fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
             }
         }
     }
-    
+
     for entry in entries {
         add_entry_specs(&mut specs, entry, "");
     }
-    
+
     specs
 }

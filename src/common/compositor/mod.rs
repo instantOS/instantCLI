@@ -1,7 +1,7 @@
+use super::display_server::DisplayServer;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::process::Command;
-use super::display_server::DisplayServer;
 
 pub mod hyprland;
 pub mod sway;
@@ -62,9 +62,7 @@ impl CompositorType {
                 // Could check for X11 window managers here if needed
                 CompositorType::Other("x11".to_string())
             }
-            DisplayServer::Unknown => {
-                CompositorType::Other("unknown".to_string())
-            }
+            DisplayServer::Unknown => CompositorType::Other("unknown".to_string()),
         }
     }
 

@@ -6,7 +6,9 @@ pub static PLAYERCTL_PACKAGE: RequiredPackage = RequiredPackage {
     name: "playerctl",
     arch_package_name: Some("playerctl"),
     ubuntu_package_name: Some("playerctl"),
-    tests: &[crate::common::requirements::InstallTest::WhichSucceeds("playerctl")],
+    tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+        "playerctl",
+    )],
 };
 
 /// Required package for qrencode (QR code generation)
@@ -14,7 +16,9 @@ pub static QRENCODE_PACKAGE: RequiredPackage = RequiredPackage {
     name: "qrencode",
     arch_package_name: Some("qrencode"),
     ubuntu_package_name: Some("qrencode"),
-    tests: &[crate::common::requirements::InstallTest::WhichSucceeds("qrencode")],
+    tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+        "qrencode",
+    )],
 };
 
 /// Required package for flameshot (screenshot and annotation tool)
@@ -22,7 +26,9 @@ pub static FLAMESHOT_PACKAGE: RequiredPackage = RequiredPackage {
     name: "flameshot",
     arch_package_name: Some("flameshot"),
     ubuntu_package_name: Some("flameshot"),
-    tests: &[crate::common::requirements::InstallTest::WhichSucceeds("flameshot")],
+    tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+        "flameshot",
+    )],
 };
 
 /// Required packages for screenshot to clipboard (both Wayland and X11)
@@ -32,43 +38,55 @@ pub static SCREENSHOT_CLIPBOARD_PACKAGES: &[RequiredPackage] = &[
         name: "slurp",
         arch_package_name: Some("slurp"),
         ubuntu_package_name: Some("slurp"),
-        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("slurp")],
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+            "slurp",
+        )],
     },
     RequiredPackage {
         name: "grim",
         arch_package_name: Some("grim"),
         ubuntu_package_name: Some("grim"),
-        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("grim")],
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+            "grim",
+        )],
     },
     RequiredPackage {
         name: "wl-clipboard",
         arch_package_name: Some("wl-clipboard"),
         ubuntu_package_name: Some("wl-clipboard"),
-        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("wl-copy")],
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+            "wl-copy",
+        )],
     },
     // X11 tools
     RequiredPackage {
         name: "slop",
         arch_package_name: Some("slop"),
         ubuntu_package_name: Some("slop"),
-        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("slop")],
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+            "slop",
+        )],
     },
     RequiredPackage {
         name: "imagemagick",
         arch_package_name: Some("imagemagick"),
         ubuntu_package_name: Some("imagemagick"),
-        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("import")],
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+            "import",
+        )],
     },
     RequiredPackage {
         name: "xclip",
         arch_package_name: Some("xclip"),
         ubuntu_package_name: Some("xclip"),
-        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("xclip")],
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+            "xclip",
+        )],
     },
 ];
 
 /// A tree structure for organizing assists
-/// 
+///
 /// This type-safe design ensures that:
 /// - Actions (leaves) have execution logic
 /// - Groups (branches) have children but no execution logic
@@ -114,14 +132,14 @@ pub struct AssistGroup {
 }
 
 /// The main assist registry defining all available assists
-/// 
+///
 /// # Structure
-/// 
+///
 /// - **Actions**: Leaf nodes that execute commands when selected
 /// - **Groups**: Branch nodes that contain child actions/groups
-/// 
+///
 /// # Example
-/// 
+///
 /// ```ignore
 /// AssistEntry::Action(AssistAction {
 ///     key: 'c',
@@ -132,9 +150,9 @@ pub struct AssistGroup {
 ///     execute: assists::caffeine,
 /// })
 /// ```
-/// 
+///
 /// For grouped actions:
-/// 
+///
 /// ```ignore
 /// AssistEntry::Group(AssistGroup {
 ///     key: 'v',
@@ -231,10 +249,10 @@ pub const ASSISTS: &[AssistEntry] = &[
 ];
 
 mod assists {
-    use anyhow::Result;
-    use anyhow::Context;
-    use std::process::Command;
     use super::super::utils;
+    use anyhow::Context;
+    use anyhow::Result;
+    use std::process::Command;
 
     /// Toggle caffeine mode - keeps system awake
     pub fn caffeine() -> Result<()> {
@@ -247,7 +265,9 @@ mod assists {
                 Ok(())
             }
             DisplayServer::X11 => {
-                anyhow::bail!("X11 support is work in progress. Caffeine currently only supports Wayland.");
+                anyhow::bail!(
+                    "X11 support is work in progress. Caffeine currently only supports Wayland."
+                );
             }
             DisplayServer::Unknown => {
                 anyhow::bail!("Unknown display server. Caffeine currently only supports Wayland.");
@@ -289,8 +309,8 @@ mod assists {
 
     /// Generate QR code from clipboard contents
     pub fn qr_encode_clipboard() -> Result<()> {
-        use std::io::Write;
         use crate::common::display_server::DisplayServer;
+        use std::io::Write;
 
         let display_server = DisplayServer::detect();
 
@@ -301,34 +321,45 @@ mod assists {
             .output()
             .with_context(|| format!("Failed to get clipboard with {}", clipboard_cmd))?
             .stdout;
-        
+
         let clipboard_text = String::from_utf8_lossy(&clipboard_content);
-        
+
         if clipboard_text.trim().is_empty() {
             anyhow::bail!("Clipboard is empty");
         }
-        
+
         // Create a temporary file with the clipboard content
-        let temp_content = std::env::temp_dir().join(format!("qr_content_{}.txt", std::process::id()));
+        let temp_content =
+            std::env::temp_dir().join(format!("qr_content_{}.txt", std::process::id()));
         std::fs::write(&temp_content, clipboard_text.as_bytes())
             .context("Failed to write clipboard content to temp file")?;
-        
+
         // Create a temporary script to display QR code
-        let temp_script = std::env::temp_dir().join(format!("qr_display_{}.sh", std::process::id()));
-        let mut script = std::fs::File::create(&temp_script)
-            .context("Failed to create temporary script")?;
-        
+        let temp_script =
+            std::env::temp_dir().join(format!("qr_display_{}.sh", std::process::id()));
+        let mut script =
+            std::fs::File::create(&temp_script).context("Failed to create temporary script")?;
+
         writeln!(script, "#!/bin/bash")?;
         writeln!(script, "echo 'QR Code for clipboard contents:'")?;
         writeln!(script, "echo")?;
-        writeln!(script, "cat '{}' | qrencode -t ansiutf8", temp_content.display())?;
+        writeln!(
+            script,
+            "cat '{}' | qrencode -t ansiutf8",
+            temp_content.display()
+        )?;
         writeln!(script, "echo")?;
         writeln!(script, "echo 'Press any key to close...'")?;
         writeln!(script, "read -n 1")?;
-        writeln!(script, "rm -f '{}' '{}'", temp_content.display(), temp_script.display())?;
-        
+        writeln!(
+            script,
+            "rm -f '{}' '{}'",
+            temp_content.display(),
+            temp_script.display()
+        )?;
+
         drop(script);
-        
+
         // Make script executable
         #[cfg(unix)]
         {
@@ -337,25 +368,25 @@ mod assists {
             perms.set_mode(0o755);
             std::fs::set_permissions(&temp_script, perms)?;
         }
-        
+
         // Launch in terminal
         let terminal = crate::common::terminal::detect_terminal();
-        
+
         Command::new(terminal)
             .arg("-e")
             .arg(temp_script.as_os_str())
             .spawn()
             .context("Failed to launch terminal with QR code")?;
-        
+
         Ok(())
     }
 
     /// Take screenshot and annotate it using flameshot
     pub fn screenshot_annotate() -> Result<()> {
         use crate::common::display_server::DisplayServer;
-        
+
         let display_server = DisplayServer::detect();
-        
+
         if display_server.is_wayland() {
             // Check if flameshot is already running
             let flameshot_running = Command::new("pgrep")
@@ -363,7 +394,7 @@ mod assists {
                 .output()
                 .map(|o| !o.stdout.is_empty())
                 .unwrap_or(false);
-            
+
             if !flameshot_running {
                 // Start flameshot daemon in background with Wayland environment
                 Command::new("flameshot")
@@ -374,11 +405,11 @@ mod assists {
                     .env("XDG_SESSION_DESKTOP", "sway")
                     .spawn()
                     .context("Failed to start flameshot daemon")?;
-                
+
                 // Give it time to initialize
                 std::thread::sleep(std::time::Duration::from_secs(2));
             }
-            
+
             // Launch flameshot GUI with Wayland environment
             Command::new("flameshot")
                 .arg("gui")
@@ -392,14 +423,14 @@ mod assists {
         } else {
             // X11 - small delay seems to be needed
             std::thread::sleep(std::time::Duration::from_millis(100));
-            
+
             // Launch flameshot GUI
             Command::new("flameshot")
                 .arg("gui")
                 .spawn()
                 .context("Failed to launch flameshot gui")?;
         }
-        
+
         Ok(())
     }
 
@@ -407,49 +438,51 @@ mod assists {
     pub fn screenshot_to_clipboard() -> Result<()> {
         use crate::common::display_server::DisplayServer;
         use std::io::Write;
-        
+
         let display_server = DisplayServer::detect();
-        
+
         if display_server.is_wayland() {
             // Get selected area using slurp
             let slurp_output = Command::new("slurp")
                 .output()
                 .context("Failed to run slurp for area selection")?;
-            
+
             if !slurp_output.status.success() {
                 // User cancelled selection
                 return Ok(());
             }
-            
-            let geometry = String::from_utf8_lossy(&slurp_output.stdout).trim().to_string();
-            
+
+            let geometry = String::from_utf8_lossy(&slurp_output.stdout)
+                .trim()
+                .to_string();
+
             if geometry.is_empty() {
                 return Ok(());
             }
-            
+
             // Capture screenshot with grim and pipe to wl-copy
             let grim_output = Command::new("grim")
                 .args(["-g", &geometry, "-"])
                 .output()
                 .context("Failed to capture screenshot with grim")?;
-            
+
             if !grim_output.status.success() {
                 anyhow::bail!("Failed to capture screenshot");
             }
-            
+
             // Copy to clipboard
             let mut wl_copy = Command::new("wl-copy")
                 .stdin(std::process::Stdio::piped())
                 .spawn()
                 .context("Failed to start wl-copy")?;
-            
+
             if let Some(mut stdin) = wl_copy.stdin.take() {
-                stdin.write_all(&grim_output.stdout)
+                stdin
+                    .write_all(&grim_output.stdout)
                     .context("Failed to write screenshot to wl-copy")?;
             }
-            
+
             wl_copy.wait().context("Failed to wait for wl-copy")?;
-            
         } else if display_server.is_x11() {
             // Get selected area using slop
             let slop_output = Command::new("slop")
@@ -457,46 +490,48 @@ mod assists {
                 .arg("%g")
                 .output()
                 .context("Failed to run slop for area selection")?;
-            
+
             if !slop_output.status.success() {
                 // User cancelled selection
                 return Ok(());
             }
-            
-            let geometry = String::from_utf8_lossy(&slop_output.stdout).trim().to_string();
-            
+
+            let geometry = String::from_utf8_lossy(&slop_output.stdout)
+                .trim()
+                .to_string();
+
             if geometry.is_empty() {
                 return Ok(());
             }
-            
+
             // Capture screenshot with import (imagemagick) and pipe to xclip
             let import_output = Command::new("import")
                 .args(["-window", "root", "-crop", &geometry, "png:-"])
                 .output()
                 .context("Failed to capture screenshot with import")?;
-            
+
             if !import_output.status.success() {
                 anyhow::bail!("Failed to capture screenshot");
             }
-            
+
             // Copy to clipboard
             let mut xclip = Command::new("xclip")
                 .args(["-selection", "clipboard", "-t", "image/png"])
                 .stdin(std::process::Stdio::piped())
                 .spawn()
                 .context("Failed to start xclip")?;
-            
+
             if let Some(mut stdin) = xclip.stdin.take() {
-                stdin.write_all(&import_output.stdout)
+                stdin
+                    .write_all(&import_output.stdout)
                     .context("Failed to write screenshot to xclip")?;
             }
-            
+
             xclip.wait().context("Failed to wait for xclip")?;
-            
         } else {
             anyhow::bail!("Unknown display server - cannot take screenshot");
         }
-        
+
         Ok(())
     }
 }
@@ -532,13 +567,13 @@ pub fn find_action(key_sequence: &str) -> Option<&'static AssistAction> {
     if key_sequence.is_empty() {
         return None;
     }
-    
+
     let mut chars = key_sequence.chars();
     let first_key = chars.next()?;
-    
+
     // Find the entry with the first key
     let entry = ASSISTS.iter().find(|entry| entry.key() == first_key)?;
-    
+
     match entry {
         AssistEntry::Action(action) => {
             // Single key action
@@ -555,7 +590,7 @@ pub fn find_action(key_sequence: &str) -> Option<&'static AssistAction> {
                 // We only support 2-level depth for now
                 return None;
             }
-            
+
             group.children.iter().find_map(|child| match child {
                 AssistEntry::Action(action) if action.key == second_key => Some(action),
                 _ => None,
@@ -580,7 +615,7 @@ mod tests {
         let action = find_action("vn");
         assert!(action.is_some());
         assert_eq!(action.unwrap().title, "Previous Track");
-        
+
         let action = find_action("vp");
         assert!(action.is_some());
         assert_eq!(action.unwrap().title, "Next Track");
