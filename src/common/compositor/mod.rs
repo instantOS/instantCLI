@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::process::Command;
+use super::display_server::DisplayServer;
 
 pub mod hyprland;
 pub mod sway;
@@ -45,25 +46,26 @@ impl CompositorType {
             }
         }
 
-        // Check for Wayland display server
-        if env::var("WAYLAND_DISPLAY").is_ok() {
-            // Try to detect specific Wayland compositors
-            if CompositorType::is_process_running("sway") {
-                return CompositorType::Sway;
+        // Use display server detection to guide compositor detection
+        match DisplayServer::detect() {
+            DisplayServer::Wayland => {
+                // Try to detect specific Wayland compositors
+                if CompositorType::is_process_running("sway") {
+                    return CompositorType::Sway;
+                }
+                if CompositorType::is_process_running("Hyprland") {
+                    return CompositorType::Hyprland;
+                }
+                CompositorType::Other("wayland".to_string())
             }
-            if CompositorType::is_process_running("Hyprland") {
-                return CompositorType::Hyprland;
+            DisplayServer::X11 => {
+                // Could check for X11 window managers here if needed
+                CompositorType::Other("x11".to_string())
+            }
+            DisplayServer::Unknown => {
+                CompositorType::Other("unknown".to_string())
             }
         }
-
-        // Check for X11 display server
-        if env::var("DISPLAY").is_ok() {
-            // Could check for X11 window managers here if needed
-            return CompositorType::Other("x11".to_string());
-        }
-
-        // Fallback
-        CompositorType::Other("unknown".to_string())
     }
 
     /// Check if a process with the given name is running
@@ -108,6 +110,22 @@ impl CompositorType {
         match self {
             CompositorType::Other(name) => name.to_lowercase().contains("x11"),
             _ => false,
+        }
+    }
+
+    /// Get the display server type for this compositor
+    pub fn display_server(&self) -> DisplayServer {
+        match self {
+            CompositorType::Sway | CompositorType::Hyprland => DisplayServer::Wayland,
+            CompositorType::Other(name) => {
+                if name.to_lowercase().contains("wayland") {
+                    DisplayServer::Wayland
+                } else if name.to_lowercase().contains("x11") {
+                    DisplayServer::X11
+                } else {
+                    DisplayServer::Unknown
+                }
+            }
         }
     }
 

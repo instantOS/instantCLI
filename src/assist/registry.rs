@@ -164,14 +164,20 @@ mod assists {
 
     /// Toggle caffeine mode - keeps system awake
     pub fn caffeine() -> Result<()> {
-        let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
+        use crate::common::display_server::DisplayServer;
 
-        if session_type == "wayland" {
-            let command = "echo 'Caffeine running - press Ctrl+C to quit' && systemd-inhibit --what=idle --who=Caffeine --why=Caffeine --mode=block sleep inf";
-            utils::launch_in_terminal(command)?;
-            Ok(())
-        } else {
-            anyhow::bail!("X11 support is work in progress. Caffeine currently only supports Wayland.");
+        match DisplayServer::detect() {
+            DisplayServer::Wayland => {
+                let command = "echo 'Caffeine running - press Ctrl+C to quit' && systemd-inhibit --what=idle --who=Caffeine --why=Caffeine --mode=block sleep inf";
+                utils::launch_in_terminal(command)?;
+                Ok(())
+            }
+            DisplayServer::X11 => {
+                anyhow::bail!("X11 support is work in progress. Caffeine currently only supports Wayland.");
+            }
+            DisplayServer::Unknown => {
+                anyhow::bail!("Unknown display server. Caffeine currently only supports Wayland.");
+            }
         }
     }
 
@@ -210,22 +216,17 @@ mod assists {
     /// Generate QR code from clipboard contents
     pub fn qr_encode_clipboard() -> Result<()> {
         use std::io::Write;
-        
-        let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
-        
-        // Get clipboard contents
-        let clipboard_content = if session_type == "wayland" {
-            Command::new("wl-paste")
-                .output()
-                .context("Failed to get clipboard with wl-paste")?
-                .stdout
-        } else {
-            Command::new("xclip")
-                .args(["-selection", "clipboard", "-o"])
-                .output()
-                .context("Failed to get clipboard with xclip")?
-                .stdout
-        };
+        use crate::common::display_server::DisplayServer;
+
+        let display_server = DisplayServer::detect();
+
+        // Get clipboard contents using appropriate command
+        let (clipboard_cmd, clipboard_args) = display_server.get_clipboard_command();
+        let clipboard_content = Command::new(clipboard_cmd)
+            .args(clipboard_args)
+            .output()
+            .with_context(|| format!("Failed to get clipboard with {}", clipboard_cmd))?
+            .stdout;
         
         let clipboard_text = String::from_utf8_lossy(&clipboard_content);
         
