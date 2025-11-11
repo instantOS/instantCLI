@@ -25,6 +25,48 @@ pub static FLAMESHOT_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[crate::common::requirements::InstallTest::WhichSucceeds("flameshot")],
 };
 
+/// Required packages for screenshot to clipboard (both Wayland and X11)
+pub static SCREENSHOT_CLIPBOARD_PACKAGES: &[RequiredPackage] = &[
+    // Wayland tools
+    RequiredPackage {
+        name: "slurp",
+        arch_package_name: Some("slurp"),
+        ubuntu_package_name: Some("slurp"),
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("slurp")],
+    },
+    RequiredPackage {
+        name: "grim",
+        arch_package_name: Some("grim"),
+        ubuntu_package_name: Some("grim"),
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("grim")],
+    },
+    RequiredPackage {
+        name: "wl-clipboard",
+        arch_package_name: Some("wl-clipboard"),
+        ubuntu_package_name: Some("wl-clipboard"),
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("wl-copy")],
+    },
+    // X11 tools
+    RequiredPackage {
+        name: "slop",
+        arch_package_name: Some("slop"),
+        ubuntu_package_name: Some("slop"),
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("slop")],
+    },
+    RequiredPackage {
+        name: "imagemagick",
+        arch_package_name: Some("imagemagick"),
+        ubuntu_package_name: Some("imagemagick"),
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("import")],
+    },
+    RequiredPackage {
+        name: "xclip",
+        arch_package_name: Some("xclip"),
+        ubuntu_package_name: Some("xclip"),
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds("xclip")],
+    },
+];
+
 /// A tree structure for organizing assists
 /// 
 /// This type-safe design ensures that:
@@ -151,6 +193,14 @@ pub const ASSISTS: &[AssistEntry] = &[
                 icon: NerdFont::Edit,
                 requirements: &[FLAMESHOT_PACKAGE],
                 execute: assists::screenshot_annotate,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'c',
+                title: "Screenshot to Clipboard",
+                description: "Capture area to clipboard",
+                icon: NerdFont::Clipboard,
+                requirements: SCREENSHOT_CLIPBOARD_PACKAGES,
+                execute: assists::screenshot_to_clipboard,
             }),
         ],
     }),
@@ -352,6 +402,103 @@ mod assists {
         
         Ok(())
     }
+
+    /// Take a screenshot of selected area to clipboard
+    pub fn screenshot_to_clipboard() -> Result<()> {
+        use crate::common::display_server::DisplayServer;
+        use std::io::Write;
+        
+        let display_server = DisplayServer::detect();
+        
+        if display_server.is_wayland() {
+            // Get selected area using slurp
+            let slurp_output = Command::new("slurp")
+                .output()
+                .context("Failed to run slurp for area selection")?;
+            
+            if !slurp_output.status.success() {
+                // User cancelled selection
+                return Ok(());
+            }
+            
+            let geometry = String::from_utf8_lossy(&slurp_output.stdout).trim().to_string();
+            
+            if geometry.is_empty() {
+                return Ok(());
+            }
+            
+            // Capture screenshot with grim and pipe to wl-copy
+            let grim_output = Command::new("grim")
+                .args(["-g", &geometry, "-"])
+                .output()
+                .context("Failed to capture screenshot with grim")?;
+            
+            if !grim_output.status.success() {
+                anyhow::bail!("Failed to capture screenshot");
+            }
+            
+            // Copy to clipboard
+            let mut wl_copy = Command::new("wl-copy")
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .context("Failed to start wl-copy")?;
+            
+            if let Some(mut stdin) = wl_copy.stdin.take() {
+                stdin.write_all(&grim_output.stdout)
+                    .context("Failed to write screenshot to wl-copy")?;
+            }
+            
+            wl_copy.wait().context("Failed to wait for wl-copy")?;
+            
+        } else if display_server.is_x11() {
+            // Get selected area using slop
+            let slop_output = Command::new("slop")
+                .arg("-f")
+                .arg("%g")
+                .output()
+                .context("Failed to run slop for area selection")?;
+            
+            if !slop_output.status.success() {
+                // User cancelled selection
+                return Ok(());
+            }
+            
+            let geometry = String::from_utf8_lossy(&slop_output.stdout).trim().to_string();
+            
+            if geometry.is_empty() {
+                return Ok(());
+            }
+            
+            // Capture screenshot with import (imagemagick) and pipe to xclip
+            let import_output = Command::new("import")
+                .args(["-window", "root", "-crop", &geometry, "png:-"])
+                .output()
+                .context("Failed to capture screenshot with import")?;
+            
+            if !import_output.status.success() {
+                anyhow::bail!("Failed to capture screenshot");
+            }
+            
+            // Copy to clipboard
+            let mut xclip = Command::new("xclip")
+                .args(["-selection", "clipboard", "-t", "image/png"])
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .context("Failed to start xclip")?;
+            
+            if let Some(mut stdin) = xclip.stdin.take() {
+                stdin.write_all(&import_output.stdout)
+                    .context("Failed to write screenshot to xclip")?;
+            }
+            
+            xclip.wait().context("Failed to wait for xclip")?;
+            
+        } else {
+            anyhow::bail!("Unknown display server - cannot take screenshot");
+        }
+        
+        Ok(())
+    }
 }
 
 impl AssistEntry {
@@ -463,5 +610,12 @@ mod tests {
     fn test_screenshot_group_key_not_an_action() {
         // "s" is a group, not an action
         assert!(find_action("s").is_none());
+    }
+
+    #[test]
+    fn test_find_screenshot_to_clipboard_action() {
+        let action = find_action("sc");
+        assert!(action.is_some());
+        assert_eq!(action.unwrap().title, "Screenshot to Clipboard");
     }
 }
