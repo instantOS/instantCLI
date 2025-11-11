@@ -1,5 +1,5 @@
 /// Common terminal emulator utilities
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::process::Command;
 
 /// Detect the available terminal emulator

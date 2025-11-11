@@ -17,6 +17,14 @@ pub static QRENCODE_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[crate::common::requirements::InstallTest::WhichSucceeds("qrencode")],
 };
 
+/// Required package for flameshot (screenshot and annotation tool)
+pub static FLAMESHOT_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "flameshot",
+    arch_package_name: Some("flameshot"),
+    ubuntu_package_name: Some("flameshot"),
+    tests: &[crate::common::requirements::InstallTest::WhichSucceeds("flameshot")],
+};
+
 /// A tree structure for organizing assists
 /// 
 /// This type-safe design ensures that:
@@ -129,6 +137,22 @@ pub const ASSISTS: &[AssistEntry] = &[
         icon: NerdFont::Square,
         requirements: &[QRENCODE_PACKAGE],
         execute: assists::qr_encode_clipboard,
+    }),
+    AssistEntry::Group(AssistGroup {
+        key: 's',
+        title: "Screenshot",
+        description: "Screenshot and annotation tools",
+        icon: NerdFont::Image,
+        children: &[
+            AssistEntry::Action(AssistAction {
+                key: 'a',
+                title: "Screenshot & Annotate",
+                description: "Take screenshot with flameshot",
+                icon: NerdFont::Edit,
+                requirements: &[FLAMESHOT_PACKAGE],
+                execute: assists::screenshot_annotate,
+            }),
+        ],
     }),
     AssistEntry::Group(AssistGroup {
         key: 'v',
@@ -275,6 +299,59 @@ mod assists {
         
         Ok(())
     }
+
+    /// Take screenshot and annotate it using flameshot
+    pub fn screenshot_annotate() -> Result<()> {
+        use crate::common::display_server::DisplayServer;
+        
+        let display_server = DisplayServer::detect();
+        
+        if display_server.is_wayland() {
+            // Check if flameshot is already running
+            let flameshot_running = Command::new("pgrep")
+                .arg("flameshot")
+                .output()
+                .map(|o| !o.stdout.is_empty())
+                .unwrap_or(false);
+            
+            if !flameshot_running {
+                // Start flameshot daemon in background with Wayland environment
+                Command::new("flameshot")
+                    .env("SDL_VIDEODRIVER", "wayland")
+                    .env("_JAVA_AWT_WM_NONREPARENTING", "1")
+                    .env("QT_QPA_PLATFORM", "wayland")
+                    .env("XDG_CURRENT_DESKTOP", "sway")
+                    .env("XDG_SESSION_DESKTOP", "sway")
+                    .spawn()
+                    .context("Failed to start flameshot daemon")?;
+                
+                // Give it time to initialize
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            
+            // Launch flameshot GUI with Wayland environment
+            Command::new("flameshot")
+                .arg("gui")
+                .env("SDL_VIDEODRIVER", "wayland")
+                .env("_JAVA_AWT_WM_NONREPARENTING", "1")
+                .env("QT_QPA_PLATFORM", "wayland")
+                .env("XDG_CURRENT_DESKTOP", "sway")
+                .env("XDG_SESSION_DESKTOP", "sway")
+                .spawn()
+                .context("Failed to launch flameshot gui")?;
+        } else {
+            // X11 - small delay seems to be needed
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            
+            // Launch flameshot GUI
+            Command::new("flameshot")
+                .arg("gui")
+                .spawn()
+                .context("Failed to launch flameshot gui")?;
+        }
+        
+        Ok(())
+    }
 }
 
 impl AssistEntry {
@@ -373,5 +450,18 @@ mod tests {
     fn test_group_key_not_an_action() {
         // "v" is a group, not an action
         assert!(find_action("v").is_none());
+    }
+
+    #[test]
+    fn test_find_screenshot_action() {
+        let action = find_action("sa");
+        assert!(action.is_some());
+        assert_eq!(action.unwrap().title, "Screenshot & Annotate");
+    }
+
+    #[test]
+    fn test_screenshot_group_key_not_an_action() {
+        // "s" is a group, not an action
+        assert!(find_action("s").is_none());
     }
 }
