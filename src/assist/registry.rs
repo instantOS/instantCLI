@@ -9,42 +9,135 @@ pub static PLAYERCTL_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[crate::common::requirements::InstallTest::WhichSucceeds("playerctl")],
 };
 
-/// An assist action that can be performed
+/// A tree structure for organizing assists
+/// 
+/// This type-safe design ensures that:
+/// - Actions (leaves) have execution logic
+/// - Groups (branches) have children but no execution logic
+/// - Invalid states (e.g., a leaf with children) are unrepresentable
 #[derive(Debug, Clone)]
-pub struct AssistDefinition {
-    pub key: &'static str,
+pub enum AssistEntry {
+    /// A leaf action that can be executed
+    Action(AssistAction),
+    /// A group containing other assists
+    Group(AssistGroup),
+}
+
+/// An executable assist action (leaf node in the assist tree)
+#[derive(Debug, Clone)]
+pub struct AssistAction {
+    /// Single character key to trigger this action
+    pub key: char,
+    /// Display name shown in menus
     pub title: &'static str,
+    /// Brief description of what the action does
     pub description: &'static str,
+    /// Icon displayed in menus
     pub icon: NerdFont,
+    /// System packages required for this action to work
     pub requirements: &'static [RequiredPackage],
+    /// Function to execute when this action is selected
     pub execute: fn() -> anyhow::Result<()>,
 }
 
-pub const ASSISTS: &[AssistDefinition] = &[
-    AssistDefinition {
+/// A group of related assists (branch node in the assist tree)
+#[derive(Debug, Clone)]
+pub struct AssistGroup {
+    /// Single character key to enter this group
+    pub key: char,
+    /// Display name shown in menus
+    pub title: &'static str,
+    /// Brief description of what this group contains
+    pub description: &'static str,
+    /// Icon displayed in menus
+    pub icon: NerdFont,
+    /// Child actions and subgroups
+    pub children: &'static [AssistEntry],
+}
+
+/// The main assist registry defining all available assists
+/// 
+/// # Structure
+/// 
+/// - **Actions**: Leaf nodes that execute commands when selected
+/// - **Groups**: Branch nodes that contain child actions/groups
+/// 
+/// # Example
+/// 
+/// ```ignore
+/// AssistEntry::Action(AssistAction {
+///     key: 'c',
+///     title: "Caffeine",
+///     description: "Keep system awake",
+///     icon: NerdFont::Lightbulb,
+///     requirements: &[],
+///     execute: assists::caffeine,
+/// })
+/// ```
+/// 
+/// For grouped actions:
+/// 
+/// ```ignore
+/// AssistEntry::Group(AssistGroup {
+///     key: 'v',
+///     title: "Media Navigation",
+///     description: "Control media playback",
+///     icon: NerdFont::Music,
+///     children: &[
+///         AssistEntry::Action(AssistAction { ... }),
+///         AssistEntry::Action(AssistAction { ... }),
+///     ],
+/// })
+/// ```
+pub const ASSISTS: &[AssistEntry] = &[
+    AssistEntry::Action(AssistAction {
         key: 'c',
         title: "Caffeine",
-        description: "Keep system awake (prevent sleep/idle)",
+        description: "Keep system awake",
         icon: NerdFont::Lightbulb,
         requirements: &[],
         execute: assists::caffeine,
-    },
-    AssistDefinition {
+    }),
+    AssistEntry::Action(AssistAction {
         key: 'a',
         title: "Volume",
-        description: "Adjust audio volume with slider",
+        description: "Adjust audio volume",
         icon: NerdFont::VolumeUp,
         requirements: &[],
         execute: assists::volume,
-    },
-    AssistDefinition {
+    }),
+    AssistEntry::Action(AssistAction {
         key: 'm',
         title: "Music",
-        description: "Play/pause music with playerctl",
+        description: "Play/pause music",
         icon: NerdFont::Music,
         requirements: &[PLAYERCTL_PACKAGE],
         execute: assists::music,
-    },
+    }),
+    AssistEntry::Group(AssistGroup {
+        key: 'v',
+        title: "Media Navigation",
+        description: "Control media playback tracks",
+        icon: NerdFont::Music,
+        children: &[
+            AssistEntry::Action(AssistAction {
+                key: 'n',
+                title: "Previous Track",
+                description: "Go to previous track",
+                icon: NerdFont::ChevronLeft,
+                requirements: &[PLAYERCTL_PACKAGE],
+                execute: assists::previous_track,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'p',
+                title: "Next Track",
+                description: "Go to next track",
+                icon: NerdFont::ChevronRight,
+                requirements: &[PLAYERCTL_PACKAGE],
+                execute: assists::next_track,
+            }),
+        ],
+    }),
 ];
 
 mod assists {
@@ -79,9 +172,121 @@ mod assists {
             .context("Failed to control playback with playerctl")?;
         Ok(())
     }
+
+    /// Go to previous track using playerctl
+    pub fn previous_track() -> Result<()> {
+        Command::new("playerctl")
+            .arg("previous")
+            .spawn()
+            .context("Failed to go to previous track with playerctl")?;
+        Ok(())
+    }
+
+    /// Go to next track using playerctl
+    pub fn next_track() -> Result<()> {
+        Command::new("playerctl")
+            .arg("next")
+            .spawn()
+            .context("Failed to go to next track with playerctl")?;
+        Ok(())
+    }
 }
 
-/// Get assist by key character
-pub fn assist_by_key(key: char) -> Option<&'static AssistDefinition> {
-    ASSISTS.iter().find(|a| a.key == key)
+impl AssistEntry {
+    /// Get the key for this entry
+    pub fn key(&self) -> char {
+        match self {
+            AssistEntry::Action(action) => action.key,
+            AssistEntry::Group(group) => group.key,
+        }
+    }
+
+    /// Get the title for this entry
+    pub fn title(&self) -> &'static str {
+        match self {
+            AssistEntry::Action(action) => action.title,
+            AssistEntry::Group(group) => group.title,
+        }
+    }
+
+    /// Get the icon for this entry
+    pub fn icon(&self) -> NerdFont {
+        match self {
+            AssistEntry::Action(action) => action.icon,
+            AssistEntry::Group(group) => group.icon,
+        }
+    }
+}
+
+/// Find an assist action by its key sequence (e.g., "c" or "vn")
+pub fn find_action(key_sequence: &str) -> Option<&'static AssistAction> {
+    if key_sequence.is_empty() {
+        return None;
+    }
+    
+    let mut chars = key_sequence.chars();
+    let first_key = chars.next()?;
+    
+    // Find the entry with the first key
+    let entry = ASSISTS.iter().find(|entry| entry.key() == first_key)?;
+    
+    match entry {
+        AssistEntry::Action(action) => {
+            // Single key action
+            if chars.next().is_none() {
+                Some(action)
+            } else {
+                None
+            }
+        }
+        AssistEntry::Group(group) => {
+            // Multi-key sequence - search in children
+            let second_key = chars.next()?;
+            if chars.next().is_some() {
+                // We only support 2-level depth for now
+                return None;
+            }
+            
+            group.children.iter().find_map(|child| match child {
+                AssistEntry::Action(action) if action.key == second_key => Some(action),
+                _ => None,
+            })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_single_key_action() {
+        let action = find_action("c");
+        assert!(action.is_some());
+        assert_eq!(action.unwrap().title, "Caffeine");
+    }
+
+    #[test]
+    fn test_find_grouped_action() {
+        let action = find_action("vn");
+        assert!(action.is_some());
+        assert_eq!(action.unwrap().title, "Previous Track");
+        
+        let action = find_action("vp");
+        assert!(action.is_some());
+        assert_eq!(action.unwrap().title, "Next Track");
+    }
+
+    #[test]
+    fn test_find_nonexistent_action() {
+        assert!(find_action("z").is_none());
+        assert!(find_action("vz").is_none());
+        assert!(find_action("").is_none());
+    }
+
+    #[test]
+    fn test_group_key_not_an_action() {
+        // "v" is a group, not an action
+        assert!(find_action("v").is_none());
+    }
 }

@@ -26,13 +26,35 @@ fn list_assists() -> Result<()> {
     println!("{}", "Available Assists:".bold());
     println!();
 
-    for assist in registry::ASSISTS {
-        println!(
-            "  {} {} {}",
-            assist.key.to_string().cyan().bold(),
-            assist.title.bold(),
-            format!("- {}", assist.description).dimmed()
-        );
+    fn print_entry(entry: &registry::AssistEntry, prefix: &str) {
+        match entry {
+            registry::AssistEntry::Action(action) => {
+                println!(
+                    "  {}{} {} {}",
+                    prefix,
+                    action.key.to_string().cyan().bold(),
+                    action.title.bold(),
+                    format!("- {}", action.description).dimmed()
+                );
+            }
+            registry::AssistEntry::Group(group) => {
+                println!(
+                    "  {}{} {} {}",
+                    prefix,
+                    group.key.to_string().cyan().bold(),
+                    group.title.bold(),
+                    format!("- {}", group.description).dimmed()
+                );
+                let child_prefix = format!("{}{}  ", prefix, group.key);
+                for child in group.children {
+                    print_entry(child, &child_prefix);
+                }
+            }
+        }
+    }
+
+    for entry in registry::ASSISTS {
+        print_entry(entry, "");
     }
 
     Ok(())
@@ -46,19 +68,8 @@ fn run_assist_selector() -> Result<()> {
         return Ok(());
     }
 
-    // Build chord specifications
-    let chord_specs: Vec<String> = assists
-        .iter()
-        .map(|assist| {
-            format!(
-                "{}:{} {}  {}",
-                assist.key,
-                char::from(assist.icon),
-                assist.title,
-                assist.description
-            )
-        })
-        .collect();
+    // Build chord specifications from the tree structure
+    let chord_specs = build_chord_specs(assists);
 
     // Show chord menu
     let client = client::MenuClient::new();
@@ -67,15 +78,10 @@ fn run_assist_selector() -> Result<()> {
 
     match client.chord(chord_specs) {
         Ok(Some(selected_key)) => {
-            let key = selected_key
-                .chars()
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("Invalid key returned"))?;
+            let action = registry::find_action(&selected_key)
+                .ok_or_else(|| anyhow::anyhow!("Assist not found for key: {}", selected_key))?;
 
-            let assist = registry::assist_by_key(key)
-                .ok_or_else(|| anyhow::anyhow!("Assist not found for key: {}", key))?;
-
-            execute_assist(assist)?;
+            execute_assist(action)?;
 
             Ok(())
         }
@@ -85,4 +91,50 @@ fn run_assist_selector() -> Result<()> {
             Err(e.into())
         }
     }
+}
+
+/// Build chord specifications from the assist tree structure
+fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
+    let mut specs = Vec::new();
+    
+    fn add_entry_specs(
+        specs: &mut Vec<String>,
+        entry: &registry::AssistEntry,
+        prefix: &str,
+    ) {
+        match entry {
+            registry::AssistEntry::Action(action) => {
+                let key = format!("{}{}", prefix, action.key);
+                specs.push(format!(
+                    "{}:{} {}  {}",
+                    key,
+                    char::from(action.icon),
+                    action.title,
+                    action.description
+                ));
+            }
+            registry::AssistEntry::Group(group) => {
+                let key = format!("{}{}", prefix, group.key);
+                
+                // Add the group itself
+                specs.push(format!(
+                    "{}:{} {}",
+                    key,
+                    char::from(group.icon),
+                    group.title
+                ));
+                
+                // Add all children with the group key as prefix
+                for child in group.children {
+                    add_entry_specs(specs, child, &key);
+                }
+            }
+        }
+    }
+    
+    for entry in entries {
+        add_entry_specs(&mut specs, entry, "");
+    }
+    
+    specs
 }

@@ -2,10 +2,10 @@ use anyhow::{Context, Result};
 use crate::common::requirements::ensure_packages_batch;
 use crate::ui::prelude::*;
 
-use super::registry::AssistDefinition;
+use super::registry::AssistAction;
 
 /// Execute an assist action, ensuring requirements are satisfied first
-pub fn execute_assist(assist: &AssistDefinition) -> Result<()> {
+pub fn execute_assist(assist: &AssistAction) -> Result<()> {
     // Check and install requirements if needed
     if !assist.requirements.is_empty() {
         emit(
