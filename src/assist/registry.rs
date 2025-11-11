@@ -1,10 +1,18 @@
 use crate::common::requirements::RequiredPackage;
 use crate::ui::prelude::NerdFont;
 
+/// Required package for playerctl (media player control)
+pub static PLAYERCTL_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "playerctl",
+    arch_package_name: Some("playerctl"),
+    ubuntu_package_name: Some("playerctl"),
+    tests: &[crate::common::requirements::InstallTest::WhichSucceeds("playerctl")],
+};
+
 /// An assist action that can be performed
 #[derive(Debug, Clone)]
 pub struct AssistDefinition {
-    pub key: char,
+    pub key: &'static str,
     pub title: &'static str,
     pub description: &'static str,
     pub icon: NerdFont,
@@ -22,17 +30,27 @@ pub const ASSISTS: &[AssistDefinition] = &[
         execute: assists::caffeine,
     },
     AssistDefinition {
-        key: 'v',
+        key: 'a',
         title: "Volume",
         description: "Adjust audio volume with slider",
         icon: NerdFont::VolumeUp,
         requirements: &[],
         execute: assists::volume,
     },
+    AssistDefinition {
+        key: 'm',
+        title: "Music",
+        description: "Play/pause music with playerctl",
+        icon: NerdFont::Music,
+        requirements: &[PLAYERCTL_PACKAGE],
+        execute: assists::music,
+    },
 ];
 
 mod assists {
     use anyhow::Result;
+    use anyhow::Context;
+    use std::process::Command;
     use super::super::utils;
 
     /// Toggle caffeine mode - keeps system awake
@@ -51,6 +69,15 @@ mod assists {
     /// Volume slider control
     pub fn volume() -> Result<()> {
         utils::menu_command(&["slide", "--preset", "audio", "--gui"])
+    }
+
+    /// Music playback control using playerctl
+    pub fn music() -> Result<()> {
+        Command::new("playerctl")
+            .arg("play-pause")
+            .spawn()
+            .context("Failed to control playback with playerctl")?;
+        Ok(())
     }
 }
 
