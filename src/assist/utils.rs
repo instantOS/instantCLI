@@ -34,3 +34,23 @@ pub fn menu_command(args: &[&str]) -> Result<()> {
         .context("Failed to execute menu command")?;
     Ok(())
 }
+
+/// Get the preferred terminal emulator
+pub fn get_terminal() -> &'static str {
+    // Check for common terminals in order of preference
+    const TERMINALS: &[&str] = &["kitty", "alacritty", "wezterm", "foot", "gnome-terminal", "konsole", "xterm"];
+    
+    for terminal in TERMINALS {
+        if Command::new("which")
+            .arg(terminal)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            return terminal;
+        }
+    }
+    
+    // Default fallback
+    "xterm"
+}
