@@ -264,7 +264,7 @@ mod assists {
         }
         
         // Launch in terminal
-        let terminal = utils::get_terminal();
+        let terminal = crate::common::terminal::detect_terminal();
         
         Command::new(terminal)
             .arg("-e")

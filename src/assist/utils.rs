@@ -34,10 +34,3 @@ pub fn menu_command(args: &[&str]) -> Result<()> {
         .context("Failed to execute menu command")?;
     Ok(())
 }
-
-/// Get the preferred terminal emulator
-/// 
-/// This is a convenience wrapper around the common terminal detection.
-pub fn get_terminal() -> String {
-    crate::common::terminal::detect_terminal()
-}
