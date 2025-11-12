@@ -1,3 +1,6 @@
+mod actions;
+mod packages;
+
 pub mod commands;
 pub mod execute;
 pub mod registry;
