@@ -187,17 +187,18 @@ pub fn screenshot_to_imgur() -> Result<()> {
             anyhow::bail!("Failed to upload screenshot to Imgur");
         }
 
-        let jq_child = Command::new("jq")
+        let mut jq_child = Command::new("jq")
             .args(["-r", ".data.link"])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .spawn()
             .context("Failed to start jq")?;
 
-        let jq_stdin = jq_child.stdin.as_ref().unwrap();
+        let mut jq_stdin = jq_child.stdin.take().unwrap();
         jq_stdin
             .write_all(&curl_output.stdout)
             .context("Failed to write to jq")?;
+        drop(jq_stdin);
 
         let jq_output = jq_child
             .wait_with_output()
