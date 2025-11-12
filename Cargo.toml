@@ -28,7 +28,7 @@ sudo = "0.6.0"                # Privilege escalation via process restart
 lazy_static = "1.5.0"         # Global registry instance
 thiserror = "2.0.16"           # Error handling
 comfy-table = "7.2.1"            # Formatted tables for doctor command output
-reqwest = { version = "0.12.23", features = ["json"] }  # For GitHub API calls
+reqwest = { version = "0.12.23", features = ["json", "multipart"] }  # For GitHub API calls and Imgur uploads
 serde_json = "1.0.145"             # For JSON parsing
 git2 = "0.20.2"                 # For native git operations
 duct = "1.1.0"                  # For non-git shell commands (makepkg, etc.)

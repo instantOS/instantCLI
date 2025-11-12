@@ -1,8 +1,8 @@
 use anyhow::Result;
 
 pub fn caffeine() -> Result<()> {
-    use crate::common::display_server::DisplayServer;
     use crate::assist::utils;
+    use crate::common::display_server::DisplayServer;
 
     match DisplayServer::detect() {
         DisplayServer::Wayland => {

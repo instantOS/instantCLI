@@ -20,13 +20,11 @@ pub fn qr_encode_clipboard() -> Result<()> {
         anyhow::bail!("Clipboard is empty");
     }
 
-    let temp_content =
-        std::env::temp_dir().join(format!("qr_content_{}.txt", std::process::id()));
+    let temp_content = std::env::temp_dir().join(format!("qr_content_{}.txt", std::process::id()));
     std::fs::write(&temp_content, clipboard_text.as_bytes())
         .context("Failed to write clipboard content to temp file")?;
 
-    let temp_script =
-        std::env::temp_dir().join(format!("qr_display_{}.sh", std::process::id()));
+    let temp_script = std::env::temp_dir().join(format!("qr_display_{}.sh", std::process::id()));
     let mut script =
         std::fs::File::create(&temp_script).context("Failed to create temporary script")?;
 

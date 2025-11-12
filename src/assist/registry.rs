@@ -1,8 +1,8 @@
 use crate::common::requirements::RequiredPackage;
 use crate::ui::prelude::NerdFont;
 
-use super::packages::*;
 use super::actions;
+use super::packages::*;
 
 #[derive(Debug, Clone)]
 pub enum AssistEntry {

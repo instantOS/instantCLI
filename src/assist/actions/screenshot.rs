@@ -141,9 +141,9 @@ pub fn screenshot_to_clipboard() -> Result<()> {
 
 pub fn screenshot_to_imgur() -> Result<()> {
     use crate::common::display_server::DisplayServer;
-    
+
     let display_server = DisplayServer::detect();
-    
+
     if display_server.is_wayland() {
         let slurp_output = Command::new("slurp")
             .output()
@@ -161,60 +161,17 @@ pub fn screenshot_to_imgur() -> Result<()> {
             return Ok(());
         }
 
-        let grim_child = Command::new("grim")
+        let screenshot = Command::new("grim")
             .args(["-g", &geometry, "-"])
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start grim")?;
+            .output()
+            .context("Failed to capture screenshot with grim")?;
 
-        let curl_child = Command::new("curl")
-            .args([
-                "-s",
-                "-F", "image=@-",
-                "https://api.imgur.com/3/image",
-                "-H", "Authorization: Client-ID 546c25a59c58ad7",
-            ])
-            .stdin(grim_child.stdout.unwrap())
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start curl")?;
-
-        let curl_output = curl_child
-            .wait_with_output()
-            .context("Failed to wait for curl")?;
-
-        if !curl_output.status.success() {
-            anyhow::bail!("Failed to upload screenshot to Imgur");
+        if !screenshot.status.success() {
+            anyhow::bail!("Failed to capture screenshot");
         }
 
-        let mut jq_child = Command::new("jq")
-            .args(["-r", ".data.link"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start jq")?;
-
-        let mut jq_stdin = jq_child.stdin.take().unwrap();
-        jq_stdin
-            .write_all(&curl_output.stdout)
-            .context("Failed to write to jq")?;
-        drop(jq_stdin);
-
-        let jq_output = jq_child
-            .wait_with_output()
-            .context("Failed to wait for jq")?;
-
-        if !jq_output.status.success() {
-            anyhow::bail!("Failed to parse Imgur response");
-        }
-
-        let imgur_link = String::from_utf8_lossy(&jq_output.stdout)
-            .trim()
-            .to_string();
-
-        if imgur_link.is_empty() {
-            anyhow::bail!("Failed to extract Imgur link from response");
-        }
+        let imgur_link =
+            upload_to_imgur(&screenshot.stdout).context("Failed to upload screenshot to Imgur")?;
 
         let mut wl_copy = Command::new("wl-copy")
             .stdin(std::process::Stdio::piped())
@@ -238,4 +195,61 @@ pub fn screenshot_to_imgur() -> Result<()> {
     } else {
         anyhow::bail!("Imgur upload currently only supports Wayland");
     }
+}
+
+fn upload_to_imgur(image_data: &[u8]) -> Result<String> {
+    let image_data = image_data.to_vec();
+
+    // Use spawn_blocking to avoid runtime nesting issues
+    std::thread::spawn(move || {
+        let rt =
+            tokio::runtime::Runtime::new().context("Failed to create tokio runtime for upload")?;
+        rt.block_on(upload_to_imgur_async(&image_data))
+    })
+    .join()
+    .map_err(|_| anyhow::anyhow!("Thread panicked during upload"))?
+}
+
+async fn upload_to_imgur_async(image_data: &[u8]) -> Result<String> {
+    use std::time::Duration;
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("Failed to create HTTP client")?;
+
+    let form = reqwest::multipart::Form::new().part(
+        "image",
+        reqwest::multipart::Part::bytes(image_data.to_vec())
+            .file_name("screenshot.png")
+            .mime_str("image/png")?,
+    );
+
+    let response = client
+        .post("https://api.imgur.com/3/image")
+        .header("Authorization", "Client-ID 546c25a59c58ad7")
+        .multipart(form)
+        .send()
+        .await
+        .context("Failed to send upload request to Imgur")?;
+
+    if !response.status().is_success() {
+        anyhow::bail!("Imgur API returned error: {}", response.status());
+    }
+
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .context("Failed to parse Imgur response as JSON")?;
+
+    let link = json["data"]["link"]
+        .as_str()
+        .context("Failed to extract link from Imgur response")?
+        .to_string();
+
+    if link.is_empty() {
+        anyhow::bail!("Imgur returned empty link");
+    }
+
+    Ok(link)
 }
