@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/instantOS/instantCLI/compare/v0.5.1...v0.5.2) - 2025-11-13
+
+### Fixed
+
+- fix
+
+### Other
+
+- better key hints
+- add key hints to sway
+- add help message on sway
+- unify dependencies and descriptions
+- add password assist
+- auphonic plans
+- more plans
+- add plans
+- better help assist
+- add help assist
+- add assist sway setup command
+- export instant assists as sway modes
+- prevent TUI interference
+- Revert "add exponential backoff"
+- abstract away copying logic
+- add exponential backoff
+- add bruh moment
+- better icons
+- swap p and n assists
+- format
+- init flatpak dependency system
+- clippy
+- dedup packages
+- format
+- add full screen screenshot assist
+- abstract away area selection
+- make imgur uploader more rusty
+- refactor assist registry
+- new plan
+
 ## [0.5.1](https://github.com/instantOS/instantCLI/compare/v0.5.0...v0.5.1) - 2025-11-11
 
 ### Other
