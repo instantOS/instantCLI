@@ -1,8 +1,8 @@
 # asking questions
 
 
-
 ping archlinux.org to ensure interent connectivity, if not found, cancel installation
+(there is already a utility to detect internet access, reuse that)
 
 ```
 localectl list-keymaps
@@ -100,8 +100,6 @@ mount --mkdir /dev/efi_system_partition /mnt/boot
 
 swapon /dev/swap_partition
 
-
-
 Set up actual mirrors Country-specific fetching: When a country is selected, depend/mirrors.sh:18 fetches mirrors specifically for that country code from https://archlinux.org/mirrorlist/?country=$COUNTRYCODE
 
 COUNTRYCODE was selected earlier by the user
@@ -149,7 +147,7 @@ set the hostname in /etc/hostname
 
 yourhostname
 
-hostnamectl set-hostname "youthostname"
+hostnamectl set-hostname "yourhostname"
 
 
 set the root password
@@ -158,9 +156,6 @@ create the user
 - username from user choice
 - user password fom user choice
 - with home directory
-- with zsh as default shell
-
-install grub
 
 if UEFI
 then
@@ -172,4 +167,24 @@ else
 grub-install "${DISK}"
 
 fi
+
+# Post-install
+
+This can run either immediately after installing the basics, or on a manually
+installed arch system. 
+
+1. Set up instant pacman repo, there are already utils for this in the doctor
+   command, maybe extarct and reuse them
+2. Install instantdepend and instantos and instantextra
+3. Detect users with a home directory
+4. For each user
+    - clone the dotfiles using ins dot clone
+    - add to wheel,docker,video,dav_group,plocate
+    - set default shell to zsh
+5. Configure sudo to show password dots
+6. Configure sudo to allow wheel group
+
+- with zsh as default shell
+
+enable lightdm
 
