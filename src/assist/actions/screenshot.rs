@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use std::io::Write;
 use std::process::Command;
 
 use crate::assist::utils::AreaSelectionConfig;
@@ -53,6 +52,8 @@ pub fn screenshot_annotate() -> Result<()> {
 }
 
 pub fn screenshot_to_clipboard() -> Result<()> {
+    use crate::assist::utils::copy_image_to_clipboard;
+
     // Create cached configuration to avoid repeated display server detection
     let config = AreaSelectionConfig::new();
 
@@ -67,7 +68,7 @@ pub fn screenshot_to_clipboard() -> Result<()> {
 
     let display_server = config.display_server();
 
-    if display_server.is_wayland() {
+    let screenshot_data = if display_server.is_wayland() {
         // Capture screenshot with grim
         let grim_output = Command::new("grim")
             .args(["-g", &geometry, "-"])
@@ -78,19 +79,7 @@ pub fn screenshot_to_clipboard() -> Result<()> {
             anyhow::bail!("Failed to capture screenshot");
         }
 
-        // Copy to clipboard with wl-copy
-        let mut wl_copy = Command::new("wl-copy")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start wl-copy")?;
-
-        if let Some(mut stdin) = wl_copy.stdin.take() {
-            stdin
-                .write_all(&grim_output.stdout)
-                .context("Failed to write screenshot to wl-copy")?;
-        }
-
-        wl_copy.wait().context("Failed to wait for wl-copy")?;
+        grim_output.stdout
     } else if display_server.is_x11() {
         // Capture screenshot with import (ImageMagick)
         let import_output = Command::new("import")
@@ -102,28 +91,19 @@ pub fn screenshot_to_clipboard() -> Result<()> {
             anyhow::bail!("Failed to capture screenshot");
         }
 
-        // Copy to clipboard with xclip
-        let mut xclip = Command::new("xclip")
-            .args(["-selection", "clipboard", "-t", "image/png"])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start xclip")?;
-
-        if let Some(mut stdin) = xclip.stdin.take() {
-            stdin
-                .write_all(&import_output.stdout)
-                .context("Failed to write screenshot to xclip")?;
-        }
-
-        xclip.wait().context("Failed to wait for xclip")?;
+        import_output.stdout
     } else {
         anyhow::bail!("Unknown display server - cannot take screenshot");
-    }
+    };
+
+    copy_image_to_clipboard(&screenshot_data, "image/png", display_server)?;
 
     Ok(())
 }
 
 pub fn screenshot_to_imgur() -> Result<()> {
+    use crate::assist::utils::copy_to_clipboard;
+
     // Create cached configuration to avoid repeated display server detection
     let config = AreaSelectionConfig::new();
 
@@ -171,34 +151,7 @@ pub fn screenshot_to_imgur() -> Result<()> {
         upload_to_imgur(&screenshot_data).context("Failed to upload screenshot to Imgur")?;
 
     // Copy link to clipboard
-    if display_server.is_wayland() {
-        let mut wl_copy = Command::new("wl-copy")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start wl-copy")?;
-
-        if let Some(mut stdin) = wl_copy.stdin.take() {
-            stdin
-                .write_all(imgur_link.as_bytes())
-                .context("Failed to write Imgur link to wl-copy")?;
-        }
-
-        wl_copy.wait().context("Failed to wait for wl-copy")?;
-    } else if display_server.is_x11() {
-        let mut xclip = Command::new("xclip")
-            .args(["-selection", "clipboard"])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to start xclip")?;
-
-        if let Some(mut stdin) = xclip.stdin.take() {
-            stdin
-                .write_all(imgur_link.as_bytes())
-                .context("Failed to write Imgur link to xclip")?;
-        }
-
-        xclip.wait().context("Failed to wait for xclip")?;
-    }
+    copy_to_clipboard(imgur_link.as_bytes(), display_server)?;
 
     // Show notification
     Command::new("notify-send")

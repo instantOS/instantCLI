@@ -1,5 +1,6 @@
 /// Shared utility functions for assists
 use anyhow::{Context, Result};
+use std::io::Write;
 use std::process::Command;
 
 use crate::common::display_server::DisplayServer;
@@ -199,4 +200,76 @@ impl AreaSelectionConfig {
     pub fn display_server(&self) -> &DisplayServer {
         &self.display_server
     }
+}
+
+/// Copy data to clipboard using the appropriate tool for the display server
+pub fn copy_to_clipboard(data: &[u8], display_server: &DisplayServer) -> Result<()> {
+    if display_server.is_wayland() {
+        let mut wl_copy = Command::new("wl-copy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .context("Failed to start wl-copy")?;
+
+        if let Some(mut stdin) = wl_copy.stdin.take() {
+            stdin
+                .write_all(data)
+                .context("Failed to write to wl-copy")?;
+        }
+
+        wl_copy.wait().context("Failed to wait for wl-copy")?;
+    } else if display_server.is_x11() {
+        let mut xclip = Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .context("Failed to start xclip")?;
+
+        if let Some(mut stdin) = xclip.stdin.take() {
+            stdin.write_all(data).context("Failed to write to xclip")?;
+        }
+
+        xclip.wait().context("Failed to wait for xclip")?;
+    } else {
+        anyhow::bail!("Unknown display server - cannot copy to clipboard");
+    }
+
+    Ok(())
+}
+
+/// Copy image data to clipboard with explicit MIME type (X11 only)
+pub fn copy_image_to_clipboard(
+    data: &[u8],
+    mime_type: &str,
+    display_server: &DisplayServer,
+) -> Result<()> {
+    if display_server.is_wayland() {
+        let mut wl_copy = Command::new("wl-copy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .context("Failed to start wl-copy")?;
+
+        if let Some(mut stdin) = wl_copy.stdin.take() {
+            stdin
+                .write_all(data)
+                .context("Failed to write to wl-copy")?;
+        }
+
+        wl_copy.wait().context("Failed to wait for wl-copy")?;
+    } else if display_server.is_x11() {
+        let mut xclip = Command::new("xclip")
+            .args(["-selection", "clipboard", "-t", mime_type])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .context("Failed to start xclip")?;
+
+        if let Some(mut stdin) = xclip.stdin.take() {
+            stdin.write_all(data).context("Failed to write to xclip")?;
+        }
+
+        xclip.wait().context("Failed to wait for xclip")?;
+    } else {
+        anyhow::bail!("Unknown display server - cannot copy to clipboard");
+    }
+
+    Ok(())
 }
