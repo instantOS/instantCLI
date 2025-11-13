@@ -240,7 +240,6 @@ impl KeyChordNavigator {
                                 break;
                             }
                         }
-                        KeyCode::Char('q') if key_event.modifiers.is_empty() => break,
                         code => {
                             if key_event.modifiers.is_empty()
                                 && let Some(chord) = self.current_node.find_chord(&code).cloned()
@@ -325,9 +324,7 @@ impl KeyChordNavigator {
             Span::styled("Esc", Style::default().fg(Color::Cyan)),
             Span::raw("/"),
             Span::styled("Backspace", Style::default().fg(Color::Cyan)),
-            Span::raw(" to go back  •  "),
-            Span::styled("q", Style::default().fg(Color::Cyan)),
-            Span::raw(" to quit"),
+            Span::raw(" to go back or quit"),
         ]);
 
         self.terminal.draw(|frame| {

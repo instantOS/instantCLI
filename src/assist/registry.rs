@@ -77,7 +77,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         execute: actions::password::open_password_manager,
     }),
     AssistEntry::Action(AssistAction {
-        key: 'e',
+        key: 'q',
         description: "QR Encode Clipboard: Generate QR code from clipboard",
         icon: NerdFont::Square,
         dependencies: &[Dependency {
@@ -87,7 +87,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         execute: actions::qr::qr_encode_clipboard,
     }),
     AssistEntry::Action(AssistAction {
-        key: 'x',
+        key: 'e',
         description: "Emoji Picker: Open emoji picker",
         icon: NerdFont::Star,
         dependencies: &[Dependency {
@@ -333,11 +333,21 @@ mod tests {
 
     #[test]
     fn test_find_emoji_picker_action() {
-        let action = find_action("x");
+        let action = find_action("e");
         assert!(action.is_some());
         assert_eq!(
             action.unwrap().description,
             "Emoji Picker: Open emoji picker"
+        );
+    }
+
+    #[test]
+    fn test_find_qr_encode_action() {
+        let action = find_action("q");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "QR Encode Clipboard: Generate QR code from clipboard"
         );
     }
 
