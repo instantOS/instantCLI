@@ -32,6 +32,10 @@ impl SliderCommand {
         command.args(&self.args);
         command.arg(value.to_string());
 
+        // Redirect stdout and stderr to prevent interference with TUI
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
+
         command
             .spawn()
             .with_context(|| format!("Failed to execute slider command '{}'", self.program))?;

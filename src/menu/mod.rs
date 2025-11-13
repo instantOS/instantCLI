@@ -34,13 +34,13 @@ struct PresetConfig {
     command: Vec<String>,
 }
 
-const AUDIO_COMMAND_SCRIPT: &str = r#"wpctl set-volume @DEFAULT_AUDIO_SINK@ "$1%";
+const AUDIO_COMMAND_SCRIPT: &str = r#"wpctl set-volume @DEFAULT_AUDIO_SINK@ "$1%" 2>/dev/null;
 
 dunstify --appname instantCLI \
     -h string:x-dunst-stack-tag:instantcli-volume \
     -h int:value:"$1" \
     -i audio-volume-medium-symbolic \
-    "Volume [$1%]""#;
+    "Volume [$1%]" 2>/dev/null"#;
 
 impl SliderPreset {
     fn config(self) -> PresetConfig {
