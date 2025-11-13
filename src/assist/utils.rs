@@ -151,9 +151,7 @@ impl AreaSelectionConfig {
             anyhow::bail!("Area selection cancelled");
         }
 
-        let geometry = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string();
+        let geometry = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         if geometry.is_empty() {
             anyhow::bail!("No area selected");
@@ -188,9 +186,7 @@ impl AreaSelectionConfig {
             anyhow::bail!("Area selection cancelled");
         }
 
-        let geometry = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string();
+        let geometry = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         if geometry.is_empty() {
             anyhow::bail!("No area selected");
@@ -203,6 +199,4 @@ impl AreaSelectionConfig {
     pub fn display_server(&self) -> &DisplayServer {
         &self.display_server
     }
-
-  }
-
+}

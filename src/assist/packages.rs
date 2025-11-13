@@ -108,16 +108,14 @@ pub static IMGUR_UPLOAD_PACKAGES: &[RequiredPackage] = &[
 ];
 
 // Notification tools
-pub static NOTIFICATION_PACKAGES: &[RequiredPackage] = &[
-    RequiredPackage {
-        name: "libnotify",
-        arch_package_name: Some("libnotify"),
-        ubuntu_package_name: Some("libnotify-bin"),
-        tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
-            "notify-send",
-        )],
-    },
-];
+pub static NOTIFICATION_PACKAGES: &[RequiredPackage] = &[RequiredPackage {
+    name: "libnotify",
+    arch_package_name: Some("libnotify"),
+    ubuntu_package_name: Some("libnotify-bin"),
+    tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+        "notify-send",
+    )],
+}];
 
 // Convenience arrays for backwards compatibility
 pub static SCREENSHOT_CLIPBOARD_PACKAGES: &[RequiredPackage] = &[

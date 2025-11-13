@@ -167,8 +167,8 @@ pub fn screenshot_to_imgur() -> Result<()> {
     };
 
     // Upload to Imgur
-    let imgur_link = upload_to_imgur(&screenshot_data)
-        .context("Failed to upload screenshot to Imgur")?;
+    let imgur_link =
+        upload_to_imgur(&screenshot_data).context("Failed to upload screenshot to Imgur")?;
 
     // Copy link to clipboard
     if display_server.is_wayland() {
@@ -268,23 +268,22 @@ async fn upload_to_imgur_async(image_data: &[u8]) -> Result<String> {
 
 pub fn fullscreen_screenshot() -> Result<()> {
     let display_server = DisplayServer::detect();
-    
+
     // Generate filename with timestamp
     let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S");
     let filename = format!("{}.png", timestamp);
-    
+
     // Get pictures directory
-    let pictures_dir = paths::pictures_dir()
-        .context("Failed to determine pictures directory")?;
+    let pictures_dir = paths::pictures_dir().context("Failed to determine pictures directory")?;
     let output_path = pictures_dir.join(&filename);
-    
+
     if display_server.is_wayland() {
         // Use grim for Wayland
         let status = Command::new("grim")
             .arg(output_path.to_str().context("Invalid path encoding")?)
             .status()
             .context("Failed to execute grim")?;
-        
+
         if !status.success() {
             anyhow::bail!("Failed to capture fullscreen screenshot with grim");
         }
@@ -295,27 +294,27 @@ pub fn fullscreen_screenshot() -> Result<()> {
             .output()
             .map(|o| !o.stdout.is_empty())
             .unwrap_or(false);
-        
+
         if picom_running {
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
-        
+
         // Add small delay for stability
         std::thread::sleep(std::time::Duration::from_millis(100));
-        
+
         // Use ImageMagick's import for X11
         let status = Command::new("import")
             .args(["-window", "root"])
             .arg(output_path.to_str().context("Invalid path encoding")?)
             .status()
             .context("Failed to execute import")?;
-        
+
         if !status.success() {
             anyhow::bail!("Failed to capture fullscreen screenshot with import");
         }
     } else {
         anyhow::bail!("Unknown display server - cannot take fullscreen screenshot");
     }
-    
+
     Ok(())
 }
