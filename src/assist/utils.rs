@@ -14,6 +14,42 @@ pub fn launch_in_terminal(command: &str) -> Result<()> {
     Ok(())
 }
 
+/// Launch a script in a detached terminal window with title
+pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
+    use tempfile::NamedTempFile;
+
+    // Write script to temporary file
+    let mut temp_file = NamedTempFile::new().context("Failed to create temporary script file")?;
+    temp_file
+        .write_all(script.as_bytes())
+        .context("Failed to write script")?;
+
+    let script_path = temp_file.path().to_owned();
+
+    // Make it executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script_path)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms)?;
+    }
+
+    // Launch in kitty with title
+    Command::new("kitty")
+        .arg("--title")
+        .arg(title)
+        .args(["-e", "bash"])
+        .arg(&script_path)
+        .spawn()
+        .context("Failed to launch terminal")?;
+
+    // Keep temp file alive by forgetting it (will be cleaned up by OS)
+    std::mem::forget(temp_file);
+
+    Ok(())
+}
+
 /// Launch a command in the background (detached)
 pub fn launch_detached(program: &str, args: &[&str]) -> Result<()> {
     Command::new(program)

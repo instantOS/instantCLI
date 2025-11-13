@@ -32,6 +32,15 @@ pub struct AssistGroup {
 
 pub const ASSISTS: &[AssistEntry] = &[
     AssistEntry::Action(AssistAction {
+        key: 'h',
+        title: "Help",
+        description: "Show all available assists",
+        icon: NerdFont::Question,
+        requirements: &[],
+        flatpak_requirements: &[],
+        execute: actions::help::show_help,
+    }),
+    AssistEntry::Action(AssistAction {
         key: 'b',
         title: "Bruh",
         description: "Display a bruh moment",
@@ -277,5 +286,12 @@ mod tests {
         let action = find_action("x");
         assert!(action.is_some());
         assert_eq!(action.unwrap().title, "Emoji Picker");
+    }
+
+    #[test]
+    fn test_find_help_action() {
+        let action = find_action("h");
+        assert!(action.is_some());
+        assert_eq!(action.unwrap().title, "Help");
     }
 }

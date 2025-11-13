@@ -34,8 +34,12 @@ pub fn bruh() -> Result<()> {
         return Ok(());
     }
 
-    // Play the bruh sound
-    Command::new("mpv").arg(&bruh_file).status()?;
+    // Play the bruh sound with default config (ignore user config and resume position)
+    Command::new("mpv")
+        .arg("--no-config")
+        .arg("--no-resume-playback")
+        .arg(&bruh_file)
+        .status()?;
 
     Ok(())
 }

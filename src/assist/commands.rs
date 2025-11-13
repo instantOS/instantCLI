@@ -33,10 +33,11 @@ pub fn dispatch_assist_command(_debug: bool, command: Option<AssistCommands>) ->
         None => run_assist_selector(),
         Some(AssistCommands::List) => list_assists(),
         Some(AssistCommands::Run { key_sequence }) => {
-            let action = registry::find_action(&key_sequence)
-                .ok_or_else(|| anyhow::anyhow!("No assist found for key sequence: {}", key_sequence))?;
+            let action = registry::find_action(&key_sequence).ok_or_else(|| {
+                anyhow::anyhow!("No assist found for key sequence: {}", key_sequence)
+            })?;
             execute_assist(action)
-        },
+        }
         Some(AssistCommands::Export { output_path }) => export_sway_config(output_path),
         Some(AssistCommands::Setup) => setup_sway_integration(),
     }
@@ -197,8 +198,7 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
                     writeln!(
                         output,
                         "    bindsym {} exec --no-startup-id {}; mode default",
-                        action.key,
-                        cmd
+                        action.key, cmd
                     )?;
                 }
                 registry::AssistEntry::Group(group) => {
@@ -206,8 +206,7 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
                     writeln!(
                         output,
                         "    bindsym {} mode \"{}\"",
-                        group.key,
-                        sub_mode_name
+                        group.key, sub_mode_name
                     )?;
                 }
             }
@@ -248,8 +247,7 @@ fn setup_sway_integration() -> Result<()> {
     use std::fs;
 
     // Determine paths
-    let config_dir = dirs::config_dir()
-        .context("Unable to determine user config directory")?;
+    let config_dir = dirs::config_dir().context("Unable to determine user config directory")?;
     let sway_config_dir = config_dir.join("sway");
     let main_config_path = sway_config_dir.join("config");
     let instantassist_config_path = sway_config_dir.join("instantassist");
@@ -259,7 +257,10 @@ fn setup_sway_integration() -> Result<()> {
         .with_context(|| format!("Failed to create directory: {}", sway_config_dir.display()))?;
 
     // Export the assist config
-    println!("Exporting assists config to {}", instantassist_config_path.display());
+    println!(
+        "Exporting assists config to {}",
+        instantassist_config_path.display()
+    );
     export_sway_config(Some(instantassist_config_path.clone()))?;
 
     // Check if main config exists
@@ -291,14 +292,9 @@ fn setup_sway_integration() -> Result<()> {
         .ok()
         .map(|p| format!("~/{}", p.display()))
         .unwrap_or_else(|| instantassist_config_path.display().to_string());
-    
+
     let include_line = format!("include {}", relative_path);
-    let integration_block = format!(
-        "\n{}\n{}\n{}\n",
-        MARKER_START,
-        include_line,
-        MARKER_END
-    );
+    let integration_block = format!("\n{}\n{}\n{}\n", MARKER_START, include_line, MARKER_END);
 
     let new_config_content = format!("{}{}", config_content, integration_block);
 
