@@ -309,3 +309,65 @@ pub fn copy_image_to_clipboard(
 
     Ok(())
 }
+
+/// Capture screenshot of selected area to memory (as PNG bytes)
+pub fn capture_area_to_memory(geometry: &str, display_server: &DisplayServer) -> Result<Vec<u8>> {
+    if display_server.is_wayland() {
+        let grim_output = Command::new("grim")
+            .args(["-g", geometry, "-"])
+            .output()
+            .context("Failed to capture screenshot with grim")?;
+
+        if !grim_output.status.success() {
+            anyhow::bail!("Failed to capture screenshot");
+        }
+
+        Ok(grim_output.stdout)
+    } else if display_server.is_x11() {
+        let import_output = Command::new("import")
+            .args(["-window", "root", "-crop", geometry, "png:-"])
+            .output()
+            .context("Failed to capture screenshot with import")?;
+
+        if !import_output.status.success() {
+            anyhow::bail!("Failed to capture screenshot");
+        }
+
+        Ok(import_output.stdout)
+    } else {
+        anyhow::bail!("Unknown display server - cannot take screenshot")
+    }
+}
+
+/// Capture screenshot of selected area to file
+pub fn capture_area_to_file(
+    geometry: &str,
+    file_path: &std::path::Path,
+    display_server: &DisplayServer,
+) -> Result<()> {
+    if display_server.is_wayland() {
+        let status = Command::new("grim")
+            .args(["-g", geometry])
+            .arg(file_path)
+            .status()
+            .context("Failed to capture screenshot with grim")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to capture screenshot");
+        }
+    } else if display_server.is_x11() {
+        let status = Command::new("import")
+            .args(["-window", "root", "-crop", geometry])
+            .arg(file_path)
+            .status()
+            .context("Failed to capture screenshot with import")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to capture screenshot");
+        }
+    } else {
+        anyhow::bail!("Unknown display server - cannot take screenshot");
+    }
+
+    Ok(())
+}

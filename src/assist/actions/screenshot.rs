@@ -52,49 +52,17 @@ pub fn screenshot_annotate() -> Result<()> {
 }
 
 pub fn screenshot_to_clipboard() -> Result<()> {
-    use crate::assist::utils::copy_image_to_clipboard;
+    use crate::assist::utils::{capture_area_to_memory, copy_image_to_clipboard};
 
-    // Create cached configuration to avoid repeated display server detection
     let config = AreaSelectionConfig::new();
 
-    // Get area selection using the cached configuration
     let geometry = match config.select_area() {
         Ok(geom) => geom,
-        Err(_) => {
-            // Area selection was cancelled or failed - just return success without taking screenshot
-            return Ok(());
-        }
+        Err(_) => return Ok(()),
     };
 
     let display_server = config.display_server();
-
-    let screenshot_data = if display_server.is_wayland() {
-        // Capture screenshot with grim
-        let grim_output = Command::new("grim")
-            .args(["-g", &geometry, "-"])
-            .output()
-            .context("Failed to capture screenshot with grim")?;
-
-        if !grim_output.status.success() {
-            anyhow::bail!("Failed to capture screenshot");
-        }
-
-        grim_output.stdout
-    } else if display_server.is_x11() {
-        // Capture screenshot with import (ImageMagick)
-        let import_output = Command::new("import")
-            .args(["-window", "root", "-crop", &geometry, "png:-"])
-            .output()
-            .context("Failed to capture screenshot with import")?;
-
-        if !import_output.status.success() {
-            anyhow::bail!("Failed to capture screenshot");
-        }
-
-        import_output.stdout
-    } else {
-        anyhow::bail!("Unknown display server - cannot take screenshot");
-    };
+    let screenshot_data = capture_area_to_memory(&geometry, display_server)?;
 
     copy_image_to_clipboard(&screenshot_data, "image/png", display_server)?;
 
@@ -102,51 +70,18 @@ pub fn screenshot_to_clipboard() -> Result<()> {
 }
 
 pub fn screenshot_to_imgur() -> Result<()> {
-    use crate::assist::utils::copy_to_clipboard;
+    use crate::assist::utils::{capture_area_to_memory, copy_to_clipboard};
 
-    // Create cached configuration to avoid repeated display server detection
     let config = AreaSelectionConfig::new();
 
-    // Get area selection using the cached configuration
     let geometry = match config.select_area() {
         Ok(geom) => geom,
-        Err(_) => {
-            // Area selection was cancelled or failed - just return success without taking screenshot
-            return Ok(());
-        }
+        Err(_) => return Ok(()),
     };
 
     let display_server = config.display_server();
+    let screenshot_data = capture_area_to_memory(&geometry, display_server)?;
 
-    let screenshot_data = if display_server.is_wayland() {
-        // Capture screenshot with grim
-        let grim_output = Command::new("grim")
-            .args(["-g", &geometry, "-"])
-            .output()
-            .context("Failed to capture screenshot with grim")?;
-
-        if !grim_output.status.success() {
-            anyhow::bail!("Failed to capture screenshot");
-        }
-
-        grim_output.stdout
-    } else if display_server.is_x11() {
-        // Capture screenshot with import (ImageMagick)
-        let import_output = Command::new("import")
-            .args(["-window", "root", "-crop", &geometry, "png:-"])
-            .output()
-            .context("Failed to capture screenshot with import")?;
-
-        if !import_output.status.success() {
-            anyhow::bail!("Failed to capture screenshot");
-        }
-
-        import_output.stdout
-    } else {
-        anyhow::bail!("Unknown display server - cannot take screenshot");
-    };
-
-    // Upload to Imgur
     let imgur_link =
         upload_to_imgur(&screenshot_data).context("Failed to upload screenshot to Imgur")?;
 
@@ -273,50 +208,21 @@ pub fn fullscreen_screenshot() -> Result<()> {
 }
 
 pub fn screenshot_ocr() -> Result<()> {
-    use crate::assist::utils::copy_to_clipboard;
+    use crate::assist::utils::{capture_area_to_file, copy_to_clipboard};
 
-    // Create cached configuration to avoid repeated display server detection
     let config = AreaSelectionConfig::new();
 
-    // Get area selection using the cached configuration
     let geometry = match config.select_area() {
         Ok(geom) => geom,
-        Err(_) => {
-            // Area selection was cancelled or failed - just return success
-            return Ok(());
-        }
+        Err(_) => return Ok(()),
     };
 
     let display_server = config.display_server();
 
-    // Generate temporary filename for OCR processing
     let pictures_dir = paths::pictures_dir().context("Failed to determine pictures directory")?;
     let image_path = pictures_dir.join("ocr.png");
 
-    // Capture screenshot to file
-    if display_server.is_wayland() {
-        let status = Command::new("grim")
-            .args(["-g", &geometry])
-            .arg(&image_path)
-            .status()
-            .context("Failed to capture screenshot with grim")?;
-
-        if !status.success() {
-            anyhow::bail!("Failed to capture screenshot");
-        }
-    } else if display_server.is_x11() {
-        let status = Command::new("import")
-            .args(["-window", "root", "-crop", &geometry])
-            .arg(&image_path)
-            .status()
-            .context("Failed to capture screenshot with import")?;
-
-        if !status.success() {
-            anyhow::bail!("Failed to capture screenshot");
-        }
-    } else {
-        anyhow::bail!("Unknown display server - cannot take screenshot");
-    }
+    capture_area_to_file(&geometry, &image_path, display_server)?;
 
     // Run tesseract OCR on the captured image
     let ocr_output = Command::new("tesseract")
