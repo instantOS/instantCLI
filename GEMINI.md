@@ -192,6 +192,7 @@ branch = "main"
 ## Important Agent Policies
 
 **No Git Commits**: Do NOT create git commits. The repository has strict policies against automated commits. If changes need to be committed, ask the user for explicit permission.
+**Never execute git commands**: Do NOT execute git commands. If git commands need to be executed, ask the user for explicit permission.
 
 **Compile After Changes**: Always compile the code after making changes to verify correctness with the compiler. Use `cargo check` for quick syntax checks or `cargo build` for full compilation.
 

@@ -77,6 +77,15 @@ pub const ASSISTS: &[AssistEntry] = &[
         execute: actions::media::music,
     }),
     AssistEntry::Action(AssistAction {
+        key: 'p',
+        title: "Password Manager",
+        description: "Open password manager",
+        icon: NerdFont::Key,
+        requirements: &[],
+        flatpak_requirements: &[],
+        execute: actions::password::open_password_manager,
+    }),
+    AssistEntry::Action(AssistAction {
         key: 'e',
         title: "QR Encode Clipboard",
         description: "Generate QR code from clipboard",
