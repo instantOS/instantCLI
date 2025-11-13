@@ -2,6 +2,7 @@ use super::display_server::DisplayServer;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::process::Command;
+use std::sync::{OnceLock, RwLock};
 
 pub mod hyprland;
 pub mod sway;
@@ -15,6 +16,9 @@ pub struct ScratchpadWindowInfo {
     pub visible: bool,
 }
 
+/// Global cached compositor detection result
+static CACHED_COMPOSITOR: OnceLock<RwLock<Option<CompositorType>>> = OnceLock::new();
+
 /// Window compositor types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CompositorType {
@@ -27,9 +31,31 @@ pub enum CompositorType {
 }
 
 impl CompositorType {
-    /// Detect the current window compositor
+    /// Detect the current window compositor (with caching)
     pub fn detect() -> Self {
-        // Check environment variables first
+        let cache = CACHED_COMPOSITOR.get_or_init(|| RwLock::new(None));
+
+        // Try to read from cache first
+        if let Ok(guard) = cache.read() {
+            if let Some(ref compositor) = *guard {
+                return compositor.clone();
+            }
+        }
+
+        // Cache miss - perform detection
+        let compositor = Self::detect_uncached();
+
+        // Cache the result for future calls
+        if let Ok(mut guard) = cache.write() {
+            *guard = Some(compositor.clone());
+        }
+
+        compositor
+    }
+
+    /// Internal detection function without caching
+    fn detect_uncached() -> Self {
+        // Check environment variables first (fast path)
         if let Ok(session) = env::var("XDG_SESSION_DESKTOP") {
             match session.to_lowercase().as_str() {
                 "sway" => return CompositorType::Sway,
@@ -63,6 +89,15 @@ impl CompositorType {
                 CompositorType::Other("x11".to_string())
             }
             DisplayServer::Unknown => CompositorType::Other("unknown".to_string()),
+        }
+    }
+
+    /// Clear the cached compositor detection (useful for testing)
+    pub fn clear_cache() {
+        if let Some(cache) = CACHED_COMPOSITOR.get() {
+            if let Ok(mut guard) = cache.write() {
+                *guard = None;
+            }
         }
     }
 

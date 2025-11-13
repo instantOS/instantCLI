@@ -102,15 +102,28 @@ impl MenuClient {
             anyhow::bail!("Failed to spawn menu server in scratchpad: {}", error_msg);
         }
 
-        // Wait a moment for server to start
-        std::thread::sleep(Duration::from_millis(1000)); // Slightly longer wait for scratchpad setup
+        // Adaptive connection polling with exponential backoff
+        // Start with 100ms, double each attempt up to 800ms max
+        let mut wait_time = 100;
+        let max_attempts = 8;
+        let max_wait = 800;
 
-        // Check if server is now running
-        if !self.is_server_running() {
-            anyhow::bail!("Server failed to start after spawning in scratchpad");
+        for _attempt in 1..=max_attempts {
+            std::thread::sleep(Duration::from_millis(wait_time));
+
+            if self.is_server_running() {
+                return Ok(());
+            }
+
+            // Double wait time for next attempt (exponential backoff)
+            wait_time = std::cmp::min(wait_time * 2, max_wait);
         }
 
-        Ok(())
+        anyhow::bail!(
+            "Server failed to start after {} attempts over {}ms",
+            max_attempts,
+            max_wait * max_attempts / 2
+        );
     }
 
     /// Send a request and receive response

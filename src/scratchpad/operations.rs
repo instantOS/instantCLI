@@ -74,8 +74,7 @@ pub fn create_and_configure_sway_scratchpad(config: &ScratchpadConfig) -> Result
         ));
     }
 
-    // Configure the new window
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    // Configure the new window immediately - no need to wait
     sway::configure_scratchpad_window(&window_class, config.width_pct, config.height_pct)?;
 
     Ok(())
