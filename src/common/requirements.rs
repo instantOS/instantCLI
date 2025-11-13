@@ -37,6 +37,14 @@ pub struct RequiredPackage {
     pub tests: &'static [InstallTest],
 }
 
+/// Represents a Flatpak application dependency
+#[derive(Debug, Clone, Copy)]
+pub struct FlatpakPackage {
+    pub name: &'static str,
+    pub app_id: &'static str,
+    pub tests: &'static [InstallTest],
+}
+
 #[derive(Debug, Clone)]
 pub enum PackageManager {
     Pacman,
@@ -196,6 +204,113 @@ impl RequiredPackage {
             format!("Install `{}`", self.name)
         } else {
             format!("Try one of: {}", hints.join(" | "))
+        }
+    }
+}
+
+impl FlatpakPackage {
+    pub fn is_installed(&self) -> bool {
+        self.tests.iter().any(|test| test.run())
+    }
+
+    fn is_flathub_configured() -> bool {
+        cmd!("flatpak", "remotes", "--columns=name")
+            .read()
+            .map(|output| output.lines().any(|line| line.trim() == "flathub"))
+            .unwrap_or(false)
+    }
+
+    fn setup_flathub() -> Result<()> {
+        FzfWrapper::builder()
+            .message("Flathub repository needs to be configured to install Flatpak applications.")
+            .title("Setting up Flathub")
+            .show_message()?;
+
+        cmd!(
+            "flatpak",
+            "remote-add",
+            "--if-not-exists",
+            "flathub",
+            "https://flathub.org/repo/flathub.flatpakrepo"
+        )
+        .run()
+        .context("Failed to add Flathub remote")?;
+
+        Ok(())
+    }
+
+    fn install_from_flathub(&self) -> Result<()> {
+        if !Self::is_flathub_configured() {
+            Self::setup_flathub()?;
+        }
+
+        let installing_msg = format!("Installing {} from Flathub...", self.name);
+        FzfWrapper::builder()
+            .message(&installing_msg)
+            .title("Installing Flatpak")
+            .show_message()?;
+
+        cmd!("flatpak", "install", "-y", "flathub", self.app_id)
+            .run()
+            .with_context(|| format!("Failed to install {} from Flathub", self.name))?;
+
+        if !self.is_installed() {
+            return Err(anyhow::anyhow!(
+                "Installation of '{}' completed but verification checks still failed",
+                self.name
+            ));
+        }
+
+        let success_msg = format!("Successfully installed {} from Flathub!", self.name);
+        FzfWrapper::builder()
+            .message(&success_msg)
+            .title("Installation Complete")
+            .show_message()?;
+
+        Ok(())
+    }
+
+    pub fn ensure(&self) -> Result<bool> {
+        if self.is_installed() {
+            return Ok(true);
+        }
+
+        let install_msg = format!(
+            "The Flatpak application '{}' is not installed.\n\nDo you want to install it from Flathub?",
+            self.name
+        );
+
+        let should_install = FzfWrapper::builder()
+            .confirm(&install_msg)
+            .yes_text("Install")
+            .no_text("Cancel")
+            .show_confirmation()?;
+
+        let should_install = matches!(should_install, crate::menu_utils::ConfirmResult::Yes);
+
+        if should_install {
+            if let Err(err) = self.install_from_flathub() {
+                let error_msg = format!(
+                    "Failed to install '{}': {}\n\nManual installation:\nflatpak install flathub {}",
+                    self.name, err, self.app_id
+                );
+                FzfWrapper::builder()
+                    .message(&error_msg)
+                    .title("Installation Failed")
+                    .show_message()?;
+                return Ok(false);
+            }
+            Ok(true)
+        } else {
+            let cancel_msg = format!(
+                "The Flatpak application '{}' is required.\n\nManual installation:\nflatpak install flathub {}",
+                self.name, self.app_id
+            );
+            FzfWrapper::builder()
+                .message(&cancel_msg)
+                .title("Flatpak Required")
+                .show_message()?;
+            Ok(false)
         }
     }
 }

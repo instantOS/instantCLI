@@ -1,4 +1,4 @@
-use crate::common::requirements::RequiredPackage;
+use crate::common::requirements::{FlatpakPackage, RequiredPackage};
 
 macro_rules! pkg {
     ($name:expr) => {
@@ -37,6 +37,16 @@ macro_rules! pkg {
 pub static PLAYERCTL: RequiredPackage = pkg!("playerctl");
 pub static QRENCODE: RequiredPackage = pkg!("qrencode");
 pub static FLAMESHOT: RequiredPackage = pkg!("flameshot");
+
+// Flatpak packages
+pub static EMOTE: FlatpakPackage = FlatpakPackage {
+    name: "Emote",
+    app_id: "com.tomjwatson.Emote",
+    tests: &[crate::common::requirements::InstallTest::CommandSucceeds {
+        program: "flatpak",
+        args: &["info", "com.tomjwatson.Emote"],
+    }],
+};
 
 // Screenshot tools
 static SLURP: RequiredPackage = pkg!("slurp");

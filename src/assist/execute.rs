@@ -37,6 +37,38 @@ pub fn execute_assist(assist: &AssistAction) -> Result<()> {
         }
     }
 
+    // Check and install flatpak requirements if needed
+    if !assist.flatpak_requirements.is_empty() {
+        emit(
+            Level::Info,
+            "assist.checking_flatpak_requirements",
+            &format!(
+                "{} Checking Flatpak requirements for {}...",
+                char::from(NerdFont::Package),
+                assist.title
+            ),
+            None,
+        );
+
+        for flatpak in assist.flatpak_requirements {
+            let satisfied = flatpak.ensure().context("Failed to ensure Flatpak requirement")?;
+
+            if !satisfied {
+                emit(
+                    Level::Warn,
+                    "assist.flatpak_requirements_not_met",
+                    &format!(
+                        "{} Flatpak requirements not satisfied for {}",
+                        char::from(NerdFont::Warning),
+                        assist.title
+                    ),
+                    None,
+                );
+                return Ok(()); // Don't execute if requirements aren't met
+            }
+        }
+    }
+
     // Execute the assist
     emit(
         Level::Info,

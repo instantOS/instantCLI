@@ -1,4 +1,4 @@
-use crate::common::requirements::RequiredPackage;
+use crate::common::requirements::{FlatpakPackage, RequiredPackage};
 use crate::ui::prelude::NerdFont;
 
 use super::actions;
@@ -17,6 +17,7 @@ pub struct AssistAction {
     pub description: &'static str,
     pub icon: NerdFont,
     pub requirements: &'static [RequiredPackage],
+    pub flatpak_requirements: &'static [FlatpakPackage],
     pub execute: fn() -> anyhow::Result<()>,
 }
 
@@ -36,6 +37,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         description: "Keep system awake",
         icon: NerdFont::Lightbulb,
         requirements: &[],
+        flatpak_requirements: &[],
         execute: actions::system::caffeine,
     }),
     AssistEntry::Action(AssistAction {
@@ -44,6 +46,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         description: "Adjust audio volume",
         icon: NerdFont::VolumeUp,
         requirements: &[],
+        flatpak_requirements: &[],
         execute: actions::system::volume,
     }),
     AssistEntry::Action(AssistAction {
@@ -52,6 +55,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         description: "Play/pause music",
         icon: NerdFont::Music,
         requirements: &[PLAYERCTL],
+        flatpak_requirements: &[],
         execute: actions::media::music,
     }),
     AssistEntry::Action(AssistAction {
@@ -60,7 +64,17 @@ pub const ASSISTS: &[AssistEntry] = &[
         description: "Generate QR code from clipboard",
         icon: NerdFont::Square,
         requirements: &[QRENCODE],
+        flatpak_requirements: &[],
         execute: actions::qr::qr_encode_clipboard,
+    }),
+    AssistEntry::Action(AssistAction {
+        key: 'x',
+        title: "Emoji Picker",
+        description: "Open emoji picker",
+        icon: NerdFont::Star,
+        requirements: &[],
+        flatpak_requirements: &[EMOTE],
+        execute: actions::emoji::emoji_picker,
     }),
     AssistEntry::Group(AssistGroup {
         key: 's',
@@ -74,6 +88,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 description: "Fullscreen screenshot to Pictures folder",
                 icon: NerdFont::Desktop,
                 requirements: SCREENSHOT_FULLSCREEN_PACKAGES,
+                flatpak_requirements: &[],
                 execute: actions::screenshot::fullscreen_screenshot,
             }),
             AssistEntry::Action(AssistAction {
@@ -82,6 +97,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 description: "Take screenshot with flameshot",
                 icon: NerdFont::Edit,
                 requirements: &[FLAMESHOT],
+                flatpak_requirements: &[],
                 execute: actions::screenshot::screenshot_annotate,
             }),
             AssistEntry::Action(AssistAction {
@@ -90,6 +106,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 description: "Capture area to clipboard",
                 icon: NerdFont::Clipboard,
                 requirements: SCREENSHOT_CLIPBOARD_PACKAGES,
+                flatpak_requirements: &[],
                 execute: actions::screenshot::screenshot_to_clipboard,
             }),
             AssistEntry::Action(AssistAction {
@@ -98,6 +115,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 description: "Capture area and upload to Imgur",
                 icon: NerdFont::Upload,
                 requirements: SCREENSHOT_IMGUR_PACKAGES,
+                flatpak_requirements: &[],
                 execute: actions::screenshot::screenshot_to_imgur,
             }),
         ],
@@ -114,6 +132,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 description: "Go to previous track",
                 icon: NerdFont::ChevronLeft,
                 requirements: &[PLAYERCTL],
+                flatpak_requirements: &[],
                 execute: actions::media::previous_track,
             }),
             AssistEntry::Action(AssistAction {
@@ -122,6 +141,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 description: "Go to next track",
                 icon: NerdFont::ChevronRight,
                 requirements: &[PLAYERCTL],
+                flatpak_requirements: &[],
                 execute: actions::media::next_track,
             }),
         ],
@@ -241,5 +261,12 @@ mod tests {
         let action = find_action("sf");
         assert!(action.is_some());
         assert_eq!(action.unwrap().title, "Fullscreen to Pictures");
+    }
+
+    #[test]
+    fn test_find_emoji_picker_action() {
+        let action = find_action("x");
+        assert!(action.is_some());
+        assert_eq!(action.unwrap().title, "Emoji Picker");
     }
 }

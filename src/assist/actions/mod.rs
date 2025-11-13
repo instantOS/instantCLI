@@ -1,3 +1,4 @@
+pub mod emoji;
 pub mod media;
 pub mod qr;
 pub mod screenshot;
