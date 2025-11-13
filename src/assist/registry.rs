@@ -128,21 +128,21 @@ pub const ASSISTS: &[AssistEntry] = &[
         children: &[
             AssistEntry::Action(AssistAction {
                 key: 'n',
-                title: "Previous Track",
-                description: "Go to previous track",
-                icon: NerdFont::ChevronLeft,
-                requirements: &[PLAYERCTL],
-                flatpak_requirements: &[],
-                execute: actions::media::previous_track,
-            }),
-            AssistEntry::Action(AssistAction {
-                key: 'p',
                 title: "Next Track",
                 description: "Go to next track",
                 icon: NerdFont::ChevronRight,
                 requirements: &[PLAYERCTL],
                 flatpak_requirements: &[],
                 execute: actions::media::next_track,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'p',
+                title: "Previous Track",
+                description: "Go to previous track",
+                icon: NerdFont::ChevronLeft,
+                requirements: &[PLAYERCTL],
+                flatpak_requirements: &[],
+                execute: actions::media::previous_track,
             }),
         ],
     }),
@@ -218,11 +218,11 @@ mod tests {
     fn test_find_grouped_action() {
         let action = find_action("vn");
         assert!(action.is_some());
-        assert_eq!(action.unwrap().title, "Previous Track");
+        assert_eq!(action.unwrap().title, "Next Track");
 
         let action = find_action("vp");
         assert!(action.is_some());
-        assert_eq!(action.unwrap().title, "Next Track");
+        assert_eq!(action.unwrap().title, "Previous Track");
     }
 
     #[test]
