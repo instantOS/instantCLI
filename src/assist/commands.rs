@@ -33,6 +33,15 @@ pub fn dispatch_assist_command(_debug: bool, command: Option<AssistCommands>) ->
         None => run_assist_selector(),
         Some(AssistCommands::List) => list_assists(),
         Some(AssistCommands::Run { key_sequence }) => {
+            // Check if this is a help request (ends with 'h')
+            if key_sequence.ends_with('h') && key_sequence.len() > 1 {
+                let path = &key_sequence[..key_sequence.len() - 1];
+                // Verify the path is valid group
+                if registry::find_group_entries(path).is_some() {
+                    return super::actions::help::show_help_for_path(path);
+                }
+            }
+
             let action = registry::find_action(&key_sequence).ok_or_else(|| {
                 anyhow::anyhow!("No assist found for key sequence: {}", key_sequence)
             })?;
@@ -190,9 +199,24 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
         writeln!(output, "    bindsym Return mode default")?;
         writeln!(output, "    bindsym Escape mode default\n")?;
 
+        // Add help binding if we're in a submode
+        if !prefix.is_empty() {
+            let help_cmd = format!("ins assist run {}h", prefix);
+            writeln!(
+                output,
+                "    # Show help for this mode\n    bindsym h exec --no-startup-id {}; mode default\n",
+                help_cmd
+            )?;
+        }
+
         for entry in entries {
             match entry {
                 registry::AssistEntry::Action(action) => {
+                    // Skip 'h' if we're in a submode (already handled above)
+                    if !prefix.is_empty() && action.key == 'h' {
+                        continue;
+                    }
+
                     let key_sequence = format!("{}{}", prefix, action.key);
                     let cmd = format!("ins assist run {}", key_sequence);
                     writeln!(

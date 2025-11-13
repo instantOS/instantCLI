@@ -189,6 +189,31 @@ impl AssistEntry {
     }
 }
 
+/// Find the group entries at a given key sequence path
+/// Returns None if path doesn't exist or points to an action
+/// Returns Some(&[]) for root level (empty string)
+pub fn find_group_entries(key_sequence: &str) -> Option<&'static [AssistEntry]> {
+    if key_sequence.is_empty() {
+        return Some(ASSISTS);
+    }
+
+    let mut chars = key_sequence.chars();
+    let first_key = chars.next()?;
+
+    let entry = ASSISTS.iter().find(|entry| entry.key() == first_key)?;
+
+    match entry {
+        AssistEntry::Action(_) => None,
+        AssistEntry::Group(group) => {
+            if chars.next().is_none() {
+                Some(group.children)
+            } else {
+                None
+            }
+        }
+    }
+}
+
 pub fn find_action(key_sequence: &str) -> Option<&'static AssistAction> {
     if key_sequence.is_empty() {
         return None;
