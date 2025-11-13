@@ -191,7 +191,12 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
         mode_name: &str,
         prefix: &str,
     ) -> Result<()> {
-        writeln!(output, "mode \"{}\" {{", mode_name)?;
+        let mode_name_with_hint = if prefix.is_empty() {
+            format!("{} (h for help)", mode_name)
+        } else {
+            mode_name.to_string()
+        };
+        writeln!(output, "mode \"{}\" {{", mode_name_with_hint)?;
         writeln!(output, "    # Exit with Escape or Return")?;
         writeln!(output, "    bindsym Return mode default")?;
         writeln!(output, "    bindsym Escape mode default\n")?;
@@ -226,8 +231,8 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
                     let sub_mode_name = format!("{}_{}", mode_name, group.key);
                     writeln!(
                         output,
-                        "    bindsym {} mode \"{}\"",
-                        group.key, sub_mode_name
+                        "    bindsym {} mode \"{}_{} (h for help)\"",
+                        group.key, mode_name, group.key
                     )?;
                 }
             }
@@ -238,7 +243,7 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
         // Recursively generate modes for groups
         for entry in entries {
             if let registry::AssistEntry::Group(group) = entry {
-                let sub_mode_name = format!("{}_{}", mode_name, group.key);
+                let sub_mode_name = format!("{}_{} (h for help)", mode_name, group.key);
                 let new_prefix = format!("{}{}", prefix, group.key);
                 generate_modes(output, group.children, &sub_mode_name, &new_prefix)?;
             }
@@ -249,7 +254,10 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
 
     // Generate mode for instantassist
     writeln!(output_writer, "# Enter instantassist mode")?;
-    writeln!(output_writer, "bindsym $mod+a mode \"instantassist\"\n")?;
+    writeln!(
+        output_writer,
+        "bindsym $mod+a mode \"instantassist (h for help)\"\n"
+    )?;
 
     // Generate all modes recursively
     generate_modes(&mut output_writer, registry::ASSISTS, "instantassist", "")?;
