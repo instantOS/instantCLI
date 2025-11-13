@@ -141,6 +141,16 @@ pub const ASSISTS: &[AssistEntry] = &[
                 }],
                 execute: actions::screenshot::screenshot_to_imgur,
             }),
+            AssistEntry::Action(AssistAction {
+                key: 'r',
+                description: "OCR Text Recognition: Extract text from selected area",
+                icon: NerdFont::FileText,
+                dependencies: &[Dependency {
+                    checks: &[],
+                    package: Package::Os(&SCREENSHOT_OCR_PACKAGES[0]),
+                }],
+                execute: actions::screenshot::screenshot_ocr,
+            }),
         ],
     }),
     AssistEntry::Group(AssistGroup {
@@ -338,6 +348,16 @@ mod tests {
         assert_eq!(
             action.unwrap().description,
             "Help: Show all available assists"
+        );
+    }
+
+    #[test]
+    fn test_find_screenshot_ocr_action() {
+        let action = find_action("sr");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "OCR Text Recognition: Extract text from selected area"
         );
     }
 }

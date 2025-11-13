@@ -38,6 +38,7 @@ pub static PLAYERCTL: RequiredPackage = pkg!("playerctl");
 pub static QRENCODE: RequiredPackage = pkg!("qrencode");
 pub static FLAMESHOT: RequiredPackage = pkg!("flameshot");
 pub static MPV: RequiredPackage = pkg!("mpv");
+pub static TESSERACT: RequiredPackage = pkg!("tesseract");
 
 // Flatpak packages
 pub static EMOTE: FlatpakPackage = FlatpakPackage {
@@ -78,5 +79,16 @@ pub static SCREENSHOT_IMGUR_PACKAGES: &[RequiredPackage] = &[
     IMAGEMAGICK,
     WL_CLIPBOARD,
     XCLIP,
+    LIBNOTIFY,
+];
+
+pub static SCREENSHOT_OCR_PACKAGES: &[RequiredPackage] = &[
+    SLURP,
+    SLOP,
+    GRIM,
+    IMAGEMAGICK,
+    WL_CLIPBOARD,
+    XCLIP,
+    TESSERACT,
     LIBNOTIFY,
 ];

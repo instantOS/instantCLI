@@ -271,3 +271,86 @@ pub fn fullscreen_screenshot() -> Result<()> {
 
     Ok(())
 }
+
+pub fn screenshot_ocr() -> Result<()> {
+    use crate::assist::utils::copy_to_clipboard;
+
+    // Create cached configuration to avoid repeated display server detection
+    let config = AreaSelectionConfig::new();
+
+    // Get area selection using the cached configuration
+    let geometry = match config.select_area() {
+        Ok(geom) => geom,
+        Err(_) => {
+            // Area selection was cancelled or failed - just return success
+            return Ok(());
+        }
+    };
+
+    let display_server = config.display_server();
+
+    // Generate temporary filename for OCR processing
+    let pictures_dir = paths::pictures_dir().context("Failed to determine pictures directory")?;
+    let image_path = pictures_dir.join("ocr.png");
+
+    // Capture screenshot to file
+    if display_server.is_wayland() {
+        let status = Command::new("grim")
+            .args(["-g", &geometry])
+            .arg(&image_path)
+            .status()
+            .context("Failed to capture screenshot with grim")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to capture screenshot");
+        }
+    } else if display_server.is_x11() {
+        let status = Command::new("import")
+            .args(["-window", "root", "-crop", &geometry])
+            .arg(&image_path)
+            .status()
+            .context("Failed to capture screenshot with import")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to capture screenshot");
+        }
+    } else {
+        anyhow::bail!("Unknown display server - cannot take screenshot");
+    }
+
+    // Run tesseract OCR on the captured image
+    let ocr_output = Command::new("tesseract")
+        .arg(&image_path)
+        .arg("stdout")
+        .output()
+        .context("Failed to run tesseract OCR")?;
+
+    if !ocr_output.status.success() {
+        anyhow::bail!("Tesseract OCR failed");
+    }
+
+    // Get detected text and clean it up (remove form feed character)
+    let detected_text = String::from_utf8_lossy(&ocr_output.stdout)
+        .trim()
+        .replace('\x0c', "")
+        .to_string();
+
+    if detected_text.is_empty() {
+        Command::new("notify-send")
+            .args(["-a", "instantASSIST", "No text detected"])
+            .spawn()
+            .context("Failed to show notification")?;
+        return Ok(());
+    }
+
+    // Copy detected text to clipboard
+    copy_to_clipboard(detected_text.as_bytes(), display_server)?;
+
+    // Show notification with detected text
+    Command::new("notify-send")
+        .args(["-a", "instantASSIST", "Detected text", &detected_text])
+        .spawn()
+        .context("Failed to show notification")?;
+
+    Ok(())
+}
