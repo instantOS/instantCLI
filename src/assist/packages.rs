@@ -6,7 +6,9 @@ macro_rules! pkg {
             name: $name,
             arch_package_name: Some($name),
             ubuntu_package_name: Some($name),
-            tests: &[crate::common::requirements::InstallTest::WhichSucceeds($name)],
+            tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+                $name,
+            )],
         }
     };
     ($name:expr, $bin:expr) => {
@@ -14,7 +16,9 @@ macro_rules! pkg {
             name: $name,
             arch_package_name: Some($name),
             ubuntu_package_name: Some($name),
-            tests: &[crate::common::requirements::InstallTest::WhichSucceeds($bin)],
+            tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+                $bin,
+            )],
         }
     };
     ($name:expr, $arch:expr, $ubuntu:expr, $bin:expr) => {
@@ -22,7 +26,9 @@ macro_rules! pkg {
             name: $name,
             arch_package_name: Some($arch),
             ubuntu_package_name: Some($ubuntu),
-            tests: &[crate::common::requirements::InstallTest::WhichSucceeds($bin)],
+            tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+                $bin,
+            )],
         }
     };
 }
@@ -43,7 +49,9 @@ static LIBNOTIFY: RequiredPackage = RequiredPackage {
     name: "libnotify",
     arch_package_name: Some("libnotify"),
     ubuntu_package_name: Some("libnotify-bin"),
-    tests: &[crate::common::requirements::InstallTest::WhichSucceeds("notify-send")],
+    tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+        "notify-send",
+    )],
 };
 
 // Composed package sets

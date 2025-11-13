@@ -115,10 +115,10 @@ impl AreaSelectionConfig {
         let compositors = ["picom", "compton", "xcompmgr", "unagi"];
 
         for compositor in &compositors {
-            if let Ok(output) = Command::new("pgrep").arg(compositor).output() {
-                if !output.stdout.is_empty() {
-                    return true;
-                }
+            if let Ok(output) = Command::new("pgrep").arg(compositor).output()
+                && !output.stdout.is_empty()
+            {
+                return true;
             }
         }
         false
@@ -170,7 +170,7 @@ impl AreaSelectionConfig {
         if self.has_compositor {
             cmd.arg("--highlight");
             cmd.arg("-b").arg("3");
-            cmd.arg("-c").arg(&format!("{},0.1", rgb_color));
+            cmd.arg("-c").arg(format!("{},0.1", rgb_color));
         } else {
             cmd.arg("-b").arg("3");
             cmd.arg("-c").arg(rgb_color);
