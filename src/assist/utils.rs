@@ -2,6 +2,8 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::common::display_server::DisplayServer;
+
 /// Launch a command in a detached terminal window
 pub fn launch_in_terminal(command: &str) -> Result<()> {
     Command::new("kitty")
@@ -34,3 +36,173 @@ pub fn menu_command(args: &[&str]) -> Result<()> {
         .context("Failed to execute menu command")?;
     Ok(())
 }
+
+/// Area selection color configuration
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ColorConfiguration {
+    Red,
+    Green,
+    Blue,
+    Yellow,
+    Default,
+}
+
+impl ColorConfiguration {
+    /// Get hex color for Wayland (slurp)
+    pub fn wayland_hex(self) -> &'static str {
+        match self {
+            Self::Red => "#F38B82",
+            Self::Green => "#81C995",
+            Self::Blue => "#89B3F7",
+            Self::Yellow => "#FDD663",
+            Self::Default => "#81C995", // Default to green
+        }
+    }
+
+    /// Get RGB color for X11 (slop)
+    pub fn x11_rgb(self) -> &'static str {
+        match self {
+            Self::Red => "0.9529411764705882,0.5450980392156862,0.5098039215686274",
+            Self::Green => "0.5058823529411764,0.788235294117647,0.5843137254901961",
+            Self::Blue => "0.5372549019607843,0.7019607843137254,0.9686274509803922",
+            Self::Yellow => "0.9921568627450981,0.8392156862745098,0.38823529411764707",
+            Self::Default => "0.5058823529411764,0.788235294117647,0.5843137254901961", // Default to green
+        }
+    }
+
+    /// Get color name for debugging/logging
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Red => "red",
+            Self::Green => "green",
+            Self::Blue => "blue",
+            Self::Yellow => "yellow",
+            Self::Default => "default",
+        }
+    }
+}
+
+/// Cached display server and compositor detection
+#[derive(Debug, Clone)]
+pub struct AreaSelectionConfig {
+    display_server: DisplayServer,
+    has_compositor: bool,
+    color: ColorConfiguration,
+}
+
+impl AreaSelectionConfig {
+    /// Create new configuration with default green color
+    pub fn new() -> Self {
+        Self {
+            display_server: DisplayServer::detect(),
+            has_compositor: Self::detect_compositor(),
+            color: ColorConfiguration::Default,
+        }
+    }
+
+    /// Create configuration with custom color
+    pub fn with_color(color: ColorConfiguration) -> Self {
+        Self {
+            display_server: DisplayServer::detect(),
+            has_compositor: Self::detect_compositor(),
+            color,
+        }
+    }
+
+    /// Detect if any compositing manager is running (X11 only)
+    fn detect_compositor() -> bool {
+        // Common compositors to check for
+        let compositors = ["picom", "compton", "xcompmgr", "unagi"];
+
+        for compositor in &compositors {
+            if let Ok(output) = Command::new("pgrep").arg(compositor).output() {
+                if !output.stdout.is_empty() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Select screen area using appropriate tools for the current display server
+    /// Returns geometry string that can be used with screenshot tools
+    pub fn select_area(&self) -> Result<String> {
+        match self.display_server {
+            DisplayServer::Wayland => self.select_area_wayland(),
+            DisplayServer::X11 => self.select_area_x11(),
+            _ => anyhow::bail!("Unsupported display server for area selection"),
+        }
+    }
+
+    /// Select area on Wayland using slurp with configurable color
+    fn select_area_wayland(&self) -> Result<String> {
+        let color_hex = self.color.wayland_hex();
+
+        let mut cmd = Command::new("slurp");
+        if !color_hex.is_empty() {
+            cmd.arg("-c").arg(color_hex);
+        }
+
+        let output = cmd
+            .output()
+            .context("Failed to run slurp for area selection")?;
+
+        if !output.status.success() {
+            anyhow::bail!("Area selection cancelled");
+        }
+
+        let geometry = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .to_string();
+
+        if geometry.is_empty() {
+            anyhow::bail!("No area selected");
+        }
+
+        Ok(geometry)
+    }
+
+    /// Select area on X11 using slop with configurable color and compositing support
+    fn select_area_x11(&self) -> Result<String> {
+        let rgb_color = self.color.x11_rgb();
+
+        let mut cmd = Command::new("slop");
+
+        // Add compositing-aware options
+        if self.has_compositor {
+            cmd.arg("--highlight");
+            cmd.arg("-b").arg("3");
+            cmd.arg("-c").arg(&format!("{},0.1", rgb_color));
+        } else {
+            cmd.arg("-b").arg("3");
+            cmd.arg("-c").arg(rgb_color);
+        }
+
+        cmd.arg("-f").arg("%g");
+
+        let output = cmd
+            .output()
+            .context("Failed to run slop for area selection")?;
+
+        if !output.status.success() {
+            anyhow::bail!("Area selection cancelled");
+        }
+
+        let geometry = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .to_string();
+
+        if geometry.is_empty() {
+            anyhow::bail!("No area selected");
+        }
+
+        Ok(geometry)
+    }
+
+    /// Get the display server for this configuration
+    pub fn display_server(&self) -> &DisplayServer {
+        &self.display_server
+    }
+
+  }
+

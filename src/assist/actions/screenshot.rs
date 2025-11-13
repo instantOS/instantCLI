@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use std::io::Write;
 use std::process::Command;
 
+use crate::assist::utils::AreaSelectionConfig;
+
 pub fn screenshot_annotate() -> Result<()> {
     use crate::common::display_server::DisplayServer;
 
@@ -49,27 +51,22 @@ pub fn screenshot_annotate() -> Result<()> {
 }
 
 pub fn screenshot_to_clipboard() -> Result<()> {
-    use crate::common::display_server::DisplayServer;
+    // Create cached configuration to avoid repeated display server detection
+    let config = AreaSelectionConfig::new();
 
-    let display_server = DisplayServer::detect();
+    // Get area selection using the cached configuration
+    let geometry = match config.select_area() {
+        Ok(geom) => geom,
+        Err(_) => {
+            // Area selection was cancelled or failed - just return success without taking screenshot
+            return Ok(());
+        }
+    };
+
+    let display_server = config.display_server();
 
     if display_server.is_wayland() {
-        let slurp_output = Command::new("slurp")
-            .output()
-            .context("Failed to run slurp for area selection")?;
-
-        if !slurp_output.status.success() {
-            return Ok(());
-        }
-
-        let geometry = String::from_utf8_lossy(&slurp_output.stdout)
-            .trim()
-            .to_string();
-
-        if geometry.is_empty() {
-            return Ok(());
-        }
-
+        // Capture screenshot with grim
         let grim_output = Command::new("grim")
             .args(["-g", &geometry, "-"])
             .output()
@@ -79,6 +76,7 @@ pub fn screenshot_to_clipboard() -> Result<()> {
             anyhow::bail!("Failed to capture screenshot");
         }
 
+        // Copy to clipboard with wl-copy
         let mut wl_copy = Command::new("wl-copy")
             .stdin(std::process::Stdio::piped())
             .spawn()
@@ -92,24 +90,7 @@ pub fn screenshot_to_clipboard() -> Result<()> {
 
         wl_copy.wait().context("Failed to wait for wl-copy")?;
     } else if display_server.is_x11() {
-        let slop_output = Command::new("slop")
-            .arg("-f")
-            .arg("%g")
-            .output()
-            .context("Failed to run slop for area selection")?;
-
-        if !slop_output.status.success() {
-            return Ok(());
-        }
-
-        let geometry = String::from_utf8_lossy(&slop_output.stdout)
-            .trim()
-            .to_string();
-
-        if geometry.is_empty() {
-            return Ok(());
-        }
-
+        // Capture screenshot with import (ImageMagick)
         let import_output = Command::new("import")
             .args(["-window", "root", "-crop", &geometry, "png:-"])
             .output()
@@ -119,6 +100,7 @@ pub fn screenshot_to_clipboard() -> Result<()> {
             anyhow::bail!("Failed to capture screenshot");
         }
 
+        // Copy to clipboard with xclip
         let mut xclip = Command::new("xclip")
             .args(["-selection", "clipboard", "-t", "image/png"])
             .stdin(std::process::Stdio::piped())
@@ -140,39 +122,54 @@ pub fn screenshot_to_clipboard() -> Result<()> {
 }
 
 pub fn screenshot_to_imgur() -> Result<()> {
-    use crate::common::display_server::DisplayServer;
+    // Create cached configuration to avoid repeated display server detection
+    let config = AreaSelectionConfig::new();
 
-    let display_server = DisplayServer::detect();
-
-    if display_server.is_wayland() {
-        let slurp_output = Command::new("slurp")
-            .output()
-            .context("Failed to run slurp for area selection")?;
-
-        if !slurp_output.status.success() {
+    // Get area selection using the cached configuration
+    let geometry = match config.select_area() {
+        Ok(geom) => geom,
+        Err(_) => {
+            // Area selection was cancelled or failed - just return success without taking screenshot
             return Ok(());
         }
+    };
 
-        let geometry = String::from_utf8_lossy(&slurp_output.stdout)
-            .trim()
-            .to_string();
+    let display_server = config.display_server();
 
-        if geometry.is_empty() {
-            return Ok(());
-        }
-
-        let screenshot = Command::new("grim")
+    let screenshot_data = if display_server.is_wayland() {
+        // Capture screenshot with grim
+        let grim_output = Command::new("grim")
             .args(["-g", &geometry, "-"])
             .output()
             .context("Failed to capture screenshot with grim")?;
 
-        if !screenshot.status.success() {
+        if !grim_output.status.success() {
             anyhow::bail!("Failed to capture screenshot");
         }
 
-        let imgur_link =
-            upload_to_imgur(&screenshot.stdout).context("Failed to upload screenshot to Imgur")?;
+        grim_output.stdout
+    } else if display_server.is_x11() {
+        // Capture screenshot with import (ImageMagick)
+        let import_output = Command::new("import")
+            .args(["-window", "root", "-crop", &geometry, "png:-"])
+            .output()
+            .context("Failed to capture screenshot with import")?;
 
+        if !import_output.status.success() {
+            anyhow::bail!("Failed to capture screenshot");
+        }
+
+        import_output.stdout
+    } else {
+        anyhow::bail!("Unknown display server - cannot take screenshot");
+    };
+
+    // Upload to Imgur
+    let imgur_link = upload_to_imgur(&screenshot_data)
+        .context("Failed to upload screenshot to Imgur")?;
+
+    // Copy link to clipboard
+    if display_server.is_wayland() {
         let mut wl_copy = Command::new("wl-copy")
             .stdin(std::process::Stdio::piped())
             .spawn()
@@ -185,16 +182,29 @@ pub fn screenshot_to_imgur() -> Result<()> {
         }
 
         wl_copy.wait().context("Failed to wait for wl-copy")?;
-
-        Command::new("notify-send")
-            .args(["Imgur link copied", &imgur_link])
+    } else if display_server.is_x11() {
+        let mut xclip = Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .stdin(std::process::Stdio::piped())
             .spawn()
-            .context("Failed to show notification")?;
+            .context("Failed to start xclip")?;
 
-        Ok(())
-    } else {
-        anyhow::bail!("Imgur upload currently only supports Wayland");
+        if let Some(mut stdin) = xclip.stdin.take() {
+            stdin
+                .write_all(imgur_link.as_bytes())
+                .context("Failed to write Imgur link to xclip")?;
+        }
+
+        xclip.wait().context("Failed to wait for xclip")?;
     }
+
+    // Show notification
+    Command::new("notify-send")
+        .args(["Imgur link copied", &imgur_link])
+        .spawn()
+        .context("Failed to show notification")?;
+
+    Ok(())
 }
 
 fn upload_to_imgur(image_data: &[u8]) -> Result<String> {
