@@ -1,3 +1,4 @@
+use crate::common::dependencies::Package;
 use crate::common::requirements::ensure_packages_batch;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
@@ -6,67 +7,64 @@ use super::registry::AssistAction;
 
 /// Execute an assist action, ensuring requirements are satisfied first
 pub fn execute_assist(assist: &AssistAction) -> Result<()> {
-    // Check and install requirements if needed
-    if !assist.requirements.is_empty() {
+    if !assist.dependencies.is_empty() {
         emit(
             Level::Info,
-            "assist.checking_requirements",
+            "assist.checking_dependencies",
             &format!(
-                "{} Checking requirements for {}...",
+                "{} Checking dependencies for {}...",
                 char::from(NerdFont::Package),
-                assist.title
+                assist.description
             ),
             None,
         );
 
-        let all_satisfied =
-            ensure_packages_batch(assist.requirements).context("Failed to ensure requirements")?;
+        for dependency in assist.dependencies {
+            let mut checks_passed = true;
+            for check in dependency.checks {
+                if !check()? {
+                    checks_passed = false;
+                    break;
+                }
+            }
 
-        if !all_satisfied {
-            emit(
-                Level::Warn,
-                "assist.requirements_not_met",
-                &format!(
-                    "{} Requirements not satisfied for {}",
-                    char::from(NerdFont::Warning),
-                    assist.title
-                ),
-                None,
-            );
-            return Ok(()); // Don't execute if requirements aren't met
-        }
-    }
-
-    // Check and install flatpak requirements if needed
-    if !assist.flatpak_requirements.is_empty() {
-        emit(
-            Level::Info,
-            "assist.checking_flatpak_requirements",
-            &format!(
-                "{} Checking Flatpak requirements for {}...",
-                char::from(NerdFont::Package),
-                assist.title
-            ),
-            None,
-        );
-
-        for flatpak in assist.flatpak_requirements {
-            let satisfied = flatpak
-                .ensure()
-                .context("Failed to ensure Flatpak requirement")?;
-
-            if !satisfied {
-                emit(
-                    Level::Warn,
-                    "assist.flatpak_requirements_not_met",
-                    &format!(
-                        "{} Flatpak requirements not satisfied for {}",
-                        char::from(NerdFont::Warning),
-                        assist.title
-                    ),
-                    None,
-                );
-                return Ok(()); // Don't execute if requirements aren't met
+            if checks_passed {
+                match &dependency.package {
+                    Package::Os(pkg) => {
+                        let all_satisfied = ensure_packages_batch(&[**pkg])
+                            .context("Failed to ensure OS packages")?;
+                        if !all_satisfied {
+                            emit(
+                                Level::Warn,
+                                "assist.dependencies_not_met",
+                                &format!(
+                                    "{} OS package dependencies not met for {}",
+                                    char::from(NerdFont::Warning),
+                                    assist.description
+                                ),
+                                None,
+                            );
+                            return Ok(());
+                        }
+                    }
+                    Package::Flatpak(fp) => {
+                        let satisfied =
+                            fp.ensure().context("Failed to ensure Flatpak dependency")?;
+                        if !satisfied {
+                            emit(
+                                Level::Warn,
+                                "assist.dependencies_not_met",
+                                &format!(
+                                    "{} Flatpak dependencies not met for {}",
+                                    char::from(NerdFont::Warning),
+                                    assist.description
+                                ),
+                                None,
+                            );
+                            return Ok(());
+                        }
+                    }
+                }
             }
         }
     }
@@ -75,11 +73,15 @@ pub fn execute_assist(assist: &AssistAction) -> Result<()> {
     emit(
         Level::Info,
         "assist.executing",
-        &format!("{} Executing {}...", char::from(assist.icon), assist.title),
+        &format!(
+            "{} Executing {}...",
+            char::from(assist.icon),
+            assist.description
+        ),
         None,
     );
 
-    (assist.execute)().context(format!("Failed to execute assist: {}", assist.title))?;
+    (assist.execute)().context(format!("Failed to execute assist: {}", assist.description))?;
 
     emit(
         Level::Success,
@@ -87,7 +89,7 @@ pub fn execute_assist(assist: &AssistAction) -> Result<()> {
         &format!(
             "{} {} launched successfully",
             char::from(NerdFont::Check),
-            assist.title
+            assist.description
         ),
         None,
     );

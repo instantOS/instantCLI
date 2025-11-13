@@ -1,4 +1,5 @@
 pub mod compositor;
+pub mod dependencies;
 pub mod display_server;
 pub mod git;
 pub mod paths;

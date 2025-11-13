@@ -1,4 +1,4 @@
-use crate::common::requirements::{FlatpakPackage, RequiredPackage};
+use crate::common::dependencies::{Dependency, Package};
 use crate::ui::prelude::NerdFont;
 
 use super::actions;
@@ -13,18 +13,15 @@ pub enum AssistEntry {
 #[derive(Debug, Clone)]
 pub struct AssistAction {
     pub key: char,
-    pub title: &'static str,
     pub description: &'static str,
     pub icon: NerdFont,
-    pub requirements: &'static [RequiredPackage],
-    pub flatpak_requirements: &'static [FlatpakPackage],
+    pub dependencies: &'static [Dependency],
     pub execute: fn() -> anyhow::Result<()>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AssistGroup {
     pub key: char,
-    pub title: &'static str,
     pub description: &'static str,
     pub icon: NerdFont,
     pub children: &'static [AssistEntry],
@@ -33,142 +30,142 @@ pub struct AssistGroup {
 pub const ASSISTS: &[AssistEntry] = &[
     AssistEntry::Action(AssistAction {
         key: 'h',
-        title: "Help",
-        description: "Show all available assists",
+        description: "Help: Show all available assists",
         icon: NerdFont::Question,
-        requirements: &[],
-        flatpak_requirements: &[],
+        dependencies: &[],
         execute: actions::help::show_help,
     }),
     AssistEntry::Action(AssistAction {
         key: 'b',
-        title: "Bruh",
-        description: "Display a bruh moment",
+        description: "Bruh: Display a bruh moment",
         icon: NerdFont::Cross,
-        requirements: &[MPV],
-        flatpak_requirements: &[],
+        dependencies: &[Dependency {
+            checks: &[],
+            package: Package::Os(&MPV),
+        }],
         execute: actions::joke::bruh,
     }),
     AssistEntry::Action(AssistAction {
         key: 'c',
-        title: "Caffeine",
-        description: "Keep system awake",
+        description: "Caffeine: Keep system awake",
         icon: NerdFont::Lightbulb,
-        requirements: &[],
-        flatpak_requirements: &[],
+        dependencies: &[],
         execute: actions::system::caffeine,
     }),
     AssistEntry::Action(AssistAction {
         key: 'a',
-        title: "Volume",
-        description: "Adjust audio volume",
+        description: "Volume: Adjust audio volume",
         icon: NerdFont::VolumeUp,
-        requirements: &[],
-        flatpak_requirements: &[],
+        dependencies: &[],
         execute: actions::system::volume,
     }),
     AssistEntry::Action(AssistAction {
         key: 'm',
-        title: "Music",
-        description: "Play/pause music",
+        description: "Music: Play/pause music",
         icon: NerdFont::Music,
-        requirements: &[PLAYERCTL],
-        flatpak_requirements: &[],
+        dependencies: &[Dependency {
+            checks: &[],
+            package: Package::Os(&PLAYERCTL),
+        }],
         execute: actions::media::music,
     }),
     AssistEntry::Action(AssistAction {
         key: 'p',
-        title: "Password Manager",
-        description: "Open password manager",
+        description: "Password Manager: Open password manager",
         icon: NerdFont::Key,
-        requirements: &[],
-        flatpak_requirements: &[],
+        dependencies: &[],
         execute: actions::password::open_password_manager,
     }),
     AssistEntry::Action(AssistAction {
         key: 'e',
-        title: "QR Encode Clipboard",
-        description: "Generate QR code from clipboard",
+        description: "QR Encode Clipboard: Generate QR code from clipboard",
         icon: NerdFont::Square,
-        requirements: &[QRENCODE],
-        flatpak_requirements: &[],
+        dependencies: &[Dependency {
+            checks: &[],
+            package: Package::Os(&QRENCODE),
+        }],
         execute: actions::qr::qr_encode_clipboard,
     }),
     AssistEntry::Action(AssistAction {
         key: 'x',
-        title: "Emoji Picker",
-        description: "Open emoji picker",
+        description: "Emoji Picker: Open emoji picker",
         icon: NerdFont::Star,
-        requirements: &[],
-        flatpak_requirements: &[EMOTE],
+        dependencies: &[Dependency {
+            checks: &[],
+            package: Package::Flatpak(&EMOTE),
+        }],
         execute: actions::emoji::emoji_picker,
     }),
     AssistEntry::Group(AssistGroup {
         key: 's',
-        title: "Screenshot",
-        description: "Screenshot and annotation tools",
+        description: "Screenshot: Screenshot and annotation tools",
         icon: NerdFont::Image,
         children: &[
             AssistEntry::Action(AssistAction {
                 key: 'f',
-                title: "Fullscreen to Pictures",
-                description: "Fullscreen screenshot to Pictures folder",
+                description: "Fullscreen to Pictures: Fullscreen screenshot to Pictures folder",
                 icon: NerdFont::Desktop,
-                requirements: SCREENSHOT_FULLSCREEN_PACKAGES,
-                flatpak_requirements: &[],
+                dependencies: &[Dependency {
+                    checks: &[],
+                    package: Package::Os(&SCREENSHOT_FULLSCREEN_PACKAGES[0]),
+                }],
                 execute: actions::screenshot::fullscreen_screenshot,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'a',
-                title: "Screenshot & Annotate",
-                description: "Take screenshot with flameshot",
+                description: "Screenshot & Annotate: Take screenshot with flameshot",
                 icon: NerdFont::Edit,
-                requirements: &[FLAMESHOT],
-                flatpak_requirements: &[],
+                dependencies: &[Dependency {
+                    checks: &[],
+                    package: Package::Os(&FLAMESHOT),
+                }],
                 execute: actions::screenshot::screenshot_annotate,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'c',
-                title: "Screenshot to Clipboard",
-                description: "Capture area to clipboard",
+                description: "Screenshot to Clipboard: Capture area to clipboard",
                 icon: NerdFont::Clipboard,
-                requirements: SCREENSHOT_CLIPBOARD_PACKAGES,
-                flatpak_requirements: &[],
+                dependencies: &[Dependency {
+                    checks: &[],
+                    package: Package::Os(&SCREENSHOT_CLIPBOARD_PACKAGES[0]),
+                }],
                 execute: actions::screenshot::screenshot_to_clipboard,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'i',
-                title: "Screenshot to Imgur",
-                description: "Capture area and upload to Imgur",
+                description: "Screenshot to Imgur: Capture area and upload to Imgur",
                 icon: NerdFont::Upload,
-                requirements: SCREENSHOT_IMGUR_PACKAGES,
-                flatpak_requirements: &[],
+                dependencies: &[Dependency {
+                    checks: &[],
+                    package: Package::Os(&SCREENSHOT_IMGUR_PACKAGES[0]),
+                }],
                 execute: actions::screenshot::screenshot_to_imgur,
             }),
         ],
     }),
     AssistEntry::Group(AssistGroup {
         key: 'v',
-        title: "Media Navigation",
-        description: "Control media playback tracks",
+        description: "Media Navigation: Control media playback tracks",
         icon: NerdFont::Music,
         children: &[
             AssistEntry::Action(AssistAction {
                 key: 'n',
-                title: "Next Track",
-                description: "Go to next track",
+                description: "Next Track: Go to next track",
                 icon: NerdFont::ChevronRight,
-                requirements: &[PLAYERCTL],
-                flatpak_requirements: &[],
+                dependencies: &[Dependency {
+                    checks: &[],
+                    package: Package::Os(&PLAYERCTL),
+                }],
                 execute: actions::media::next_track,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'p',
-                title: "Previous Track",
-                description: "Go to previous track",
+                description: "Previous Track: Go to previous track",
                 icon: NerdFont::ChevronLeft,
-                requirements: &[PLAYERCTL],
-                flatpak_requirements: &[],
+                dependencies: &[Dependency {
+                    checks: &[],
+                    package: Package::Os(&PLAYERCTL),
+                }],
                 execute: actions::media::previous_track,
             }),
         ],
@@ -183,10 +180,10 @@ impl AssistEntry {
         }
     }
 
-    pub fn title(&self) -> &'static str {
+    pub fn description(&self) -> &'static str {
         match self {
-            AssistEntry::Action(action) => action.title,
-            AssistEntry::Group(group) => group.title,
+            AssistEntry::Action(action) => action.description,
+            AssistEntry::Group(group) => group.description,
         }
     }
 
@@ -198,9 +195,6 @@ impl AssistEntry {
     }
 }
 
-/// Find the group entries at a given key sequence path
-/// Returns None if path doesn't exist or points to an action
-/// Returns Some(&[]) for root level (empty string)
 pub fn find_group_entries(key_sequence: &str) -> Option<&'static [AssistEntry]> {
     if key_sequence.is_empty() {
         return Some(ASSISTS);
@@ -263,18 +257,21 @@ mod tests {
     fn test_find_single_key_action() {
         let action = find_action("c");
         assert!(action.is_some());
-        assert_eq!(action.unwrap().title, "Caffeine");
+        assert_eq!(action.unwrap().description, "Caffeine: Keep system awake");
     }
 
     #[test]
     fn test_find_grouped_action() {
         let action = find_action("vn");
         assert!(action.is_some());
-        assert_eq!(action.unwrap().title, "Next Track");
+        assert_eq!(action.unwrap().description, "Next Track: Go to next track");
 
         let action = find_action("vp");
         assert!(action.is_some());
-        assert_eq!(action.unwrap().title, "Previous Track");
+        assert_eq!(
+            action.unwrap().description,
+            "Previous Track: Go to previous track"
+        );
     }
 
     #[test]
@@ -293,7 +290,10 @@ mod tests {
     fn test_find_screenshot_action() {
         let action = find_action("sa");
         assert!(action.is_some());
-        assert_eq!(action.unwrap().title, "Screenshot & Annotate");
+        assert_eq!(
+            action.unwrap().description,
+            "Screenshot & Annotate: Take screenshot with flameshot"
+        );
     }
 
     #[test]
@@ -305,27 +305,39 @@ mod tests {
     fn test_find_screenshot_to_clipboard_action() {
         let action = find_action("sc");
         assert!(action.is_some());
-        assert_eq!(action.unwrap().title, "Screenshot to Clipboard");
+        assert_eq!(
+            action.unwrap().description,
+            "Screenshot to Clipboard: Capture area to clipboard"
+        );
     }
 
     #[test]
     fn test_find_fullscreen_screenshot_action() {
         let action = find_action("sf");
         assert!(action.is_some());
-        assert_eq!(action.unwrap().title, "Fullscreen to Pictures");
+        assert_eq!(
+            action.unwrap().description,
+            "Fullscreen to Pictures: Fullscreen screenshot to Pictures folder"
+        );
     }
 
     #[test]
     fn test_find_emoji_picker_action() {
         let action = find_action("x");
         assert!(action.is_some());
-        assert_eq!(action.unwrap().title, "Emoji Picker");
+        assert_eq!(
+            action.unwrap().description,
+            "Emoji Picker: Open emoji picker"
+        );
     }
 
     #[test]
     fn test_find_help_action() {
         let action = find_action("h");
         assert!(action.is_some());
-        assert_eq!(action.unwrap().title, "Help");
+        assert_eq!(
+            action.unwrap().description,
+            "Help: Show all available assists"
+        );
     }
 }

@@ -62,20 +62,18 @@ fn list_assists() -> Result<()> {
         match entry {
             registry::AssistEntry::Action(action) => {
                 println!(
-                    "  {}{} {} {}",
+                    "  {}{} {}",
                     prefix,
                     action.key.to_string().cyan().bold(),
-                    action.title.bold(),
-                    format!("- {}", action.description).dimmed()
+                    action.description.bold(),
                 );
             }
             registry::AssistEntry::Group(group) => {
                 println!(
-                    "  {}{} {} {}",
+                    "  {}{} {}",
                     prefix,
                     group.key.to_string().cyan().bold(),
-                    group.title.bold(),
-                    format!("- {}", group.description).dimmed()
+                    group.description.bold(),
                 );
                 let child_prefix = format!("{}{}  ", prefix, group.key);
                 for child in group.children {
@@ -134,10 +132,9 @@ fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
             registry::AssistEntry::Action(action) => {
                 let key = format!("{}{}", prefix, action.key);
                 specs.push(format!(
-                    "{}:{} {}  {}",
+                    "{}:{} {}",
                     key,
                     char::from(action.icon),
-                    action.title,
                     action.description
                 ));
             }
@@ -149,7 +146,7 @@ fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
                     "{}:{} {}",
                     key,
                     char::from(group.icon),
-                    group.title
+                    group.description
                 ));
 
                 // Add all children with the group key as prefix
