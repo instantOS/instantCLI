@@ -209,7 +209,8 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
         let keys_hint = if available_keys.is_empty() {
             "".to_string()
         } else {
-            format!(" ({})", available_keys.iter().collect::<String>())
+            let keys_str: Vec<String> = available_keys.iter().map(|c| c.to_string()).collect();
+            format!(" (keys: {})", keys_str.join(", "))
         };
 
         let mode_name_with_hint = if prefix.is_empty() {
@@ -250,22 +251,23 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
                 }
                 registry::AssistEntry::Group(group) => {
                     // Collect available keys for the submode
-                    let mut sub_keys: Vec<char> = group.children
+                    let mut sub_keys: Vec<char> = group
+                        .children
                         .iter()
-                        .filter_map(|child| {
-                            match child {
-                                registry::AssistEntry::Action(action) if action.key == 'h' => None,
-                                _ => Some(child.key()),
-                            }
+                        .filter_map(|child| match child {
+                            registry::AssistEntry::Action(action) if action.key == 'h' => None,
+                            _ => Some(child.key()),
                         })
                         .collect();
                     sub_keys.sort_unstable();
                     let sub_keys_hint = if sub_keys.is_empty() {
                         "".to_string()
                     } else {
-                        format!(" ({})", sub_keys.iter().collect::<String>())
+                        let keys_str: Vec<String> =
+                            sub_keys.iter().map(|c| c.to_string()).collect();
+                        format!(" (keys: {})", keys_str.join(", "))
                     };
-                    
+
                     writeln!(
                         output,
                         "    bindsym {} mode \"{}_{}{} (h for help)\"",
@@ -291,19 +293,17 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
 
     // Generate mode for instantassist
     writeln!(output_writer, "# Enter instantassist mode")?;
-    
+
     // Collect available keys for the root mode
-    let mut root_keys: Vec<char> = registry::ASSISTS
-        .iter()
-        .map(|entry| entry.key())
-        .collect();
+    let mut root_keys: Vec<char> = registry::ASSISTS.iter().map(|entry| entry.key()).collect();
     root_keys.sort_unstable();
     let root_keys_hint = if root_keys.is_empty() {
         "".to_string()
     } else {
-        format!(" ({})", root_keys.iter().collect::<String>())
+        let keys_str: Vec<String> = root_keys.iter().map(|c| c.to_string()).collect();
+        format!(" (keys: {})", keys_str.join(", "))
     };
-    
+
     writeln!(
         output_writer,
         "bindsym $mod+a mode \"instantassist{} (h for help)\"\n",
