@@ -32,6 +32,15 @@ pub struct AssistGroup {
 
 pub const ASSISTS: &[AssistEntry] = &[
     AssistEntry::Action(AssistAction {
+        key: 'b',
+        title: "Bruh",
+        description: "Display a bruh moment",
+        icon: NerdFont::Cross,
+        requirements: &[MPV],
+        flatpak_requirements: &[],
+        execute: actions::joke::bruh,
+    }),
+    AssistEntry::Action(AssistAction {
         key: 'c',
         title: "Caffeine",
         description: "Keep system awake",

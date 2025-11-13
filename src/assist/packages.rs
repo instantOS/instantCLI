@@ -37,6 +37,7 @@ macro_rules! pkg {
 pub static PLAYERCTL: RequiredPackage = pkg!("playerctl");
 pub static QRENCODE: RequiredPackage = pkg!("qrencode");
 pub static FLAMESHOT: RequiredPackage = pkg!("flameshot");
+pub static MPV: RequiredPackage = pkg!("mpv");
 
 // Flatpak packages
 pub static EMOTE: FlatpakPackage = FlatpakPackage {
