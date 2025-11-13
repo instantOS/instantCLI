@@ -71,3 +71,14 @@ pub fn default_games_repo_path() -> PathBuf {
         .join("games")
         .join("repo")
 }
+
+/// Get the user's Pictures directory
+pub fn pictures_dir() -> Result<PathBuf> {
+    let pictures_dir = dirs::picture_dir()
+        .context("Unable to determine user pictures directory")?;
+
+    std::fs::create_dir_all(&pictures_dir)
+        .with_context(|| format!("creating pictures directory at {}", pictures_dir.display()))?;
+
+    Ok(pictures_dir)
+}

@@ -69,6 +69,14 @@ pub const ASSISTS: &[AssistEntry] = &[
         icon: NerdFont::Image,
         children: &[
             AssistEntry::Action(AssistAction {
+                key: 'f',
+                title: "Fullscreen to Pictures",
+                description: "Fullscreen screenshot to Pictures folder",
+                icon: NerdFont::Desktop,
+                requirements: SCREENSHOT_FULLSCREEN_PACKAGES,
+                execute: actions::screenshot::fullscreen_screenshot,
+            }),
+            AssistEntry::Action(AssistAction {
                 key: 'a',
                 title: "Screenshot & Annotate",
                 description: "Take screenshot with flameshot",
@@ -226,5 +234,12 @@ mod tests {
         let action = find_action("sc");
         assert!(action.is_some());
         assert_eq!(action.unwrap().title, "Screenshot to Clipboard");
+    }
+
+    #[test]
+    fn test_find_fullscreen_screenshot_action() {
+        let action = find_action("sf");
+        assert!(action.is_some());
+        assert_eq!(action.unwrap().title, "Fullscreen to Pictures");
     }
 }

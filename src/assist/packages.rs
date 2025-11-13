@@ -174,6 +174,26 @@ pub static SCREENSHOT_CLIPBOARD_PACKAGES: &[RequiredPackage] = &[
     },
 ];
 
+// Fullscreen screenshot packages (no area selection needed)
+pub static SCREENSHOT_FULLSCREEN_PACKAGES: &[RequiredPackage] = &[
+    RequiredPackage {
+        name: "grim",
+        arch_package_name: Some("grim"),
+        ubuntu_package_name: Some("grim"),
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+            "grim",
+        )],
+    },
+    RequiredPackage {
+        name: "imagemagick",
+        arch_package_name: Some("imagemagick"),
+        ubuntu_package_name: Some("imagemagick"),
+        tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+            "import",
+        )],
+    },
+];
+
 pub static SCREENSHOT_IMGUR_PACKAGES: &[RequiredPackage] = &[
     // Area selection tools
     RequiredPackage {
