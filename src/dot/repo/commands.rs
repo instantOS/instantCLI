@@ -278,7 +278,7 @@ fn show_repository_info(config: &Config, db: &Database, name: &str) -> Result<()
         ),
         (char::from(NerdFont::Info), "URL", repo_config.url.clone()),
         (
-            char::from(NerdFont::Flag),
+            char::from(NerdFont::GitBranch),
             "Branch",
             repo_config
                 .branch

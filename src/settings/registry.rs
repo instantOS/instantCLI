@@ -268,7 +268,7 @@ pub const CATEGORIES: &[SettingCategory] = &[
         id: "workspace",
         title: "Workspace",
         description: "Window manager defaults and layout preferences.",
-        icon: NerdFont::Folder,
+        icon: NerdFont::Workspace,
     },
     SettingCategory {
         id: "audio",
@@ -298,7 +298,7 @@ pub const CATEGORIES: &[SettingCategory] = &[
         id: "storage",
         title: "Storage",
         description: "Disk management and auto-mounting.",
-        icon: NerdFont::Save,
+        icon: NerdFont::Database2,
     },
     SettingCategory {
         id: "printers",

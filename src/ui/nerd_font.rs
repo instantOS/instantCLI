@@ -142,6 +142,94 @@ pub enum NerdFont {
     FileWord,
     FileExcel,
     FilePresentation,
+
+    // Version Control and Development
+    GitCommit,
+    GitMerge,
+    GitBranch,
+    GitPullRequest,
+    GitCompare,
+    FileCode,
+    FileConfig,
+
+    // Status and Operations
+    Clock2,
+    Sync2,
+    Cloud2,
+    CloudDownload,
+    CloudUpload,
+    BackupRestore,
+    Database2,
+
+    // System and Performance
+    Monitor,
+    Shield2,
+    Network,
+    Server2,
+    TerminalBash,
+    TerminalPowershell,
+    TerminalUbuntu,
+    Activity,
+
+    // Gaming Enhancement
+    PlayCircle,
+    Controller,
+    Joystick,
+    Achievement,
+    HeartFilled,
+
+    // File and Folder Variants
+    FolderConfig,
+    FolderGit,
+    FolderActive,
+    FileBinary,
+    FileSymlink,
+
+    // Operations and Actions
+    Debug,
+    SettingsGear,
+    Broom,
+    Sliders,
+    Help,
+    InfoCircle,
+
+    // Application and Workspace
+    Workspace,
+    WorkspaceTrusted,
+    WorkspaceUntrusted,
+    RootFolder,
+    FolderLibrary,
+
+    // Dotfile Specific
+    DotFile,
+    Hash,
+    SourceBranch,
+    SourceMerge,
+    SourceCommit,
+
+    // Cloud and Backup
+    CloudSync,
+    CloudCheck,
+    CloudAlert,
+    CloudLock,
+
+    // Performance and Monitoring
+    Performance,
+    Tachograph,
+    ActivityMonitor,
+    Heartbeat,
+
+    // Security and Privacy
+    ShieldCheck,
+    ShieldLock,
+    ShieldAlert,
+    ShieldBug,
+
+    // Testing and Development
+    TestTube,
+    Flask,
+    BugReport,
+    CodeReview,
 }
 
 impl NerdFont {
@@ -284,6 +372,94 @@ impl NerdFont {
             Self::FileWord => '',         // fa-file-word
             Self::FileExcel => '',        // fa-file-excel
             Self::FilePresentation => '󰐩', // fa-file-powerpoint
+
+            // Version Control and Development
+            Self::GitCommit => '',         // cod-git-commit
+            Self::GitMerge => '',          // cod-git-merge
+            Self::GitBranch => '',         // pl-branch (traditional git branch)
+            Self::GitPullRequest => '',     // cod-git-pull-request
+            Self::GitCompare => '',        // cod-git-compare
+            Self::FileCode => '',          // cod-file-code
+            Self::FileConfig => '',        // seti-config
+
+            // Status and Operations
+            Self::Clock2 => '',             // fa-clock
+            Self::Sync2 => '󰓦',              // md-sync
+            Self::Cloud2 => '󰅟',            // md-cloud
+            Self::CloudDownload => '',     // fa-cloud-arrow-down
+            Self::CloudUpload => '',       // fa-cloud-arrow-up
+            Self::BackupRestore => '󰁯',      // md-backup-restore
+            Self::Database2 => '',          // fa-database
+
+            // System and Performance
+            Self::Monitor => '󰍹',           // md-monitor
+            Self::Shield2 => '',            // fa-shield
+            Self::Network => '󰛳',          // md-network
+            Self::Server2 => '󰒋',            // md-server
+            Self::TerminalBash => '',      // cod-terminal-bash
+            Self::TerminalPowershell => '', // cod-terminal-powershell
+            Self::TerminalUbuntu => '',     // cod-terminal-ubuntu
+            Self::Activity => '',          // fa-heartbeat
+
+            // Gaming Enhancement
+            Self::PlayCircle => '',        // fa-circle-play
+            Self::Controller => '󰮂',        // md-controller-classic
+            Self::Joystick => '',          // fa-playstation
+            Self::Achievement => '',       // fa-trophy
+            Self::HeartFilled => '',       // fa-heart
+
+            // File and Folder Variants
+            Self::FolderConfig => '',      // custom-folder-config
+            Self::FolderGit => '',         // custom-folder-git
+            Self::FolderActive => '',      // cod-folder-active
+            Self::FileBinary => '',        // cod-file-binary
+            Self::FileSymlink => '',       // cod-file-symlink-file
+
+            // Operations and Actions
+            Self::Debug => '',             // cod-debug
+            Self::SettingsGear => '',      // cod-settings-gear
+            Self::Broom => '󰃢',             // md-broom
+            Self::Sliders => '',           // fa-sliders
+            Self::Help => '󰋖',              // md-help
+            Self::InfoCircle => '',        // fa-circle-info
+
+            // Application and Workspace
+            Self::Workspace => '',         // cod-workspace-unknown
+            Self::WorkspaceTrusted => '',  // cod-workspace-trusted
+            Self::WorkspaceUntrusted => '', // cod-workspace-untrusted
+            Self::RootFolder => '',        // cod-root-folder
+            Self::FolderLibrary => '',      // cod-folder-library
+
+            // Dotfile Specific
+            Self::DotFile => '',           // oct-dot
+            Self::Hash => '',              // oct-hash
+            Self::SourceBranch => '󰘬',      // md-source-branch
+            Self::SourceMerge => '󰘭',       // md-source-merge
+            Self::SourceCommit => '󰜘',      // md-source-commit
+
+            // Cloud and Backup
+            Self::CloudSync => '󰘿',         // md-cloud-sync
+            Self::CloudCheck => '󰅠',        // md-cloud-check
+            Self::CloudAlert => '󰧠',        // md-cloud-alert
+            Self::CloudLock => '󱇱',         // md-cloud-lock
+
+            // Performance and Monitoring
+            Self::Performance => '',        // fa-tachograph-digital
+            Self::Tachograph => '',        // fa-heartbeat (performance monitoring)
+            Self::ActivityMonitor => '󰦖',   // md-progress-clock
+            Self::Heartbeat => '󰗶',         // md-heart-pulse
+
+            // Security and Privacy
+            Self::ShieldCheck => '',       // oct-shield-check
+            Self::ShieldLock => '',        // oct-shield-lock
+            Self::ShieldAlert => '󰻌',       // md-shield-alert
+            Self::ShieldBug => '󱏚',         // md-shield-bug
+
+            // Testing and Development
+            Self::TestTube => '󰙨',          // md-test-tube
+            Self::Flask => '󰂓',             // md-flask
+            Self::BugReport => '',         // cod-bug
+            Self::CodeReview => '',        // cod-code
         }
     }
 }

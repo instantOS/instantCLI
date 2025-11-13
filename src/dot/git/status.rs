@@ -17,9 +17,18 @@ pub enum DotFileStatus {
 impl std::fmt::Display for DotFileStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DotFileStatus::Modified => write!(f, "{}", " modified".yellow()),
-            DotFileStatus::Outdated => write!(f, "{}", "outdated".blue()),
-            DotFileStatus::Clean => write!(f, "{}", "clean".green()),
+            DotFileStatus::Modified => write!(f, "{} {}",
+                crate::ui::nerd_font::NerdFont::Edit.to_string().yellow(),
+                "modified".yellow()
+            ),
+            DotFileStatus::Outdated => write!(f, "{} {}",
+                crate::ui::nerd_font::NerdFont::Sync2.to_string().blue(),
+                "outdated".blue()
+            ),
+            DotFileStatus::Clean => write!(f, "{} {}",
+                crate::ui::nerd_font::NerdFont::CheckCircle.to_string().green(),
+                "clean".green()
+            ),
         }
     }
 }

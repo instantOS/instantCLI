@@ -214,7 +214,7 @@ fn print_apply_summary(created: usize, updated: usize, skipped: usize, unchanged
             ),
             (
                 Level::Info,
-                Some(char::from(NerdFont::Flag)),
+                Some(char::from(NerdFont::Clock2)),
                 "Unchanged",
                 unchanged,
                 "dot.apply.summary.unchanged",

@@ -56,7 +56,7 @@ async fn handle_clone(debug: bool) -> Result<()> {
     if debug {
         eprintln!(
             "{} Selected repository: {}",
-            char::from(NerdFont::Flag),
+            char::from(NerdFont::SourceBranch),
             selected_repo.name
         );
     }

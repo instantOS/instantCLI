@@ -675,7 +675,7 @@ impl<'a> SetupPreview<'a> {
 
         lines.push(format!(
             "{} Restic snapshots: {}",
-            char::from(NerdFont::Archive),
+            char::from(NerdFont::BackupRestore),
             snapshot.snapshot_count
         ));
 
