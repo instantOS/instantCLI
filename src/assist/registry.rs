@@ -51,7 +51,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         title: "Music",
         description: "Play/pause music",
         icon: NerdFont::Music,
-        requirements: &[PLAYERCTL_PACKAGE],
+        requirements: &[PLAYERCTL],
         execute: actions::media::music,
     }),
     AssistEntry::Action(AssistAction {
@@ -59,7 +59,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         title: "QR Encode Clipboard",
         description: "Generate QR code from clipboard",
         icon: NerdFont::Square,
-        requirements: &[QRENCODE_PACKAGE],
+        requirements: &[QRENCODE],
         execute: actions::qr::qr_encode_clipboard,
     }),
     AssistEntry::Group(AssistGroup {
@@ -81,7 +81,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 title: "Screenshot & Annotate",
                 description: "Take screenshot with flameshot",
                 icon: NerdFont::Edit,
-                requirements: &[FLAMESHOT_PACKAGE],
+                requirements: &[FLAMESHOT],
                 execute: actions::screenshot::screenshot_annotate,
             }),
             AssistEntry::Action(AssistAction {
@@ -113,7 +113,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 title: "Previous Track",
                 description: "Go to previous track",
                 icon: NerdFont::ChevronLeft,
-                requirements: &[PLAYERCTL_PACKAGE],
+                requirements: &[PLAYERCTL],
                 execute: actions::media::previous_track,
             }),
             AssistEntry::Action(AssistAction {
@@ -121,7 +121,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 title: "Next Track",
                 description: "Go to next track",
                 icon: NerdFont::ChevronRight,
-                requirements: &[PLAYERCTL_PACKAGE],
+                requirements: &[PLAYERCTL],
                 execute: actions::media::next_track,
             }),
         ],
