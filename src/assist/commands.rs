@@ -191,10 +191,31 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
         mode_name: &str,
         prefix: &str,
     ) -> Result<()> {
-        let mode_name_with_hint = if prefix.is_empty() {
-            format!("{} (h for help)", mode_name)
+        let mut available_keys: Vec<char> = entries
+            .iter()
+            .filter_map(|entry| {
+                // Filter out 'h' if it's already handled as a help binding in a submode
+                if !prefix.is_empty() {
+                    match entry {
+                        registry::AssistEntry::Action(action) if action.key == 'h' => None,
+                        _ => Some(entry.key()),
+                    }
+                } else {
+                    Some(entry.key())
+                }
+            })
+            .collect();
+        available_keys.sort_unstable();
+        let keys_hint = if available_keys.is_empty() {
+            "".to_string()
         } else {
-            mode_name.to_string()
+            format!(" ({})", available_keys.iter().collect::<String>())
+        };
+
+        let mode_name_with_hint = if prefix.is_empty() {
+            format!("{}{} (h for help)", mode_name, keys_hint)
+        } else {
+            format!("{}{} (h for help)", mode_name, keys_hint)
         };
         writeln!(output, "mode \"{}\" {{", mode_name_with_hint)?;
         writeln!(output, "    # Exit with Escape or Return")?;
@@ -228,11 +249,27 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
                     )?;
                 }
                 registry::AssistEntry::Group(group) => {
-                    let sub_mode_name = format!("{}_{}", mode_name, group.key);
+                    // Collect available keys for the submode
+                    let mut sub_keys: Vec<char> = group.children
+                        .iter()
+                        .filter_map(|child| {
+                            match child {
+                                registry::AssistEntry::Action(action) if action.key == 'h' => None,
+                                _ => Some(child.key()),
+                            }
+                        })
+                        .collect();
+                    sub_keys.sort_unstable();
+                    let sub_keys_hint = if sub_keys.is_empty() {
+                        "".to_string()
+                    } else {
+                        format!(" ({})", sub_keys.iter().collect::<String>())
+                    };
+                    
                     writeln!(
                         output,
-                        "    bindsym {} mode \"{}_{} (h for help)\"",
-                        group.key, mode_name, group.key
+                        "    bindsym {} mode \"{}_{}{} (h for help)\"",
+                        group.key, mode_name, group.key, sub_keys_hint
                     )?;
                 }
             }
@@ -243,7 +280,7 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
         // Recursively generate modes for groups
         for entry in entries {
             if let registry::AssistEntry::Group(group) = entry {
-                let sub_mode_name = format!("{}_{} (h for help)", mode_name, group.key);
+                let sub_mode_name = format!("{}_{}", mode_name, group.key);
                 let new_prefix = format!("{}{}", prefix, group.key);
                 generate_modes(output, group.children, &sub_mode_name, &new_prefix)?;
             }
@@ -254,9 +291,23 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
 
     // Generate mode for instantassist
     writeln!(output_writer, "# Enter instantassist mode")?;
+    
+    // Collect available keys for the root mode
+    let mut root_keys: Vec<char> = registry::ASSISTS
+        .iter()
+        .map(|entry| entry.key())
+        .collect();
+    root_keys.sort_unstable();
+    let root_keys_hint = if root_keys.is_empty() {
+        "".to_string()
+    } else {
+        format!(" ({})", root_keys.iter().collect::<String>())
+    };
+    
     writeln!(
         output_writer,
-        "bindsym $mod+a mode \"instantassist (h for help)\"\n"
+        "bindsym $mod+a mode \"instantassist{} (h for help)\"\n",
+        root_keys_hint
     )?;
 
     // Generate all modes recursively
