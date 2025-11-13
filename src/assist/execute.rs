@@ -51,7 +51,9 @@ pub fn execute_assist(assist: &AssistAction) -> Result<()> {
         );
 
         for flatpak in assist.flatpak_requirements {
-            let satisfied = flatpak.ensure().context("Failed to ensure Flatpak requirement")?;
+            let satisfied = flatpak
+                .ensure()
+                .context("Failed to ensure Flatpak requirement")?;
 
             if !satisfied {
                 emit(
