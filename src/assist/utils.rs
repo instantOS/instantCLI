@@ -1,7 +1,7 @@
 /// Shared utility functions for assists
 use anyhow::{Context, Result};
 use std::io::Write;
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
 use crate::common::display_server::DisplayServer;
 
@@ -48,6 +48,37 @@ pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
     std::mem::forget(temp_file);
 
     Ok(())
+}
+
+/// Run a script in a terminal window and wait for completion
+pub fn run_script_in_terminal_and_wait(script: &str, title: &str) -> Result<ExitStatus> {
+    use tempfile::NamedTempFile;
+
+    let mut temp_file = NamedTempFile::new().context("Failed to create temporary script file")?;
+    temp_file
+        .write_all(script.as_bytes())
+        .context("Failed to write script")?;
+
+    let script_path = temp_file.path().to_owned();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script_path)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms)?;
+    }
+
+    let status = Command::new("kitty")
+        .arg("--hold")
+        .arg("--title")
+        .arg(title)
+        .args(["-e", "bash"])
+        .arg(&script_path)
+        .status()
+        .context("Failed to run terminal command")?;
+
+    Ok(status)
 }
 
 /// Launch a command in the background (detached)

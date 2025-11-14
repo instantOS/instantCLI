@@ -5,7 +5,7 @@ use std::io::{self, Write};
 
 use crate::menu::client;
 
-use super::execute::execute_assist;
+use super::execute::{execute_assist, install_dependencies_for_assist};
 use super::registry;
 
 #[derive(Subcommand, Debug, Clone)]
@@ -15,6 +15,13 @@ pub enum AssistCommands {
     /// Run an assist by its key sequence
     Run {
         /// Key sequence of the assist to run (e.g., 'c' or 'vn')
+        key_sequence: String,
+    },
+    #[command(hide = true)]
+    /// Install dependencies for an assist key sequence without running it
+    InstallDeps {
+        /// Key sequence of the assist to ensure dependencies for
+        #[arg(long = "key-sequence")]
         key_sequence: String,
     },
     /// Export assists to Sway config format
@@ -45,7 +52,22 @@ pub fn dispatch_assist_command(_debug: bool, command: Option<AssistCommands>) ->
             let action = registry::find_action(&key_sequence).ok_or_else(|| {
                 anyhow::anyhow!("No assist found for key sequence: {}", key_sequence)
             })?;
-            execute_assist(action)
+            execute_assist(action, &key_sequence)
+        }
+        Some(AssistCommands::InstallDeps { key_sequence }) => {
+            let action = registry::find_action(&key_sequence).ok_or_else(|| {
+                anyhow::anyhow!("No assist found for key sequence: {}", key_sequence)
+            })?;
+
+            if install_dependencies_for_assist(action)? {
+                println!("All dependencies satisfied for {}", action.description);
+                Ok(())
+            } else {
+                anyhow::bail!(
+                    "Dependencies for '{}' are still missing after installation attempt",
+                    action.description
+                );
+            }
         }
         Some(AssistCommands::Export { output_path }) => export_sway_config(output_path),
         Some(AssistCommands::Setup) => setup_sway_integration(),
@@ -111,7 +133,7 @@ fn run_assist_selector() -> Result<()> {
             let action = registry::find_action(&selected_key)
                 .ok_or_else(|| anyhow::anyhow!("Assist not found for key: {}", selected_key))?;
 
-            execute_assist(action)?;
+            execute_assist(action, &selected_key)?;
 
             Ok(())
         }
