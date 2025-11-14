@@ -1,4 +1,4 @@
-use crate::common::dependencies::{Dependency, Package};
+use crate::common::dependencies::Dependency;
 use crate::ui::prelude::NerdFont;
 
 use super::actions;
@@ -39,10 +39,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         key: 'b',
         description: "Brightness: Adjust display brightness",
         icon: NerdFont::Monitor,
-        dependencies: &[Dependency {
-            checks: &[],
-            package: Package::Os(&BRIGHTNESSCTL),
-        }],
+        dependencies: &[Dependency::os(&BRIGHTNESSCTL)],
         execute: actions::system::brightness,
     }),
     AssistEntry::Group(AssistGroup {
@@ -53,10 +50,7 @@ pub const ASSISTS: &[AssistEntry] = &[
             key: 'b',
             description: "Bruh: Display a bruh moment",
             icon: NerdFont::Cross,
-            dependencies: &[Dependency {
-                checks: &[],
-                package: Package::Os(&MPV),
-            }],
+            dependencies: &[Dependency::os(&MPV)],
             execute: actions::joke::bruh,
         })],
     }),
@@ -78,10 +72,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         key: 'm',
         description: "Music: Play/pause music",
         icon: NerdFont::Music,
-        dependencies: &[Dependency {
-            checks: &[],
-            package: Package::Os(&PLAYERCTL),
-        }],
+        dependencies: &[Dependency::os(&PLAYERCTL)],
         execute: actions::media::music,
     }),
     AssistEntry::Action(AssistAction {
@@ -95,20 +86,14 @@ pub const ASSISTS: &[AssistEntry] = &[
         key: 'q',
         description: "QR Encode Clipboard: Generate QR code from clipboard",
         icon: NerdFont::Square,
-        dependencies: &[Dependency {
-            checks: &[],
-            package: Package::Os(&QRENCODE),
-        }],
+        dependencies: &[Dependency::os(&QRENCODE)],
         execute: actions::qr::qr_encode_clipboard,
     }),
     AssistEntry::Action(AssistAction {
         key: 'e',
         description: "Emoji Picker: Open emoji picker",
         icon: NerdFont::Star,
-        dependencies: &[Dependency {
-            checks: &[],
-            package: Package::Flatpak(&EMOTE),
-        }],
+        dependencies: &[Dependency::flatpak(&EMOTE)],
         execute: actions::emoji::emoji_picker,
     }),
     AssistEntry::Group(AssistGroup {
@@ -120,50 +105,35 @@ pub const ASSISTS: &[AssistEntry] = &[
                 key: 'f',
                 description: "Fullscreen to Pictures: Fullscreen screenshot to Pictures folder",
                 icon: NerdFont::Desktop,
-                dependencies: &[Dependency {
-                    checks: &[],
-                    package: Package::Os(&SCREENSHOT_FULLSCREEN_PACKAGES[0]),
-                }],
+                dependencies: &[Dependency::os(&SCREENSHOT_FULLSCREEN_PACKAGES[0])],
                 execute: actions::screenshot::fullscreen_screenshot,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'a',
                 description: "Screenshot & Annotate: Take screenshot with flameshot",
                 icon: NerdFont::Edit,
-                dependencies: &[Dependency {
-                    checks: &[],
-                    package: Package::Os(&FLAMESHOT),
-                }],
+                dependencies: &[Dependency::os(&FLAMESHOT)],
                 execute: actions::screenshot::screenshot_annotate,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'c',
                 description: "Screenshot to Clipboard: Capture area to clipboard",
                 icon: NerdFont::Clipboard,
-                dependencies: &[Dependency {
-                    checks: &[],
-                    package: Package::Os(&SCREENSHOT_CLIPBOARD_PACKAGES[0]),
-                }],
+                dependencies: &[Dependency::os(&SCREENSHOT_CLIPBOARD_PACKAGES[0])],
                 execute: actions::screenshot::screenshot_to_clipboard,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'i',
                 description: "Screenshot to Imgur: Capture area and upload to Imgur",
                 icon: NerdFont::Upload,
-                dependencies: &[Dependency {
-                    checks: &[],
-                    package: Package::Os(&SCREENSHOT_IMGUR_PACKAGES[0]),
-                }],
+                dependencies: &[Dependency::os(&SCREENSHOT_IMGUR_PACKAGES[0])],
                 execute: actions::screenshot::screenshot_to_imgur,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'r',
                 description: "OCR Text Recognition: Extract text from selected area",
                 icon: NerdFont::FileText,
-                dependencies: &[Dependency {
-                    checks: &[],
-                    package: Package::Os(&SCREENSHOT_OCR_PACKAGES[0]),
-                }],
+                dependencies: &[Dependency::os(&SCREENSHOT_OCR_PACKAGES[0])],
                 execute: actions::screenshot::screenshot_ocr,
             }),
         ],
@@ -177,20 +147,14 @@ pub const ASSISTS: &[AssistEntry] = &[
                 key: 'n',
                 description: "Next Track: Go to next track",
                 icon: NerdFont::ChevronRight,
-                dependencies: &[Dependency {
-                    checks: &[],
-                    package: Package::Os(&PLAYERCTL),
-                }],
+                dependencies: &[Dependency::os(&PLAYERCTL)],
                 execute: actions::media::next_track,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'p',
                 description: "Previous Track: Go to previous track",
                 icon: NerdFont::ChevronLeft,
-                dependencies: &[Dependency {
-                    checks: &[],
-                    package: Package::Os(&PLAYERCTL),
-                }],
+                dependencies: &[Dependency::os(&PLAYERCTL)],
                 execute: actions::media::previous_track,
             }),
         ],

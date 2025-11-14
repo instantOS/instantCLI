@@ -20,49 +20,42 @@ pub fn execute_assist(assist: &AssistAction) -> Result<()> {
         );
 
         for dependency in assist.dependencies {
-            let mut checks_passed = true;
-            for check in dependency.checks {
-                if !check()? {
-                    checks_passed = false;
-                    break;
-                }
+            if dependency.is_satisfied() {
+                continue;
             }
 
-            if checks_passed {
-                match &dependency.package {
-                    Package::Os(pkg) => {
-                        let all_satisfied = ensure_packages_batch(&[**pkg])
-                            .context("Failed to ensure OS packages")?;
-                        if !all_satisfied {
-                            emit(
-                                Level::Warn,
-                                "assist.dependencies_not_met",
-                                &format!(
-                                    "{} OS package dependencies not met for {}",
-                                    char::from(NerdFont::Warning),
-                                    assist.description
-                                ),
-                                None,
-                            );
-                            return Ok(());
-                        }
+            match &dependency.package {
+                Package::Os(pkg) => {
+                    let all_satisfied =
+                        ensure_packages_batch(&[**pkg]).context("Failed to ensure OS packages")?;
+                    if !all_satisfied {
+                        emit(
+                            Level::Warn,
+                            "assist.dependencies_not_met",
+                            &format!(
+                                "{} OS package dependencies not met for {}",
+                                char::from(NerdFont::Warning),
+                                assist.description
+                            ),
+                            None,
+                        );
+                        return Ok(());
                     }
-                    Package::Flatpak(fp) => {
-                        let satisfied =
-                            fp.ensure().context("Failed to ensure Flatpak dependency")?;
-                        if !satisfied {
-                            emit(
-                                Level::Warn,
-                                "assist.dependencies_not_met",
-                                &format!(
-                                    "{} Flatpak dependencies not met for {}",
-                                    char::from(NerdFont::Warning),
-                                    assist.description
-                                ),
-                                None,
-                            );
-                            return Ok(());
-                        }
+                }
+                Package::Flatpak(fp) => {
+                    let satisfied = fp.ensure().context("Failed to ensure Flatpak dependency")?;
+                    if !satisfied {
+                        emit(
+                            Level::Warn,
+                            "assist.dependencies_not_met",
+                            &format!(
+                                "{} Flatpak dependencies not met for {}",
+                                char::from(NerdFont::Warning),
+                                assist.description
+                            ),
+                            None,
+                        );
+                        return Ok(());
                     }
                 }
             }
