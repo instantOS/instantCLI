@@ -6,7 +6,7 @@ REPO="instantOS/instantCLI"
 API_URL="https://api.github.com/repos/$REPO/releases/latest"
 BIN_NAME="ins"
 
-INSTALL_DIR=${INSTALL_DIR:-"$HOME/.local/bin"}
+INSTALL_DIR=${INSTALL_DIR:-}
 
 log() {
     printf '%s\n' "$1"
@@ -26,7 +26,7 @@ usage() {
 Usage: install.sh [--install-dir <path>] [--bin-name <name>]
 
 Environment variables:
-  INSTALL_DIR  Destination directory (default: \$HOME/.local/bin)
+  INSTALL_DIR  Destination directory (default: first user bin in PATH, else /usr/local/bin)
 
 Options:
   --install-dir <path>  Set installation directory
@@ -60,8 +60,25 @@ parse_args() {
     done
 }
 
+choose_install_dir() {
+    if [ -n "$INSTALL_DIR" ]; then
+        return
+    fi
+
+    for candidate in "$HOME/.local/bin" "$HOME/bin"; do
+        case ":$PATH:" in
+            *:"$candidate":*)
+                INSTALL_DIR="$candidate"
+                return
+                ;;
+        esac
+    done
+
+    INSTALL_DIR="/usr/local/bin"
+}
+
 require_commands() {
-    for cmd in curl tar uname mktemp head; do
+    for cmd in curl tar uname mktemp head find; do
         command -v "$cmd" >/dev/null 2>&1 || fatal "required command '$cmd' not found"
     done
 }
@@ -181,7 +198,15 @@ find_binary_path() {
 install_binary() {
     binary_path=$1
 
-    mkdir -p "$INSTALL_DIR" || fatal "unable to create $INSTALL_DIR"
+    if [ ! -d "$INSTALL_DIR" ]; then
+        if ! mkdir -p "$INSTALL_DIR" 2>/dev/null; then
+            fatal "unable to create $INSTALL_DIR (set INSTALL_DIR or run with appropriate permissions)"
+        fi
+    fi
+
+    if [ ! -w "$INSTALL_DIR" ]; then
+        fatal "cannot write to $INSTALL_DIR; set INSTALL_DIR to a writable directory or re-run with elevated permissions"
+    fi
 
     if command -v install >/dev/null 2>&1; then
         install -m 755 "$binary_path" "$INSTALL_DIR/$BIN_NAME"
@@ -210,6 +235,7 @@ print_summary() {
 
 main() {
     parse_args "$@"
+    choose_install_dir
     require_commands
     detect_target
     fetch_release_json

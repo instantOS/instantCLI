@@ -29,6 +29,16 @@ while enabling easy theme and configuration switching.
 
 ## Installation
 
+### Quick install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/instantOS/instantCLI/main/scripts/install.sh | sh
+```
+
+Set `INSTALL_DIR` to override the destination directory (defaults to a writable user bin in your `PATH`, otherwise `/usr/local/bin`).
+
+Check before you pipe `:)`
+
 ### Cargo
 
 ```bash
