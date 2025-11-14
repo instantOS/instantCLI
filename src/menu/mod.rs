@@ -37,28 +37,6 @@ struct PresetConfig {
     command: Vec<String>,
 }
 
-const AUDIO_COMMAND_SCRIPT: &str = r#"wpctl set-volume @DEFAULT_AUDIO_SINK@ "$1%" 2>/dev/null;
-
-dunstify --appname instantCLI \
-    -h string:x-dunst-stack-tag:instantcli-volume \
-    -h int:value:"$1" \
-    -i audio-volume-medium-symbolic \
-    "Volume [$1%]" 2>/dev/null"#;
-
-const BRIGHTNESS_COMMAND_SCRIPT: &str = r#"value="$1"
-
-if command -v brightnessctl >/dev/null 2>&1; then
-    brightnessctl --quiet set "${value}%" 2>/dev/null
-fi
-
-if command -v dunstify >/dev/null 2>&1; then
-    dunstify --appname instantCLI \
-        -h string:x-dunst-stack-tag:instantcli-brightness \
-        -h int:value:"${value}" \
-        -i display-brightness-medium-symbolic \
-        "Brightness [${value}%]" 2>/dev/null
-fi"#;
-
 impl SliderPreset {
     fn config(self) -> PresetConfig {
         match self {
@@ -72,7 +50,7 @@ impl SliderPreset {
                 command: vec![
                     "sh".to_string(),
                     "-c".to_string(),
-                    AUDIO_COMMAND_SCRIPT.to_string(),
+                    Self::audio_command_script(),
                     "ins-menu-slide-audio".to_string(),
                 ],
             },
@@ -86,7 +64,7 @@ impl SliderPreset {
                 command: vec![
                     "sh".to_string(),
                     "-c".to_string(),
-                    BRIGHTNESS_COMMAND_SCRIPT.to_string(),
+                    Self::brightness_command_script(),
                     "ins-menu-slide-brightness".to_string(),
                 ],
             },
@@ -99,6 +77,37 @@ impl SliderPreset {
 
     fn detect_brightness_level() -> Option<i64> {
         Self::brightnessctl_percentage()
+    }
+
+    fn audio_command_script() -> String {
+        let mut script = String::from("value=\"$1\"\n\n");
+        script.push_str("wpctl set-volume @DEFAULT_AUDIO_SINK@ \"${value}%\" 2>/dev/null\n\n");
+        script.push_str(&Self::notification_script(
+            "instantcli-volume",
+            "audio-volume-medium-symbolic",
+            "Volume [${value}%]",
+        ));
+        script
+    }
+
+    fn brightness_command_script() -> String {
+        let mut script = String::from("value=\"$1\"\n\n");
+        script.push_str("brightnessctl --quiet set \"${value}%\" 2>/dev/null\n\n");
+        script.push_str(&Self::notification_script(
+            "instantcli-brightness",
+            "display-brightness-medium-symbolic",
+            "Brightness [${value}%]",
+        ));
+        script
+    }
+
+    fn notification_script(stack_tag: &str, icon: &str, label: &str) -> String {
+        format!(
+            "dunstify --appname instantCLI \\\n+    -h string:x-dunst-stack-tag:{stack_tag} \\\n+    -h int:value:\"${{value}}\" \\\n+    -i {icon} \\\n+    \"{label}\" 2>/dev/null",
+            stack_tag = stack_tag,
+            icon = icon,
+            label = label
+        )
     }
 
     fn wpctl_volume() -> Option<i64> {

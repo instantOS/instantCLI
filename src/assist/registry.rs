@@ -45,6 +45,21 @@ pub const ASSISTS: &[AssistEntry] = &[
         }],
         execute: actions::system::brightness,
     }),
+    AssistEntry::Group(AssistGroup {
+        key: 'j',
+        description: "Jokes: Quick fun assists",
+        icon: NerdFont::Star,
+        children: &[AssistEntry::Action(AssistAction {
+            key: 'b',
+            description: "Bruh: Display a bruh moment",
+            icon: NerdFont::Cross,
+            dependencies: &[Dependency {
+                checks: &[],
+                package: Package::Os(&MPV),
+            }],
+            execute: actions::joke::bruh,
+        })],
+    }),
     AssistEntry::Action(AssistAction {
         key: 'c',
         description: "Caffeine: Keep system awake",
