@@ -22,6 +22,9 @@ pub fn caffeine() -> Result<()> {
 }
 
 pub fn volume() -> Result<()> {
-    use crate::assist::utils;
-    utils::menu_command(&["slide", "--preset", "audio", "--gui"])
+    crate::assist::utils::menu_command(&["slide", "--preset", "audio", "--gui"])
+}
+
+pub fn brightness() -> Result<()> {
+    crate::assist::utils::menu_command(&["slide", "--preset", "brightness", "--gui"])
 }

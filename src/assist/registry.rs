@@ -37,13 +37,13 @@ pub const ASSISTS: &[AssistEntry] = &[
     }),
     AssistEntry::Action(AssistAction {
         key: 'b',
-        description: "Bruh: Display a bruh moment",
-        icon: NerdFont::Cross,
+        description: "Brightness: Adjust display brightness",
+        icon: NerdFont::Monitor,
         dependencies: &[Dependency {
             checks: &[],
-            package: Package::Os(&MPV),
+            package: Package::Os(&BRIGHTNESSCTL),
         }],
-        execute: actions::joke::bruh,
+        execute: actions::system::brightness,
     }),
     AssistEntry::Action(AssistAction {
         key: 'c',

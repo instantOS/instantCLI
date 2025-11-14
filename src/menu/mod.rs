@@ -22,6 +22,9 @@ use client::MenuClient;
 pub enum SliderPreset {
     #[value(alias = "volume")]
     Audio,
+    #[value(alias = "brightness")]
+    #[value(alias = "bright")]
+    Brightness,
 }
 
 struct PresetConfig {
@@ -42,6 +45,20 @@ dunstify --appname instantCLI \
     -i audio-volume-medium-symbolic \
     "Volume [$1%]" 2>/dev/null"#;
 
+const BRIGHTNESS_COMMAND_SCRIPT: &str = r#"value="$1"
+
+if command -v brightnessctl >/dev/null 2>&1; then
+    brightnessctl --quiet set "${value}%" 2>/dev/null
+fi
+
+if command -v dunstify >/dev/null 2>&1; then
+    dunstify --appname instantCLI \
+        -h string:x-dunst-stack-tag:instantcli-brightness \
+        -h int:value:"${value}" \
+        -i display-brightness-medium-symbolic \
+        "Brightness [${value}%]" 2>/dev/null
+fi"#;
+
 impl SliderPreset {
     fn config(self) -> PresetConfig {
         match self {
@@ -59,11 +76,29 @@ impl SliderPreset {
                     "ins-menu-slide-audio".to_string(),
                 ],
             },
+            SliderPreset::Brightness => PresetConfig {
+                min: 0,
+                max: 100,
+                value: Self::detect_brightness_level(),
+                step: Some(1),
+                big_step: Some(5),
+                label: Some("Screen Brightness".to_string()),
+                command: vec![
+                    "sh".to_string(),
+                    "-c".to_string(),
+                    BRIGHTNESS_COMMAND_SCRIPT.to_string(),
+                    "ins-menu-slide-brightness".to_string(),
+                ],
+            },
         }
     }
 
     fn detect_audio_volume() -> Option<i64> {
         Self::wpctl_volume()
+    }
+
+    fn detect_brightness_level() -> Option<i64> {
+        Self::brightnessctl_percentage()
     }
 
     fn wpctl_volume() -> Option<i64> {
@@ -76,6 +111,22 @@ impl SliderPreset {
         let percent = (fraction * 100.0).trunc().clamp(0.0, 100.0);
         Some(percent as i64)
     }
+    fn brightnessctl_percentage() -> Option<i64> {
+        let current = Self::command_output("brightnessctl", &["get"])?
+            .parse::<f64>()
+            .ok()?;
+        let max = Self::command_output("brightnessctl", &["max"])?
+            .parse::<f64>()
+            .ok()?;
+
+        if max <= 0.0 {
+            return None;
+        }
+
+        let percent = (current / max * 100.0).round().clamp(0.0, 100.0);
+        Some(percent as i64)
+    }
+
     fn command_output(program: &str, args: &[&str]) -> Option<String> {
         let output = Command::new(program).args(args).output().ok()?;
         if !output.status.success() {

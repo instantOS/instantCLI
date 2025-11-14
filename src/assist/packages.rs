@@ -39,6 +39,7 @@ pub static QRENCODE: RequiredPackage = pkg!("qrencode");
 pub static FLAMESHOT: RequiredPackage = pkg!("flameshot");
 pub static MPV: RequiredPackage = pkg!("mpv");
 pub static TESSERACT: RequiredPackage = pkg!("tesseract");
+pub static BRIGHTNESSCTL: RequiredPackage = pkg!("brightnessctl");
 
 // Flatpak packages
 pub static EMOTE: FlatpakPackage = FlatpakPackage {
