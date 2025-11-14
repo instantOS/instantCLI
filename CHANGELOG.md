@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3](https://github.com/instantOS/instantCLI/compare/v0.5.2...v0.5.3) - 2025-11-14
+
+### Other
+
+- improve install script
+- init install script
+- allow installing assist deps inside a terminal
+- refactor dependency handling
+- refactor slider assists
+- init brightness assist
+- add q to valid chord keys
+- deduplicate screenshot logic
+- add ocr assist
+
 ## [0.5.2](https://github.com/instantOS/instantCLI/compare/v0.5.1...v0.5.2) - 2025-11-13
 
 ### Fixed
