@@ -1,7 +1,7 @@
 use super::cli::{RepoCommands, SubdirCommands};
 use crate::dot::config::{Config, extract_repo_name};
 use crate::dot::db::Database;
-use crate::dot::git::add_repo as git_add_repo;
+use crate::dot::git::add_repo as git_clone_repo;
 use crate::dot::repo::RepositoryManager;
 use crate::ui::Level;
 use crate::ui::prelude::*;
@@ -17,8 +17,8 @@ pub fn handle_repo_command(
 ) -> Result<()> {
     match command {
         RepoCommands::List => list_repositories(config, db),
-        RepoCommands::Add { url, name, branch } => {
-            add_repository(config, db, url, name.as_deref(), branch.as_deref(), debug)
+        RepoCommands::Clone { url, name, branch } => {
+            clone_repository(config, db, url, name.as_deref(), branch.as_deref(), debug)
         }
         RepoCommands::Remove { name, keep_files } => {
             remove_repository(config, db, name, !*keep_files)
@@ -121,8 +121,8 @@ fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
     Ok(())
 }
 
-/// Add a new repository
-fn add_repository(
+/// Clone a new repository
+fn clone_repository(
     config: &mut Config,
     db: &Database,
     url: &str,
@@ -148,9 +148,9 @@ fn add_repository(
 
     emit(
         Level::Success,
-        "dot.repo.added",
+        "dot.repo.clone.added",
         &format!(
-            "{} Added repository '{}' from {}",
+            "{} Cloned repository '{}' from {}",
             char::from(NerdFont::Check),
             repo_name,
             url
@@ -159,11 +159,11 @@ fn add_repository(
     );
 
     // Clone the repository
-    match git_add_repo(config, repo_config, debug) {
+    match git_clone_repo(config, repo_config, debug) {
         Ok(path) => {
             emit(
                 Level::Info,
-                "dot.repo.add.clone_path",
+                "dot.repo.clone.path",
                 &format!(
                     "{} Cloned to: {}",
                     char::from(NerdFont::Folder),
@@ -175,7 +175,7 @@ fn add_repository(
             // Apply the repository immediately after adding
             emit(
                 Level::Info,
-                "dot.repo.add.apply",
+                "dot.repo.clone.apply",
                 &format!(
                     "{} Applying dotfiles from new repository...",
                     char::from(NerdFont::Info)
@@ -185,7 +185,7 @@ fn add_repository(
             if let Err(e) = apply_all_repos(config, db) {
                 emit(
                     Level::Warn,
-                    "dot.repo.add.apply_failed",
+                    "dot.repo.clone.apply_failed",
                     &format!(
                         "{} Failed to apply dotfiles: {e}",
                         char::from(NerdFont::Warning)
@@ -197,7 +197,7 @@ fn add_repository(
         Err(e) => {
             emit(
                 Level::Error,
-                "dot.repo.add.clone_failed",
+                "dot.repo.clone.failed",
                 &format!(
                     "{} Failed to clone repository: {e}",
                     char::from(NerdFont::CrossCircle)

@@ -226,7 +226,7 @@ enum DotCommands {
         #[arg(long)]
         all: bool,
     },
-    /// Initialize the repo in the current directory as an instantdots repo
+    /// Initialize the current git repo or bootstrap a default dotfile repo when outside git
     Init {
         /// Optional name to set in instantdots.toml
         name: Option<String>,
@@ -372,12 +372,14 @@ async fn main() -> Result<()> {
                         anyhow::anyhow!("Unable to determine current directory: {}", e)
                     })?;
                     execute_with_error_handling(
-                        dot::meta::init_repo(&cwd, name.as_deref(), *non_interactive),
+                        dot::meta::handle_init_command(
+                            &mut config,
+                            &cwd,
+                            name.as_deref(),
+                            *non_interactive,
+                        ),
                         "Error initializing repo",
-                        Some(&format!(
-                            "Initialized instantdots.toml in {}",
-                            cwd.display()
-                        )),
+                        None,
                     )?;
                 }
                 DotCommands::Diff { path } => {

@@ -269,7 +269,7 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 - `ins dot status [<path>]`: Check repository status
 - `ins dot init`: Initialize current directory as a dotfile repo
 - `ins dot diff [<path>]`: Show differences between source and target files
-- `ins dot repo add <url>`: Add a new dotfile repository
+- `ins dot repo clone <url>`: Clone a new dotfile repository
 - `ins dot repo list`: List all configured repositories
 - `ins dot repo remove <name>`: Remove a repository
 - `ins dot repo info <name>`: Show detailed repository information

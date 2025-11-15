@@ -5,8 +5,8 @@ use clap_complete::engine::ArgValueCompleter;
 pub enum RepoCommands {
     /// List all configured repositories
     List,
-    /// Add a new repository (and immediately apply)
-    Add {
+    /// Clone a new repository (and immediately apply)
+    Clone {
         url: String,
         #[arg(long)]
         name: Option<String>,

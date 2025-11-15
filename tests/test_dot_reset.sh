@@ -13,7 +13,7 @@ main() {
 
     local repo_url="file://${repo_dir}"
 
-    ins dot repo add "${repo_url}" --name reset-test
+    ins dot repo clone "${repo_url}" --name reset-test
     ins dot apply
 
     local target_file="${HOME}/.config/instanttest/config.txt"

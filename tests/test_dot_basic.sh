@@ -60,9 +60,9 @@ main() {
     assert_json_field "${empty_list_json}" ".data.count" "0"
     assert_json_field "${empty_list_json}" ".data.repos" "[]"
 
-    # Add repository
-    echo "Adding repository..."
-    ins dot repo add "${repo_url}" --name basic-test >/dev/null 2>&1
+    # Clone repository
+    echo "Cloning repository..."
+    ins dot repo clone "${repo_url}" --name basic-test >/dev/null 2>&1
 
     # Test dot repo list JSON output (after adding repo)
     echo "Testing repo list JSON output after adding repo..."
@@ -80,7 +80,7 @@ main() {
     assert_json_field "${status_json}" ".data.total_files" "2"
     assert_json_field "${status_json}" ".data.modified_count" "0"
     assert_json_field "${status_json}" ".data.outdated_count" "0"
-    assert_json_field "${status_json}" ".data.clean_count" "2"  # Files are already applied (clean) due to auto-apply during 'dot repo add'
+    assert_json_field "${status_json}" ".data.clean_count" "2"  # Files are already applied (clean) due to auto-apply during 'dot repo clone'
 
     # Apply dotfiles
     echo "Applying dotfiles..."

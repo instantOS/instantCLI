@@ -71,7 +71,7 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
 
     pb.finish_with_message(format!("Cloned {}", repo.url));
 
-    // Note: config addition is now handled by the caller (add_repository function)
+    // Note: config addition is now handled by the caller (clone_repository function)
 
     // validate metadata but do not delete invalid clones; report their existence
     let local_repo = repo_mod::LocalRepo::new(config, repo.name.clone())?;
