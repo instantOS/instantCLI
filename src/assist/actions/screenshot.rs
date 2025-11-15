@@ -69,6 +69,62 @@ pub fn screenshot_to_clipboard() -> Result<()> {
     Ok(())
 }
 
+pub fn screenshot_to_clipboard_fullscreen() -> Result<()> {
+    use crate::assist::utils::copy_image_to_clipboard;
+
+    let display_server = DisplayServer::detect();
+    let screenshot_data = capture_fullscreen_to_memory(&display_server)?;
+
+    copy_image_to_clipboard(&screenshot_data, "image/png", &display_server)?;
+
+    Ok(())
+}
+
+/// Capture fullscreen screenshot to memory (as PNG bytes)
+fn capture_fullscreen_to_memory(display_server: &DisplayServer) -> Result<Vec<u8>> {
+    if display_server.is_wayland() {
+        // For Wayland, use grim with no geometry (fullscreen)
+        let grim_output = Command::new("grim")
+            .arg("-")
+            .output()
+            .context("Failed to capture fullscreen screenshot with grim")?;
+
+        if !grim_output.status.success() {
+            anyhow::bail!("Failed to capture fullscreen screenshot");
+        }
+
+        Ok(grim_output.stdout)
+    } else if display_server.is_x11() {
+        // Check if picom is running and add small delay (similar to old instantassist)
+        let picom_running = Command::new("pgrep")
+            .arg("picom")
+            .output()
+            .map(|o| !o.stdout.is_empty())
+            .unwrap_or(false);
+
+        if picom_running {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+
+        // Add small delay for stability
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // For X11, use import with -window root (same as old instantassist)
+        let import_output = Command::new("import")
+            .args(["-window", "root", "png:-"])
+            .output()
+            .context("Failed to capture fullscreen screenshot with import")?;
+
+        if !import_output.status.success() {
+            anyhow::bail!("Failed to capture fullscreen screenshot");
+        }
+
+        Ok(import_output.stdout)
+    } else {
+        anyhow::bail!("Unknown display server - cannot take fullscreen screenshot")
+    }
+}
+
 pub fn screenshot_to_imgur() -> Result<()> {
     use crate::assist::utils::{capture_area_to_memory, copy_to_clipboard};
 

@@ -146,6 +146,13 @@ pub const ASSISTS: &[AssistEntry] = &[
                 execute: actions::screenshot::screenshot_to_imgur,
             }),
             AssistEntry::Action(AssistAction {
+                key: 'm',
+                description: "Fullscreen to Clipboard: Fullscreen screenshot directly to clipboard",
+                icon: NerdFont::Desktop,
+                dependencies: &[Dependency::os(&SCREENSHOT_CLIPBOARD_PACKAGES[0])],
+                execute: actions::screenshot::screenshot_to_clipboard_fullscreen,
+            }),
+            AssistEntry::Action(AssistAction {
                 key: 'r',
                 description: "OCR Text Recognition: Extract text from selected area",
                 icon: NerdFont::FileText,
