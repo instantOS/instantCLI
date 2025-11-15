@@ -106,33 +106,40 @@ fetch_release_json() {
 }
 
 find_asset_urls() {
-    asset_url=$(printf '%s\n' "$release_json" | awk -v target="$TARGET" -F'"' '
-        /browser_download_url/ {
-            url=$4
-            if (index(url, target) && (url ~ /\.tar\.zst$/ || url ~ /\.tgz$/)) {
-                print url
-                exit
+    asset_url=$(printf '%s\n' "$release_json" | awk -v target="$TARGET" '
+        {
+            rest = $0
+            while (match(rest, /"browser_download_url":"([^"]+)"/, m)) {
+                url = m[1]
+                if (index(url, target) && (url ~ /\.tar\.zst$/ || url ~ /\.tgz$/)) {
+                    print url
+                    exit
+                }
+                rest = substr(rest, RSTART + RLENGTH)
             }
         }
     ')
 
     [ -n "$asset_url" ] || fatal "no prebuilt archive found for $TARGET"
 
-    sha_url=$(printf '%s\n' "$release_json" | awk -v archive="$asset_url" -F'"' '
-        /browser_download_url/ {
-            url=$4
-            if (url == archive ".sha256") {
-                print url
-                exit
+    sha_url=$(printf '%s\n' "$release_json" | awk -v archive="$asset_url" '
+        {
+            rest = $0
+            target_sha = archive ".sha256"
+            while (match(rest, /"browser_download_url":"([^"]+)"/, m)) {
+                url = m[1]
+                if (url == target_sha) {
+                    print url
+                    exit
+                }
+                rest = substr(rest, RSTART + RLENGTH)
             }
         }
     ')
 
-    version=$(printf '%s\n' "$release_json" | awk -F'"' '
-        /"tag_name"/ {
-            v=$4
-            sub(/^v/, "", v)
-            print v
+    version=$(printf '%s\n' "$release_json" | awk '
+        match($0, /"tag_name":"v?([^"]+)"/, m) {
+            print m[1]
             exit
         }
     ')
@@ -156,6 +163,17 @@ verify_checksum() {
         warn "failed to download checksum file; skipping verification"
         return 0
     }
+
+    checksum_basename=$(basename "$archive_path")
+    if ! grep -q "  $checksum_basename$" "$checksum_file" 2>/dev/null; then
+        tmp_checksum_file="$checksum_file.tmp"
+        if awk -v name="$checksum_basename" '{print $1 "  " name}' "$checksum_file" > "$tmp_checksum_file" 2>/dev/null; then
+            mv "$tmp_checksum_file" "$checksum_file"
+        else
+            warn "failed to normalize checksum file; skipping verification"
+            return 0
+        fi
+    fi
 
     (cd "$TMPDIR" && sha256sum -c "$(basename "$checksum_file")") || fatal "checksum verification failed"
 }
