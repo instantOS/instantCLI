@@ -49,3 +49,7 @@ pub fn bruh() -> Result<()> {
 pub fn asciiquarium() -> Result<()> {
     utils::launch_in_terminal("asciiquarium")
 }
+
+pub fn cmatrix() -> Result<()> {
+    utils::launch_in_terminal("cmatrix")
+}

@@ -55,6 +55,13 @@ pub const ASSISTS: &[AssistEntry] = &[
                 execute: actions::joke::bruh,
             }),
             AssistEntry::Action(AssistAction {
+                key: 'c',
+                description: "CMatrix: Run the Matrix rain",
+                icon: NerdFont::Terminal,
+                dependencies: &[Dependency::os(&CMATRIX)],
+                execute: actions::joke::cmatrix,
+            }),
+            AssistEntry::Action(AssistAction {
                 key: 'q',
                 description: "Asciiquarium: Launch the terminal aquarium",
                 icon: NerdFont::Terminal,
