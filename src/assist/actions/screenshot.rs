@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::assist::utils::AreaSelectionConfig;
+use crate::assist::utils::{AreaSelectionConfig, capture_area_to_file, capture_area_to_memory, copy_image_to_clipboard, copy_to_clipboard, generate_screenshot_filename, show_notification};
 use crate::common::display_server::DisplayServer;
 use crate::common::paths;
 
@@ -52,8 +52,6 @@ pub fn screenshot_annotate() -> Result<()> {
 }
 
 pub fn screenshot_to_clipboard() -> Result<()> {
-    use crate::assist::utils::{capture_area_to_memory, copy_image_to_clipboard};
-
     let config = AreaSelectionConfig::new();
 
     let geometry = match config.select_area() {
@@ -70,8 +68,6 @@ pub fn screenshot_to_clipboard() -> Result<()> {
 }
 
 pub fn screenshot_to_clipboard_fullscreen() -> Result<()> {
-    use crate::assist::utils::copy_image_to_clipboard;
-
     let display_server = DisplayServer::detect();
     let screenshot_data = capture_fullscreen_to_memory(&display_server)?;
 
@@ -126,8 +122,6 @@ fn capture_fullscreen_to_memory(display_server: &DisplayServer) -> Result<Vec<u8
 }
 
 pub fn screenshot_to_imgur() -> Result<()> {
-    use crate::assist::utils::{capture_area_to_memory, copy_to_clipboard};
-
     let config = AreaSelectionConfig::new();
 
     let geometry = match config.select_area() {
@@ -144,11 +138,8 @@ pub fn screenshot_to_imgur() -> Result<()> {
     // Copy link to clipboard
     copy_to_clipboard(imgur_link.as_bytes(), display_server)?;
 
-    // Show notification
-    Command::new("notify-send")
-        .args(["Imgur link copied", &imgur_link])
-        .spawn()
-        .context("Failed to show notification")?;
+    // Show notification using shared utility
+    show_notification("Imgur link copied", &imgur_link)?;
 
     Ok(())
 }
@@ -213,9 +204,8 @@ async fn upload_to_imgur_async(image_data: &[u8]) -> Result<String> {
 pub fn fullscreen_screenshot() -> Result<()> {
     let display_server = DisplayServer::detect();
 
-    // Generate filename with timestamp
-    let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S");
-    let filename = format!("{}.png", timestamp);
+    // Generate filename with timestamp using shared utility
+    let filename = generate_screenshot_filename();
 
     // Get pictures directory
     let pictures_dir = paths::pictures_dir().context("Failed to determine pictures directory")?;
@@ -260,11 +250,13 @@ pub fn fullscreen_screenshot() -> Result<()> {
         anyhow::bail!("Unknown display server - cannot take fullscreen screenshot");
     }
 
+    // Use shared notification utility
+    show_notification("Screenshot saved", &output_path.to_str().unwrap_or(""))?;
+
     Ok(())
 }
 
 pub fn screenshot_ocr() -> Result<()> {
-    use crate::assist::utils::{capture_area_to_file, copy_to_clipboard};
 
     let config = AreaSelectionConfig::new();
 
@@ -298,10 +290,7 @@ pub fn screenshot_ocr() -> Result<()> {
         .to_string();
 
     if detected_text.is_empty() {
-        Command::new("notify-send")
-            .args(["-a", "instantASSIST", "No text detected"])
-            .spawn()
-            .context("Failed to show notification")?;
+        show_notification("No text detected", "")?;
         return Ok(());
     }
 
@@ -309,10 +298,34 @@ pub fn screenshot_ocr() -> Result<()> {
     copy_to_clipboard(detected_text.as_bytes(), display_server)?;
 
     // Show notification with detected text
-    Command::new("notify-send")
-        .args(["-a", "instantASSIST", "Detected text", &detected_text])
-        .spawn()
-        .context("Failed to show notification")?;
+    show_notification("Detected text", &detected_text)?;
+
+    Ok(())
+}
+
+pub fn screenshot_area_to_pictures() -> Result<()> {
+
+    let config = AreaSelectionConfig::new();
+
+    let geometry = match config.select_area() {
+        Ok(geom) => geom,
+        Err(_) => return Ok(()),
+    };
+
+    let display_server = config.display_server();
+
+    // Generate filename with timestamp using shared utility
+    let filename = generate_screenshot_filename();
+
+    // Get pictures directory and create file path
+    let pictures_dir = paths::pictures_dir().context("Failed to determine pictures directory")?;
+    let image_path = pictures_dir.join(&filename);
+
+    // Capture the selected area to file
+    capture_area_to_file(&geometry, &image_path, display_server)?;
+
+    // Use shared notification utility
+    show_notification("Screenshot saved", &image_path.to_str().unwrap_or(""))?;
 
     Ok(())
 }

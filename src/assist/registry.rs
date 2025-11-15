@@ -153,6 +153,13 @@ pub const ASSISTS: &[AssistEntry] = &[
                 execute: actions::screenshot::screenshot_to_clipboard_fullscreen,
             }),
             AssistEntry::Action(AssistAction {
+                key: 'p',
+                description: "Area to Pictures: Selected area screenshot to Pictures folder",
+                icon: NerdFont::FolderOpen,
+                dependencies: &[Dependency::os(&SCREENSHOT_CLIPBOARD_PACKAGES[0])],
+                execute: actions::screenshot::screenshot_area_to_pictures,
+            }),
+            AssistEntry::Action(AssistAction {
                 key: 'r',
                 description: "OCR Text Recognition: Extract text from selected area",
                 icon: NerdFont::FileText,
