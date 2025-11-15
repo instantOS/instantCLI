@@ -1,6 +1,8 @@
 use anyhow::Result;
 use std::process::Command;
 
+use crate::assist::utils;
+
 pub fn bruh() -> Result<()> {
     // Create cache directory if it doesn't exist
     let cache_dir = dirs::cache_dir().unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
@@ -42,4 +44,8 @@ pub fn bruh() -> Result<()> {
         .status()?;
 
     Ok(())
+}
+
+pub fn asciiquarium() -> Result<()> {
+    utils::launch_in_terminal("asciiquarium")
 }

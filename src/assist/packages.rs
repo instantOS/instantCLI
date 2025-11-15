@@ -40,6 +40,8 @@ pub static FLAMESHOT: RequiredPackage = pkg!("flameshot");
 pub static MPV: RequiredPackage = pkg!("mpv");
 pub static TESSERACT: RequiredPackage = pkg!("tesseract");
 pub static BRIGHTNESSCTL: RequiredPackage = pkg!("brightnessctl");
+pub static ASCIICAQUARIUM: RequiredPackage = pkg!("asciiquarium");
+pub static CMATRIX: RequiredPackage = pkg!("cmatrix");
 
 // Flatpak packages
 pub static EMOTE: FlatpakPackage = FlatpakPackage {

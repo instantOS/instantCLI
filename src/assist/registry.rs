@@ -46,13 +46,22 @@ pub const ASSISTS: &[AssistEntry] = &[
         key: 'j',
         description: "Jokes: Quick fun assists",
         icon: NerdFont::Star,
-        children: &[AssistEntry::Action(AssistAction {
-            key: 'b',
-            description: "Bruh: Display a bruh moment",
-            icon: NerdFont::Cross,
-            dependencies: &[Dependency::os(&MPV)],
-            execute: actions::joke::bruh,
-        })],
+        children: &[
+            AssistEntry::Action(AssistAction {
+                key: 'b',
+                description: "Bruh: Display a bruh moment",
+                icon: NerdFont::Cross,
+                dependencies: &[Dependency::os(&MPV)],
+                execute: actions::joke::bruh,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'q',
+                description: "Asciiquarium: Launch the terminal aquarium",
+                icon: NerdFont::Terminal,
+                dependencies: &[Dependency::os(&ASCIICAQUARIUM)],
+                execute: actions::joke::asciiquarium,
+            }),
+        ],
     }),
     AssistEntry::Action(AssistAction {
         key: 'c',
