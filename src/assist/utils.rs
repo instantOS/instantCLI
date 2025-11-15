@@ -402,3 +402,27 @@ pub fn capture_area_to_file(
 
     Ok(())
 }
+
+/// Show a notification using notify-send
+pub fn show_notification(title: &str, message: &str) -> Result<()> {
+    Command::new("notify-send")
+        .args(["-a", "instantASSIST", title, message])
+        .spawn()
+        .context("Failed to show notification")?;
+    Ok(())
+}
+
+/// Show a notification with icon using notify-send
+pub fn show_notification_with_icon(title: &str, message: &str, icon: &str) -> Result<()> {
+    Command::new("notify-send")
+        .args(["-a", "instantASSIST", "-i", icon, title, message])
+        .spawn()
+        .context("Failed to show notification")?;
+    Ok(())
+}
+
+/// Generate screenshot filename with timestamp
+pub fn generate_screenshot_filename() -> String {
+    let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S");
+    format!("{}.png", timestamp)
+}
