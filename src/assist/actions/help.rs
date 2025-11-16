@@ -83,21 +83,25 @@ fn generate_entry_tree(
     match entry {
         registry::AssistEntry::Action(action) => {
             let key_chord = format!("{}{}", key_prefix, action.key);
+            let icon = char::from(action.icon);
             output.push_str(&format!(
-                "{}{} {} {}\n",
+                "{}{} {} {} {}\n",
                 prefix,
                 connector,
                 key_chord.green().bold(),
+                icon,
                 action.description.bold(),
             ));
         }
         registry::AssistEntry::Group(group) => {
             let key_chord = format!("{}{}", key_prefix, group.key);
+            let icon = char::from(group.icon);
             output.push_str(&format!(
-                "{}{} {} {}\n",
+                "{}{} {} {} {}\n",
                 prefix,
                 connector,
                 key_chord.yellow().bold(),
+                icon,
                 group.description.bold(),
             ));
 

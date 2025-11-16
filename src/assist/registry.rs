@@ -101,7 +101,7 @@ pub const ASSISTS: &[AssistEntry] = &[
     AssistEntry::Action(AssistAction {
         key: 'q',
         description: "QR Encode Clipboard: Generate QR code from clipboard",
-        icon: NerdFont::Square,
+        icon: NerdFont::Code,
         dependencies: &[Dependency::os(&QRENCODE)],
         execute: actions::qr::qr_encode_clipboard,
     }),

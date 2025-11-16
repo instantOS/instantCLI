@@ -302,6 +302,7 @@ pub enum ApplyOverride {
     Choice(&'static SettingOption),
 }
 
+//TODO: document what this does
 pub fn apply_definition(
     ctx: &mut SettingsContext,
     definition: &'static SettingDefinition,
@@ -310,7 +311,7 @@ pub fn apply_definition(
     match (&definition.kind, override_value) {
         (
             SettingKind::Toggle {
-                key,
+                key: _,
                 apply: Some(apply_fn),
                 ..
             },
