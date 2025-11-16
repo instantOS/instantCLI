@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6](https://github.com/instantOS/instantCLI/compare/v0.5.5...v0.5.6) - 2025-11-16
+
+### Fixed
+
+- fix install script on ubuntu
+
+### Other
+
+- compat with older fzf versions
+- self update
+- format and sudo
+- format
+- make deps cleaner
+- init qr screenshotting
+- add icons to assist help menu
+
 ## [0.5.5](https://github.com/instantOS/instantCLI/compare/v0.5.4...v0.5.5) - 2025-11-16
 
 ### Fixed
