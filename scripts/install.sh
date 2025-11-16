@@ -109,8 +109,10 @@ find_asset_urls() {
     asset_url=$(printf '%s\n' "$release_json" | awk -v target="$TARGET" '
         {
             rest = $0
-            while (match(rest, /"browser_download_url":"([^"]+)"/, m)) {
-                url = m[1]
+            while (match(rest, /"browser_download_url":"([^"]+)"/)) {
+                url_start = index(rest, "\"browser_download_url\":\"") + 24
+                url_end = index(substr(rest, url_start), "\"")
+                url = substr(rest, url_start, url_end - 1)
                 if (index(url, target) && (url ~ /\.tar\.zst$/ || url ~ /\.tgz$/)) {
                     print url
                     exit
@@ -126,8 +128,10 @@ find_asset_urls() {
         {
             rest = $0
             target_sha = archive ".sha256"
-            while (match(rest, /"browser_download_url":"([^"]+)"/, m)) {
-                url = m[1]
+            while (match(rest, /"browser_download_url":"([^"]+)"/)) {
+                url_start = index(rest, "\"browser_download_url\":\"") + 24
+                url_end = index(substr(rest, url_start), "\"")
+                url = substr(rest, url_start, url_end - 1)
                 if (url == target_sha) {
                     print url
                     exit
@@ -138,8 +142,12 @@ find_asset_urls() {
     ')
 
     version=$(printf '%s\n' "$release_json" | awk '
-        match($0, /"tag_name":"v?([^"]+)"/, m) {
-            print m[1]
+        match($0, /"tag_name":"v?([^"]+)"/) {
+            tag_start = index($0, "\"tag_name\":\"") + 12
+            tag_end = index(substr($0, tag_start), "\"")
+            tag = substr($0, tag_start, tag_end - 1)
+            sub(/^v/, "", tag)
+            print tag
             exit
         }
     ')
