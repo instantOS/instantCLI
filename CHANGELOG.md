@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4](https://github.com/instantOS/instantCLI/compare/v0.5.3...v0.5.4) - 2025-11-16
+
+### Fixed
+
+- fix install script
+
+### Other
+
+- dynamic swaymsg reload
+- switch out pactl with wpctl
+- rename add to clone and make init more user friendly
+- add area to pictures assist
+- add notification utils
+- add fullscreen assist
+- add cmatrix assist
+- add asciiquarium assist
+
 ## [0.5.3](https://github.com/instantOS/instantCLI/compare/v0.5.2...v0.5.3) - 2025-11-14
 
 ### Other
