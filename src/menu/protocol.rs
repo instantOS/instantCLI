@@ -425,6 +425,6 @@ mod tests {
         assert_eq!(deserialized.max, 100);
         assert_eq!(deserialized.value, Some(42));
         assert_eq!(deserialized.label.as_deref(), Some("Volume"));
-        assert_eq!(deserialized.command.len(), 2);
+        assert_eq!(deserialized.command.len(), 4);
     }
 }
