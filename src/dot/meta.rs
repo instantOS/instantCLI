@@ -288,6 +288,14 @@ pub fn init_or_create_default_repo(
 
     let (repo_name, repo_path) = next_available_repo_name(config);
 
+    if !non_interactive {
+        println!(
+            "Creating new dotfile repository at: {}",
+            repo_path.display()
+        );
+        println!();
+    }
+
     let repo = Repository::init(&repo_path)
         .with_context(|| format!("creating git repository at {}", repo_path.display()))?;
 

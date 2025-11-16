@@ -45,6 +45,7 @@ base64 = "0.22.1"
 dialoguer = "0.12.0"
 pulldown-cmark = { version = "0.12.2", features = ["simd"] }
 serde_yaml = "0.9.34"
+nix = { version = "0.29", features = ["fs"] }
 
 
 [dev-dependencies]

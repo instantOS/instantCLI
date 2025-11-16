@@ -13,6 +13,7 @@ mod menu;
 mod menu_utils;
 mod restic;
 mod scratchpad;
+mod self_update;
 mod settings;
 mod ui;
 mod video;
@@ -173,6 +174,8 @@ enum Commands {
         #[command(subcommand)]
         command: completions::CompletionCommands,
     },
+    /// Update to the latest version
+    SelfUpdate,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -476,6 +479,13 @@ async fn main() -> Result<()> {
                 println!("{instructions}");
             }
         },
+        Some(Commands::SelfUpdate) => {
+            execute_with_error_handling(
+                self_update::self_update().await,
+                "Error during self-update",
+                None,
+            )?;
+        }
         None => {
             emit(
                 Level::Info,
