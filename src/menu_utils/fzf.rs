@@ -5,6 +5,15 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use super::version::USE_LEGACY_ARGS;
+
+fn check_and_set_legacy_mode(stderr: &[u8]) {
+    let stderr_str = String::from_utf8_lossy(stderr);
+    if stderr_str.contains("unknown option") || stderr_str.contains("invalid option") {
+        USE_LEGACY_ARGS.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 fn shell_escape(s: &str) -> String {
     if s.is_empty() {
         return "''".to_string();
@@ -262,6 +271,15 @@ impl FzfWrapper {
                     && (code == 130 || code == 143)
                 {
                     return Ok(FzfResult::Cancelled);
+                }
+
+                if !result.status.success()
+                    && !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    check_and_set_legacy_mode(&result.stderr);
+                    if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+                        return self.select(items);
+                    }
                 }
 
                 let stdout = String::from_utf8_lossy(&result.stdout);
@@ -563,7 +581,7 @@ impl FzfBuilder {
             cmd.arg("--prompt").arg(format!("{prompt} "));
         }
 
-        for arg in self.additional_args {
+        for arg in &self.additional_args {
             cmd.arg(arg);
         }
 
@@ -587,6 +605,13 @@ impl FzfBuilder {
             && (code == 130 || code == 143)
         {
             return Ok(String::new());
+        }
+
+        if !output.status.success() && !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+            check_and_set_legacy_mode(&output.stderr);
+            if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+                return self.input_dialog();
+            }
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -645,12 +670,15 @@ impl FzfBuilder {
     }
 
     fn execute_confirm(self) -> Result<ConfirmResult> {
-        let (yes_text, no_text) =
-            if let DialogType::Confirmation { yes_text, no_text } = self.dialog_type {
-                (yes_text, no_text)
-            } else {
-                return Ok(ConfirmResult::Cancelled);
-            };
+        let (yes_text, no_text) = if let DialogType::Confirmation {
+            ref yes_text,
+            ref no_text,
+        } = self.dialog_type
+        {
+            (yes_text.clone(), no_text.clone())
+        } else {
+            return Ok(ConfirmResult::Cancelled);
+        };
 
         let mut cmd = Command::new("fzf");
         cmd.arg("--layout").arg("reverse");
@@ -661,7 +689,7 @@ impl FzfBuilder {
 
         cmd.arg("--prompt").arg("> ");
 
-        for arg in self.additional_args {
+        for arg in &self.additional_args {
             cmd.arg(arg);
         }
 
@@ -686,6 +714,12 @@ impl FzfBuilder {
         crate::menu::server::unregister_menu_process(pid);
 
         if !output.status.success() {
+            if !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+                check_and_set_legacy_mode(&output.stderr);
+                if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+                    return self.confirm_dialog();
+                }
+            }
             return Ok(ConfirmResult::Cancelled);
         }
 
@@ -704,8 +738,12 @@ impl FzfBuilder {
     }
 
     fn execute_message(self) -> Result<()> {
-        let (ok_text, title) = if let DialogType::Message { ok_text, title } = self.dialog_type {
-            (ok_text, title)
+        let (ok_text, title) = if let DialogType::Message {
+            ref ok_text,
+            ref title,
+        } = self.dialog_type
+        {
+            (ok_text.clone(), title.clone())
         } else {
             return Ok(());
         };
@@ -723,7 +761,7 @@ impl FzfBuilder {
 
         cmd.arg("--prompt").arg("- ");
 
-        for arg in self.additional_args {
+        for arg in &self.additional_args {
             cmd.arg(arg);
         }
 
@@ -749,10 +787,21 @@ impl FzfBuilder {
             return Ok(());
         }
 
+        if !output.status.success() && !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+            check_and_set_legacy_mode(&output.stderr);
+            if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+                return self.message_dialog();
+            }
+        }
+
         Ok(())
     }
 
     fn default_args() -> Vec<String> {
+        if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+            return Self::legacy_args();
+        }
+
         let mut args = vec![
             "--margin".to_string(),
             "10%,2%".to_string(),
@@ -764,6 +813,10 @@ impl FzfBuilder {
     }
 
     fn input_args() -> Vec<String> {
+        if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+            return Self::legacy_args();
+        }
+
         let mut args = vec![
             "--margin".to_string(),
             "20%,2%".to_string(),
@@ -775,6 +828,10 @@ impl FzfBuilder {
     }
 
     fn confirm_args() -> Vec<String> {
+        if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+            return Self::legacy_args();
+        }
+
         let mut args = vec![
             "--margin".to_string(),
             "20%,2%".to_string(),
@@ -787,11 +844,18 @@ impl FzfBuilder {
         args
     }
 
+    fn legacy_args() -> Vec<String> {
+        vec![]
+    }
+
     fn password_args() -> Vec<String> {
         vec![]
     }
 
     fn theme_args() -> Vec<String> {
+        if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+            return vec![];
+        }
         vec![
             "--color=bg+:#313244".to_string(),
             "--color=bg:#1E1E2E".to_string(),
