@@ -3,13 +3,12 @@ use std::io::Write;
 use std::process::Command;
 
 use crate::assist::utils::{
-    capture_area_to_file, copy_to_clipboard, show_notification, AreaSelectionConfig,
+    AreaSelectionConfig, capture_area_to_file, copy_to_clipboard, show_notification,
 };
 use crate::common::display_server::DisplayServer;
 use crate::common::paths;
 
 pub fn qr_encode_clipboard() -> Result<()> {
-
     let display_server = DisplayServer::detect();
 
     let (clipboard_cmd, clipboard_args) = display_server.get_clipboard_command();
