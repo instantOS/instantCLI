@@ -297,9 +297,13 @@ fn find_binary_in_dir(search_dir: &Path, bin_name: &str) -> Result<PathBuf> {
 }
 
 /// Install the binary (with or without sudo)
+/// Uses a two-phase approach to avoid "Text file busy" error
 fn install_binary(binary_path: &Path, target_path: &Path, needs_sudo: bool) -> Result<()> {
     use std::process::Command;
 
+    // Create a temporary path alongside the target for atomic replacement
+    let temp_target = target_path.with_extension("new");
+    
     if needs_sudo {
         emit(
             Level::Info,
@@ -311,26 +315,44 @@ fn install_binary(binary_path: &Path, target_path: &Path, needs_sudo: bool) -> R
             None,
         );
 
+        // First, install to temporary location
         let status = Command::new("sudo")
             .arg("install")
             .arg("-m")
             .arg("755")
             .arg(binary_path)
-            .arg(target_path)
+            .arg(&temp_target)
             .status()
-            .context("Failed to execute sudo install")?;
+            .context("Failed to execute sudo install to temporary location")?;
 
         if !status.success() {
             return Err(anyhow!("sudo install failed"));
         }
-    } else {
-        fs::copy(binary_path, target_path).context("Failed to copy binary")?;
 
-        let mut perms = fs::metadata(target_path)
+        // Then atomically move it to the target location
+        let status = Command::new("sudo")
+            .arg("mv")
+            .arg("-f")
+            .arg(&temp_target)
+            .arg(target_path)
+            .status()
+            .context("Failed to move binary to final location")?;
+
+        if !status.success() {
+            return Err(anyhow!("sudo mv failed"));
+        }
+    } else {
+        // Copy to temporary location first
+        fs::copy(binary_path, &temp_target).context("Failed to copy binary to temporary location")?;
+
+        let mut perms = fs::metadata(&temp_target)
             .context("Failed to get binary permissions")?
             .permissions();
         perms.set_mode(0o755);
-        fs::set_permissions(target_path, perms).context("Failed to set binary permissions")?;
+        fs::set_permissions(&temp_target, perms).context("Failed to set binary permissions")?;
+
+        // Atomically rename to final location (this works even on running executables)
+        fs::rename(&temp_target, target_path).context("Failed to move binary to final location")?;
     }
 
     Ok(())
