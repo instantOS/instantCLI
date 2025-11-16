@@ -33,35 +33,23 @@ macro_rules! pkg {
     };
 }
 
-// Single packages
-pub static PLAYERCTL: RequiredPackage = pkg!("playerctl");
-pub static QRENCODE: RequiredPackage = pkg!("qrencode");
-pub static ZBAR: RequiredPackage = pkg!("zbar", "zbarimg");
-pub static FLAMESHOT: RequiredPackage = pkg!("flameshot");
-pub static MPV: RequiredPackage = pkg!("mpv");
-pub static TESSERACT: RequiredPackage = pkg!("tesseract");
-pub static BRIGHTNESSCTL: RequiredPackage = pkg!("brightnessctl");
-pub static ASCIICAQUARIUM: RequiredPackage = pkg!("asciiquarium");
-pub static CMATRIX: RequiredPackage = pkg!("cmatrix");
-
-// Flatpak packages
-pub static EMOTE: FlatpakPackage = FlatpakPackage {
-    name: "Emote",
-    app_id: "com.tomjwatson.Emote",
-    tests: &[crate::common::requirements::InstallTest::CommandSucceeds {
-        program: "flatpak",
-        args: &["info", "com.tomjwatson.Emote"],
-    }],
-};
-
-// Screenshot tools
-static SLURP: RequiredPackage = pkg!("slurp");
-static SLOP: RequiredPackage = pkg!("slop");
-static GRIM: RequiredPackage = pkg!("grim");
-static IMAGEMAGICK: RequiredPackage = pkg!("imagemagick", "import");
-static WL_CLIPBOARD: RequiredPackage = pkg!("wl-clipboard", "wl-copy");
-static XCLIP: RequiredPackage = pkg!("xclip");
-static LIBNOTIFY: RequiredPackage = RequiredPackage {
+// Package definitions - referenced directly in registry.rs
+pub(super) static PLAYERCTL: RequiredPackage = pkg!("playerctl");
+pub(super) static QRENCODE: RequiredPackage = pkg!("qrencode");
+pub(super) static ZBAR: RequiredPackage = pkg!("zbar", "zbarimg");
+pub(super) static FLAMESHOT: RequiredPackage = pkg!("flameshot");
+pub(super) static MPV: RequiredPackage = pkg!("mpv");
+pub(super) static TESSERACT: RequiredPackage = pkg!("tesseract");
+pub(super) static BRIGHTNESSCTL: RequiredPackage = pkg!("brightnessctl");
+pub(super) static ASCIIQUARIUM: RequiredPackage = pkg!("asciiquarium");
+pub(super) static CMATRIX: RequiredPackage = pkg!("cmatrix");
+pub(super) static SLURP: RequiredPackage = pkg!("slurp");
+pub(super) static SLOP: RequiredPackage = pkg!("slop");
+pub(super) static GRIM: RequiredPackage = pkg!("grim");
+pub(super) static IMAGEMAGICK: RequiredPackage = pkg!("imagemagick", "import");
+pub(super) static WL_CLIPBOARD: RequiredPackage = pkg!("wl-clipboard", "wl-copy");
+pub(super) static XCLIP: RequiredPackage = pkg!("xclip");
+pub(super) static LIBNOTIFY: RequiredPackage = RequiredPackage {
     name: "libnotify",
     arch_package_name: Some("libnotify"),
     ubuntu_package_name: Some("libnotify-bin"),
@@ -70,38 +58,11 @@ static LIBNOTIFY: RequiredPackage = RequiredPackage {
     )],
 };
 
-// Composed package sets
-pub static SCREENSHOT_FULLSCREEN_PACKAGES: &[RequiredPackage] = &[GRIM, IMAGEMAGICK];
-
-pub static SCREENSHOT_CLIPBOARD_PACKAGES: &[RequiredPackage] =
-    &[SLURP, SLOP, GRIM, IMAGEMAGICK, WL_CLIPBOARD, XCLIP];
-
-pub static SCREENSHOT_IMGUR_PACKAGES: &[RequiredPackage] = &[
-    SLURP,
-    SLOP,
-    GRIM,
-    IMAGEMAGICK,
-    WL_CLIPBOARD,
-    XCLIP,
-    LIBNOTIFY,
-];
-
-pub static SCREENSHOT_OCR_PACKAGES: &[RequiredPackage] = &[
-    SLURP,
-    SLOP,
-    GRIM,
-    IMAGEMAGICK,
-    WL_CLIPBOARD,
-    XCLIP,
-    TESSERACT,
-    LIBNOTIFY,
-];
-
-pub static QR_SCAN_PACKAGES: &[RequiredPackage] = &[
-    SLURP,
-    SLOP,
-    GRIM,
-    IMAGEMAGICK,
-    ZBAR,
-    LIBNOTIFY,
-];
+pub(super) static EMOTE: FlatpakPackage = FlatpakPackage {
+    name: "Emote",
+    app_id: "com.tomjwatson.Emote",
+    tests: &[crate::common::requirements::InstallTest::CommandSucceeds {
+        program: "flatpak",
+        args: &["info", "com.tomjwatson.Emote"],
+    }],
+};

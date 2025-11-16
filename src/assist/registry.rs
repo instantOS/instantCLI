@@ -2,7 +2,9 @@ use crate::common::dependencies::Dependency;
 use crate::ui::prelude::NerdFont;
 
 use super::actions;
-use super::packages::*;
+use super::packages;
+
+use packages::*;
 
 #[derive(Debug, Clone)]
 pub enum AssistEntry {
@@ -65,7 +67,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 key: 'q',
                 description: "Asciiquarium: Launch the terminal aquarium",
                 icon: NerdFont::Terminal,
-                dependencies: &[Dependency::os(&ASCIICAQUARIUM)],
+                dependencies: &[Dependency::os(&ASCIIQUARIUM)],
                 execute: actions::joke::asciiquarium,
             }),
         ],
@@ -121,7 +123,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 key: 'f',
                 description: "Fullscreen to Pictures: Fullscreen screenshot to Pictures folder",
                 icon: NerdFont::Desktop,
-                dependencies: &[Dependency::os(&SCREENSHOT_FULLSCREEN_PACKAGES[0])],
+                dependencies: &[Dependency::os(&GRIM), Dependency::os(&IMAGEMAGICK)],
                 execute: actions::screenshot::fullscreen_screenshot,
             }),
             AssistEntry::Action(AssistAction {
@@ -135,42 +137,87 @@ pub const ASSISTS: &[AssistEntry] = &[
                 key: 'c',
                 description: "Screenshot to Clipboard: Capture area to clipboard",
                 icon: NerdFont::Clipboard,
-                dependencies: &[Dependency::os(&SCREENSHOT_CLIPBOARD_PACKAGES[0])],
+                dependencies: &[
+                    Dependency::os(&SLURP),
+                    Dependency::os(&SLOP),
+                    Dependency::os(&GRIM),
+                    Dependency::os(&IMAGEMAGICK),
+                    Dependency::os(&WL_CLIPBOARD),
+                    Dependency::os(&XCLIP),
+                ],
                 execute: actions::screenshot::screenshot_to_clipboard,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'i',
                 description: "Screenshot to Imgur: Capture area and upload to Imgur",
                 icon: NerdFont::Upload,
-                dependencies: &[Dependency::os(&SCREENSHOT_IMGUR_PACKAGES[0])],
+                dependencies: &[
+                    Dependency::os(&SLURP),
+                    Dependency::os(&SLOP),
+                    Dependency::os(&GRIM),
+                    Dependency::os(&IMAGEMAGICK),
+                    Dependency::os(&WL_CLIPBOARD),
+                    Dependency::os(&XCLIP),
+                    Dependency::os(&LIBNOTIFY),
+                ],
                 execute: actions::screenshot::screenshot_to_imgur,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'm',
                 description: "Fullscreen to Clipboard: Fullscreen screenshot directly to clipboard",
                 icon: NerdFont::Desktop,
-                dependencies: &[Dependency::os(&SCREENSHOT_CLIPBOARD_PACKAGES[0])],
+                dependencies: &[
+                    Dependency::os(&SLURP),
+                    Dependency::os(&SLOP),
+                    Dependency::os(&GRIM),
+                    Dependency::os(&IMAGEMAGICK),
+                    Dependency::os(&WL_CLIPBOARD),
+                    Dependency::os(&XCLIP),
+                ],
                 execute: actions::screenshot::screenshot_to_clipboard_fullscreen,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'p',
                 description: "Area to Pictures: Selected area screenshot to Pictures folder",
                 icon: NerdFont::FolderOpen,
-                dependencies: &[Dependency::os(&SCREENSHOT_CLIPBOARD_PACKAGES[0])],
+                dependencies: &[
+                    Dependency::os(&SLURP),
+                    Dependency::os(&SLOP),
+                    Dependency::os(&GRIM),
+                    Dependency::os(&IMAGEMAGICK),
+                    Dependency::os(&WL_CLIPBOARD),
+                    Dependency::os(&XCLIP),
+                ],
                 execute: actions::screenshot::screenshot_area_to_pictures,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'q',
                 description: "QR Code Scanner: Scan QR code from selected area",
                 icon: NerdFont::Code,
-                dependencies: &[Dependency::os(&QR_SCAN_PACKAGES[0])],
+                dependencies: &[
+                    Dependency::os(&SLURP),
+                    Dependency::os(&SLOP),
+                    Dependency::os(&GRIM),
+                    Dependency::os(&IMAGEMAGICK),
+                    Dependency::os(&ZBAR),
+                    Dependency::os(&LIBNOTIFY),
+                ],
                 execute: actions::qr::qr_scan,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'r',
                 description: "OCR Text Recognition: Extract text from selected area",
                 icon: NerdFont::FileText,
-                dependencies: &[Dependency::os(&SCREENSHOT_OCR_PACKAGES[0])],
+                dependencies: &[
+                    Dependency::os(&SLURP),
+                    Dependency::os(&SLOP),
+                    Dependency::os(&GRIM),
+                    Dependency::os(&IMAGEMAGICK),
+                    Dependency::os(&WL_CLIPBOARD),
+                    Dependency::os(&XCLIP),
+                    Dependency::os(&TESSERACT),
+                    Dependency::os(&LIBNOTIFY),
+                ],
                 execute: actions::screenshot::screenshot_ocr,
             }),
         ],
