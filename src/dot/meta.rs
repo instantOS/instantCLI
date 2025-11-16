@@ -264,12 +264,12 @@ pub fn handle_init_command(
                 Level::Success,
                 "dot.init.initialized_in_place",
                 &format!(
-                    "{} Initialized instantdots.toml in {}",
-                    char::from(NerdFont::Check),
-                    path.display()
+                    "{} Added instantCLI dotfile metadata to existing repository",
+                    char::from(NerdFont::Check)
                 ),
                 None,
             );
+            println!("  Location: {}", path.display());
         }
         InitOutcome::CreatedDefault { info } => {
             let CreatedRepoInfo {
@@ -352,6 +352,11 @@ pub fn init_or_create_default_repo(
     non_interactive: bool,
 ) -> Result<InitOutcome> {
     if Repository::open(current_dir).is_ok() {
+        if !non_interactive {
+            println!("Adding instantCLI dotfile metadata to existing git repository");
+            println!("Location: {}", current_dir.display());
+            println!();
+        }
         init_repo(current_dir, name, non_interactive)?;
         return Ok(InitOutcome::InitializedInPlace {
             path: current_dir.to_path_buf(),
