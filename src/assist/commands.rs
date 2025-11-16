@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{self, Write};
 
 use crate::menu::client;
+use crate::ui::prelude::*;
 
 use super::execute::{execute_assist, install_dependencies_for_assist};
 use super::registry;
@@ -346,7 +347,21 @@ fn export_sway_config(output_path: Option<std::path::PathBuf>) -> Result<()> {
 
 /// Set up Sway integration by exporting config and adding include to main config
 fn setup_sway_integration() -> Result<()> {
+    use std::collections::hash_map::DefaultHasher;
     use std::fs;
+    use std::hash::{Hash, Hasher};
+
+    // Helper to compute hash of a file
+    fn hash_file(path: &std::path::Path) -> Result<u64> {
+        if !path.exists() {
+            return Ok(0); // Return 0 for non-existent files
+        }
+        let content =
+            fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        Ok(hasher.finish())
+    }
 
     // Determine paths
     let config_dir = dirs::config_dir().context("Unable to determine user config directory")?;
@@ -358,13 +373,6 @@ fn setup_sway_integration() -> Result<()> {
     fs::create_dir_all(&sway_config_dir)
         .with_context(|| format!("Failed to create directory: {}", sway_config_dir.display()))?;
 
-    // Export the assist config
-    println!(
-        "Exporting assists config to {}",
-        instantassist_config_path.display()
-    );
-    export_sway_config(Some(instantassist_config_path.clone()))?;
-
     // Check if main config exists
     if !main_config_path.exists() {
         anyhow::bail!(
@@ -372,6 +380,13 @@ fn setup_sway_integration() -> Result<()> {
             main_config_path.display()
         );
     }
+
+    // Compute initial hashes
+    let initial_main_hash = hash_file(&main_config_path)?;
+    let initial_assist_hash = hash_file(&instantassist_config_path)?;
+
+    // Export the assist config
+    export_sway_config(Some(instantassist_config_path.clone()))?;
 
     // Read the main config
     let config_content = fs::read_to_string(&main_config_path)
@@ -381,33 +396,104 @@ fn setup_sway_integration() -> Result<()> {
     const MARKER_START: &str = "# BEGIN instantCLI assists integration (managed automatically)";
     const MARKER_END: &str = "# END instantCLI assists integration";
 
-    if config_content.contains(MARKER_START) {
-        println!("✓ Sway config already includes instantassist integration");
-        println!("  Config file: {}", instantassist_config_path.display());
-        return Ok(());
+    if !config_content.contains(MARKER_START) {
+        // Add include line with markers (use tilde notation for home directory)
+        let home_dir = dirs::home_dir().context("Unable to determine home directory")?;
+        let relative_path = instantassist_config_path
+            .strip_prefix(&home_dir)
+            .ok()
+            .map(|p| format!("~/{}", p.display()))
+            .unwrap_or_else(|| instantassist_config_path.display().to_string());
+
+        let include_line = format!("include {}", relative_path);
+        let integration_block = format!("\n{}\n{}\n{}\n", MARKER_START, include_line, MARKER_END);
+
+        let new_config_content = format!("{}{}", config_content, integration_block);
+
+        // Write back the config
+        fs::write(&main_config_path, new_config_content)
+            .with_context(|| format!("Failed to write {}", main_config_path.display()))?;
     }
 
-    // Add include line with markers (use tilde notation for home directory)
-    let home_dir = dirs::home_dir().context("Unable to determine home directory")?;
-    let relative_path = instantassist_config_path
-        .strip_prefix(&home_dir)
-        .ok()
-        .map(|p| format!("~/{}", p.display()))
-        .unwrap_or_else(|| instantassist_config_path.display().to_string());
+    // Compute final hashes
+    let final_main_hash = hash_file(&main_config_path)?;
+    let final_assist_hash = hash_file(&instantassist_config_path)?;
 
-    let include_line = format!("include {}", relative_path);
-    let integration_block = format!("\n{}\n{}\n{}\n", MARKER_START, include_line, MARKER_END);
+    // Check if anything changed
+    let main_changed = initial_main_hash != final_main_hash;
+    let assist_changed = initial_assist_hash != final_assist_hash;
 
-    let new_config_content = format!("{}{}", config_content, integration_block);
+    if main_changed || assist_changed {
+        emit(
+            Level::Success,
+            "assist.setup.updated",
+            &format!("{} Sway config updated", char::from(NerdFont::Check)),
+            None,
+        );
+        emit(
+            Level::Info,
+            "assist.setup.config",
+            &format!("  Config file: {}", instantassist_config_path.display()),
+            None,
+        );
+        emit(
+            Level::Info,
+            "assist.setup.main",
+            &format!("  Main config: {}", main_config_path.display()),
+            None,
+        );
 
-    // Write back the config
-    fs::write(&main_config_path, new_config_content)
-        .with_context(|| format!("Failed to write {}", main_config_path.display()))?;
-
-    println!("✓ Successfully set up Sway integration");
-    println!("  Config file: {}", instantassist_config_path.display());
-    println!("  Main config: {}", main_config_path.display());
-    println!("\nReload Sway config with: swaymsg reload");
+        // Reload sway
+        match std::process::Command::new("swaymsg").arg("reload").status() {
+            Ok(status) if status.success() => {
+                emit(
+                    Level::Success,
+                    "assist.setup.reloaded",
+                    &format!("{} Sway configuration reloaded", char::from(NerdFont::Sync)),
+                    None,
+                );
+            }
+            Ok(_) => {
+                emit(
+                    Level::Warn,
+                    "assist.setup.reload_failed",
+                    &format!(
+                        "{} Failed to reload Sway (swaymsg returned non-zero exit code)",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
+            }
+            Err(e) => {
+                emit(
+                    Level::Warn,
+                    "assist.setup.swaymsg_error",
+                    &format!(
+                        "{} Could not run swaymsg: {}",
+                        char::from(NerdFont::Warning),
+                        e
+                    ),
+                    None,
+                );
+            }
+        }
+    } else {
+        emit(
+            Level::Info,
+            "assist.setup.unchanged",
+            &format!(
+                "{} Sway config unchanged, skipping reload",
+                char::from(NerdFont::Check)
+            ),
+            None,
+        );
+        emit(
+            Level::Info,
+            "assist.setup.config",
+            &format!("  Config file: {}", instantassist_config_path.display()),
+            None,
+        );
+    }
 
     Ok(())
 }

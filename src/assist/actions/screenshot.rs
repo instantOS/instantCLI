@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::assist::utils::{AreaSelectionConfig, capture_area_to_file, capture_area_to_memory, copy_image_to_clipboard, copy_to_clipboard, generate_screenshot_filename, show_notification};
+use crate::assist::utils::{
+    AreaSelectionConfig, capture_area_to_file, capture_area_to_memory, copy_image_to_clipboard,
+    copy_to_clipboard, generate_screenshot_filename, show_notification,
+};
 use crate::common::display_server::DisplayServer;
 use crate::common::paths;
 
@@ -251,13 +254,12 @@ pub fn fullscreen_screenshot() -> Result<()> {
     }
 
     // Use shared notification utility
-    show_notification("Screenshot saved", &output_path.to_str().unwrap_or(""))?;
+    show_notification("Screenshot saved", output_path.to_str().unwrap_or(""))?;
 
     Ok(())
 }
 
 pub fn screenshot_ocr() -> Result<()> {
-
     let config = AreaSelectionConfig::new();
 
     let geometry = match config.select_area() {
@@ -304,7 +306,6 @@ pub fn screenshot_ocr() -> Result<()> {
 }
 
 pub fn screenshot_area_to_pictures() -> Result<()> {
-
     let config = AreaSelectionConfig::new();
 
     let geometry = match config.select_area() {
@@ -325,7 +326,7 @@ pub fn screenshot_area_to_pictures() -> Result<()> {
     capture_area_to_file(&geometry, &image_path, display_server)?;
 
     // Use shared notification utility
-    show_notification("Screenshot saved", &image_path.to_str().unwrap_or(""))?;
+    show_notification("Screenshot saved", image_path.to_str().unwrap_or(""))?;
 
     Ok(())
 }

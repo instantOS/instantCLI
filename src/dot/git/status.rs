@@ -538,7 +538,9 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
             } else if clean_count > 0 {
                 println!("✓ All dotfiles are clean and up to date!");
             } else {
-                println!("No dotfiles found. Use '{bin} dot repo clone <url>' to clone a repository.");
+                println!(
+                    "No dotfiles found. Use '{bin} dot repo clone <url>' to clone a repository."
+                );
             }
         }
     }

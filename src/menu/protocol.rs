@@ -410,7 +410,12 @@ mod tests {
             step: Some(1),
             big_step: Some(10),
             label: Some("Volume".to_string()),
-            command: vec!["sh".to_string(), "-c".to_string(), "wpctl set-volume @DEFAULT_AUDIO_SINK@ \"${1}%\"".to_string(), "_".to_string()],
+            command: vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "wpctl set-volume @DEFAULT_AUDIO_SINK@ \"${1}%\"".to_string(),
+                "_".to_string(),
+            ],
         };
 
         let json = serde_json::to_string(&request).unwrap();

@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use git2::{Repository, Signature};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use crate::dot::config::{self, Config};
 use crate::ui::prelude::*;
@@ -288,8 +291,12 @@ pub fn init_or_create_default_repo(
     let repo = Repository::init(&repo_path)
         .with_context(|| format!("creating git repository at {}", repo_path.display()))?;
 
-    fs::create_dir_all(repo_path.join("dots"))
-        .with_context(|| format!("creating dots directory at {}", repo_path.join("dots").display()))?;
+    fs::create_dir_all(repo_path.join("dots")).with_context(|| {
+        format!(
+            "creating dots directory at {}",
+            repo_path.join("dots").display()
+        )
+    })?;
 
     init_repo(&repo_path, name, non_interactive)?;
 
