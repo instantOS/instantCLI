@@ -36,6 +36,7 @@ macro_rules! pkg {
 // Single packages
 pub static PLAYERCTL: RequiredPackage = pkg!("playerctl");
 pub static QRENCODE: RequiredPackage = pkg!("qrencode");
+pub static ZBAR: RequiredPackage = pkg!("zbar", "zbarimg");
 pub static FLAMESHOT: RequiredPackage = pkg!("flameshot");
 pub static MPV: RequiredPackage = pkg!("mpv");
 pub static TESSERACT: RequiredPackage = pkg!("tesseract");
@@ -93,5 +94,14 @@ pub static SCREENSHOT_OCR_PACKAGES: &[RequiredPackage] = &[
     WL_CLIPBOARD,
     XCLIP,
     TESSERACT,
+    LIBNOTIFY,
+];
+
+pub static QR_SCAN_PACKAGES: &[RequiredPackage] = &[
+    SLURP,
+    SLOP,
+    GRIM,
+    IMAGEMAGICK,
+    ZBAR,
     LIBNOTIFY,
 ];

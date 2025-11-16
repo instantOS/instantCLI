@@ -2,8 +2,13 @@ use anyhow::{Context, Result};
 use std::io::Write;
 use std::process::Command;
 
+use crate::assist::utils::{
+    capture_area_to_file, copy_to_clipboard, show_notification, AreaSelectionConfig,
+};
+use crate::common::display_server::DisplayServer;
+use crate::common::paths;
+
 pub fn qr_encode_clipboard() -> Result<()> {
-    use crate::common::display_server::DisplayServer;
 
     let display_server = DisplayServer::detect();
 
@@ -63,6 +68,51 @@ pub fn qr_encode_clipboard() -> Result<()> {
         .arg(temp_script.as_os_str())
         .spawn()
         .context("Failed to launch terminal with QR code")?;
+
+    Ok(())
+}
+
+pub fn qr_scan() -> Result<()> {
+    let config = AreaSelectionConfig::new();
+
+    let geometry = match config.select_area() {
+        Ok(geom) => geom,
+        Err(_) => return Ok(()),
+    };
+
+    let display_server = config.display_server();
+
+    let pictures_dir = paths::pictures_dir().context("Failed to determine pictures directory")?;
+    let image_path = pictures_dir.join("qrcode.png");
+
+    capture_area_to_file(&geometry, &image_path, display_server)?;
+
+    let zbarimg_output = Command::new("zbarimg")
+        .arg("-q")
+        .arg(&image_path)
+        .output()
+        .context("Failed to run zbarimg")?;
+
+    if !zbarimg_output.status.success() {
+        show_notification("No QR code detected", "")?;
+        return Ok(());
+    }
+
+    let raw_output = String::from_utf8_lossy(&zbarimg_output.stdout);
+    let detected_text = raw_output
+        .lines()
+        .filter_map(|line| line.split_once(':').map(|(_, text)| text))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if detected_text.is_empty() {
+        show_notification("No QR code detected", "")?;
+        return Ok(());
+    }
+
+    copy_to_clipboard(detected_text.as_bytes(), display_server)?;
+
+    show_notification("Read QR code text", &detected_text)?;
 
     Ok(())
 }

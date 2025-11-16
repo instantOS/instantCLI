@@ -160,6 +160,13 @@ pub const ASSISTS: &[AssistEntry] = &[
                 execute: actions::screenshot::screenshot_area_to_pictures,
             }),
             AssistEntry::Action(AssistAction {
+                key: 'q',
+                description: "QR Code Scanner: Scan QR code from selected area",
+                icon: NerdFont::Code,
+                dependencies: &[Dependency::os(&QR_SCAN_PACKAGES[0])],
+                execute: actions::qr::qr_scan,
+            }),
+            AssistEntry::Action(AssistAction {
                 key: 'r',
                 description: "OCR Text Recognition: Extract text from selected area",
                 icon: NerdFont::FileText,
@@ -377,6 +384,16 @@ mod tests {
         assert_eq!(
             action.unwrap().description,
             "OCR Text Recognition: Extract text from selected area"
+        );
+    }
+
+    #[test]
+    fn test_find_qr_scan_action() {
+        let action = find_action("sq");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "QR Code Scanner: Scan QR code from selected area"
         );
     }
 }
