@@ -44,7 +44,7 @@ fn is_package_managed_location(path: &Path) -> bool {
 fn is_writable(path: &Path) -> bool {
     if !path.exists() {
         // Check if we can create it
-        return path.parent().map_or(false, |p| is_writable(p));
+        return path.parent().is_some_and(is_writable);
     }
 
     fs::metadata(path)
@@ -441,7 +441,7 @@ pub async fn self_update() -> Result<()> {
 
     // Create temporary directory
     let temp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
-    let archive_name = archive_url.split('/').last().unwrap_or("archive");
+    let archive_name = archive_url.split('/').next_back().unwrap_or("archive");
     let archive_path = temp_dir.path().join(archive_name);
 
     emit(
