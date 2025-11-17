@@ -63,6 +63,8 @@ pub struct Config {
     pub repos_dir: TildePath,
     #[serde(default = "default_database_dir")]
     pub database_dir: TildePath,
+    #[serde(default)]
+    pub ignored_paths: Vec<String>,
 }
 
 impl Default for Config {
@@ -73,6 +75,7 @@ impl Default for Config {
             hash_cleanup_days: default_hash_cleanup_days(),
             repos_dir: default_repos_dir(),
             database_dir: default_database_dir(),
+            ignored_paths: Vec::new(),
         }
     }
 }
@@ -224,6 +227,46 @@ impl Config {
             ));
         }
         self.save(custom_path)
+    }
+
+    /// Add a path to the ignore list
+    pub fn add_ignored_path(&mut self, path: String, custom_path: Option<&str>) -> Result<()> {
+        if self.ignored_paths.contains(&path) {
+            return Err(anyhow::anyhow!("Path '{}' is already ignored", path));
+        }
+        self.ignored_paths.push(path);
+        self.save(custom_path)
+    }
+
+    /// Remove a path from the ignore list
+    pub fn remove_ignored_path(&mut self, path: &str, custom_path: Option<&str>) -> Result<()> {
+        let original_len = self.ignored_paths.len();
+        self.ignored_paths.retain(|p| p != path);
+        if self.ignored_paths.len() == original_len {
+            return Err(anyhow::anyhow!("Path '{}' is not in the ignore list", path));
+        }
+        self.save(custom_path)
+    }
+
+    /// Check if a path should be ignored
+    pub fn is_path_ignored(&self, path: &Path) -> bool {
+        let home = PathBuf::from(shellexpand::tilde("~").to_string());
+        
+        for ignored in &self.ignored_paths {
+            let ignored_path = if ignored.starts_with('~') {
+                PathBuf::from(shellexpand::tilde(ignored).to_string())
+            } else {
+                home.join(ignored)
+            };
+            
+            // Check if the path starts with the ignored path (for directories)
+            // or is exactly the ignored path (for files)
+            if path == ignored_path || path.starts_with(&ignored_path) {
+                return true;
+            }
+        }
+        
+        false
     }
 }
 

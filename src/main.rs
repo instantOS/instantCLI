@@ -243,6 +243,29 @@ enum DotCommands {
         #[arg(value_hint = ValueHint::AnyPath)]
         path: Option<String>,
     },
+    /// Manage ignored paths
+    Ignore {
+        #[command(subcommand)]
+        command: IgnoreCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum IgnoreCommands {
+    /// Add a path to the ignore list
+    Add {
+        /// Path to ignore (relative to ~, e.g., .config/nvim or .bashrc)
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+    },
+    /// Remove a path from the ignore list
+    Remove {
+        /// Path to stop ignoring
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+    },
+    /// List all ignored paths
+    List,
 }
 
 fn handle_debug_command(command: DebugCommands) -> Result<()> {
@@ -265,6 +288,111 @@ fn handle_debug_command(command: DebugCommands) -> Result<()> {
                 );
             } else {
                 logger.print_recent_logs(limit)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_ignore_command(
+    config: &mut Config,
+    command: &IgnoreCommands,
+    config_path: Option<&str>,
+) -> Result<()> {
+    use colored::Colorize;
+    
+    match command {
+        IgnoreCommands::Add { path } => {
+            let normalized_path = if path.starts_with('~') {
+                path.clone()
+            } else if path.starts_with('/') {
+                let home = shellexpand::tilde("~").to_string();
+                if path.starts_with(&home) {
+                    format!("~{}", path.strip_prefix(&home).unwrap_or(path))
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Path must be within home directory. Use ~ or relative paths."
+                    ));
+                }
+            } else {
+                format!("~/{}", path.trim_start_matches('/'))
+            };
+
+            config.add_ignored_path(normalized_path.clone(), config_path)?;
+            emit(
+                Level::Success,
+                "dot.ignore.added",
+                &format!(
+                    "{} Added {} to ignore list",
+                    char::from(NerdFont::Check),
+                    normalized_path.green()
+                ),
+                Some(serde_json::json!({
+                    "path": normalized_path,
+                    "action": "added"
+                })),
+            );
+        }
+        IgnoreCommands::Remove { path } => {
+            let normalized_path = if path.starts_with('~') {
+                path.clone()
+            } else if path.starts_with('/') {
+                let home = shellexpand::tilde("~").to_string();
+                if path.starts_with(&home) {
+                    format!("~{}", path.strip_prefix(&home).unwrap_or(path))
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Path must be within home directory. Use ~ or relative paths."
+                    ));
+                }
+            } else {
+                format!("~/{}", path.trim_start_matches('/'))
+            };
+            
+            config.remove_ignored_path(&normalized_path, config_path)?;
+            emit(
+                Level::Success,
+                "dot.ignore.removed",
+                &format!(
+                    "{} Removed {} from ignore list",
+                    char::from(NerdFont::Check),
+                    normalized_path.green()
+                ),
+                Some(serde_json::json!({
+                    "path": normalized_path,
+                    "action": "removed"
+                })),
+            );
+        }
+        IgnoreCommands::List => {
+            if config.ignored_paths.is_empty() {
+                emit(
+                    Level::Info,
+                    "dot.ignore.list.empty",
+                    &format!("{} No paths are currently ignored", char::from(NerdFont::Info)),
+                    None,
+                );
+            } else {
+                emit(
+                    Level::Info,
+                    "dot.ignore.list.header",
+                    &format!("{} Ignored paths:", char::from(NerdFont::List)),
+                    Some(serde_json::json!({
+                        "count": config.ignored_paths.len()
+                    })),
+                );
+                for (i, path) in config.ignored_paths.iter().enumerate() {
+                    emit(
+                        Level::Info,
+                        "dot.ignore.list.item",
+                        &format!("  {} {}", (i + 1), path.cyan()),
+                        Some(serde_json::json!({
+                            "index": i + 1,
+                            "path": path
+                        })),
+                    );
+                }
             }
         }
     }
@@ -350,6 +478,13 @@ fn handle_dot_command(command: &DotCommands, config_path: Option<&str>, debug: b
             execute_with_error_handling(
                 dot::diff_all(&config, debug, path.as_deref(), &db),
                 "Error showing dotfile differences",
+                None,
+            )?;
+        }
+        DotCommands::Ignore { command } => {
+            execute_with_error_handling(
+                handle_ignore_command(&mut config, command, config_path),
+                "Error managing ignore list",
                 None,
             )?;
         }

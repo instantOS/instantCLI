@@ -173,7 +173,12 @@ pub fn get_all_dotfiles(config: &Config, db: &Database) -> Result<HashMap<PathBu
     }
 
     // Merge with proper override behavior
-    Ok(merge_dotfiles(all_dotfiles))
+    let mut merged = merge_dotfiles(all_dotfiles);
+    
+    // Filter out ignored paths
+    merged.retain(|target_path, _| !config.is_path_ignored(target_path));
+    
+    Ok(merged)
 }
 
 /// Filter dotfiles to only those within a specific directory path
