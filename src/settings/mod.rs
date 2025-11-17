@@ -15,5 +15,5 @@ pub mod store;
 pub mod ui;
 pub mod users;
 
-pub use commands::{SettingsCommands, SettingsNavigation, dispatch_settings_command};
+pub use commands::SettingsCommands;
 pub use context::SettingsContext;

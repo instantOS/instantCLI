@@ -3,6 +3,17 @@ use clap::{Subcommand, ValueHint};
 
 use super::apply;
 
+/// Navigation target for direct access to settings
+#[derive(Debug, Clone)]
+pub enum SettingsNavigation {
+    /// Navigate to a specific setting by ID
+    Setting(String),
+    /// Navigate to a specific category
+    Category(String),
+    /// Start in search mode
+    Search,
+}
+
 #[derive(Subcommand, Debug, Clone)]
 pub enum SettingsCommands {
     /// Reapply settings that do not persist across reboots
@@ -27,17 +38,6 @@ pub enum SettingsCommands {
         #[arg(long = "settings-file", value_hint = ValueHint::FilePath)]
         settings_file: Option<std::path::PathBuf>,
     },
-}
-
-/// Navigation target for direct access to settings
-#[derive(Debug, Clone)]
-pub enum SettingsNavigation {
-    /// Navigate to a specific setting by ID
-    Setting(String),
-    /// Navigate to a specific category
-    Category(String),
-    /// Start in search mode
-    Search,
 }
 
 pub fn dispatch_settings_command(
@@ -145,4 +145,30 @@ fn list_settings(categories_only: bool, category_filter: Option<&str>) -> Result
     }
 
     Ok(())
+}
+
+pub fn handle_settings_command(
+    command: &Option<SettingsCommands>,
+    setting: &Option<String>,
+    category: &Option<String>,
+    search: bool,
+    debug: bool,
+    internal_privileged_mode: bool,
+) -> Result<()> {
+    let navigation = if let Some(setting_id) = setting {
+        Some(SettingsNavigation::Setting(setting_id.clone()))
+    } else if let Some(category_id) = category {
+        Some(SettingsNavigation::Category(category_id.clone()))
+    } else if search {
+        Some(SettingsNavigation::Search)
+    } else {
+        None
+    };
+
+    dispatch_settings_command(
+        debug,
+        internal_privileged_mode,
+        command.clone(),
+        navigation,
+    )
 }

@@ -4,6 +4,7 @@ use colored::*;
 mod assist;
 mod common;
 mod completions;
+mod debug;
 mod dev;
 mod doctor;
 mod dot;
@@ -18,7 +19,7 @@ mod settings;
 mod ui;
 mod video;
 
-use clap::{CommandFactory, Parser, Subcommand, ValueHint};
+use clap::{CommandFactory, Parser, Subcommand};
 
 /// Helper function to format and print errors consistently
 fn handle_error(context: &str, error: &anyhow::Error) -> String {
@@ -51,14 +52,12 @@ fn execute_with_error_handling<T>(
     }
 }
 
+use crate::debug::DebugCommands;
 use crate::dev::DevCommands;
 use crate::doctor::DoctorCommands;
-use crate::dot::config::Config;
-use crate::dot::db::Database;
-use crate::dot::repo::cli::RepoCommands;
+use crate::dot::commands::DotCommands;
 use crate::scratchpad::ScratchpadCommand;
 use crate::settings::SettingsCommands;
-use crate::ui::prelude::*;
 
 /// InstantCLI main parser
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -178,370 +177,6 @@ enum Commands {
     SelfUpdate,
 }
 
-#[derive(Subcommand, Debug, Clone)]
-enum DebugCommands {
-    /// View restic command logs
-    ResticLogs {
-        /// Number of recent logs to show (default: 10)
-        #[arg(short, long)]
-        limit: Option<usize>,
-        /// Clear all logs
-        #[arg(long)]
-        clear: bool,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum DotCommands {
-    /// Repository management commands
-    Repo {
-        #[command(subcommand)]
-        command: RepoCommands,
-    },
-    /// Reset modified dotfiles to their original state in the given path
-    Reset {
-        /// Path to reset (relative to ~)
-        #[arg(value_hint = ValueHint::AnyPath)]
-        path: String,
-    },
-    /// Apply dotfiles
-    Apply,
-    /// Add or update dotfiles
-    ///
-    /// For a single file: If tracked, update the source file. If untracked, prompt to add it.
-    /// For a directory: Update all tracked files. Use --all to also add untracked files.
-    Add {
-        /// Path to add or update (relative to ~)
-        #[arg(value_hint = ValueHint::AnyPath)]
-        path: String,
-        /// Recursively add all files in directory, including untracked ones
-        #[arg(long)]
-        all: bool,
-    },
-    /// Pull updates for all configured repos and apply changes
-    Update,
-    /// Check dotfile status
-    Status {
-        /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
-        #[arg(value_hint = ValueHint::AnyPath)]
-        path: Option<String>,
-        /// Show all dotfiles including clean ones
-        #[arg(long)]
-        all: bool,
-    },
-    /// Initialize the current git repo or bootstrap a default dotfile repo when outside git
-    Init {
-        /// Optional name to set in instantdots.toml
-        name: Option<String>,
-        /// Run non-interactively (use provided name or directory name)
-        #[arg(long)]
-        non_interactive: bool,
-    },
-    /// Show differences between modified dotfiles and their source
-    Diff {
-        /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
-        #[arg(value_hint = ValueHint::AnyPath)]
-        path: Option<String>,
-    },
-    /// Manage ignored paths
-    Ignore {
-        #[command(subcommand)]
-        command: IgnoreCommands,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum IgnoreCommands {
-    /// Add a path to the ignore list
-    Add {
-        /// Path to ignore (relative to ~, e.g., .config/nvim or .bashrc)
-        #[arg(value_hint = ValueHint::AnyPath)]
-        path: String,
-    },
-    /// Remove a path from the ignore list
-    Remove {
-        /// Path to stop ignoring
-        #[arg(value_hint = ValueHint::AnyPath)]
-        path: String,
-    },
-    /// List all ignored paths
-    List,
-}
-
-fn handle_debug_command(command: DebugCommands) -> Result<()> {
-    use crate::restic::logging::ResticCommandLogger;
-
-    match command {
-        DebugCommands::ResticLogs { limit, clear } => {
-            let logger = ResticCommandLogger::new()?;
-
-            if clear {
-                logger.clear_logs()?;
-                emit(
-                    Level::Success,
-                    "restic.logs.cleared",
-                    &format!(
-                        "{} Cleared all restic command logs.",
-                        char::from(NerdFont::Trash)
-                    ),
-                    None,
-                );
-            } else {
-                logger.print_recent_logs(limit)?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn handle_ignore_command(
-    config: &mut Config,
-    command: &IgnoreCommands,
-    config_path: Option<&str>,
-) -> Result<()> {
-    use colored::Colorize;
-    
-    match command {
-        IgnoreCommands::Add { path } => {
-            let normalized_path = if path.starts_with('~') {
-                path.clone()
-            } else if path.starts_with('/') {
-                let home = shellexpand::tilde("~").to_string();
-                if path.starts_with(&home) {
-                    format!("~{}", path.strip_prefix(&home).unwrap_or(path))
-                } else {
-                    return Err(anyhow::anyhow!(
-                        "Path must be within home directory. Use ~ or relative paths."
-                    ));
-                }
-            } else {
-                format!("~/{}", path.trim_start_matches('/'))
-            };
-
-            config.add_ignored_path(normalized_path.clone(), config_path)?;
-            emit(
-                Level::Success,
-                "dot.ignore.added",
-                &format!(
-                    "{} Added {} to ignore list",
-                    char::from(NerdFont::Check),
-                    normalized_path.green()
-                ),
-                Some(serde_json::json!({
-                    "path": normalized_path,
-                    "action": "added"
-                })),
-            );
-        }
-        IgnoreCommands::Remove { path } => {
-            let normalized_path = if path.starts_with('~') {
-                path.clone()
-            } else if path.starts_with('/') {
-                let home = shellexpand::tilde("~").to_string();
-                if path.starts_with(&home) {
-                    format!("~{}", path.strip_prefix(&home).unwrap_or(path))
-                } else {
-                    return Err(anyhow::anyhow!(
-                        "Path must be within home directory. Use ~ or relative paths."
-                    ));
-                }
-            } else {
-                format!("~/{}", path.trim_start_matches('/'))
-            };
-            
-            config.remove_ignored_path(&normalized_path, config_path)?;
-            emit(
-                Level::Success,
-                "dot.ignore.removed",
-                &format!(
-                    "{} Removed {} from ignore list",
-                    char::from(NerdFont::Check),
-                    normalized_path.green()
-                ),
-                Some(serde_json::json!({
-                    "path": normalized_path,
-                    "action": "removed"
-                })),
-            );
-        }
-        IgnoreCommands::List => {
-            if config.ignored_paths.is_empty() {
-                emit(
-                    Level::Info,
-                    "dot.ignore.list.empty",
-                    &format!("{} No paths are currently ignored", char::from(NerdFont::Info)),
-                    None,
-                );
-            } else {
-                emit(
-                    Level::Info,
-                    "dot.ignore.list.header",
-                    &format!("{} Ignored paths:", char::from(NerdFont::List)),
-                    Some(serde_json::json!({
-                        "count": config.ignored_paths.len()
-                    })),
-                );
-                for (i, path) in config.ignored_paths.iter().enumerate() {
-                    emit(
-                        Level::Info,
-                        "dot.ignore.list.item",
-                        &format!("  {} {}", (i + 1), path.cyan()),
-                        Some(serde_json::json!({
-                            "index": i + 1,
-                            "path": path
-                        })),
-                    );
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn handle_dot_command(command: &DotCommands, config_path: Option<&str>, debug: bool) -> Result<()> {
-    let mut config = execute_with_error_handling(
-        Config::load(config_path),
-        "Error loading configuration",
-        None,
-    )?;
-
-    config.ensure_directories()?;
-    let db = execute_with_error_handling(
-        Database::new(config.database_path().to_path_buf()),
-        "Error opening database",
-        None,
-    )?;
-
-    match command {
-        DotCommands::Repo { command } => {
-            execute_with_error_handling(
-                dot::repo::commands::handle_repo_command(&mut config, &db, command, debug),
-                "Error handling repository command",
-                None,
-            )?;
-        }
-        DotCommands::Reset { path } => {
-            execute_with_error_handling(
-                dot::reset_modified(&config, &db, path),
-                "Error resetting dotfiles",
-                None,
-            )?;
-        }
-        DotCommands::Apply => {
-            execute_with_error_handling(
-                dot::apply_all(&config, &db),
-                "Error applying dotfiles",
-                Some("Applied dotfiles"),
-            )?;
-        }
-        DotCommands::Add { path, all } => {
-            execute_with_error_handling(
-                dot::add_dotfile(&config, &db, path, *all),
-                "Error adding/updating dotfile",
-                None,
-            )?;
-        }
-        DotCommands::Update => {
-            execute_with_error_handling(
-                dot::update_all(&config, debug),
-                "Error updating repos",
-                Some("All repos updated"),
-            )?;
-        }
-        DotCommands::Status { path, all } => {
-            execute_with_error_handling(
-                dot::status_all(&config, debug, path.as_deref(), &db, *all),
-                "Error checking repo status",
-                None,
-            )?;
-        }
-        DotCommands::Init {
-            name,
-            non_interactive,
-        } => {
-            let cwd = std::env::current_dir()
-                .map_err(|e| anyhow::anyhow!("Unable to determine current directory: {}", e))?;
-            execute_with_error_handling(
-                dot::meta::handle_init_command(
-                    &mut config,
-                    &cwd,
-                    name.as_deref(),
-                    *non_interactive,
-                ),
-                "Error initializing repo",
-                None,
-            )?;
-        }
-        DotCommands::Diff { path } => {
-            execute_with_error_handling(
-                dot::diff_all(&config, debug, path.as_deref(), &db),
-                "Error showing dotfile differences",
-                None,
-            )?;
-        }
-        DotCommands::Ignore { command } => {
-            execute_with_error_handling(
-                handle_ignore_command(&mut config, command, config_path),
-                "Error managing ignore list",
-                None,
-            )?;
-        }
-    }
-
-    Ok(())
-}
-
-fn handle_settings_command(
-    command: &Option<SettingsCommands>,
-    setting: &Option<String>,
-    category: &Option<String>,
-    search: bool,
-    debug: bool,
-    internal_privileged_mode: bool,
-) -> Result<()> {
-    use settings::SettingsNavigation;
-
-    let navigation = if let Some(setting_id) = setting {
-        Some(SettingsNavigation::Setting(setting_id.clone()))
-    } else if let Some(category_id) = category {
-        Some(SettingsNavigation::Category(category_id.clone()))
-    } else if search {
-        Some(SettingsNavigation::Search)
-    } else {
-        None
-    };
-
-    execute_with_error_handling(
-        settings::dispatch_settings_command(
-            debug,
-            internal_privileged_mode,
-            command.clone(),
-            navigation,
-        ),
-        "Error running settings",
-        None,
-    )
-}
-
-fn handle_completions_command(command: &completions::CompletionCommands) -> Result<()> {
-    match command {
-        completions::CompletionCommands::Generate { shell } => {
-            let script = completions::generate(*shell)?;
-            print!("{script}");
-        }
-        completions::CompletionCommands::Install {
-            shell,
-            snippet_only,
-        } => {
-            let instructions = completions::install(*shell, *snippet_only)?;
-            println!("{instructions}");
-        }
-    }
-    Ok(())
-}
-
 fn initialize_cli(cli: &Cli) {
     let format = match cli.output {
         OutputFormatArg::Text => ui::OutputFormat::Text,
@@ -569,7 +204,11 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             )?;
         }
         Some(Commands::Dot { command }) => {
-            handle_dot_command(command, cli.config.as_deref(), cli.debug)?;
+            execute_with_error_handling(
+                dot::commands::handle_dot_command(command, cli.config.as_deref(), cli.debug),
+                "Error handling dot command",
+                None,
+            )?;
         }
         Some(Commands::Dev { command }) => {
             execute_with_error_handling(
@@ -607,13 +246,17 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             category,
             search,
         }) => {
-            handle_settings_command(
-                command,
-                setting,
-                category,
-                *search,
-                cli.debug,
-                cli.internal_privileged_mode,
+            execute_with_error_handling(
+                settings::commands::handle_settings_command(
+                    command,
+                    setting,
+                    category,
+                    *search,
+                    cli.debug,
+                    cli.internal_privileged_mode,
+                ),
+                "Error running settings",
+                None,
             )?;
         }
         Some(Commands::Video { command }) => {
@@ -625,13 +268,17 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
         }
         Some(Commands::Debug { command }) => {
             execute_with_error_handling(
-                handle_debug_command(command.clone()),
+                debug::handle_debug_command(command.clone()),
                 "Error handling debug command",
                 None,
             )?;
         }
         Some(Commands::Completions { command }) => {
-            handle_completions_command(command)?;
+            execute_with_error_handling(
+                completions::handle_completions_command(command),
+                "Error handling completions command",
+                None,
+            )?;
         }
         Some(Commands::SelfUpdate) => {
             execute_with_error_handling(

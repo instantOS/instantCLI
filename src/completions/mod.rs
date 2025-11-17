@@ -156,3 +156,20 @@ pub fn repo_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
 
     sort_and_filter(names, &prefix)
 }
+
+pub fn handle_completions_command(command: &CompletionCommands) -> Result<()> {
+    match command {
+        CompletionCommands::Generate { shell } => {
+            let script = generate(*shell)?;
+            print!("{script}");
+        }
+        CompletionCommands::Install {
+            shell,
+            snippet_only,
+        } => {
+            let instructions = install(*shell, *snippet_only)?;
+            println!("{instructions}");
+        }
+    }
+    Ok(())
+}
