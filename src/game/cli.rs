@@ -1,3 +1,5 @@
+use std::ffi::OsString;
+
 use clap::Subcommand;
 use clap_complete::engine::ArgValueCompleter;
 
@@ -45,6 +47,12 @@ pub enum GameCommands {
         /// Game name to launch (optional, will prompt if not specified)
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
+    },
+    /// Execute a command with pre/post syncs (for Steam game prefixes)
+    Exec {
+        /// Command to execute (use with Steam %command% placeholder)
+        #[arg(required = true, trailing_var_arg = true)]
+        command: Vec<OsString>,
     },
     /// List all configured games
     List,

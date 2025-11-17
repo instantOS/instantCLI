@@ -303,7 +303,7 @@ fn install_binary(binary_path: &Path, target_path: &Path, needs_sudo: bool) -> R
 
     // Create a temporary path alongside the target for atomic replacement
     let temp_target = target_path.with_extension("new");
-    
+
     if needs_sudo {
         emit(
             Level::Info,
@@ -343,7 +343,8 @@ fn install_binary(binary_path: &Path, target_path: &Path, needs_sudo: bool) -> R
         }
     } else {
         // Copy to temporary location first
-        fs::copy(binary_path, &temp_target).context("Failed to copy binary to temporary location")?;
+        fs::copy(binary_path, &temp_target)
+            .context("Failed to copy binary to temporary location")?;
 
         let mut perms = fs::metadata(&temp_target)
             .context("Failed to get binary permissions")?

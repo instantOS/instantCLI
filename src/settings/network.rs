@@ -181,7 +181,7 @@ fn get_public_ip() -> Result<String> {
 }
 
 /// Check if internet is available
-fn check_internet() -> bool {
+pub fn check_internet() -> bool {
     Command::new("ping")
         .args(["-c", "1", "-W", "2", "1.1.1.1"])
         .output()

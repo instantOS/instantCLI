@@ -1,3 +1,5 @@
+use std::ffi::OsString;
+
 use anyhow::Result;
 
 use crate::common::requirements::RESTIC_PACKAGE;
@@ -11,7 +13,7 @@ use super::edit;
 use super::games::GameManager;
 use super::games::manager::AddGameOptions;
 use super::games::{display, selection};
-use super::operations::{launch_game, sync_game_saves};
+use super::operations::{exec_game_command, launch_game, sync_game_saves};
 use super::repository::RepositoryManager;
 use super::repository::manager::InitOptions;
 use super::restic::{
@@ -52,6 +54,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             handle_sync(game_name, force)
         }
         GameCommands::Launch { game_name } => handle_launch(game_name),
+        GameCommands::Exec { command } => handle_exec(command),
         GameCommands::List => handle_list(),
         GameCommands::Info { game_name } => handle_info(game_name),
         GameCommands::Edit { game_name } => edit::edit_game(game_name),
@@ -103,6 +106,10 @@ fn handle_sync(game_name: Option<String>, force: bool) -> Result<()> {
 
 fn handle_launch(game_name: Option<String>) -> Result<()> {
     launch_game(game_name)
+}
+
+fn handle_exec(command: Vec<OsString>) -> Result<()> {
+    exec_game_command(command)
 }
 
 fn handle_remove(game_name: Option<String>, force: bool) -> Result<()> {
