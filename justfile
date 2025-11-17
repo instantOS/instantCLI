@@ -15,3 +15,6 @@ appimage:
 
 format:
     yamlfmt .github
+    cargo clippy --fix --allow-dirty
+    cargo fmt
+    find . -name "*.sh" -exec shfmt -w {} \;

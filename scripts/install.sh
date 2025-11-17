@@ -22,7 +22,7 @@ fatal() {
 }
 
 usage() {
-	cat << EOF
+	cat <<EOF
 Usage: install.sh [--install-dir <path>] [--bin-name <name>]
 
 Environment variables:
@@ -79,13 +79,13 @@ choose_install_dir() {
 
 require_commands() {
 	for cmd in curl tar uname mktemp head find; do
-		command -v "$cmd" > /dev/null 2>&1 || fatal "required command '$cmd' not found"
+		command -v "$cmd" >/dev/null 2>&1 || fatal "required command '$cmd' not found"
 	done
 }
 
 detect_steam_deck() {
 	if [ -f /etc/os-release ]; then
-		if grep -q "steamdeck" /etc/os-release 2> /dev/null || grep -q "SteamOS" /etc/os-release 2> /dev/null; then
+		if grep -q "steamdeck" /etc/os-release 2>/dev/null || grep -q "SteamOS" /etc/os-release 2>/dev/null; then
 			return 0
 		fi
 	fi
@@ -117,109 +117,87 @@ detect_target() {
 	fi
 }
 
-fetch_releases_json() {
-	releases_json=$(curl -fsSL \
+fetch_release_json() {
+	# Fetch all releases and find first one with our assets
+	all_releases=$(curl -fsSL \
 		-H "Accept: application/vnd.github+json" \
 		-H "User-Agent: instantcli-installer" \
 		"$API_URL") || fatal "failed to fetch releases metadata"
+	
+	# Try each release until we find one with our asset
+	release_json=$(find_working_release "$all_releases") || fatal "no working release found with assets for $TARGET"
 }
 
-# Parse releases and find one with assets for our target
 find_working_release() {
-	# Extract releases array and process each release
-	printf '%s\n' "$releases_json" | awk -v target="$TARGET" -v use_appimage="$USE_APPIMAGE" '
-	function find_asset(release_data, target_pattern) {
-		rest = release_data
-		while (match(rest, /"browser_download_url":"([^"]+)"/)) {
-			url_start = index(rest, "\"browser_download_url\":\"") + 24
-			url_end = index(substr(rest, url_start), "\"")
-			url = substr(rest, url_start, url_end - 1)
+	all_releases="$1"
+	
+	# AWK-only parsing - process the JSON array to find a valid release
+	printf '%s' "$all_releases" | awk -v target="$TARGET" -v use_appimage="$USE_APPIMAGE" '
+	BEGIN {
+		json = ""
+	}
+	{
+		json = json $0
+	}
+	END {
+		# Remove outer array brackets
+		gsub(/^[[:space:]]*\[/, "", json)
+		gsub(/\][[:space:]]*$/, "", json)
+		
+		# Split on "},{"  to separate releases
+		n = split(json, parts, /\},\{/)
+		
+		for (i = 1; i <= n; i++) {
+			release = parts[i]
+			# Restore braces
+			if (i > 1) release = "{" release
+			if (i < n) release = release "}"
+			if (i == 1 && substr(release, 1, 1) != "{") release = "{" release
+			if (i == n && substr(release, length(release), 1) != "}") release = release "}"
 			
-			if (use_appimage == 1) {
-				if (url ~ /\.AppImage$/ && url !~ /\.sha256$/) {
-					return url
-				}
-			} else {
-				if (index(url, target_pattern) && (url ~ /\.tar\.zst$/ || url ~ /\.tgz$/)) {
-					return url
-				}
+			# Skip drafts and prereleases
+			if (index(release, "\"draft\":true") > 0 || index(release, "\"prerelease\":true") > 0) {
+				continue
 			}
-			rest = substr(rest, RSTART + RLENGTH)
-		}
-		return ""
-	}
-	
-	function is_valid_release(release_data) {
-		# Skip drafts and prereleases
-		if (match(release_data, /"draft":true/) || match(release_data, /"prerelease":true/)) {
-			return 0
-		}
-		return 1
-	}
-	
-	function extract_tag(release_data) {
-		if (match(release_data, /"tag_name":"([^"]+)"/)) {
-			tag_start = index(release_data, "\"tag_name\":\"") + 12
-			tag_end = index(substr(release_data, tag_start), "\"")
-			tag = substr(release_data, tag_start, tag_end - 1)
-			return tag
-		}
-		return ""
-	}
-	
-	# Process each release in the array
-	rest = $0
-	in_release = 0
-	release_data = ""
-	
-	while ((pos = index(rest, "{")) > 0) {
-		if (!in_release) {
-			# Start of a new release object
-			in_release = 1
-			bracket_count = 1
-			release_data = "{"
-			rest = substr(rest, pos + 1)
-		} else {
-			# We are inside a release object
-			i = 1
-			while (i <= length(rest)) {
-				char = substr(rest, i, 1)
-				if (char == "{") {
-					bracket_count++
-				} else if (char == "}") {
-					bracket_count--
-					if (bracket_count == 0) {
-						# End of release object
-						release_data = release_data substr(rest, 1, i)
-						rest = substr(rest, i + 1)
-						
-						# Check if this is a valid release with assets for our target
-						if (is_valid_release(release_data)) {
-							asset_url = find_asset(release_data, target)
-							if (asset_url != "") {
-								# Found a working release, print it and exit
-								print release_data
-								exit 0
-							}
-						}
-						
-						in_release = 0
-						release_data = ""
+			
+			# Look for matching asset URL
+			found = 0
+			pos = 1
+			while (1) {
+				# Find next browser_download_url
+				url_start = index(substr(release, pos), "\"browser_download_url\":\"")
+				if (url_start == 0) break
+				
+				url_start = pos + url_start + 23
+				url_end = index(substr(release, url_start), "\"")
+				if (url_end == 0) break
+				
+				url = substr(release, url_start, url_end - 1)
+				
+				# Check if this URL matches our criteria
+				if (use_appimage == 1) {
+					if (match(url, /\.AppImage$/) && index(url, ".sha256") == 0) {
+						found = 1
+						break
+					}
+				} else {
+					if (index(url, target) > 0 && index(url, ".sha256") == 0 && index(url, ".pkg.tar.zst") == 0 && index(url, "-debug-") == 0) {
+						found = 1
 						break
 					}
 				}
-				release_data = release_data char
-				i++
+				
+				pos = url_start + url_end
 			}
-			if (in_release) {
-				release_data = release_data rest
-				rest = ""
+			
+			if (found) {
+				print release
+				exit 0
 			}
 		}
+		
+		exit 1
 	}
-	
-	# If we get here, no working release was found
-	exit 1
 	'
 }
 
@@ -249,7 +227,7 @@ find_asset_urls() {
                     url_start = index(rest, "\"browser_download_url\":\"") + 24
                     url_end = index(substr(rest, url_start), "\"")
                     url = substr(rest, url_start, url_end - 1)
-                    if (index(url, target) && (url ~ /\.tar\.zst$/ || url ~ /\.tgz$/)) {
+                    if (index(url, target) && url !~ /\.sha256$/ && url !~ /\.pkg\.tar\.zst$/ && url !~ /-debug-/) {
                         print url
                         exit
                     }
@@ -257,7 +235,7 @@ find_asset_urls() {
                 }
             }
         ')
-		[ -n "$asset_url" ] || fatal "no prebuilt archive found for $TARGET"
+		[ -n "$asset_url" ] || fatal "no prebuilt binary or archive found for $TARGET"
 	fi
 
 	sha_url=$(printf '%s\n' "$release_json" | awk -v archive="$asset_url" '
@@ -297,7 +275,7 @@ verify_checksum() {
 		return 0
 	fi
 
-	if ! command -v sha256sum > /dev/null 2>&1; then
+	if ! command -v sha256sum >/dev/null 2>&1; then
 		warn "sha256sum not available; skipping checksum verification"
 		return 0
 	fi
@@ -309,9 +287,9 @@ verify_checksum() {
 	}
 
 	checksum_basename=$(basename "$archive_path")
-	if ! grep -q "  $checksum_basename$" "$checksum_file" 2> /dev/null; then
+	if ! grep -q "  $checksum_basename$" "$checksum_file" 2>/dev/null; then
 		tmp_checksum_file="$checksum_file.tmp"
-		if awk -v name="$checksum_basename" '{print $1 "  " name}' "$checksum_file" > "$tmp_checksum_file" 2> /dev/null; then
+		if awk -v name="$checksum_basename" '{print $1 "  " name}' "$checksum_file" >"$tmp_checksum_file" 2>/dev/null; then
 			mv "$tmp_checksum_file" "$checksum_file"
 		else
 			warn "failed to normalize checksum file; skipping verification"
@@ -328,11 +306,11 @@ extract_archive() {
 
 	case "$archive_path" in
 	*.tar.zst)
-		if tar --help 2> /dev/null | grep -q "--zstd"; then
+		if tar --help 2>/dev/null | grep -q "--zstd"; then
 			tar --zstd -xf "$archive_path" -C "$dest_dir"
-		elif command -v unzstd > /dev/null 2>&1; then
+		elif command -v unzstd >/dev/null 2>&1; then
 			unzstd -c "$archive_path" | tar -xf - -C "$dest_dir"
-		elif command -v zstd > /dev/null 2>&1; then
+		elif command -v zstd >/dev/null 2>&1; then
 			zstd -d --stdout "$archive_path" | tar -xf - -C "$dest_dir"
 		else
 			fatal "extracting .tar.zst requires tar with zstd support or the zstd utility"
@@ -350,7 +328,7 @@ extract_archive() {
 find_binary_path() {
 	search_root=$1
 
-	binary_path=$(find "$search_root" -type f -name "$BIN_NAME" 2> /dev/null | head -n 1)
+	binary_path=$(find "$search_root" -type f -name "$BIN_NAME" 2>/dev/null | head -n 1)
 
 	[ -n "$binary_path" ] || fatal "failed to locate $BIN_NAME in extracted archive"
 
@@ -362,7 +340,7 @@ install_binary() {
 	needs_sudo=0
 
 	if [ ! -d "$INSTALL_DIR" ]; then
-		if ! mkdir -p "$INSTALL_DIR" 2> /dev/null; then
+		if ! mkdir -p "$INSTALL_DIR" 2>/dev/null; then
 			needs_sudo=1
 		fi
 	fi
@@ -372,7 +350,7 @@ install_binary() {
 	fi
 
 	if [ "$needs_sudo" -eq 1 ]; then
-		if ! command -v sudo > /dev/null 2>&1; then
+		if ! command -v sudo >/dev/null 2>&1; then
 			fatal "cannot write to $INSTALL_DIR and sudo not available; set INSTALL_DIR to a writable directory"
 		fi
 
@@ -382,7 +360,7 @@ install_binary() {
 			sudo mkdir -p "$INSTALL_DIR" || fatal "failed to create $INSTALL_DIR with sudo"
 		fi
 
-		if command -v install > /dev/null 2>&1; then
+		if command -v install >/dev/null 2>&1; then
 			sudo install -m 755 "$binary_path" "$INSTALL_DIR/$BIN_NAME"
 		else
 			warn "install(1) not found; falling back to cp"
@@ -390,7 +368,7 @@ install_binary() {
 			sudo chmod 755 "$INSTALL_DIR/$BIN_NAME"
 		fi
 	else
-		if command -v install > /dev/null 2>&1; then
+		if command -v install >/dev/null 2>&1; then
 			install -m 755 "$binary_path" "$INSTALL_DIR/$BIN_NAME"
 		else
 			warn "install(1) not found; falling back to cp"
@@ -420,11 +398,8 @@ main() {
 	choose_install_dir
 	require_commands
 	detect_target
-	fetch_releases_json
-	
-	# Try to find a working release (fallback to previous releases if latest is missing assets)
-	release_json=$(find_working_release) || fatal "no working release found with assets for $TARGET"
-	
+	fetch_release_json
+
 	find_asset_urls
 
 	TMPDIR=$(mktemp -d)
@@ -439,10 +414,20 @@ main() {
 		chmod +x "$archive"
 		binary_path="$archive"
 	else
-		extract_dir="$TMPDIR/extracted"
-		mkdir "$extract_dir"
-		extract_archive "$archive" "$extract_dir"
-		binary_path=$(find_binary_path "$extract_dir")
+		# Check if it's an archive or a bare binary
+		case "$archive" in
+		*.tar.zst | *.tgz | *.tar.gz)
+			extract_dir="$TMPDIR/extracted"
+			mkdir "$extract_dir"
+			extract_archive "$archive" "$extract_dir"
+			binary_path=$(find_binary_path "$extract_dir")
+			;;
+		*)
+			# Bare binary file
+			chmod +x "$archive"
+			binary_path="$archive"
+			;;
+		esac
 	fi
 	install_binary "$binary_path"
 	print_summary

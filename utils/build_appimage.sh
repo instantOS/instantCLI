@@ -5,10 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
 for cmd in cargo curl unzip bunzip2 tar jq python3 install; do
-    if ! command -v "${cmd}" >/dev/null 2>&1; then
-        echo "missing dependency: ${cmd}" >&2
-        exit 1
-    fi
+	if ! command -v "${cmd}" >/dev/null 2>&1; then
+		echo "missing dependency: ${cmd}" >&2
+		exit 1
+	fi
 done
 
 RESTIC_VERSION="${RESTIC_VERSION:-0.18.1}"
@@ -25,63 +25,63 @@ BIN_DIR="${APPDIR}/usr/bin"
 
 rm -rf "${APPDIR}"
 mkdir -p "${BIN_DIR}" \
-         "${APPDIR}/usr/share/applications" \
-         "${APPDIR}/usr/share/doc/ins" \
-         "${DOWNLOAD_DIR}"
+	"${APPDIR}/usr/share/applications" \
+	"${APPDIR}/usr/share/doc/ins" \
+	"${DOWNLOAD_DIR}"
 
 cargo build --release --locked
 install -Dm755 "target/release/ins" "${BIN_DIR}/ins"
 
 download() {
-    local url="$1"
-    local dest="$2"
-    if [[ ! -f "${dest}" ]]; then
-        curl -L "${url}" -o "${dest}"
-    fi
+	local url="$1"
+	local dest="$2"
+	if [[ ! -f "${dest}" ]]; then
+		curl -L "${url}" -o "${dest}"
+	fi
 }
 
 bundle_restic() {
-    local archive="${DOWNLOAD_DIR}/restic_${RESTIC_VERSION}_linux_amd64.bz2"
-    download "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2" "${archive}"
-    bunzip2 -c "${archive}" > "${BIN_DIR}/restic.tmp"
-    mv "${BIN_DIR}/restic.tmp" "${BIN_DIR}/restic"
-    chmod +x "${BIN_DIR}/restic"
+	local archive="${DOWNLOAD_DIR}/restic_${RESTIC_VERSION}_linux_amd64.bz2"
+	download "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_amd64.bz2" "${archive}"
+	bunzip2 -c "${archive}" >"${BIN_DIR}/restic.tmp"
+	mv "${BIN_DIR}/restic.tmp" "${BIN_DIR}/restic"
+	chmod +x "${BIN_DIR}/restic"
 }
 
 bundle_rclone() {
-    local archive="${DOWNLOAD_DIR}/rclone-v${RCLONE_VERSION}-linux-amd64.zip"
-    download "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-amd64.zip" "${archive}"
-    local tmp
-    tmp="$(mktemp -d)"
-    unzip -q "${archive}" -d "${tmp}"
-    install -Dm755 "${tmp}/rclone-v${RCLONE_VERSION}-linux-amd64/rclone" "${BIN_DIR}/rclone"
-    rm -rf "${tmp}"
+	local archive="${DOWNLOAD_DIR}/rclone-v${RCLONE_VERSION}-linux-amd64.zip"
+	download "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-amd64.zip" "${archive}"
+	local tmp
+	tmp="$(mktemp -d)"
+	unzip -q "${archive}" -d "${tmp}"
+	install -Dm755 "${tmp}/rclone-v${RCLONE_VERSION}-linux-amd64/rclone" "${BIN_DIR}/rclone"
+	rm -rf "${tmp}"
 }
 
 bundle_gum() {
-    local archive="${DOWNLOAD_DIR}/gum_${GUM_VERSION}_Linux_x86_64.tar.gz"
-    download "https://github.com/charmbracelet/gum/releases/download/v${GUM_VERSION}/gum_${GUM_VERSION}_Linux_x86_64.tar.gz" "${archive}"
-    local tmp
-    tmp="$(mktemp -d)"
-    tar -xzf "${archive}" -C "${tmp}"
-    local binary
-    binary="$(find "${tmp}" -type f -name gum -perm -u+x | head -n1)"
-    if [[ -z "${binary}" ]]; then
-        echo "unable to find gum binary in archive" >&2
-        exit 1
-    fi
-    install -Dm755 "${binary}" "${BIN_DIR}/gum"
-    rm -rf "${tmp}"
+	local archive="${DOWNLOAD_DIR}/gum_${GUM_VERSION}_Linux_x86_64.tar.gz"
+	download "https://github.com/charmbracelet/gum/releases/download/v${GUM_VERSION}/gum_${GUM_VERSION}_Linux_x86_64.tar.gz" "${archive}"
+	local tmp
+	tmp="$(mktemp -d)"
+	tar -xzf "${archive}" -C "${tmp}"
+	local binary
+	binary="$(find "${tmp}" -type f -name gum -perm -u+x | head -n1)"
+	if [[ -z "${binary}" ]]; then
+		echo "unable to find gum binary in archive" >&2
+		exit 1
+	fi
+	install -Dm755 "${binary}" "${BIN_DIR}/gum"
+	rm -rf "${tmp}"
 }
 
 bundle_fzf() {
-    local archive="${DOWNLOAD_DIR}/fzf-${FZF_VERSION}-linux_amd64.tar.gz"
-    download "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-linux_amd64.tar.gz" "${archive}"
-    local tmp
-    tmp="$(mktemp -d)"
-    tar -xzf "${archive}" -C "${tmp}"
-    install -Dm755 "${tmp}/fzf" "${BIN_DIR}/fzf"
-    rm -rf "${tmp}"
+	local archive="${DOWNLOAD_DIR}/fzf-${FZF_VERSION}-linux_amd64.tar.gz"
+	download "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-linux_amd64.tar.gz" "${archive}"
+	local tmp
+	tmp="$(mktemp -d)"
+	tar -xzf "${archive}" -C "${tmp}"
+	install -Dm755 "${tmp}/fzf" "${BIN_DIR}/fzf"
+	rm -rf "${tmp}"
 }
 
 bundle_restic
@@ -89,7 +89,7 @@ bundle_rclone
 bundle_gum
 bundle_fzf
 
-cat > "${APPDIR}/AppRun" <<'EOF'
+cat >"${APPDIR}/AppRun" <<'EOF'
 #!/bin/sh
 set -e
 APPDIR="$(dirname "$(readlink -f "$0")")"
@@ -100,8 +100,8 @@ chmod +x "${APPDIR}/AppRun"
 
 DESKTOP_TEMPLATE="${ROOT_DIR}/utils/appimage/ins.desktop"
 if [[ ! -f "${DESKTOP_TEMPLATE}" ]]; then
-    echo "desktop template not found: ${DESKTOP_TEMPLATE}" >&2
-    exit 1
+	echo "desktop template not found: ${DESKTOP_TEMPLATE}" >&2
+	exit 1
 fi
 
 python3 - "${DESKTOP_TEMPLATE}" "${APPDIR}/ins.desktop" "${INS_VERSION}" <<'PY'
@@ -124,8 +124,8 @@ install -Dm644 "LICENSE" "${APPDIR}/usr/share/doc/ins/LICENSE"
 
 APPIMAGETOOL="${WORK_DIR}/appimagetool-x86_64.AppImage"
 if [[ ! -x "${APPIMAGETOOL}" ]]; then
-    download "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" "${APPIMAGETOOL}"
-    chmod +x "${APPIMAGETOOL}"
+	download "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" "${APPIMAGETOOL}"
+	chmod +x "${APPIMAGETOOL}"
 fi
 
 OUTPUT="${WORK_DIR}/InstantCLI-${INS_VERSION}-x86_64.AppImage"
