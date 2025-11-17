@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5](https://github.com/instantOS/instantCLI/compare/v0.6.4...v0.6.5) - 2025-11-17
+
+### Other
+
+- horrible awk code to find newest working release
+- format
+- init ARM support
+
 ## [0.6.4](https://github.com/instantOS/instantCLI/compare/v0.6.3...v0.6.4) - 2025-11-17
 
 ### Other
