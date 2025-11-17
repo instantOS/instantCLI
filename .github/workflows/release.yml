@@ -132,7 +132,7 @@ jobs:
         uses: houseabsolute/actions-rust-cross@v1
         with:
           command: build
-          target: aarch64-linux-android
+          target: aarch64-unknown-linux-gnu
           args: "--locked --release --features cross-compile"
           strip: true
       - name: Collect ARM artifacts
@@ -159,14 +159,16 @@ jobs:
           sha256sum "artifacts/${pkg_dir_armv7}.tgz" > "artifacts/${pkg_dir_armv7}.tgz.sha256"
           rm -rf "$tmpdir_armv7"
 
-          # Android ARM64 (Termux)
-          pkg_dir_android="ins-aarch64-linux-android-v${VERSION}"
-          tmpdir_android=$(mktemp -d)
-          mkdir -p "$tmpdir_android/$pkg_dir_android"
-          install -Dm0755 "target/aarch64-linux-android/release/ins" "$tmpdir_android/$pkg_dir_android/ins"
-          tar -czf "artifacts/${pkg_dir_android}.tgz" -C "$tmpdir_android" "$pkg_dir_android"
-          sha256sum "artifacts/${pkg_dir_android}.tgz" > "artifacts/${pkg_dir_android}.tgz.sha256"
-          rm -rf "$tmpdir_android"
+          # Android ARM64 (Termux) - uses same binary as ARM64 Linux
+          # Termux uses bionic libc but is compatible with gnu builds
+          # We already built aarch64-unknown-linux-gnu above, just create termux-labeled archive
+          pkg_dir_termux="ins-aarch64-termux-v${VERSION}"
+          tmpdir_termux=$(mktemp -d)
+          mkdir -p "$tmpdir_termux/$pkg_dir_termux"
+          install -Dm0755 "target/aarch64-unknown-linux-gnu/release/ins" "$tmpdir_termux/$pkg_dir_termux/ins"
+          tar -czf "artifacts/${pkg_dir_termux}.tgz" -C "$tmpdir_termux" "$pkg_dir_termux"
+          sha256sum "artifacts/${pkg_dir_termux}.tgz" > "artifacts/${pkg_dir_termux}.tgz.sha256"
+          rm -rf "$tmpdir_termux"
       - name: Upload ARM artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -176,8 +178,8 @@ jobs:
             artifacts/ins-aarch64-unknown-linux-gnu-v${{ steps.vars.outputs.version }}.tgz.sha256
             artifacts/ins-armv7-unknown-linux-gnueabihf-v${{ steps.vars.outputs.version }}.tgz
             artifacts/ins-armv7-unknown-linux-gnueabihf-v${{ steps.vars.outputs.version }}.tgz.sha256
-            artifacts/ins-aarch64-linux-android-v${{ steps.vars.outputs.version }}.tgz
-            artifacts/ins-aarch64-linux-android-v${{ steps.vars.outputs.version }}.tgz.sha256
+            artifacts/ins-aarch64-termux-v${{ steps.vars.outputs.version }}.tgz
+            artifacts/ins-aarch64-termux-v${{ steps.vars.outputs.version }}.tgz.sha256
   pkgbuild:
     name: Build Arch package
     runs-on: ubuntu-latest
