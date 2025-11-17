@@ -22,7 +22,7 @@ fatal() {
 }
 
 usage() {
-	cat << EOF
+	cat <<EOF
 Usage: install.sh [--install-dir <path>] [--bin-name <name>]
 
 Environment variables:
@@ -79,13 +79,13 @@ choose_install_dir() {
 
 require_commands() {
 	for cmd in curl tar uname mktemp head find; do
-		command -v "$cmd" > /dev/null 2>&1 || fatal "required command '$cmd' not found"
+		command -v "$cmd" >/dev/null 2>&1 || fatal "required command '$cmd' not found"
 	done
 }
 
 detect_steam_deck() {
 	if [ -f /etc/os-release ]; then
-		if grep -q "steamdeck" /etc/os-release 2> /dev/null || grep -q "SteamOS" /etc/os-release 2> /dev/null; then
+		if grep -q "steamdeck" /etc/os-release 2>/dev/null || grep -q "SteamOS" /etc/os-release 2>/dev/null; then
 			return 0
 		fi
 	fi
@@ -297,7 +297,7 @@ verify_checksum() {
 		return 0
 	fi
 
-	if ! command -v sha256sum > /dev/null 2>&1; then
+	if ! command -v sha256sum >/dev/null 2>&1; then
 		warn "sha256sum not available; skipping checksum verification"
 		return 0
 	fi
@@ -309,9 +309,9 @@ verify_checksum() {
 	}
 
 	checksum_basename=$(basename "$archive_path")
-	if ! grep -q "  $checksum_basename$" "$checksum_file" 2> /dev/null; then
+	if ! grep -q "  $checksum_basename$" "$checksum_file" 2>/dev/null; then
 		tmp_checksum_file="$checksum_file.tmp"
-		if awk -v name="$checksum_basename" '{print $1 "  " name}' "$checksum_file" > "$tmp_checksum_file" 2> /dev/null; then
+		if awk -v name="$checksum_basename" '{print $1 "  " name}' "$checksum_file" >"$tmp_checksum_file" 2>/dev/null; then
 			mv "$tmp_checksum_file" "$checksum_file"
 		else
 			warn "failed to normalize checksum file; skipping verification"
@@ -328,11 +328,11 @@ extract_archive() {
 
 	case "$archive_path" in
 	*.tar.zst)
-		if tar --help 2> /dev/null | grep -q "--zstd"; then
+		if tar --help 2>/dev/null | grep -q "--zstd"; then
 			tar --zstd -xf "$archive_path" -C "$dest_dir"
-		elif command -v unzstd > /dev/null 2>&1; then
+		elif command -v unzstd >/dev/null 2>&1; then
 			unzstd -c "$archive_path" | tar -xf - -C "$dest_dir"
-		elif command -v zstd > /dev/null 2>&1; then
+		elif command -v zstd >/dev/null 2>&1; then
 			zstd -d --stdout "$archive_path" | tar -xf - -C "$dest_dir"
 		else
 			fatal "extracting .tar.zst requires tar with zstd support or the zstd utility"
@@ -350,7 +350,7 @@ extract_archive() {
 find_binary_path() {
 	search_root=$1
 
-	binary_path=$(find "$search_root" -type f -name "$BIN_NAME" 2> /dev/null | head -n 1)
+	binary_path=$(find "$search_root" -type f -name "$BIN_NAME" 2>/dev/null | head -n 1)
 
 	[ -n "$binary_path" ] || fatal "failed to locate $BIN_NAME in extracted archive"
 
@@ -362,7 +362,7 @@ install_binary() {
 	needs_sudo=0
 
 	if [ ! -d "$INSTALL_DIR" ]; then
-		if ! mkdir -p "$INSTALL_DIR" 2> /dev/null; then
+		if ! mkdir -p "$INSTALL_DIR" 2>/dev/null; then
 			needs_sudo=1
 		fi
 	fi
@@ -372,7 +372,7 @@ install_binary() {
 	fi
 
 	if [ "$needs_sudo" -eq 1 ]; then
-		if ! command -v sudo > /dev/null 2>&1; then
+		if ! command -v sudo >/dev/null 2>&1; then
 			fatal "cannot write to $INSTALL_DIR and sudo not available; set INSTALL_DIR to a writable directory"
 		fi
 
@@ -382,7 +382,7 @@ install_binary() {
 			sudo mkdir -p "$INSTALL_DIR" || fatal "failed to create $INSTALL_DIR with sudo"
 		fi
 
-		if command -v install > /dev/null 2>&1; then
+		if command -v install >/dev/null 2>&1; then
 			sudo install -m 755 "$binary_path" "$INSTALL_DIR/$BIN_NAME"
 		else
 			warn "install(1) not found; falling back to cp"
@@ -390,7 +390,7 @@ install_binary() {
 			sudo chmod 755 "$INSTALL_DIR/$BIN_NAME"
 		fi
 	else
-		if command -v install > /dev/null 2>&1; then
+		if command -v install >/dev/null 2>&1; then
 			install -m 755 "$binary_path" "$INSTALL_DIR/$BIN_NAME"
 		else
 			warn "install(1) not found; falling back to cp"
@@ -421,10 +421,10 @@ main() {
 	require_commands
 	detect_target
 	fetch_releases_json
-	
+
 	# Try to find a working release (fallback to previous releases if latest is missing assets)
 	release_json=$(find_working_release) || fatal "no working release found with assets for $TARGET"
-	
+
 	find_asset_urls
 
 	TMPDIR=$(mktemp -d)
