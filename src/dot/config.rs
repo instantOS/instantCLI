@@ -251,21 +251,21 @@ impl Config {
     /// Check if a path should be ignored
     pub fn is_path_ignored(&self, path: &Path) -> bool {
         let home = PathBuf::from(shellexpand::tilde("~").to_string());
-        
+
         for ignored in &self.ignored_paths {
             let ignored_path = if ignored.starts_with('~') {
                 PathBuf::from(shellexpand::tilde(ignored).to_string())
             } else {
                 home.join(ignored)
             };
-            
+
             // Check if the path starts with the ignored path (for directories)
             // or is exactly the ignored path (for files)
             if path == ignored_path || path.starts_with(&ignored_path) {
                 return true;
             }
         }
-        
+
         false
     }
 }

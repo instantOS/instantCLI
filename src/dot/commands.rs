@@ -157,7 +157,10 @@ fn handle_ignore_command(
                 emit(
                     Level::Info,
                     "dot.ignore.list.empty",
-                    &format!("{} No paths are currently ignored", char::from(NerdFont::Info)),
+                    &format!(
+                        "{} No paths are currently ignored",
+                        char::from(NerdFont::Info)
+                    ),
                     None,
                 );
             } else {
@@ -187,7 +190,11 @@ fn handle_ignore_command(
     Ok(())
 }
 
-pub fn handle_dot_command(command: &DotCommands, config_path: Option<&str>, debug: bool) -> Result<()> {
+pub fn handle_dot_command(
+    command: &DotCommands,
+    config_path: Option<&str>,
+    debug: bool,
+) -> Result<()> {
     let mut config = Config::load(config_path)?;
     config.ensure_directories()?;
     let db = Database::new(config.database_path().to_path_buf())?;
@@ -217,12 +224,7 @@ pub fn handle_dot_command(command: &DotCommands, config_path: Option<&str>, debu
         } => {
             let cwd = std::env::current_dir()
                 .map_err(|e| anyhow::anyhow!("Unable to determine current directory: {}", e))?;
-            super::meta::handle_init_command(
-                &mut config,
-                &cwd,
-                name.as_deref(),
-                *non_interactive,
-            )?;
+            super::meta::handle_init_command(&mut config, &cwd, name.as_deref(), *non_interactive)?;
         }
         DotCommands::Diff { path } => {
             super::diff_all(&config, debug, path.as_deref(), &db)?;

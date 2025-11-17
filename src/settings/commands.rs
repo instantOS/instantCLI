@@ -165,10 +165,5 @@ pub fn handle_settings_command(
         None
     };
 
-    dispatch_settings_command(
-        debug,
-        internal_privileged_mode,
-        command.clone(),
-        navigation,
-    )
+    dispatch_settings_command(debug, internal_privileged_mode, command.clone(), navigation)
 }
