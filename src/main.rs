@@ -272,13 +272,142 @@ fn handle_debug_command(command: DebugCommands) -> Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    clap_complete::CompleteEnv::with_factory(cli_command).complete();
+fn handle_dot_command(command: &DotCommands, config_path: Option<&str>, debug: bool) -> Result<()> {
+    let mut config = execute_with_error_handling(
+        Config::load(config_path),
+        "Error loading configuration",
+        None,
+    )?;
 
-    let cli = Cli::parse();
+    config.ensure_directories()?;
+    let db = execute_with_error_handling(
+        Database::new(config.database_path().to_path_buf()),
+        "Error opening database",
+        None,
+    )?;
 
-    // Initialize UI renderer
+    match command {
+        DotCommands::Repo { command } => {
+            execute_with_error_handling(
+                dot::repo::commands::handle_repo_command(&mut config, &db, command, debug),
+                "Error handling repository command",
+                None,
+            )?;
+        }
+        DotCommands::Reset { path } => {
+            execute_with_error_handling(
+                dot::reset_modified(&config, &db, path),
+                "Error resetting dotfiles",
+                None,
+            )?;
+        }
+        DotCommands::Apply => {
+            execute_with_error_handling(
+                dot::apply_all(&config, &db),
+                "Error applying dotfiles",
+                Some("Applied dotfiles"),
+            )?;
+        }
+        DotCommands::Add { path, all } => {
+            execute_with_error_handling(
+                dot::add_dotfile(&config, &db, path, *all),
+                "Error adding/updating dotfile",
+                None,
+            )?;
+        }
+        DotCommands::Update => {
+            execute_with_error_handling(
+                dot::update_all(&config, debug),
+                "Error updating repos",
+                Some("All repos updated"),
+            )?;
+        }
+        DotCommands::Status { path, all } => {
+            execute_with_error_handling(
+                dot::status_all(&config, debug, path.as_deref(), &db, *all),
+                "Error checking repo status",
+                None,
+            )?;
+        }
+        DotCommands::Init {
+            name,
+            non_interactive,
+        } => {
+            let cwd = std::env::current_dir()
+                .map_err(|e| anyhow::anyhow!("Unable to determine current directory: {}", e))?;
+            execute_with_error_handling(
+                dot::meta::handle_init_command(
+                    &mut config,
+                    &cwd,
+                    name.as_deref(),
+                    *non_interactive,
+                ),
+                "Error initializing repo",
+                None,
+            )?;
+        }
+        DotCommands::Diff { path } => {
+            execute_with_error_handling(
+                dot::diff_all(&config, debug, path.as_deref(), &db),
+                "Error showing dotfile differences",
+                None,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_settings_command(
+    command: &Option<SettingsCommands>,
+    setting: &Option<String>,
+    category: &Option<String>,
+    search: bool,
+    debug: bool,
+    internal_privileged_mode: bool,
+) -> Result<()> {
+    use settings::SettingsNavigation;
+
+    let navigation = if let Some(setting_id) = setting {
+        Some(SettingsNavigation::Setting(setting_id.clone()))
+    } else if let Some(category_id) = category {
+        Some(SettingsNavigation::Category(category_id.clone()))
+    } else if search {
+        Some(SettingsNavigation::Search)
+    } else {
+        None
+    };
+
+    execute_with_error_handling(
+        settings::dispatch_settings_command(
+            debug,
+            internal_privileged_mode,
+            command.clone(),
+            navigation,
+        ),
+        "Error running settings",
+        None,
+    )
+}
+
+fn handle_completions_command(command: &completions::CompletionCommands) -> Result<()> {
+    match command {
+        completions::CompletionCommands::Generate { shell } => {
+            let script = completions::generate(*shell)?;
+            print!("{script}");
+        }
+        completions::CompletionCommands::Install {
+            shell,
+            snippet_only,
+        } => {
+            let instructions = completions::install(*shell, *snippet_only)?;
+            println!("{instructions}");
+        }
+    }
+    Ok(())
+}
+
+fn initialize_cli(cli: &Cli) {
     let format = match cli.output {
         OutputFormatArg::Text => ui::OutputFormat::Text,
         OutputFormatArg::Json => ui::OutputFormat::Json,
@@ -291,10 +420,11 @@ async fn main() -> Result<()> {
 
     if cli.debug {
         eprintln!("Debug mode is on");
-        // Set global debug mode for restic logging
         crate::restic::logging::set_debug_mode(true);
     }
+}
 
+async fn dispatch_command(cli: &Cli) -> Result<()> {
     match &cli.command {
         Some(Commands::Game { command }) => {
             execute_with_error_handling(
@@ -304,95 +434,7 @@ async fn main() -> Result<()> {
             )?;
         }
         Some(Commands::Dot { command }) => {
-            // Load configuration once at startup
-            let mut config = execute_with_error_handling(
-                Config::load(cli.config.as_deref()),
-                "Error loading configuration",
-                None,
-            )?;
-
-            // Ensure directories exist and create database instance once at startup
-            config.ensure_directories()?;
-            let db = execute_with_error_handling(
-                Database::new(config.database_path().to_path_buf()),
-                "Error opening database",
-                None,
-            )?;
-
-            match command {
-                DotCommands::Repo { command } => {
-                    execute_with_error_handling(
-                        dot::repo::commands::handle_repo_command(
-                            &mut config,
-                            &db,
-                            command,
-                            cli.debug,
-                        ),
-                        "Error handling repository command",
-                        None,
-                    )?;
-                }
-                DotCommands::Reset { path } => {
-                    execute_with_error_handling(
-                        dot::reset_modified(&config, &db, path),
-                        "Error resetting dotfiles",
-                        None,
-                    )?;
-                }
-                DotCommands::Apply => {
-                    execute_with_error_handling(
-                        dot::apply_all(&config, &db),
-                        "Error applying dotfiles",
-                        Some("Applied dotfiles"),
-                    )?;
-                }
-                DotCommands::Add { path, all } => {
-                    execute_with_error_handling(
-                        dot::add_dotfile(&config, &db, path, *all),
-                        "Error adding/updating dotfile",
-                        None, // Success messages are handled within add_dotfile
-                    )?;
-                }
-                DotCommands::Update => {
-                    execute_with_error_handling(
-                        dot::update_all(&config, cli.debug),
-                        "Error updating repos",
-                        Some("All repos updated"),
-                    )?;
-                }
-                DotCommands::Status { path, all } => {
-                    execute_with_error_handling(
-                        dot::status_all(&config, cli.debug, path.as_deref(), &db, *all),
-                        "Error checking repo status",
-                        None,
-                    )?;
-                }
-                DotCommands::Init {
-                    name,
-                    non_interactive,
-                } => {
-                    let cwd = std::env::current_dir().map_err(|e| {
-                        anyhow::anyhow!("Unable to determine current directory: {}", e)
-                    })?;
-                    execute_with_error_handling(
-                        dot::meta::handle_init_command(
-                            &mut config,
-                            &cwd,
-                            name.as_deref(),
-                            *non_interactive,
-                        ),
-                        "Error initializing repo",
-                        None,
-                    )?;
-                }
-                DotCommands::Diff { path } => {
-                    execute_with_error_handling(
-                        dot::diff_all(&config, cli.debug, path.as_deref(), &db),
-                        "Error showing dotfile differences",
-                        None,
-                    )?;
-                }
-            }
+            handle_dot_command(command, cli.config.as_deref(), cli.debug)?;
         }
         Some(Commands::Dev { command }) => {
             execute_with_error_handling(
@@ -430,26 +472,13 @@ async fn main() -> Result<()> {
             category,
             search,
         }) => {
-            use settings::SettingsNavigation;
-            let navigation = if let Some(setting_id) = setting {
-                Some(SettingsNavigation::Setting(setting_id.clone()))
-            } else if let Some(category_id) = category {
-                Some(SettingsNavigation::Category(category_id.clone()))
-            } else if *search {
-                Some(SettingsNavigation::Search)
-            } else {
-                None
-            };
-
-            execute_with_error_handling(
-                settings::dispatch_settings_command(
-                    cli.debug,
-                    cli.internal_privileged_mode,
-                    command.clone(),
-                    navigation,
-                ),
-                "Error running settings",
-                None,
+            handle_settings_command(
+                command,
+                setting,
+                category,
+                *search,
+                cli.debug,
+                cli.internal_privileged_mode,
             )?;
         }
         Some(Commands::Video { command }) => {
@@ -466,19 +495,9 @@ async fn main() -> Result<()> {
                 None,
             )?;
         }
-        Some(Commands::Completions { command }) => match command {
-            completions::CompletionCommands::Generate { shell } => {
-                let script = completions::generate(*shell)?;
-                print!("{script}");
-            }
-            completions::CompletionCommands::Install {
-                shell,
-                snippet_only,
-            } => {
-                let instructions = completions::install(*shell, *snippet_only)?;
-                println!("{instructions}");
-            }
-        },
+        Some(Commands::Completions { command }) => {
+            handle_completions_command(command)?;
+        }
         Some(Commands::SelfUpdate) => {
             execute_with_error_handling(
                 self_update::self_update().await,
@@ -487,10 +506,17 @@ async fn main() -> Result<()> {
             )?;
         }
         None => {
-            // Print full help by default when no command is provided
             Cli::command().print_help()?;
             println!();
         }
     }
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    clap_complete::CompleteEnv::with_factory(cli_command).complete();
+    let cli = Cli::parse();
+    initialize_cli(&cli);
+    dispatch_command(&cli).await
 }
