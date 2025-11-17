@@ -223,6 +223,9 @@ branch = "main"
 - `ins dot repo disable <name>`: Disable a repository temporarily
 - `ins dot repo subdirs list <name>`: List available subdirectories
 - `ins dot repo subdirs set <name> <subdirs...>`: Set active subdirectories
+- `ins dot ignore add <path>`: Add a path to the ignore list (prevents apply/update)
+- `ins dot ignore remove <path>`: Remove a path from the ignore list
+- `ins dot ignore list`: List all currently ignored paths
 
 ### Game Save Management Commands
 - `ins game init`: Initialize restic repository for game saves
@@ -308,3 +311,41 @@ active_subdirs = ["dots", "themes"]
 - If `active_subdirs` is not specified in global config, defaults to `["dots"]`
 - Only the first subdirectory is active by default to maintain backward compatibility
 - Later repositories override earlier ones for the same file paths (overlay system)
+
+## Path Ignoring
+
+Sometimes you may want to prevent certain dotfiles from being applied on a specific machine, even if they exist in your dotfile repositories. The ignore functionality allows you to maintain a local list of paths that should be skipped during `ins dot apply`.
+
+### Use Cases
+
+- **Machine-specific exclusions**: Ignore dotfiles that don't make sense on a particular machine (e.g., ignore GUI configs on a headless server)
+- **Prevent overwrites**: Exclude files you've intentionally deleted locally and don't want restored
+- **Temporary exclusions**: Temporarily ignore specific configs while testing alternatives
+
+### Managing Ignored Paths
+
+```bash
+# Add a path to ignore list (supports both files and directories)
+ins dot ignore add ~/.config/nvim
+ins dot ignore add .bashrc
+
+# Remove a path from ignore list
+ins dot ignore remove ~/.config/nvim
+
+# List all ignored paths
+ins dot ignore list
+```
+
+### Path Formats
+
+The ignore command accepts paths in multiple formats:
+- Tilde notation: `~/.config/nvim` or `~/.bashrc`
+- Relative paths: `.config/nvim` or `.bashrc` (automatically prefixed with `~/`)
+- Absolute paths: `/home/user/.config/nvim` (converted to tilde notation)
+
+### Behavior
+
+- Ignored paths are stored in your dotfiles configuration (`~/.config/instant/dots.toml`)
+- When you run `ins dot apply`, any dotfiles matching ignored paths are skipped
+- Directory ignores apply recursively (ignoring `~/.config/nvim` ignores all files under that directory)
+- Ignored paths are local to each machine and not synced with your dotfile repositories
