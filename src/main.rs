@@ -487,12 +487,9 @@ async fn main() -> Result<()> {
             )?;
         }
         None => {
-            emit(
-                Level::Info,
-                "cli.help",
-                &format!("ℹ️ {}: run with --help for usage", env!("CARGO_BIN_NAME")),
-                None,
-            );
+            // Print full help by default when no command is provided
+            Cli::command().print_help()?;
+            println!();
         }
     }
     Ok(())
