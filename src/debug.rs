@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::Subcommand;
 
 use crate::restic::logging::ResticCommandLogger;
-use crate::ui::{emit, Level};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::{Level, emit};
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DebugCommands {
