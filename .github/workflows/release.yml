@@ -97,6 +97,87 @@ jobs:
             artifacts/ins-${{ steps.target.outputs.triple }}-v${{ steps.vars.outputs.version }}.tgz.sha256
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage.sha256
+  cross-compile:
+    name: Cross-compile for ARM targets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract version
+        id: vars
+        run: |
+          version=$(awk -F '"' '/^version =/ {print $2; exit}' Cargo.toml)
+          if [[ -z "$version" ]]; then
+            echo "Failed to determine version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cross compile for ARM64 Linux
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: build
+          target: aarch64-unknown-linux-gnu
+          args: "--locked --release --features cross-compile"
+          strip: true
+      - name: Cross compile for ARMv7 Linux
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: build
+          target: armv7-unknown-linux-gnueabihf
+          args: "--locked --release --features cross-compile"
+          strip: true
+      - name: Cross compile for Android ARM64 (Termux)
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: build
+          target: aarch64-linux-android
+          args: "--locked --release --features cross-compile"
+          strip: true
+      - name: Collect ARM artifacts
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          mkdir -p artifacts
+          
+          # ARM64 Linux
+          pkg_dir_aarch64="ins-aarch64-unknown-linux-gnu-v${VERSION}"
+          tmpdir_aarch64=$(mktemp -d)
+          mkdir -p "$tmpdir_aarch64/$pkg_dir_aarch64"
+          install -Dm0755 "target/aarch64-unknown-linux-gnu/release/ins" "$tmpdir_aarch64/$pkg_dir_aarch64/ins"
+          tar -czf "artifacts/${pkg_dir_aarch64}.tgz" -C "$tmpdir_aarch64" "$pkg_dir_aarch64"
+          sha256sum "artifacts/${pkg_dir_aarch64}.tgz" > "artifacts/${pkg_dir_aarch64}.tgz.sha256"
+          rm -rf "$tmpdir_aarch64"
+          
+          # ARMv7 Linux
+          pkg_dir_armv7="ins-armv7-unknown-linux-gnueabihf-v${VERSION}"
+          tmpdir_armv7=$(mktemp -d)
+          mkdir -p "$tmpdir_armv7/$pkg_dir_armv7"
+          install -Dm0755 "target/armv7-unknown-linux-gnueabihf/release/ins" "$tmpdir_armv7/$pkg_dir_armv7/ins"
+          tar -czf "artifacts/${pkg_dir_armv7}.tgz" -C "$tmpdir_armv7" "$pkg_dir_armv7"
+          sha256sum "artifacts/${pkg_dir_armv7}.tgz" > "artifacts/${pkg_dir_armv7}.tgz.sha256"
+          rm -rf "$tmpdir_armv7"
+          
+          # Android ARM64 (Termux)
+          pkg_dir_android="ins-aarch64-linux-android-v${VERSION}"
+          tmpdir_android=$(mktemp -d)
+          mkdir -p "$tmpdir_android/$pkg_dir_android"
+          install -Dm0755 "target/aarch64-linux-android/release/ins" "$tmpdir_android/$pkg_dir_android/ins"
+          tar -czf "artifacts/${pkg_dir_android}.tgz" -C "$tmpdir_android" "$pkg_dir_android"
+          sha256sum "artifacts/${pkg_dir_android}.tgz" > "artifacts/${pkg_dir_android}.tgz.sha256"
+          rm -rf "$tmpdir_android"
+      - name: Upload ARM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ins-${{ steps.vars.outputs.version }}-arm-binaries
+          path: |
+            artifacts/ins-aarch64-unknown-linux-gnu-v${{ steps.vars.outputs.version }}.tgz
+            artifacts/ins-aarch64-unknown-linux-gnu-v${{ steps.vars.outputs.version }}.tgz.sha256
+            artifacts/ins-armv7-unknown-linux-gnueabihf-v${{ steps.vars.outputs.version }}.tgz
+            artifacts/ins-armv7-unknown-linux-gnueabihf-v${{ steps.vars.outputs.version }}.tgz.sha256
+            artifacts/ins-aarch64-linux-android-v${{ steps.vars.outputs.version }}.tgz
+            artifacts/ins-aarch64-linux-android-v${{ steps.vars.outputs.version }}.tgz.sha256
   pkgbuild:
     name: Build Arch package
     runs-on: ubuntu-latest
@@ -136,6 +217,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build
+      - cross-compile
       - pkgbuild
     permissions:
       contents: write

@@ -7,6 +7,10 @@ license = "GPL-2.0-only"
 homepage = "https://instantos.io"
 repository = "https://github.com/instantOS/instantCLI"
 
+[features]
+default = []
+cross-compile = ["reqwest/native-tls-vendored", "git2/vendored-openssl", "rusqlite/bundled"]
+
 [dependencies]
 anyhow = "1.0.100"
 chrono = { version = "0.4.42", features = ["serde"] }
@@ -45,8 +49,3 @@ dialoguer = "0.12.0"
 pulldown-cmark = { version = "0.12.2", features = ["simd"] }
 serde_yaml = "0.9.34"
 nix = { version = "0.29", features = ["fs"] }
-
-
-[dev-dependencies]
-tempfile = "3.23.0"
-serde_json = "1.0.145"
