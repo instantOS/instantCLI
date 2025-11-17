@@ -1,0 +1,20 @@
+[Desktop Entry]
+Comment[en_US]=Install InstantCLI command-line utility suite
+Comment=Install InstantCLI command-line utility suite
+Exec=sh -c 'curl -L https://raw.githubusercontent.com/instantOS/instantCLI/main/scripts/install.sh | bash'
+GenericName[en_US]=InstantCLI Installer
+GenericName=InstantCLI Installer
+Name[en]=Install InstantCLI
+Name[es]=Instalar InstantCLI
+Name=Install InstantCLI
+Path=
+StartupNotify=false
+Terminal=true
+TerminalOptions=
+Type=Application
+Icon=utilities-terminal
+X-DBUS-ServiceName=
+X-DBUS-StartupType=
+X-KDE-SubstituteUID=false
+X-KDE-Username=
+Categories=Utility;System;
