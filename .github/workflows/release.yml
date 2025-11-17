@@ -140,7 +140,7 @@ jobs:
           VERSION: ${{ steps.vars.outputs.version }}
         run: |
           mkdir -p artifacts
-          
+
           # ARM64 Linux
           pkg_dir_aarch64="ins-aarch64-unknown-linux-gnu-v${VERSION}"
           tmpdir_aarch64=$(mktemp -d)
@@ -149,7 +149,7 @@ jobs:
           tar -czf "artifacts/${pkg_dir_aarch64}.tgz" -C "$tmpdir_aarch64" "$pkg_dir_aarch64"
           sha256sum "artifacts/${pkg_dir_aarch64}.tgz" > "artifacts/${pkg_dir_aarch64}.tgz.sha256"
           rm -rf "$tmpdir_aarch64"
-          
+
           # ARMv7 Linux
           pkg_dir_armv7="ins-armv7-unknown-linux-gnueabihf-v${VERSION}"
           tmpdir_armv7=$(mktemp -d)
@@ -158,7 +158,7 @@ jobs:
           tar -czf "artifacts/${pkg_dir_armv7}.tgz" -C "$tmpdir_armv7" "$pkg_dir_armv7"
           sha256sum "artifacts/${pkg_dir_armv7}.tgz" > "artifacts/${pkg_dir_armv7}.tgz.sha256"
           rm -rf "$tmpdir_armv7"
-          
+
           # Android ARM64 (Termux)
           pkg_dir_android="ins-aarch64-linux-android-v${VERSION}"
           tmpdir_android=$(mktemp -d)

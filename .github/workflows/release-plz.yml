@@ -1,10 +1,8 @@
 name: Release-plz
-
 on:
   push:
     branches:
       - main
-
 jobs:
   release-plz-release:
     name: Release-plz release
@@ -30,7 +28,6 @@ jobs:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
-
   release-plz-pr:
     name: Release-plz PR
     runs-on: ubuntu-latest
