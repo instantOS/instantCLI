@@ -3,7 +3,7 @@
 set -eu
 
 REPO="instantOS/instantCLI"
-API_URL="https://api.github.com/repos/$REPO/releases/latest"
+API_URL="https://api.github.com/repos/$REPO/releases"
 BIN_NAME="ins"
 
 INSTALL_DIR=${INSTALL_DIR:-}
@@ -117,11 +117,110 @@ detect_target() {
 	fi
 }
 
-fetch_release_json() {
-	release_json=$(curl -fsSL \
+fetch_releases_json() {
+	releases_json=$(curl -fsSL \
 		-H "Accept: application/vnd.github+json" \
 		-H "User-Agent: instantcli-installer" \
-		"$API_URL") || fatal "failed to fetch release metadata"
+		"$API_URL") || fatal "failed to fetch releases metadata"
+}
+
+# Parse releases and find one with assets for our target
+find_working_release() {
+	# Extract releases array and process each release
+	printf '%s\n' "$releases_json" | awk -v target="$TARGET" -v use_appimage="$USE_APPIMAGE" '
+	function find_asset(release_data, target_pattern) {
+		rest = release_data
+		while (match(rest, /"browser_download_url":"([^"]+)"/)) {
+			url_start = index(rest, "\"browser_download_url\":\"") + 24
+			url_end = index(substr(rest, url_start), "\"")
+			url = substr(rest, url_start, url_end - 1)
+			
+			if (use_appimage == 1) {
+				if (url ~ /\.AppImage$/ && url !~ /\.sha256$/) {
+					return url
+				}
+			} else {
+				if (index(url, target_pattern) && (url ~ /\.tar\.zst$/ || url ~ /\.tgz$/)) {
+					return url
+				}
+			}
+			rest = substr(rest, RSTART + RLENGTH)
+		}
+		return ""
+	}
+	
+	function is_valid_release(release_data) {
+		# Skip drafts and prereleases
+		if (match(release_data, /"draft":true/) || match(release_data, /"prerelease":true/)) {
+			return 0
+		}
+		return 1
+	}
+	
+	function extract_tag(release_data) {
+		if (match(release_data, /"tag_name":"([^"]+)"/)) {
+			tag_start = index(release_data, "\"tag_name\":\"") + 12
+			tag_end = index(substr(release_data, tag_start), "\"")
+			tag = substr(release_data, tag_start, tag_end - 1)
+			return tag
+		}
+		return ""
+	}
+	
+	# Process each release in the array
+	rest = $0
+	in_release = 0
+	release_data = ""
+	
+	while ((pos = index(rest, "{")) > 0) {
+		if (!in_release) {
+			# Start of a new release object
+			in_release = 1
+			bracket_count = 1
+			release_data = "{"
+			rest = substr(rest, pos + 1)
+		} else {
+			# We are inside a release object
+			i = 1
+			while (i <= length(rest)) {
+				char = substr(rest, i, 1)
+				if (char == "{") {
+					bracket_count++
+				} else if (char == "}") {
+					bracket_count--
+					if (bracket_count == 0) {
+						# End of release object
+						release_data = release_data substr(rest, 1, i)
+						rest = substr(rest, i + 1)
+						
+						# Check if this is a valid release with assets for our target
+						if (is_valid_release(release_data)) {
+							asset_url = find_asset(release_data, target)
+							if (asset_url != "") {
+								# Found a working release, print it and exit
+								print release_data
+								exit 0
+							}
+						}
+						
+						in_release = 0
+						release_data = ""
+						break
+					}
+				}
+				release_data = release_data char
+				i++
+			}
+			if (in_release) {
+				release_data = release_data rest
+				rest = ""
+			}
+		}
+	}
+	
+	# If we get here, no working release was found
+	exit 1
+	'
 }
 
 find_asset_urls() {
@@ -141,7 +240,6 @@ find_asset_urls() {
                 }
             }
         ')
-
 		[ -n "$asset_url" ] || fatal "no AppImage found in release"
 	else
 		asset_url=$(printf '%s\n' "$release_json" | awk -v target="$TARGET" '
@@ -159,7 +257,6 @@ find_asset_urls() {
                 }
             }
         ')
-
 		[ -n "$asset_url" ] || fatal "no prebuilt archive found for $TARGET"
 	fi
 
@@ -313,7 +410,7 @@ print_summary() {
 	case ":$PATH:" in
 	*:"$INSTALL_DIR":*) ;;
 	*)
-		warn "$INSTALL_DIR is not in PATH; add 'export PATH=\\$PATH:$INSTALL_DIR' to your shell profile"
+		warn "$INSTALL_DIR is not in PATH; add 'export PATH=\$PATH:$INSTALL_DIR' to your shell profile"
 		;;
 	esac
 }
@@ -323,7 +420,11 @@ main() {
 	choose_install_dir
 	require_commands
 	detect_target
-	fetch_release_json
+	fetch_releases_json
+	
+	# Try to find a working release (fallback to previous releases if latest is missing assets)
+	release_json=$(find_working_release) || fatal "no working release found with assets for $TARGET"
+	
 	find_asset_urls
 
 	TMPDIR=$(mktemp -d)
