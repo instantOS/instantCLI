@@ -170,7 +170,7 @@ enum MenuAction {
 }
 
 /// Run the main category selection menu
-fn run_main_menu(ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Result<MenuAction> {
+fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Result<MenuAction> {
     let mut menu_items = Vec::with_capacity(CATEGORIES.len() + 1);
     menu_items.push(CategoryMenuItem::SearchAll);
 

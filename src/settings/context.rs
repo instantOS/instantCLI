@@ -330,8 +330,8 @@ pub fn apply_definition(
         }
         (
             SettingKind::Choice {
-                key,
-                options,
+                key: _,
+                options: _,
                 apply: Some(apply_fn),
                 ..
             },

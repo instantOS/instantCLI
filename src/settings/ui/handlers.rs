@@ -29,7 +29,7 @@ fn choice_menu_index(items: &[ChoiceMenuItem], selected: ChoiceMenuItem) -> Opti
 
 /// Check and handle requirements for a setting
 fn ensure_requirements(
-    ctx: &mut SettingsContext,
+    _ctx: &mut SettingsContext,
     definition: &'static SettingDefinition,
 ) -> Result<bool> {
     let mut unmet = Vec::new();
