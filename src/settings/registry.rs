@@ -672,7 +672,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_browser,
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(
+            super::defaultapps::XDG_UTILS_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "apps.email",
@@ -685,7 +687,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_email,
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(
+            super::defaultapps::XDG_UTILS_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "apps.file_manager",
@@ -698,7 +702,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_file_manager,
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(
+            super::defaultapps::XDG_UTILS_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "apps.text_editor",
@@ -711,7 +717,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_text_editor,
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(
+            super::defaultapps::XDG_UTILS_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "apps.image_viewer",
@@ -724,7 +732,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_image_viewer,
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(
+            super::defaultapps::XDG_UTILS_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "apps.video_player",
@@ -737,7 +747,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_video_player,
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(
+            super::defaultapps::XDG_UTILS_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "apps.music_player",
@@ -750,7 +762,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_music_player,
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(
+            super::defaultapps::XDG_UTILS_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "apps.pdf_viewer",
@@ -763,7 +777,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_pdf_viewer,
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(
+            super::defaultapps::XDG_UTILS_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "apps.archive_manager",
@@ -776,7 +792,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_archive_manager,
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(
+            super::defaultapps::XDG_UTILS_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "apps.default",
@@ -789,7 +807,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::manage_default_apps,
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(
+            super::defaultapps::XDG_UTILS_PACKAGE,
+        )],
     },
     SettingDefinition {
         id: "system.upgrade",
