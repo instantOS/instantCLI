@@ -37,13 +37,16 @@ fn check_and_set_legacy_mode(stderr: &[u8]) {
         || stderr_str.contains("invalid color specification")
     {
         USE_LEGACY_ARGS.store(true, std::sync::atomic::Ordering::Relaxed);
-        
+
         // Emit debug message when legacy mode is activated
         if crate::ui::is_debug_enabled() {
             crate::ui::emit(
                 crate::ui::Level::Debug,
                 "fzf.legacy_mode_activated",
-                &format!("FZF legacy mode activated due to error: {}", stderr_str.trim()),
+                &format!(
+                    "FZF legacy mode activated due to error: {}",
+                    stderr_str.trim()
+                ),
                 None,
             );
         }
@@ -56,7 +59,7 @@ fn log_fzf_failure(stderr: &[u8], exit_code: Option<i32>) {
         let code_str = exit_code
             .map(|c| format!("exit code {}", c))
             .unwrap_or_else(|| "unknown".to_string());
-        
+
         crate::ui::emit(
             crate::ui::Level::Debug,
             "fzf.execution_failed",
