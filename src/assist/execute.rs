@@ -1,6 +1,7 @@
 use crate::assist::utils;
 use crate::common::dependencies::Package;
 use crate::common::requirements::ensure_packages_batch;
+use crate::common::shell::shell_quote;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use std::io::IsTerminal;
@@ -147,18 +148,4 @@ fn emit_dependency_warning(assist: &AssistAction) {
         ),
         None,
     );
-}
-
-fn shell_quote(value: &str) -> String {
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\\''");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
 }

@@ -20,6 +20,8 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use crate::common::shell::shell_quote;
+
 /// Check if the error indicates an old fzf version and exit if so
 fn check_for_old_fzf_and_exit(stderr: &[u8]) {
     let stderr_str = String::from_utf8_lossy(stderr);
@@ -57,20 +59,6 @@ fn log_fzf_failure(stderr: &[u8], exit_code: Option<i32>) {
             None,
         );
     }
-}
-
-fn shell_escape(s: &str) -> String {
-    if s.is_empty() {
-        return "''".to_string();
-    }
-
-    if s.chars()
-        .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '=' | '/' | '.' | ':' | ','))
-    {
-        return s.to_string();
-    }
-
-    format!("'{}'", s.replace('\'', r"'\''"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,7 +137,7 @@ impl FzfWrapper {
         let mut cmd = Command::new("sh");
         cmd.arg("-c");
 
-        let escaped_args: Vec<String> = fzf_args.iter().map(|arg| shell_escape(arg)).collect();
+        let escaped_args: Vec<String> = fzf_args.iter().map(|arg| shell_quote(arg)).collect();
         let fzf_cmd = format!("fzf {}", escaped_args.join(" "));
         let full_command = format!("unset FZF_DEFAULT_OPTS; {} | {}", input_command, fzf_cmd);
 

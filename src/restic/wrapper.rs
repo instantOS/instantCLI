@@ -43,7 +43,7 @@ impl ResticWrapper {
         Ok(output)
     }
 
-    fn base_command(&self) -> Command {
+    pub fn base_command(&self) -> Command {
         let mut cmd = Command::new("restic");
         cmd.arg("-r")
             .arg(&self.repository)

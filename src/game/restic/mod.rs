@@ -409,14 +409,15 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
         return Err(anyhow::anyhow!("no restic command provided"));
     }
 
-    // Build restic command with repository and password
-    let mut cmd = std::process::Command::new("restic");
+    // Initialize restic wrapper to get base command configuration
+    let restic = crate::restic::ResticWrapper::new(
+        game_config.repo.as_path().to_string_lossy().to_string(),
+        game_config.repo_password.clone(),
+    )
+    .context("Failed to initialize restic wrapper")?;
 
-    // Set repository
-    cmd.arg("-r").arg(game_config.repo.as_path());
-
-    // Set password via environment variable
-    cmd.env("RESTIC_PASSWORD", &game_config.repo_password);
+    // Build restic command using centralized configuration
+    let mut cmd = restic.base_command();
 
     // Add user-provided arguments
     cmd.args(&args);
