@@ -73,6 +73,18 @@ just rootinstall
 - Restic
 - SQLite3
 
+#### Arch
+
+```bash
+sudo pacman -Sy git fzf restic sqlite --needed
+```
+
+#### Ubuntu
+
+```bash
+sudo apt update; sudo apt install -y git fzf restic libsqlite3-dev sqlite3
+```
+
 ## Dotfile Management
 
 ### Dotfile Structure
