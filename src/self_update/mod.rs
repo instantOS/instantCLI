@@ -95,12 +95,9 @@ struct GitHubRelease {
     assets: Vec<GitHubAsset>,
 }
 
-/// Fetch the latest release from GitHub
-async fn fetch_latest_release() -> Result<GitHubRelease> {
-    let url = format!(
-        "{}/{}/{}/releases/latest",
-        GITHUB_API_URL, REPO_OWNER, REPO_NAME
-    );
+/// Fetch the latest release from GitHub that has binaries available
+async fn fetch_latest_release_with_binaries(target: &str) -> Result<GitHubRelease> {
+    let url = format!("{}/{}/{}/releases", GITHUB_API_URL, REPO_OWNER, REPO_NAME);
 
     let client = reqwest::Client::builder()
         .user_agent(format!("{}/{}", BIN_NAME, env!("CARGO_PKG_VERSION")))
@@ -118,10 +115,26 @@ async fn fetch_latest_release() -> Result<GitHubRelease> {
         return Err(anyhow!("GitHub API returned status: {}", response.status()));
     }
 
-    response
-        .json::<GitHubRelease>()
+    let releases: Vec<GitHubRelease> = response
+        .json()
         .await
-        .context("Failed to parse release information")
+        .context("Failed to parse release information")?;
+
+    // Find the first release that has the required binary for this target
+    for release in releases {
+        let has_binary = release.assets.iter().any(|a| {
+            a.name.contains(target) && (a.name.ends_with(".tar.zst") || a.name.ends_with(".tgz"))
+        });
+
+        if has_binary {
+            return Ok(release);
+        }
+    }
+
+    Err(anyhow!(
+        "No release found with binaries for target: {}",
+        target
+    ))
 }
 
 /// Compare version strings
@@ -397,7 +410,7 @@ pub async fn self_update() -> Result<()> {
 
     let current_version = env!("CARGO_PKG_VERSION");
     let target = detect_target()?;
-    let release = fetch_latest_release().await?;
+    let release = fetch_latest_release_with_binaries(&target).await?;
 
     let latest_version = release.tag_name.trim_start_matches('v');
 
