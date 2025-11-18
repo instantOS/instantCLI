@@ -79,9 +79,3 @@ pub fn show_dependency_list(
     Ok(())
 }
 
-fn format_path_for_display(path: &str) -> String {
-    let path_buf = std::path::PathBuf::from(path);
-    crate::dot::path_serde::TildePath::new(path_buf)
-        .to_tilde_string()
-        .unwrap_or_else(|_| path.to_string())
-}

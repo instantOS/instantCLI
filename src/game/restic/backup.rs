@@ -91,20 +91,6 @@ impl GameBackup {
         Ok("backup completed (no snapshot created)".to_string())
     }
 
-    /// List backups for a specific game
-    pub fn list_game_backups(&self, game_name: &str) -> Result<String> {
-        let restic = ResticWrapper::new(
-            self.config.repo.as_path().to_string_lossy().to_string(),
-            self.config.repo_password.clone(),
-        )
-        .context("Failed to initialize restic wrapper")?;
-
-        let json = restic
-            .list_snapshots_filtered(Some(tags::create_game_tags(game_name)))
-            .context("Failed to list restic snapshots")?;
-
-        Ok(json)
-    }
 
     /// Restore a game backup
     pub fn restore_game_backup(
