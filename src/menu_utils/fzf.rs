@@ -1,3 +1,26 @@
+//! FZF wrapper with automatic fallback for older versions
+//!
+//! This module provides a robust wrapper around fzf that automatically detects and handles
+//! older fzf versions (e.g., 0.27.0 shipped with Ubuntu) that don't support modern options.
+//!
+//! ## Fallback Mechanism
+//!
+//! When fzf fails with errors like "unknown option" or "invalid color specification":
+//! 1. The error is detected by checking stderr
+//! 2. The `USE_LEGACY_ARGS` flag is set globally
+//! 3. The operation is automatically retried with legacy-safe arguments
+//! 4. All subsequent calls use legacy mode until process restart
+//!
+//! ## Environment Handling
+//!
+//! All fzf invocations clear `FZF_DEFAULT_OPTS` to avoid conflicts with user/system-wide
+//! settings that may contain unsupported options.
+//!
+//! ## Compatibility
+//!
+//! - **Primary target**: Modern fzf versions (0.40+) with full theming and features
+//! - **Fallback target**: Old fzf versions (0.27.0+) with basic functionality
+
 use anyhow::{self, Result};
 use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
@@ -9,9 +32,61 @@ use super::version::USE_LEGACY_ARGS;
 
 fn check_and_set_legacy_mode(stderr: &[u8]) {
     let stderr_str = String::from_utf8_lossy(stderr);
-    if stderr_str.contains("unknown option") || stderr_str.contains("invalid option") {
+    if stderr_str.contains("unknown option")
+        || stderr_str.contains("invalid option")
+        || stderr_str.contains("invalid color specification")
+    {
         USE_LEGACY_ARGS.store(true, std::sync::atomic::Ordering::Relaxed);
     }
+}
+
+/// Filters out fzf arguments that are not supported in legacy/older versions
+///
+/// When `USE_LEGACY_ARGS` is enabled, this function removes:
+/// - Modern layout options (--gap, --gap-line, --margin, --min-height)
+/// - Modern color keys (selected-bg, label, border) from --color arguments
+/// - Hidden info display option (--info=hidden)
+///
+/// This allows user code to pass modern arguments without breaking on old fzf versions.
+fn filter_legacy_args(args: &[String]) -> Vec<String> {
+    if !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+        return args.to_vec();
+    }
+
+    // List of options that don't exist in older fzf versions (< 0.30.0)
+    const UNSUPPORTED_OPTIONS: &[&str] = &[
+        "--gap",
+        "--gap-line",
+        "--margin",
+        "--min-height",
+        "--info=hidden",
+    ];
+
+    // Color keys added in newer versions
+    const UNSUPPORTED_COLOR_KEYS: &[&str] = &["selected-bg", "label", "border"];
+
+    args.iter()
+        .filter(|arg| {
+            // Skip unsupported options
+            for opt in UNSUPPORTED_OPTIONS {
+                if arg.starts_with(opt) {
+                    return false;
+                }
+            }
+
+            // Skip color specifications with unsupported keys
+            if arg.starts_with("--color=") {
+                for key in UNSUPPORTED_COLOR_KEYS {
+                    if arg.contains(&format!("{}:", key)) {
+                        return false;
+                    }
+                }
+            }
+
+            true
+        })
+        .cloned()
+        .collect()
 }
 
 fn shell_escape(s: &str) -> String {
@@ -99,20 +174,18 @@ impl FzfWrapper {
             fzf_args.push(header.clone());
         }
 
-        fzf_args.extend(self.additional_args.clone());
+        let filtered_additional = filter_legacy_args(&self.additional_args);
+        fzf_args.extend(filtered_additional);
 
         let mut cmd = Command::new("sh");
         cmd.arg("-c");
 
         let escaped_args: Vec<String> = fzf_args.iter().map(|arg| shell_escape(arg)).collect();
         let fzf_cmd = format!("fzf {}", escaped_args.join(" "));
-        let full_command = format!("{} | {}", input_command, fzf_cmd);
+        let full_command = format!("unset FZF_DEFAULT_OPTS; {} | {}", input_command, fzf_cmd);
         cmd.arg(&full_command);
 
-        let child = cmd
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()?;
+        let child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
 
         let pid = child.id();
         let _ = crate::menu::server::register_menu_process(pid);
@@ -126,6 +199,15 @@ impl FzfWrapper {
                     && (code == 130 || code == 143)
                 {
                     return Ok(FzfResult::Cancelled);
+                }
+
+                if !result.status.success()
+                    && !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    check_and_set_legacy_mode(&result.stderr);
+                    if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+                        return self.select_streaming(input_command);
+                    }
                 }
 
                 let stdout = String::from_utf8_lossy(&result.stdout);
@@ -178,6 +260,7 @@ impl FzfWrapper {
         let preview_strategy = PreviewUtils::analyze_preview_strategy(&items)?;
 
         let mut cmd = Command::new("fzf");
+        cmd.env_remove("FZF_DEFAULT_OPTS");
         cmd.arg("--tiebreak=index");
 
         if self.multi_select {
@@ -245,7 +328,8 @@ impl FzfWrapper {
             cmd.arg("--bind").arg(format!("load:pos({})", position + 1));
         }
 
-        for arg in &self.additional_args {
+        let filtered_args = filter_legacy_args(&self.additional_args);
+        for arg in &filtered_args {
             cmd.arg(arg);
         }
 
@@ -575,13 +659,15 @@ impl FzfBuilder {
 
     fn execute_input(self) -> Result<String> {
         let mut cmd = Command::new("fzf");
+        cmd.env_remove("FZF_DEFAULT_OPTS");
         cmd.arg("--print-query").arg("--no-info");
 
         if let Some(prompt) = &self.prompt {
             cmd.arg("--prompt").arg(format!("{prompt} "));
         }
 
-        for arg in &self.additional_args {
+        let filtered_args = filter_legacy_args(&self.additional_args);
+        for arg in &filtered_args {
             cmd.arg(arg);
         }
 
@@ -681,6 +767,7 @@ impl FzfBuilder {
         };
 
         let mut cmd = Command::new("fzf");
+        cmd.env_remove("FZF_DEFAULT_OPTS");
         cmd.arg("--layout").arg("reverse");
 
         if let Some(header) = &self.header {
@@ -689,7 +776,8 @@ impl FzfBuilder {
 
         cmd.arg("--prompt").arg("> ");
 
-        for arg in &self.additional_args {
+        let filtered_args = filter_legacy_args(&self.additional_args);
+        for arg in &filtered_args {
             cmd.arg(arg);
         }
 
@@ -749,6 +837,7 @@ impl FzfBuilder {
         };
 
         let mut cmd = Command::new("fzf");
+        cmd.env_remove("FZF_DEFAULT_OPTS");
         cmd.arg("--layout").arg("reverse");
 
         if let Some(title) = &title {
@@ -761,7 +850,8 @@ impl FzfBuilder {
 
         cmd.arg("--prompt").arg("- ");
 
-        for arg in &self.additional_args {
+        let filtered_args = filter_legacy_args(&self.additional_args);
+        for arg in &filtered_args {
             cmd.arg(arg);
         }
 
