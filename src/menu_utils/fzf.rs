@@ -89,33 +89,56 @@ fn filter_legacy_args(args: &[String]) -> Vec<String> {
         "--margin",
         "--min-height",
         "--info=hidden",
+        "--info",
     ];
 
     // Color keys added in newer versions
     const UNSUPPORTED_COLOR_KEYS: &[&str] = &["selected-bg", "label", "border"];
 
-    args.iter()
-        .filter(|arg| {
-            // Skip unsupported options
-            for opt in UNSUPPORTED_OPTIONS {
-                if arg.starts_with(opt) {
-                    return false;
+    let mut result = Vec::new();
+    let mut skip_next = false;
+
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+
+        // Check if this is an unsupported option
+        let mut is_unsupported = false;
+        for opt in UNSUPPORTED_OPTIONS {
+            if arg.starts_with(opt) {
+                is_unsupported = true;
+                // If the option doesn't contain '=', the next arg is its value
+                if !arg.contains('=') && !opt.starts_with("--info") {
+                    skip_next = true;
+                }
+                break;
+            }
+        }
+
+        if is_unsupported {
+            continue;
+        }
+
+        // Skip color specifications with unsupported keys
+        if arg.starts_with("--color=") {
+            let mut has_unsupported_key = false;
+            for key in UNSUPPORTED_COLOR_KEYS {
+                if arg.contains(&format!("{}:", key)) {
+                    has_unsupported_key = true;
+                    break;
                 }
             }
-
-            // Skip color specifications with unsupported keys
-            if arg.starts_with("--color=") {
-                for key in UNSUPPORTED_COLOR_KEYS {
-                    if arg.contains(&format!("{}:", key)) {
-                        return false;
-                    }
-                }
+            if has_unsupported_key {
+                continue;
             }
+        }
 
-            true
-        })
-        .cloned()
-        .collect()
+        result.push(arg.clone());
+    }
+
+    result
 }
 
 fn shell_escape(s: &str) -> String {
