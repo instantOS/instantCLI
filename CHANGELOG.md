@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.9](https://github.com/instantOS/instantCLI/compare/v0.6.8...v0.6.9) - 2025-11-18
+
+### Other
+
+- Configure release-plz to include changelog in GitHub releases
+
 ## [0.6.8](https://github.com/instantOS/instantCLI/compare/v0.6.7...v0.6.8) - 2025-11-18
 
 ### Other
