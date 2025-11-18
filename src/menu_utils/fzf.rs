@@ -1,25 +1,17 @@
-//! FZF wrapper with automatic fallback for older versions
+//! FZF wrapper for modern fzf versions
 //!
-//! This module provides a robust wrapper around fzf that automatically detects and handles
-//! older fzf versions (e.g., 0.27.0 shipped with Ubuntu) that don't support modern options.
+//! This module provides a wrapper around fzf targeting version 0.66.x or newer.
 //!
-//! ## Fallback Mechanism
+//! ## Version Requirements
 //!
-//! When fzf fails with errors like "unknown option" or "invalid color specification":
-//! 1. The error is detected by checking stderr
-//! 2. The `USE_LEGACY_ARGS` flag is set globally
-//! 3. The operation is automatically retried with legacy-safe arguments
-//! 4. All subsequent calls use legacy mode until process restart
+//! If fzf fails with "unknown option" or similar errors indicating an old version,
+//! the program will exit with a message directing the user to upgrade fzf.
+//! We recommend using `mise` for managing fzf versions.
 //!
 //! ## Environment Handling
 //!
 //! All fzf invocations clear `FZF_DEFAULT_OPTS` to avoid conflicts with user/system-wide
 //! settings that may contain unsupported options.
-//!
-//! ## Compatibility
-//!
-//! - **Primary target**: Modern fzf versions (0.40+) with full theming and features
-//! - **Fallback target**: Old fzf versions (0.27.0+) with basic functionality
 
 use anyhow::{self, Result};
 use base64::{Engine as _, engine::general_purpose};
@@ -28,47 +20,26 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use super::version::USE_LEGACY_ARGS;
-
-/// Utility function to log the full FZF command when debug mode is enabled and legacy mode is active
-fn log_fzf_command_if_legacy(cmd: &Command, dialog_type: &str) {
-    if crate::ui::is_debug_enabled() && USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-        if let Some(program) = cmd.get_program().to_str() {
-            let args: Vec<String> = cmd.get_args()
-                .filter_map(|arg| arg.to_str())
-                .map(|s| s.to_string())
-                .collect();
-            let full_command = format!("{} {}", program, args.join(" "));
-            crate::ui::emit(
-                crate::ui::Level::Debug,
-                "fzf.legacy_command",
-                &format!("FZF {} command in legacy mode: {}", dialog_type, full_command),
-                None,
-            );
-        }
-    }
-}
-
-fn check_and_set_legacy_mode(stderr: &[u8]) {
+/// Check if the error indicates an old fzf version and exit if so
+fn check_for_old_fzf_and_exit(stderr: &[u8]) {
     let stderr_str = String::from_utf8_lossy(stderr);
     if stderr_str.contains("unknown option")
         || stderr_str.contains("invalid option")
         || stderr_str.contains("invalid color specification")
+        || stderr_str.contains("unrecognized option")
     {
-        USE_LEGACY_ARGS.store(true, std::sync::atomic::Ordering::Relaxed);
-
-        // Emit debug message when legacy mode is activated
-        if crate::ui::is_debug_enabled() {
-            crate::ui::emit(
-                crate::ui::Level::Debug,
-                "fzf.legacy_mode_activated",
-                &format!(
-                    "FZF legacy mode activated due to error: {}",
-                    stderr_str.trim()
-                ),
-                None,
-            );
-        }
+        eprintln!("\n{}\n", "=".repeat(70));
+        eprintln!("ERROR: Your fzf version is too old");
+        eprintln!("{}\n", "=".repeat(70));
+        eprintln!("This program requires fzf 0.66.x or newer.");
+        eprintln!("Your current fzf version does not support required options.\n");
+        eprintln!("To upgrade fzf, we recommend using mise:");
+        eprintln!("  https://mise.jdx.dev/\n");
+        eprintln!("Install mise and then run:");
+        eprintln!("  mise use -g fzf@latest\n");
+        eprintln!("Error details: {}", stderr_str.trim());
+        eprintln!("{}\n", "=".repeat(70));
+        std::process::exit(1);
     }
 }
 
@@ -86,78 +57,6 @@ fn log_fzf_failure(stderr: &[u8], exit_code: Option<i32>) {
             None,
         );
     }
-}
-
-/// Filters out fzf arguments that are not supported in legacy/older versions
-///
-/// When `USE_LEGACY_ARGS` is enabled, this function removes:
-/// - Modern layout options (--gap, --gap-line, --margin, --min-height)
-/// - Modern color keys (selected-bg, label, border) from --color arguments
-/// - Hidden info display option (--info=hidden)
-///
-/// This allows user code to pass modern arguments without breaking on old fzf versions.
-fn filter_legacy_args(args: &[String]) -> Vec<String> {
-    if !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-        return args.to_vec();
-    }
-
-    // List of options that don't exist in older fzf versions (< 0.30.0)
-    const UNSUPPORTED_OPTIONS: &[&str] = &[
-        "--gap",
-        "--gap-line",
-        "--margin",
-        "--min-height",
-        "--info=hidden",
-        "--info",
-    ];
-
-    // Color keys added in newer versions
-    const UNSUPPORTED_COLOR_KEYS: &[&str] = &["selected-bg", "label", "border"];
-
-    let mut result = Vec::new();
-    let mut skip_next = false;
-
-    for arg in args {
-        if skip_next {
-            skip_next = false;
-            continue;
-        }
-
-        // Check if this is an unsupported option
-        let mut is_unsupported = false;
-        for opt in UNSUPPORTED_OPTIONS {
-            if arg.starts_with(opt) {
-                is_unsupported = true;
-                // If the option doesn't contain '=', the next arg is its value
-                if !arg.contains('=') && !opt.starts_with("--info") {
-                    skip_next = true;
-                }
-                break;
-            }
-        }
-
-        if is_unsupported {
-            continue;
-        }
-
-        // Skip color specifications with unsupported keys
-        if arg.starts_with("--color=") {
-            let mut has_unsupported_key = false;
-            for key in UNSUPPORTED_COLOR_KEYS {
-                if arg.contains(&format!("{}:", key)) {
-                    has_unsupported_key = true;
-                    break;
-                }
-            }
-            if has_unsupported_key {
-                continue;
-            }
-        }
-
-        result.push(arg.clone());
-    }
-
-    result
 }
 
 fn shell_escape(s: &str) -> String {
@@ -245,8 +144,7 @@ impl FzfWrapper {
             fzf_args.push(header.clone());
         }
 
-        let filtered_additional = filter_legacy_args(&self.additional_args);
-        fzf_args.extend(filtered_additional);
+        fzf_args.extend(self.additional_args.clone());
 
         let mut cmd = Command::new("sh");
         cmd.arg("-c");
@@ -254,16 +152,6 @@ impl FzfWrapper {
         let escaped_args: Vec<String> = fzf_args.iter().map(|arg| shell_escape(arg)).collect();
         let fzf_cmd = format!("fzf {}", escaped_args.join(" "));
         let full_command = format!("unset FZF_DEFAULT_OPTS; {} | {}", input_command, fzf_cmd);
-
-        // Log the full FZF command when debug mode is enabled and legacy mode is active
-        if crate::ui::is_debug_enabled() && USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-            crate::ui::emit(
-                crate::ui::Level::Debug,
-                "fzf.legacy_command",
-                &format!("FZF command in legacy mode: {}", full_command),
-                None,
-            );
-        }
 
         cmd.arg(&full_command);
 
@@ -283,16 +171,8 @@ impl FzfWrapper {
                     return Ok(FzfResult::Cancelled);
                 }
 
-                if !result.status.success()
-                    && !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed)
-                {
-                    check_and_set_legacy_mode(&result.stderr);
-                    if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-                        return self.select_streaming(input_command);
-                    } else {
-                        log_fzf_failure(&result.stderr, result.status.code());
-                    }
-                } else if !result.status.success() {
+                if !result.status.success() {
+                    check_for_old_fzf_and_exit(&result.stderr);
                     log_fzf_failure(&result.stderr, result.status.code());
                 }
 
@@ -414,12 +294,9 @@ impl FzfWrapper {
             cmd.arg("--bind").arg(format!("load:pos({})", position + 1));
         }
 
-        let filtered_args = filter_legacy_args(&self.additional_args);
-        for arg in &filtered_args {
+        for arg in &self.additional_args {
             cmd.arg(arg);
         }
-
-        log_fzf_command_if_legacy(&cmd, "selection");
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -445,18 +322,8 @@ impl FzfWrapper {
                     return Ok(FzfResult::Cancelled);
                 }
 
-                if !result.status.success()
-                    && !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed)
-                {
-                    check_and_set_legacy_mode(&result.stderr);
-                    if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-                        return self.select(items);
-                    } else {
-                        // fzf failed but not due to known legacy issues
-                        log_fzf_failure(&result.stderr, result.status.code());
-                    }
-                } else if !result.status.success() {
-                    // fzf failed even in legacy mode
+                if !result.status.success() {
+                    check_for_old_fzf_and_exit(&result.stderr);
                     log_fzf_failure(&result.stderr, result.status.code());
                 }
 
@@ -760,12 +627,9 @@ impl FzfBuilder {
             cmd.arg("--prompt").arg(format!("{prompt} "));
         }
 
-        let filtered_args = filter_legacy_args(&self.additional_args);
-        for arg in &filtered_args {
+        for arg in &self.additional_args {
             cmd.arg(arg);
         }
-
-        log_fzf_command_if_legacy(&cmd, "input dialog");
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -789,14 +653,8 @@ impl FzfBuilder {
             return Ok(String::new());
         }
 
-        if !output.status.success() && !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-            check_and_set_legacy_mode(&output.stderr);
-            if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-                return self.input_dialog();
-            } else {
-                log_fzf_failure(&output.stderr, output.status.code());
-            }
-        } else if !output.status.success() {
+        if !output.status.success() {
+            check_for_old_fzf_and_exit(&output.stderr);
             log_fzf_failure(&output.stderr, output.status.code());
         }
 
@@ -876,12 +734,9 @@ impl FzfBuilder {
 
         cmd.arg("--prompt").arg("> ");
 
-        let filtered_args = filter_legacy_args(&self.additional_args);
-        for arg in &filtered_args {
+        for arg in &self.additional_args {
             cmd.arg(arg);
         }
-
-        log_fzf_command_if_legacy(&cmd, "confirm dialog");
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -904,16 +759,8 @@ impl FzfBuilder {
         crate::menu::server::unregister_menu_process(pid);
 
         if !output.status.success() {
-            if !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-                check_and_set_legacy_mode(&output.stderr);
-                if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-                    return self.confirm_dialog();
-                } else {
-                    log_fzf_failure(&output.stderr, output.status.code());
-                }
-            } else {
-                log_fzf_failure(&output.stderr, output.status.code());
-            }
+            check_for_old_fzf_and_exit(&output.stderr);
+            log_fzf_failure(&output.stderr, output.status.code());
             return Ok(ConfirmResult::Cancelled);
         }
 
@@ -956,12 +803,9 @@ impl FzfBuilder {
 
         cmd.arg("--prompt").arg("- ");
 
-        let filtered_args = filter_legacy_args(&self.additional_args);
-        for arg in &filtered_args {
+        for arg in &self.additional_args {
             cmd.arg(arg);
         }
-
-        log_fzf_command_if_legacy(&cmd, "message dialog");
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -985,21 +829,14 @@ impl FzfBuilder {
             return Ok(());
         }
 
-        if !output.status.success() && !USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-            check_and_set_legacy_mode(&output.stderr);
-            if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-                return self.message_dialog();
-            }
+        if !output.status.success() {
+            check_for_old_fzf_and_exit(&output.stderr);
         }
 
         Ok(())
     }
 
     fn default_args() -> Vec<String> {
-        if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-            return Self::legacy_args();
-        }
-
         let mut args = vec![
             "--margin".to_string(),
             "10%,2%".to_string(),
@@ -1011,10 +848,6 @@ impl FzfBuilder {
     }
 
     fn input_args() -> Vec<String> {
-        if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-            return Self::legacy_args();
-        }
-
         let mut args = vec![
             "--margin".to_string(),
             "20%,2%".to_string(),
@@ -1026,10 +859,6 @@ impl FzfBuilder {
     }
 
     fn confirm_args() -> Vec<String> {
-        if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-            return Self::legacy_args();
-        }
-
         let mut args = vec![
             "--margin".to_string(),
             "20%,2%".to_string(),
@@ -1042,18 +871,11 @@ impl FzfBuilder {
         args
     }
 
-    fn legacy_args() -> Vec<String> {
-        vec![]
-    }
-
     fn password_args() -> Vec<String> {
         vec![]
     }
 
     fn theme_args() -> Vec<String> {
-        if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
-            return vec![];
-        }
         vec![
             "--color=bg+:#313244".to_string(),
             "--color=bg:#1E1E2E".to_string(),

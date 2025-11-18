@@ -3,7 +3,6 @@ mod fzf;
 mod keychord;
 mod path_input;
 mod slider;
-mod version;
 
 #[allow(unused_imports)]
 pub use file_picker::{FilePickerBuilder, FilePickerResult, FilePickerScope, MenuWrapper};
