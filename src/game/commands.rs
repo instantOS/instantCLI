@@ -197,12 +197,13 @@ fn handle_debug_tags(game_name: Option<String>) -> Result<()> {
     use crate::restic::wrapper::ResticWrapper;
     use anyhow::Context;
 
-    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
     let restic = ResticWrapper::new(
-        game_config.repo.as_path().to_string_lossy().to_string(),
-        game_config.repo_password.clone(),
-    );
+        config.repo.as_path().to_string_lossy().to_string(),
+        config.repo_password.clone(),
+    )
+    .context("Failed to initialize restic wrapper")?;
 
     let snapshots_json = if let Some(game_name) = game_name {
         // Get snapshots for specific game

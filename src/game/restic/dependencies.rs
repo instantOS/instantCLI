@@ -66,7 +66,8 @@ pub fn backup_dependency(
     let restic = ResticWrapper::new(
         config.repo.as_path().to_string_lossy().to_string(),
         config.repo_password.clone(),
-    );
+    )
+    .context("Failed to initialize restic wrapper")?;
 
     let tags = tags::create_dependency_tags(game_name, dependency_id);
     let mut include_filter = None;
@@ -145,7 +146,8 @@ pub fn restore_dependency(
     let restic = ResticWrapper::new(
         config.repo.as_path().to_string_lossy().to_string(),
         config.repo_password.clone(),
-    );
+    )
+    .context("Failed to initialize restic wrapper")?;
 
     let source_kind = dependency.source_type;
 

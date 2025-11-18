@@ -106,7 +106,8 @@ fn fetch_repository_snapshots_from_restic(config: &InstantGameConfig) -> Result<
     let restic = crate::restic::wrapper::ResticWrapper::new(
         config.repo.as_path().to_string_lossy().to_string(),
         config.repo_password.clone(),
-    );
+    )
+    .context("Failed to initialize restic wrapper")?;
 
     restic
         .list_snapshots()

@@ -119,11 +119,12 @@ mod tests {
 
     fn restic_wrapper_for_config(
         config: &InstantGameConfig,
-    ) -> crate::restic::wrapper::ResticWrapper {
-        crate::restic::wrapper::ResticWrapper::new(
+    ) -> anyhow::Result<crate::restic::wrapper::ResticWrapper> {
+        Ok(crate::restic::wrapper::ResticWrapper::new(
             config.repo.as_path().to_string_lossy().to_string(),
             config.repo_password.clone(),
         )
+        .context("Failed to initialize restic wrapper")?)
     }
 
     fn latest_snapshot_id(config: &InstantGameConfig) -> String {
@@ -145,7 +146,7 @@ mod tests {
 
         let temp_dir = tempfile::tempdir()?;
         let config = init_config(&temp_dir, "testpass-file");
-        let restic = restic_wrapper_for_config(&config);
+        let restic = restic_wrapper_for_config(&config)?;
         restic.init_repository()?;
 
         let save_file = temp_dir.path().join("save.sav");
@@ -168,7 +169,7 @@ mod tests {
 
         let temp_dir = tempfile::tempdir()?;
         let config = init_config(&temp_dir, "testpass-dir");
-        let restic = restic_wrapper_for_config(&config);
+        let restic = restic_wrapper_for_config(&config)?;
         restic.init_repository()?;
 
         let save_dir = temp_dir.path().join("SaveData");
@@ -189,7 +190,8 @@ fn count_snapshot_files(game_config: &InstantGameConfig, snapshot_id: &str) -> R
     let restic = ResticWrapper::new(
         game_config.repo.as_path().to_string_lossy().to_string(),
         game_config.repo_password.clone(),
-    );
+    )
+    .context("Failed to initialize restic wrapper")?;
 
     let nodes = restic
         .list_snapshot_nodes(snapshot_id)
