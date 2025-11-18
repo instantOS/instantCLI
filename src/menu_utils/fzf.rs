@@ -30,6 +30,25 @@ use std::process::{Command, Stdio};
 
 use super::version::USE_LEGACY_ARGS;
 
+/// Utility function to log the full FZF command when debug mode is enabled and legacy mode is active
+fn log_fzf_command_if_legacy(cmd: &Command, dialog_type: &str) {
+    if crate::ui::is_debug_enabled() && USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Some(program) = cmd.get_program().to_str() {
+            let args: Vec<String> = cmd.get_args()
+                .filter_map(|arg| arg.to_str())
+                .map(|s| s.to_string())
+                .collect();
+            let full_command = format!("{} {}", program, args.join(" "));
+            crate::ui::emit(
+                crate::ui::Level::Debug,
+                "fzf.legacy_command",
+                &format!("FZF {} command in legacy mode: {}", dialog_type, full_command),
+                None,
+            );
+        }
+    }
+}
+
 fn check_and_set_legacy_mode(stderr: &[u8]) {
     let stderr_str = String::from_utf8_lossy(stderr);
     if stderr_str.contains("unknown option")
@@ -235,6 +254,17 @@ impl FzfWrapper {
         let escaped_args: Vec<String> = fzf_args.iter().map(|arg| shell_escape(arg)).collect();
         let fzf_cmd = format!("fzf {}", escaped_args.join(" "));
         let full_command = format!("unset FZF_DEFAULT_OPTS; {} | {}", input_command, fzf_cmd);
+
+        // Log the full FZF command when debug mode is enabled and legacy mode is active
+        if crate::ui::is_debug_enabled() && USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
+            crate::ui::emit(
+                crate::ui::Level::Debug,
+                "fzf.legacy_command",
+                &format!("FZF command in legacy mode: {}", full_command),
+                None,
+            );
+        }
+
         cmd.arg(&full_command);
 
         let child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
@@ -388,6 +418,8 @@ impl FzfWrapper {
         for arg in &filtered_args {
             cmd.arg(arg);
         }
+
+        log_fzf_command_if_legacy(&cmd, "selection");
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -733,6 +765,8 @@ impl FzfBuilder {
             cmd.arg(arg);
         }
 
+        log_fzf_command_if_legacy(&cmd, "input dialog");
+
         let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -847,6 +881,8 @@ impl FzfBuilder {
             cmd.arg(arg);
         }
 
+        log_fzf_command_if_legacy(&cmd, "confirm dialog");
+
         let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -924,6 +960,8 @@ impl FzfBuilder {
         for arg in &filtered_args {
             cmd.arg(arg);
         }
+
+        log_fzf_command_if_legacy(&cmd, "message dialog");
 
         let mut child = cmd
             .stdin(Stdio::piped())
