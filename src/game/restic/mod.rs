@@ -10,8 +10,7 @@ pub mod snapshot_selection;
 pub mod tags;
 
 use crate::game::checkpoint;
-use crate::game::config::{InstallationsConfig, InstantGameConfig};
-use crate::game::games::selection;
+use crate::game::config::InstantGameConfig;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -39,72 +38,30 @@ fn emit_restic_event(
 /// Handle game save backup with optional game selection
 pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Load configurations
-    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let installations =
-        InstallationsConfig::load().context("Failed to load installations configuration")?;
+    // Step 1: Game selection using security module
+    let game_selection = security::get_game_installation(game_name)?;
+    if game_selection.game_name.is_empty() {
+        // User cancelled selection
+        return Ok(());
+    }
 
-    // Check restic availability and game manager initialization
-    super::utils::validation::check_restic_and_game_manager(&game_config)?;
+    let game_name = game_selection.game_name;
+    let installation = &game_selection.installation;
 
-    // Get game name
-    let game_name = match game_name {
-        Some(name) => name,
-        None => match selection::select_game_interactive(None)? {
-            Some(name) => name,
-            None => return Ok(()),
-        },
-    };
-
-    // Find the game installation
-    let installation = match installations
-        .installations
-        .iter()
-        .find(|inst| inst.game_name.0 == game_name)
-    {
-        Some(installation) => installation,
-        None => {
-            let plain_message = format!("Error: No installation found for game '{game_name}'.");
-            let text_message = format!(
-                "Error: No installation found for game '{}'.",
-                game_name.red()
-            );
-            let data = serde_json::json!({
-                "game": game_name,
-                "action": "installation_missing"
-            });
-            emit_restic_event(
-                Level::Error,
-                "game.backup.installation_missing",
-                Some(char::from(NerdFont::CrossCircle)),
-                plain_message,
-                text_message,
-                Some(data),
-            );
-            emit_restic_event(
-                Level::Info,
-                "game.backup.hint.add",
-                Some(char::from(NerdFont::Info)),
-                format!(
-                    "Please add the game first using '{} game add'.",
-                    env!("CARGO_BIN_NAME")
-                ),
-                format!(
-                    "Please add the game first using '{} game add'.",
-                    env!("CARGO_BIN_NAME")
-                ),
-                Some(serde_json::json!({
-                    "hint": "add_game",
-                    "command": format!("{} game add", env!("CARGO_BIN_NAME"))
-                })),
-            );
-            return Err(anyhow::anyhow!("game installation not found"));
-        }
-    };
-
-    // Security check: ensure save directory is not empty
+    // Step 2: Security check: ensure save directory is not empty
     helpers::validate_backup_requirements(&game_name, installation)?;
 
-    // Create backup
+    // Step 3: Perform the backup
+    perform_game_backup(&game_name, installation)
+}
+
+/// Internal helper to perform the actual backup process
+fn perform_game_backup(
+    game_name: &str,
+    installation: &crate::game::config::GameInstallation,
+) -> Result<()> {
+    // Load configuration for backup handler
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let backup_handler = backup::GameBackup::new(game_config.clone());
 
     emit_restic_event(
@@ -120,7 +77,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             game_name.yellow()
         ),
         Some(serde_json::json!({
-            "game": game_name.clone(),
+            "game": game_name,
             "action": "backup_start"
         })),
     );
@@ -138,7 +95,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
                     output
                 ),
                 Some(serde_json::json!({
-                    "game": game_name.clone(),
+                    "game": game_name,
                     "action": "backup_completed",
                     "output": output
                 })),
@@ -146,14 +103,15 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
 
             // Update checkpoint after successful backup
             if let Err(e) =
-                checkpoint::update_checkpoint_after_backup(&output, &game_name, &game_config)
+                checkpoint::update_checkpoint_after_backup(&output, game_name, &game_config)
             {
                 eprintln!("Warning: Could not update checkpoint: {e}");
             }
 
             // Invalidate cache for this game after successful backup
             let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
-            cache::invalidate_game_cache(&game_name, &repo_path);
+            cache::invalidate_game_cache(game_name, &repo_path);
+            Ok(())
         }
         Err(e) => {
             emit_restic_event(
@@ -168,11 +126,9 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
                     "error": e.to_string()
                 })),
             );
-            return Err(e);
+            Err(e)
         }
     }
-
-    Ok(())
 }
 
 /// Handle game save restore with optional game and snapshot selection
