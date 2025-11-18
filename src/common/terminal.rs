@@ -44,6 +44,7 @@ fn is_available(terminal: &str) -> bool {
 /// Get the execute flag for a terminal
 ///
 /// Returns the flag needed to execute a command in the terminal (e.g., "-e")
+#[allow(dead_code)]
 pub fn get_execute_flag(terminal: &str) -> &'static str {
     match terminal {
         "kitty" | "alacritty" | "wezterm" | "foot" | "xterm" => "-e",

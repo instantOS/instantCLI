@@ -8,13 +8,13 @@ use colored::Colorize;
 /// following the existing borrowed references pattern
 pub struct RepositoryManager<'a> {
     config: &'a Config,
-    db: &'a Database,
+    _db: &'a Database,
 }
 
 impl<'a> RepositoryManager<'a> {
     /// Create a new RepositoryManager with borrowed references
     pub fn new(config: &'a Config, db: &'a Database) -> Self {
-        Self { config, db }
+        Self { config, _db: db }
     }
 
     /// Get detailed information about a specific repository

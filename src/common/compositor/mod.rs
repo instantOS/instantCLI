@@ -96,6 +96,7 @@ impl CompositorType {
     }
 
     /// Check if the compositor is Wayland-based
+    #[allow(dead_code)]
     pub fn is_wayland(&self) -> bool {
         match self {
             CompositorType::Sway | CompositorType::Hyprland => true,
@@ -104,6 +105,7 @@ impl CompositorType {
     }
 
     /// Check if the compositor is X11-based
+    #[allow(dead_code)]
     pub fn is_x11(&self) -> bool {
         match self {
             CompositorType::Other(name) => name.to_lowercase().contains("x11"),
@@ -112,6 +114,7 @@ impl CompositorType {
     }
 
     /// Get the display server type for this compositor
+    #[allow(dead_code)]
     pub fn display_server(&self) -> DisplayServer {
         match self {
             CompositorType::Sway | CompositorType::Hyprland => DisplayServer::Wayland,

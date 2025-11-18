@@ -120,13 +120,6 @@ pub fn hide_special_workspace(workspace_name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Workspace information from hyprctl workspaces -j
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct HyprlandWorkspaceInfo {
-    pub id: i32,
-    pub name: String,
-    pub windows: i32,
-}
 
 /// Monitor information from hyprctl monitors -j
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,6 +158,7 @@ pub fn is_special_workspace_active(workspace_name: &str) -> Result<bool> {
 }
 
 /// Execute a hyprctl dispatcher command
+#[allow(dead_code)]
 pub fn dispatch_command(command: &str) -> Result<()> {
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {

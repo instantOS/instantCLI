@@ -195,14 +195,3 @@ pub fn filter_dotfiles_by_path<'a>(
         .collect()
 }
 
-/// Filter dotfiles to only those within a specific directory path, returning owned values
-pub fn filter_dotfiles_by_path_owned(
-    all_dotfiles: &HashMap<PathBuf, Dotfile>,
-    path: &Path,
-) -> Vec<Dotfile> {
-    all_dotfiles
-        .values()
-        .filter(|dotfile| dotfile.target_path.starts_with(path))
-        .cloned()
-        .collect()
-}

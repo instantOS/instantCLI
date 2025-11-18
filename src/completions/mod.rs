@@ -22,27 +22,6 @@ impl SupportedShell {
         }
     }
 
-    fn file_name(self) -> &'static str {
-        match self {
-            SupportedShell::Bash => "ins.bash",
-            SupportedShell::Zsh => "_ins",
-        }
-    }
-
-    fn install_instructions(self, install_path: &Path) -> String {
-        match self {
-            SupportedShell::Bash => format!(
-                "Add this to your ~/.bashrc or ~/.bash_profile:\n  if [ -r \"{}\" ]; then\n      source \"{}\"\n  fi",
-                install_path.display(),
-                install_path.display()
-            ),
-            SupportedShell::Zsh => format!(
-                "Add this to your ~/.zshrc:\n  if [ -r \"{}\" ]; then\n      source \"{}\"\n  fi\nautoload -U compinit && compinit",
-                install_path.display(),
-                install_path.display()
-            ),
-        }
-    }
 }
 
 impl fmt::Display for SupportedShell {
@@ -113,9 +92,6 @@ pub fn install(shell: SupportedShell, snippet_only: bool) -> Result<String> {
     }
 }
 
-pub fn instructions(shell: SupportedShell, install_path: &Path) -> String {
-    shell.install_instructions(install_path)
-}
 
 fn matches_prefix(value: &str, prefix: &str) -> bool {
     prefix.is_empty() || value.starts_with(prefix)

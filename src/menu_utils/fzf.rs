@@ -434,7 +434,7 @@ enum DialogType {
 }
 
 #[derive(Debug, Clone)]
-enum InitialCursor {
+pub(crate) enum InitialCursor {
     Index(usize),
 }
 
@@ -893,7 +893,7 @@ struct PreviewData {
 
 pub struct PreviewUtils;
 
-enum PreviewStrategy {
+pub(crate) enum PreviewStrategy {
     /// No previews
     None,
     /// Text previews embedded in input (base64)

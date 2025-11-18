@@ -92,6 +92,7 @@ impl DisplayServer {
     }
 
     /// Get a human-readable name for the display server
+    #[allow(dead_code)]
     pub fn name(&self) -> &'static str {
         match self {
             DisplayServer::Wayland => "Wayland",
@@ -111,6 +112,7 @@ impl DisplayServer {
     }
 
     /// Check if the display server is unknown/unsupported
+    #[allow(dead_code)]
     pub fn is_unknown(&self) -> bool {
         matches!(self, DisplayServer::Unknown)
     }
@@ -125,6 +127,7 @@ impl DisplayServer {
     }
 
     /// Get the appropriate screenshot command for the display server
+    #[allow(dead_code)]
     pub fn get_screenshot_command(&self) -> (&'static str, Vec<&'static str>) {
         match self {
             DisplayServer::Wayland => ("grim", vec![]),
@@ -134,6 +137,7 @@ impl DisplayServer {
     }
 
     /// Check if the current session is a desktop session
+    #[allow(dead_code)]
     pub fn is_desktop_session(&self) -> bool {
         !self.is_unknown()
     }

@@ -155,56 +155,6 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str, add_all: bool) ->
     Ok(())
 }
 
-/// Update a tracked file by copying from target to source
-fn update_tracked_file(dotfile: &Dotfile, db: &Database) -> Result<()> {
-    let was_modified = !dotfile.is_target_unmodified(db)?;
-
-    if was_modified {
-        // Compute hashes before and after to detect changes
-        let old_source_hash = if dotfile.source_path.exists() {
-            Some(Dotfile::compute_hash(&dotfile.source_path)?)
-        } else {
-            None
-        };
-
-        dotfile.fetch(db)?;
-
-        let new_source_hash = Dotfile::compute_hash(&dotfile.source_path)?;
-
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
-        let relative_path = dotfile
-            .target_path
-            .strip_prefix(&home)
-            .unwrap_or(&dotfile.target_path);
-
-        if old_source_hash.as_ref() != Some(&new_source_hash) {
-            println!(
-                "{} Updated ~/{} (changes detected)",
-                char::from(NerdFont::Check),
-                relative_path.display().to_string().green()
-            );
-        } else {
-            println!(
-                "{} ~/{} (no changes)",
-                char::from(NerdFont::Info),
-                relative_path.display().to_string().dimmed()
-            );
-        }
-    } else {
-        let home = PathBuf::from(shellexpand::tilde("~").to_string());
-        let relative_path = dotfile
-            .target_path
-            .strip_prefix(&home)
-            .unwrap_or(&dotfile.target_path);
-        println!(
-            "{} ~/{} (already in sync)",
-            char::from(NerdFont::Info),
-            relative_path.display().to_string().dimmed()
-        );
-    }
-
-    Ok(())
-}
 
 /// Add a new untracked file
 fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<()> {

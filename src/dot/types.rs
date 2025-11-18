@@ -14,9 +14,6 @@ impl RepoName {
         &self.0
     }
 
-    pub fn into_inner(self) -> String {
-        self.0
-    }
 }
 
 impl std::fmt::Display for RepoName {

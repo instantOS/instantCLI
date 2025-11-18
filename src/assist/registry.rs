@@ -253,6 +253,7 @@ impl AssistEntry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn description(&self) -> &'static str {
         match self {
             AssistEntry::Action(action) => action.description,
@@ -260,6 +261,7 @@ impl AssistEntry {
         }
     }
 
+    #[allow(dead_code)]
     pub fn icon(&self) -> NerdFont {
         match self {
             AssistEntry::Action(action) => action.icon,

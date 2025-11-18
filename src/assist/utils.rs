@@ -82,6 +82,7 @@ pub fn run_script_in_terminal_and_wait(script: &str, title: &str) -> Result<Exit
 }
 
 /// Launch a command in the background (detached)
+#[allow(dead_code)]
 pub fn launch_detached(program: &str, args: &[&str]) -> Result<()> {
     Command::new(program)
         .args(args)
@@ -107,6 +108,7 @@ pub fn menu_command(args: &[&str]) -> Result<()> {
 
 /// Area selection color configuration
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum ColorConfiguration {
     Red,
     Green,
@@ -169,6 +171,7 @@ impl AreaSelectionConfig {
     }
 
     /// Create configuration with custom color
+    #[allow(dead_code)]
     pub fn with_color(color: ColorConfiguration) -> Self {
         Self {
             display_server: DisplayServer::detect(),
@@ -413,6 +416,7 @@ pub fn show_notification(title: &str, message: &str) -> Result<()> {
 }
 
 /// Show a notification with icon using notify-send
+#[allow(dead_code)]
 pub fn show_notification_with_icon(title: &str, message: &str, icon: &str) -> Result<()> {
     Command::new("notify-send")
         .args(["-a", "instantASSIST", "-i", icon, title, message])

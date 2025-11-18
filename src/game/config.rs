@@ -143,15 +143,6 @@ impl Game {
         }
     }
 
-    pub fn with_description(mut self, description: impl Into<String>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    pub fn with_launch_command(mut self, command: impl Into<String>) -> Self {
-        self.launch_command = Some(command.into());
-        self
-    }
 }
 
 /// Definition of a game dependency stored in games.toml
@@ -178,9 +169,6 @@ pub struct GameInstallation {
 }
 
 impl GameInstallation {
-    pub fn new(game_name: impl Into<GameName>, save_path: impl Into<TildePath>) -> Self {
-        Self::with_kind(game_name, save_path, PathContentKind::Directory)
-    }
 
     pub fn with_kind(
         game_name: impl Into<GameName>,
@@ -197,23 +185,11 @@ impl GameInstallation {
         }
     }
 
-    pub fn with_checkpoint(mut self, checkpoint_id: impl Into<String>) -> Self {
-        self.nearest_checkpoint = Some(checkpoint_id.into());
-        self
-    }
 
     pub fn update_checkpoint(&mut self, checkpoint_id: impl Into<String>) {
         self.nearest_checkpoint = Some(checkpoint_id.into());
     }
 
-    pub fn clear_checkpoint(&mut self) {
-        self.nearest_checkpoint = None;
-    }
-
-    pub fn with_launch_command(mut self, command: impl Into<String>) -> Self {
-        self.launch_command = Some(command.into());
-        self
-    }
 }
 
 /// Installed dependency mapping stored in installations.toml
@@ -333,35 +309,6 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    #[test]
-    fn test_game_installation_new() {
-        let installation = GameInstallation::new(
-            GameName("test_game".to_string()),
-            TildePath::new(PathBuf::from("~/.test/saves")),
-        );
-
-        assert_eq!(installation.game_name.0, "test_game");
-        assert_eq!(installation.nearest_checkpoint, None);
-        assert_eq!(installation.launch_command, None);
-        assert!(installation.dependencies.is_empty());
-    }
-
-    #[test]
-    fn test_game_installation_with_checkpoint() {
-        let installation = GameInstallation::new(
-            GameName("test_game".to_string()),
-            TildePath::new(PathBuf::from("~/.test/saves")),
-        )
-        .with_checkpoint("checkpoint123");
-
-        assert_eq!(installation.game_name.0, "test_game");
-        assert_eq!(
-            installation.nearest_checkpoint,
-            Some("checkpoint123".to_string())
-        );
-        assert_eq!(installation.launch_command, None);
-        assert!(installation.dependencies.is_empty());
-    }
 
     #[test]
     fn test_game_installation_update_checkpoint() {
@@ -386,25 +333,6 @@ mod tests {
         assert_eq!(installation.launch_command, None);
     }
 
-    #[test]
-    fn test_game_installation_clear_checkpoint() {
-        let mut installation = GameInstallation::new(
-            GameName("test_game".to_string()),
-            TildePath::new(PathBuf::from("~/.test/saves")),
-        )
-        .with_checkpoint("checkpoint123");
-
-        assert_eq!(
-            installation.nearest_checkpoint,
-            Some("checkpoint123".to_string())
-        );
-        assert_eq!(installation.launch_command, None);
-
-        installation.clear_checkpoint();
-        assert_eq!(installation.nearest_checkpoint, None);
-        assert_eq!(installation.launch_command, None);
-        assert!(installation.dependencies.is_empty());
-    }
 
     #[test]
     fn test_retention_policy_defaults() {

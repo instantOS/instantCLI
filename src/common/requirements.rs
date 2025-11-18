@@ -150,6 +150,7 @@ impl RequiredPackage {
     }
 
     /// Get the package name for the current system
+    #[allow(dead_code)]
     pub fn get_package_name(&self) -> Option<(&'static str, PackageManager)> {
         let pm = PackageManager::detect()?;
         let name = pm.package_name(self)?;
