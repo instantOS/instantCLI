@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.7](https://github.com/instantOS/instantCLI/compare/v0.6.6...v0.6.7) - 2025-11-18
+
+### Fixed
+
+- fix legacy fzf
+- fix ignoring
+
+### Other
+
+- no more fzf fuckery
+- more fzf debugging
+- fmt
+- better debugging
+- document deps
+- better fzf fallback
+
 ## [0.6.6](https://github.com/instantOS/instantCLI/compare/v0.6.5...v0.6.6) - 2025-11-17
 
 ### Fixed
