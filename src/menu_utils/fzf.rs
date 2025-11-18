@@ -37,6 +37,32 @@ fn check_and_set_legacy_mode(stderr: &[u8]) {
         || stderr_str.contains("invalid color specification")
     {
         USE_LEGACY_ARGS.store(true, std::sync::atomic::Ordering::Relaxed);
+        
+        // Emit debug message when legacy mode is activated
+        if crate::ui::is_debug_enabled() {
+            crate::ui::emit(
+                crate::ui::Level::Debug,
+                "fzf.legacy_mode_activated",
+                &format!("FZF legacy mode activated due to error: {}", stderr_str.trim()),
+                None,
+            );
+        }
+    }
+}
+
+fn log_fzf_failure(stderr: &[u8], exit_code: Option<i32>) {
+    if crate::ui::is_debug_enabled() {
+        let stderr_str = String::from_utf8_lossy(stderr);
+        let code_str = exit_code
+            .map(|c| format!("exit code {}", c))
+            .unwrap_or_else(|| "unknown".to_string());
+        
+        crate::ui::emit(
+            crate::ui::Level::Debug,
+            "fzf.execution_failed",
+            &format!("FZF execution failed ({}): {}", code_str, stderr_str.trim()),
+            None,
+        );
     }
 }
 
@@ -207,7 +233,11 @@ impl FzfWrapper {
                     check_and_set_legacy_mode(&result.stderr);
                     if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
                         return self.select_streaming(input_command);
+                    } else {
+                        log_fzf_failure(&result.stderr, result.status.code());
                     }
+                } else if !result.status.success() {
+                    log_fzf_failure(&result.stderr, result.status.code());
                 }
 
                 let stdout = String::from_utf8_lossy(&result.stdout);
@@ -363,7 +393,13 @@ impl FzfWrapper {
                     check_and_set_legacy_mode(&result.stderr);
                     if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
                         return self.select(items);
+                    } else {
+                        // fzf failed but not due to known legacy issues
+                        log_fzf_failure(&result.stderr, result.status.code());
                     }
+                } else if !result.status.success() {
+                    // fzf failed even in legacy mode
+                    log_fzf_failure(&result.stderr, result.status.code());
                 }
 
                 let stdout = String::from_utf8_lossy(&result.stdout);
@@ -697,7 +733,11 @@ impl FzfBuilder {
             check_and_set_legacy_mode(&output.stderr);
             if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
                 return self.input_dialog();
+            } else {
+                log_fzf_failure(&output.stderr, output.status.code());
             }
+        } else if !output.status.success() {
+            log_fzf_failure(&output.stderr, output.status.code());
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -806,7 +846,11 @@ impl FzfBuilder {
                 check_and_set_legacy_mode(&output.stderr);
                 if USE_LEGACY_ARGS.load(std::sync::atomic::Ordering::Relaxed) {
                     return self.confirm_dialog();
+                } else {
+                    log_fzf_failure(&output.stderr, output.status.code());
                 }
+            } else {
+                log_fzf_failure(&output.stderr, output.status.code());
             }
             return Ok(ConfirmResult::Cancelled);
         }

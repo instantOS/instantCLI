@@ -4,19 +4,16 @@ use serde::{Deserialize, Serialize};
 use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use crate::common::paths;
 
-// Global debug state
-static DEBUG_MODE: OnceLock<bool> = OnceLock::new();
-
+// Re-export debug functions from ui module for backward compatibility
 pub fn set_debug_mode(enabled: bool) {
-    DEBUG_MODE.set(enabled).ok();
+    crate::ui::set_debug_mode(enabled);
 }
 
 pub fn is_debug_enabled() -> bool {
-    DEBUG_MODE.get().copied().unwrap_or(false)
+    crate::ui::is_debug_enabled()
 }
 
 #[derive(Debug, Serialize, Deserialize)]

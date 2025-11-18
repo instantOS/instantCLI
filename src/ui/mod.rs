@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use serde::Serialize;
 use std::io::{self, Write};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -48,6 +49,17 @@ impl Default for Renderer {
 
 lazy_static! {
     static ref RENDERER: RwLock<Renderer> = RwLock::new(Renderer::default());
+}
+
+// Global debug state
+static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_debug_mode(enabled: bool) {
+    DEBUG_MODE.store(enabled, Ordering::Relaxed);
+}
+
+pub fn is_debug_enabled() -> bool {
+    DEBUG_MODE.load(Ordering::Relaxed)
 }
 
 pub fn init(format: OutputFormat, color: bool) {

@@ -190,7 +190,7 @@ fn initialize_cli(cli: &Cli) {
 
     if cli.debug {
         eprintln!("Debug mode is on");
-        crate::restic::logging::set_debug_mode(true);
+        crate::ui::set_debug_mode(true);
     }
 }
 
