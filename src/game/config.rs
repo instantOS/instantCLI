@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -142,7 +143,6 @@ impl Game {
             dependencies: Vec::new(),
         }
     }
-
 }
 
 /// Definition of a game dependency stored in games.toml
@@ -169,6 +169,9 @@ pub struct GameInstallation {
 }
 
 impl GameInstallation {
+    pub fn new(game_name: impl Into<GameName>, save_path: impl Into<TildePath>) -> Self {
+        Self::with_kind(game_name, save_path, PathContentKind::Directory)
+    }
 
     pub fn with_kind(
         game_name: impl Into<GameName>,
@@ -185,11 +188,9 @@ impl GameInstallation {
         }
     }
 
-
     pub fn update_checkpoint(&mut self, checkpoint_id: impl Into<String>) {
         self.nearest_checkpoint = Some(checkpoint_id.into());
     }
-
 }
 
 /// Installed dependency mapping stored in installations.toml
@@ -255,7 +256,21 @@ impl InstantGameConfig {
 
         let content = fs::read_to_string(path).context("reading games config")?;
         let config: Self = toml::from_str(&content).context("parsing games config")?;
+        config.validate()?;
         Ok(config)
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        let mut names = HashSet::new();
+        for game in &self.games {
+            if !names.insert(&game.name.0) {
+                return Err(anyhow::anyhow!(
+                    "Duplicate game name found: {}",
+                    game.name.0
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub fn save(&self) -> Result<()> {
@@ -289,7 +304,21 @@ impl InstallationsConfig {
 
         let content = fs::read_to_string(path).context("reading installations config")?;
         let config: Self = toml::from_str(&content).context("parsing installations config")?;
+        config.validate()?;
         Ok(config)
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        let mut names = HashSet::new();
+        for installation in &self.installations {
+            if !names.insert(&installation.game_name.0) {
+                return Err(anyhow::anyhow!(
+                    "Duplicate installation for game found: {}",
+                    installation.game_name.0
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub fn save(&self) -> Result<()> {
@@ -308,7 +337,6 @@ impl InstallationsConfig {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-
 
     #[test]
     fn test_game_installation_update_checkpoint() {
@@ -332,7 +360,6 @@ mod tests {
         );
         assert_eq!(installation.launch_command, None);
     }
-
 
     #[test]
     fn test_retention_policy_defaults() {
@@ -385,5 +412,52 @@ mod tests {
         assert_eq!(rules.len(), 5);
         assert!(rules.contains(&("keep-last".to_string(), "5".to_string())));
         assert!(rules.contains(&("keep-yearly".to_string(), "13".to_string())));
+    }
+
+    #[test]
+    fn test_validate_duplicate_games() {
+        let toml_content = r#"
+            repo = "~/.test/repo"
+            repo_password = "pass"
+            
+            [[games]]
+            name = "Game1"
+            
+            [[games]]
+            name = "Game1"
+        "#;
+
+        let config: InstantGameConfig = toml::from_str(toml_content).expect("Parsing failed");
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Duplicate game name")
+        );
+    }
+
+    #[test]
+    fn test_validate_duplicate_installations() {
+        let toml_content = r#"
+            [[installations]]
+            game_name = "Game1"
+            save_path = "~/.saves/game1"
+            
+            [[installations]]
+            game_name = "Game1"
+            save_path = "~/.saves/game1_other"
+        "#;
+
+        let config: InstallationsConfig = toml::from_str(toml_content).expect("Parsing failed");
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Duplicate installation for game found")
+        );
     }
 }
