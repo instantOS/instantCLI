@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.12](https://github.com/instantOS/instantCLI/compare/v0.6.11...v0.6.12) - 2025-11-19
+
+### Other
+
+- Migrate workflows to Blacksmith
+- remove redundant compilation
+
 ## [0.6.11](https://github.com/instantOS/instantCLI/compare/v0.6.10...v0.6.11) - 2025-11-19
 
 ### Fixed
