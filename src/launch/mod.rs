@@ -21,7 +21,6 @@ pub enum LaunchCommands {
 }
 
 /// Handle launch command
-// TODO: this is very long and might have mulptiple responsibilities, refactor
 pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
     // Initialize cache
     let mut cache = LaunchCache::new()?;
@@ -30,77 +29,92 @@ pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
     let launch_items = cache.get_launch_items().await?;
 
     if list_only {
-        // Print launch items instead of showing menu
-        for item in &launch_items {
-            println!("{}", item.display_name());
-        }
-        Ok(0)
+        handle_list_mode(&launch_items)
     } else {
-        let mut item_lookup: HashMap<String, LaunchItem> =
-            HashMap::with_capacity(launch_items.len());
+        handle_interactive_mode(&mut cache, launch_items).await
+    }
+}
 
-        // Convert to menu items with metadata for execution
-        let mut menu_items = Vec::with_capacity(launch_items.len());
+fn handle_list_mode(launch_items: &[LaunchItem]) -> Result<i32> {
+    // Print launch items instead of showing menu
+    for item in launch_items {
+        println!("{}", item.display_name());
+    }
+    Ok(0)
+}
 
-        for item in &launch_items {
-            let key = item.metadata_key();
-            item_lookup.insert(key.clone(), item.clone());
+async fn handle_interactive_mode(
+    cache: &mut LaunchCache,
+    launch_items: Vec<LaunchItem>,
+) -> Result<i32> {
+    let (item_lookup, menu_items) = prepare_menu_items(&launch_items);
 
-            let mut metadata = HashMap::new();
-            metadata.insert("type".to_string(), item.metadata_type().to_string());
-            metadata.insert("key".to_string(), key);
+    // Use GUI menu to select application
+    let client = client::MenuClient::new();
 
-            menu_items.push(SerializableMenuItem {
-                display_text: item.display_name().to_string(),
-                preview: FzfPreview::None,
-                metadata: Some(metadata),
-            });
-        }
+    // Show the scratchpad first for immediate feedback
+    client.show()?;
 
-        // Use GUI menu to select application
-        let client = client::MenuClient::new();
+    // Ensure server is running
+    client.ensure_server_running()?;
 
-        // Show the scratchpad first for immediate feedback
-        client.show()?;
+    // Show choice menu
+    match client.choice("Launch application:".to_string(), menu_items, false) {
+        Ok(selected) => {
+            if selected.is_empty() {
+                Ok(1) // Cancelled
+            } else {
+                let selected_metadata = selected[0]
+                    .metadata
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Selection metadata missing"))?;
 
-        // Ensure server is running
-        client.ensure_server_running()?;
+                let key = selected_metadata
+                    .get("key")
+                    .ok_or_else(|| anyhow::anyhow!("Selection key missing"))?;
 
-        // Show choice menu
-        match client.choice("Launch application:".to_string(), menu_items, false) {
-            Ok(selected) => {
-                if selected.is_empty() {
-                    Ok(1) // Cancelled
-                } else {
-                    let selected_metadata = selected[0]
-                        .metadata
-                        .as_ref()
-                        .ok_or_else(|| anyhow::anyhow!("Selection metadata missing"))?;
+                let launch_item = item_lookup
+                    .get(key)
+                    .ok_or_else(|| anyhow::anyhow!("Launch item not found for key: {}", key))?;
 
-                    let key = selected_metadata
-                        .get("key")
-                        .ok_or_else(|| anyhow::anyhow!("Selection key missing"))?;
+                // Execute the selected item
+                execute::execute_launch_item(launch_item).await?;
 
-                    let launch_item = item_lookup
-                        .get(key)
-                        .cloned()
-                        .ok_or_else(|| anyhow::anyhow!("Launch item not found for key: {}", key))?;
-
-                    // Execute the selected item
-                    execute::execute_launch_item(&launch_item).await?;
-
-                    // Record launch in frecency store
-                    if let Err(e) = cache.record_launch_item(&launch_item) {
-                        eprintln!("Warning: Failed to record launch: {e}");
-                    }
-
-                    Ok(0) // Success
+                // Record launch in frecency store
+                if let Err(e) = cache.record_launch_item(launch_item) {
+                    eprintln!("Warning: Failed to record launch: {e}");
                 }
+
+                Ok(0) // Success
             }
-            Err(e) => {
-                eprintln!("Error showing menu: {e}");
-                Ok(2) // Error
-            }
+        }
+        Err(e) => {
+            eprintln!("Error showing menu: {e}");
+            Ok(2) // Error
         }
     }
+}
+
+fn prepare_menu_items(
+    launch_items: &[LaunchItem],
+) -> (HashMap<String, LaunchItem>, Vec<SerializableMenuItem>) {
+    let mut item_lookup: HashMap<String, LaunchItem> = HashMap::with_capacity(launch_items.len());
+    let mut menu_items = Vec::with_capacity(launch_items.len());
+
+    for item in launch_items {
+        let key = item.metadata_key();
+        item_lookup.insert(key.clone(), item.clone());
+
+        let mut metadata = HashMap::new();
+        metadata.insert("type".to_string(), item.metadata_type().to_string());
+        metadata.insert("key".to_string(), key);
+
+        menu_items.push(SerializableMenuItem {
+            display_text: item.display_name().to_string(),
+            preview: FzfPreview::None,
+            metadata: Some(metadata),
+        });
+    }
+
+    (item_lookup, menu_items)
 }
