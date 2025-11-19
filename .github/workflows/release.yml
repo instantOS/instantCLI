@@ -7,7 +7,7 @@ on:
 jobs:
   build:
     name: Build release artifacts
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     container:
       image: archlinux:latest
     env:
@@ -99,7 +99,7 @@ jobs:
             artifacts/ins-${{ steps.vars.outputs.version }}-x86_64.AppImage.sha256
   cross-compile:
     name: Cross-compile for ARM targets
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -179,7 +179,7 @@ jobs:
             artifacts/ins-aarch64-termux-v${{ steps.vars.outputs.version }}.tgz.sha256
   pkgbuild:
     name: Build Arch package
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: build
     steps:
       - name: Checkout
@@ -213,7 +213,7 @@ jobs:
           path: artifacts/
   release:
     name: Publish GitHub release
-    runs-on: self-hosted
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs:
       - build
       - cross-compile
