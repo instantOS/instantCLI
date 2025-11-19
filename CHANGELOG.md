@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.11](https://github.com/instantOS/instantCLI/compare/v0.6.10...v0.6.11) - 2025-11-19
+
+### Fixed
+
+- *(ci)* use cargo-ndk for android termux builds to resolve linking issues
+
+### Other
+
+- make self hosted
+- refactor launch handle function
+
 ## [0.6.10](https://github.com/instantOS/instantCLI/compare/v0.6.9...v0.6.10) - 2025-11-19
 
 ### Fixed
