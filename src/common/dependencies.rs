@@ -26,6 +26,7 @@ impl Dependency {
         }
     }
 
+    #[allow(dead_code)]
     pub const fn custom(package: Package, checks: &'static [InstallTest]) -> Self {
         Self { package, checks }
     }

@@ -305,7 +305,8 @@ impl RepositoryManager {
         let restic = crate::restic::ResticWrapper::new(
             repo.as_path().to_string_lossy().to_string(),
             password.to_string(),
-        );
+        )
+        .context("Failed to initialize restic wrapper")?;
 
         // Try to check if repository exists - this will test the actual connection
         match restic.repository_exists() {

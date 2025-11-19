@@ -2,6 +2,7 @@ pub mod backup;
 pub mod cache;
 pub mod commands;
 pub mod dependencies;
+pub mod helpers;
 pub mod prune;
 pub mod security;
 pub mod single_file;
@@ -9,8 +10,7 @@ pub mod snapshot_selection;
 pub mod tags;
 
 use crate::game::checkpoint;
-use crate::game::config::{InstallationsConfig, InstantGameConfig};
-use crate::game::games::selection;
+use crate::game::config::InstantGameConfig;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -38,232 +38,30 @@ fn emit_restic_event(
 /// Handle game save backup with optional game selection
 pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
     // Load configurations
+    // Step 1: Game selection using security module
+    let game_selection = security::get_game_installation(game_name)?;
+    if game_selection.game_name.is_empty() {
+        // User cancelled selection
+        return Ok(());
+    }
+
+    let game_name = game_selection.game_name;
+    let installation = &game_selection.installation;
+
+    // Step 2: Security check: ensure save directory is not empty
+    helpers::validate_backup_requirements(&game_name, installation)?;
+
+    // Step 3: Perform the backup
+    perform_game_backup(&game_name, installation)
+}
+
+/// Internal helper to perform the actual backup process
+fn perform_game_backup(
+    game_name: &str,
+    installation: &crate::game::config::GameInstallation,
+) -> Result<()> {
+    // Load configuration for backup handler
     let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-    let installations =
-        InstallationsConfig::load().context("Failed to load installations configuration")?;
-
-    // Check restic availability and game manager initialization
-    super::utils::validation::check_restic_and_game_manager(&game_config)?;
-
-    // Get game name
-    let game_name = match game_name {
-        Some(name) => name,
-        None => match selection::select_game_interactive(None)? {
-            Some(name) => name,
-            None => return Ok(()),
-        },
-    };
-
-    // Find the game installation
-    let installation = match installations
-        .installations
-        .iter()
-        .find(|inst| inst.game_name.0 == game_name)
-    {
-        Some(installation) => installation,
-        None => {
-            let plain_message = format!("Error: No installation found for game '{game_name}'.");
-            let text_message = format!(
-                "Error: No installation found for game '{}'.",
-                game_name.red()
-            );
-            let data = serde_json::json!({
-                "game": game_name,
-                "action": "installation_missing"
-            });
-            emit_restic_event(
-                Level::Error,
-                "game.backup.installation_missing",
-                Some(char::from(NerdFont::CrossCircle)),
-                plain_message,
-                text_message,
-                Some(data),
-            );
-            emit_restic_event(
-                Level::Info,
-                "game.backup.hint.add",
-                Some(char::from(NerdFont::Info)),
-                format!(
-                    "Please add the game first using '{} game add'.",
-                    env!("CARGO_BIN_NAME")
-                ),
-                format!(
-                    "Please add the game first using '{} game add'.",
-                    env!("CARGO_BIN_NAME")
-                ),
-                Some(serde_json::json!({
-                    "hint": "add_game",
-                    "command": format!("{} game add", env!("CARGO_BIN_NAME"))
-                })),
-            );
-            return Err(anyhow::anyhow!("game installation not found"));
-        }
-    };
-
-    // Security check: ensure save directory is not empty
-    let save_path = installation.save_path.as_path();
-    if !save_path.exists() {
-        let path_display = save_path.display().to_string();
-        emit_restic_event(
-            Level::Error,
-            "game.backup.save_path_missing",
-            Some(char::from(NerdFont::CrossCircle)),
-            format!(
-                "Error: Save path does not exist for game '{}': {}",
-                game_name, path_display
-            ),
-            format!(
-                "Error: Save path does not exist for game '{}': {}",
-                game_name.red(),
-                path_display
-            ),
-            Some(serde_json::json!({
-                "game": game_name.clone(),
-                "action": "save_path_missing",
-                "path": path_display
-            })),
-        );
-        emit_restic_event(
-            Level::Warn,
-            "game.backup.hint.config",
-            Some(char::from(NerdFont::Warning)),
-            "Please check the game installation configuration.".to_string(),
-            "Please check the game installation configuration.".to_string(),
-            Some(serde_json::json!({
-                "hint": "check_configuration"
-            })),
-        );
-        return Err(anyhow::anyhow!("save path does not exist"));
-    }
-
-    // Check if save path is empty based on type
-    let is_empty = match installation.save_path_type {
-        crate::game::config::PathContentKind::File => {
-            // For files, check if file is empty
-            save_path
-                .metadata()
-                .map_or(true, |metadata| metadata.len() == 0)
-        }
-        crate::game::config::PathContentKind::Directory => {
-            // For directories, check if directory is empty (ignoring hidden files)
-            let mut is_empty = true;
-            if let Ok(mut entries) = std::fs::read_dir(save_path)
-                && let Some(entry) = entries.next()
-            {
-                // Only consider non-hidden files/directories
-                if let Ok(entry) = entry {
-                    let file_name = entry.file_name();
-                    let file_name_str = file_name.to_string_lossy();
-                    if !file_name_str.starts_with('.') {
-                        is_empty = false;
-                    }
-                }
-            }
-            is_empty
-        }
-    };
-
-    if is_empty {
-        let path_display = save_path.display().to_string();
-        let (entity_type, error_msg) = match installation.save_path_type {
-            crate::game::config::PathContentKind::File => {
-                ("save file", "save file is empty - security precaution")
-            }
-            crate::game::config::PathContentKind::Directory => (
-                "save directory",
-                "save directory is empty - security precaution",
-            ),
-        };
-
-        emit_restic_event(
-            Level::Error,
-            "game.backup.security.empty_path",
-            Some(char::from(NerdFont::CrossCircle)),
-            format!(
-                "Security: Refusing to backup empty {} for game '{}': {}",
-                entity_type, game_name, path_display
-            ),
-            format!(
-                "Security: Refusing to backup empty {} for game '{}': {}",
-                entity_type,
-                game_name.red(),
-                path_display.red()
-            ),
-            Some(serde_json::json!({
-                "game": game_name.clone(),
-                "action": "empty_save_path",
-                "path": path_display,
-                "path_type": entity_type
-            })),
-        );
-
-        emit_restic_event(
-            Level::Info,
-            "game.backup.security.context",
-            Some(char::from(NerdFont::Info)),
-            format!(
-                "The {} appears to be empty or contains only hidden files. This could indicate:",
-                entity_type
-            ),
-            format!(
-                "The {} appears to be empty or contains only hidden files. This could indicate:",
-                entity_type
-            ),
-            Some(serde_json::json!({
-                "context": "empty_save_path",
-                "path_type": entity_type
-            })),
-        );
-
-        let reasons = [
-            (
-                "game.backup.security.reason1",
-                "The game has not created any saves yet",
-                "no_visible_saves",
-            ),
-            (
-                "game.backup.security.reason2",
-                "The save path is configured incorrectly",
-                "save_path_incorrect",
-            ),
-            (
-                "game.backup.security.reason3",
-                "The saves are stored in a different location",
-                "saves_elsewhere",
-            ),
-        ];
-
-        for (code, text, key) in reasons {
-            emit_restic_event(
-                Level::Info,
-                code,
-                None,
-                text.to_string(),
-                format!("• {text}"),
-                Some(serde_json::json!({
-                    "context": "empty_save_path",
-                    "detail": key
-                })),
-            );
-        }
-
-        emit_restic_event(
-            Level::Info,
-            "game.backup.security.action",
-            None,
-            "Please verify the save path configuration and ensure the game has created save files."
-                .to_string(),
-            "Please verify the save path configuration and ensure the game has created save files."
-                .to_string(),
-            Some(serde_json::json!({
-                "context": "empty_save_path",
-                "action": "verify_save_path"
-            })),
-        );
-        return Err(anyhow::anyhow!(error_msg));
-    }
-
-    // Create backup
     let backup_handler = backup::GameBackup::new(game_config.clone());
 
     emit_restic_event(
@@ -279,7 +77,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
             game_name.yellow()
         ),
         Some(serde_json::json!({
-            "game": game_name.clone(),
+            "game": game_name,
             "action": "backup_start"
         })),
     );
@@ -297,7 +95,7 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
                     output
                 ),
                 Some(serde_json::json!({
-                    "game": game_name.clone(),
+                    "game": game_name,
                     "action": "backup_completed",
                     "output": output
                 })),
@@ -305,14 +103,15 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
 
             // Update checkpoint after successful backup
             if let Err(e) =
-                checkpoint::update_checkpoint_after_backup(&output, &game_name, &game_config)
+                checkpoint::update_checkpoint_after_backup(&output, game_name, &game_config)
             {
                 eprintln!("Warning: Could not update checkpoint: {e}");
             }
 
             // Invalidate cache for this game after successful backup
             let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
-            cache::invalidate_game_cache(&game_name, &repo_path);
+            cache::invalidate_game_cache(game_name, &repo_path);
+            Ok(())
         }
         Err(e) => {
             emit_restic_event(
@@ -327,11 +126,9 @@ pub fn backup_game_saves(game_name: Option<String>) -> Result<()> {
                     "error": e.to_string()
                 })),
             );
-            return Err(e);
+            Err(e)
         }
     }
-
-    Ok(())
 }
 
 /// Handle game save restore with optional game and snapshot selection
@@ -612,14 +409,15 @@ pub fn handle_restic_command(args: Vec<String>) -> Result<()> {
         return Err(anyhow::anyhow!("no restic command provided"));
     }
 
-    // Build restic command with repository and password
-    let mut cmd = std::process::Command::new("restic");
+    // Initialize restic wrapper to get base command configuration
+    let restic = crate::restic::ResticWrapper::new(
+        game_config.repo.as_path().to_string_lossy().to_string(),
+        game_config.repo_password.clone(),
+    )
+    .context("Failed to initialize restic wrapper")?;
 
-    // Set repository
-    cmd.arg("-r").arg(game_config.repo.as_path());
-
-    // Set password via environment variable
-    cmd.env("RESTIC_PASSWORD", &game_config.repo_password);
+    // Build restic command using centralized configuration
+    let mut cmd = restic.base_command();
 
     // Add user-provided arguments
     cmd.args(&args);

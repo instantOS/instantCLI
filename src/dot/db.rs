@@ -179,6 +179,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
         let mut stmt = self
             .conn
@@ -201,6 +202,7 @@ impl Database {
         Ok(result.next().is_some())
     }
 
+    #[allow(dead_code)]
     pub fn target_hash_exists(&self, hash: &str, path: &Path) -> Result<bool> {
         let mut stmt = self
             .conn

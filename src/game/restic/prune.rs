@@ -22,7 +22,8 @@ fn prune_with_retention(game_name: Option<String>) -> Result<()> {
     validation::check_restic_and_game_manager(&game_config)?;
 
     let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
-    let restic = ResticWrapper::new(repo_path.clone(), game_config.repo_password.clone());
+    let restic = ResticWrapper::new(repo_path.clone(), game_config.repo_password.clone())
+        .context("Failed to initialize restic wrapper")?;
 
     let games = resolve_games(&game_config, game_name);
     if games.is_empty() {
@@ -99,7 +100,8 @@ fn prune_zero_change_snapshots(game_name: Option<String>) -> Result<()> {
     validation::check_restic_and_game_manager(&game_config)?;
 
     let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
-    let restic = ResticWrapper::new(repo_path.clone(), game_config.repo_password.clone());
+    let restic = ResticWrapper::new(repo_path.clone(), game_config.repo_password.clone())
+        .context("Failed to initialize restic wrapper")?;
 
     let games = resolve_games(&game_config, game_name);
     if games.is_empty() {

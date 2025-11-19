@@ -14,7 +14,8 @@ pub fn initialize_restic_repo(repo: &Path, password: &str, debug: bool) -> Resul
         );
     }
 
-    let restic = ResticWrapper::new(repo.to_string_lossy().to_string(), password.to_string());
+    let restic = ResticWrapper::new(repo.to_string_lossy().to_string(), password.to_string())
+        .context("Failed to initialize restic wrapper")?;
 
     // Check if repository already exists
     match restic.repository_exists() {

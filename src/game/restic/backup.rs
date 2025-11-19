@@ -43,7 +43,8 @@ impl GameBackup {
         let restic = ResticWrapper::new(
             self.config.repo.as_path().to_string_lossy().to_string(),
             self.config.repo_password.clone(),
-        );
+        )
+        .context("Failed to initialize restic wrapper")?;
 
         // Use the centralized restic wrapper which already includes
         // --skip-if-unchanged for backups.
@@ -90,20 +91,6 @@ impl GameBackup {
         Ok("backup completed (no snapshot created)".to_string())
     }
 
-    /// List backups for a specific game
-    pub fn list_game_backups(&self, game_name: &str) -> Result<String> {
-        let restic = ResticWrapper::new(
-            self.config.repo.as_path().to_string_lossy().to_string(),
-            self.config.repo_password.clone(),
-        );
-
-        let json = restic
-            .list_snapshots_filtered(Some(tags::create_game_tags(game_name)))
-            .context("Failed to list restic snapshots")?;
-
-        Ok(json)
-    }
-
     /// Restore a game backup
     pub fn restore_game_backup(
         &self,
@@ -125,7 +112,8 @@ impl GameBackup {
         let restic = ResticWrapper::new(
             self.config.repo.as_path().to_string_lossy().to_string(),
             self.config.repo_password.clone(),
-        );
+        )
+        .context("Failed to initialize restic wrapper")?;
 
         let progress = restic
             .restore(snapshot_id, snapshot_path.as_deref(), target_path)
@@ -158,7 +146,8 @@ impl GameBackup {
                 let restic = ResticWrapper::new(
                     self.config.repo.as_path().to_string_lossy().to_string(),
                     self.config.repo_password.clone(),
-                );
+                )
+                .context("Failed to initialize restic wrapper")?;
 
                 // For single files, restore to temp directory then move to final location
                 let temp_restore = std::env::temp_dir().join(format!(
@@ -225,8 +214,11 @@ impl GameBackup {
     pub fn check_restic_availability() -> Result<bool> {
         // Use the wrapper to query version
         let restic = ResticWrapper::new("".to_string(), "".to_string());
-        match restic.check_version() {
-            Ok(success) => Ok(success),
+        match restic {
+            Ok(r) => match r.check_version() {
+                Ok(success) => Ok(success),
+                Err(_) => Ok(false),
+            },
             Err(_) => Ok(false),
         }
     }

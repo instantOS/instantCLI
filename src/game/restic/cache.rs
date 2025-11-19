@@ -106,7 +106,8 @@ fn fetch_repository_snapshots_from_restic(config: &InstantGameConfig) -> Result<
     let restic = crate::restic::wrapper::ResticWrapper::new(
         config.repo.as_path().to_string_lossy().to_string(),
         config.repo_password.clone(),
-    );
+    )
+    .context("Failed to initialize restic wrapper")?;
 
     restic
         .list_snapshots()
@@ -127,46 +128,6 @@ pub fn invalidate_game_cache(game_name: &str, repository_path: &str) {
     if let Ok(mut cache) = get_cache().lock() {
         cache.repositories.remove(repository_path);
     }
-}
-
-/// Get cache statistics for debugging
-pub fn get_cache_stats() -> String {
-    if let Ok(cache) = get_cache().lock() {
-        let _now = SystemTime::now();
-
-        let mut valid_entries = 0;
-        let mut expired_entries = 0;
-
-        for cached_data in cache.repositories.values() {
-            if is_cache_valid(cached_data) {
-                valid_entries += 1;
-            } else {
-                expired_entries += 1;
-            }
-        }
-
-        format!(
-            "Snapshot Cache Stats: {} total entries, {} valid, {} expired",
-            cache.repositories.len(),
-            valid_entries,
-            expired_entries
-        )
-    } else {
-        "Snapshot Cache Stats: cache unavailable".to_string()
-    }
-}
-
-/// Force refresh snapshots for a specific game
-pub fn refresh_snapshots_for_game(
-    game_name: &str,
-    config: &InstantGameConfig,
-) -> Result<Vec<Snapshot>> {
-    // Invalidate cache for this game first
-    let repository_path = config.repo.as_path().to_string_lossy().to_string();
-    invalidate_game_cache(game_name, &repository_path);
-
-    // Fetch fresh data
-    get_snapshots_for_game(game_name, config)
 }
 
 /// Get snapshot by ID from cached snapshots if available

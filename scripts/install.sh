@@ -97,6 +97,17 @@ detect_steam_deck() {
 
 detect_target() {
 	arch=$(uname -m)
+
+	if [ -n "${TERMUX_VERSION:-}" ]; then
+		case "$arch" in
+		aarch64 | arm64)
+			TARGET="aarch64-termux"
+			USE_APPIMAGE=0
+			return
+			;;
+		esac
+	fi
+
 	case "$arch" in
 	x86_64 | amd64)
 		TARGET="x86_64-unknown-linux-gnu"

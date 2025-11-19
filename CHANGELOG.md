@@ -33,7 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - no more fzf fuckery
 - more fzf debugging
-- fmt
 - better debugging
 - document deps
 - better fzf fallback
@@ -191,7 +190,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- fmt
 - screenshotpretty
 - init sc assist
 - add flameshot assist
@@ -299,7 +297,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - init game manager refactor
 - clippy
 - init refactor
-- fmt
 - more setup flow
 - tests and further implementation
 - init better setup
@@ -406,7 +403,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - init new NLE
 - add example to plan
 - better plan
-- hacky fix
 - init video render dry run
 - more wine plans
 - downscale overlays
@@ -491,14 +487,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix nerd fonts
 - fix conflict
 - fix package command
-- fix
 - fix multi select
 - fix snake case
 - fix compilation
 - fix password prompt
-- fix some stuff
-- fix
-- fix some stuff
 - fix release workflow
 
 ### Other

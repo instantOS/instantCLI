@@ -20,6 +20,7 @@ impl ServiceScope {
 
 /// Represents the state of a systemd service
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ServiceState {
     Active,
     Inactive,
@@ -29,6 +30,7 @@ pub enum ServiceState {
 
 /// Represents the enablement state of a systemd service
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ServiceEnablement {
     Enabled,
     Disabled,
@@ -65,18 +67,21 @@ impl UserServiceConfig {
     }
 
     /// Set the restart policy
+    #[allow(dead_code)]
     pub fn with_restart(mut self, restart: impl Into<String>) -> Self {
         self.restart = Some(restart.into());
         self
     }
 
     /// Set the restart delay in seconds
+    #[allow(dead_code)]
     pub fn with_restart_sec(mut self, sec: u32) -> Self {
         self.restart_sec = Some(sec);
         self
     }
 
     /// Set the target that wants this service
+    #[allow(dead_code)]
     pub fn with_wanted_by(mut self, target: impl Into<String>) -> Self {
         self.wanted_by = Some(target.into());
         self
@@ -159,6 +164,7 @@ impl SystemdManager {
     }
 
     /// Get the detailed state of a service
+    #[allow(dead_code)]
     pub fn get_state(&self, service_name: &str) -> ServiceState {
         let output = self.run_systemctl(&["is-active", service_name]);
 
@@ -177,6 +183,7 @@ impl SystemdManager {
     }
 
     /// Get the enablement state of a service
+    #[allow(dead_code)]
     pub fn get_enablement(&self, service_name: &str) -> ServiceEnablement {
         let output = self.run_systemctl(&["is-enabled", service_name]);
 
@@ -207,6 +214,7 @@ impl SystemdManager {
     }
 
     /// Stop a service
+    #[allow(dead_code)]
     pub fn stop(&self, service_name: &str) -> Result<()> {
         let status = self
             .run_systemctl(&["stop", service_name])
@@ -219,6 +227,7 @@ impl SystemdManager {
     }
 
     /// Enable a service
+    #[allow(dead_code)]
     pub fn enable(&self, service_name: &str) -> Result<()> {
         let status = self
             .run_systemctl(&["enable", service_name])
@@ -231,6 +240,7 @@ impl SystemdManager {
     }
 
     /// Disable a service
+    #[allow(dead_code)]
     pub fn disable(&self, service_name: &str) -> Result<()> {
         let status = self
             .run_systemctl(&["disable", service_name])
@@ -305,6 +315,7 @@ impl SystemdManager {
     }
 
     /// Create a user service file with custom content
+    #[allow(dead_code)]
     pub fn create_user_service_file(
         &self,
         service_name: &str,
@@ -333,6 +344,7 @@ impl SystemdManager {
     }
 
     /// Remove a user service file
+    #[allow(dead_code)]
     pub fn remove_user_service_file(&self, service_name: &str) -> Result<()> {
         if self.scope != ServiceScope::User {
             anyhow::bail!("remove_user_service_file can only be used with user scope");
@@ -381,45 +393,6 @@ impl SystemdManager {
     }
 }
 
-/// Convenience functions for common systemd operations
-pub mod utils {
-    use super::*;
-
-    /// Check if a system service is active
-    pub fn system_service_is_active(service_name: &str) -> bool {
-        SystemdManager::system().is_active(service_name)
-    }
-
-    /// Check if a system service is enabled
-    pub fn system_service_is_enabled(service_name: &str) -> bool {
-        SystemdManager::system().is_enabled(service_name)
-    }
-
-    /// Check if a user service is active
-    pub fn user_service_is_active(service_name: &str) -> bool {
-        SystemdManager::user().is_active(service_name)
-    }
-
-    /// Check if a user service is enabled
-    pub fn user_service_is_enabled(service_name: &str) -> bool {
-        SystemdManager::user().is_enabled(service_name)
-    }
-
-    /// Create a udiskie service configuration
-    pub fn create_udiskie_service_config() -> UserServiceConfig {
-        UserServiceConfig::new(
-            "udiskie",
-            "udiskie removable media automounter",
-            "/usr/bin/udiskie",
-        )
-    }
-
-    /// Create a standard user service file content for udiskie (legacy)
-    pub fn create_udiskie_service_content() -> String {
-        create_udiskie_service_config().to_service_content()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,21 +432,5 @@ mod tests {
         assert!(content.contains("Restart=on-failure"));
         assert!(content.contains("RestartSec=10"));
         assert!(content.contains("WantedBy=graphical.target"));
-    }
-
-    #[test]
-    fn test_udiskie_service_config() {
-        let config = utils::create_udiskie_service_config();
-        assert_eq!(config.name, "udiskie");
-        assert_eq!(config.description, "udiskie removable media automounter");
-        assert_eq!(config.exec_start, "/usr/bin/udiskie");
-    }
-
-    #[test]
-    fn test_udiskie_service_content() {
-        let content = utils::create_udiskie_service_content();
-        assert!(content.contains("Description=udiskie removable media automounter"));
-        assert!(content.contains("ExecStart=/usr/bin/udiskie"));
-        assert!(content.contains("WantedBy=default.target"));
     }
 }

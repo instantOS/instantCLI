@@ -502,28 +502,6 @@ pub fn init_or_create_default_repo(
     })
 }
 
-fn next_available_repo_name(config: &Config) -> (String, PathBuf) {
-    let base_name = "local".to_string();
-    if !name_in_use(config, &base_name) {
-        let path = config.repos_path().join(&base_name);
-        if !path.exists() {
-            return (base_name, path);
-        }
-    }
-
-    let mut counter = 2;
-    loop {
-        let candidate = format!("local-{}", counter);
-        if !name_in_use(config, &candidate) {
-            let path = config.repos_path().join(&candidate);
-            if !path.exists() {
-                return (candidate, path);
-            }
-        }
-        counter += 1;
-    }
-}
-
 fn name_in_use(config: &Config, name: &str) -> bool {
     config.repos.iter().any(|r| r.name == name)
 }

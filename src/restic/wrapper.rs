@@ -12,12 +12,13 @@ pub struct ResticWrapper {
 }
 
 impl ResticWrapper {
-    pub fn new(repository: String, password: String) -> Self {
-        Self {
+    pub fn new(repository: String, password: String) -> Result<Self, ResticError> {
+        Ok(Self {
             repository,
             password,
-            logger: ResticCommandLogger::new().expect("Failed to create restic command logger"),
-        }
+            logger: ResticCommandLogger::new()
+                .map_err(|e| ResticError::CommandFailed(format!("Failed to create logger: {e}")))?,
+        })
     }
 
     fn execute_and_log_command(
@@ -42,7 +43,7 @@ impl ResticWrapper {
         Ok(output)
     }
 
-    fn base_command(&self) -> Command {
+    pub fn base_command(&self) -> Command {
         let mut cmd = Command::new("restic");
         cmd.arg("-r")
             .arg(&self.repository)
