@@ -23,81 +23,101 @@ pub async fn handle_auphonic(args: AuphonicArgs) -> Result<()> {
     let project_paths = directories.project_paths(&input_hash);
     project_paths.ensure_directories()?;
 
-    let cache_file_name = format!("{}_auphonic.mp3", input_hash);
-    let cache_path = project_paths.transcript_dir().join(&cache_file_name);
+    let raw_cache_file_name = format!("{}_auphonic_raw.mp3", input_hash);
+    let raw_cache_path = project_paths.transcript_dir().join(&raw_cache_file_name);
 
-    if cache_path.exists() && !args.force {
+    let processed_cache_file_name = format!("{}_auphonic_processed.mp3", input_hash);
+    let processed_cache_path = project_paths
+        .transcript_dir()
+        .join(&processed_cache_file_name);
+
+    // Step 1: Ensure raw Auphonic result exists
+    if !raw_cache_path.exists() || args.force {
+        // Load config
+        let config = VideoConfig::load()?;
+        let api_key = args
+            .api_key
+            .or(config.auphonic_api_key)
+            .context("Auphonic API key not found. Please provide it via --api-key or in ~/.config/instant/video.toml")?;
+
+        let client = Client::new();
+
+        // Get or create preset
+        let preset_uuid = if let Some(uuid) = args.preset.or(config.auphonic_preset_uuid) {
+            uuid
+        } else {
+            create_or_get_preset(&client, &api_key).await?
+        };
+
+        // Start production
+        let production_uuid =
+            start_production(&client, &api_key, &preset_uuid, &input_path).await?;
+
+        // Poll status
+        wait_for_production(&client, &api_key, &production_uuid).await?;
+
+        // Download result
+        download_result(&client, &api_key, &production_uuid, &raw_cache_path).await?;
+    } else {
         emit(
             Level::Info,
             "video.auphonic.cached",
-            &format!("Auphonic result already cached at {}", cache_path.display()),
+            &format!(
+                "Using cached raw Auphonic result at {}",
+                raw_cache_path.display()
+            ),
             None,
         );
-        copy_to_output(&cache_path, &input_path)?;
-        return Ok(());
     }
 
-    // Load config
-    let config = VideoConfig::load()?;
-    let api_key = args
-        .api_key
-        .or(config.auphonic_api_key)
-        .context("Auphonic API key not found. Please provide it via --api-key or in ~/.config/instant/video.toml")?;
+    // Step 2: Process/Trim the raw result
+    // We re-process if the processed file doesn't exist OR if force is enabled
+    if !processed_cache_path.exists() || args.force {
+        let original_duration =
+            get_duration(&input_path).context("Failed to get original duration")?;
+        let raw_duration = get_duration(&raw_cache_path).context("Failed to get raw duration")?;
 
-    let client = Client::new();
+        if raw_duration > original_duration {
+            let diff = raw_duration - original_duration;
+            // If difference is significant (e.g. > 1 second), assume jingles
+            if diff > 1.0 {
+                let cut = diff / 2.0;
+                emit(
+                    Level::Info,
+                    "video.auphonic.trim",
+                    &format!(
+                        "Detected duration difference of {:.2}s. Trimming {:.2}s from start and end...",
+                        diff, cut
+                    ),
+                    None,
+                );
 
-    // Get or create preset
-    let preset_uuid = if let Some(uuid) = args.preset.or(config.auphonic_preset_uuid) {
-        uuid
-    } else {
-        create_or_get_preset(&client, &api_key).await?
-    };
+                let start = cut;
+                let end = raw_duration - cut;
 
-    // Start production
-    let production_uuid = start_production(&client, &api_key, &preset_uuid, &input_path).await?;
-
-    // Poll status
-    wait_for_production(&client, &api_key, &production_uuid).await?;
-
-    // Download result
-    download_result(&client, &api_key, &production_uuid, &cache_path).await?;
-
-    // Check for jingles and trim if necessary
-    let original_duration = get_duration(&input_path).context("Failed to get original duration")?;
-    let processed_duration =
-        get_duration(&cache_path).context("Failed to get processed duration")?;
-
-    if processed_duration > original_duration {
-        let diff = processed_duration - original_duration;
-        // If difference is significant (e.g. > 1 second), assume jingles
-        if diff > 1.0 {
-            let cut = diff / 2.0;
-            emit(
-                Level::Info,
-                "video.auphonic.trim",
-                &format!(
-                    "Detected duration difference of {:.2}s. Trimming {:.2}s from start and end...",
-                    diff, cut
-                ),
-                None,
-            );
-
-            let trimmed_path = project_paths
-                .transcript_dir()
-                .join(format!("{}_trimmed.mp3", input_hash));
-            let start = cut;
-            let end = processed_duration - cut;
-
-            trim_audio(&cache_path, &trimmed_path, start, end)?;
-
-            // Replace cache file with trimmed version
-            fs::rename(&trimmed_path, &cache_path)
-                .context("Failed to replace cache file with trimmed version")?;
+                trim_audio(&raw_cache_path, &processed_cache_path, start, end)?;
+            } else {
+                // Just copy if no significant difference
+                fs::copy(&raw_cache_path, &processed_cache_path)?;
+            }
+        } else {
+            // Raw is shorter or equal, just copy
+            fs::copy(&raw_cache_path, &processed_cache_path)?;
         }
+    } else {
+        emit(
+            Level::Info,
+            "video.auphonic.cached",
+            &format!(
+                "Using cached processed result at {}",
+                processed_cache_path.display()
+            ),
+            None,
+        );
     }
 
     // Copy to output
-    copy_to_output(&cache_path, &input_path)?;
+    copy_to_output(&processed_cache_path, &input_path)?;
 
     Ok(())
 }
@@ -442,10 +462,10 @@ fn get_duration(path: &Path) -> Result<f64> {
 }
 
 fn trim_audio(input: &Path, output: &Path, start: f64, end: f64) -> Result<()> {
-    // ffmpeg -i input -ss start -to end -c copy output
+    // ffmpeg -i input -ss start -to end -c:a libmp3lame -q:a 2 output
+    // Removing -c copy to ensure precision, using high quality VBR MP3
     let output_str = output.to_string_lossy();
 
-    // We need to use -y to overwrite if it exists (though we usually create new temp files)
     let status = std::process::Command::new("ffmpeg")
         .args(&[
             "-y",
@@ -455,8 +475,10 @@ fn trim_audio(input: &Path, output: &Path, start: f64, end: f64) -> Result<()> {
             &format!("{}", start),
             "-to",
             &format!("{}", end),
-            "-c",
-            "copy",
+            "-c:a",
+            "libmp3lame",
+            "-q:a",
+            "2",
             &output_str,
         ])
         .status()
