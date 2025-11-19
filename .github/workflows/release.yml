@@ -128,13 +128,12 @@ jobs:
           target: armv7-unknown-linux-gnueabihf
           args: "--locked --release --features cross-compile"
           strip: true
-      - name: Cross compile for Android ARM64 (Termux)
-        uses: houseabsolute/actions-rust-cross@v1
-        with:
-          command: build
-          target: aarch64-linux-android
-          args: "--locked --release --features cross-compile"
-          strip: true
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+      - name: Add Android target
+        run: rustup target add aarch64-linux-android
+      - name: Build for Android
+        run: cargo ndk -t aarch64-linux-android build --release --locked --features cross-compile
       - name: Collect ARM artifacts
         env:
           VERSION: ${{ steps.vars.outputs.version }}
