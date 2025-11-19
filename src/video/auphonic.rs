@@ -195,8 +195,8 @@ async fn create_or_get_preset(client: &Client, api_key: &str) -> Result<String> 
             "denoise": true,
             "denoiseamount": 100,
             "silence_cutter": false,
-            "filler_cutter": true,
-            "cough_cutter": true
+            "filler_cutter": false,
+            "cough_cutter": false
         },
         "output_files": [
             {"format": "mp3", "bitrate": "128", "bitrate_mode": "cbr"}
