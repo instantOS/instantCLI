@@ -37,3 +37,6 @@ someone.md
 *.jpg
 
 insvideodata/*
+
+*.mp3
+*.m4a
