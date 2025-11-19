@@ -1,18 +1,20 @@
 use anyhow::Result;
 
+use super::auphonic;
 use super::cli::VideoCommands;
-use super::convert::handle_convert;
-use super::render::handle_render;
-use super::stats::handle_stats;
-use super::titlecard::handle_titlecard;
-use super::transcribe::handle_transcribe;
+use super::convert;
+use super::render;
+use super::stats;
+use super::titlecard;
+use super::transcribe;
 
-pub fn handle_video_command(command: VideoCommands, _debug: bool) -> Result<()> {
+pub async fn handle_video_command(command: VideoCommands, _debug: bool) -> Result<()> {
     match command {
-        VideoCommands::Convert(args) => handle_convert(args),
-        VideoCommands::Transcribe(args) => handle_transcribe(args),
-        VideoCommands::Render(args) => handle_render(args),
-        VideoCommands::Titlecard(args) => handle_titlecard(args),
-        VideoCommands::Stats(args) => handle_stats(args),
+        VideoCommands::Convert(args) => convert::handle_convert(args),
+        VideoCommands::Transcribe(args) => transcribe::handle_transcribe(args),
+        VideoCommands::Render(args) => render::handle_render(args),
+        VideoCommands::Titlecard(args) => titlecard::handle_titlecard(args),
+        VideoCommands::Stats(args) => stats::handle_stats(args),
+        VideoCommands::Auphonic(args) => auphonic::handle_auphonic(args).await,
     }
 }
