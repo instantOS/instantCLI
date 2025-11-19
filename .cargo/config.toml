@@ -4,3 +4,6 @@ jobs = 1
 [test]
 # Run tests sequentially to avoid database conflicts
 test-threads = 1
+
+[target.aarch64-linux-android]
+rustflags = ["-L/system/lib64", "-lunwind"]
