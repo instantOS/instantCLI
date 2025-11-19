@@ -1,7 +1,6 @@
 use crate::game::config::InstantGameConfig;
 use anyhow::{Context, Result};
 
-
 /// Validate game manager is initialized
 pub fn validate_game_manager_initialized() -> Result<bool> {
     let config = InstantGameConfig::load().context("Failed to load game configuration")?;

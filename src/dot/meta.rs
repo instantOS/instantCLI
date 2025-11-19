@@ -502,7 +502,6 @@ pub fn init_or_create_default_repo(
     })
 }
 
-
 fn name_in_use(config: &Config, name: &str) -> bool {
     config.repos.iter().any(|r| r.name == name)
 }

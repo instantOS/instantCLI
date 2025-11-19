@@ -91,7 +91,6 @@ impl GameBackup {
         Ok("backup completed (no snapshot created)".to_string())
     }
 
-
     /// Restore a game backup
     pub fn restore_game_backup(
         &self,

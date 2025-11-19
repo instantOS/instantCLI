@@ -194,4 +194,3 @@ pub fn filter_dotfiles_by_path<'a>(
         .filter(|dotfile| dotfile.target_path.starts_with(path))
         .collect()
 }
-

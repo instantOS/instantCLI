@@ -13,7 +13,6 @@ impl RepoName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-
 }
 
 impl std::fmt::Display for RepoName {

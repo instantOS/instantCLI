@@ -120,7 +120,6 @@ pub fn hide_special_workspace(workspace_name: &str) -> Result<()> {
     Ok(())
 }
 
-
 /// Monitor information from hyprctl monitors -j
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct HyprlandMonitorInfo {

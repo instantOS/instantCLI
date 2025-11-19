@@ -130,7 +130,6 @@ pub fn invalidate_game_cache(game_name: &str, repository_path: &str) {
     }
 }
 
-
 /// Get snapshot by ID from cached snapshots if available
 pub fn get_snapshot_by_id(
     snapshot_id: &str,

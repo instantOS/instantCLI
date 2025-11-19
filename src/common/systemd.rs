@@ -393,7 +393,6 @@ impl SystemdManager {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,5 +433,4 @@ mod tests {
         assert!(content.contains("RestartSec=10"));
         assert!(content.contains("WantedBy=graphical.target"));
     }
-
 }

@@ -155,7 +155,6 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str, add_all: bool) ->
     Ok(())
 }
 
-
 /// Add a new untracked file
 fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<()> {
     // Repository selection

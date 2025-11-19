@@ -21,7 +21,6 @@ impl SupportedShell {
             SupportedShell::Zsh => "zsh",
         }
     }
-
 }
 
 impl fmt::Display for SupportedShell {
@@ -91,7 +90,6 @@ pub fn install(shell: SupportedShell, snippet_only: bool) -> Result<String> {
         ))
     }
 }
-
 
 fn matches_prefix(value: &str, prefix: &str) -> bool {
     prefix.is_empty() || value.starts_with(prefix)
