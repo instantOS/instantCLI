@@ -78,10 +78,8 @@ fn detect_target() -> Result<String> {
     let arch = env::consts::ARCH;
 
     // Check for Termux environment
-    if env::var("TERMUX_VERSION").is_ok() {
-        if arch == "aarch64" {
-            return Ok("aarch64-termux".to_string());
-        }
+    if env::var("TERMUX_VERSION").is_ok() && arch == "aarch64" {
+        return Ok("aarch64-termux".to_string());
     }
 
     match arch {

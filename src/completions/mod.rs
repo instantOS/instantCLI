@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, fmt, path::Path};
+use std::{ffi::OsStr, fmt};
 
 use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
