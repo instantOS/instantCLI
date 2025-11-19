@@ -62,6 +62,40 @@ pub async fn handle_auphonic(args: AuphonicArgs) -> Result<()> {
     // Download result
     download_result(&client, &api_key, &production_uuid, &cache_path).await?;
 
+    // Check for jingles and trim if necessary
+    let original_duration = get_duration(&input_path).context("Failed to get original duration")?;
+    let processed_duration =
+        get_duration(&cache_path).context("Failed to get processed duration")?;
+
+    if processed_duration > original_duration {
+        let diff = processed_duration - original_duration;
+        // If difference is significant (e.g. > 1 second), assume jingles
+        if diff > 1.0 {
+            let cut = diff / 2.0;
+            emit(
+                Level::Info,
+                "video.auphonic.trim",
+                &format!(
+                    "Detected duration difference of {:.2}s. Trimming {:.2}s from start and end...",
+                    diff, cut
+                ),
+                None,
+            );
+
+            let trimmed_path = project_paths
+                .transcript_dir()
+                .join(format!("{}_trimmed.mp3", input_hash));
+            let start = cut;
+            let end = processed_duration - cut;
+
+            trim_audio(&cache_path, &trimmed_path, start, end)?;
+
+            // Replace cache file with trimmed version
+            fs::rename(&trimmed_path, &cache_path)
+                .context("Failed to replace cache file with trimmed version")?;
+        }
+    }
+
     // Copy to output
     copy_to_output(&cache_path, &input_path)?;
 
@@ -376,4 +410,60 @@ async fn download_result(
 
         anyhow::bail!("Failed to download file: {}", resp.status());
     }
+}
+
+fn get_duration(path: &Path) -> Result<f64> {
+    let output = std::process::Command::new("ffprobe")
+        .args(&[
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+        ])
+        .arg(path)
+        .output()
+        .context("Failed to run ffprobe")?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "ffprobe failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let duration_str = String::from_utf8_lossy(&output.stdout);
+    let duration: f64 = duration_str
+        .trim()
+        .parse()
+        .context("Failed to parse duration")?;
+    Ok(duration)
+}
+
+fn trim_audio(input: &Path, output: &Path, start: f64, end: f64) -> Result<()> {
+    // ffmpeg -i input -ss start -to end -c copy output
+    let output_str = output.to_string_lossy();
+
+    // We need to use -y to overwrite if it exists (though we usually create new temp files)
+    let status = std::process::Command::new("ffmpeg")
+        .args(&[
+            "-y",
+            "-i",
+            &input.to_string_lossy(),
+            "-ss",
+            &format!("{}", start),
+            "-to",
+            &format!("{}", end),
+            "-c",
+            "copy",
+            &output_str,
+        ])
+        .status()
+        .context("Failed to run ffmpeg")?;
+
+    if !status.success() {
+        anyhow::bail!("ffmpeg failed to trim audio");
+    }
+    Ok(())
 }
