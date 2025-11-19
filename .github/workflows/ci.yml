@@ -46,11 +46,9 @@ jobs:
           # Make test scripts executable
           chmod +x tests/*.sh
           ./tests/run_all.sh
-      - name: Build release binary
-        run: cargo build --release --locked
       - name: Check binary functionality
         run: |
           # Test basic CLI functionality
-          ./target/release/ins --help > /dev/null
-          ./target/release/ins --version
+          ./target/debug/ins --help > /dev/null
+          ./target/debug/ins --version
           echo "✓ CLI binary basic functionality works"
