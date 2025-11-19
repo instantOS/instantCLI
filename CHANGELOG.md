@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.10](https://github.com/instantOS/instantCLI/compare/v0.6.9...v0.6.10) - 2025-11-19
+
+### Fixed
+
+- fix android compilation
+
+### Other
+
+- clippy
+- Merge branch 'dev'
+
 ## [0.6.9](https://github.com/instantOS/instantCLI/compare/v0.6.8...v0.6.9) - 2025-11-18
 
 ### Other
