@@ -67,12 +67,16 @@ pub struct VideoProjectPaths {
 #[serde(default)]
 pub struct VideoConfig {
     pub music_volume: f32,
+    pub auphonic_api_key: Option<String>,
+    pub auphonic_preset_uuid: Option<String>,
 }
 
 impl Default for VideoConfig {
     fn default() -> Self {
         Self {
             music_volume: Self::DEFAULT_MUSIC_VOLUME,
+            auphonic_api_key: None,
+            auphonic_preset_uuid: None,
         }
     }
 }

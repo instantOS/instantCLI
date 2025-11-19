@@ -261,7 +261,7 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
         }
         Some(Commands::Video { command }) => {
             execute_with_error_handling(
-                video::handle_video_command(command.clone(), cli.debug),
+                video::handle_video_command(command.clone(), cli.debug).await,
                 "Error handling video command",
                 None,
             )?;

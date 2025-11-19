@@ -1,3 +1,4 @@
+pub mod auphonic;
 pub mod cli;
 pub mod commands;
 mod config;

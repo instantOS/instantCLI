@@ -12,7 +12,10 @@ pub enum VideoCommands {
     /// Generate a title card image from a markdown file
     Titlecard(TitlecardArgs),
     /// Display statistics about how a markdown file will be rendered
+    /// Display statistics about how a markdown file will be rendered
     Stats(StatsArgs),
+    /// Process audio using Auphonic
+    Auphonic(AuphonicArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -96,4 +99,23 @@ pub struct StatsArgs {
     /// Markdown file describing the edited timeline
     #[arg(value_hint = ValueHint::FilePath)]
     pub markdown: PathBuf,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct AuphonicArgs {
+    /// Source video or audio file to process
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub input_file: PathBuf,
+
+    /// Auphonic Preset UUID (overrides config)
+    #[arg(long)]
+    pub preset: Option<String>,
+
+    /// Auphonic API key (overrides config)
+    #[arg(long)]
+    pub api_key: Option<String>,
+
+    /// Force reprocessing even if cached
+    #[arg(long)]
+    pub force: bool,
 }
