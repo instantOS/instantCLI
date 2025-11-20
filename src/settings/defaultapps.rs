@@ -6,19 +6,10 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::common::requirements::{InstallTest, RequiredPackage};
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 
 use super::context::SettingsContext;
-
-/// XDG utilities package for MIME type handling
-pub const XDG_UTILS_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "XDG utilities",
-    arch_package_name: Some("xdg-utils"),
-    ubuntu_package_name: Some("xdg-utils"),
-    tests: &[InstallTest::WhichSucceeds("xdg-mime")],
-};
 
 /// Information about a MIME type for display purposes
 #[derive(Debug, Clone)]

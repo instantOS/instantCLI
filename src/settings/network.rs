@@ -1,29 +1,10 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::common::requirements::RequiredPackage;
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::*;
 
 use super::context::SettingsContext;
-
-pub const NM_CONNECTION_EDITOR_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "NetworkManager connection editor",
-    arch_package_name: Some("nm-connection-editor"),
-    ubuntu_package_name: Some("network-manager-gnome"),
-    tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
-        "nm-connection-editor",
-    )],
-};
-
-pub const CHROMIUM_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Chromium browser",
-    arch_package_name: Some("chromium"),
-    ubuntu_package_name: Some("chromium-browser"),
-    tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
-        "chromium",
-    )],
-};
 
 /// Show IP address information
 pub fn show_ip_info(ctx: &mut SettingsContext) -> Result<()> {

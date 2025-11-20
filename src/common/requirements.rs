@@ -521,3 +521,116 @@ pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<bool> {
     show_success_message(package_names.len())?;
     Ok(true)
 }
+
+// Common Package Definitions
+
+pub const WIREMIX_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "wiremix",
+    arch_package_name: Some("wiremix"),
+    ubuntu_package_name: None,
+    tests: &[InstallTest::WhichSucceeds("wiremix")],
+};
+
+pub const UDISKIE_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "udiskie",
+    arch_package_name: Some("udiskie"),
+    ubuntu_package_name: Some("udiskie"),
+    tests: &[InstallTest::WhichSucceeds("udiskie")],
+};
+
+pub const GNOME_DISKS_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "GNOME Disks",
+    arch_package_name: Some("gnome-disk-utility"),
+    ubuntu_package_name: Some("gnome-disk-utility"),
+    tests: &[InstallTest::WhichSucceeds("gnome-disks")],
+};
+
+pub const GPARTED_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "GParted",
+    arch_package_name: Some("gparted"),
+    ubuntu_package_name: Some("gparted"),
+    tests: &[InstallTest::WhichSucceeds("gparted")],
+};
+
+pub const FASTFETCH_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "fastfetch",
+    arch_package_name: Some("fastfetch"),
+    ubuntu_package_name: Some("fastfetch"),
+    tests: &[InstallTest::WhichSucceeds("fastfetch")],
+};
+
+pub const PACMAN_CONTRIB_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "pacman-contrib",
+    arch_package_name: Some("pacman-contrib"),
+    ubuntu_package_name: None,
+    tests: &[InstallTest::WhichSucceeds("paccache")],
+};
+
+pub const TOPGRADE_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "topgrade",
+    arch_package_name: Some("topgrade"),
+    ubuntu_package_name: None,
+    tests: &[InstallTest::WhichSucceeds("topgrade")],
+};
+
+pub const BLUEZ_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "BlueZ bluetooth daemon",
+    arch_package_name: Some("bluez"),
+    ubuntu_package_name: Some("bluez"),
+    tests: &[
+        InstallTest::WhichSucceeds("bluetoothd"),
+        InstallTest::FileExists("/usr/lib/systemd/system/bluetooth.service"),
+    ],
+};
+
+pub const BLUEZ_UTILS_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "BlueZ utilities",
+    arch_package_name: Some("bluez-utils"),
+    ubuntu_package_name: Some("bluez"),
+    tests: &[InstallTest::WhichSucceeds("bluetoothctl")],
+};
+
+pub const BLUEMAN_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Blueman applet",
+    arch_package_name: Some("blueman"),
+    ubuntu_package_name: Some("blueman"),
+    tests: &[InstallTest::WhichSucceeds("blueman-applet")],
+};
+
+pub const COCKPIT_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Cockpit",
+    arch_package_name: Some("cockpit"),
+    ubuntu_package_name: Some("cockpit"),
+    tests: &[
+        InstallTest::FileExists("/usr/lib/systemd/system/cockpit.socket"),
+        InstallTest::WhichSucceeds("cockpit-bridge"),
+    ],
+};
+
+pub const CHROMIUM_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Chromium browser",
+    arch_package_name: Some("chromium"),
+    ubuntu_package_name: Some("chromium-browser"),
+    tests: &[InstallTest::WhichSucceeds("chromium")],
+};
+
+pub const GNOME_FIRMWARE_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "GNOME Firmware manager",
+    arch_package_name: Some("gnome-firmware"),
+    ubuntu_package_name: Some("gnome-firmware"),
+    tests: &[InstallTest::WhichSucceeds("gnome-firmware")],
+};
+
+pub const XDG_UTILS_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "XDG utilities",
+    arch_package_name: Some("xdg-utils"),
+    ubuntu_package_name: Some("xdg-utils"),
+    tests: &[InstallTest::WhichSucceeds("xdg-mime")],
+};
+
+pub const NM_CONNECTION_EDITOR_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Network Manager Connection Editor",
+    arch_package_name: Some("nm-connection-editor"),
+    ubuntu_package_name: Some("network-manager-gnome"),
+    tests: &[InstallTest::WhichSucceeds("nm-connection-editor")],
+};

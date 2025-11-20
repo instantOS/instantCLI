@@ -3,8 +3,8 @@ use reqwest::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::multipart::{Form, Part};
 use serde_json::json;
-use std::fs::{self, File};
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::path::Path;
 use std::time::Duration;
 use tokio::time::sleep;
 
