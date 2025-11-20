@@ -1,7 +1,11 @@
-use crate::common::requirements::{InstallTest, RequiredPackage};
+use crate::common::requirements::{
+    BLUEMAN_PACKAGE, BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE, CHROMIUM_PACKAGE, COCKPIT_PACKAGE,
+    FASTFETCH_PACKAGE, GNOME_DISKS_PACKAGE, GNOME_FIRMWARE_PACKAGE, GPARTED_PACKAGE,
+    NM_CONNECTION_EDITOR_PACKAGE, PACMAN_CONTRIB_PACKAGE, RequiredPackage, TOPGRADE_PACKAGE,
+    WIREMIX_PACKAGE, XDG_UTILS_PACKAGE,
+};
 use crate::ui::prelude::NerdFont;
 
-use super::firmware;
 use super::printer;
 use super::store::{BoolSettingKey, StringSettingKey};
 use super::users;
@@ -127,55 +131,6 @@ impl CommandSpec {
     }
 }
 
-const WIREMIX_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "wiremix",
-    arch_package_name: Some("wiremix"),
-    ubuntu_package_name: None,
-    tests: &[InstallTest::WhichSucceeds("wiremix")],
-};
-
-pub const UDISKIE_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "udiskie",
-    arch_package_name: Some("udiskie"),
-    ubuntu_package_name: Some("udiskie"),
-    tests: &[InstallTest::WhichSucceeds("udiskie")],
-};
-
-pub const GNOME_DISKS_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "GNOME Disks",
-    arch_package_name: Some("gnome-disk-utility"),
-    ubuntu_package_name: Some("gnome-disk-utility"),
-    tests: &[InstallTest::WhichSucceeds("gnome-disks")],
-};
-
-pub const GPARTED_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "GParted",
-    arch_package_name: Some("gparted"),
-    ubuntu_package_name: Some("gparted"),
-    tests: &[InstallTest::WhichSucceeds("gparted")],
-};
-
-pub const FASTFETCH_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "fastfetch",
-    arch_package_name: Some("fastfetch"),
-    ubuntu_package_name: Some("fastfetch"),
-    tests: &[InstallTest::WhichSucceeds("fastfetch")],
-};
-
-pub const PACMAN_CONTRIB_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "pacman-contrib",
-    arch_package_name: Some("pacman-contrib"),
-    ubuntu_package_name: None,
-    tests: &[InstallTest::WhichSucceeds("paccache")],
-};
-
-pub const TOPGRADE_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "topgrade",
-    arch_package_name: Some("topgrade"),
-    ubuntu_package_name: None,
-    tests: &[InstallTest::WhichSucceeds("topgrade")],
-};
-
 pub const BLUETOOTH_SERVICE_KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.service", false);
 pub const BLUETOOTH_HARDWARE_OVERRIDE_KEY: BoolSettingKey =
     BoolSettingKey::new("bluetooth.hardware_override", false);
@@ -185,48 +140,7 @@ pub const UDISKIE_AUTOMOUNT_KEY: BoolSettingKey = BoolSettingKey::new("storage.u
 pub const PACMAN_AUTOCLEAN_KEY: BoolSettingKey =
     BoolSettingKey::new("system.pacman_autoclean", false);
 
-pub const BLUEZ_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "BlueZ bluetooth daemon",
-    arch_package_name: Some("bluez"),
-    ubuntu_package_name: Some("bluez"),
-    tests: &[
-        InstallTest::WhichSucceeds("bluetoothd"),
-        InstallTest::FileExists("/usr/lib/systemd/system/bluetooth.service"),
-    ],
-};
-
-pub const BLUEZ_UTILS_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "BlueZ utilities",
-    arch_package_name: Some("bluez-utils"),
-    ubuntu_package_name: Some("bluez"),
-    tests: &[InstallTest::WhichSucceeds("bluetoothctl")],
-};
-
-pub const BLUEMAN_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Blueman applet",
-    arch_package_name: Some("blueman"),
-    ubuntu_package_name: Some("blueman"),
-    tests: &[InstallTest::WhichSucceeds("blueman-applet")],
-};
-
 pub const BLUETOOTH_CORE_PACKAGES: [RequiredPackage; 2] = [BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE];
-
-pub const COCKPIT_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Cockpit",
-    arch_package_name: Some("cockpit"),
-    ubuntu_package_name: Some("cockpit"),
-    tests: &[
-        InstallTest::FileExists("/usr/lib/systemd/system/cockpit.socket"),
-        InstallTest::WhichSucceeds("cockpit-bridge"),
-    ],
-};
-
-pub const CHROMIUM_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Chromium browser",
-    arch_package_name: Some("chromium"),
-    ubuntu_package_name: Some("chromium-browser"),
-    tests: &[InstallTest::WhichSucceeds("chromium")],
-};
 
 pub const COCKPIT_PACKAGES: [RequiredPackage; 2] = [COCKPIT_PACKAGE, CHROMIUM_PACKAGE];
 
@@ -560,9 +474,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             command: CommandSpec::detached("chromium", &["--app=https://fast.com"]),
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::network::CHROMIUM_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(CHROMIUM_PACKAGE)],
     },
     SettingDefinition {
         id: "network.edit_connections",
@@ -575,9 +487,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             command: CommandSpec::detached("nm-connection-editor", &[]),
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::network::NM_CONNECTION_EDITOR_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(NM_CONNECTION_EDITOR_PACKAGE)],
     },
     SettingDefinition {
         id: "storage.automount",
@@ -656,9 +566,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             command: CommandSpec::detached("gnome-firmware", &[]),
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            firmware::GNOME_FIRMWARE_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(GNOME_FIRMWARE_PACKAGE)],
     },
     // Quick access settings for common applications
     SettingDefinition {
@@ -672,9 +580,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_browser,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::defaultapps::XDG_UTILS_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(XDG_UTILS_PACKAGE)],
     },
     SettingDefinition {
         id: "apps.email",
@@ -687,9 +593,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_email,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::defaultapps::XDG_UTILS_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(XDG_UTILS_PACKAGE)],
     },
     SettingDefinition {
         id: "apps.file_manager",
@@ -702,9 +606,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_file_manager,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::defaultapps::XDG_UTILS_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(XDG_UTILS_PACKAGE)],
     },
     SettingDefinition {
         id: "apps.text_editor",
@@ -717,9 +619,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_text_editor,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::defaultapps::XDG_UTILS_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(XDG_UTILS_PACKAGE)],
     },
     SettingDefinition {
         id: "apps.image_viewer",
@@ -732,9 +632,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_image_viewer,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::defaultapps::XDG_UTILS_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(XDG_UTILS_PACKAGE)],
     },
     SettingDefinition {
         id: "apps.video_player",
@@ -747,9 +645,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_video_player,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::defaultapps::XDG_UTILS_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(XDG_UTILS_PACKAGE)],
     },
     SettingDefinition {
         id: "apps.music_player",
@@ -762,9 +658,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_music_player,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::defaultapps::XDG_UTILS_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(XDG_UTILS_PACKAGE)],
     },
     SettingDefinition {
         id: "apps.pdf_viewer",
@@ -777,9 +671,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_pdf_viewer,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::defaultapps::XDG_UTILS_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(XDG_UTILS_PACKAGE)],
     },
     SettingDefinition {
         id: "apps.archive_manager",
@@ -792,9 +684,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::set_default_archive_manager,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::defaultapps::XDG_UTILS_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(XDG_UTILS_PACKAGE)],
     },
     SettingDefinition {
         id: "apps.default",
@@ -807,9 +697,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             run: super::defaultapps::manage_default_apps,
         },
         requires_reapply: false,
-        requirements: &[SettingRequirement::Package(
-            super::defaultapps::XDG_UTILS_PACKAGE,
-        )],
+        requirements: &[SettingRequirement::Package(XDG_UTILS_PACKAGE)],
     },
     SettingDefinition {
         id: "system.upgrade",

@@ -9,9 +9,10 @@ use crate::ui::prelude::*;
 use super::context::SettingsContext;
 use super::registry::{
     BLUETOOTH_CORE_PACKAGES, BLUETOOTH_HARDWARE_OVERRIDE_KEY, BLUETOOTH_SERVICE_KEY,
-    COCKPIT_PACKAGES, PACMAN_AUTOCLEAN_KEY, UDISKIE_AUTOMOUNT_KEY, UDISKIE_PACKAGE,
+    COCKPIT_PACKAGES, PACMAN_AUTOCLEAN_KEY, UDISKIE_AUTOMOUNT_KEY,
 };
 use super::sources;
+use crate::common::requirements::UDISKIE_PACKAGE;
 
 const BLUETOOTH_SERVICE_NAME: &str = "bluetooth";
 const UDISKIE_SERVICE_NAME: &str = "udiskie";
