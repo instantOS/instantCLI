@@ -10,7 +10,7 @@ use super::transcribe;
 
 pub async fn handle_video_command(command: VideoCommands, _debug: bool) -> Result<()> {
     match command {
-        VideoCommands::Convert(args) => convert::handle_convert(args),
+        VideoCommands::Convert(args) => convert::handle_convert(args).await,
         VideoCommands::Transcribe(args) => transcribe::handle_transcribe(args),
         VideoCommands::Render(args) => render::handle_render(args),
         VideoCommands::Titlecard(args) => titlecard::handle_titlecard(args),

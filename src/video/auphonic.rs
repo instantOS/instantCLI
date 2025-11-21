@@ -17,7 +17,26 @@ const BASE_URL: &str = "https://auphonic.com/api";
 
 pub async fn handle_auphonic(args: AuphonicArgs) -> Result<()> {
     let input_path = canonicalize_existing(&args.input_file)?;
-    let input_hash = compute_file_hash(&input_path)?;
+
+    // Load config to check for API key if we need to process
+    // We do this check inside process_with_auphonic, but we might need to pass args
+
+    let processed_path =
+        process_with_auphonic(&input_path, args.force, args.api_key, args.preset).await?;
+
+    // Copy to output
+    copy_to_output(&processed_path, &input_path)?;
+
+    Ok(())
+}
+
+pub async fn process_with_auphonic(
+    input_path: &Path,
+    force: bool,
+    api_key_arg: Option<String>,
+    preset_arg: Option<String>,
+) -> Result<std::path::PathBuf> {
+    let input_hash = compute_file_hash(input_path)?;
 
     let directories = VideoDirectories::new()?;
     let project_paths = directories.project_paths(&input_hash);
@@ -32,26 +51,24 @@ pub async fn handle_auphonic(args: AuphonicArgs) -> Result<()> {
         .join(&processed_cache_file_name);
 
     // Step 1: Ensure raw Auphonic result exists
-    if !raw_cache_path.exists() || args.force {
+    if !raw_cache_path.exists() || force {
         // Load config
         let config = VideoConfig::load()?;
-        let api_key = args
-            .api_key
+        let api_key = api_key_arg
             .or(config.auphonic_api_key)
             .context("Auphonic API key not found. Please provide it via --api-key or in ~/.config/instant/video.toml")?;
 
         let client = Client::new();
 
         // Get or create preset
-        let preset_uuid = if let Some(uuid) = args.preset.or(config.auphonic_preset_uuid) {
+        let preset_uuid = if let Some(uuid) = preset_arg.or(config.auphonic_preset_uuid) {
             uuid
         } else {
             create_or_get_preset(&client, &api_key).await?
         };
 
         // Start production
-        let production_uuid =
-            start_production(&client, &api_key, &preset_uuid, &input_path).await?;
+        let production_uuid = start_production(&client, &api_key, &preset_uuid, input_path).await?;
 
         // Poll status
         wait_for_production(&client, &api_key, &production_uuid).await?;
@@ -72,9 +89,9 @@ pub async fn handle_auphonic(args: AuphonicArgs) -> Result<()> {
 
     // Step 2: Process/Trim the raw result
     // We re-process if the processed file doesn't exist OR if force is enabled
-    if !processed_cache_path.exists() || args.force {
+    if !processed_cache_path.exists() || force {
         let original_duration =
-            get_duration(&input_path).context("Failed to get original duration")?;
+            get_duration(input_path).context("Failed to get original duration")?;
         let raw_duration = get_duration(&raw_cache_path).context("Failed to get raw duration")?;
 
         if raw_duration > original_duration {
@@ -116,10 +133,7 @@ pub async fn handle_auphonic(args: AuphonicArgs) -> Result<()> {
         );
     }
 
-    // Copy to output
-    copy_to_output(&processed_cache_path, &input_path)?;
-
-    Ok(())
+    Ok(processed_cache_path)
 }
 
 fn copy_to_output(cache_path: &Path, input_path: &Path) -> Result<()> {

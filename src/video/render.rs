@@ -51,6 +51,35 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
     let video_path = resolve_video_path(&document.metadata, markdown_dir)?;
     let video_path = canonicalize_existing(&video_path)?;
 
+    // Resolve Auphonic processed audio
+    let video_hash = super::utils::compute_file_hash(&video_path)?;
+    let directories = VideoDirectories::new()?;
+    let project_paths = directories.project_paths(&video_hash);
+    let auphonic_processed_path = project_paths
+        .transcript_dir()
+        .join(format!("{}_auphonic_processed.mp3", video_hash));
+
+    let audio_path = if auphonic_processed_path.exists() {
+        emit(
+            Level::Info,
+            "video.render.audio",
+            &format!(
+                "Using Auphonic processed audio: {}",
+                auphonic_processed_path.display()
+            ),
+            None,
+        );
+        auphonic_processed_path
+    } else {
+        emit(
+            Level::Warn,
+            "video.render.audio",
+            "Auphonic processed audio not found. Using original video audio.",
+            None,
+        );
+        video_path.clone()
+    };
+
     let output_path = if pre_cache_only {
         None
     } else {
@@ -150,6 +179,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         video_width,
         video_height,
         video_config,
+        audio_path,
     );
 
     if dry_run {
@@ -403,6 +433,7 @@ struct RenderPipeline {
     target_width: u32,
     target_height: u32,
     config: VideoConfig,
+    audio_source: PathBuf,
 }
 
 impl RenderPipeline {
@@ -412,6 +443,7 @@ impl RenderPipeline {
         target_width: u32,
         target_height: u32,
         config: VideoConfig,
+        audio_source: PathBuf,
     ) -> Self {
         Self {
             output,
@@ -419,6 +451,7 @@ impl RenderPipeline {
             target_width,
             target_height,
             config,
+            audio_source,
         }
     }
 
@@ -464,6 +497,18 @@ impl RenderPipeline {
             }
         }
 
+        // Add the separate audio source if it's different from the video source
+        // Actually, we always add it as a separate input to simplify logic,
+        // unless we want to be smart about it. Let's just add it.
+        let audio_input_index = if !source_map.contains_key(&self.audio_source) {
+            source_map.insert(self.audio_source.clone(), next_index);
+            source_order.push(self.audio_source.clone());
+            next_index += 1;
+            next_index - 1
+        } else {
+            *source_map.get(&self.audio_source).unwrap()
+        };
+
         // Add all input files in the order they were discovered
         for source in &source_order {
             args.push("-i".to_string());
@@ -471,7 +516,7 @@ impl RenderPipeline {
         }
 
         // Build filter complex
-        let filter_complex = self.build_filter_complex(&source_map)?;
+        let filter_complex = self.build_filter_complex(&source_map, audio_input_index)?;
         args.push("-filter_complex".to_string());
         args.push(filter_complex);
 
@@ -502,6 +547,7 @@ impl RenderPipeline {
     fn build_filter_complex(
         &self,
         source_map: &std::collections::HashMap<PathBuf, usize>,
+        audio_input_index: usize,
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();
         let total_duration = self.timeline.total_duration();
@@ -547,10 +593,10 @@ impl RenderPipeline {
                     video = video_label,
                 ));
 
-                // Trim audio segment
+                // Trim audio segment from the separate audio source
                 filters.push(format!(
                     "[{input}:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio}]",
-                    input = input_index,
+                    input = audio_input_index,
                     start = format_time(*start_time),
                     end = format_time(end_time),
                     audio = audio_label,

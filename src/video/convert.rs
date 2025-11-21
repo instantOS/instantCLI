@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ui::prelude::{Level, emit};
 
+use super::auphonic::process_with_auphonic;
 use super::cli::{ConvertArgs, TranscribeArgs};
 use super::config::{VideoDirectories, VideoProjectPaths};
 use super::markdown::{MarkdownMetadata, build_markdown};
@@ -11,7 +12,7 @@ use super::srt::parse_srt;
 use super::transcribe::handle_transcribe;
 use super::utils::{canonicalize_existing, compute_file_hash};
 
-pub fn handle_convert(args: ConvertArgs) -> Result<()> {
+pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
     let video_path = canonicalize_existing(&args.video)?;
     let video_hash = compute_file_hash(&video_path)?;
 
@@ -38,8 +39,26 @@ pub fn handle_convert(args: ConvertArgs) -> Result<()> {
         let provided_path = canonicalize_existing(provided)?;
         copy_transcript(&provided_path, &cached_transcript_path)?;
     } else if !cached_transcript_path.exists() {
+        // Process with Auphonic first
+        // We don't have CLI args for api_key/preset here, so we rely on config
+        let audio_source = match process_with_auphonic(&video_path, args.force, None, None).await {
+            Ok(path) => path,
+            Err(e) => {
+                emit(
+                    Level::Warn,
+                    "video.convert.auphonic_failed",
+                    &format!(
+                        "Auphonic processing failed: {}. Falling back to original video.",
+                        e
+                    ),
+                    None,
+                );
+                video_path.clone()
+            }
+        };
+
         handle_transcribe(TranscribeArgs {
-            video: video_path.clone(),
+            video: audio_source,
             compute_type: "int8".to_string(),
             device: "cpu".to_string(),
             model: None,
