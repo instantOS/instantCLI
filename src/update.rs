@@ -5,6 +5,7 @@ use duct::cmd;
 use crate::common::requirements::TOPGRADE_PACKAGE;
 use crate::dot;
 use crate::game::operations::sync_game_saves;
+use crate::self_update;
 use crate::ui::prelude::*;
 
 pub async fn handle_update_command(debug: bool) -> Result<()> {
@@ -74,6 +75,16 @@ pub async fn handle_update_command(debug: bool) -> Result<()> {
         "Game saves synced successfully",
         None,
     );
+
+    // 5. Run ins self-update
+    emit(
+        Level::Info,
+        "update.self.start",
+        "Checking for CLI updates...",
+        None,
+    );
+
+    self_update::self_update().await?;
 
     Ok(())
 }
