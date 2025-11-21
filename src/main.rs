@@ -17,6 +17,7 @@ mod scratchpad;
 mod self_update;
 mod settings;
 mod ui;
+mod update;
 mod video;
 
 use clap::{CommandFactory, Parser, Subcommand};
@@ -175,6 +176,8 @@ enum Commands {
     },
     /// Update to the latest version
     SelfUpdate,
+    /// Update system, dotfiles, and sync games
+    Update,
 }
 
 fn initialize_cli(cli: &Cli) {
@@ -284,6 +287,13 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             execute_with_error_handling(
                 self_update::self_update().await,
                 "Error during self-update",
+                None,
+            )?;
+        }
+        Some(Commands::Update) => {
+            execute_with_error_handling(
+                update::handle_update_command(cli.debug).await,
+                "Error during update",
                 None,
             )?;
         }
