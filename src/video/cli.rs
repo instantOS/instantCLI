@@ -35,6 +35,10 @@ pub struct ConvertArgs {
     /// Overwrite existing markdown file
     #[arg(long)]
     pub force: bool,
+
+    /// Disable Auphonic audio processing
+    #[arg(long)]
+    pub no_auphonic: bool,
 }
 
 #[derive(Args, Debug, Clone)]

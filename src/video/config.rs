@@ -69,6 +69,7 @@ pub struct VideoConfig {
     pub music_volume: f32,
     pub auphonic_api_key: Option<String>,
     pub auphonic_preset_uuid: Option<String>,
+    pub auphonic_enabled: bool,
 }
 
 impl Default for VideoConfig {
@@ -77,6 +78,7 @@ impl Default for VideoConfig {
             music_volume: Self::DEFAULT_MUSIC_VOLUME,
             auphonic_api_key: None,
             auphonic_preset_uuid: None,
+            auphonic_enabled: true,
         }
     }
 }

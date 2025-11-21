@@ -6,7 +6,7 @@ use crate::ui::prelude::{Level, emit};
 
 use super::auphonic::process_with_auphonic;
 use super::cli::{ConvertArgs, TranscribeArgs};
-use super::config::{VideoDirectories, VideoProjectPaths};
+use super::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
 use super::markdown::{MarkdownMetadata, build_markdown};
 use super::srt::parse_srt;
 use super::transcribe::handle_transcribe;
@@ -39,22 +39,29 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
         let provided_path = canonicalize_existing(provided)?;
         copy_transcript(&provided_path, &cached_transcript_path)?;
     } else if !cached_transcript_path.exists() {
-        // Process with Auphonic first
-        // We don't have CLI args for api_key/preset here, so we rely on config
-        let audio_source = match process_with_auphonic(&video_path, args.force, None, None).await {
-            Ok(path) => path,
-            Err(e) => {
-                emit(
-                    Level::Warn,
-                    "video.convert.auphonic_failed",
-                    &format!(
-                        "Auphonic processing failed: {}. Falling back to original video.",
-                        e
-                    ),
-                    None,
-                );
-                video_path.clone()
+        let config = VideoConfig::load()?;
+        let auphonic_enabled = config.auphonic_enabled && !args.no_auphonic;
+
+        let audio_source = if auphonic_enabled {
+            // Process with Auphonic first
+            // We don't have CLI args for api_key/preset here, so we rely on config
+            match process_with_auphonic(&video_path, args.force, None, None).await {
+                Ok(path) => path,
+                Err(e) => {
+                    emit(
+                        Level::Warn,
+                        "video.convert.auphonic_failed",
+                        &format!(
+                            "Auphonic processing failed: {}. Falling back to original video.",
+                            e
+                        ),
+                        None,
+                    );
+                    video_path.clone()
+                }
             }
+        } else {
+            video_path.clone()
         };
 
         handle_transcribe(TranscribeArgs {
