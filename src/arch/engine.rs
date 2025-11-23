@@ -218,7 +218,8 @@ impl QuestionEngine {
                     },
                     QuestionResult::Cancelled => {
                         // Show Navigation Menu
-                        let options = vec!["Resume", "Review Answers", "Go Back", "Abort Installation"];
+                        let options =
+                            vec!["Resume", "Review Answers", "Go Back", "Abort Installation"];
                         let nav = crate::menu_utils::FzfWrapper::builder()
                             .header("Installation Paused")
                             .select(options)?;
