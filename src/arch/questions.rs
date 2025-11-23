@@ -23,7 +23,7 @@ impl Question for HostnameQuestion {
         }
     }
 
-    fn validate(&self, answer: &str) -> Result<(), String> {
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
         if answer.trim().is_empty() {
             return Err("Hostname cannot be empty.".to_string());
         }
@@ -55,7 +55,7 @@ impl Question for UsernameQuestion {
         }
     }
 
-    fn validate(&self, answer: &str) -> Result<(), String> {
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
         if answer.trim().is_empty() {
             return Err("Username cannot be empty.".to_string());
         }
@@ -97,7 +97,7 @@ impl Question for MirrorRegionQuestion {
         }
     }
 
-    fn validate(&self, answer: &str) -> Result<(), String> {
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
         if answer.is_empty() {
             return Err("You must select a mirror region.".to_string());
         }
@@ -137,7 +137,7 @@ impl Question for TimezoneQuestion {
         }
     }
 
-    fn validate(&self, answer: &str) -> Result<(), String> {
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
         if answer.is_empty() {
             return Err("You must select a timezone.".to_string());
         }
@@ -181,7 +181,7 @@ impl Question for DiskQuestion {
         }
     }
 
-    fn validate(&self, answer: &str) -> Result<(), String> {
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
         if answer.is_empty() {
             return Err("You must select a disk.".to_string());
         }
