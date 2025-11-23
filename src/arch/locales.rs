@@ -18,40 +18,27 @@ impl crate::arch::engine::AsyncDataProvider for LocaleProvider {
 
 fn parse_locale_gen(contents: &str) -> Vec<String> {
     let mut locales = Vec::new();
+
     for line in contents.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with('%') {
+
+        // Skip empty lines and comment headers (lines starting with %)
+        if line.is_empty() || line.starts_with('%') {
             continue;
         }
-        // Format is usually: en_US.UTF-8 UTF-8
-        // We just want the first part
-        if let Some(locale) = line.split_whitespace().next() {
-            locales.push(locale.to_string());
+
+        // Strip leading # to handle both commented and uncommented lines
+        let clean_line = line.trim_start_matches('#').trim();
+
+        if clean_line.is_empty() {
+            continue;
         }
-    }
-    // If empty (e.g. all commented out), maybe fallback or return empty?
-    // Let's also include commented ones but maybe mark them?
-    // Actually, usually we want to select from ALL available locales to generate.
-    // The previous code in settings/language/locale_gen.rs parsed ALL lines, even commented ones.
-    // Let's do that too, so user can select any locale supported by the system.
 
-    if locales.is_empty() {
-        // Re-parse including commented lines
-        for line in contents.lines() {
-            let line = line.trim();
-            // Skip empty or comments that are not locales (e.g. headers)
-            // But how to distinguish?
-            // The settings code had a robust parser. Let's try to be simple but effective.
-            // Look for lines that contain "UTF-8" or "ISO" maybe?
-
-            // Let's just strip leading # and whitespace
-            let clean_line = line.trim_start_matches('#').trim();
-            if let Some(locale) = clean_line.split_whitespace().next() {
-                if !locale.is_empty()
-                    && (clean_line.contains("UTF-8") || clean_line.contains("ISO"))
-                {
-                    locales.push(locale.to_string());
-                }
+        // Get the locale name (first word)
+        if let Some(locale) = clean_line.split_whitespace().next() {
+            // Only include lines that look like locale definitions
+            if !locale.is_empty() && (clean_line.contains("UTF-8") || clean_line.contains("ISO")) {
+                locales.push(locale.to_string());
             }
         }
     }
