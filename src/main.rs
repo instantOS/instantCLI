@@ -1,8 +1,8 @@
 use anyhow::Result;
 use colored::*;
 
-mod assist;
 mod arch;
+mod assist;
 mod common;
 mod completions;
 mod debug;

@@ -1,6 +1,6 @@
-use anyhow::Result;
-use crate::arch::engine::{Question, QuestionId, InstallContext};
+use crate::arch::engine::{InstallContext, Question, QuestionId};
 use crate::menu_utils::FzfWrapper;
+use anyhow::Result;
 
 pub struct HostnameQuestion;
 
@@ -16,6 +16,16 @@ impl Question for HostnameQuestion {
 
     async fn ask(&self, _context: &InstallContext) -> Result<String> {
         FzfWrapper::input("Please enter the hostname for the new system")
+    }
+
+    fn validate(&self, answer: &str) -> Result<(), String> {
+        if answer.trim().is_empty() {
+            return Err("Hostname cannot be empty.".to_string());
+        }
+        if answer.contains(' ') {
+            return Err("Hostname cannot contain spaces.".to_string());
+        }
+        Ok(())
     }
 }
 
@@ -33,6 +43,19 @@ impl Question for UsernameQuestion {
 
     async fn ask(&self, _context: &InstallContext) -> Result<String> {
         FzfWrapper::input("Please enter the username for the new user")
+    }
+
+    fn validate(&self, answer: &str) -> Result<(), String> {
+        if answer.trim().is_empty() {
+            return Err("Username cannot be empty.".to_string());
+        }
+        if answer.contains(' ') {
+            return Err("Username cannot contain spaces.".to_string());
+        }
+        if answer == "root" {
+            return Err("Username cannot be 'root'.".to_string());
+        }
+        Ok(())
     }
 }
 
@@ -53,15 +76,22 @@ impl Question for MirrorRegionQuestion {
         let data = context.data.lock().unwrap();
         let regions_str = data.get("mirror_regions").unwrap();
         let regions: Vec<String> = regions_str.split(',').map(|s| s.to_string()).collect();
-        
+
         let result = FzfWrapper::builder()
             .header("Select Mirror Region")
             .select(regions)?;
-            
+
         match result {
             crate::menu_utils::FzfResult::Selected(region) => Ok(region),
             _ => Ok("".to_string()), // Handle cancellation better?
         }
+    }
+
+    fn validate(&self, answer: &str) -> Result<(), String> {
+        if answer.is_empty() {
+            return Err("You must select a mirror region.".to_string());
+        }
+        Ok(())
     }
 }
 
@@ -82,15 +112,22 @@ impl Question for TimezoneQuestion {
         let data = context.data.lock().unwrap();
         let timezones_str = data.get("timezones").unwrap();
         let timezones: Vec<String> = timezones_str.lines().map(|s| s.to_string()).collect();
-        
+
         let result = FzfWrapper::builder()
             .header("Select Timezone")
             .select(timezones)?;
-            
+
         match result {
             crate::menu_utils::FzfResult::Selected(tz) => Ok(tz),
             _ => Ok("".to_string()),
         }
+    }
+
+    fn validate(&self, answer: &str) -> Result<(), String> {
+        if answer.is_empty() {
+            return Err("You must select a timezone.".to_string());
+        }
+        Ok(())
     }
 }
 
@@ -112,15 +149,26 @@ impl Question for DiskQuestion {
             "/dev/sda (500GB)".to_string(),
             "/dev/nvme0n1 (1TB)".to_string(),
         ];
-        
+
         let result = FzfWrapper::builder()
             .header("Select Disk to Install To")
             .select(disks)?;
-            
+
         match result {
             crate::menu_utils::FzfResult::Selected(disk) => Ok(disk),
             _ => Ok("".to_string()),
         }
+    }
+
+    fn validate(&self, answer: &str) -> Result<(), String> {
+        if answer.is_empty() {
+            return Err("You must select a disk.".to_string());
+        }
+        // Example: Check if disk actually exists (mocked here)
+        if !answer.starts_with("/dev/") {
+            return Err("Invalid disk path.".to_string());
+        }
+        Ok(())
     }
 }
 
@@ -138,16 +186,12 @@ impl Question for KeymapQuestion {
 
     async fn ask(&self, _context: &InstallContext) -> Result<String> {
         // Mock keymaps
-        let keymaps = vec![
-            "us".to_string(),
-            "de-latin1".to_string(),
-            "uk".to_string(),
-        ];
-        
+        let keymaps = vec!["us".to_string(), "de-latin1".to_string(), "uk".to_string()];
+
         let result = FzfWrapper::builder()
             .header("Select Keymap")
             .select(keymaps)?;
-            
+
         match result {
             crate::menu_utils::FzfResult::Selected(km) => Ok(km),
             _ => Ok("".to_string()),
@@ -168,7 +212,23 @@ impl Question for LocaleQuestion {
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<String> {
-        FzfWrapper::input("Please enter the system locale (e.g., en_US.UTF-8)")
+        // Mock common locales
+        let common_locales = vec![
+            "en_US.UTF-8".to_string(),
+            "de_DE.UTF-8".to_string(),
+            "fr_FR.UTF-8".to_string(),
+            "es_ES.UTF-8".to_string(),
+            "ja_JP.UTF-8".to_string(),
+        ];
+
+        let result = FzfWrapper::builder()
+            .header("Select System Locale")
+            .select(common_locales)?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(locale) => Ok(locale),
+            _ => Ok("en_US.UTF-8".to_string()), // Default fallback
+        }
     }
 }
 
@@ -185,6 +245,24 @@ impl Question for PasswordQuestion {
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<String> {
-        FzfWrapper::password("Please enter the password for the new user (and root)")
+        loop {
+            let pass1 =
+                FzfWrapper::password("Please enter the password for the new user (and root)")?;
+            if pass1.is_empty() {
+                FzfWrapper::message("Password cannot be empty.")?;
+                continue;
+            }
+
+            let pass2 = FzfWrapper::password("Please confirm the password")?;
+
+            if pass1 == pass2 {
+                return Ok(pass1);
+            } else {
+                FzfWrapper::message("Passwords do not match. Please try again.")?;
+            }
+        }
     }
+
+    // No extra validate() needed as ask() handles the confirmation loop,
+    // but we could add complexity checks here if desired.
 }
