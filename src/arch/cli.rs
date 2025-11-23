@@ -58,15 +58,22 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             // This is needed for questions like MirrorRegion/Timezone
             let data_clone = engine.context.data.clone();
             tokio::spawn(async move {
-                // Simulate network delay for mirrors
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                {
-                    let mut data = data_clone.lock().unwrap();
-                    // In reality: fetch from archlinux.org/mirrorlist
-                    data.insert(
-                        "mirror_regions".to_string(),
-                        "Germany,United States,France,Japan".to_string(),
-                    );
+                // Fetch mirror regions
+                match crate::arch::mirrors::fetch_mirror_regions().await {
+                    Ok(regions) => {
+                        let mut data = data_clone.lock().unwrap();
+                        let mut names: Vec<String> = regions.keys().cloned().collect();
+                        names.sort();
+                        data.insert("mirror_regions".to_string(), names.join(","));
+                        if let Ok(json) = serde_json::to_string(&regions) {
+                            data.insert("mirror_map".to_string(), json);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to fetch mirror regions: {}", e);
+                        let mut data = data_clone.lock().unwrap();
+                        data.insert("mirror_regions".to_string(), "Worldwide".to_string());
+                    }
                 }
 
                 // Simulate filesystem scan for timezones
@@ -164,15 +171,22 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             // Spawn background task to fetch data
             let data_clone = engine.context.data.clone();
             tokio::spawn(async move {
-                // Simulate network delay for mirrors
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                {
-                    let mut data = data_clone.lock().unwrap();
-                    // In reality: fetch from archlinux.org/mirrorlist
-                    data.insert(
-                        "mirror_regions".to_string(),
-                        "Germany,United States,France,Japan".to_string(),
-                    );
+                // Fetch mirror regions
+                match crate::arch::mirrors::fetch_mirror_regions().await {
+                    Ok(regions) => {
+                        let mut data = data_clone.lock().unwrap();
+                        let mut names: Vec<String> = regions.keys().cloned().collect();
+                        names.sort();
+                        data.insert("mirror_regions".to_string(), names.join(","));
+                        if let Ok(json) = serde_json::to_string(&regions) {
+                            data.insert("mirror_map".to_string(), json);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to fetch mirror regions: {}", e);
+                        let mut data = data_clone.lock().unwrap();
+                        data.insert("mirror_regions".to_string(), "Worldwide".to_string());
+                    }
                 }
 
                 // Simulate filesystem scan for timezones
