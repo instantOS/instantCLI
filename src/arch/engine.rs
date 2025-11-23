@@ -63,6 +63,14 @@ impl InstallContext {
     pub fn get_answer(&self, id: &QuestionId) -> Option<&String> {
         self.answers.get(id)
     }
+
+    pub fn is_answered(&self, id: QuestionId) -> bool {
+        self.answers.contains_key(&id)
+    }
+
+    pub fn get_answer_bool(&self, id: QuestionId) -> bool {
+        self.answers.get(&id).map(|s| s == "true").unwrap_or(false)
+    }
 }
 
 /// Result of asking a question
@@ -190,50 +198,21 @@ impl QuestionEngine {
 
     pub async fn run(mut self) -> Result<InstallContext> {
         loop {
-            // Find the first active question that needs attention (unanswered or invalid)
-            let mut next_question_idx = None;
-
-            for (i, q) in self.questions.iter().enumerate() {
-                if !q.should_ask(&self.context) {
-                    continue;
-                }
-
-                // It is active. Do we have an answer?
-                if let Some(ans) = self.context.get_answer(&q.id()) {
-                    // Is it valid?
-                    if let Err(_) = q.validate(&self.context, ans) {
-                        // Invalid answer (maybe context changed).
-                        // Clear it.
-                        self.context.answers.remove(&q.id());
-                        // Now it needs answering.
-                        next_question_idx = Some(i);
-                        break;
-                    }
-                    // Valid answer. Continue to next question.
-                } else {
-                    // No answer. Needs answering.
-                    next_question_idx = Some(i);
-                    break;
-                }
-            }
-
-            match next_question_idx {
+            match self.find_next_question_index() {
                 Some(idx) => {
-                    let question = &self.questions[idx];
-
-                    // Wait until question is ready (dependencies met)
-                    while !question.is_ready(&self.context) {
+                    while !self.questions[idx].is_ready(&self.context) {
                         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     }
 
                     loop {
-                        let result = question.ask(&self.context).await?;
+                        let result = self.questions[idx].ask(&self.context).await?;
                         match result {
                             QuestionResult::Answer(answer) => {
-                                match question.validate(&self.context, &answer) {
+                                match self.questions[idx].validate(&self.context, &answer) {
                                     Ok(()) => {
-                                        self.context.answers.insert(question.id(), answer);
-                                        break; // Break inner loop, continue outer loop to find next question
+                                        let id = self.questions[idx].id();
+                                        self.context.answers.insert(id, answer);
+                                        break;
                                     }
                                     Err(msg) => {
                                         crate::menu_utils::FzfWrapper::message(&msg)?;
@@ -241,90 +220,101 @@ impl QuestionEngine {
                                 }
                             }
                             QuestionResult::Cancelled => {
-                                // Show Navigation Menu
-                                let options = vec![
-                                    "Resume",
-                                    "Review Answers",
-                                    "Go Back",
-                                    "Abort Installation",
-                                ];
-                                let nav = crate::menu_utils::FzfWrapper::builder()
-                                    .header("Installation Paused")
-                                    .select(options)?;
-
-                                match nav {
-                                    crate::menu_utils::FzfResult::Selected(opt) => match opt {
-                                        "Resume" => continue, // Retry question
-                                        "Review Answers" => {
-                                            // Review allows picking any previously answered question
-                                            // If we pick one, we just need to ensure we don't break the flow.
-                                            // Actually, if we pick one and change it, the main loop will handle re-validation.
-                                            // So we just need to ask it here?
-                                            // Or can we just set the answer?
-                                            // The handle_review method returns an index.
-                                            // If we get an index, we can just clear that answer?
-                                            // If we clear the answer, the main loop will pick it up as the next question!
-                                            if let Some(review_idx) = self.handle_review(idx)? {
-                                                let q_id = self.questions[review_idx].id();
-                                                self.context.answers.remove(&q_id);
-                                                // We break the inner loop. The outer loop will restart.
-                                                // Since we removed the answer, the outer loop will find this question (or an earlier one) as the next one.
-                                                break;
-                                            }
-                                            continue;
-                                        }
-                                        "Go Back" => {
-                                            // Go back means clearing the answer of the previous active question?
-                                            // Or just finding it and clearing it?
-                                            let prev_idx = self.handle_go_back(idx);
-                                            if prev_idx != idx {
-                                                let q_id = self.questions[prev_idx].id();
-                                                self.context.answers.remove(&q_id);
-                                                break;
-                                            }
-                                            continue;
-                                        }
-                                        "Abort Installation" => {
-                                            std::process::exit(0);
-                                        }
-                                        _ => continue,
-                                    },
-                                    _ => continue, // Cancelled menu -> Resume
+                                if self.handle_navigation_menu(idx)? {
+                                    break;
                                 }
                             }
                         }
                     }
                 }
                 None => {
-                    // All active questions answered and valid.
-                    // Final Review Step
-                    let options = vec!["Install", "Review Answers", "Abort Installation"];
-                    let nav = crate::menu_utils::FzfWrapper::builder()
-                        .header("Installation Configuration Complete")
-                        .select(options)?;
-
-                    match nav {
-                        crate::menu_utils::FzfResult::Selected(opt) => match opt {
-                            "Install" => break,
-                            "Review Answers" => {
-                                if let Some(review_idx) = self.handle_review(self.questions.len())?
-                                {
-                                    let q_id = self.questions[review_idx].id();
-                                    self.context.answers.remove(&q_id);
-                                    continue; // Restart loop to pick up the cleared question
-                                }
-                            }
-                            "Abort Installation" => {
-                                std::process::exit(0);
-                            }
-                            _ => continue,
-                        },
-                        _ => continue,
+                    if self.handle_final_review()? {
+                        break;
                     }
                 }
             }
         }
 
         Ok(self.context.clone())
+    }
+
+    fn find_next_question_index(&mut self) -> Option<usize> {
+        for (i, q) in self.questions.iter().enumerate() {
+            if !q.should_ask(&self.context) {
+                continue;
+            }
+
+            if let Some(ans) = self.context.get_answer(&q.id()) {
+                if let Err(_) = q.validate(&self.context, ans) {
+                    self.context.answers.remove(&q.id());
+                    return Some(i);
+                }
+            } else {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn handle_navigation_menu(&mut self, current_idx: usize) -> Result<bool> {
+        let options = vec!["Resume", "Review Answers", "Go Back", "Abort Installation"];
+        let nav = crate::menu_utils::FzfWrapper::builder()
+            .header("Installation Paused")
+            .select(options)?;
+
+        match nav {
+            crate::menu_utils::FzfResult::Selected(opt) => match opt {
+                "Resume" => Ok(false),
+                "Review Answers" => {
+                    if let Some(review_idx) = self.handle_review(current_idx)? {
+                        let q_id = self.questions[review_idx].id();
+                        self.context.answers.remove(&q_id);
+                        Ok(true)
+                    } else {
+                        Ok(false)
+                    }
+                }
+                "Go Back" => {
+                    let prev_idx = self.handle_go_back(current_idx);
+                    if prev_idx != current_idx {
+                        let q_id = self.questions[prev_idx].id();
+                        self.context.answers.remove(&q_id);
+                        Ok(true)
+                    } else {
+                        Ok(false)
+                    }
+                }
+                "Abort Installation" => {
+                    std::process::exit(0);
+                }
+                _ => Ok(false),
+            },
+            _ => Ok(false),
+        }
+    }
+
+    fn handle_final_review(&mut self) -> Result<bool> {
+        let options = vec!["Install", "Review Answers", "Abort Installation"];
+        let nav = crate::menu_utils::FzfWrapper::builder()
+            .header("Installation Configuration Complete")
+            .select(options)?;
+
+        match nav {
+            crate::menu_utils::FzfResult::Selected(opt) => match opt {
+                "Install" => Ok(true),
+                "Review Answers" => {
+                    if let Some(review_idx) = self.handle_review(self.questions.len())? {
+                        let q_id = self.questions[review_idx].id();
+                        self.context.answers.remove(&q_id);
+                    }
+                    Ok(false)
+                }
+                "Abort Installation" => {
+                    std::process::exit(0);
+                }
+                _ => Ok(false),
+            },
+            _ => Ok(false),
+        }
     }
 }
