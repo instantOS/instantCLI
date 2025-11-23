@@ -190,63 +190,89 @@ impl QuestionEngine {
 
     pub async fn run(mut self) -> Result<InstallContext> {
         let mut index = 0;
-        while index < self.questions.len() {
-            let question = &self.questions[index];
 
-            // Wait until question is ready (dependencies met)
-            while !question.is_ready(&self.context) {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            }
+        loop {
+            while index < self.questions.len() {
+                let question = &self.questions[index];
 
-            if question.should_skip(&self.context) {
-                index += 1;
-                continue;
-            }
+                // Wait until question is ready (dependencies met)
+                while !question.is_ready(&self.context) {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
 
-            loop {
-                let result = question.ask(&self.context).await?;
-                match result {
-                    QuestionResult::Answer(answer) => match question.validate(&answer) {
-                        Ok(()) => {
-                            self.context.answers.insert(question.id(), answer);
-                            index += 1;
-                            break;
-                        }
-                        Err(msg) => {
-                            crate::menu_utils::FzfWrapper::message(&msg)?;
-                        }
-                    },
-                    QuestionResult::Cancelled => {
-                        // Show Navigation Menu
-                        let options =
-                            vec!["Resume", "Review Answers", "Go Back", "Abort Installation"];
-                        let nav = crate::menu_utils::FzfWrapper::builder()
-                            .header("Installation Paused")
-                            .select(options)?;
+                if question.should_skip(&self.context) {
+                    index += 1;
+                    continue;
+                }
 
-                        match nav {
-                            crate::menu_utils::FzfResult::Selected(opt) => match opt {
-                                "Resume" => continue, // Retry question
-                                "Review Answers" => {
-                                    if let Some(new_index) = self.handle_review(index)? {
-                                        index = new_index;
-                                        break;
+                loop {
+                    let result = question.ask(&self.context).await?;
+                    match result {
+                        QuestionResult::Answer(answer) => match question.validate(&answer) {
+                            Ok(()) => {
+                                self.context.answers.insert(question.id(), answer);
+                                index += 1;
+                                break;
+                            }
+                            Err(msg) => {
+                                crate::menu_utils::FzfWrapper::message(&msg)?;
+                            }
+                        },
+                        QuestionResult::Cancelled => {
+                            // Show Navigation Menu
+                            let options =
+                                vec!["Resume", "Review Answers", "Go Back", "Abort Installation"];
+                            let nav = crate::menu_utils::FzfWrapper::builder()
+                                .header("Installation Paused")
+                                .select(options)?;
+
+                            match nav {
+                                crate::menu_utils::FzfResult::Selected(opt) => match opt {
+                                    "Resume" => continue, // Retry question
+                                    "Review Answers" => {
+                                        if let Some(new_index) = self.handle_review(index)? {
+                                            index = new_index;
+                                            break;
+                                        }
+                                        continue;
                                     }
-                                    continue;
-                                }
-                                "Go Back" => {
-                                    index = self.handle_go_back(index);
-                                    break; // Break inner loop, go to outer loop with new index
-                                }
-                                "Abort Installation" => {
-                                    std::process::exit(0);
-                                }
-                                _ => continue,
-                            },
-                            _ => continue, // Cancelled menu -> Resume
+                                    "Go Back" => {
+                                        index = self.handle_go_back(index);
+                                        break; // Break inner loop, go to outer loop with new index
+                                    }
+                                    "Abort Installation" => {
+                                        std::process::exit(0);
+                                    }
+                                    _ => continue,
+                                },
+                                _ => continue, // Cancelled menu -> Resume
+                            }
                         }
                     }
                 }
+            }
+
+            // Final Review Step
+            let options = vec!["Install", "Review Answers", "Abort Installation"];
+            let nav = crate::menu_utils::FzfWrapper::builder()
+                .header("Installation Configuration Complete")
+                .select(options)?;
+
+            match nav {
+                crate::menu_utils::FzfResult::Selected(opt) => match opt {
+                    "Install" => break,
+                    "Review Answers" => {
+                        if let Some(new_index) = self.handle_review(self.questions.len())? {
+                            index = new_index;
+                            continue; // Re-enter the main loop
+                        }
+                    }
+                    "Abort Installation" => {
+                        std::process::exit(0);
+                    }
+                    _ => continue,
+                },
+                _ => continue,
             }
         }
 
