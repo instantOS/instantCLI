@@ -2,6 +2,7 @@ use anyhow::Result;
 use colored::*;
 
 mod assist;
+mod arch;
 mod common;
 mod completions;
 mod debug;
@@ -104,6 +105,11 @@ pub(crate) fn cli_command() -> clap::Command {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Arch Linux installation commands
+    Arch {
+        #[command(subcommand)]
+        command: arch::cli::ArchCommands,
+    },
     /// Dotfile management commands
     Dot {
         #[command(subcommand)]
@@ -199,6 +205,13 @@ fn initialize_cli(cli: &Cli) {
 
 async fn dispatch_command(cli: &Cli) -> Result<()> {
     match &cli.command {
+        Some(Commands::Arch { command }) => {
+            execute_with_error_handling(
+                arch::cli::handle_arch_command(command.clone(), cli.debug).await,
+                "Error handling arch command",
+                None,
+            )?;
+        }
         Some(Commands::Game { command }) => {
             execute_with_error_handling(
                 game::handle_game_command(command.clone(), cli.debug),
