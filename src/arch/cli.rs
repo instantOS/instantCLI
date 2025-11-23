@@ -42,13 +42,18 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             Ok(())
         }
         ArchCommands::Ask { id } => {
+            // Escalate if the question requires root (e.g. Disk)
+            if matches!(id, crate::arch::engine::QuestionId::Disk) {
+                ensure_root()?;
+            }
+
             let question = questions
                 .into_iter()
                 .find(|q| q.id() == id)
                 .ok_or_else(|| anyhow::anyhow!("Question not found"))?;
 
             let engine = QuestionEngine::new(vec![question]);
-            
+
             // Initialize data providers so questions that need data (like MirrorRegion) work
             engine.initialize_providers();
 
@@ -62,6 +67,9 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             Ok(())
         }
         ArchCommands::Install => {
+            // Installation requires root privileges
+            ensure_root()?;
+
             println!("Starting Arch Linux installation wizard...");
 
             // Perform system checks
@@ -135,4 +143,12 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             Ok(())
         }
     }
+}
+
+fn ensure_root() -> Result<()> {
+    if let sudo::RunningAs::User = sudo::check() {
+        sudo::with_env(&["RUST_BACKTRACE", "RUST_LOG"])
+            .map_err(|e| anyhow::anyhow!("Failed to escalate privileges: {}", e))?;
+    }
+    Ok(())
 }
