@@ -1,5 +1,6 @@
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::FzfWrapper;
+use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 
 pub struct HostnameQuestion;
@@ -12,7 +13,10 @@ impl Question for HostnameQuestion {
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let result = FzfWrapper::builder()
-            .prompt("Please enter the hostname for the new system")
+            .prompt(format!(
+                "{} Please enter the hostname for the new system",
+                NerdFont::Desktop
+            ))
             .input()
             .input_result()?;
 
@@ -44,7 +48,10 @@ impl Question for UsernameQuestion {
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let result = FzfWrapper::builder()
-            .prompt("Please enter the username for the new user")
+            .prompt(format!(
+                "{} Please enter the username for the new user",
+                NerdFont::User
+            ))
             .input()
             .input_result()?;
 
@@ -87,7 +94,7 @@ impl Question for MirrorRegionQuestion {
         let regions: Vec<String> = regions_str.split(',').map(|s| s.to_string()).collect();
 
         let result = FzfWrapper::builder()
-            .header("Select Mirror Region")
+            .header(format!("{} Select Mirror Region", NerdFont::Globe))
             .select(regions)?;
 
         match result {
@@ -127,7 +134,7 @@ impl Question for TimezoneQuestion {
         let timezones: Vec<String> = timezones_str.lines().map(|s| s.to_string()).collect();
 
         let result = FzfWrapper::builder()
-            .header("Select Timezone")
+            .header(format!("{} Select Timezone", NerdFont::Clock))
             .select(timezones)?;
 
         match result {
@@ -171,7 +178,7 @@ impl Question for DiskQuestion {
         }
 
         let result = FzfWrapper::builder()
-            .header("Select Disk to Install To")
+            .header(format!("{} Select Disk to Install To", NerdFont::HardDrive))
             .select(disks)?;
 
         match result {
@@ -206,7 +213,7 @@ impl Question for KeymapQuestion {
         let keymaps = vec!["us".to_string(), "de-latin1".to_string(), "uk".to_string()];
 
         let result = FzfWrapper::builder()
-            .header("Select Keymap")
+            .header(format!("{} Select Keymap", NerdFont::Key))
             .select(keymaps)?;
 
         match result {
@@ -239,7 +246,7 @@ impl Question for LocaleQuestion {
         }
 
         let result = FzfWrapper::builder()
-            .header("Select System Locale")
+            .header(format!("{} Select System Locale", NerdFont::Flag))
             .select(locales)?;
 
         match result {
@@ -276,15 +283,19 @@ impl Question for PasswordQuestion {
 
             // Let's try to use `password()` and if it returns empty, treat as cancel.
 
-            let pass1 =
-                match FzfWrapper::password("Please enter the password for the new user (and root)")
-                {
-                    Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
-                    Ok(p) => p,
-                    Err(_) => return Ok(QuestionResult::Cancelled),
-                };
+            let pass1 = match FzfWrapper::password(&format!(
+                "{} Please enter the password for the new user (and root)",
+                NerdFont::Lock
+            )) {
+                Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
+                Ok(p) => p,
+                Err(_) => return Ok(QuestionResult::Cancelled),
+            };
 
-            let pass2 = match FzfWrapper::password("Please confirm the password") {
+            let pass2 = match FzfWrapper::password(&format!(
+                "{} Please confirm the password",
+                NerdFont::Check
+            )) {
                 Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
                 Ok(p) => p,
                 Err(_) => return Ok(QuestionResult::Cancelled),
@@ -293,7 +304,10 @@ impl Question for PasswordQuestion {
             if pass1 == pass2 {
                 return Ok(QuestionResult::Answer(pass1));
             } else {
-                FzfWrapper::message("Passwords do not match. Please try again.")?;
+                FzfWrapper::message(&format!(
+                    "{} Passwords do not match. Please try again.",
+                    NerdFont::Warning
+                ))?;
             }
         }
     }
