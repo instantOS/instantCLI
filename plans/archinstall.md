@@ -188,3 +188,22 @@ installed arch system.
 
 enable lightdm
 
+
+# Commands
+
+Split the installation into several steps, allow executing a specific step
+through a command line argument
+
+We have `ins arch exec <step>`, which optionally takes a step name. The program
+needs a toml with answers to all questions and then reads that to actually
+execute that part of the installation. It should dynamcially determine wether to
+run in chroot or not, and both the chroot and non-chroot should have a toml file
+tracking which steps were already completed successfully, and in that way, an
+exec step can refuse if previous steps it depends on were not done. 
+
+The way chroot could work:
+calling `ins arch exec mychrootstep` should detect if it is running in a chroot,
+and if it is not, it should call `arch-chroot /mnt ins arch exec mychrootstep`
+(or something similar) to run itself in the chroot. It should also check that
+both the chroot and non-chroot have the same answers-file. 
+
