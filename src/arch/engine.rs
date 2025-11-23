@@ -89,8 +89,20 @@ pub trait AsyncDataProvider: Send + Sync {
 pub trait Question: Send + Sync {
     fn id(&self) -> QuestionId;
 
+    /// Returns a list of keys that must exist in context.data before this question is ready
+    fn required_data_keys(&self) -> Vec<String> {
+        vec![]
+    }
+
     /// Returns true if the question is ready to be asked (dependencies met)
-    fn is_ready(&self, context: &InstallContext) -> bool;
+    fn is_ready(&self, context: &InstallContext) -> bool {
+        let keys = self.required_data_keys();
+        if keys.is_empty() {
+            return true;
+        }
+        let data = context.data.lock().unwrap();
+        keys.iter().all(|k| data.contains_key(k))
+    }
 
     /// Asks the question and returns the answer or cancellation
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult>;

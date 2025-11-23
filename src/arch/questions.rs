@@ -10,9 +10,7 @@ impl Question for HostnameQuestion {
         QuestionId::Hostname
     }
 
-    fn is_ready(&self, _context: &InstallContext) -> bool {
-        true
-    }
+
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let result = FzfWrapper::builder()
@@ -46,9 +44,7 @@ impl Question for UsernameQuestion {
         QuestionId::Username
     }
 
-    fn is_ready(&self, _context: &InstallContext) -> bool {
-        true
-    }
+
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let result = FzfWrapper::builder()
@@ -85,9 +81,8 @@ impl Question for MirrorRegionQuestion {
         QuestionId::MirrorRegion
     }
 
-    fn is_ready(&self, context: &InstallContext) -> bool {
-        let data = context.data.lock().unwrap();
-        data.contains_key("mirror_regions")
+    fn required_data_keys(&self) -> Vec<String> {
+        vec!["mirror_regions".to_string()]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
@@ -126,9 +121,8 @@ impl Question for TimezoneQuestion {
         QuestionId::Timezone
     }
 
-    fn is_ready(&self, context: &InstallContext) -> bool {
-        let data = context.data.lock().unwrap();
-        data.contains_key("timezones")
+    fn required_data_keys(&self) -> Vec<String> {
+        vec!["timezones".to_string()]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
@@ -167,9 +161,8 @@ impl Question for DiskQuestion {
         QuestionId::Disk
     }
 
-    fn is_ready(&self, context: &InstallContext) -> bool {
-        let data = context.data.lock().unwrap();
-        data.contains_key("disks")
+    fn required_data_keys(&self) -> Vec<String> {
+        vec!["disks".to_string()]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
@@ -212,9 +205,7 @@ impl Question for KeymapQuestion {
         QuestionId::Keymap
     }
 
-    fn is_ready(&self, _context: &InstallContext) -> bool {
-        true
-    }
+
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         // Mock keymaps
@@ -240,9 +231,8 @@ impl Question for LocaleQuestion {
         QuestionId::Locale
     }
 
-    fn is_ready(&self, context: &InstallContext) -> bool {
-        let data = context.data.lock().unwrap();
-        data.contains_key("locales")
+    fn required_data_keys(&self) -> Vec<String> {
+        vec!["locales".to_string()]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
@@ -276,10 +266,6 @@ pub struct PasswordQuestion;
 impl Question for PasswordQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::Password
-    }
-
-    fn is_ready(&self, _context: &InstallContext) -> bool {
-        true
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
