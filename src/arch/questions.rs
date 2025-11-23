@@ -240,29 +240,33 @@ impl Question for LocaleQuestion {
         QuestionId::Locale
     }
 
-    fn is_ready(&self, _context: &InstallContext) -> bool {
-        true
+    fn is_ready(&self, context: &InstallContext) -> bool {
+        let data = context.data.lock().unwrap();
+        data.contains_key("locales")
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        // Mock common locales
-        let common_locales = vec![
-            "en_US.UTF-8".to_string(),
-            "de_DE.UTF-8".to_string(),
-            "fr_FR.UTF-8".to_string(),
-            "es_ES.UTF-8".to_string(),
-            "ja_JP.UTF-8".to_string(),
-        ];
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+        let data = context.data.lock().unwrap();
+        let locales_str = data.get("locales").unwrap();
+        let locales: Vec<String> = locales_str.lines().map(|s| s.to_string()).collect();
+
+        if locales.is_empty() {
+            return Ok(QuestionResult::Cancelled);
+        }
 
         let result = FzfWrapper::builder()
             .header("Select System Locale")
-            .select(common_locales)?;
+            .select(locales)?;
 
         match result {
             crate::menu_utils::FzfResult::Selected(locale) => Ok(QuestionResult::Answer(locale)),
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),
         }
+    }
+
+    fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
+        vec![Box::new(crate::arch::locales::LocaleProvider)]
     }
 }
 
