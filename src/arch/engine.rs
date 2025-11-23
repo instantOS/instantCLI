@@ -143,6 +143,51 @@ impl QuestionEngine {
         }
     }
 
+    fn handle_review(&self, current_index: usize) -> Result<Option<usize>> {
+        let mut review_items = Vec::new();
+        for q in self.questions.iter().take(current_index) {
+            if let Some(ans) = self.context.get_answer(&q.id()) {
+                review_items.push(format!("{:?}: {}", q.id(), ans));
+            }
+        }
+
+        if review_items.is_empty() {
+            crate::menu_utils::FzfWrapper::message("No answers to review yet.")?;
+            return Ok(None);
+        }
+
+        let review = crate::menu_utils::FzfWrapper::builder()
+            .header("Select a question to modify")
+            .select(review_items)?;
+
+        match review {
+            crate::menu_utils::FzfResult::Selected(selection) => {
+                let parts: Vec<&str> = selection.splitn(2, ": ").collect();
+                if let Some(id_str) = parts.first() {
+                    if let Some(new_index) = self
+                        .questions
+                        .iter()
+                        .position(|q| format!("{:?}", q.id()) == *id_str)
+                    {
+                        return Ok(Some(new_index));
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(None)
+    }
+
+    fn handle_go_back(&self, mut index: usize) -> usize {
+        if index > 0 {
+            index -= 1;
+            while index > 0 && self.questions[index].should_skip(&self.context) {
+                index -= 1;
+            }
+        }
+        index
+    }
+
     pub async fn run(mut self) -> Result<InstallContext> {
         let mut index = 0;
         while index < self.questions.len() {
@@ -173,39 +218,30 @@ impl QuestionEngine {
                     },
                     QuestionResult::Cancelled => {
                         // Show Navigation Menu
-                        let options = vec!["Resume", "Go Back", "Abort Installation"];
+                        let options = vec!["Resume", "Review Answers", "Go Back", "Abort Installation"];
                         let nav = crate::menu_utils::FzfWrapper::builder()
                             .header("Installation Paused")
                             .select(options)?;
 
                         match nav {
-                            crate::menu_utils::FzfResult::Selected(opt) => {
-                                match opt {
-                                    "Resume" => continue, // Retry question
-                                    "Go Back" => {
-                                        if index > 0 {
-                                            // Find previous non-skipped question?
-                                            // For simplicity, just decr index. The loop will handle skip check next iter.
-                                            // But if prev was skipped, we need to decr again.
-                                            // Let's just decr and let the main loop handle it.
-                                            // Wait, if we decr, next iter checks skip. If skipped, it incrs.
-                                            // So we need to loop back until we find a non-skipped one or 0.
-
-                                            index -= 1;
-                                            while index > 0
-                                                && self.questions[index].should_skip(&self.context)
-                                            {
-                                                index -= 1;
-                                            }
-                                        }
-                                        break; // Break inner loop, go to outer loop with new index
+                            crate::menu_utils::FzfResult::Selected(opt) => match opt {
+                                "Resume" => continue, // Retry question
+                                "Review Answers" => {
+                                    if let Some(new_index) = self.handle_review(index)? {
+                                        index = new_index;
+                                        break;
                                     }
-                                    "Abort Installation" => {
-                                        std::process::exit(0);
-                                    }
-                                    _ => continue,
+                                    continue;
                                 }
-                            }
+                                "Go Back" => {
+                                    index = self.handle_go_back(index);
+                                    break; // Break inner loop, go to outer loop with new index
+                                }
+                                "Abort Installation" => {
+                                    std::process::exit(0);
+                                }
+                                _ => continue,
+                            },
                             _ => continue, // Cancelled menu -> Resume
                         }
                     }
