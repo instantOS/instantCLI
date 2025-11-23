@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use colored::Colorize;
 use duct::cmd;
 
 use crate::common::requirements::TOPGRADE_PACKAGE;

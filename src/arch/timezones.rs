@@ -65,12 +65,12 @@ fn collect_timezones(
             collect_timezones(base_path, &path, timezones, skip_names)?;
         } else if path.is_file() {
             // Get the relative path from zoneinfo root
-            if let Ok(relative) = path.strip_prefix(base_path) {
-                if let Some(tz) = relative.to_str() {
-                    // Only include valid timezone format (Region/City or Region/Subregion/City)
-                    if tz.contains('/') && !tz.starts_with('.') {
-                        timezones.push(tz.to_string());
-                    }
+            if let Ok(relative) = path.strip_prefix(base_path)
+                && let Some(tz) = relative.to_str()
+            {
+                // Only include valid timezone format (Region/City or Region/Subregion/City)
+                if tz.contains('/') && !tz.starts_with('.') {
+                    timezones.push(tz.to_string());
                 }
             }
         }

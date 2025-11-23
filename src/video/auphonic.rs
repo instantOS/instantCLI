@@ -192,124 +192,123 @@ async fn create_or_get_preset(client: &Client, api_key: &str) -> Result<String> 
         let json: serde_json::Value = resp.json().await?;
         if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
             for p in data {
-                if p.get("preset_name").and_then(|n| n.as_str()) == Some(preset_name) {
-                    if let Some(uuid) = p.get("uuid").and_then(|u| u.as_str()) {
-                        emit(
-                            Level::Info,
-                            "video.auphonic.preset",
-                            &format!("Found existing preset: {} ({})", preset_name, uuid),
-                            None,
-                        );
+                if p.get("preset_name").and_then(|n| n.as_str()) == Some(preset_name)
+                    && let Some(uuid) = p.get("uuid").and_then(|u| u.as_str())
+                {
+                    emit(
+                        Level::Info,
+                        "video.auphonic.preset",
+                        &format!("Found existing preset: {} ({})", preset_name, uuid),
+                        None,
+                    );
 
-                        // Verify configuration
-                        let preset_url = format!("{}/preset/{}.json", BASE_URL, uuid);
-                        let preset_resp = client
-                            .get(&preset_url)
-                            .header(AUTHORIZATION, format!("bearer {}", api_key))
-                            .send()
-                            .await
-                            .context("Failed to get preset details")?;
+                    // Verify configuration
+                    let preset_url = format!("{}/preset/{}.json", BASE_URL, uuid);
+                    let preset_resp = client
+                        .get(&preset_url)
+                        .header(AUTHORIZATION, format!("bearer {}", api_key))
+                        .send()
+                        .await
+                        .context("Failed to get preset details")?;
 
-                        if preset_resp.status().is_success() {
-                            let preset_json: serde_json::Value = preset_resp.json().await?;
-                            let current_algorithms = &preset_json["data"]["algorithms"];
-                            let current_output_files = &preset_json["data"]["output_files"];
+                    if preset_resp.status().is_success() {
+                        let preset_json: serde_json::Value = preset_resp.json().await?;
+                        let current_algorithms = &preset_json["data"]["algorithms"];
+                        let current_output_files = &preset_json["data"]["output_files"];
 
-                            // Simple comparison - might need more robust check if API returns extra fields
-                            // But for now, let's check if our expected fields match
-                            let mut needs_update = false;
+                        // Simple comparison - might need more robust check if API returns extra fields
+                        // But for now, let's check if our expected fields match
+                        let mut needs_update = false;
 
-                            if let Some(current_obj) = current_algorithms.as_object() {
-                                if let Some(expected_obj) = expected_algorithms.as_object() {
-                                    for (k, v) in expected_obj {
-                                        if current_obj.get(k) != Some(v) {
-                                            emit(
-                                                Level::Debug,
-                                                "video.auphonic.preset",
-                                                &format!(
-                                                    "Config mismatch for {}: expected {}, got {:?}",
-                                                    k,
-                                                    v,
-                                                    current_obj.get(k)
-                                                ),
-                                                None,
-                                            );
-                                            needs_update = true;
-                                            break;
-                                        }
+                        if let Some(current_obj) = current_algorithms.as_object() {
+                            if let Some(expected_obj) = expected_algorithms.as_object() {
+                                for (k, v) in expected_obj {
+                                    if current_obj.get(k) != Some(v) {
+                                        emit(
+                                            Level::Debug,
+                                            "video.auphonic.preset",
+                                            &format!(
+                                                "Config mismatch for {}: expected {}, got {:?}",
+                                                k,
+                                                v,
+                                                current_obj.get(k)
+                                            ),
+                                            None,
+                                        );
+                                        needs_update = true;
+                                        break;
                                     }
-                                } else {
-                                    needs_update = true; // Expected algorithms is an object, current is not
-                                }
-                            } else if expected_algorithms.is_object() {
-                                needs_update = true; // Current algorithms is not an object, but expected is
-                            }
-
-                            // Compare output files (simple string comparison of the serialized JSON)
-                            if current_output_files.to_string() != expected_output_files.to_string()
-                            {
-                                emit(
-                                    Level::Debug,
-                                    "video.auphonic.preset",
-                                    &format!(
-                                        "Output files mismatch: expected {}, got {}",
-                                        expected_output_files, current_output_files
-                                    ),
-                                    None,
-                                );
-                                needs_update = true;
-                            }
-
-                            if needs_update {
-                                emit(
-                                    Level::Info,
-                                    "video.auphonic.preset",
-                                    "Preset configuration mismatch. Updating preset...",
-                                    None,
-                                );
-
-                                let update_data = json!({
-                                    "algorithms": expected_algorithms,
-                                    "output_files": expected_output_files
-                                });
-
-                                let update_resp = client
-                                    .post(&preset_url)
-                                    .header(AUTHORIZATION, format!("bearer {}", api_key))
-                                    .header(CONTENT_TYPE, "application/json")
-                                    .json(&update_data)
-                                    .send()
-                                    .await
-                                    .context("Failed to update preset")?;
-
-                                if !update_resp.status().is_success() {
-                                    let text = update_resp.text().await.unwrap_or_default();
-                                    emit(
-                                        Level::Warn,
-                                        "video.auphonic.preset",
-                                        &format!("Failed to update preset: {}", text),
-                                        None,
-                                    );
-                                } else {
-                                    emit(
-                                        Level::Success,
-                                        "video.auphonic.preset",
-                                        "Preset updated successfully.",
-                                        None,
-                                    );
                                 }
                             } else {
+                                needs_update = true; // Expected algorithms is an object, current is not
+                            }
+                        } else if expected_algorithms.is_object() {
+                            needs_update = true; // Current algorithms is not an object, but expected is
+                        }
+
+                        // Compare output files (simple string comparison of the serialized JSON)
+                        if *current_output_files != expected_output_files {
+                            emit(
+                                Level::Debug,
+                                "video.auphonic.preset",
+                                &format!(
+                                    "Output files mismatch: expected {}, got {}",
+                                    expected_output_files, current_output_files
+                                ),
+                                None,
+                            );
+                            needs_update = true;
+                        }
+
+                        if needs_update {
+                            emit(
+                                Level::Info,
+                                "video.auphonic.preset",
+                                "Preset configuration mismatch. Updating preset...",
+                                None,
+                            );
+
+                            let update_data = json!({
+                                "algorithms": expected_algorithms,
+                                "output_files": expected_output_files
+                            });
+
+                            let update_resp = client
+                                .post(&preset_url)
+                                .header(AUTHORIZATION, format!("bearer {}", api_key))
+                                .header(CONTENT_TYPE, "application/json")
+                                .json(&update_data)
+                                .send()
+                                .await
+                                .context("Failed to update preset")?;
+
+                            if !update_resp.status().is_success() {
+                                let text = update_resp.text().await.unwrap_or_default();
                                 emit(
-                                    Level::Debug,
+                                    Level::Warn,
                                     "video.auphonic.preset",
-                                    "Preset configuration matches.",
+                                    &format!("Failed to update preset: {}", text),
+                                    None,
+                                );
+                            } else {
+                                emit(
+                                    Level::Success,
+                                    "video.auphonic.preset",
+                                    "Preset updated successfully.",
                                     None,
                                 );
                             }
+                        } else {
+                            emit(
+                                Level::Debug,
+                                "video.auphonic.preset",
+                                "Preset configuration matches.",
+                                None,
+                            );
                         }
-
-                        return Ok(uuid.to_string());
                     }
+
+                    return Ok(uuid.to_string());
                 }
             }
         }
@@ -538,20 +537,20 @@ async fn download_result(
             let content = resp.bytes().await?;
             fs::write(output_path, content).context("Failed to write output file")?;
             return Ok(());
-        } else if resp.status().is_redirection() {
-            if let Some(location) = resp.headers().get(reqwest::header::LOCATION) {
-                let location_str = location.to_str().context("Invalid Location header")?;
-                // Handle relative redirects if necessary, but Auphonic likely returns absolute
-                current_url = location_str.to_string();
-                attempts += 1;
-                emit(
-                    Level::Debug,
-                    "video.auphonic.redirect",
-                    &format!("Redirecting to {}", current_url),
-                    None,
-                );
-                continue;
-            }
+        } else if resp.status().is_redirection()
+            && let Some(location) = resp.headers().get(reqwest::header::LOCATION)
+        {
+            let location_str = location.to_str().context("Invalid Location header")?;
+            // Handle relative redirects if necessary, but Auphonic likely returns absolute
+            current_url = location_str.to_string();
+            attempts += 1;
+            emit(
+                Level::Debug,
+                "video.auphonic.redirect",
+                &format!("Redirecting to {}", current_url),
+                None,
+            );
+            continue;
         }
 
         anyhow::bail!("Failed to download file: {}", resp.status());
@@ -560,7 +559,7 @@ async fn download_result(
 
 fn get_duration(path: &Path) -> Result<f64> {
     let output = std::process::Command::new("ffprobe")
-        .args(&[
+        .args([
             "-v",
             "error",
             "-show_entries",
@@ -593,7 +592,7 @@ fn trim_audio(input: &Path, output: &Path, start: f64, end: f64) -> Result<()> {
     let output_str = output.to_string_lossy();
 
     let status = std::process::Command::new("ffmpeg")
-        .args(&[
+        .args([
             "-y",
             "-i",
             &input.to_string_lossy(),

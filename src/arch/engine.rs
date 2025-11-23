@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::any::Any;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -19,17 +18,12 @@ pub enum QuestionId {
     ConfirmInstall,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum BootMode {
     UEFI64,
     UEFI32,
+    #[default]
     BIOS,
-}
-
-impl Default for BootMode {
-    fn default() -> Self {
-        Self::BIOS
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
