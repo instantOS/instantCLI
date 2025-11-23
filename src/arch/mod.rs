@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod config;
+pub mod disks;
 pub mod engine;
 pub mod mirrors;
 pub mod questions;

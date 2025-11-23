@@ -167,16 +167,19 @@ impl Question for DiskQuestion {
         QuestionId::Disk
     }
 
-    fn is_ready(&self, _context: &InstallContext) -> bool {
-        true
+    fn is_ready(&self, context: &InstallContext) -> bool {
+        let data = context.data.lock().unwrap();
+        data.contains_key("disks")
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        // Mock disks for now
-        let disks = vec![
-            "/dev/sda (500GB)".to_string(),
-            "/dev/nvme0n1 (1TB)".to_string(),
-        ];
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+        let data = context.data.lock().unwrap();
+        let disks_str = data.get("disks").unwrap();
+        let disks: Vec<String> = disks_str.lines().map(|s| s.to_string()).collect();
+
+        if disks.is_empty() {
+            return Ok(QuestionResult::Cancelled); // Or show error
+        }
 
         let result = FzfWrapper::builder()
             .header("Select Disk to Install To")
@@ -193,11 +196,11 @@ impl Question for DiskQuestion {
         if answer.is_empty() {
             return Err("You must select a disk.".to_string());
         }
-        // Example: Check if disk actually exists (mocked here)
-        if !answer.starts_with("/dev/") {
-            return Err("Invalid disk path.".to_string());
-        }
         Ok(())
+    }
+
+    fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
+        vec![Box::new(crate::arch::disks::DiskProvider)]
     }
 }
 
