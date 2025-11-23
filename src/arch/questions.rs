@@ -10,8 +10,6 @@ impl Question for HostnameQuestion {
         QuestionId::Hostname
     }
 
-
-
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let result = FzfWrapper::builder()
             .prompt("Please enter the hostname for the new system")
@@ -43,8 +41,6 @@ impl Question for UsernameQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::Username
     }
-
-
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         let result = FzfWrapper::builder()
@@ -204,8 +200,6 @@ impl Question for KeymapQuestion {
     fn id(&self) -> QuestionId {
         QuestionId::Keymap
     }
-
-
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         // Mock keymaps
