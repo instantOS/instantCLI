@@ -71,6 +71,12 @@ impl InstallContext {
     }
 }
 
+/// Result of asking a question
+pub enum QuestionResult {
+    Answer(String),
+    Cancelled,
+}
+
 /// Trait that every question must implement
 #[async_trait::async_trait]
 pub trait Question: Send + Sync {
@@ -79,8 +85,8 @@ pub trait Question: Send + Sync {
     /// Returns true if the question is ready to be asked (dependencies met)
     fn is_ready(&self, context: &InstallContext) -> bool;
 
-    /// Asks the question and returns the answer as a string
-    async fn ask(&self, context: &InstallContext) -> Result<String>;
+    /// Asks the question and returns the answer or cancellation
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult>;
 
     /// Returns true if this question should be skipped based on previous answers
     fn should_skip(&self, _context: &InstallContext) -> bool {
@@ -107,25 +113,70 @@ impl QuestionEngine {
     }
 
     pub async fn run(mut self) -> Result<InstallContext> {
-        for question in &self.questions {
+        let mut index = 0;
+        while index < self.questions.len() {
+            let question = &self.questions[index];
+
             // Wait until question is ready (dependencies met)
             while !question.is_ready(&self.context) {
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
 
             if question.should_skip(&self.context) {
+                index += 1;
                 continue;
             }
 
             loop {
-                let answer = question.ask(&self.context).await?;
-                match question.validate(&answer) {
-                    Ok(()) => {
-                        self.context.answers.insert(question.id(), answer);
-                        break;
-                    }
-                    Err(msg) => {
-                        crate::menu_utils::FzfWrapper::message(&msg)?;
+                let result = question.ask(&self.context).await?;
+                match result {
+                    QuestionResult::Answer(answer) => match question.validate(&answer) {
+                        Ok(()) => {
+                            self.context.answers.insert(question.id(), answer);
+                            index += 1;
+                            break;
+                        }
+                        Err(msg) => {
+                            crate::menu_utils::FzfWrapper::message(&msg)?;
+                        }
+                    },
+                    QuestionResult::Cancelled => {
+                        // Show Navigation Menu
+                        let options = vec!["Resume", "Go Back", "Abort Installation"];
+                        let nav = crate::menu_utils::FzfWrapper::builder()
+                            .header("Installation Paused")
+                            .select(options)?;
+
+                        match nav {
+                            crate::menu_utils::FzfResult::Selected(opt) => {
+                                match opt {
+                                    "Resume" => continue, // Retry question
+                                    "Go Back" => {
+                                        if index > 0 {
+                                            // Find previous non-skipped question?
+                                            // For simplicity, just decr index. The loop will handle skip check next iter.
+                                            // But if prev was skipped, we need to decr again.
+                                            // Let's just decr and let the main loop handle it.
+                                            // Wait, if we decr, next iter checks skip. If skipped, it incrs.
+                                            // So we need to loop back until we find a non-skipped one or 0.
+
+                                            index -= 1;
+                                            while index > 0
+                                                && self.questions[index].should_skip(&self.context)
+                                            {
+                                                index -= 1;
+                                            }
+                                        }
+                                        break; // Break inner loop, go to outer loop with new index
+                                    }
+                                    "Abort Installation" => {
+                                        std::process::exit(0);
+                                    }
+                                    _ => continue,
+                                }
+                            }
+                            _ => continue, // Cancelled menu -> Resume
+                        }
                     }
                 }
             }

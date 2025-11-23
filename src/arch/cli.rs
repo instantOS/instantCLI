@@ -88,14 +88,22 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             }
 
             loop {
-                let answer = question.ask(&engine.context).await?;
-                match question.validate(&answer) {
-                    Ok(()) => {
-                        println!("Answer: {}", answer);
-                        break;
+                let result = question.ask(&engine.context).await?;
+                match result {
+                    crate::arch::engine::QuestionResult::Answer(answer) => {
+                        match question.validate(&answer) {
+                            Ok(()) => {
+                                println!("Answer: {}", answer);
+                                break;
+                            }
+                            Err(msg) => {
+                                crate::menu_utils::FzfWrapper::message(&msg)?;
+                            }
+                        }
                     }
-                    Err(msg) => {
-                        crate::menu_utils::FzfWrapper::message(&msg)?;
+                    crate::arch::engine::QuestionResult::Cancelled => {
+                        println!("Cancelled.");
+                        break;
                     }
                 }
             }

@@ -1,4 +1,4 @@
-use crate::arch::engine::{InstallContext, Question, QuestionId};
+use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::FzfWrapper;
 use anyhow::Result;
 
@@ -14,8 +14,17 @@ impl Question for HostnameQuestion {
         true
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<String> {
-        FzfWrapper::input("Please enter the hostname for the new system")
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        let result = FzfWrapper::builder()
+            .prompt("Please enter the hostname for the new system")
+            .input()
+            .input_result()?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(s) => Ok(QuestionResult::Answer(s)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
+        }
     }
 
     fn validate(&self, answer: &str) -> Result<(), String> {
@@ -41,8 +50,17 @@ impl Question for UsernameQuestion {
         true
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<String> {
-        FzfWrapper::input("Please enter the username for the new user")
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        let result = FzfWrapper::builder()
+            .prompt("Please enter the username for the new user")
+            .input()
+            .input_result()?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(s) => Ok(QuestionResult::Answer(s)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
+        }
     }
 
     fn validate(&self, answer: &str) -> Result<(), String> {
@@ -72,7 +90,7 @@ impl Question for MirrorRegionQuestion {
         data.contains_key("mirror_regions")
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<String> {
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let data = context.data.lock().unwrap();
         let regions_str = data.get("mirror_regions").unwrap();
         let regions: Vec<String> = regions_str.split(',').map(|s| s.to_string()).collect();
@@ -82,8 +100,9 @@ impl Question for MirrorRegionQuestion {
             .select(regions)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(region) => Ok(region),
-            _ => Ok("".to_string()), // Handle cancellation better?
+            crate::menu_utils::FzfResult::Selected(region) => Ok(QuestionResult::Answer(region)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
         }
     }
 
@@ -108,7 +127,7 @@ impl Question for TimezoneQuestion {
         data.contains_key("timezones")
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<String> {
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let data = context.data.lock().unwrap();
         let timezones_str = data.get("timezones").unwrap();
         let timezones: Vec<String> = timezones_str.lines().map(|s| s.to_string()).collect();
@@ -118,8 +137,9 @@ impl Question for TimezoneQuestion {
             .select(timezones)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(tz) => Ok(tz),
-            _ => Ok("".to_string()),
+            crate::menu_utils::FzfResult::Selected(tz) => Ok(QuestionResult::Answer(tz)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
         }
     }
 
@@ -143,7 +163,7 @@ impl Question for DiskQuestion {
         true
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<String> {
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         // Mock disks for now
         let disks = vec![
             "/dev/sda (500GB)".to_string(),
@@ -155,8 +175,9 @@ impl Question for DiskQuestion {
             .select(disks)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(disk) => Ok(disk),
-            _ => Ok("".to_string()),
+            crate::menu_utils::FzfResult::Selected(disk) => Ok(QuestionResult::Answer(disk)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
         }
     }
 
@@ -184,7 +205,7 @@ impl Question for KeymapQuestion {
         true
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<String> {
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         // Mock keymaps
         let keymaps = vec!["us".to_string(), "de-latin1".to_string(), "uk".to_string()];
 
@@ -193,8 +214,9 @@ impl Question for KeymapQuestion {
             .select(keymaps)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(km) => Ok(km),
-            _ => Ok("".to_string()),
+            crate::menu_utils::FzfResult::Selected(km) => Ok(QuestionResult::Answer(km)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
         }
     }
 }
@@ -211,7 +233,7 @@ impl Question for LocaleQuestion {
         true
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<String> {
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         // Mock common locales
         let common_locales = vec![
             "en_US.UTF-8".to_string(),
@@ -226,8 +248,9 @@ impl Question for LocaleQuestion {
             .select(common_locales)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(locale) => Ok(locale),
-            _ => Ok("en_US.UTF-8".to_string()), // Default fallback
+            crate::menu_utils::FzfResult::Selected(locale) => Ok(QuestionResult::Answer(locale)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
         }
     }
 }
@@ -244,19 +267,36 @@ impl Question for PasswordQuestion {
         true
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<String> {
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         loop {
-            let pass1 =
-                FzfWrapper::password("Please enter the password for the new user (and root)")?;
-            if pass1.is_empty() {
-                FzfWrapper::message("Password cannot be empty.")?;
-                continue;
-            }
+            // NOTE: FzfWrapper::password currently returns Result<String>, not FzfResult.
+            // It uses `gum` or fallback. `gum` cancellation returns error or empty string?
+            // FzfWrapper::password implementation calls `execute_password`.
+            // `execute_password` returns `Ok(stdout.trim())` or fallback.
+            // If gum is cancelled (Ctrl+C), it might return error or empty.
+            // For now, let's assume if we get empty string (and we require password), it's a cancel?
+            // But password CAN be empty? No, we validate against it.
+            // So if `password()` returns empty, we can treat as cancel?
+            // But `PasswordQuestion` has its own loop for confirmation.
 
-            let pass2 = FzfWrapper::password("Please confirm the password")?;
+            // Let's try to use `password()` and if it returns empty, treat as cancel.
+
+            let pass1 =
+                match FzfWrapper::password("Please enter the password for the new user (and root)")
+                {
+                    Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
+                    Ok(p) => p,
+                    Err(_) => return Ok(QuestionResult::Cancelled),
+                };
+
+            let pass2 = match FzfWrapper::password("Please confirm the password") {
+                Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
+                Ok(p) => p,
+                Err(_) => return Ok(QuestionResult::Cancelled),
+            };
 
             if pass1 == pass2 {
-                return Ok(pass1);
+                return Ok(QuestionResult::Answer(pass1));
             } else {
                 FzfWrapper::message("Passwords do not match. Please try again.")?;
             }

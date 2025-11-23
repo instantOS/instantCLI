@@ -86,6 +86,12 @@ impl FzfSelectable for String {
     }
 }
 
+impl FzfSelectable for &str {
+    fn fzf_display_text(&self) -> String {
+        self.to_string()
+    }
+}
+
 pub struct FzfWrapper {
     pub(crate) multi_select: bool,
     pub(crate) prompt: Option<String>,
@@ -606,7 +612,23 @@ impl FzfBuilder {
         self.message_dialog()
     }
 
+    pub fn input_result(self) -> Result<FzfResult<String>> {
+        if !matches!(self.dialog_type, DialogType::Input) {
+            return Err(anyhow::anyhow!("Builder not configured for input"));
+        }
+        self.execute_input_result()
+    }
+
     fn execute_input(self) -> Result<String> {
+        match self.execute_input_result()? {
+            FzfResult::Selected(s) => Ok(s),
+            FzfResult::Cancelled => Ok(String::new()),
+            FzfResult::Error(e) => Err(anyhow::anyhow!(e)),
+            _ => Ok(String::new()),
+        }
+    }
+
+    fn execute_input_result(self) -> Result<FzfResult<String>> {
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
         cmd.arg("--print-query").arg("--no-info");
@@ -638,7 +660,7 @@ impl FzfBuilder {
         if let Some(code) = output.status.code()
             && (code == 130 || code == 143)
         {
-            return Ok(String::new());
+            return Ok(FzfResult::Cancelled);
         }
 
         if !output.status.success() {
@@ -650,9 +672,9 @@ impl FzfBuilder {
         let lines: Vec<&str> = stdout.trim_end().split('\n').collect();
 
         if let Some(query) = lines.first() {
-            Ok(query.trim().to_string())
+            Ok(FzfResult::Selected(query.trim().to_string()))
         } else {
-            Ok(String::new())
+            Ok(FzfResult::Selected(String::new()))
         }
     }
 
