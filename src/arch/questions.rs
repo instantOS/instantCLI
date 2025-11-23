@@ -112,6 +112,10 @@ impl Question for MirrorRegionQuestion {
         }
         Ok(())
     }
+
+    fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
+        vec![Box::new(crate::arch::mirrors::MirrorlistProvider)]
+    }
 }
 
 pub struct TimezoneQuestion;
@@ -148,6 +152,10 @@ impl Question for TimezoneQuestion {
             return Err("You must select a timezone.".to_string());
         }
         Ok(())
+    }
+
+    fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
+        vec![Box::new(crate::arch::timezones::TimezoneProvider)]
     }
 }
 

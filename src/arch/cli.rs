@@ -47,72 +47,17 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 .find(|q| q.id() == id)
                 .ok_or_else(|| anyhow::anyhow!("Question not found"))?;
 
-            // For single question asking, we might need a dummy context or partial context
-            // depending on dependencies. For now, we'll create a default context.
-            // Note: If the question depends on async data (like MirrorRegion), this might fail
-            // or need the background task.
+            let engine = QuestionEngine::new(vec![question]);
+            
+            // Initialize data providers so questions that need data (like MirrorRegion) work
+            engine.initialize_providers();
 
-            let mut engine = QuestionEngine::new(vec![]); // Dummy engine to get context
+            // Run the engine with just this single question
+            // This handles is_ready, validation, cancellation, etc.
+            let context = engine.run().await?;
 
-            // Spawn background task to fetch data (same as install)
-            // This is needed for questions like MirrorRegion/Timezone
-            let data_clone = engine.context.data.clone();
-            tokio::spawn(async move {
-                // Fetch mirror regions
-                match crate::arch::mirrors::fetch_mirror_regions().await {
-                    Ok(regions) => {
-                        let mut data = data_clone.lock().unwrap();
-                        let mut names: Vec<String> = regions.keys().cloned().collect();
-                        names.sort();
-                        data.insert("mirror_regions".to_string(), names.join(","));
-                        if let Ok(json) = serde_json::to_string(&regions) {
-                            data.insert("mirror_map".to_string(), json);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to fetch mirror regions: {}", e);
-                        let mut data = data_clone.lock().unwrap();
-                        data.insert("mirror_regions".to_string(), "Worldwide".to_string());
-                    }
-                }
-
-                // Simulate filesystem scan for timezones
-                // In reality: walkdir /usr/share/zoneinfo
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                {
-                    let mut data = data_clone.lock().unwrap();
-                    data.insert(
-                        "timezones".to_string(),
-                        "Europe/Berlin\nEurope/London\nAmerica/New_York".to_string(),
-                    );
-                }
-            });
-
-            // Wait for readiness if needed
-            while !question.is_ready(&engine.context) {
-                println!("Waiting for data...");
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
-
-            loop {
-                let result = question.ask(&engine.context).await?;
-                match result {
-                    crate::arch::engine::QuestionResult::Answer(answer) => {
-                        match question.validate(&answer) {
-                            Ok(()) => {
-                                println!("Answer: {}", answer);
-                                break;
-                            }
-                            Err(msg) => {
-                                crate::menu_utils::FzfWrapper::message(&msg)?;
-                            }
-                        }
-                    }
-                    crate::arch::engine::QuestionResult::Cancelled => {
-                        println!("Cancelled.");
-                        break;
-                    }
-                }
+            if let Some(answer) = context.get_answer(&id) {
+                println!("Answer: {}", answer);
             }
             Ok(())
         }
@@ -168,38 +113,8 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             let mut engine = QuestionEngine::new(questions);
             engine.context.system_info = system_info;
 
-            // Spawn background task to fetch data
-            let data_clone = engine.context.data.clone();
-            tokio::spawn(async move {
-                // Fetch mirror regions
-                match crate::arch::mirrors::fetch_mirror_regions().await {
-                    Ok(regions) => {
-                        let mut data = data_clone.lock().unwrap();
-                        let mut names: Vec<String> = regions.keys().cloned().collect();
-                        names.sort();
-                        data.insert("mirror_regions".to_string(), names.join(","));
-                        if let Ok(json) = serde_json::to_string(&regions) {
-                            data.insert("mirror_map".to_string(), json);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to fetch mirror regions: {}", e);
-                        let mut data = data_clone.lock().unwrap();
-                        data.insert("mirror_regions".to_string(), "Worldwide".to_string());
-                    }
-                }
-
-                // Simulate filesystem scan for timezones
-                // In reality: walkdir /usr/share/zoneinfo
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                {
-                    let mut data = data_clone.lock().unwrap();
-                    data.insert(
-                        "timezones".to_string(),
-                        "Europe/Berlin\nEurope/London\nAmerica/New_York".to_string(),
-                    );
-                }
-            });
+            // Initialize data providers
+            engine.initialize_providers();
 
             let context = engine.run().await?;
 

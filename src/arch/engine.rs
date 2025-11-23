@@ -77,6 +77,13 @@ pub enum QuestionResult {
     Cancelled,
 }
 
+/// Trait for providing async data to the install context
+#[async_trait::async_trait]
+pub trait AsyncDataProvider: Send + Sync {
+    /// Fetches data and updates the context
+    async fn provide(&self, context: &InstallContext) -> Result<()>;
+}
+
 /// Trait that every question must implement
 #[async_trait::async_trait]
 pub trait Question: Send + Sync {
@@ -97,6 +104,11 @@ pub trait Question: Send + Sync {
     fn validate(&self, _answer: &str) -> Result<(), String> {
         Ok(())
     }
+
+    /// Returns a list of data providers required by this question
+    fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
+        vec![]
+    }
 }
 
 pub struct QuestionEngine {
@@ -109,6 +121,19 @@ impl QuestionEngine {
         Self {
             questions,
             context: InstallContext::new(),
+        }
+    }
+
+    pub fn initialize_providers(&self) {
+        for question in &self.questions {
+            for provider in question.data_providers() {
+                let context = self.context.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = provider.provide(&context).await {
+                        eprintln!("Data provider failed: {}", e);
+                    }
+                });
+            }
         }
     }
 

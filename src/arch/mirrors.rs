@@ -33,3 +33,28 @@ pub async fn fetch_mirror_regions() -> Result<HashMap<String, String>> {
 
     Ok(regions)
 }
+
+pub struct MirrorlistProvider;
+
+#[async_trait::async_trait]
+impl crate::arch::engine::AsyncDataProvider for MirrorlistProvider {
+    async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
+        match fetch_mirror_regions().await {
+            Ok(regions) => {
+                let mut data = context.data.lock().unwrap();
+                let mut names: Vec<String> = regions.keys().cloned().collect();
+                names.sort();
+                data.insert("mirror_regions".to_string(), names.join(","));
+                if let Ok(json) = serde_json::to_string(&regions) {
+                    data.insert("mirror_map".to_string(), json);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to fetch mirror regions: {}", e);
+                let mut data = context.data.lock().unwrap();
+                data.insert("mirror_regions".to_string(), "Worldwide".to_string());
+            }
+        }
+        Ok(())
+    }
+}
