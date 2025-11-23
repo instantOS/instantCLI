@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::ui::nerd_font::NerdFont;
 use serde::{Deserialize, Serialize};
 
 /// Represents a unique identifier for a question
@@ -153,14 +154,21 @@ impl QuestionEngine {
 
     fn handle_review(&self, current_index: usize) -> Result<Option<usize>> {
         let mut review_items = Vec::new();
+
+        let continue_opt = format!("{} Continue with installation", NerdFont::ArrowRight);
+        review_items.push(continue_opt.clone());
+
         for q in self.questions.iter().take(current_index) {
             if let Some(ans) = self.context.get_answer(&q.id()) {
-                review_items.push(format!("{:?}: {}", q.id(), ans));
+                review_items.push(format!("{} {:?}: {}", NerdFont::Check, q.id(), ans));
             }
         }
 
-        if review_items.is_empty() {
-            crate::menu_utils::FzfWrapper::message("No answers to review yet.")?;
+        if review_items.len() == 1 {
+            crate::menu_utils::FzfWrapper::message(&format!(
+                "{} No answers to review yet.",
+                NerdFont::Info
+            ))?;
             return Ok(None);
         }
 
@@ -170,12 +178,18 @@ impl QuestionEngine {
 
         match review {
             crate::menu_utils::FzfResult::Selected(selection) => {
-                let parts: Vec<&str> = selection.splitn(2, ": ").collect();
-                if let Some(id_str) = parts.first() {
+                if selection == continue_opt {
+                    return Ok(None);
+                }
+
+                // Format: "ICON QuestionId: Answer"
+                let parts: Vec<&str> = selection.splitn(3, ' ').collect();
+                if parts.len() >= 2 {
+                    let id_str = parts[1].trim_end_matches(':');
                     if let Some(new_index) = self
                         .questions
                         .iter()
-                        .position(|q| format!("{:?}", q.id()) == *id_str)
+                        .position(|q| format!("{:?}", q.id()) == id_str)
                     {
                         return Ok(Some(new_index));
                     }
@@ -215,7 +229,11 @@ impl QuestionEngine {
                                         break;
                                     }
                                     Err(msg) => {
-                                        crate::menu_utils::FzfWrapper::message(&msg)?;
+                                        crate::menu_utils::FzfWrapper::message(&format!(
+                                            "{} {}",
+                                            NerdFont::Warning,
+                                            msg
+                                        ))?;
                                     }
                                 }
                             }
@@ -257,15 +275,21 @@ impl QuestionEngine {
     }
 
     fn handle_navigation_menu(&mut self, current_idx: usize) -> Result<bool> {
-        let options = vec!["Resume", "Review Answers", "Go Back", "Abort Installation"];
+        let options = vec![
+            format!("{} Resume", NerdFont::Play),
+            format!("{} Review Answers", NerdFont::List),
+            format!("{} Go Back", NerdFont::ArrowLeft),
+            format!("{} Abort Installation", NerdFont::Cross),
+        ];
         let nav = crate::menu_utils::FzfWrapper::builder()
             .header("Installation Paused")
             .select(options)?;
 
         match nav {
-            crate::menu_utils::FzfResult::Selected(opt) => match opt {
-                "Resume" => Ok(false),
-                "Review Answers" => {
+            crate::menu_utils::FzfResult::Selected(opt) => {
+                if opt.contains("Resume") {
+                    Ok(false)
+                } else if opt.contains("Review Answers") {
                     if let Some(review_idx) = self.handle_review(current_idx)? {
                         let q_id = self.questions[review_idx].id();
                         self.context.answers.remove(&q_id);
@@ -273,8 +297,7 @@ impl QuestionEngine {
                     } else {
                         Ok(false)
                     }
-                }
-                "Go Back" => {
+                } else if opt.contains("Go Back") {
                     let prev_idx = self.handle_go_back(current_idx);
                     if prev_idx != current_idx {
                         let q_id = self.questions[prev_idx].id();
@@ -283,37 +306,42 @@ impl QuestionEngine {
                     } else {
                         Ok(false)
                     }
-                }
-                "Abort Installation" => {
+                } else if opt.contains("Abort Installation") {
                     std::process::exit(0);
+                } else {
+                    Ok(false)
                 }
-                _ => Ok(false),
-            },
+            }
             _ => Ok(false),
         }
     }
 
     fn handle_final_review(&mut self) -> Result<bool> {
-        let options = vec!["Install", "Review Answers", "Abort Installation"];
+        let options = vec![
+            format!("{} Install", NerdFont::Download),
+            format!("{} Review Answers", NerdFont::List),
+            format!("{} Abort Installation", NerdFont::Cross),
+        ];
         let nav = crate::menu_utils::FzfWrapper::builder()
             .header("Installation Configuration Complete")
             .select(options)?;
 
         match nav {
-            crate::menu_utils::FzfResult::Selected(opt) => match opt {
-                "Install" => Ok(true),
-                "Review Answers" => {
+            crate::menu_utils::FzfResult::Selected(opt) => {
+                if opt.contains("Install") {
+                    Ok(true)
+                } else if opt.contains("Review Answers") {
                     if let Some(review_idx) = self.handle_review(self.questions.len())? {
                         let q_id = self.questions[review_idx].id();
                         self.context.answers.remove(&q_id);
                     }
                     Ok(false)
-                }
-                "Abort Installation" => {
+                } else if opt.contains("Abort Installation") {
                     std::process::exit(0);
+                } else {
+                    Ok(false)
                 }
-                _ => Ok(false),
-            },
+            }
             _ => Ok(false),
         }
     }
