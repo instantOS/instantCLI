@@ -4,7 +4,11 @@ use clap::Subcommand;
 #[derive(Subcommand, Debug, Clone)]
 pub enum ArchCommands {
     /// Start the Arch Linux installation wizard
-    Install,
+    Install {
+        /// Optional path to save the configuration TOML file
+        #[arg(short = 'o', long)]
+        output_config: Option<std::path::PathBuf>,
+    },
     /// List all available questions
     List,
     /// Ask a specific question
@@ -66,7 +70,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             }
             Ok(())
         }
-        ArchCommands::Install => {
+        ArchCommands::Install { output_config } => {
             // Installation requires root privileges
             ensure_root()?;
 
@@ -136,9 +140,18 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 context.get_answer(&crate::arch::engine::QuestionId::Username)
             );
 
-            println!("\n--- Configuration TOML ---");
-            println!("{}", context.to_toml()?);
-            println!("--------------------------");
+            let toml_content = context.to_toml()?;
+
+            if let Some(config_path) = output_config {
+                // Write to file
+                std::fs::write(&config_path, &toml_content)?;
+                println!("\nConfiguration saved to: {}", config_path.display());
+            } else {
+                // Print to stdout
+                println!("\n--- Configuration TOML ---");
+                println!("{}", toml_content);
+                println!("--------------------------");
+            }
 
             Ok(())
         }

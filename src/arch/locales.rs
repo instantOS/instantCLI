@@ -36,8 +36,8 @@ fn parse_locale_gen(contents: &str) -> Vec<String> {
 
         // Get the locale name (first word)
         if let Some(locale) = clean_line.split_whitespace().next() {
-            // Only include UTF-8 locales
-            if !locale.is_empty() && clean_line.contains("UTF-8") {
+            // Only include locales that end with .UTF-8
+            if locale.ends_with(".UTF-8") {
                 locales.push(locale.to_string());
             }
         }
