@@ -25,18 +25,8 @@ pub struct PathExecutableDetails {
 }
 
 impl LaunchItem {
-    pub fn display_name(&self) -> &str {
-        match self {
-            LaunchItem::DesktopApp(id) => {
-                // Extract name from desktop_id (remove .desktop suffix)
-                id.strip_suffix(".desktop").unwrap_or(id)
-            }
-            LaunchItem::PathExecutable(name) => name,
-        }
-    }
-
     pub fn sort_key(&self) -> String {
-        self.display_name().to_lowercase()
+        self.to_string().to_lowercase()
     }
 
     pub fn metadata_type(&self) -> &'static str {
@@ -57,5 +47,18 @@ impl LaunchItem {
                 }
             }
         }
+    }
+}
+
+impl std::fmt::Display for LaunchItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            LaunchItem::DesktopApp(id) => {
+                // Extract name from desktop_id (remove .desktop suffix)
+                id.strip_suffix(".desktop").unwrap_or(id)
+            }
+            LaunchItem::PathExecutable(name) => name,
+        };
+        write!(f, "{}", name)
     }
 }

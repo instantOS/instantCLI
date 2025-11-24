@@ -38,7 +38,7 @@ pub async fn handle_launch_command(list_only: bool) -> Result<i32> {
 fn handle_list_mode(launch_items: &[LaunchItem]) -> Result<i32> {
     // Print launch items instead of showing menu
     for item in launch_items {
-        println!("{}", item.display_name());
+        println!("{}", item);
     }
     Ok(0)
 }
@@ -110,7 +110,7 @@ fn prepare_menu_items(
         metadata.insert("key".to_string(), key);
 
         menu_items.push(SerializableMenuItem {
-            display_text: item.display_name().to_string(),
+            display_text: item.to_string(),
             preview: FzfPreview::None,
             metadata: Some(metadata),
         });

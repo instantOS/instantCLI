@@ -91,16 +91,6 @@ impl DisplayServer {
         false
     }
 
-    /// Get a human-readable name for the display server
-    #[allow(dead_code)]
-    pub fn name(&self) -> &'static str {
-        match self {
-            DisplayServer::Wayland => "Wayland",
-            DisplayServer::X11 => "X11",
-            DisplayServer::Unknown => "Unknown",
-        }
-    }
-
     /// Check if the display server is Wayland
     pub fn is_wayland(&self) -> bool {
         matches!(self, DisplayServer::Wayland)
@@ -143,6 +133,17 @@ impl DisplayServer {
     }
 }
 
+impl std::fmt::Display for DisplayServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            DisplayServer::Wayland => "Wayland",
+            DisplayServer::X11 => "X11",
+            DisplayServer::Unknown => "Unknown",
+        };
+        write!(f, "{}", name)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,9 +162,9 @@ mod tests {
 
     #[test]
     fn test_display_server_name() {
-        assert_eq!(DisplayServer::Wayland.name(), "Wayland");
-        assert_eq!(DisplayServer::X11.name(), "X11");
-        assert_eq!(DisplayServer::Unknown.name(), "Unknown");
+        assert_eq!(DisplayServer::Wayland.to_string(), "Wayland");
+        assert_eq!(DisplayServer::X11.to_string(), "X11");
+        assert_eq!(DisplayServer::Unknown.to_string(), "Unknown");
     }
 
     #[test]
