@@ -195,6 +195,11 @@ pub trait Question: Send + Sync {
         true
     }
 
+    /// Returns true if the answer should be masked in the review UI
+    fn is_sensitive(&self) -> bool {
+        false
+    }
+
     /// Validate the answer. Returns Ok(()) if valid, or Err(message) if invalid.
     fn validate(&self, _context: &InstallContext, _answer: &str) -> Result<(), String> {
         Ok(())
@@ -240,7 +245,12 @@ impl QuestionEngine {
 
         for q in self.questions.iter().take(current_index) {
             if let Some(ans) = self.context.get_answer(&q.id()) {
-                review_items.push(format!("{} {:?}: {}", NerdFont::Check, q.id(), ans));
+                let display_ans = if q.is_sensitive() {
+                    "******"
+                } else {
+                    ans.as_str()
+                };
+                review_items.push(format!("{} {:?}: {}", NerdFont::Check, q.id(), display_ans));
             }
         }
 

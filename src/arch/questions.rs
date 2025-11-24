@@ -285,6 +285,10 @@ impl Question for PasswordQuestion {
         QuestionId::Password
     }
 
+    fn is_sensitive(&self) -> bool {
+        true
+    }
+
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
         loop {
             // NOTE: FzfWrapper::password currently returns Result<String>, not FzfResult.
