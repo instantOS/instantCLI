@@ -222,13 +222,8 @@ impl Question for KeymapQuestion {
         }
 
         let provider = crate::arch::annotations::KeymapAnnotationProvider;
-        let annotated_keymaps: Vec<_> = keymaps
-            .into_iter()
-            .map(|k| {
-                let ann = crate::arch::annotations::AnnotationProvider::annotate(&provider, &k);
-                crate::arch::annotations::AnnotatedValue::new(k, ann)
-            })
-            .collect();
+        let annotated_keymaps =
+            crate::arch::annotations::AnnotationProvider::annotate_list(&provider, keymaps);
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select Keymap", NerdFont::Key))
@@ -268,13 +263,8 @@ impl Question for LocaleQuestion {
         }
 
         let provider = crate::arch::annotations::LocaleAnnotationProvider;
-        let annotated_locales: Vec<_> = locales
-            .into_iter()
-            .map(|l| {
-                let ann = crate::arch::annotations::AnnotationProvider::annotate(&provider, &l);
-                crate::arch::annotations::AnnotatedValue::new(l, ann)
-            })
-            .collect();
+        let annotated_locales =
+            crate::arch::annotations::AnnotationProvider::annotate_list(&provider, locales);
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select System Locale", NerdFont::Flag))

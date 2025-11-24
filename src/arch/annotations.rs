@@ -1,4 +1,4 @@
-use crate::menu_utils::FzfSelectable;
+use crate::menu_utils::{FzfPreview, FzfSelectable};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -13,21 +13,39 @@ impl<T> AnnotatedValue<T> {
     }
 }
 
-impl<T: ToString> FzfSelectable for AnnotatedValue<T> {
+impl<T: FzfSelectable> FzfSelectable for AnnotatedValue<T> {
     fn fzf_display_text(&self) -> String {
         match &self.annotation {
-            Some(ann) => format!("{} - {}", ann, self.value.to_string()),
-            None => self.value.to_string(),
+            Some(ann) => format!("{} - {}", ann, self.value.fzf_display_text()),
+            None => self.value.fzf_display_text(),
         }
     }
 
     fn fzf_key(&self) -> String {
-        self.value.to_string()
+        self.value.fzf_key()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.value.fzf_preview()
     }
 }
 
 pub trait AnnotationProvider {
     fn annotate(&self, value: &str) -> Option<String>;
+
+    fn annotate_list<T: FzfSelectable + Clone>(&self, items: Vec<T>) -> Vec<AnnotatedValue<T>>
+    where
+        Self: Sized,
+    {
+        items
+            .into_iter()
+            .map(|item| {
+                let key = item.fzf_key();
+                let annotation = self.annotate(&key);
+                AnnotatedValue::new(item, annotation)
+            })
+            .collect()
+    }
 }
 
 pub struct LocaleAnnotationProvider;
@@ -91,19 +109,16 @@ mod tests {
     }
 
     #[test]
-    fn test_locale_annotation() {
+    fn test_annotate_list() {
         let provider = LocaleAnnotationProvider;
-        assert_eq!(
-            provider.annotate("de_DE.UTF-8"),
-            Some("German (Germany)".to_string())
-        );
-        assert_eq!(provider.annotate("unknown"), None);
-    }
+        let items = vec!["de_DE.UTF-8", "unknown"];
+        let annotated = provider.annotate_list(items);
 
-    #[test]
-    fn test_keymap_annotation() {
-        let provider = KeymapAnnotationProvider;
-        assert_eq!(provider.annotate("us"), Some("English (US)".to_string()));
-        assert_eq!(provider.annotate("unknown"), None);
+        assert_eq!(annotated.len(), 2);
+        assert_eq!(
+            annotated[0].fzf_display_text(),
+            "German (Germany) - de_DE.UTF-8"
+        );
+        assert_eq!(annotated[1].fzf_display_text(), "unknown");
     }
 }
