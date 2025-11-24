@@ -221,12 +221,21 @@ impl Question for KeymapQuestion {
             return Ok(QuestionResult::Cancelled);
         }
 
+        let provider = crate::arch::annotations::KeymapAnnotationProvider;
+        let annotated_keymaps: Vec<_> = keymaps
+            .into_iter()
+            .map(|k| {
+                let ann = crate::arch::annotations::AnnotationProvider::annotate(&provider, &k);
+                crate::arch::annotations::AnnotatedValue::new(k, ann)
+            })
+            .collect();
+
         let result = FzfWrapper::builder()
             .header(format!("{} Select Keymap", NerdFont::Key))
-            .select(keymaps)?;
+            .select(annotated_keymaps)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(km) => Ok(QuestionResult::Answer(km)),
+            crate::menu_utils::FzfResult::Selected(val) => Ok(QuestionResult::Answer(val.value)),
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),
         }
@@ -258,12 +267,21 @@ impl Question for LocaleQuestion {
             return Ok(QuestionResult::Cancelled);
         }
 
+        let provider = crate::arch::annotations::LocaleAnnotationProvider;
+        let annotated_locales: Vec<_> = locales
+            .into_iter()
+            .map(|l| {
+                let ann = crate::arch::annotations::AnnotationProvider::annotate(&provider, &l);
+                crate::arch::annotations::AnnotatedValue::new(l, ann)
+            })
+            .collect();
+
         let result = FzfWrapper::builder()
             .header(format!("{} Select System Locale", NerdFont::Flag))
-            .select(locales)?;
+            .select(annotated_locales)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(locale) => Ok(QuestionResult::Answer(locale)),
+            crate::menu_utils::FzfResult::Selected(val) => Ok(QuestionResult::Answer(val.value)),
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),
         }
