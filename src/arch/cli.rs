@@ -138,12 +138,14 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             println!("Installation configuration complete!");
             println!(
                 "Hostname: {}",
-                context.get_answer(&crate::arch::engine::QuestionId::Hostname)
+                context
+                    .get_answer(&crate::arch::engine::QuestionId::Hostname)
                     .map_or("<not set>".to_string(), |v| v.clone())
             );
             println!(
                 "Username: {}",
-                context.get_answer(&crate::arch::engine::QuestionId::Username)
+                context
+                    .get_answer(&crate::arch::engine::QuestionId::Username)
                     .map_or("<not set>".to_string(), |v| v.clone())
             );
 
