@@ -116,7 +116,12 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             }
 
             println!("System Checks:");
-            println!("  Boot Mode: {:?}", system_info.boot_mode);
+            let boot_mode_str = match system_info.boot_mode {
+                crate::arch::engine::BootMode::UEFI64 => "UEFI64",
+                crate::arch::engine::BootMode::UEFI32 => "UEFI32",
+                crate::arch::engine::BootMode::BIOS => "BIOS",
+            };
+            println!("  Boot Mode: {}", boot_mode_str);
             println!("  Internet: {}", system_info.internet_connected);
             println!("  AMD CPU: {}", system_info.has_amd_cpu);
             println!("  Intel CPU: {}", system_info.has_intel_cpu);
@@ -134,14 +139,12 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             println!(
                 "Hostname: {}",
                 context.get_answer(&crate::arch::engine::QuestionId::Hostname)
-                    .as_deref()
-                    .unwrap_or("<not set>")
+                    .map_or("<not set>".to_string(), |v| v.clone())
             );
             println!(
                 "Username: {}",
                 context.get_answer(&crate::arch::engine::QuestionId::Username)
-                    .as_deref()
-                    .unwrap_or("<not set>")
+                    .map_or("<not set>".to_string(), |v| v.clone())
             );
 
             let toml_content = context.to_toml()?;
