@@ -195,6 +195,38 @@ impl Question for DiskQuestion {
         if answer.is_empty() {
             return Err("You must select a disk.".to_string());
         }
+        if !answer.starts_with("/dev/") {
+            return Err("Invalid disk selection: must start with /dev/".to_string());
+        }
+
+        // Extract device name from the selection (e.g., "/dev/sda (500 GiB)" -> "/dev/sda")
+        let device_name = answer.split('(').next().unwrap_or(answer).trim();
+
+        // Get the root filesystem device to check against
+        if let Ok(Some(root_device)) = crate::arch::disks::get_root_device() {
+            // Check if the selected device is exactly the root filesystem device
+            if device_name == root_device {
+                return Err(format!(
+                    "Cannot select the current root filesystem device ({}) for installation.\n\
+                    This device contains the currently running system and would cause data loss.\n\
+                    Please select a different disk.",
+                    root_device
+                ));
+            }
+        }
+
+        // Check if this disk is the current boot disk (physical disk containing root)
+        if let Ok(Some(boot_disk)) = crate::arch::disks::get_boot_disk() {
+            if device_name == boot_disk {
+                return Err(format!(
+                    "Cannot select the current boot disk ({}) for installation.\n\
+                    This disk contains the currently running system and would cause data loss.\n\
+                    Please select a different disk.",
+                    boot_disk
+                ));
+            }
+        }
+
         Ok(())
     }
 
@@ -334,4 +366,37 @@ impl Question for PasswordQuestion {
 
     // No extra validate() needed as ask() handles the confirmation loop,
     // but we could add complexity checks here if desired.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_disk_question_validation() {
+        let question = DiskQuestion;
+        let context = InstallContext::new();
+
+        // Mock test would require mocking the get_boot_disk function
+        assert!(question.validate(&context, "/dev/sda (500 GiB)").is_ok());
+        assert!(question.validate(&context, "").is_err());
+        assert!(question.validate(&context, "invalid").is_err());
+        assert!(question.validate(&context, "/mnt/data").is_err());
+    }
+
+    #[test]
+    fn test_device_name_extraction() {
+        // Test that device name extraction works correctly
+        let test_cases = vec![
+            ("/dev/sda (500 GiB)", "/dev/sda"),
+            ("/dev/nvme0n1 (1 TiB)", "/dev/nvme0n1"),
+            ("/dev/sdb", "/dev/sdb"),
+            ("/dev/sdc   ", "/dev/sdc"),
+        ];
+
+        for (input, expected) in test_cases {
+            let device_name = input.split('(').next().unwrap_or(input).trim();
+            assert_eq!(device_name, expected, "Failed for input: {}", input);
+        }
+    }
 }

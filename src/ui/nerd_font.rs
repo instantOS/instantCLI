@@ -273,26 +273,26 @@ impl NerdFont {
             Self::Archive => '',    // fa-archive
 
             // System and hardware
-            Self::Desktop => '',  // fa-desktop
-            Self::Terminal => '', // fa-terminal
-            Self::Gear => '⚙',     // fa-gear
-            Self::Wrench => '',   // fa-wrench
-            Self::Bug => '',      // fa-bug
-            Self::Key => '',      // fa-key
-            Self::Keyboard => '⌨', // U+2328 KEYBOARD
-            Self::Lock => '',     // fa-lock
+            Self::Desktop => '',           // fa-desktop
+            Self::Terminal => '',          // fa-terminal
+            Self::Gear => '⚙',              // fa-gear
+            Self::Wrench => '',            // fa-wrench
+            Self::Bug => '',               // fa-bug
+            Self::Key => '',               // fa-key
+            Self::Keyboard => '⌨',          // U+2328 KEYBOARD
+            Self::Lock => '',              // fa-lock
             Self::ClosedLockWithKey => '', // fa-lock-with-key
-            Self::Unlock => '',   // fa-unlock
+            Self::Unlock => '',            // fa-unlock
 
             // Media and audio
-            Self::VolumeUp => '󰝝',   // fa-volume-up
-            Self::VolumeDown => '󰝞', // fa-volume-down
-            Self::VolumeMute => '', // fa-volume-mute
-            Self::Play => '▶',       // fa-play
-            Self::PlayCircle => '', // fa-play-circle
-            Self::Pause => '⏸',      // fa-pause
+            Self::VolumeUp => '󰝝',    // fa-volume-up
+            Self::VolumeDown => '󰝞',  // fa-volume-down
+            Self::VolumeMute => '',  // fa-volume-mute
+            Self::Play => '▶',        // fa-play
+            Self::PlayCircle => '',  // fa-play-circle
+            Self::Pause => '⏸',       // fa-pause
             Self::PauseCircle => '', // fa-pause-circle
-            Self::Stop => '⏹',       // fa-stop
+            Self::Stop => '⏹',        // fa-stop
 
             // Communication and network
             Self::Bluetooth => '',    // fa-bluetooth
@@ -309,14 +309,14 @@ impl NerdFont {
             Self::UserMinus => '', // fa-user-minus
 
             // Actions and controls
-            Self::Plus => '+',   // fa-plus
-            Self::Minus => '-',  // fa-minus
-            Self::Edit => '',   // fa-edit
-            Self::Trash => '🗑',  // fa-trash
-            Self::Search => '', // fa-search
-            Self::Filter => '', // fa-filter
-            Self::QrCode => '\u{f029}',  // fa-qrcode
-            Self::Smile => '\u{f118}',   // fa-smile-o
+            Self::Plus => '+',          // fa-plus
+            Self::Minus => '-',         // fa-minus
+            Self::Edit => '',          // fa-edit
+            Self::Trash => '🗑',         // fa-trash
+            Self::Search => '',        // fa-search
+            Self::Filter => '',        // fa-filter
+            Self::QrCode => '\u{f029}', // fa-qrcode
+            Self::Smile => '\u{f118}',  // fa-smile-o
 
             // Gaming and entertainment
             Self::Gamepad => '', // fa-gamepad
