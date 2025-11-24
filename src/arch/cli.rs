@@ -116,12 +116,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             }
 
             println!("System Checks:");
-            let boot_mode_str = match system_info.boot_mode {
-                crate::arch::engine::BootMode::UEFI64 => "UEFI64",
-                crate::arch::engine::BootMode::UEFI32 => "UEFI32",
-                crate::arch::engine::BootMode::BIOS => "BIOS",
-            };
-            println!("  Boot Mode: {}", boot_mode_str);
+            println!("  Boot Mode: {}", system_info.boot_mode);
             println!("  Internet: {}", system_info.internet_connected);
             println!("  AMD CPU: {}", system_info.has_amd_cpu);
             println!("  Intel CPU: {}", system_info.has_intel_cpu);

@@ -27,6 +27,16 @@ pub enum BootMode {
     BIOS,
 }
 
+impl std::fmt::Display for BootMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BootMode::UEFI64 => write!(f, "UEFI64"),
+            BootMode::UEFI32 => write!(f, "UEFI32"),
+            BootMode::BIOS => write!(f, "BIOS"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SystemInfo {
     pub boot_mode: BootMode,
