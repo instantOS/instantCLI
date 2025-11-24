@@ -5,49 +5,128 @@ use std::process::Command;
 
 /// Run the interactive package installer as a settings action
 pub fn run_package_installer_action(ctx: &mut SettingsContext) -> Result<()> {
-    run_package_installer(ctx.debug())
+    run_unified_package_installer(ctx.debug())
 }
 
-/// Run the interactive package installer
-fn run_package_installer(debug: bool) -> Result<()> {
+/// Package source enumeration
+#[derive(Debug, Clone, PartialEq)]
+enum PackageSource {
+    Pacman,
+    AUR,
+}
+
+/// A package with its source information
+#[derive(Debug, Clone)]
+struct Package {
+    #[allow(dead_code)]
+    name: String,
+    #[allow(dead_code)]
+    source: PackageSource,
+}
+
+impl Package {
+    fn extract_name_from_display(display: &str) -> (String, PackageSource) {
+        if display.starts_with("[AUR] ") {
+            (display[6..].to_string(), PackageSource::AUR)
+        } else if display.starts_with("[Repo] ") {
+            (display[7..].to_string(), PackageSource::Pacman)
+        } else {
+            // Fallback for backwards compatibility
+            (display.to_string(), PackageSource::Pacman)
+        }
+    }
+}
+
+/// Run the unified package installer (supports both pacman and AUR)
+fn run_unified_package_installer(debug: bool) -> Result<()> {
     if debug {
-        println!("Starting package installer...");
+        println!("Starting unified package installer...");
     }
 
-    // Check if pacman is available
-    if !is_pacman_available() {
-        anyhow::bail!("pacman is not available on this system");
+    // Check what package managers are available
+    let aur_helper = detect_aur_helper();
+    let has_pacman = is_pacman_available();
+
+    if !has_pacman && aur_helper.is_none() {
+        anyhow::bail!("Neither pacman nor an AUR helper is available on this system");
     }
 
-    // Build the FZF selection with streaming input
+    // Construct the list command
+    let mut list_cmds = Vec::new();
+
+    if has_pacman {
+        // List repo packages
+        list_cmds.push("pacman -Slq | sed 's/^/[Repo] /'");
+    }
+
+    if aur_helper.is_some() {
+        // List AUR packages using the static list
+        // We use curl to fetch the list because helpers like yay don't easily list ONLY AUR packages
+        list_cmds.push("curl -sL https://aur.archlinux.org/packages.gz 2>/dev/null | gunzip 2>/dev/null | sed 's/^/[AUR] /'");
+    }
+
+    // Combine commands to run in sequence
+    let full_command = format!("{{ {}; }}", list_cmds.join("; "));
+
+    // Determine preview command
+    // If we have an AUR helper, it can usually preview both repo and AUR packages
+    let preview_cmd = if let Some(ref helper) = aur_helper {
+        format!("{} -Sii {{2}}", helper)
+    } else {
+        "pacman -Sii {2}".to_string()
+    };
+
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt("Select packages to install")
         .args([
             "--preview",
-            "pacman -Sii {}",
+            &preview_cmd,
             "--preview-window",
             "down:65%:wrap",
+            "--bind",
+            "ctrl-l:clear-screen",
+            "--ansi",
+            "--no-mouse",
+            "--delimiter",
+            " ",
+            "--with-nth",
+            "1..",
         ])
-        .select_streaming("pacman -Slq")
+        .select_streaming(&full_command)
         .context("Failed to run package selector")?;
 
     match result {
-        FzfResult::MultiSelected(packages) => {
-            if packages.is_empty() {
+        FzfResult::MultiSelected(lines) => {
+            if lines.is_empty() {
                 println!("No packages selected.");
                 return Ok(());
             }
 
+            let mut pacman_packages = Vec::new();
+            let mut aur_packages = Vec::new();
+
+            for line in lines {
+                let (name, source) = Package::extract_name_from_display(&line);
+                match source {
+                    PackageSource::Pacman => pacman_packages.push(name),
+                    PackageSource::AUR => aur_packages.push(name),
+                }
+            }
+
             if debug {
-                println!("Selected packages: {:?}", packages);
+                println!("Selected Repo packages: {:?}", pacman_packages);
+                println!("Selected AUR packages: {:?}", aur_packages);
             }
 
             // Confirm installation
+            let total = pacman_packages.len() + aur_packages.len();
             let confirm_msg = format!(
-                "Install {} package{}?",
-                packages.len(),
-                if packages.len() == 1 { "" } else { "s" }
+                "Install {} package{} ({} Repo, {} AUR)?",
+                total,
+                if total == 1 { "" } else { "s" },
+                pacman_packages.len(),
+                aur_packages.len()
             );
 
             let confirm = FzfWrapper::builder()
@@ -59,18 +138,42 @@ fn run_package_installer(debug: bool) -> Result<()> {
                 return Ok(());
             }
 
-            // Install packages
-            install_packages(&packages, debug)?;
+            // Install Repo packages first
+            if !pacman_packages.is_empty() {
+                install_pacman_packages(&pacman_packages, debug)?;
+            }
 
-            // Show success message
+            // Install AUR packages
+            if !aur_packages.is_empty() {
+                if let Some(helper) = aur_helper {
+                    install_aur_packages(&aur_packages, &helper, debug)?;
+                } else {
+                    println!(
+                        "Warning: AUR packages selected but no AUR helper found. Skipping: {:?}",
+                        aur_packages
+                    );
+                }
+            }
+
             println!("✓ Package installation completed successfully!");
         }
-        FzfResult::Selected(package) => {
-            // Single selection (shouldn't happen with multi-select, but handle it)
+        FzfResult::Selected(line) => {
+            let (name, source) = Package::extract_name_from_display(&line);
+
             if debug {
-                println!("Selected package: {}", package);
+                println!("Selected package: {} ({:?})", name, source);
             }
-            install_packages(&[package], debug)?;
+
+            match source {
+                PackageSource::Pacman => install_pacman_packages(&[name], debug)?,
+                PackageSource::AUR => {
+                    if let Some(helper) = aur_helper {
+                        install_aur_packages(&[name], &helper, debug)?;
+                    } else {
+                        println!("Warning: AUR package selected but no AUR helper found.");
+                    }
+                }
+            }
             println!("✓ Package installation completed successfully!");
         }
         FzfResult::Cancelled => {
@@ -84,6 +187,23 @@ fn run_package_installer(debug: bool) -> Result<()> {
     Ok(())
 }
 
+/// Detect available AUR helper (yay, paru, etc.)
+fn detect_aur_helper() -> Option<String> {
+    const AUR_HELPERS: &[&str] = &["yay", "paru", "pikaur", "trizen"];
+
+    for helper in AUR_HELPERS {
+        if Command::new("which")
+            .arg(helper)
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+        {
+            return Some(helper.to_string());
+        }
+    }
+    None
+}
+
 /// Check if pacman is available on the system
 fn is_pacman_available() -> bool {
     Command::new("which")
@@ -93,17 +213,17 @@ fn is_pacman_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Install packages using pacman
-fn install_packages(packages: &[String], debug: bool) -> Result<()> {
+/// Install pacman packages
+fn install_pacman_packages(packages: &[String], debug: bool) -> Result<()> {
     if packages.is_empty() {
         return Ok(());
     }
 
     if debug {
-        println!("Installing packages: {}", packages.join(" "));
+        println!("Installing pacman packages: {}", packages.join(" "));
     }
 
-    println!("Installing packages...");
+    println!("Installing repository packages...");
 
     let status = Command::new("sudo")
         .arg("pacman")
@@ -114,7 +234,37 @@ fn install_packages(packages: &[String], debug: bool) -> Result<()> {
         .context("Failed to execute pacman")?;
 
     if !status.success() {
-        anyhow::bail!("Package installation failed");
+        anyhow::bail!("Pacman package installation failed");
+    }
+
+    Ok(())
+}
+
+/// Install AUR packages using the available AUR helper
+fn install_aur_packages(packages: &[String], aur_helper: &str, debug: bool) -> Result<()> {
+    if packages.is_empty() {
+        return Ok(());
+    }
+
+    if debug {
+        println!(
+            "Installing AUR packages with {}: {}",
+            aur_helper,
+            packages.join(" ")
+        );
+    }
+
+    println!("Installing AUR packages...");
+
+    let status = Command::new(aur_helper)
+        .arg("-S")
+        .arg("--noconfirm")
+        .args(packages)
+        .status()
+        .context(format!("Failed to execute {}", aur_helper))?;
+
+    if !status.success() {
+        anyhow::bail!("AUR package installation failed");
     }
 
     Ok(())

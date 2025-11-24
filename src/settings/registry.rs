@@ -167,6 +167,24 @@ pub const BLUETOOTH_MANAGER_REQUIREMENTS: [SettingRequirement; 4] = [
 
 pub const CATEGORIES: &[SettingCategory] = &[
     SettingCategory {
+        id: "install",
+        title: "Install Applications",
+        description: "Browse and install system packages.",
+        icon: NerdFont::Download,
+    },
+    SettingCategory {
+        id: "network",
+        title: "Network & Internet",
+        description: "Internet connection and network settings.",
+        icon: NerdFont::Wifi,
+    },
+    SettingCategory {
+        id: "bluetooth",
+        title: "Bluetooth & Devices",
+        description: "Pair and manage Bluetooth devices.",
+        icon: NerdFont::Bluetooth,
+    },
+    SettingCategory {
         id: "appearance",
         title: "Appearance",
         description: "Theme and visual presentation of the desktop.",
@@ -186,27 +204,15 @@ pub const CATEGORIES: &[SettingCategory] = &[
     },
     SettingCategory {
         id: "audio",
-        title: "Audio",
+        title: "Sound",
         description: "Sound routing tools and audio behaviour.",
         icon: NerdFont::VolumeUp,
     },
     SettingCategory {
         id: "apps",
-        title: "Applications",
+        title: "Default Apps",
         description: "Default applications and file associations.",
         icon: NerdFont::Package,
-    },
-    SettingCategory {
-        id: "network",
-        title: "Network",
-        description: "Internet connection and network settings.",
-        icon: NerdFont::Wifi,
-    },
-    SettingCategory {
-        id: "bluetooth",
-        title: "Bluetooth",
-        description: "Pair and manage Bluetooth devices.",
-        icon: NerdFont::Bluetooth,
     },
     SettingCategory {
         id: "storage",
@@ -222,19 +228,19 @@ pub const CATEGORIES: &[SettingCategory] = &[
     },
     SettingCategory {
         id: "users",
-        title: "Users",
+        title: "Users & Accounts",
         description: "Create and manage user accounts.",
         icon: NerdFont::Users,
     },
     SettingCategory {
         id: "language",
-        title: "Language",
+        title: "Language & Region",
         description: "Manage system locales and language defaults.",
         icon: NerdFont::Globe,
     },
     SettingCategory {
         id: "system",
-        title: "System",
+        title: "System & Updates",
         description: "System administration and maintenance.",
         icon: NerdFont::Server,
     },
@@ -373,7 +379,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
     SettingDefinition {
         id: "system.install_packages",
         title: "Install packages",
-        category: "system",
+        category: "install",
         icon: NerdFont::Download,
         breadcrumbs: &["Install packages"],
         kind: SettingKind::Action {
@@ -399,7 +405,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
     SettingDefinition {
         id: "system.timezone",
         title: "Timezone",
-        category: "system",
+        category: "language",
         icon: NerdFont::Clock,
         breadcrumbs: &["Language", "Timezone"],
         kind: SettingKind::Action {
