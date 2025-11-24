@@ -1,7 +1,7 @@
-use anyhow::Result;
-use std::process::Command;
 use crate::arch::annotations::{AnnotatedValue, AnnotationProvider};
 use crate::arch::engine::DataKey;
+use anyhow::Result;
+use std::process::Command;
 
 pub struct KeymapsKey;
 
@@ -15,9 +15,7 @@ pub struct KeymapProvider;
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for KeymapProvider {
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
-        let output = Command::new("localectl")
-            .arg("list-keymaps")
-            .output()?;
+        let output = Command::new("localectl").arg("list-keymaps").output()?;
 
         let stdout = String::from_utf8(output.stdout)?;
         let keymaps = parse_keymaps(&stdout);

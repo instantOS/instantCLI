@@ -129,7 +129,7 @@ impl InstallContext {
             .and_then(|boxed| boxed.downcast_ref::<K::Value>())
             .cloned()
     }
-    
+
     /// Check if a key exists
     pub fn contains_key(&self, key: &str) -> bool {
         let data = self.data.lock().unwrap();
@@ -157,7 +157,7 @@ pub trait AsyncDataProvider: Send + Sync {
     /// Helper to annotate and save a list of items to the context
     fn save_list<K, T>(&self, context: &InstallContext, items: Vec<T>)
     where
-        T: crate::menu_utils::FzfSelectable + Clone + Send + Sync + 'static,
+        T: crate::menu_utils::FzfSelectable + Clone + Send + Sync + Ord + 'static,
         K: DataKey<Value = Vec<crate::arch::annotations::AnnotatedValue<T>>>,
         Self: Sized,
     {
@@ -452,7 +452,7 @@ mod tests {
 
         assert_eq!(context.get::<TestKey>(), Some("hello".to_string()));
         assert_eq!(context.get::<IntKey>(), Some(42));
-        
+
         // Test missing key
         struct MissingKey;
         impl DataKey for MissingKey {

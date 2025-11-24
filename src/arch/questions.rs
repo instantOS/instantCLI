@@ -1,5 +1,5 @@
 use crate::arch::engine::{
-    AsyncDataProvider, BootMode, InstallContext, Question, QuestionId, QuestionResult, DataKey,
+    AsyncDataProvider, BootMode, DataKey, InstallContext, Question, QuestionId, QuestionResult,
 };
 use crate::menu_utils::{FzfResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;

@@ -1,7 +1,7 @@
-use anyhow::Result;
-use std::fs;
 use crate::arch::annotations::{AnnotatedValue, AnnotationProvider};
 use crate::arch::engine::DataKey;
+use anyhow::Result;
+use std::fs;
 
 pub struct LocalesKey;
 

@@ -13,6 +13,48 @@ impl<T> AnnotatedValue<T> {
     }
 }
 
+impl<T: PartialEq> PartialEq for AnnotatedValue<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.annotation == other.annotation && self.value == other.value
+    }
+}
+
+impl<T: Eq> Eq for AnnotatedValue<T> {}
+
+impl<T: PartialOrd> PartialOrd for AnnotatedValue<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (&self.annotation, &other.annotation) {
+            (Some(a), Some(b)) => {
+                let ann_cmp = a.cmp(b);
+                if ann_cmp != std::cmp::Ordering::Equal {
+                    return Some(ann_cmp);
+                }
+                self.value.partial_cmp(&other.value)
+            }
+            (Some(_), None) => Some(std::cmp::Ordering::Less),
+            (None, Some(_)) => Some(std::cmp::Ordering::Greater),
+            (None, None) => self.value.partial_cmp(&other.value),
+        }
+    }
+}
+
+impl<T: Ord> Ord for AnnotatedValue<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (&self.annotation, &other.annotation) {
+            (Some(a), Some(b)) => {
+                let ann_cmp = a.cmp(b);
+                if ann_cmp != std::cmp::Ordering::Equal {
+                    return ann_cmp;
+                }
+                self.value.cmp(&other.value)
+            }
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => self.value.cmp(&other.value),
+        }
+    }
+}
+
 impl<T: FzfSelectable> FzfSelectable for AnnotatedValue<T> {
     fn fzf_display_text(&self) -> String {
         match &self.annotation {
@@ -34,11 +76,11 @@ pub trait AnnotationProvider {
     fn annotate(&self, value: &str) -> Option<String>;
 }
 
-pub fn annotate_list<T: FzfSelectable + Clone>(
+pub fn annotate_list<T: FzfSelectable + Clone + Ord>(
     provider: Option<&dyn AnnotationProvider>,
     items: Vec<T>,
 ) -> Vec<AnnotatedValue<T>> {
-    items
+    let mut list: Vec<AnnotatedValue<T>> = items
         .into_iter()
         .map(|item| {
             let annotation = if let Some(p) = provider {
@@ -49,7 +91,10 @@ pub fn annotate_list<T: FzfSelectable + Clone>(
             };
             AnnotatedValue::new(item, annotation)
         })
-        .collect()
+        .collect();
+
+    list.sort();
+    list
 }
 
 pub struct LocaleAnnotationProvider;
@@ -115,15 +160,40 @@ mod tests {
     #[test]
     fn test_annotate_list() {
         let provider = LocaleAnnotationProvider;
-        let items = vec!["de_DE.UTF-8", "unknown"];
+        let items = vec!["unknown", "de_DE.UTF-8"];
         let annotated = annotate_list(Some(&provider), items);
 
         assert_eq!(annotated.len(), 2);
+        // Annotated should come first
         assert_eq!(
             annotated[0].fzf_display_text(),
             "German (Germany) - de_DE.UTF-8"
         );
         assert_eq!(annotated[1].fzf_display_text(), "unknown");
+    }
+
+    #[test]
+    fn test_annotate_list_sorting() {
+        let provider = LocaleAnnotationProvider;
+        // "en_US.UTF-8" -> "English (United States)"
+        // "de_DE.UTF-8" -> "German (Germany)"
+        // "unknown1"
+        // "unknown2"
+        let items = vec!["unknown2", "en_US.UTF-8", "unknown1", "de_DE.UTF-8"];
+        let annotated = annotate_list(Some(&provider), items);
+
+        assert_eq!(annotated.len(), 4);
+
+        // Expected order:
+        // 1. English (United States) (Annotated, 'E' < 'G')
+        // 2. German (Germany) (Annotated)
+        // 3. unknown1 (Non-annotated, 'u1' < 'u2')
+        // 4. unknown2 (Non-annotated)
+
+        assert_eq!(annotated[0].value, "en_US.UTF-8");
+        assert_eq!(annotated[1].value, "de_DE.UTF-8");
+        assert_eq!(annotated[2].value, "unknown1");
+        assert_eq!(annotated[3].value, "unknown2");
     }
 
     #[test]
