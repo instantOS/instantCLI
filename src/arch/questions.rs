@@ -208,9 +208,18 @@ impl Question for KeymapQuestion {
         QuestionId::Keymap
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        // Mock keymaps
-        let keymaps = vec!["us".to_string(), "de-latin1".to_string(), "uk".to_string()];
+    fn required_data_keys(&self) -> Vec<String> {
+        vec!["keymaps".to_string()]
+    }
+
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+        let data = context.data.lock().unwrap();
+        let keymaps_str = data.get("keymaps").unwrap();
+        let keymaps: Vec<String> = keymaps_str.lines().map(|s| s.to_string()).collect();
+
+        if keymaps.is_empty() {
+            return Ok(QuestionResult::Cancelled);
+        }
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select Keymap", NerdFont::Key))
@@ -221,6 +230,10 @@ impl Question for KeymapQuestion {
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),
         }
+    }
+
+    fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
+        vec![Box::new(crate::arch::keymaps::KeymapProvider)]
     }
 }
 
