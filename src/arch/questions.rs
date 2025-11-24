@@ -225,7 +225,7 @@ impl Question for KeymapQuestion {
         }
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Keymap", NerdFont::Key))
+            .header(format!("{} Select Keymap", NerdFont::Keyboard))
             .select(keymaps)?;
 
         match result {

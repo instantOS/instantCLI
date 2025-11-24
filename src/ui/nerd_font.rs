@@ -43,6 +43,7 @@ pub enum NerdFont {
     Wrench,
     Bug,
     Key,
+    Keyboard,
     Lock,
     Unlock,
 
@@ -273,6 +274,7 @@ impl NerdFont {
             Self::Wrench => '',   // fa-wrench
             Self::Bug => '',      // fa-bug
             Self::Key => '',      // fa-key
+            Self::Keyboard => '⌨', // U+2328 KEYBOARD
             Self::Lock => '',     // fa-lock
             Self::Unlock => '',   // fa-unlock
 
