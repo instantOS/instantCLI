@@ -132,12 +132,16 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
 
             println!("Installation configuration complete!");
             println!(
-                "Hostname: {:?}",
+                "Hostname: {}",
                 context.get_answer(&crate::arch::engine::QuestionId::Hostname)
+                    .as_deref()
+                    .unwrap_or("<not set>")
             );
             println!(
-                "Username: {:?}",
+                "Username: {}",
                 context.get_answer(&crate::arch::engine::QuestionId::Username)
+                    .as_deref()
+                    .unwrap_or("<not set>")
             );
 
             let toml_content = context.to_toml()?;
