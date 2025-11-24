@@ -2,16 +2,22 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
+use crate::arch::engine::DataKey;
+
+pub struct TimezonesKey;
+
+impl DataKey for TimezonesKey {
+    type Value = Vec<String>;
+    const KEY: &'static str = "timezones";
+}
+
 pub struct TimezoneProvider;
 
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for TimezoneProvider {
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
         let timezones = fetch_timezones()?;
-
-        let mut data = context.data.lock().unwrap();
-        data.insert("timezones".to_string(), timezones.join("\n"));
-
+        context.set::<TimezonesKey>(timezones);
         Ok(())
     }
 }

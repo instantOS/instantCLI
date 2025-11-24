@@ -1,6 +1,15 @@
 use anyhow::Result;
 use std::process::Command;
 
+use crate::arch::engine::DataKey;
+
+pub struct DisksKey;
+
+impl DataKey for DisksKey {
+    type Value = Vec<String>;
+    const KEY: &'static str = "disks";
+}
+
 pub struct DiskProvider;
 
 #[async_trait::async_trait]
@@ -55,8 +64,7 @@ impl crate::arch::engine::AsyncDataProvider for DiskProvider {
             eprintln!("No disks found. Are you running with sudo?");
         }
 
-        let mut data = context.data.lock().unwrap();
-        data.insert("disks".to_string(), disks.join("\n"));
+        context.set::<DisksKey>(disks);
 
         Ok(())
     }

@@ -1,7 +1,10 @@
-use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::FzfWrapper;
+use crate::arch::engine::{
+    AsyncDataProvider, BootMode, InstallContext, Question, QuestionId, QuestionResult, DataKey,
+};
+use crate::menu_utils::{FzfResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
+use std::process::Command;
 
 pub struct HostnameQuestion;
 
@@ -85,13 +88,13 @@ impl Question for MirrorRegionQuestion {
     }
 
     fn required_data_keys(&self) -> Vec<String> {
-        vec!["mirror_regions".to_string()]
+        vec![crate::arch::mirrors::MirrorRegionsKey::KEY.to_string()]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
-        let data = context.data.lock().unwrap();
-        let regions_str = data.get("mirror_regions").unwrap();
-        let regions: Vec<String> = regions_str.split(',').map(|s| s.to_string()).collect();
+        let regions = context
+            .get::<crate::arch::mirrors::MirrorRegionsKey>()
+            .unwrap_or_default();
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select Mirror Region", NerdFont::Globe))
@@ -125,13 +128,13 @@ impl Question for TimezoneQuestion {
     }
 
     fn required_data_keys(&self) -> Vec<String> {
-        vec!["timezones".to_string()]
+        vec![crate::arch::timezones::TimezonesKey::KEY.to_string()]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
-        let data = context.data.lock().unwrap();
-        let timezones_str = data.get("timezones").unwrap();
-        let timezones: Vec<String> = timezones_str.lines().map(|s| s.to_string()).collect();
+        let timezones = context
+            .get::<crate::arch::timezones::TimezonesKey>()
+            .unwrap_or_default();
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select Timezone", NerdFont::Clock))
@@ -165,20 +168,20 @@ impl Question for DiskQuestion {
     }
 
     fn required_data_keys(&self) -> Vec<String> {
-        vec!["disks".to_string()]
+        vec![crate::arch::disks::DisksKey::KEY.to_string()]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
-        let data = context.data.lock().unwrap();
-        let disks_str = data.get("disks").unwrap();
-        let disks: Vec<String> = disks_str.lines().map(|s| s.to_string()).collect();
+        let disks = context
+            .get::<crate::arch::disks::DisksKey>()
+            .unwrap_or_default();
 
         if disks.is_empty() {
-            return Ok(QuestionResult::Cancelled); // Or show error
+            return Ok(QuestionResult::Cancelled);
         }
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select Disk to Install To", NerdFont::HardDrive))
+            .header(format!("{} Select Installation Disk", NerdFont::HardDrive))
             .select(disks)?;
 
         match result {
@@ -209,25 +212,21 @@ impl Question for KeymapQuestion {
     }
 
     fn required_data_keys(&self) -> Vec<String> {
-        vec!["keymaps".to_string()]
+        vec![crate::arch::keymaps::KeymapsKey::KEY.to_string()]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
-        let data = context.data.lock().unwrap();
-        let keymaps_str = data.get("keymaps").unwrap();
-        let keymaps: Vec<String> = keymaps_str.lines().map(|s| s.to_string()).collect();
+        let keymaps = context
+            .get::<crate::arch::keymaps::KeymapsKey>()
+            .unwrap_or_default();
 
         if keymaps.is_empty() {
             return Ok(QuestionResult::Cancelled);
         }
 
-        let provider = crate::arch::annotations::KeymapAnnotationProvider;
-        let annotated_keymaps =
-            crate::arch::annotations::AnnotationProvider::annotate_list(&provider, keymaps);
-
         let result = FzfWrapper::builder()
             .header(format!("{} Select Keymap", NerdFont::Key))
-            .select(annotated_keymaps)?;
+            .select(keymaps)?;
 
         match result {
             crate::menu_utils::FzfResult::Selected(val) => Ok(QuestionResult::Answer(val.value)),
@@ -250,25 +249,21 @@ impl Question for LocaleQuestion {
     }
 
     fn required_data_keys(&self) -> Vec<String> {
-        vec!["locales".to_string()]
+        vec![crate::arch::locales::LocalesKey::KEY.to_string()]
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
-        let data = context.data.lock().unwrap();
-        let locales_str = data.get("locales").unwrap();
-        let locales: Vec<String> = locales_str.lines().map(|s| s.to_string()).collect();
+        let locales = context
+            .get::<crate::arch::locales::LocalesKey>()
+            .unwrap_or_default();
 
         if locales.is_empty() {
             return Ok(QuestionResult::Cancelled);
         }
 
-        let provider = crate::arch::annotations::LocaleAnnotationProvider;
-        let annotated_locales =
-            crate::arch::annotations::AnnotationProvider::annotate_list(&provider, locales);
-
         let result = FzfWrapper::builder()
             .header(format!("{} Select System Locale", NerdFont::Flag))
-            .select(annotated_locales)?;
+            .select(locales)?;
 
         match result {
             crate::menu_utils::FzfResult::Selected(val) => Ok(QuestionResult::Answer(val.value)),

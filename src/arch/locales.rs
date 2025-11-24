@@ -1,5 +1,14 @@
 use anyhow::Result;
 use std::fs;
+use crate::arch::annotations::{AnnotatedValue, AnnotationProvider};
+use crate::arch::engine::DataKey;
+
+pub struct LocalesKey;
+
+impl DataKey for LocalesKey {
+    type Value = Vec<AnnotatedValue<String>>;
+    const KEY: &'static str = "locales";
+}
 
 pub struct LocaleProvider;
 
@@ -9,10 +18,13 @@ impl crate::arch::engine::AsyncDataProvider for LocaleProvider {
         let contents = fs::read_to_string("/etc/locale.gen")?;
         let locales = parse_locale_gen(&contents);
 
-        let mut data = context.data.lock().unwrap();
-        data.insert("locales".to_string(), locales.join("\n"));
+        self.save_list::<LocalesKey, _>(context, locales);
 
         Ok(())
+    }
+
+    fn annotation_provider(&self) -> Option<Box<dyn crate::arch::annotations::AnnotationProvider>> {
+        Some(Box::new(crate::arch::annotations::LocaleAnnotationProvider))
     }
 }
 

@@ -36,13 +36,56 @@ pub struct SystemInfo {
     pub internet_connected: bool,
 }
 
+use std::any::Any;
+
+/// Trait for defining type-safe keys for the data map
+pub trait DataKey: Send + Sync + 'static {
+    type Value: Send + Sync + Clone + 'static;
+    const KEY: &'static str;
+}
+
 /// Holds the state of the installation wizard
-#[derive(Default, Clone, Serialize, Deserialize)]
+#[derive(Default, Clone)]
 pub struct InstallContext {
     pub answers: HashMap<QuestionId, String>,
     pub system_info: SystemInfo,
-    #[serde(skip)]
-    pub data: Arc<Mutex<HashMap<String, String>>>, // For async data like mirror lists
+    // We use Arc<Mutex> for interior mutability across threads
+    pub data: Arc<Mutex<HashMap<String, Box<dyn Any + Send + Sync>>>>,
+}
+
+// Custom Serialize implementation to skip the data field
+impl Serialize for InstallContext {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("InstallContext", 2)?;
+        state.serialize_field("answers", &self.answers)?;
+        state.serialize_field("system_info", &self.system_info)?;
+        state.end()
+    }
+}
+
+// Custom Deserialize implementation
+impl<'de> Deserialize<'de> for InstallContext {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            answers: HashMap<QuestionId, String>,
+            system_info: SystemInfo,
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+        Ok(InstallContext {
+            answers: helper.answers,
+            system_info: helper.system_info,
+            data: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
 }
 
 impl InstallContext {
@@ -72,6 +115,26 @@ impl InstallContext {
     pub fn get_answer_bool(&self, id: QuestionId) -> bool {
         self.answers.get(&id).map(|s| s == "true").unwrap_or(false)
     }
+
+    /// Set a value in the data map using a strongly-typed key
+    pub fn set<K: DataKey>(&self, value: K::Value) {
+        let mut data = self.data.lock().unwrap();
+        data.insert(K::KEY.to_string(), Box::new(value));
+    }
+
+    /// Get a value from the data map using a strongly-typed key
+    pub fn get<K: DataKey>(&self) -> Option<K::Value> {
+        let data = self.data.lock().unwrap();
+        data.get(K::KEY)
+            .and_then(|boxed| boxed.downcast_ref::<K::Value>())
+            .cloned()
+    }
+    
+    /// Check if a key exists
+    pub fn contains_key(&self, key: &str) -> bool {
+        let data = self.data.lock().unwrap();
+        data.contains_key(key)
+    }
 }
 
 /// Result of asking a question
@@ -85,6 +148,23 @@ pub enum QuestionResult {
 pub trait AsyncDataProvider: Send + Sync {
     /// Fetches data and updates the context
     async fn provide(&self, context: &InstallContext) -> Result<()>;
+
+    /// Returns an optional annotation provider for this data provider
+    fn annotation_provider(&self) -> Option<Box<dyn crate::arch::annotations::AnnotationProvider>> {
+        None
+    }
+
+    /// Helper to annotate and save a list of items to the context
+    fn save_list<K, T>(&self, context: &InstallContext, items: Vec<T>)
+    where
+        T: crate::menu_utils::FzfSelectable + Clone + Send + Sync + 'static,
+        K: DataKey<Value = Vec<crate::arch::annotations::AnnotatedValue<T>>>,
+        Self: Sized,
+    {
+        let provider = self.annotation_provider();
+        let annotated = crate::arch::annotations::annotate_list(provider.as_deref(), items);
+        context.set::<K>(annotated);
+    }
 }
 
 /// Trait that every question must implement
@@ -344,5 +424,41 @@ impl QuestionEngine {
             }
             _ => Ok(false),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestKey;
+    impl DataKey for TestKey {
+        type Value = String;
+        const KEY: &'static str = "test_key";
+    }
+
+    struct IntKey;
+    impl DataKey for IntKey {
+        type Value = i32;
+        const KEY: &'static str = "int_key";
+    }
+
+    #[test]
+    fn test_install_context_typemap() {
+        let context = InstallContext::new();
+
+        context.set::<TestKey>("hello".to_string());
+        context.set::<IntKey>(42);
+
+        assert_eq!(context.get::<TestKey>(), Some("hello".to_string()));
+        assert_eq!(context.get::<IntKey>(), Some(42));
+        
+        // Test missing key
+        struct MissingKey;
+        impl DataKey for MissingKey {
+            type Value = bool;
+            const KEY: &'static str = "missing";
+        }
+        assert_eq!(context.get::<MissingKey>(), None);
     }
 }

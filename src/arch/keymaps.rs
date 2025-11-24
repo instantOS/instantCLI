@@ -1,20 +1,34 @@
 use anyhow::Result;
 use std::process::Command;
+use crate::arch::annotations::{AnnotatedValue, AnnotationProvider};
+use crate::arch::engine::DataKey;
+
+pub struct KeymapsKey;
+
+impl DataKey for KeymapsKey {
+    type Value = Vec<AnnotatedValue<String>>;
+    const KEY: &'static str = "keymaps";
+}
 
 pub struct KeymapProvider;
 
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for KeymapProvider {
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
-        let output = Command::new("localectl").arg("list-keymaps").output()?;
+        let output = Command::new("localectl")
+            .arg("list-keymaps")
+            .output()?;
 
         let stdout = String::from_utf8(output.stdout)?;
         let keymaps = parse_keymaps(&stdout);
 
-        let mut data = context.data.lock().unwrap();
-        data.insert("keymaps".to_string(), keymaps.join("\n"));
+        self.save_list::<KeymapsKey, _>(context, keymaps);
 
         Ok(())
+    }
+
+    fn annotation_provider(&self) -> Option<Box<dyn crate::arch::annotations::AnnotationProvider>> {
+        Some(Box::new(crate::arch::annotations::KeymapAnnotationProvider))
     }
 }
 

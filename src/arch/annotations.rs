@@ -32,20 +32,24 @@ impl<T: FzfSelectable> FzfSelectable for AnnotatedValue<T> {
 
 pub trait AnnotationProvider {
     fn annotate(&self, value: &str) -> Option<String>;
+}
 
-    fn annotate_list<T: FzfSelectable + Clone>(&self, items: Vec<T>) -> Vec<AnnotatedValue<T>>
-    where
-        Self: Sized,
-    {
-        items
-            .into_iter()
-            .map(|item| {
+pub fn annotate_list<T: FzfSelectable + Clone>(
+    provider: Option<&dyn AnnotationProvider>,
+    items: Vec<T>,
+) -> Vec<AnnotatedValue<T>> {
+    items
+        .into_iter()
+        .map(|item| {
+            let annotation = if let Some(p) = provider {
                 let key = item.fzf_key();
-                let annotation = self.annotate(&key);
-                AnnotatedValue::new(item, annotation)
-            })
-            .collect()
-    }
+                p.annotate(&key)
+            } else {
+                None
+            };
+            AnnotatedValue::new(item, annotation)
+        })
+        .collect()
 }
 
 pub struct LocaleAnnotationProvider;
@@ -112,13 +116,23 @@ mod tests {
     fn test_annotate_list() {
         let provider = LocaleAnnotationProvider;
         let items = vec!["de_DE.UTF-8", "unknown"];
-        let annotated = provider.annotate_list(items);
+        let annotated = annotate_list(Some(&provider), items);
 
         assert_eq!(annotated.len(), 2);
         assert_eq!(
             annotated[0].fzf_display_text(),
             "German (Germany) - de_DE.UTF-8"
         );
+        assert_eq!(annotated[1].fzf_display_text(), "unknown");
+    }
+
+    #[test]
+    fn test_annotate_list_no_provider() {
+        let items = vec!["de_DE.UTF-8", "unknown"];
+        let annotated = annotate_list(None, items);
+
+        assert_eq!(annotated.len(), 2);
+        assert_eq!(annotated[0].fzf_display_text(), "de_DE.UTF-8");
         assert_eq!(annotated[1].fzf_display_text(), "unknown");
     }
 }
