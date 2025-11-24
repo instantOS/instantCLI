@@ -45,6 +45,7 @@ pub enum NerdFont {
     Key,
     Keyboard,
     Lock,
+    ClosedLockWithKey,
     Unlock,
 
     // Media and audio
@@ -52,13 +53,16 @@ pub enum NerdFont {
     VolumeDown,
     VolumeMute,
     Play,
+    PlayCircle,
     Pause,
+    PauseCircle,
     Stop,
 
     // Communication and network
     Bluetooth,
     Wifi,
     Globe,
+    Language,
     Link,
     ExternalLink,
 
@@ -75,6 +79,8 @@ pub enum NerdFont {
     Trash,
     Search,
     Filter,
+    QrCode,
+    Smile,
 
     // Gaming and entertainment
     Gamepad,
@@ -173,7 +179,6 @@ pub enum NerdFont {
     Activity,
 
     // Gaming Enhancement
-    PlayCircle,
     Controller,
     Joystick,
     Achievement,
@@ -276,6 +281,7 @@ impl NerdFont {
             Self::Key => '',      // fa-key
             Self::Keyboard => '⌨', // U+2328 KEYBOARD
             Self::Lock => '',     // fa-lock
+            Self::ClosedLockWithKey => '', // fa-lock-with-key
             Self::Unlock => '',   // fa-unlock
 
             // Media and audio
@@ -283,13 +289,16 @@ impl NerdFont {
             Self::VolumeDown => '󰝞', // fa-volume-down
             Self::VolumeMute => '', // fa-volume-mute
             Self::Play => '▶',       // fa-play
+            Self::PlayCircle => '', // fa-play-circle
             Self::Pause => '⏸',      // fa-pause
+            Self::PauseCircle => '', // fa-pause-circle
             Self::Stop => '⏹',       // fa-stop
 
             // Communication and network
             Self::Bluetooth => '',    // fa-bluetooth
             Self::Wifi => '',         // fa-wifi
             Self::Globe => '',        // fa-globe
+            Self::Language => '',     // fa-language
             Self::Link => '',         // fa-link
             Self::ExternalLink => '', // fa-external-link
 
@@ -306,6 +315,8 @@ impl NerdFont {
             Self::Trash => '🗑',  // fa-trash
             Self::Search => '', // fa-search
             Self::Filter => '', // fa-filter
+            Self::QrCode => '\u{f029}',  // fa-qrcode
+            Self::Smile => '\u{f118}',   // fa-smile-o
 
             // Gaming and entertainment
             Self::Gamepad => '', // fa-gamepad
@@ -404,7 +415,6 @@ impl NerdFont {
             Self::Activity => '',           // fa-heartbeat
 
             // Gaming Enhancement
-            Self::PlayCircle => '',  // fa-circle-play
             Self::Controller => '󰮂',  // md-controller-classic
             Self::Joystick => '',    // fa-playstation
             Self::Achievement => '', // fa-trophy

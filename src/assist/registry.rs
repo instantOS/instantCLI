@@ -96,21 +96,21 @@ pub const ASSISTS: &[AssistEntry] = &[
     AssistEntry::Action(AssistAction {
         key: 'p',
         description: "Password Manager: Open password manager",
-        icon: NerdFont::Key,
+        icon: NerdFont::ClosedLockWithKey,
         dependencies: &[],
         execute: actions::password::open_password_manager,
     }),
     AssistEntry::Action(AssistAction {
         key: 'q',
         description: "QR Encode Clipboard: Generate QR code from clipboard",
-        icon: NerdFont::Code,
+        icon: NerdFont::QrCode,
         dependencies: &[Dependency::os(&QRENCODE)],
         execute: actions::qr::qr_encode_clipboard,
     }),
     AssistEntry::Action(AssistAction {
         key: 'e',
         description: "Emoji Picker: Open emoji picker",
-        icon: NerdFont::Star,
+        icon: NerdFont::Smile,
         dependencies: &[Dependency::flatpak(&EMOTE)],
         execute: actions::emoji::emoji_picker,
     }),
@@ -193,7 +193,7 @@ pub const ASSISTS: &[AssistEntry] = &[
             AssistEntry::Action(AssistAction {
                 key: 'q',
                 description: "QR Code Scanner: Scan QR code from selected area",
-                icon: NerdFont::Code,
+                icon: NerdFont::QrCode,
                 dependencies: &[
                     Dependency::os(&SLURP),
                     Dependency::os(&SLOP),

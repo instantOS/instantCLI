@@ -262,7 +262,7 @@ impl Question for LocaleQuestion {
         }
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Select System Locale", NerdFont::Flag))
+            .header(format!("{} Select System Locale", NerdFont::Language))
             .select(locales)?;
 
         match result {
