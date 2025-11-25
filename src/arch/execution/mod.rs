@@ -1,36 +1,16 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
 use std::path::PathBuf;
 
-#[derive(Debug, Deserialize, clap::ValueEnum, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum InstallStep {
-    /// Prepare disk (partition, format, mount)
-    Disk,
-    /// Install base system (pacstrap)
-    Base,
-    /// Generate fstab
-    Fstab,
-    /// Configure system (timezone, locale, hostname, users)
-    Config,
-    /// Install bootloader
-    Bootloader,
-    /// Post-installation setup
-    Post,
-}
+pub mod base;
+pub mod bootloader;
+pub mod config;
+pub mod disk;
+pub mod fstab;
+pub mod state;
+pub mod step;
 
-impl InstallStep {
-    pub fn requires_chroot(&self) -> bool {
-        match self {
-            InstallStep::Disk => false,
-            InstallStep::Base => false,
-            InstallStep::Fstab => false,
-            InstallStep::Config => true,
-            InstallStep::Bootloader => true, // Bootloader install usually needs chroot
-            InstallStep::Post => true,       // Post install usually needs chroot
-        }
-    }
-}
+use self::state::InstallState;
+use self::step::InstallStep;
 
 pub fn is_chroot() -> bool {
     // A simple check is to compare the device/inode of / and /proc/1/root
@@ -229,6 +209,24 @@ async fn execute_step(
     let in_chroot = is_chroot();
     let requires_chroot = step.requires_chroot();
 
+    // Load state
+    let mut state = InstallState::load().unwrap_or_else(|e| {
+        println!("Warning: Failed to load install state: {}", e);
+        InstallState::new()
+    });
+
+    // Check dependencies
+    if let Err(missing) = state.check_dependencies(step) {
+        if executor.dry_run {
+            println!(
+                "Warning: Missing dependencies for {:?}: {:?}. Proceeding (Dry Run).",
+                step, missing
+            );
+        } else {
+            anyhow::bail!("Missing dependencies for {:?}: {:?}", step, missing);
+        }
+    }
+
     if requires_chroot && !in_chroot && !executor.dry_run {
         println!(
             "Step {:?} requires chroot, setting up and entering...",
@@ -281,6 +279,15 @@ async fn execute_step(
             println!("Step {:?} not implemented yet", step);
         }
     }
+
+    // Mark complete if successful and not dry run
+    if !executor.dry_run {
+        state.mark_complete(step);
+        if let Err(e) = state.save() {
+            println!("Warning: Failed to save install state: {}", e);
+        }
+    }
+
     Ok(())
 }
 
@@ -309,6 +316,17 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
             std::fs::create_dir_all("/mnt/tmp")?;
         }
         std::fs::copy(config_path, target_config).context("Failed to copy config to chroot")?;
+    }
+
+    // Copy state file
+    let state_file = "/tmp/instant_install_state.toml";
+    let target_state = "/mnt/tmp/instant_install_state.toml";
+    if std::path::Path::new(state_file).exists() {
+        if executor.dry_run {
+            println!("[DRY RUN] cp {} {}", state_file, target_state);
+        } else {
+            std::fs::copy(state_file, target_state).context("Failed to copy state to chroot")?;
+        }
     }
 
     Ok(())
