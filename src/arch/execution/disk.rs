@@ -23,15 +23,24 @@ pub fn prepare_disk(context: &InstallContext, executor: &CommandExecutor) -> Res
     let _ = executor.run(Command::new("umount").args(["-R", "/mnt"]));
     let _ = executor.run(Command::new("swapoff").args(["-a"]));
 
+    // Calculate swap size
+    let ram_size_gb = get_total_ram_gb().unwrap_or(4);
+    // Rule of thumb: At least 4GB, or equal to RAM for hibernation support
+    let swap_size_gb = std::cmp::max(4, ram_size_gb);
+    println!(
+        "Detected RAM: {} GiB, setting Swap: {} GiB",
+        ram_size_gb, swap_size_gb
+    );
+
     // Partitioning
     match boot_mode {
         BootMode::UEFI64 | BootMode::UEFI32 => {
-            partition_uefi(disk_path, executor)?;
+            partition_uefi(disk_path, executor, swap_size_gb)?;
             format_uefi(disk_path, executor)?;
             mount_uefi(disk_path, executor)?;
         }
         BootMode::BIOS => {
-            partition_bios(disk_path, executor)?;
+            partition_bios(disk_path, executor, swap_size_gb)?;
             format_bios(disk_path, executor)?;
             mount_bios(disk_path, executor)?;
         }
@@ -40,19 +49,36 @@ pub fn prepare_disk(context: &InstallContext, executor: &CommandExecutor) -> Res
     Ok(())
 }
 
-fn partition_uefi(disk: &str, executor: &CommandExecutor) -> Result<()> {
+fn get_total_ram_gb() -> Option<u64> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+    for line in meminfo.lines() {
+        if line.starts_with("MemTotal:") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let kb: u64 = parts[1].parse().ok()?;
+                // Convert KB to GiB (KB / 1024 / 1024)
+                // We round up to nearest GB
+                return Some((kb + 1024 * 1024 - 1) / (1024 * 1024));
+            }
+        }
+    }
+    None
+}
+
+fn partition_uefi(disk: &str, executor: &CommandExecutor, swap_size_gb: u64) -> Result<()> {
     println!("Partitioning for UEFI...");
 
     // Layout:
     // 1. 1GiB EFI System
-    // 2. 4GiB Swap (Fixed for now, could be dynamic)
+    // 2. Swap (Dynamic size)
     // 3. Rest Root
 
     let script = format!(
         "label: gpt\n\
          size=1G, type=U\n\
-         size=4G, type=S\n\
-         type=L\n"
+         size={}G, type=S\n\
+         type=L\n",
+        swap_size_gb
     );
 
     executor.run_with_input(Command::new("sfdisk").arg(disk), &script)?;
@@ -65,17 +91,18 @@ fn partition_uefi(disk: &str, executor: &CommandExecutor) -> Result<()> {
     Ok(())
 }
 
-fn partition_bios(disk: &str, executor: &CommandExecutor) -> Result<()> {
+fn partition_bios(disk: &str, executor: &CommandExecutor, swap_size_gb: u64) -> Result<()> {
     println!("Partitioning for BIOS...");
 
     // Layout:
-    // 1. 4GiB Swap
+    // 1. Swap (Dynamic size)
     // 2. Rest Root
 
     let script = format!(
         "label: dos\n\
-         size=4G, type=82\n\
-         type=83\n"
+         size={}G, type=82\n\
+         type=83\n",
+        swap_size_gb
     );
 
     executor.run_with_input(Command::new("sfdisk").arg(disk), &script)?;
