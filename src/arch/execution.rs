@@ -19,7 +19,23 @@ pub enum InstallStep {
     Post,
 }
 
-pub async fn execute_installation(config_path: PathBuf, step: Option<String>) -> Result<()> {
+pub async fn execute_installation(
+    config_path: PathBuf,
+    step: Option<String>,
+    mut dry_run: bool,
+) -> Result<()> {
+    // Check for force dry-run file
+    if std::path::Path::new("/etc/instant/installdryrun").exists() {
+        if !dry_run {
+            println!("Notice: /etc/instant/installdryrun exists, forcing dry-run mode.");
+        }
+        dry_run = true;
+    }
+
+    if dry_run {
+        println!("*** DRY RUN MODE ENABLED - No changes will be made ***");
+    }
+
     println!("Loading configuration from: {}", config_path.display());
 
     if !config_path.exists() {
@@ -50,7 +66,7 @@ pub async fn execute_installation(config_path: PathBuf, step: Option<String>) ->
         };
 
         println!("Executing single step: {:?}", step_enum);
-        execute_step(step_enum, &context).await?;
+        execute_step(step_enum, &context, dry_run).await?;
     } else {
         println!("Executing all steps...");
         let steps = vec![
@@ -63,7 +79,7 @@ pub async fn execute_installation(config_path: PathBuf, step: Option<String>) ->
         ];
 
         for step in steps {
-            execute_step(step, &context).await?;
+            execute_step(step, &context, dry_run).await?;
         }
     }
 
@@ -73,8 +89,10 @@ pub async fn execute_installation(config_path: PathBuf, step: Option<String>) ->
 async fn execute_step(
     step: InstallStep,
     _context: &crate::arch::engine::InstallContext,
+    dry_run: bool,
 ) -> Result<()> {
-    println!("  -> Running step: {:?}", step);
+    let prefix = if dry_run { "[DRY RUN] " } else { "" };
+    println!("{}-> Running step: {:?}", prefix, step);
     // TODO: Implement actual logic for each step
     // match step {
     //     InstallStep::Disk => ...
