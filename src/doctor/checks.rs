@@ -1,8 +1,6 @@
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::fs::OpenOptions;
-use tokio::io::AsyncWriteExt;
 use tokio::process::Command as TokioCommand;
 
 #[derive(Default)]

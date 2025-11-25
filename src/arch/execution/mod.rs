@@ -274,14 +274,8 @@ async fn execute_step(
             // setup_chroot is handled above if needed
             post::install_post(context, executor).await?
         }
-        _ => {
-            println!("Step {:?} not implemented yet", step);
-        }
     }
-    Ok(())
-}
 
-fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Result<()> {
     if !executor.dry_run {
         state.mark_complete(step);
         if let Err(e) = state.save() {

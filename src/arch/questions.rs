@@ -1,10 +1,9 @@
 use crate::arch::engine::{
-    AsyncDataProvider, BootMode, DataKey, InstallContext, Question, QuestionId, QuestionResult,
+    DataKey, InstallContext, Question, QuestionId, QuestionResult,
 };
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
-use std::process::Command;
 
 pub struct HostnameQuestion;
 
