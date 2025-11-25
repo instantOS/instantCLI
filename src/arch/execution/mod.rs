@@ -32,11 +32,6 @@ pub fn is_chroot() -> bool {
     root_meta.dev() != proc_root_meta.dev() || root_meta.ino() != proc_root_meta.ino()
 }
 
-pub mod base;
-pub mod bootloader;
-pub mod config;
-pub mod disk;
-pub mod fstab;
 
 pub struct CommandExecutor {
     pub dry_run: bool,
@@ -302,8 +297,6 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
         println!("[DRY RUN] cp {:?} {}", current_exe, target_bin);
     } else {
         // We assume /mnt/usr/bin exists (created by base install)
-        // If not, we might want to create it or fail?
-        // Base install should have created it.
         std::fs::copy(&current_exe, target_bin).context("Failed to copy binary to chroot")?;
     }
 
@@ -312,9 +305,7 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
     if executor.dry_run {
         println!("[DRY RUN] cp {:?} {}", config_path, target_config);
     } else {
-        if !std::path::Path::new("/mnt/tmp").exists() {
-            std::fs::create_dir_all("/mnt/tmp")?;
-        }
+        // We assume /mnt/tmp exists because base install creates the directory structure
         std::fs::copy(config_path, target_config).context("Failed to copy config to chroot")?;
     }
 
