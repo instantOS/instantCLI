@@ -41,8 +41,7 @@ pub fn detect_distro() -> Result<Distro> {
         return Ok(Distro::Unknown("No /etc/os-release found".to_string()));
     }
 
-    let content = fs::read_to_string(os_release_path)
-        .context("Failed to read /etc/os-release")?;
+    let content = fs::read_to_string(os_release_path).context("Failed to read /etc/os-release")?;
 
     parse_os_release(&content)
 }
