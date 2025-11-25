@@ -19,6 +19,7 @@ pub enum InstallStep {
     Post,
 }
 
+pub mod base;
 pub mod disk;
 
 pub struct CommandExecutor {
@@ -173,6 +174,7 @@ async fn execute_step(
 
     match step {
         InstallStep::Disk => disk::prepare_disk(context, executor)?,
+        InstallStep::Base => base::install_base(context, executor).await?,
         _ => {
             println!("Step {:?} not implemented yet", step);
         }
