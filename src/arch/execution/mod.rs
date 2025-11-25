@@ -19,6 +19,39 @@ pub enum InstallStep {
     Post,
 }
 
+impl InstallStep {
+    pub fn requires_chroot(&self) -> bool {
+        match self {
+            InstallStep::Disk => false,
+            InstallStep::Base => false,
+            InstallStep::Fstab => false,
+            InstallStep::Config => true,
+            InstallStep::Bootloader => true, // Bootloader install usually needs chroot
+            InstallStep::Post => true,       // Post install usually needs chroot
+        }
+    }
+}
+
+pub fn is_chroot() -> bool {
+    // A simple check is to compare the device/inode of / and /proc/1/root
+    // If they are different, we are in a chroot.
+    // If /proc is not mounted, this might fail, but in our context it should be.
+
+    use std::os::unix::fs::MetadataExt;
+
+    let root_meta = match std::fs::metadata("/") {
+        Ok(m) => m,
+        Err(_) => return false, // Assume not chroot if we can't stat /
+    };
+
+    let proc_root_meta = match std::fs::metadata("/proc/1/root") {
+        Ok(m) => m,
+        Err(_) => return false, // Assume not chroot if we can't stat /proc/1/root
+    };
+
+    root_meta.dev() != proc_root_meta.dev() || root_meta.ino() != proc_root_meta.ino()
+}
+
 pub mod base;
 pub mod config;
 pub mod disk;
@@ -192,15 +225,51 @@ async fn execute_step(
     executor: &CommandExecutor,
     config_path: &std::path::Path,
 ) -> Result<()> {
-    let prefix = if executor.dry_run { "[DRY RUN] " } else { "" };
-    println!("{}-> Running step: {:?}", prefix, step);
+    let in_chroot = is_chroot();
+    let requires_chroot = step.requires_chroot();
+
+    if requires_chroot && !in_chroot && !executor.dry_run {
+        println!(
+            "Step {:?} requires chroot, setting up and entering...",
+            step
+        );
+        setup_chroot(executor, config_path)?;
+
+        // Construct command to run inside chroot
+        // arch-chroot /mnt /usr/bin/ins arch exec <step> --config /tmp/install_config.toml
+        // Note: we need to pass the step name as string.
+        // We can convert enum to string via Debug or Display if implemented, or just match.
+        // clap::ValueEnum implements Display/FromStr usually but let's be safe.
+        let step_name = format!("{:?}", step).to_lowercase();
+
+        let mut cmd = std::process::Command::new("arch-chroot");
+        cmd.arg("/mnt")
+            .arg("/usr/bin/ins")
+            .arg("arch")
+            .arg("exec")
+            .arg(step_name)
+            .arg("--config")
+            .arg("/tmp/install_config.toml");
+
+        if executor.dry_run {
+            // Pass dry-run flag if we are dry-running
+            cmd.arg("--dry-run");
+        }
+
+        executor.run(&mut cmd)?;
+        return Ok(());
+    }
+
+    if !requires_chroot && in_chroot {
+        anyhow::bail!("Step {:?} should NOT be run inside chroot", step);
+    }
 
     match step {
         InstallStep::Disk => disk::prepare_disk(context, executor)?,
         InstallStep::Base => base::install_base(context, executor).await?,
         InstallStep::Fstab => fstab::generate_fstab(context, executor)?,
         InstallStep::Config => {
-            setup_chroot(executor, config_path)?;
+            // setup_chroot is handled above if needed
             config::install_config(context, executor).await?
         }
         _ => {
