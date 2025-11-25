@@ -18,11 +18,6 @@ pub fn prepare_disk(context: &InstallContext, executor: &CommandExecutor) -> Res
 
     let boot_mode = &context.system_info.boot_mode;
 
-    // Unmount everything first just in case
-    // We ignore errors here as it might not be mounted
-    let _ = executor.run(Command::new("umount").args(["-R", "/mnt"]));
-    let _ = executor.run(Command::new("swapoff").args(["-a"]));
-
     // Calculate swap size
     let ram_size_gb = get_total_ram_gb().unwrap_or(4);
     // Rule of thumb: At least 4GB, or equal to RAM for hibernation support

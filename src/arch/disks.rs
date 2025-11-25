@@ -123,6 +123,51 @@ pub fn get_boot_disk() -> Result<Option<String>> {
     }
 }
 
+/// Check if any partition on the given disk is currently mounted
+pub fn is_disk_mounted(disk: &str) -> Result<bool> {
+    let output = Command::new("findmnt")
+        .args(["-n", "-o", "SOURCE"])
+        .output()?;
+
+    if !output.status.success() {
+        // If findmnt fails, we assume nothing is mounted or we can't tell.
+        // But for safety, maybe we should error?
+        // findmnt returns 1 if nothing is mounted? No, it returns 1 if error.
+        // Actually findmnt returns 1 if no mountpoints found matching criteria.
+        // If we run without args it lists all.
+        return Ok(false);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let source = line.trim();
+        if source.starts_with(disk) {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+/// Check if any partition on the given disk is currently used as swap
+pub fn is_disk_swap(disk: &str) -> Result<bool> {
+    let swaps = std::fs::read_to_string("/proc/swaps")?;
+    // /proc/swaps format:
+    // Filename				Type		Size	Used	Priority
+    // /dev/dm-1                               partition	33554428	0	-2
+    
+    for line in swaps.lines().skip(1) { // Skip header
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if let Some(filename) = parts.first() {
+            if filename.starts_with(disk) {
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
