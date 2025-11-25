@@ -51,6 +51,9 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         "vim",            // Essential editor
         "nano",           // Backup editor
         "networkmanager", // Essential for networking
+        "grub",           // Bootloader
+        "efibootmgr",     // Required for GRUB on UEFI
+        "os-prober",      // Detect other OSes
     ];
 
     // CPU Microcode

@@ -1,36 +1,17 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
 use std::path::PathBuf;
 
-#[derive(Debug, Deserialize, clap::ValueEnum, Clone, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum InstallStep {
-    /// Prepare disk (partition, format, mount)
-    Disk,
-    /// Install base system (pacstrap)
-    Base,
-    /// Generate fstab
-    Fstab,
-    /// Configure system (timezone, locale, hostname, users)
-    Config,
-    /// Install bootloader
-    Bootloader,
-    /// Post-installation setup
-    Post,
-}
+pub mod base;
+pub mod bootloader;
+pub mod config;
+pub mod disk;
+pub mod fstab;
+pub mod post;
+pub mod state;
+pub mod step;
 
-impl InstallStep {
-    pub fn requires_chroot(&self) -> bool {
-        match self {
-            InstallStep::Disk => false,
-            InstallStep::Base => false,
-            InstallStep::Fstab => false,
-            InstallStep::Config => true,
-            InstallStep::Bootloader => true, // Bootloader install usually needs chroot
-            InstallStep::Post => true,       // Post install usually needs chroot
-        }
-    }
-}
+use self::state::InstallState;
+use self::step::InstallStep;
 
 pub fn is_chroot() -> bool {
     // A simple check is to compare the device/inode of / and /proc/1/root
@@ -51,11 +32,6 @@ pub fn is_chroot() -> bool {
 
     root_meta.dev() != proc_root_meta.dev() || root_meta.ino() != proc_root_meta.ino()
 }
-
-pub mod base;
-pub mod config;
-pub mod disk;
-pub mod fstab;
 
 pub struct CommandExecutor {
     pub dry_run: bool,
@@ -228,6 +204,24 @@ async fn execute_step(
     let in_chroot = is_chroot();
     let requires_chroot = step.requires_chroot();
 
+    // Load state
+    let mut state = InstallState::load().unwrap_or_else(|e| {
+        println!("Warning: Failed to load install state: {}", e);
+        InstallState::new()
+    });
+
+    // Check dependencies
+    if let Err(missing) = state.check_dependencies(step) {
+        if executor.dry_run {
+            println!(
+                "Warning: Missing dependencies for {:?}: {:?}. Proceeding (Dry Run).",
+                step, missing
+            );
+        } else {
+            anyhow::bail!("Missing dependencies for {:?}: {:?}", step, missing);
+        }
+    }
+
     if requires_chroot && !in_chroot && !executor.dry_run {
         println!(
             "Step {:?} requires chroot, setting up and entering...",
@@ -272,10 +266,23 @@ async fn execute_step(
             // setup_chroot is handled above if needed
             config::install_config(context, executor).await?
         }
-        _ => {
-            println!("Step {:?} not implemented yet", step);
+        InstallStep::Bootloader => {
+            // setup_chroot is handled above if needed
+            bootloader::install_bootloader(context, executor).await?
+        }
+        InstallStep::Post => {
+            // setup_chroot is handled above if needed
+            post::install_post(context, executor).await?
         }
     }
+
+    if !executor.dry_run {
+        state.mark_complete(step);
+        if let Err(e) = state.save() {
+            println!("Warning: Failed to save install state: {}", e);
+        }
+    }
+
     Ok(())
 }
 
@@ -290,8 +297,6 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
         println!("[DRY RUN] cp {:?} {}", current_exe, target_bin);
     } else {
         // We assume /mnt/usr/bin exists (created by base install)
-        // If not, we might want to create it or fail?
-        // Base install should have created it.
         std::fs::copy(&current_exe, target_bin).context("Failed to copy binary to chroot")?;
     }
 
@@ -300,10 +305,19 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
     if executor.dry_run {
         println!("[DRY RUN] cp {:?} {}", config_path, target_config);
     } else {
-        if !std::path::Path::new("/mnt/tmp").exists() {
-            std::fs::create_dir_all("/mnt/tmp")?;
-        }
+        // We assume /mnt/tmp exists because base install creates the directory structure
         std::fs::copy(config_path, target_config).context("Failed to copy config to chroot")?;
+    }
+
+    // Copy state file
+    let state_file = "/tmp/instant_install_state.toml";
+    let target_state = "/mnt/tmp/instant_install_state.toml";
+    if std::path::Path::new(state_file).exists() {
+        if executor.dry_run {
+            println!("[DRY RUN] cp {} {}", state_file, target_state);
+        } else {
+            std::fs::copy(state_file, target_state).context("Failed to copy state to chroot")?;
+        }
     }
 
     Ok(())

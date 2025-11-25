@@ -2,6 +2,7 @@ pub mod compositor;
 pub mod dependencies;
 pub mod display_server;
 pub mod git;
+pub mod pacman;
 pub mod paths;
 pub mod progress;
 pub mod requirements;

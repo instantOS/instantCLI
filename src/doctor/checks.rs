@@ -1,8 +1,6 @@
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::fs::OpenOptions;
-use tokio::io::AsyncWriteExt;
 use tokio::process::Command as TokioCommand;
 
 #[derive(Default)]
@@ -109,16 +107,6 @@ impl DoctorCheck for InstantRepoCheck {
     }
 
     async fn fix(&self) -> Result<()> {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/etc/pacman.conf")
-            .await?;
-
-        file.write_all(b"\n[instant]\nInclude = /etc/pacman.d/instantmirrorlist\n")
-            .await?;
-
-        println!("Added InstantOS repository to /etc/pacman.conf");
-        Ok(())
+        crate::common::pacman::setup_instant_repo(false).await
     }
 }
