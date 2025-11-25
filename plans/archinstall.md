@@ -100,7 +100,7 @@ mount --mkdir /dev/efi_system_partition /mnt/boot
 
 swapon /dev/swap_partition
 
-Set up actual mirrors Country-specific fetching: When a country is selected, depend/mirrors.sh:18 fetches mirrors specifically for that country code from https://archlinux.org/mirrorlist/?country=$COUNTRYCODE
+Set up actual mirrors Country-specific fetching: When a country is selected, fetch mirrors specifically for that country code from https://archlinux.org/mirrorlist/?country=$COUNTRYCODE
 
 COUNTRYCODE was selected earlier by the user
 

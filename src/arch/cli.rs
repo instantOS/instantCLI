@@ -17,6 +17,15 @@ pub enum ArchCommands {
         #[arg(value_enum)]
         id: crate::arch::engine::QuestionId,
     },
+    /// Execute installation steps based on a configuration file
+    Exec {
+        /// The step to execute (optional, defaults to all steps)
+        #[arg(value_enum)]
+        step: Option<String>,
+        /// Path to the configuration TOML file
+        #[arg(short = 'c', long, default_value = "/etc/instant/questions.toml")]
+        config: std::path::PathBuf,
+    },
 }
 
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
@@ -146,18 +155,25 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
 
             let toml_content = context.to_toml()?;
 
-            if let Some(config_path) = output_config {
-                // Write to file
-                std::fs::write(&config_path, &toml_content)?;
-                println!("\nConfiguration saved to: {}", config_path.display());
-            } else {
-                // Print to stdout
-                println!("\n--- Configuration TOML ---");
-                println!("{}", toml_content);
-                println!("--------------------------");
+            let config_path = output_config
+                .unwrap_or_else(|| std::path::PathBuf::from("/etc/instant/questions.toml"));
+
+            // Ensure parent directory exists
+            if let Some(parent) = config_path.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent)?;
+                }
             }
 
+            // Write to file
+            std::fs::write(&config_path, &toml_content)?;
+            println!("\nConfiguration saved to: {}", config_path.display());
+
             Ok(())
+        }
+        ArchCommands::Exec { step, config } => {
+            ensure_root()?;
+            crate::arch::execution::execute_installation(config, step).await
         }
     }
 }
