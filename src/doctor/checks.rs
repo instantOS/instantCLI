@@ -107,6 +107,6 @@ impl DoctorCheck for InstantRepoCheck {
     }
 
     async fn fix(&self) -> Result<()> {
-        crate::arch::repo::setup_instant_repo(false).await
+        crate::common::pacman::setup_instant_repo(false).await
     }
 }

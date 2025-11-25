@@ -8,5 +8,5 @@ pub mod keymaps;
 pub mod locales;
 pub mod mirrors;
 pub mod questions;
-pub mod repo;
+
 pub mod timezones;

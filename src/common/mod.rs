@@ -8,3 +8,4 @@ pub mod requirements;
 pub mod shell;
 pub mod systemd;
 pub mod terminal;
+pub mod pacman;

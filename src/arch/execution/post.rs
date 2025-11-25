@@ -16,7 +16,7 @@ pub async fn install_post(context: &InstallContext, executor: &CommandExecutor) 
 
 async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
     println!("Setting up instantOS repository...");
-    crate::arch::repo::setup_instant_repo(executor.dry_run).await?;
+    crate::common::pacman::setup_instant_repo(executor.dry_run).await?;
 
     // Update repositories
     println!("Updating repositories...");
