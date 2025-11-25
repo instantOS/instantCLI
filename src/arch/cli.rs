@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::Subcommand;
 
+const DEFAULT_QUESTIONS_FILE: &str = "/etc/instant/questions.toml";
+
 #[derive(Subcommand, Debug, Clone)]
 pub enum ArchCommands {
     /// Start the Arch Linux installation wizard
@@ -17,14 +19,14 @@ pub enum ArchCommands {
         #[arg(value_enum)]
         id: crate::arch::engine::QuestionId,
     },
-    /// Execute installation steps based on a configuration file
+    /// Execute installation steps based on a questions file
     Exec {
         /// The step to execute (optional, defaults to all steps)
         #[arg(value_enum)]
         step: Option<String>,
-        /// Path to the configuration TOML file
-        #[arg(short = 'f', long, default_value = "/etc/instant/questions.toml")]
-        config_file: std::path::PathBuf,
+        /// Path to the questions TOML file
+        #[arg(short = 'f', long = "questions-file", default_value = DEFAULT_QUESTIONS_FILE)]
+        questions_file: std::path::PathBuf,
         /// Run in dry-run mode (no changes will be made)
         #[arg(long)]
         dry_run: bool,
@@ -168,8 +170,8 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
 
             let toml_content = context.to_toml()?;
 
-            let config_path = output_config
-                .unwrap_or_else(|| std::path::PathBuf::from("/etc/instant/questions.toml"));
+            let config_path =
+                output_config.unwrap_or_else(|| std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE));
 
             // Ensure parent directory exists
             if let Some(parent) = config_path.parent()
@@ -186,13 +188,13 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         }
         ArchCommands::Exec {
             step,
-            config_file,
+            questions_file,
             dry_run,
         } => {
             if !dry_run {
                 ensure_root()?;
             }
-            crate::arch::execution::execute_installation(config_file, step, dry_run).await
+            crate::arch::execution::execute_installation(questions_file, step, dry_run).await
         }
     }
 }
