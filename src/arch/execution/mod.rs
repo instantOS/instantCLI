@@ -19,6 +19,8 @@ pub enum InstallStep {
     Post,
 }
 
+pub mod disk;
+
 pub async fn execute_installation(
     config_path: PathBuf,
     step: Option<String>,
@@ -88,14 +90,17 @@ pub async fn execute_installation(
 
 async fn execute_step(
     step: InstallStep,
-    _context: &crate::arch::engine::InstallContext,
+    context: &crate::arch::engine::InstallContext,
     dry_run: bool,
 ) -> Result<()> {
     let prefix = if dry_run { "[DRY RUN] " } else { "" };
     println!("{}-> Running step: {:?}", prefix, step);
-    // TODO: Implement actual logic for each step
-    // match step {
-    //     InstallStep::Disk => ...
-    // }
+
+    match step {
+        InstallStep::Disk => disk::prepare_disk(context, dry_run)?,
+        _ => {
+            println!("Step {:?} not implemented yet", step);
+        }
+    }
     Ok(())
 }

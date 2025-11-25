@@ -23,8 +23,8 @@ pub enum ArchCommands {
         #[arg(value_enum)]
         step: Option<String>,
         /// Path to the configuration TOML file
-        #[arg(short = 'c', long, default_value = "/etc/instant/questions.toml")]
-        config: std::path::PathBuf,
+        #[arg(short = 'f', long, default_value = "/etc/instant/questions.toml")]
+        config_file: std::path::PathBuf,
         /// Run in dry-run mode (no changes will be made)
         #[arg(long)]
         dry_run: bool,
@@ -176,11 +176,11 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         }
         ArchCommands::Exec {
             step,
-            config,
+            config_file,
             dry_run,
         } => {
             ensure_root()?;
-            crate::arch::execution::execute_installation(config, step, dry_run).await
+            crate::arch::execution::execute_installation(config_file, step, dry_run).await
         }
     }
 }
