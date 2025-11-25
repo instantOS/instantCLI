@@ -109,16 +109,6 @@ impl DoctorCheck for InstantRepoCheck {
     }
 
     async fn fix(&self) -> Result<()> {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/etc/pacman.conf")
-            .await?;
-
-        file.write_all(b"\n[instant]\nInclude = /etc/pacman.d/instantmirrorlist\n")
-            .await?;
-
-        println!("Added InstantOS repository to /etc/pacman.conf");
-        Ok(())
+        crate::arch::repo::setup_instant_repo(false).await
     }
 }

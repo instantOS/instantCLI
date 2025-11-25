@@ -6,6 +6,7 @@ pub mod bootloader;
 pub mod config;
 pub mod disk;
 pub mod fstab;
+pub mod post;
 pub mod state;
 pub mod step;
 
@@ -31,7 +32,6 @@ pub fn is_chroot() -> bool {
 
     root_meta.dev() != proc_root_meta.dev() || root_meta.ino() != proc_root_meta.ino()
 }
-
 
 pub struct CommandExecutor {
     pub dry_run: bool,
@@ -270,12 +270,18 @@ async fn execute_step(
             // setup_chroot is handled above if needed
             bootloader::install_bootloader(context, executor).await?
         }
+        InstallStep::Post => {
+            // setup_chroot is handled above if needed
+            post::install_post(context, executor).await?
+        }
         _ => {
             println!("Step {:?} not implemented yet", step);
         }
     }
+    Ok(())
+}
 
-    // Mark complete if successful and not dry run
+fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Result<()> {
     if !executor.dry_run {
         state.mark_complete(step);
         if let Err(e) = state.save() {
