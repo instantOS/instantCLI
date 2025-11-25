@@ -1,8 +1,9 @@
+use super::CommandExecutor;
 use crate::arch::engine::{BootMode, InstallContext, QuestionId};
 use anyhow::{Context, Result};
 use std::process::Command;
 
-pub fn prepare_disk(context: &InstallContext, dry_run: bool) -> Result<()> {
+pub fn prepare_disk(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     let disk = context
         .get_answer(&QuestionId::Disk)
         .context("No disk selected")?;
@@ -18,32 +19,28 @@ pub fn prepare_disk(context: &InstallContext, dry_run: bool) -> Result<()> {
     let boot_mode = &context.system_info.boot_mode;
 
     // Unmount everything first just in case
-    if dry_run {
-        println!("[DRY RUN] umount -R /mnt || true");
-        println!("[DRY RUN] swapoff -a || true");
-    } else {
-        let _ = Command::new("umount").args(["-R", "/mnt"]).status();
-        let _ = Command::new("swapoff").args(["-a"]).status();
-    }
+    // We ignore errors here as it might not be mounted
+    let _ = executor.run(Command::new("umount").args(["-R", "/mnt"]));
+    let _ = executor.run(Command::new("swapoff").args(["-a"]));
 
     // Partitioning
     match boot_mode {
         BootMode::UEFI64 | BootMode::UEFI32 => {
-            partition_uefi(disk_path, dry_run)?;
-            format_uefi(disk_path, dry_run)?;
-            mount_uefi(disk_path, dry_run)?;
+            partition_uefi(disk_path, executor)?;
+            format_uefi(disk_path, executor)?;
+            mount_uefi(disk_path, executor)?;
         }
         BootMode::BIOS => {
-            partition_bios(disk_path, dry_run)?;
-            format_bios(disk_path, dry_run)?;
-            mount_bios(disk_path, dry_run)?;
+            partition_bios(disk_path, executor)?;
+            format_bios(disk_path, executor)?;
+            mount_bios(disk_path, executor)?;
         }
     }
 
     Ok(())
 }
 
-fn partition_uefi(disk: &str, dry_run: bool) -> Result<()> {
+fn partition_uefi(disk: &str, executor: &CommandExecutor) -> Result<()> {
     println!("Partitioning for UEFI...");
 
     // Layout:
@@ -58,39 +55,17 @@ fn partition_uefi(disk: &str, dry_run: bool) -> Result<()> {
          type=L\n"
     );
 
-    if dry_run {
-        println!(
-            "[DRY RUN] echo '{}' | sfdisk {}",
-            script.replace('\n', "\\n"),
-            disk
-        );
-    } else {
-        use std::io::Write;
-        let mut child = Command::new("sfdisk")
-            .arg(disk)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped()) // Capture output to avoid clutter
-            .spawn()?;
-
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(script.as_bytes())?;
-        }
-
-        let status = child.wait()?;
-        if !status.success() {
-            anyhow::bail!("Failed to partition disk {}", disk);
-        }
-    }
+    executor.run_with_input(Command::new("sfdisk").arg(disk), &script)?;
 
     // Wait for kernel to update partition table
-    if !dry_run {
+    if !executor.dry_run {
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
     Ok(())
 }
 
-fn partition_bios(disk: &str, dry_run: bool) -> Result<()> {
+fn partition_bios(disk: &str, executor: &CommandExecutor) -> Result<()> {
     println!("Partitioning for BIOS...");
 
     // Layout:
@@ -103,31 +78,9 @@ fn partition_bios(disk: &str, dry_run: bool) -> Result<()> {
          type=83\n"
     );
 
-    if dry_run {
-        println!(
-            "[DRY RUN] echo '{}' | sfdisk {}",
-            script.replace('\n', "\\n"),
-            disk
-        );
-    } else {
-        use std::io::Write;
-        let mut child = Command::new("sfdisk")
-            .arg(disk)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()?;
+    executor.run_with_input(Command::new("sfdisk").arg(disk), &script)?;
 
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(script.as_bytes())?;
-        }
-
-        let status = child.wait()?;
-        if !status.success() {
-            anyhow::bail!("Failed to partition disk {}", disk);
-        }
-    }
-
-    if !dry_run {
+    if !executor.dry_run {
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
@@ -143,84 +96,54 @@ fn get_part_path(disk: &str, part_num: u32) -> String {
     }
 }
 
-fn format_uefi(disk: &str, dry_run: bool) -> Result<()> {
+fn format_uefi(disk: &str, executor: &CommandExecutor) -> Result<()> {
     let p1 = get_part_path(disk, 1); // EFI
     let p2 = get_part_path(disk, 2); // Swap
     let p3 = get_part_path(disk, 3); // Root
 
     println!("Formatting partitions...");
 
-    if dry_run {
-        println!("[DRY RUN] mkfs.fat -F32 {}", p1);
-        println!("[DRY RUN] mkswap {}", p2);
-        println!("[DRY RUN] mkfs.ext4 -F {}", p3);
-    } else {
-        run_cmd("mkfs.fat", &["-F32", &p1])?;
-        run_cmd("mkswap", &[&p2])?;
-        run_cmd("mkfs.ext4", &["-F", &p3])?;
-    }
+    executor.run(Command::new("mkfs.fat").args(["-F32", &p1]))?;
+    executor.run(Command::new("mkswap").arg(&p2))?;
+    executor.run(Command::new("mkfs.ext4").args(["-F", &p3]))?;
 
     Ok(())
 }
 
-fn format_bios(disk: &str, dry_run: bool) -> Result<()> {
+fn format_bios(disk: &str, executor: &CommandExecutor) -> Result<()> {
     let p1 = get_part_path(disk, 1); // Swap
     let p2 = get_part_path(disk, 2); // Root
 
     println!("Formatting partitions...");
 
-    if dry_run {
-        println!("[DRY RUN] mkswap {}", p1);
-        println!("[DRY RUN] mkfs.ext4 -F {}", p2);
-    } else {
-        run_cmd("mkswap", &[&p1])?;
-        run_cmd("mkfs.ext4", &["-F", &p2])?;
-    }
+    executor.run(Command::new("mkswap").arg(&p1))?;
+    executor.run(Command::new("mkfs.ext4").args(["-F", &p2]))?;
 
     Ok(())
 }
 
-fn mount_uefi(disk: &str, dry_run: bool) -> Result<()> {
+fn mount_uefi(disk: &str, executor: &CommandExecutor) -> Result<()> {
     let p1 = get_part_path(disk, 1); // EFI
     let p2 = get_part_path(disk, 2); // Swap
     let p3 = get_part_path(disk, 3); // Root
 
     println!("Mounting partitions...");
 
-    if dry_run {
-        println!("[DRY RUN] mount {} /mnt", p3);
-        println!("[DRY RUN] mount --mkdir {} /mnt/boot", p1);
-        println!("[DRY RUN] swapon {}", p2);
-    } else {
-        run_cmd("mount", &[&p3, "/mnt"])?;
-        run_cmd("mount", &["--mkdir", &p1, "/mnt/boot"])?;
-        run_cmd("swapon", &[&p2])?;
-    }
+    executor.run(Command::new("mount").args([&p3, "/mnt"]))?;
+    executor.run(Command::new("mount").args(["--mkdir", &p1, "/mnt/boot"]))?;
+    executor.run(Command::new("swapon").arg(&p2))?;
 
     Ok(())
 }
 
-fn mount_bios(disk: &str, dry_run: bool) -> Result<()> {
+fn mount_bios(disk: &str, executor: &CommandExecutor) -> Result<()> {
     let p1 = get_part_path(disk, 1); // Swap
     let p2 = get_part_path(disk, 2); // Root
 
     println!("Mounting partitions...");
 
-    if dry_run {
-        println!("[DRY RUN] mount {} /mnt", p2);
-        println!("[DRY RUN] swapon {}", p1);
-    } else {
-        run_cmd("mount", &[&p2, "/mnt"])?;
-        run_cmd("swapon", &[&p1])?;
-    }
+    executor.run(Command::new("mount").args([&p2, "/mnt"]))?;
+    executor.run(Command::new("swapon").arg(&p1))?;
 
-    Ok(())
-}
-
-fn run_cmd(cmd: &str, args: &[&str]) -> Result<()> {
-    let status = Command::new(cmd).args(args).status()?;
-    if !status.success() {
-        anyhow::bail!("Command failed: {} {:?}", cmd, args);
-    }
     Ok(())
 }
