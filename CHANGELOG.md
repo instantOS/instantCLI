@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1](https://github.com/instantOS/instantCLI/compare/v0.7.0...v0.7.1) - 2025-11-25
+
+### Fixed
+
+- fix output
+
+### Other
+
+- support AUR for package installation
+- more display trait'
+- refactor display for bootmode
+- better output
+- add more disk validation
+- update deps
+- better icons
+- better icon
+- mask password
+- sort annotated values
+- even better annotation provider
+- better annotation provider
+- init annotations
+- add proper keymap provider
+- more plans
+- more icons
+- add icons
+- refactor very long engine function
+- better question fetching system
+- trigger review at the end of question asking
+- fmt
+- add question review
+- clippy
+- add output option
+- utf
+- better locale ask
+- implement real time zone provider
+- fmt
+- better requirement handling
+- add proper locale asking
+- make arch install require root
+- init disk provider
+- init data provider system
+- real mirrorlist parsing
+- implement going back
+- add list and ask commands
+- add input validation
+- init arch installer
+- add option to disable auphonic
+- make video renderer use auphonic
+- add self-update to ins update
+- init update command
+- refactor packages
+
 ## [0.6.12](https://github.com/instantOS/instantCLI/compare/v0.6.11...v0.6.12) - 2025-11-19
 
 ### Other
