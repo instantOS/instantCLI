@@ -63,10 +63,10 @@ pub fn get_boot_disk() -> Result<Option<String>> {
             }
 
             // Recursively check children
-            if let Some(children) = device.get("children").and_then(|c| c.as_array()) {
-                if let Some(disk) = find_physical_disk(children, target_name) {
-                    return Some(disk);
-                }
+            if let Some(children) = device.get("children").and_then(|c| c.as_array())
+                && let Some(disk) = find_physical_disk(children, target_name)
+            {
+                return Some(disk);
             }
         }
         None
@@ -79,21 +79,21 @@ pub fn get_boot_disk() -> Result<Option<String>> {
 
             if device_type == "disk" {
                 // Check if this disk contains the target
-                if let Some(children) = device.get("children").and_then(|c| c.as_array()) {
-                    if contains_device(children, target_name) {
-                        let name = device.get("name")?.as_str()?;
-                        let disk_path = if name.contains('/') {
-                            name.to_string()
-                        } else {
-                            format!("/dev/{}", name)
-                        };
-                        return Some(disk_path);
-                    }
+                if let Some(children) = device.get("children").and_then(|c| c.as_array())
+                    && contains_device(children, target_name)
+                {
+                    let name = device.get("name")?.as_str()?;
+                    let disk_path = if name.contains('/') {
+                        name.to_string()
+                    } else {
+                        format!("/dev/{}", name)
+                    };
+                    return Some(disk_path);
                 }
-            } else if let Some(children) = device.get("children").and_then(|c| c.as_array()) {
-                if let Some(disk) = find_parent_disk(children, target_name) {
-                    return Some(disk);
-                }
+            } else if let Some(children) = device.get("children").and_then(|c| c.as_array())
+                && let Some(disk) = find_parent_disk(children, target_name)
+            {
+                return Some(disk);
             }
         }
         None
@@ -102,15 +102,15 @@ pub fn get_boot_disk() -> Result<Option<String>> {
     // Function to check if a list of children contains the target device (recursively)
     fn contains_device(children: &[Value], target_name: &str) -> bool {
         for child in children {
-            if let Some(name) = child.get("name").and_then(|n| n.as_str()) {
-                if name == target_name {
-                    return true;
-                }
+            if let Some(name) = child.get("name").and_then(|n| n.as_str())
+                && name == target_name
+            {
+                return true;
             }
-            if let Some(grandchildren) = child.get("children").and_then(|c| c.as_array()) {
-                if contains_device(grandchildren, target_name) {
-                    return true;
-                }
+            if let Some(grandchildren) = child.get("children").and_then(|c| c.as_array())
+                && contains_device(grandchildren, target_name)
+            {
+                return true;
             }
         }
         false
@@ -159,10 +159,10 @@ pub fn is_disk_swap(disk: &str) -> Result<bool> {
     for line in swaps.lines().skip(1) {
         // Skip header
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if let Some(filename) = parts.first() {
-            if filename.starts_with(disk) {
-                return Ok(true);
-            }
+        if let Some(filename) = parts.first()
+            && filename.starts_with(disk)
+        {
+            return Ok(true);
         }
     }
 

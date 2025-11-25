@@ -1,4 +1,4 @@
-use crate::arch::annotations::{AnnotatedValue, AnnotationProvider};
+use crate::arch::annotations::AnnotatedValue;
 use crate::arch::engine::DataKey;
 use anyhow::Result;
 use std::fs;
