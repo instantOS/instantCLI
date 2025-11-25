@@ -21,6 +21,72 @@ pub enum InstallStep {
 
 pub mod disk;
 
+pub struct CommandExecutor {
+    dry_run: bool,
+}
+
+impl CommandExecutor {
+    pub fn new(dry_run: bool) -> Self {
+        Self { dry_run }
+    }
+
+    pub fn run(&self, command: &mut std::process::Command) -> anyhow::Result<()> {
+        if self.dry_run {
+            self.print_dry_run(command, None);
+            Ok(())
+        } else {
+            let status = command.status()?;
+            if !status.success() {
+                anyhow::bail!("Command failed: {:?}", command);
+            }
+            Ok(())
+        }
+    }
+
+    pub fn run_with_input(
+        &self,
+        command: &mut std::process::Command,
+        input: &str,
+    ) -> anyhow::Result<()> {
+        if self.dry_run {
+            self.print_dry_run(command, Some(input));
+            Ok(())
+        } else {
+            use std::io::Write;
+            command.stdin(std::process::Stdio::piped());
+            command.stdout(std::process::Stdio::piped()); // Capture output to avoid clutter
+
+            let mut child = command.spawn()?;
+
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(input.as_bytes())?;
+            }
+
+            let status = child.wait()?;
+            if !status.success() {
+                anyhow::bail!("Command failed: {:?}", command);
+            }
+            Ok(())
+        }
+    }
+
+    fn print_dry_run(&self, command: &std::process::Command, input: Option<&str>) {
+        let program = command.get_program().to_string_lossy();
+        let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
+        let cmd_str = format!("{} {}", program, args.join(" "));
+
+        if let Some(input_str) = input {
+            println!(
+                "[DRY RUN] echo '{}' | {}",
+                input_str.replace('\n', "\\n"),
+                cmd_str
+            );
+        } else {
+            println!("[DRY RUN] {}", cmd_str);
+        }
+    }
+}
+
 pub async fn execute_installation(
     config_path: PathBuf,
     step: Option<String>,
@@ -37,6 +103,8 @@ pub async fn execute_installation(
     if dry_run {
         println!("*** DRY RUN MODE ENABLED - No changes will be made ***");
     }
+
+    let executor = CommandExecutor::new(dry_run);
 
     println!("Loading configuration from: {}", config_path.display());
 
@@ -68,7 +136,7 @@ pub async fn execute_installation(
         };
 
         println!("Executing single step: {:?}", step_enum);
-        execute_step(step_enum, &context, dry_run).await?;
+        execute_step(step_enum, &context, &executor).await?;
     } else {
         println!("Executing all steps...");
         let steps = vec![
@@ -81,7 +149,7 @@ pub async fn execute_installation(
         ];
 
         for step in steps {
-            execute_step(step, &context, dry_run).await?;
+            execute_step(step, &context, &executor).await?;
         }
     }
 
@@ -91,13 +159,13 @@ pub async fn execute_installation(
 async fn execute_step(
     step: InstallStep,
     context: &crate::arch::engine::InstallContext,
-    dry_run: bool,
+    executor: &CommandExecutor,
 ) -> Result<()> {
-    let prefix = if dry_run { "[DRY RUN] " } else { "" };
+    let prefix = if executor.dry_run { "[DRY RUN] " } else { "" };
     println!("{}-> Running step: {:?}", prefix, step);
 
     match step {
-        InstallStep::Disk => disk::prepare_disk(context, dry_run)?,
+        InstallStep::Disk => disk::prepare_disk(context, executor)?,
         _ => {
             println!("Step {:?} not implemented yet", step);
         }
