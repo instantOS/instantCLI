@@ -1,10 +1,7 @@
-use crate::arch::engine::{
-    AsyncDataProvider, BootMode, DataKey, InstallContext, Question, QuestionId, QuestionResult,
-};
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
+use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
-use std::process::Command;
 
 pub struct HostnameQuestion;
 
@@ -216,15 +213,15 @@ impl Question for DiskQuestion {
         }
 
         // Check if this disk is the current boot disk (physical disk containing root)
-        if let Ok(Some(boot_disk)) = crate::arch::disks::get_boot_disk() {
-            if device_name == boot_disk {
-                return Err(format!(
-                    "Cannot select the current boot disk ({}) for installation.\n\
+        if let Ok(Some(boot_disk)) = crate::arch::disks::get_boot_disk()
+            && device_name == boot_disk
+        {
+            return Err(format!(
+                "Cannot select the current boot disk ({}) for installation.\n\
                     This disk contains the currently running system and would cause data loss.\n\
                     Please select a different disk.",
-                    boot_disk
-                ));
-            }
+                boot_disk
+            ));
         }
 
         Ok(())
