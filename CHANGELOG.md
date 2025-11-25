@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3](https://github.com/instantOS/instantCLI/compare/v0.7.2...v0.7.3) - 2025-11-25
+
+### Fixed
+
+- fix test for CI
+- fix typos
+- fix deps
+
+### Other
+
+- clippy
+- clippy
+- rename repo.rs
+- init postinstall step
+- sync PKGBUILD version
+- release v0.7.2
+- add step dependency system
+- init bootloader step
+- better chroot handling
+- init config step
+- init fstab step
+- init base step
+- init mirrorlist fetching
+- improve dry run output
+- better disk verification
+- make RAM determine swap space
+- better command runner
+- init disk step
+- move
+- add dry-run mode
+- scaffold install execution
+
 ## [0.7.2](https://github.com/instantOS/instantCLI/compare/v0.7.1...v0.7.2) - 2025-11-25
 
 ### Other
