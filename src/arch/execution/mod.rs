@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -20,6 +20,7 @@ pub enum InstallStep {
 }
 
 pub mod base;
+pub mod config;
 pub mod disk;
 pub mod fstab;
 
@@ -165,7 +166,7 @@ pub async fn execute_installation(
         };
 
         println!("Executing single step: {:?}", step_enum);
-        execute_step(step_enum, &context, &executor).await?;
+        execute_step(step_enum, &context, &executor, &config_path).await?;
     } else {
         println!("Executing all steps...");
         let steps = vec![
@@ -178,7 +179,7 @@ pub async fn execute_installation(
         ];
 
         for step in steps {
-            execute_step(step, &context, &executor).await?;
+            execute_step(step, &context, &executor, &config_path).await?;
         }
     }
 
@@ -189,6 +190,7 @@ async fn execute_step(
     step: InstallStep,
     context: &crate::arch::engine::InstallContext,
     executor: &CommandExecutor,
+    config_path: &std::path::Path,
 ) -> Result<()> {
     let prefix = if executor.dry_run { "[DRY RUN] " } else { "" };
     println!("{}-> Running step: {:?}", prefix, step);
@@ -197,9 +199,43 @@ async fn execute_step(
         InstallStep::Disk => disk::prepare_disk(context, executor)?,
         InstallStep::Base => base::install_base(context, executor).await?,
         InstallStep::Fstab => fstab::generate_fstab(context, executor)?,
+        InstallStep::Config => {
+            setup_chroot(executor, config_path)?;
+            config::install_config(context, executor).await?
+        }
         _ => {
             println!("Step {:?} not implemented yet", step);
         }
     }
+    Ok(())
+}
+
+fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Result<()> {
+    println!("Setting up chroot environment...");
+
+    // Copy binary
+    let current_exe = std::env::current_exe()?;
+    let target_bin = "/mnt/usr/bin/ins";
+
+    if executor.dry_run {
+        println!("[DRY RUN] cp {:?} {}", current_exe, target_bin);
+    } else {
+        // We assume /mnt/usr/bin exists (created by base install)
+        // If not, we might want to create it or fail?
+        // Base install should have created it.
+        std::fs::copy(&current_exe, target_bin).context("Failed to copy binary to chroot")?;
+    }
+
+    // Copy config
+    let target_config = "/mnt/tmp/install_config.toml";
+    if executor.dry_run {
+        println!("[DRY RUN] cp {:?} {}", config_path, target_config);
+    } else {
+        if !std::path::Path::new("/mnt/tmp").exists() {
+            std::fs::create_dir_all("/mnt/tmp")?;
+        }
+        std::fs::copy(config_path, target_config).context("Failed to copy config to chroot")?;
+    }
+
     Ok(())
 }
