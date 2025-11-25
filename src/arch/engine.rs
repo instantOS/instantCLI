@@ -276,26 +276,23 @@ impl QuestionEngine {
             .header("Select a question to modify")
             .select(review_items)?;
 
-        match review {
-            crate::menu_utils::FzfResult::Selected(selection) => {
-                if selection == continue_opt {
-                    return Ok(None);
-                }
+        if let crate::menu_utils::FzfResult::Selected(selection) = review {
+            if selection == continue_opt {
+                return Ok(None);
+            }
 
-                // Format: "ICON QuestionId: Answer"
-                let parts: Vec<&str> = selection.splitn(3, ' ').collect();
-                if parts.len() >= 2 {
-                    let id_str = parts[1].trim_end_matches(':');
-                    if let Some(new_index) = self
-                        .questions
-                        .iter()
-                        .position(|q| format!("{:?}", q.id()) == id_str)
-                    {
-                        return Ok(Some(new_index));
-                    }
+            // Format: "ICON QuestionId: Answer"
+            let parts: Vec<&str> = selection.splitn(3, ' ').collect();
+            if parts.len() >= 2 {
+                let id_str = parts[1].trim_end_matches(':');
+                if let Some(new_index) = self
+                    .questions
+                    .iter()
+                    .position(|q| format!("{:?}", q.id()) == id_str)
+                {
+                    return Ok(Some(new_index));
                 }
             }
-            _ => {}
         }
         Ok(None)
     }
@@ -363,7 +360,7 @@ impl QuestionEngine {
             }
 
             if let Some(ans) = self.context.get_answer(&q.id()) {
-                if let Err(_) = q.validate(&self.context, ans) {
+                if q.validate(&self.context, ans).is_err() {
                     self.context.answers.remove(&q.id());
                     return Some(i);
                 }

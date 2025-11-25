@@ -162,10 +162,10 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 .unwrap_or_else(|| std::path::PathBuf::from("/etc/instant/questions.toml"));
 
             // Ensure parent directory exists
-            if let Some(parent) = config_path.parent() {
-                if !parent.exists() {
-                    std::fs::create_dir_all(parent)?;
-                }
+            if let Some(parent) = config_path.parent()
+                && !parent.exists()
+            {
+                std::fs::create_dir_all(parent)?;
             }
 
             // Write to file
