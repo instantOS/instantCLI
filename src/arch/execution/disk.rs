@@ -53,7 +53,7 @@ fn get_total_ram_gb() -> Option<u64> {
                 let kb: u64 = parts[1].parse().ok()?;
                 // Convert KB to GiB (KB / 1024 / 1024)
                 // We round up to nearest GB
-                return Some(kb.div_ceil((1024 * 1024)));
+                return Some(kb.div_ceil(1024 * 1024));
             }
         }
     }
