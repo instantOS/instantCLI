@@ -183,7 +183,7 @@ mod tests {
 
             match result.unwrap() {
                 Some(device) => {
-                    // The device should be a non-empty string
+                    // In containers, the root device might be "overlay" or similar, so we don't assert /dev/ prefix
                     assert!(!device.is_empty());
                     println!("Root device detected: {}", device);
 
