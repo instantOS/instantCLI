@@ -153,6 +153,9 @@ fn mount_uefi(disk: &str, executor: &CommandExecutor) -> Result<()> {
 
     executor.run(Command::new("mount").args([&p3, "/mnt"]))?;
     executor.run(Command::new("mount").args(["--mkdir", &p1, "/mnt/boot"]))?;
+
+    // We activate swap here so that genfstab can automatically detect it
+    // and add it to the generated /etc/fstab in the next step.
     executor.run(Command::new("swapon").arg(&p2))?;
 
     Ok(())
@@ -165,6 +168,9 @@ fn mount_bios(disk: &str, executor: &CommandExecutor) -> Result<()> {
     println!("Mounting partitions...");
 
     executor.run(Command::new("mount").args([&p2, "/mnt"]))?;
+
+    // We activate swap here so that genfstab can automatically detect it
+    // and add it to the generated /etc/fstab in the next step.
     executor.run(Command::new("swapon").arg(&p1))?;
 
     Ok(())
