@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 pub async fn install_config(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
-    println!("Configuring system...");
+    println!("Configuring system (inside chroot)...");
 
     configure_timezone(context, executor)?;
     configure_locale(context, executor)?;
@@ -24,12 +24,9 @@ fn configure_vconsole(context: &InstallContext, executor: &CommandExecutor) -> R
     println!("Setting console keymap to {}", keymap);
 
     if executor.dry_run {
-        println!(
-            "[DRY RUN] echo 'KEYMAP={}' > /mnt/etc/vconsole.conf",
-            keymap
-        );
+        println!("[DRY RUN] echo 'KEYMAP={}' > /etc/vconsole.conf", keymap);
     } else {
-        std::fs::write("/mnt/etc/vconsole.conf", format!("KEYMAP={}\n", keymap))?;
+        std::fs::write("/etc/vconsole.conf", format!("KEYMAP={}\n", keymap))?;
     }
 
     Ok(())
@@ -42,9 +39,9 @@ fn configure_timezone(context: &InstallContext, executor: &CommandExecutor) -> R
 
     println!("Setting timezone to {}", timezone);
 
-    // ln -sf /usr/share/zoneinfo/Region/City /mnt/etc/localtime
+    // ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
     let source = format!("/usr/share/zoneinfo/{}", timezone);
-    let target = "/mnt/etc/localtime";
+    let target = "/etc/localtime";
 
     if executor.dry_run {
         println!("[DRY RUN] ln -sf {} {}", source, target);
@@ -56,9 +53,9 @@ fn configure_timezone(context: &InstallContext, executor: &CommandExecutor) -> R
         std::os::unix::fs::symlink(&source, target)?;
     }
 
-    // arch-chroot /mnt hwclock --systohc
-    let mut cmd = Command::new("arch-chroot");
-    cmd.arg("/mnt").arg("hwclock").arg("--systohc");
+    // hwclock --systohc
+    let mut cmd = Command::new("hwclock");
+    cmd.arg("--systohc");
     executor.run(&mut cmd)?;
 
     Ok(())
@@ -72,14 +69,14 @@ fn configure_locale(context: &InstallContext, executor: &CommandExecutor) -> Res
     println!("Setting locale to {}", locale);
 
     if executor.dry_run {
-        println!("[DRY RUN] Uncommenting {} in /mnt/etc/locale.gen", locale);
-        println!("[DRY RUN] arch-chroot /mnt locale-gen");
-        println!("[DRY RUN] echo 'LANG={}' > /mnt/etc/locale.conf", locale);
+        println!("[DRY RUN] Uncommenting {} in /etc/locale.gen", locale);
+        println!("[DRY RUN] locale-gen");
+        println!("[DRY RUN] echo 'LANG={}' > /etc/locale.conf", locale);
     } else {
-        // Read /mnt/etc/locale.gen
-        let locale_gen_path = "/mnt/etc/locale.gen";
-        let content = std::fs::read_to_string(locale_gen_path)
-            .context("Failed to read /mnt/etc/locale.gen")?;
+        // Read /etc/locale.gen
+        let locale_gen_path = "/etc/locale.gen";
+        let content =
+            std::fs::read_to_string(locale_gen_path).context("Failed to read /etc/locale.gen")?;
 
         // Uncomment the selected locale
         let mut new_lines = Vec::new();
@@ -107,14 +104,13 @@ fn configure_locale(context: &InstallContext, executor: &CommandExecutor) -> Res
         std::fs::write(locale_gen_path, new_lines.join("\n"))?;
 
         // Run locale-gen
-        let mut cmd = Command::new("arch-chroot");
-        cmd.arg("/mnt").arg("locale-gen");
+        let mut cmd = Command::new("locale-gen");
         executor.run(&mut cmd)?;
 
         // Write locale.conf
         // Extract just the LANG part, e.g., "en_US.UTF-8" from "en_US.UTF-8 UTF-8"
         let lang = locale.split_whitespace().next().unwrap_or(locale);
-        std::fs::write("/mnt/etc/locale.conf", format!("LANG={}\n", lang))?;
+        std::fs::write("/etc/locale.conf", format!("LANG={}\n", lang))?;
     }
 
     Ok(())
@@ -128,16 +124,16 @@ fn configure_network(context: &InstallContext, executor: &CommandExecutor) -> Re
     println!("Setting hostname to {}", hostname);
 
     if executor.dry_run {
-        println!("[DRY RUN] echo '{}' > /mnt/etc/hostname", hostname);
-        println!("[DRY RUN] Writing /mnt/etc/hosts");
+        println!("[DRY RUN] echo '{}' > /etc/hostname", hostname);
+        println!("[DRY RUN] Writing /etc/hosts");
     } else {
-        std::fs::write("/mnt/etc/hostname", format!("{}\n", hostname))?;
+        std::fs::write("/etc/hostname", format!("{}\n", hostname))?;
 
         let hosts_content = format!(
             "127.0.0.1\tlocalhost\n::1\t\tlocalhost\n127.0.1.1\t{}.localdomain\t{}\n",
             hostname, hostname
         );
-        std::fs::write("/mnt/etc/hosts", hosts_content)?;
+        std::fs::write("/etc/hosts", hosts_content)?;
     }
 
     Ok(())
@@ -156,8 +152,7 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
     // Set root password
     // echo "root:password" | chpasswd
     let root_input = format!("root:{}", password);
-    let mut cmd_root = Command::new("arch-chroot");
-    cmd_root.arg("/mnt").arg("chpasswd");
+    let mut cmd_root = Command::new("chpasswd");
     executor.run_with_input(&mut cmd_root, &root_input)?;
 
     // Create user
@@ -165,10 +160,8 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
     let groups = "wheel,video,docker,uucp,sys,rfkill"; // Common groups
     let shell = "/bin/bash"; // Default to bash for now, maybe zsh later if requested
 
-    let mut cmd_user = Command::new("arch-chroot");
+    let mut cmd_user = Command::new("useradd");
     cmd_user
-        .arg("/mnt")
-        .arg("useradd")
         .arg("-m")
         .arg("-G")
         .arg(groups)
@@ -180,8 +173,7 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
 
     // Set user password
     let user_input = format!("{}:{}", username, password);
-    let mut cmd_pass = Command::new("arch-chroot");
-    cmd_pass.arg("/mnt").arg("chpasswd");
+    let mut cmd_pass = Command::new("chpasswd");
     executor.run_with_input(&mut cmd_pass, &user_input)?;
 
     Ok(())
@@ -192,12 +184,12 @@ fn configure_sudo(_context: &InstallContext, executor: &CommandExecutor) -> Resu
     // Uncomment %wheel ALL=(ALL:ALL) ALL
 
     if executor.dry_run {
-        println!("[DRY RUN] Uncommenting %wheel in /mnt/etc/sudoers");
-        println!("[DRY RUN] Adding 'Defaults env_reset,pwfeedback' to /mnt/etc/sudoers");
+        println!("[DRY RUN] Uncommenting %wheel in /etc/sudoers");
+        println!("[DRY RUN] Adding 'Defaults env_reset,pwfeedback' to /etc/sudoers");
     } else {
-        let sudoers_path = "/mnt/etc/sudoers";
+        let sudoers_path = "/etc/sudoers";
         let content =
-            std::fs::read_to_string(sudoers_path).context("Failed to read /mnt/etc/sudoers")?;
+            std::fs::read_to_string(sudoers_path).context("Failed to read /etc/sudoers")?;
 
         let mut new_lines = Vec::new();
         for line in content.lines() {
