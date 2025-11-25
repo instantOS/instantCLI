@@ -3,6 +3,7 @@ pub mod cli;
 pub mod config;
 pub mod disks;
 pub mod engine;
+pub mod execution;
 pub mod keymaps;
 pub mod locales;
 pub mod mirrors;
