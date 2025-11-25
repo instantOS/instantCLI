@@ -179,7 +179,9 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             config_file,
             dry_run,
         } => {
-            ensure_root()?;
+            if !dry_run {
+                ensure_root()?;
+            }
             crate::arch::execution::execute_installation(config_file, step, dry_run).await
         }
     }
