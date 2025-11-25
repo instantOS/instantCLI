@@ -1,6 +1,7 @@
 pub mod compositor;
 pub mod dependencies;
 pub mod display_server;
+pub mod distro;
 pub mod git;
 pub mod paths;
 pub mod progress;

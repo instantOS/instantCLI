@@ -25,6 +25,16 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         DiskQuestion, HostnameQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion,
         PasswordQuestion, TimezoneQuestion, UsernameQuestion,
     };
+    use crate::common::distro::{detect_distro, Distro};
+
+    if let Ok(distro) = detect_distro() {
+        if distro != Distro::Arch {
+            eprintln!(
+                "Warning: You appear to be running on {}, but this command is intended for Arch Linux.",
+                distro
+            );
+        }
+    }
 
     let questions: Vec<Box<dyn crate::arch::engine::Question>> = vec![
         Box::new(KeymapQuestion),
