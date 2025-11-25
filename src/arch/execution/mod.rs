@@ -21,9 +21,10 @@ pub enum InstallStep {
 
 pub mod base;
 pub mod disk;
+pub mod fstab;
 
 pub struct CommandExecutor {
-    dry_run: bool,
+    pub dry_run: bool,
 }
 
 impl CommandExecutor {
@@ -68,6 +69,26 @@ impl CommandExecutor {
                 anyhow::bail!("Command failed: {:?}", command);
             }
             Ok(())
+        }
+    }
+
+    pub fn run_with_output(
+        &self,
+        command: &mut std::process::Command,
+    ) -> anyhow::Result<Option<std::process::Output>> {
+        if self.dry_run {
+            self.print_dry_run(command, None);
+            Ok(None)
+        } else {
+            // Capture stdout/stderr
+            command.stdout(std::process::Stdio::piped());
+            // We don't necessarily want to capture stderr, maybe let it inherit?
+            // But .output() captures both.
+            let output = command.output()?;
+            if !output.status.success() {
+                anyhow::bail!("Command failed: {:?}", command);
+            }
+            Ok(Some(output))
         }
     }
 
@@ -175,6 +196,7 @@ async fn execute_step(
     match step {
         InstallStep::Disk => disk::prepare_disk(context, executor)?,
         InstallStep::Base => base::install_base(context, executor).await?,
+        InstallStep::Fstab => fstab::generate_fstab(context, executor)?,
         _ => {
             println!("Step {:?} not implemented yet", step);
         }
