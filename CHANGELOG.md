@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4](https://github.com/instantOS/instantCLI/compare/v0.7.3...v0.7.4) - 2025-11-25
+
+### Fixed
+
+- fix test for containers
+
+### Other
+
+- Merge branch 'dev'
+- make archinstall command refuse non-arch distros
+- init distro detection
+
 ## [0.7.3](https://github.com/instantOS/instantCLI/compare/v0.7.2...v0.7.3) - 2025-11-25
 
 ### Fixed
