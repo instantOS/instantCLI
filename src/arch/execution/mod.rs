@@ -53,6 +53,7 @@ pub fn is_chroot() -> bool {
 }
 
 pub mod base;
+pub mod bootloader;
 pub mod config;
 pub mod disk;
 pub mod fstab;
@@ -271,6 +272,10 @@ async fn execute_step(
         InstallStep::Config => {
             // setup_chroot is handled above if needed
             config::install_config(context, executor).await?
+        }
+        InstallStep::Bootloader => {
+            // setup_chroot is handled above if needed
+            bootloader::install_bootloader(context, executor).await?
         }
         _ => {
             println!("Step {:?} not implemented yet", step);
