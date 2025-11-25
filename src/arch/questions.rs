@@ -227,6 +227,24 @@ impl Question for DiskQuestion {
             }
         }
 
+        // Check if disk is mounted
+        if let Ok(true) = crate::arch::disks::is_disk_mounted(device_name) {
+            return Err(format!(
+                "The selected disk ({}) contains mounted partitions.\n\
+                Please unmount all partitions on this disk before proceeding.",
+                device_name
+            ));
+        }
+
+        // Check if disk is used as swap
+        if let Ok(true) = crate::arch::disks::is_disk_swap(device_name) {
+            return Err(format!(
+                "The selected disk ({}) is currently being used as swap.\n\
+                Please swapoff this disk before proceeding.",
+                device_name
+            ));
+        }
+
         Ok(())
     }
 

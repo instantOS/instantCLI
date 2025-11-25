@@ -33,6 +33,27 @@ pub async fn fetch_mirror_regions() -> Result<HashMap<String, String>> {
     Ok(regions)
 }
 
+pub async fn fetch_mirrorlist(region_code: &str) -> Result<String> {
+    let url = format!(
+        "https://archlinux.org/mirrorlist/?country={}&protocol=https&ip_version=4",
+        region_code
+    );
+    let response = reqwest::get(&url).await?.text().await?;
+
+    // Uncomment servers
+    let mut mirrorlist = String::new();
+    for line in response.lines() {
+        if line.starts_with("#Server =") {
+            mirrorlist.push_str(&line[1..]); // Remove #
+        } else {
+            mirrorlist.push_str(line);
+        }
+        mirrorlist.push('\n');
+    }
+
+    Ok(mirrorlist)
+}
+
 use crate::arch::engine::DataKey;
 
 pub struct MirrorRegionsKey;
