@@ -76,11 +76,18 @@ impl CommandExecutor {
         let cmd_str = format!("{} {}", program, args.join(" "));
 
         if let Some(input_str) = input {
-            println!(
-                "[DRY RUN] echo '{}' | {}",
-                input_str.replace('\n', "\\n"),
-                cmd_str
-            );
+            if input_str.contains('\n') {
+                println!("[DRY RUN] --- BEGIN COMMAND ---");
+                println!("> {}", cmd_str);
+                println!("{}", input_str.trim());
+                println!("[DRY RUN] --- END COMMAND ---");
+            } else {
+                println!(
+                    "[DRY RUN] echo '{}' | {}",
+                    input_str.replace('\n', "\\n"),
+                    cmd_str
+                );
+            }
         } else {
             println!("[DRY RUN] {}", cmd_str);
         }
