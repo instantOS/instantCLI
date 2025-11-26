@@ -2,8 +2,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::net::TcpStream;
-use std::time::Duration;
 use crate::common::paths;
 use crate::common::compositor::CompositorType;
 use crate::assist::{self, AssistCommands};
@@ -57,14 +55,6 @@ fn is_already_running() -> bool {
     false
 }
 
-fn check_internet() -> bool {
-    // Try to connect to Google DNS
-    TcpStream::connect_timeout(
-        &"8.8.8.8:53".parse().unwrap(),
-        Duration::from_secs(2)
-    ).is_ok()
-}
-
 pub async fn run(debug: bool) -> Result<()> {
     let config = load_config()?;
     
@@ -94,7 +84,7 @@ pub async fn run(debug: bool) -> Result<()> {
         assist::dispatch_assist_command(debug, Some(AssistCommands::Setup))?;
     }
 
-    if check_internet() {
+    if crate::common::network::check_internet() {
         if debug {
             println!("Internet connection detected, running dot update");
         }

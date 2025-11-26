@@ -3,7 +3,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::settings::network::check_internet;
+use crate::common::network::check_internet;
 
 use super::sync::sync_game_saves;
 

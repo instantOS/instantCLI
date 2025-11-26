@@ -104,7 +104,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             let mut system_info = crate::arch::engine::SystemInfo::default();
 
             // Internet check
-            system_info.internet_connected = crate::settings::network::check_internet();
+            system_info.internet_connected = crate::common::network::check_internet();
             if !system_info.internet_connected {
                 eprintln!(
                     "Error: No internet connection detected. Arch installation requires internet."

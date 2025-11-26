@@ -51,8 +51,9 @@ fn setup_user_dotfiles(context: &InstallContext, executor: &CommandExecutor) -> 
     println!("Setting up dotfiles for user: {}", username);
 
     // Clone dotfiles
-    // su -c "ins dot repo clone https://github.com/instantOS/instantDOTS" username
-    let clone_cmd_str = "ins dot repo clone https://github.com/instantOS/instantDOTS";
+    // su -c "ins dot repo clone https://github.com/instantOS/dotfiles" username
+    // TODO: make repo url a constant
+    let clone_cmd_str = "ins dot repo clone https://github.com/instantOS/dotfiles";
     let mut cmd_clone = Command::new("su");
     cmd_clone.arg("-c").arg(clone_cmd_str).arg(username);
 
