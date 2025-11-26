@@ -79,7 +79,33 @@ fn setup_user_dotfiles(username: &str, executor: &CommandExecutor) -> Result<()>
 fn enable_services(executor: &CommandExecutor) -> Result<()> {
     println!("Enabling services...");
 
-    let services = vec!["lightdm", "NetworkManager", "sshd"];
+    let mut services = vec!["NetworkManager", "sshd"];
+
+    // Check if other display managers are enabled
+    // We check this directly via Command because CommandExecutor errors on failure (non-zero exit),
+    // and systemctl is-enabled returns non-zero if disabled.
+    let mut other_dm_enabled = false;
+
+    for dm in &["sddm", "gdm"] {
+        let mut cmd = Command::new("systemctl");
+        cmd.arg("is-enabled").arg(dm);
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+
+        if let Ok(status) = cmd.status() {
+            if status.success() {
+                println!("Detected enabled display manager: {}", dm);
+                other_dm_enabled = true;
+                break;
+            }
+        }
+    }
+
+    if !other_dm_enabled {
+        services.push("lightdm");
+    } else {
+        println!("Skipping lightdm setup because another display manager is enabled.");
+    }
 
     for service in services {
         let mut cmd = Command::new("systemctl");
