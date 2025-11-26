@@ -6,11 +6,11 @@ pub mod bootloader;
 pub mod config;
 pub mod disk;
 pub mod fstab;
+pub mod paths;
 pub mod post;
 pub mod setup;
 pub mod state;
 pub mod step;
-pub mod paths;
 
 use self::state::InstallState;
 use self::step::InstallStep;
@@ -136,7 +136,10 @@ pub async fn execute_installation(
     // Check for force dry-run file
     if std::path::Path::new(paths::DRY_RUN_FLAG).exists() {
         if !dry_run {
-            println!("Notice: {} exists, forcing dry-run mode.", paths::DRY_RUN_FLAG);
+            println!(
+                "Notice: {} exists, forcing dry-run mode.",
+                paths::DRY_RUN_FLAG
+            );
         }
         dry_run = true;
     }
@@ -298,10 +301,10 @@ async fn execute_step(
         } else if !in_chroot {
             // Sync state to chroot if it exists
             let chroot_state = paths::chroot_path(paths::STATE_FILE);
-            if chroot_state.parent().map(|p| p.exists()).unwrap_or(false) {
-                if let Err(e) = std::fs::copy(paths::STATE_FILE, &chroot_state) {
-                    println!("Warning: Failed to sync state to chroot: {}", e);
-                }
+            if chroot_state.parent().map(|p| p.exists()).unwrap_or(false)
+                && let Err(e) = std::fs::copy(paths::STATE_FILE, &chroot_state)
+            {
+                println!("Warning: Failed to sync state to chroot: {}", e);
             }
         }
     }
@@ -329,10 +332,10 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
         println!("[DRY RUN] cp {:?} {:?}", config_path, target_config);
     } else {
         // Ensure directory exists
-        if let Some(parent) = target_config.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent).context("Failed to create config dir in chroot")?;
-            }
+        if let Some(parent) = target_config.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent).context("Failed to create config dir in chroot")?;
         }
         std::fs::copy(config_path, target_config).context("Failed to copy config to chroot")?;
     }
@@ -345,10 +348,10 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
             println!("[DRY RUN] cp {} {:?}", state_file, target_state);
         } else {
             // Ensure directory exists (should be same as config but good to be safe)
-            if let Some(parent) = target_state.parent() {
-                if !parent.exists() {
-                    std::fs::create_dir_all(parent).context("Failed to create state dir in chroot")?;
-                }
+            if let Some(parent) = target_state.parent()
+                && !parent.exists()
+            {
+                std::fs::create_dir_all(parent).context("Failed to create state dir in chroot")?;
             }
             std::fs::copy(state_file, target_state).context("Failed to copy state to chroot")?;
         }

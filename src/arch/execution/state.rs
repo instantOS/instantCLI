@@ -29,10 +29,10 @@ impl InstallState {
 
     pub fn save(&self) -> Result<()> {
         let content = toml::to_string_pretty(self)?;
-        if let Some(parent) = Path::new(paths::STATE_FILE).parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = Path::new(paths::STATE_FILE).parent()
+            && !parent.exists()
+        {
+            fs::create_dir_all(parent)?;
         }
         fs::write(paths::STATE_FILE, content)?;
         Ok(())

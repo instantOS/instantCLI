@@ -177,13 +177,7 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
     executor.run_with_input(&mut cmd_root, &root_input)?;
 
     // Create user
-    let groups = vec![
-        "wheel",
-        "video",
-        "docker",
-        "sys",
-        "rfkill",
-    ];
+    let groups = vec!["wheel", "video", "docker", "sys", "rfkill"];
 
     // Ensure groups exist
     for group in &groups {
