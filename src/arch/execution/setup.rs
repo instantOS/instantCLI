@@ -37,7 +37,13 @@ async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
 fn install_instant_packages(executor: &CommandExecutor) -> Result<()> {
     println!("Installing instantOS packages...");
 
-    let packages = vec!["instantdepend", "instantos", "instantextra"];
+    let packages = vec![
+        "instantdepend",
+        "instantos",
+        "instantextra",
+        "lightdm",
+        "lightdm-gtk-greeter",
+    ];
 
     let mut cmd = Command::new("pacman");
     cmd.arg("-S")

@@ -60,6 +60,7 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         "base-devel", // Generally useful and often required
         "fzf",        // Required for menu_utils
         "gum",        // Required for some UI elements
+        "openssh",    // Required for sshd
     ];
 
     // CPU Microcode
