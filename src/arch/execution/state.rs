@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-const STATE_FILE: &str = "/tmp/instant_install_state.toml";
+use super::paths;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InstallState {
@@ -18,8 +18,8 @@ impl InstallState {
     }
 
     pub fn load() -> Result<Self> {
-        if Path::new(STATE_FILE).exists() {
-            let content = fs::read_to_string(STATE_FILE)?;
+        if Path::new(paths::STATE_FILE).exists() {
+            let content = fs::read_to_string(paths::STATE_FILE)?;
             let state: InstallState = toml::from_str(&content)?;
             Ok(state)
         } else {
@@ -29,7 +29,12 @@ impl InstallState {
 
     pub fn save(&self) -> Result<()> {
         let content = toml::to_string_pretty(self)?;
-        fs::write(STATE_FILE, content)?;
+        if let Some(parent) = Path::new(paths::STATE_FILE).parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        fs::write(paths::STATE_FILE, content)?;
         Ok(())
     }
 

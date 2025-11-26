@@ -224,6 +224,7 @@ pub trait Question: Send + Sync {
 pub struct QuestionEngine {
     questions: Vec<Box<dyn Question>>,
     pub context: InstallContext,
+    is_tty: bool,
 }
 
 impl QuestionEngine {
@@ -231,6 +232,7 @@ impl QuestionEngine {
         Self {
             questions,
             context: InstallContext::new(),
+            is_tty: is_tty_environment(),
         }
     }
 
@@ -316,6 +318,13 @@ impl QuestionEngine {
                     }
 
                     loop {
+                        // Clear screen if running in TTY to avoid artifacts
+                        if self.is_tty {
+                            print!("\x1B[2J\x1B[1;1H");
+                            use std::io::Write;
+                            let _ = std::io::stdout().flush();
+                        }
+
                         let result = self.questions[idx].ask(&self.context).await?;
                         match result {
                             QuestionResult::Answer(answer) => {
@@ -442,6 +451,11 @@ impl QuestionEngine {
             _ => Ok(false),
         }
     }
+}
+
+fn is_tty_environment() -> bool {
+    std::env::var("TERM").map(|t| t == "linux").unwrap_or(false)
+        || (std::env::var("DISPLAY").is_err() && std::env::var("WAYLAND_DISPLAY").is_err())
 }
 
 #[cfg(test)]

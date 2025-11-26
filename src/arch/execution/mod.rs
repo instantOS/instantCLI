@@ -10,6 +10,7 @@ pub mod post;
 pub mod setup;
 pub mod state;
 pub mod step;
+pub mod paths;
 
 use self::state::InstallState;
 use self::step::InstallStep;
@@ -133,9 +134,9 @@ pub async fn execute_installation(
     mut dry_run: bool,
 ) -> Result<()> {
     // Check for force dry-run file
-    if std::path::Path::new("/etc/instant/installdryrun").exists() {
+    if std::path::Path::new(paths::DRY_RUN_FLAG).exists() {
         if !dry_run {
-            println!("Notice: /etc/instant/installdryrun exists, forcing dry-run mode.");
+            println!("Notice: {} exists, forcing dry-run mode.", paths::DRY_RUN_FLAG);
         }
         dry_run = true;
     }
@@ -211,6 +212,12 @@ async fn execute_step(
         InstallState::new()
     });
 
+    // Check if already complete
+    if state.is_complete(step) && !executor.dry_run {
+        println!("Step {:?} is already complete. Skipping.", step);
+        return Ok(());
+    }
+
     // Check dependencies
     if let Err(missing) = state.check_dependencies(step) {
         if executor.dry_run {
@@ -231,20 +238,20 @@ async fn execute_step(
         setup_chroot(executor, config_path)?;
 
         // Construct command to run inside chroot
-        // arch-chroot /mnt /usr/bin/ins arch exec <step> --config /tmp/install_config.toml
+        // arch-chroot /mnt /usr/bin/ins arch exec <step> --config /etc/instant/install_config.toml
         // Note: we need to pass the step name as string.
         // We can convert enum to string via Debug or Display if implemented, or just match.
         // clap::ValueEnum implements Display/FromStr usually but let's be safe.
         let step_name = format!("{:?}", step).to_lowercase();
 
         let mut cmd = std::process::Command::new("arch-chroot");
-        cmd.arg("/mnt")
+        cmd.arg(paths::CHROOT_MOUNT)
             .arg("/usr/bin/ins")
             .arg("arch")
             .arg("exec")
             .arg(step_name)
-            .arg("--config")
-            .arg("/tmp/install_config.toml");
+            .arg("--questions-file")
+            .arg(paths::CONFIG_FILE);
 
         if executor.dry_run {
             // Pass dry-run flag if we are dry-running
@@ -252,6 +259,13 @@ async fn execute_step(
         }
 
         executor.run(&mut cmd)?;
+
+        // Mark complete on host after successful chroot execution
+        state.mark_complete(step);
+        if let Err(e) = state.save() {
+            println!("Warning: Failed to save install state on host: {}", e);
+        }
+
         return Ok(());
     }
 
@@ -281,6 +295,14 @@ async fn execute_step(
         state.mark_complete(step);
         if let Err(e) = state.save() {
             println!("Warning: Failed to save install state: {}", e);
+        } else if !in_chroot {
+            // Sync state to chroot if it exists
+            let chroot_state = paths::chroot_path(paths::STATE_FILE);
+            if chroot_state.parent().map(|p| p.exists()).unwrap_or(false) {
+                if let Err(e) = std::fs::copy(paths::STATE_FILE, &chroot_state) {
+                    println!("Warning: Failed to sync state to chroot: {}", e);
+                }
+            }
         }
     }
 
@@ -292,31 +314,42 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
 
     // Copy binary
     let current_exe = std::env::current_exe()?;
-    let target_bin = "/mnt/usr/bin/ins";
+    let target_bin = paths::chroot_path("/usr/bin/ins");
 
     if executor.dry_run {
-        println!("[DRY RUN] cp {:?} {}", current_exe, target_bin);
+        println!("[DRY RUN] cp {:?} {:?}", current_exe, target_bin);
     } else {
         // We assume /mnt/usr/bin exists (created by base install)
         std::fs::copy(&current_exe, target_bin).context("Failed to copy binary to chroot")?;
     }
 
     // Copy config
-    let target_config = "/mnt/tmp/install_config.toml";
+    let target_config = paths::chroot_path(paths::CONFIG_FILE);
     if executor.dry_run {
-        println!("[DRY RUN] cp {:?} {}", config_path, target_config);
+        println!("[DRY RUN] cp {:?} {:?}", config_path, target_config);
     } else {
-        // We assume /mnt/tmp exists because base install creates the directory structure
+        // Ensure directory exists
+        if let Some(parent) = target_config.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent).context("Failed to create config dir in chroot")?;
+            }
+        }
         std::fs::copy(config_path, target_config).context("Failed to copy config to chroot")?;
     }
 
     // Copy state file
-    let state_file = "/tmp/instant_install_state.toml";
-    let target_state = "/mnt/tmp/instant_install_state.toml";
+    let state_file = paths::STATE_FILE;
+    let target_state = paths::chroot_path(paths::STATE_FILE);
     if std::path::Path::new(state_file).exists() {
         if executor.dry_run {
-            println!("[DRY RUN] cp {} {}", state_file, target_state);
+            println!("[DRY RUN] cp {} {:?}", state_file, target_state);
         } else {
+            // Ensure directory exists (should be same as config but good to be safe)
+            if let Some(parent) = target_state.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).context("Failed to create state dir in chroot")?;
+                }
+            }
             std::fs::copy(state_file, target_state).context("Failed to copy state to chroot")?;
         }
     }

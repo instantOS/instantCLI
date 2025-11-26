@@ -177,15 +177,28 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
     executor.run_with_input(&mut cmd_root, &root_input)?;
 
     // Create user
-    // useradd -m -G wheel,video,docker,uucp -s /bin/bash username
-    let groups = "wheel,video,docker,uucp,sys,rfkill"; // Common groups
+    let groups = vec![
+        "wheel",
+        "video",
+        "docker",
+        "sys",
+        "rfkill",
+    ];
+
+    // Ensure groups exist
+    for group in &groups {
+        let mut cmd = Command::new("groupadd");
+        cmd.arg("-f").arg(group);
+        executor.run(&mut cmd)?;
+    }
+
     let shell = "/bin/bash"; // Default to bash for now, maybe zsh later if requested
 
     let mut cmd_user = Command::new("useradd");
     cmd_user
         .arg("-m")
         .arg("-G")
-        .arg(groups)
+        .arg(groups.join(","))
         .arg("-s")
         .arg(shell)
         .arg(username);
