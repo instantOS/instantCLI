@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.9](https://github.com/instantOS/instantCLI/compare/v0.7.8...v0.7.9) - 2025-11-26
+
+### Fixed
+
+- fix icons
+
+### Other
+
+- add install script
+- clippy
+- init "finished" menu
+- improve live iso dep installation
+- plans
+- add missing deps
+
 ## [0.7.8](https://github.com/instantOS/instantCLI/compare/v0.7.7...v0.7.8) - 2025-11-26
 
 ### Other
