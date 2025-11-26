@@ -8,6 +8,8 @@ pub async fn setup_instantos(executor: &CommandExecutor, username: Option<String
     setup_instant_repo(executor).await?;
     install_instant_packages(executor)?;
 
+    update_os_release(executor)?;
+
     if let Some(user) = username {
         setup_user_dotfiles(&user, executor)?;
     } else {
@@ -129,6 +131,72 @@ fn enable_services(executor: &CommandExecutor) -> Result<()> {
         let mut cmd = Command::new("systemctl");
         cmd.arg("enable").arg(service);
         executor.run(&mut cmd)?;
+    }
+
+    Ok(())
+}
+
+fn update_os_release(executor: &CommandExecutor) -> Result<()> {
+    println!("Updating /etc/os-release...");
+
+    if executor.dry_run {
+        println!("[DRY RUN] Update /etc/os-release with instantOS values");
+        return Ok(());
+    }
+
+    let path = std::path::Path::new("/etc/os-release");
+    if !path.exists() {
+        println!("Warning: /etc/os-release not found");
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(path)?;
+    let mut new_lines = Vec::new();
+
+    let mut found_name = false;
+    let mut found_id = false;
+    let mut found_pretty_name = false;
+    let mut found_id_like = false;
+
+    for line in content.lines() {
+        if line.starts_with("NAME=") {
+            new_lines.push("NAME=\"instantOS\"".to_string());
+            found_name = true;
+        } else if line.starts_with("ID=") {
+            new_lines.push("ID=\"instantos\"".to_string());
+            found_id = true;
+        } else if line.starts_with("PRETTY_NAME=") {
+            new_lines.push("PRETTY_NAME=\"instantOS\"".to_string());
+            found_pretty_name = true;
+        } else if line.starts_with("ID_LIKE=") {
+            new_lines.push("ID_LIKE=\"arch\"".to_string());
+            found_id_like = true;
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    if !found_name {
+        new_lines.push("NAME=\"instantOS\"".to_string());
+    }
+    if !found_id {
+        new_lines.push("ID=\"instantos\"".to_string());
+    }
+    if !found_pretty_name {
+        new_lines.push("PRETTY_NAME=\"instantOS\"".to_string());
+    }
+    if !found_id_like {
+        new_lines.push("ID_LIKE=\"arch\"".to_string());
+    }
+
+    let new_content = new_lines.join("\n");
+
+    // Only write if changed
+    if new_content != content {
+        std::fs::write(path, new_content)?;
+        println!("Updated /etc/os-release");
+    } else {
+        println!("/etc/os-release already up to date");
     }
 
     Ok(())
