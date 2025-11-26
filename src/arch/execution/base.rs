@@ -54,6 +54,7 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         "grub",           // Bootloader
         "efibootmgr",     // Required for GRUB on UEFI
         "os-prober",      // Detect other OSes
+        "sway",
     ];
 
     // CPU Microcode
