@@ -2,9 +2,13 @@ use anyhow::Result;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 
+pub const INSTANT_REPO_URL: &str = "https://packages.instantos.io";
+pub const INSTANT_MIRRORLIST: &str = include_str!("instantmirrorlist");
+
 pub async fn setup_instant_repo(dry_run: bool) -> Result<()> {
     if dry_run {
         println!("[DRY RUN] Appending [instant] config to /etc/pacman.conf");
+        println!("[DRY RUN] Creating /etc/pacman.d/instantmirrorlist");
         return Ok(());
     }
 
@@ -30,9 +34,12 @@ pub async fn setup_instant_repo(dry_run: bool) -> Result<()> {
         .await?;
 
     file.write_all(
-        b"\n[instant]\nSigLevel = Optional TrustAll\nServer = http://instantos.io/repo/$arch\n",
+        b"\n[instant]\nSigLevel = Optional TrustAll\nInclude = /etc/pacman.d/instantmirrorlist\n",
     )
     .await?;
+
+    // Create the mirrorlist file
+    tokio::fs::write("/etc/pacman.d/instantmirrorlist", INSTANT_MIRRORLIST).await?;
 
     println!("Added InstantOS repository to /etc/pacman.conf");
     Ok(())
