@@ -3,6 +3,7 @@ use colored::*;
 
 mod arch;
 mod assist;
+mod autostart;
 mod common;
 mod completions;
 mod debug;
@@ -184,6 +185,8 @@ enum Commands {
     SelfUpdate,
     /// Update system, dotfiles, and sync games
     Update,
+    /// Run autostart tasks (setup assist, update dots, etc.)
+    Autostart,
 }
 
 fn initialize_cli(cli: &Cli) {
@@ -307,6 +310,13 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             execute_with_error_handling(
                 update::handle_update_command(cli.debug).await,
                 "Error during update",
+                None,
+            )?;
+        }
+        Some(Commands::Autostart) => {
+            execute_with_error_handling(
+                autostart::run(cli.debug).await,
+                "Error running autostart",
                 None,
             )?;
         }
