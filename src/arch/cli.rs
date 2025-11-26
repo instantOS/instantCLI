@@ -215,9 +215,48 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 ensure_root()?;
             }
 
+            // Try to infer user:
+            // 1. Provided argument
+            // 2. SUDO_USER env var
+            // 3. Smart detection (single user in /home)
+            let target_user = user
+                .or_else(|| std::env::var("SUDO_USER").ok())
+                .or_else(detect_single_user);
+
             let executor = crate::arch::execution::CommandExecutor::new(dry_run);
-            crate::arch::execution::setup::setup_instantos(&executor, user).await
+            crate::arch::execution::setup::setup_instantos(&executor, target_user).await
         }
+    }
+}
+
+fn detect_single_user() -> Option<String> {
+    let home = std::path::Path::new("/home");
+    if !home.exists() {
+        return None;
+    }
+
+    let entries = match std::fs::read_dir(home) {
+        Ok(e) => e,
+        Err(_) => return None,
+    };
+
+    let mut users = Vec::new();
+    for entry in entries.flatten() {
+        if let Ok(file_type) = entry.file_type() {
+            if file_type.is_dir() {
+                if let Ok(name) = entry.file_name().into_string() {
+                    if name != "lost+found" {
+                        users.push(name);
+                    }
+                }
+            }
+        }
+    }
+
+    if users.len() == 1 {
+        Some(users[0].clone())
+    } else {
+        None
     }
 }
 

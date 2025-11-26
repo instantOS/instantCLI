@@ -10,6 +10,8 @@ pub async fn setup_instantos(executor: &CommandExecutor, username: Option<String
 
     if let Some(user) = username {
         setup_user_dotfiles(&user, executor)?;
+    } else {
+        println!("Skipping dotfiles setup: No user specified and SUDO_USER not found.");
     }
 
     enable_services(executor)?;
