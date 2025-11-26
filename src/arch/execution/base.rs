@@ -61,6 +61,9 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         "fzf",        // Required for menu_utils
         "gum",        // Required for some UI elements
         "openssh",    // Required for sshd
+        "mesa",       // Required for OpenGL (Sway)
+        "xorg-xwayland", // Required for X11 apps in Sway
+        "polkit",     // Required for privilege escalation
     ];
 
     // CPU Microcode
