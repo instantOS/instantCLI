@@ -71,7 +71,9 @@ fn configure_locale(context: &InstallContext, executor: &CommandExecutor) -> Res
     if executor.dry_run {
         println!("[DRY RUN] Uncommenting {} in /etc/locale.gen", locale);
         println!("[DRY RUN] locale-gen");
-        println!("[DRY RUN] echo 'LANG={}' > /etc/locale.conf", locale);
+        // Extract just the LANG part, e.g., "en_US.UTF-8" from "en_US.UTF-8 UTF-8"
+        let lang = locale.split_whitespace().next().unwrap_or(locale);
+        println!("[DRY RUN] localectl set-locale LANG={}", lang);
     } else {
         // Read /etc/locale.gen
         let locale_gen_path = "/etc/locale.gen";
@@ -107,10 +109,12 @@ fn configure_locale(context: &InstallContext, executor: &CommandExecutor) -> Res
         let mut cmd = Command::new("locale-gen");
         executor.run(&mut cmd)?;
 
-        // Write locale.conf
+        // Use localectl to set the system locale instead of directly editing /etc/locale.conf
         // Extract just the LANG part, e.g., "en_US.UTF-8" from "en_US.UTF-8 UTF-8"
         let lang = locale.split_whitespace().next().unwrap_or(locale);
-        std::fs::write("/etc/locale.conf", format!("LANG={}\n", lang))?;
+        let mut cmd = Command::new("localectl");
+        cmd.arg("set-locale").arg(format!("LANG={}", lang));
+        executor.run(&mut cmd)?;
     }
 
     Ok(())
