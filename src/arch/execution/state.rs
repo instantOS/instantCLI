@@ -10,11 +10,18 @@ use super::paths;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InstallState {
     pub completed_steps: HashSet<InstallStep>,
+    pub start_time: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl InstallState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn mark_start(&mut self) {
+        if self.start_time.is_none() {
+            self.start_time = Some(chrono::Utc::now());
+        }
     }
 
     pub fn load() -> Result<Self> {
