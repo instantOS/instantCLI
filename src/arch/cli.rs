@@ -242,14 +242,12 @@ fn detect_single_user() -> Option<String> {
 
     let mut users = Vec::new();
     for entry in entries.flatten() {
-        if let Ok(file_type) = entry.file_type() {
-            if file_type.is_dir() {
-                if let Ok(name) = entry.file_name().into_string() {
-                    if name != "lost+found" {
-                        users.push(name);
-                    }
-                }
-            }
+        if let Ok(file_type) = entry.file_type()
+            && file_type.is_dir()
+            && let Ok(name) = entry.file_name().into_string()
+            && name != "lost+found"
+        {
+            users.push(name);
         }
     }
 

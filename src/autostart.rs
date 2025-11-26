@@ -76,10 +76,9 @@ pub async fn run(debug: bool) -> Result<()> {
         if let Err(e) = std::process::Command::new("nvidia-settings")
             .arg("-l")
             .status()
+            && debug
         {
-            if debug {
-                eprintln!("Failed to run nvidia-settings: {}", e);
-            }
+            eprintln!("Failed to run nvidia-settings: {}", e);
         }
     }
 

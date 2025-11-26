@@ -1,5 +1,5 @@
 use super::CommandExecutor;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::process::Command;
 
 pub async fn setup_instantos(executor: &CommandExecutor, username: Option<String>) -> Result<()> {
@@ -112,12 +112,12 @@ fn enable_services(executor: &CommandExecutor) -> Result<()> {
         cmd.stdout(std::process::Stdio::null());
         cmd.stderr(std::process::Stdio::null());
 
-        if let Ok(status) = cmd.status() {
-            if status.success() {
-                println!("Detected enabled display manager: {}", dm);
-                other_dm_enabled = true;
-                break;
-            }
+        if let Ok(status) = cmd.status()
+            && status.success()
+        {
+            println!("Detected enabled display manager: {}", dm);
+            other_dm_enabled = true;
+            break;
         }
     }
 
