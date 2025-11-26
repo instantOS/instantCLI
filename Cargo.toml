@@ -11,6 +11,14 @@ repository = "https://github.com/instantOS/instantCLI"
 default = []
 cross-compile = ["reqwest/native-tls-vendored", "git2/vendored-openssl", "rusqlite/bundled"]
 
+[profile.upload]
+inherits = "dev"
+opt-level = "z"
+strip = true
+debug = false
+panic = "abort"
+lto = false
+
 [dependencies]
 anyhow = "1.0.100"
 chrono = { version = "0.4.42", features = ["serde"] }

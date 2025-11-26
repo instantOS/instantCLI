@@ -13,6 +13,10 @@ test:
 appimage:
     ./utils/build_appimage.sh
 
+stuff:
+    cargo build --profile upload
+    rsync ./target/upload/ins ubuntu@stuff.paperbenni.xyz:/data/stuff/ins
+
 format:
     yamlfmt .github
     cargo clippy --fix --allow-dirty
