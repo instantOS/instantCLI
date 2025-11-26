@@ -211,6 +211,12 @@ async fn execute_step(
         InstallState::new()
     });
 
+    // Check if already complete
+    if state.is_complete(step) && !executor.dry_run {
+        println!("Step {:?} is already complete. Skipping.", step);
+        return Ok(());
+    }
+
     // Check dependencies
     if let Err(missing) = state.check_dependencies(step) {
         if executor.dry_run {
@@ -252,6 +258,13 @@ async fn execute_step(
         }
 
         executor.run(&mut cmd)?;
+
+        // Mark complete on host after successful chroot execution
+        state.mark_complete(step);
+        if let Err(e) = state.save() {
+            println!("Warning: Failed to save install state on host: {}", e);
+        }
+
         return Ok(());
     }
 
@@ -281,6 +294,14 @@ async fn execute_step(
         state.mark_complete(step);
         if let Err(e) = state.save() {
             println!("Warning: Failed to save install state: {}", e);
+        } else if !in_chroot {
+            // Sync state to chroot if it exists
+            let chroot_state = std::path::Path::new("/mnt/tmp/instant_install_state.toml");
+            if chroot_state.parent().map(|p| p.exists()).unwrap_or(false) {
+                if let Err(e) = std::fs::copy("/tmp/instant_install_state.toml", chroot_state) {
+                    println!("Warning: Failed to sync state to chroot: {}", e);
+                }
+            }
         }
     }
 
