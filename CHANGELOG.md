@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7](https://github.com/instantOS/instantCLI/compare/v0.7.6...v0.7.7) - 2025-11-26
+
+### Fixed
+
+- fix setting up the pacman repo
+- fix default groups
+- fix chroot bug
+
+### Other
+
+- change state location
+- better chroot state handling
+- detect and deal with TTY
+
+### Security
+
+- security plans
+
 ## [0.7.6](https://github.com/instantOS/instantCLI/compare/v0.7.5...v0.7.6) - 2025-11-26
 
 ### Fixed
