@@ -46,6 +46,10 @@ pub fn detect_distro() -> Result<Distro> {
     parse_os_release(&content)
 }
 
+pub fn is_live_iso() -> bool {
+    Path::new("/run/archiso/cowspace").exists()
+}
+
 fn parse_os_release(content: &str) -> Result<Distro> {
     let mut id = String::new();
 

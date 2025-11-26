@@ -50,7 +50,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         DiskQuestion, HostnameQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion,
         PasswordQuestion, TimezoneQuestion, UsernameQuestion,
     };
-    use crate::common::distro::{Distro, detect_distro};
+    use crate::common::distro::{Distro, detect_distro, is_live_iso};
 
     if let Ok(distro) = detect_distro()
         && distro != Distro::Arch
@@ -125,7 +125,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 }
 
                 // Check if running on live ISO and handle dependencies
-                if std::path::Path::new("/run/archiso/cowspace").exists() {
+                if is_live_iso() {
                     println!("Detected Arch Linux Live ISO environment.");
 
                     let dependencies = vec![
@@ -138,11 +138,11 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                     // Collect all missing packages first
                     let mut missing_packages = Vec::new();
                     for dep in &dependencies {
-                        if !dep.is_installed() {
-                            if let Some(package_name) = dep.arch_package_name {
-                                missing_packages.push(package_name);
-                                println!("Will install missing dependency: {}...", dep.name);
-                            }
+                        if !dep.is_installed()
+                            && let Some(package_name) = dep.arch_package_name
+                        {
+                            missing_packages.push(package_name);
+                            println!("Will install missing dependency: {}...", dep.name);
                         }
                     }
 
@@ -365,7 +365,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         }
         ArchCommands::Setup { user, dry_run } => {
             // Check if running on live CD
-            if std::path::Path::new("/run/archiso/cowspace").exists() {
+            if is_live_iso() {
                 anyhow::bail!("This command cannot be run on a live CD/ISO.");
             }
 
