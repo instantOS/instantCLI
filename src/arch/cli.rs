@@ -284,6 +284,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         }
         ArchCommands::Finished => {
             use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+            use crate::ui::nerd_font::NerdFont;
 
             #[derive(Clone)]
             enum FinishedMenuOption {
@@ -295,17 +296,19 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             impl FzfSelectable for FinishedMenuOption {
                 fn fzf_display_text(&self) -> String {
                     match self {
-                        FinishedMenuOption::Reboot => " Reboot".to_string(),
-                        FinishedMenuOption::Shutdown => " Shutdown".to_string(),
-                        FinishedMenuOption::Continue => " Continue in Live Session".to_string(),
+                        FinishedMenuOption::Reboot => format!("{} Reboot", NerdFont::Reboot),
+                        FinishedMenuOption::Shutdown => format!("{} Shutdown", NerdFont::PowerOff),
+                        FinishedMenuOption::Continue => {
+                            format!("{} Continue in Live Session", NerdFont::Continue)
+                        }
                     }
                 }
             }
 
             let state = crate::arch::execution::state::InstallState::load()?;
-            
+
             println!("\n{}", "Installation Finished!".green().bold());
-            
+
             if let Some(start_time) = state.start_time {
                 let duration = chrono::Utc::now() - start_time;
                 let hours = duration.num_hours();
@@ -315,7 +318,11 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             }
 
             // Calculate storage used (approximate)
-            if let Ok(output) = std::process::Command::new("df").arg("-h").arg("/mnt").output() {
+            if let Ok(output) = std::process::Command::new("df")
+                .arg("-h")
+                .arg("/mnt")
+                .output()
+            {
                 let output_str = String::from_utf8_lossy(&output.stdout);
                 if let Some(line) = output_str.lines().nth(1) {
                     let parts: Vec<&str> = line.split_whitespace().collect();

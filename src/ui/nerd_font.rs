@@ -47,6 +47,9 @@ pub enum NerdFont {
     Lock,
     ClosedLockWithKey,
     Unlock,
+    PowerOff,
+    Reboot,
+    Continue,
 
     // Media and audio
     VolumeUp,
@@ -283,6 +286,9 @@ impl NerdFont {
             Self::Lock => '',              // fa-lock
             Self::ClosedLockWithKey => '', // fa-lock-with-key
             Self::Unlock => '',            // fa-unlock
+            Self::PowerOff => '',          // fa-power-off
+            Self::Reboot => '',            // fa-repeat
+            Self::Continue => '',          // fa-play
 
             // Media and audio
             Self::VolumeUp => '󰝝',    // fa-volume-up

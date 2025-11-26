@@ -55,15 +55,15 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         "efibootmgr",     // Required for GRUB on UEFI
         "os-prober",      // Detect other OSes
         "sway",
-        "git",        // Required for instantCLI
-        "libgit2",    // Required for instantCLI
-        "base-devel", // Generally useful and often required
-        "fzf",        // Required for menu_utils
-        "gum",        // Required for some UI elements
-        "openssh",    // Required for sshd
-        "mesa",       // Required for OpenGL (Sway)
+        "git",           // Required for instantCLI
+        "libgit2",       // Required for instantCLI
+        "base-devel",    // Generally useful and often required
+        "fzf",           // Required for menu_utils
+        "gum",           // Required for some UI elements
+        "openssh",       // Required for sshd
+        "mesa",          // Required for OpenGL (Sway)
         "xorg-xwayland", // Required for X11 apps in Sway
-        "polkit",     // Required for privilege escalation
+        "polkit",        // Required for privilege escalation
     ];
 
     // CPU Microcode
