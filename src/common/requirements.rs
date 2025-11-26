@@ -634,3 +634,31 @@ pub const NM_CONNECTION_EDITOR_PACKAGE: RequiredPackage = RequiredPackage {
     ubuntu_package_name: Some("network-manager-gnome"),
     tests: &[InstallTest::WhichSucceeds("nm-connection-editor")],
 };
+
+pub const FZF_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "fzf",
+    arch_package_name: Some("fzf"),
+    ubuntu_package_name: Some("fzf"),
+    tests: &[InstallTest::WhichSucceeds("fzf")],
+};
+
+pub const LIBGIT2_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "libgit2",
+    arch_package_name: Some("libgit2"),
+    ubuntu_package_name: Some("libgit2-dev"),
+    tests: &[InstallTest::FileExists("/usr/lib/libgit2.so")],
+};
+
+pub const GIT_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "git",
+    arch_package_name: Some("git"),
+    ubuntu_package_name: Some("git"),
+    tests: &[InstallTest::WhichSucceeds("git")],
+};
+
+pub const GUM_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "gum",
+    arch_package_name: Some("gum"),
+    ubuntu_package_name: Some("gum"),
+    tests: &[InstallTest::WhichSucceeds("gum")],
+};

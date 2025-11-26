@@ -55,6 +55,11 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         "efibootmgr",     // Required for GRUB on UEFI
         "os-prober",      // Detect other OSes
         "sway",
+        "git",        // Required for instantCLI
+        "libgit2",    // Required for instantCLI
+        "base-devel", // Generally useful and often required
+        "fzf",        // Required for menu_utils
+        "gum",        // Required for some UI elements
     ];
 
     // CPU Microcode

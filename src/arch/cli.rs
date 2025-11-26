@@ -121,6 +121,44 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 return Ok(());
             }
 
+            // Check if running on live ISO and handle dependencies
+            if std::path::Path::new("/run/archiso/cowspace").exists() {
+                println!("Detected Arch Linux Live ISO environment.");
+
+                let dependencies = vec![
+                    crate::common::requirements::FZF_PACKAGE,
+                    crate::common::requirements::GIT_PACKAGE,
+                    crate::common::requirements::LIBGIT2_PACKAGE,
+                    crate::common::requirements::GUM_PACKAGE,
+                ];
+
+                let mut needs_update = true;
+
+                for dep in dependencies {
+                    if !dep.is_installed() {
+                        println!("Installing missing dependency: {}...", dep.name);
+
+                        let mut cmd = std::process::Command::new("pacman");
+                        if needs_update {
+                            cmd.arg("-Sy");
+                            needs_update = false;
+                        } else {
+                            cmd.arg("-S");
+                        }
+
+                        let status = cmd
+                            .arg("--noconfirm")
+                            .arg("--needed")
+                            .arg(dep.arch_package_name.unwrap())
+                            .status()?;
+
+                        if !status.success() {
+                            eprintln!("Warning: Failed to install {}", dep.name);
+                        }
+                    }
+                }
+            }
+
             // Boot mode check
             if std::path::Path::new("/sys/firmware/efi/fw_platform_size").exists() {
                 let content = std::fs::read_to_string("/sys/firmware/efi/fw_platform_size")
