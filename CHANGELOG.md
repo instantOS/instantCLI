@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5](https://github.com/instantOS/instantCLI/compare/v0.7.4...v0.7.5) - 2025-11-26
+
+### Other
+
+- clippy
+- update os-release
+- add sway
+- make autostart run nvidia-settings -l
+- smarter timedatectl behavior
+- make dotfile cloning idempotent
+- smarter user detection
+- be mindful of other display managers
+- init `ins arch setup`
+- use localectl instead of editing /etc...
+- more plans
+- fmt
+- deduplicate internet check
+- init autostart command
+- more plans
+- fmt
+- clippy
+
 ## [0.7.4](https://github.com/instantOS/instantCLI/compare/v0.7.3...v0.7.4) - 2025-11-25
 
 ### Fixed
