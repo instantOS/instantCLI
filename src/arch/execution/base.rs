@@ -48,8 +48,8 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         "linux",
         "linux-headers",
         "linux-firmware",
-        "vim",            // Essential editor
-        "nano",           // Backup editor
+        "vim",
+        "nano",
         "networkmanager", // Essential for networking
         "grub",           // Bootloader
         "efibootmgr",     // Required for GRUB on UEFI
