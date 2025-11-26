@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Subcommand;
 
 const DEFAULT_QUESTIONS_FILE: &str = "/etc/instant/questions.toml";
@@ -132,29 +132,33 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                     crate::common::requirements::GUM_PACKAGE,
                 ];
 
-                let mut needs_update = true;
-
-                for dep in dependencies {
+                // Collect all missing packages first
+                let mut missing_packages = Vec::new();
+                for dep in &dependencies {
                     if !dep.is_installed() {
-                        println!("Installing missing dependency: {}...", dep.name);
-
-                        let mut cmd = std::process::Command::new("pacman");
-                        if needs_update {
-                            cmd.arg("-Sy");
-                            needs_update = false;
-                        } else {
-                            cmd.arg("-S");
+                        if let Some(package_name) = dep.arch_package_name {
+                            missing_packages.push(package_name);
+                            println!("Will install missing dependency: {}...", dep.name);
                         }
+                    }
+                }
 
-                        let status = cmd
-                            .arg("--noconfirm")
-                            .arg("--needed")
-                            .arg(dep.arch_package_name.unwrap())
-                            .status()?;
+                // Install all missing packages in one pacman call
+                if !missing_packages.is_empty() {
+                    println!("Installing {} missing packages...", missing_packages.len());
 
-                        if !status.success() {
-                            eprintln!("Warning: Failed to install {}", dep.name);
-                        }
+                    let mut pacman_args = vec!["-Sy", "--noconfirm", "--needed"];
+                    pacman_args.extend(&missing_packages);
+
+                    let status = std::process::Command::new("pacman")
+                        .args(&pacman_args)
+                        .status()
+                        .context("Failed to install packages with pacman")?;
+
+                    if !status.success() {
+                        eprintln!("Warning: Failed to install some packages");
+                    } else {
+                        println!("Successfully installed {} packages", missing_packages.len());
                     }
                 }
             }
