@@ -39,24 +39,41 @@ fn configure_timezone(context: &InstallContext, executor: &CommandExecutor) -> R
 
     println!("Setting timezone to {}", timezone);
 
-    // ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
-    let source = format!("/usr/share/zoneinfo/{}", timezone);
-    let target = "/etc/localtime";
+    // Try timedatectl first
+    // timedatectl set-timezone "$REGION"
+    let mut cmd = Command::new("timedatectl");
+    cmd.arg("set-timezone").arg(timezone);
 
-    if executor.dry_run {
-        println!("[DRY RUN] ln -sf {} {}", source, target);
+    // We try to run timedatectl. If it fails (e.g. in chroot without dbus), we fallback.
+    // We suppress the error from executor.run by checking the result.
+    if executor.run(&mut cmd).is_ok() {
+        // timedatectl set-ntp true
+        let mut cmd_ntp = Command::new("timedatectl");
+        cmd_ntp.arg("set-ntp").arg("true");
+        // We ignore errors here as NTP might not be controllable in chroot
+        let _ = executor.run(&mut cmd_ntp);
     } else {
-        // Remove existing link/file if it exists to avoid error
-        if std::path::Path::new(target).exists() {
-            std::fs::remove_file(target)?;
-        }
-        std::os::unix::fs::symlink(&source, target)?;
-    }
+        println!("timedatectl failed, falling back to manual configuration...");
 
-    // hwclock --systohc
-    let mut cmd = Command::new("hwclock");
-    cmd.arg("--systohc");
-    executor.run(&mut cmd)?;
+        // ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
+        let source = format!("/usr/share/zoneinfo/{}", timezone);
+        let target = "/etc/localtime";
+
+        if executor.dry_run {
+            println!("[DRY RUN] ln -sf {} {}", source, target);
+        } else {
+            // Remove existing link/file if it exists to avoid error
+            if std::path::Path::new(target).exists() {
+                std::fs::remove_file(target)?;
+            }
+            std::os::unix::fs::symlink(&source, target)?;
+        }
+
+        // hwclock --systohc
+        let mut cmd_hw = Command::new("hwclock");
+        cmd_hw.arg("--systohc");
+        executor.run(&mut cmd_hw)?;
+    }
 
     Ok(())
 }
