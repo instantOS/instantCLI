@@ -243,7 +243,7 @@ async fn execute_step(
             .arg("arch")
             .arg("exec")
             .arg(step_name)
-            .arg("--config")
+            .arg("--questions-file")
             .arg("/tmp/install_config.toml");
 
         if executor.dry_run {
