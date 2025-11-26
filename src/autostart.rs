@@ -1,22 +1,16 @@
+use crate::assist::{self, AssistCommands};
+use crate::common::compositor::CompositorType;
+use crate::common::paths;
+use crate::dot::commands::DotCommands;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use crate::common::paths;
-use crate::common::compositor::CompositorType;
-use crate::assist::{self, AssistCommands};
-use crate::dot::commands::DotCommands;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AutostartConfig {
     #[serde(default)]
     pub disabled: bool,
-}
-
-impl Default for AutostartConfig {
-    fn default() -> Self {
-        Self { disabled: false }
-    }
 }
 
 pub fn load_config() -> Result<AutostartConfig> {
@@ -27,26 +21,24 @@ pub fn load_config() -> Result<AutostartConfig> {
         return Ok(AutostartConfig::default());
     }
 
-    let content = fs::read_to_string(&config_path)
-        .context("Failed to read autostart config")?;
-    
+    let content = fs::read_to_string(&config_path).context("Failed to read autostart config")?;
+
     toml::from_str(&content).context("Failed to parse autostart config")
 }
 
 fn is_already_running() -> bool {
     // Simple lock file mechanism
     let lock_path = std::env::temp_dir().join("instant_autostart.lock");
-    
+
     // If lock file exists, check if process is still running
-    if lock_path.exists() {
-        if let Ok(pid_str) = fs::read_to_string(&lock_path) {
-            if let Ok(pid) = pid_str.trim().parse::<i32>() {
-                // Check if process exists by checking /proc/<pid>
-                let proc_path = PathBuf::from(format!("/proc/{}", pid));
-                if proc_path.exists() {
-                    return true;
-                }
-            }
+    if lock_path.exists()
+        && let Ok(pid_str) = fs::read_to_string(&lock_path)
+        && let Ok(pid) = pid_str.trim().parse::<i32>()
+    {
+        // Check if process exists by checking /proc/<pid>
+        let proc_path = PathBuf::from(format!("/proc/{}", pid));
+        if proc_path.exists() {
+            return true;
         }
     }
 
@@ -57,7 +49,7 @@ fn is_already_running() -> bool {
 
 pub async fn run(debug: bool) -> Result<()> {
     let config = load_config()?;
-    
+
     if config.disabled {
         if debug {
             println!("Autostart is disabled in config");

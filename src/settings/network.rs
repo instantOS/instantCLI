@@ -1,7 +1,7 @@
-use anyhow::Result;
+use crate::common::network::{check_internet, get_local_ip, get_public_ip};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::*;
-use crate::common::network::{get_local_ip, get_public_ip, check_internet};
+use anyhow::Result;
 
 use super::context::SettingsContext;
 
@@ -107,4 +107,3 @@ pub fn show_ip_info(ctx: &mut SettingsContext) -> Result<()> {
 
     Ok(())
 }
-
