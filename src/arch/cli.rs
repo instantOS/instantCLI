@@ -31,6 +31,15 @@ pub enum ArchCommands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Setup instantOS on an existing Arch Linux installation
+    Setup {
+        /// Optional username to setup dotfiles for
+        #[arg(short, long)]
+        user: Option<String>,
+        /// Run in dry-run mode
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
@@ -195,6 +204,19 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 ensure_root()?;
             }
             crate::arch::execution::execute_installation(questions_file, step, dry_run).await
+        }
+        ArchCommands::Setup { user, dry_run } => {
+            // Check if running on live CD
+            if std::path::Path::new("/run/archiso/cowspace").exists() {
+                anyhow::bail!("This command cannot be run on a live CD/ISO.");
+            }
+
+            if !dry_run {
+                ensure_root()?;
+            }
+
+            let executor = crate::arch::execution::CommandExecutor::new(dry_run);
+            crate::arch::execution::setup::setup_instantos(&executor, user).await
         }
     }
 }

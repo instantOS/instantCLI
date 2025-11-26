@@ -7,6 +7,7 @@ pub mod config;
 pub mod disk;
 pub mod fstab;
 pub mod post;
+pub mod setup;
 pub mod state;
 pub mod step;
 
