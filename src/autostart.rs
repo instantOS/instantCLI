@@ -69,6 +69,20 @@ pub async fn run(debug: bool) -> Result<()> {
         println!("Detected compositor: {:?}", compositor);
     }
 
+    if which::which("nvidia-settings").is_ok() {
+        if debug {
+            println!("Found nvidia-settings, loading settings");
+        }
+        if let Err(e) = std::process::Command::new("nvidia-settings")
+            .arg("-l")
+            .status()
+        {
+            if debug {
+                eprintln!("Failed to run nvidia-settings: {}", e);
+            }
+        }
+    }
+
     if let CompositorType::Sway = compositor {
         if debug {
             println!("Running assist setup for Sway");
