@@ -51,14 +51,30 @@ fn install_instant_packages(executor: &CommandExecutor) -> Result<()> {
 fn setup_user_dotfiles(username: &str, executor: &CommandExecutor) -> Result<()> {
     println!("Setting up dotfiles for user: {}", username);
 
-    // Clone dotfiles
-    // su -c "ins dot repo clone https://github.com/instantOS/dotfiles" username
-    // TODO: make repo url a constant
-    let clone_cmd_str = "ins dot repo clone https://github.com/instantOS/dotfiles";
-    let mut cmd_clone = Command::new("su");
-    cmd_clone.arg("-c").arg(clone_cmd_str).arg(username);
+    // Check if dotfiles repo already exists
+    let check_cmd_str = "ins dot repo list";
+    let mut cmd_check = Command::new("su");
+    cmd_check.arg("-c").arg(check_cmd_str).arg(username);
 
-    executor.run(&mut cmd_clone)?;
+    let repo_exists = if let Some(output) = executor.run_with_output(&mut cmd_check)? {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout.contains("dotfiles")
+    } else {
+        false
+    };
+
+    if !repo_exists {
+        // Clone dotfiles
+        // su -c "ins dot repo clone https://github.com/instantOS/dotfiles" username
+        // TODO: make repo url a constant
+        let clone_cmd_str = "ins dot repo clone https://github.com/instantOS/dotfiles";
+        let mut cmd_clone = Command::new("su");
+        cmd_clone.arg("-c").arg(clone_cmd_str).arg(username);
+
+        executor.run(&mut cmd_clone)?;
+    } else {
+        println!("Dotfiles repository already exists, skipping clone.");
+    }
 
     // Apply dotfiles
     // su -c "ins dot apply" username
