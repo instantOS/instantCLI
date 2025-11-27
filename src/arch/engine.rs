@@ -16,6 +16,7 @@ pub enum QuestionId {
     MirrorRegion,
     Timezone,
     Locale,
+    Kernel,
     ConfirmInstall,
 }
 
@@ -206,7 +207,13 @@ pub trait Question: Send + Sync {
     }
 
     /// Returns true if the answer should be masked in the review UI
+    /// Returns true if the answer should be masked in the review UI
     fn is_sensitive(&self) -> bool {
+        false
+    }
+
+    /// Returns true if the question is optional and should be skipped in the main flow
+    fn is_optional(&self) -> bool {
         false
     }
 
@@ -343,8 +350,9 @@ impl QuestionEngine {
                                     }
                                 }
                             }
+
                             QuestionResult::Cancelled => {
-                                if self.handle_navigation_menu(idx)? {
+                                if self.handle_navigation_menu(idx).await? {
                                     break;
                                 }
                             }
@@ -352,7 +360,7 @@ impl QuestionEngine {
                     }
                 }
                 None => {
-                    if self.handle_final_review()? {
+                    if self.handle_final_review().await? {
                         break;
                     }
                 }
@@ -368,6 +376,11 @@ impl QuestionEngine {
                 continue;
             }
 
+            // Skip optional questions in the main flow
+            if q.is_optional() {
+                continue;
+            }
+
             if let Some(ans) = self.context.get_answer(&q.id()) {
                 if q.validate(&self.context, ans).is_err() {
                     self.context.answers.remove(&q.id());
@@ -380,7 +393,7 @@ impl QuestionEngine {
         None
     }
 
-    fn handle_navigation_menu(&mut self, current_idx: usize) -> Result<bool> {
+    async fn handle_navigation_menu(&mut self, current_idx: usize) -> Result<bool> {
         let options = vec![
             format!("{} Resume", NerdFont::Play),
             format!("{} Review Answers", NerdFont::List),
@@ -396,13 +409,14 @@ impl QuestionEngine {
                 if opt.contains("Resume") {
                     Ok(false)
                 } else if opt.contains("Review Answers") {
-                    if let Some(review_idx) = self.handle_review(current_idx)? {
-                        let q_id = self.questions[review_idx].id();
-                        self.context.answers.remove(&q_id);
-                        Ok(true)
-                    } else {
-                        Ok(false)
+                    loop {
+                        if let Some(review_idx) = self.handle_review(current_idx)? {
+                            self.force_ask_question(review_idx).await?;
+                        } else {
+                            break;
+                        }
                     }
+                    Ok(false)
                 } else if opt.contains("Go Back") {
                     let prev_idx = self.handle_go_back(current_idx);
                     if prev_idx != current_idx {
@@ -413,7 +427,12 @@ impl QuestionEngine {
                         Ok(false)
                     }
                 } else if opt.contains("Abort Installation") {
-                    std::process::exit(0);
+                    if let Ok(crate::menu_utils::ConfirmResult::Yes) =
+                        crate::menu_utils::FzfWrapper::confirm("Are you sure you want to abort?")
+                    {
+                        std::process::exit(0);
+                    }
+                    Ok(false)
                 } else {
                     Ok(false)
                 }
@@ -422,10 +441,11 @@ impl QuestionEngine {
         }
     }
 
-    fn handle_final_review(&mut self) -> Result<bool> {
+    async fn handle_final_review(&mut self) -> Result<bool> {
         let options = vec![
             format!("{} Install", NerdFont::Download),
             format!("{} Review Answers", NerdFont::List),
+            format!("{} Advanced Options", NerdFont::Gear),
             format!("{} Abort Installation", NerdFont::Cross),
         ];
         let nav = crate::menu_utils::FzfWrapper::builder()
@@ -437,19 +457,101 @@ impl QuestionEngine {
                 if opt.contains("Install") {
                     Ok(true)
                 } else if opt.contains("Review Answers") {
-                    if let Some(review_idx) = self.handle_review(self.questions.len())? {
-                        let q_id = self.questions[review_idx].id();
-                        self.context.answers.remove(&q_id);
+                    loop {
+                        if let Some(review_idx) = self.handle_review(self.questions.len())? {
+                            self.force_ask_question(review_idx).await?;
+                        } else {
+                            break;
+                        }
+                    }
+                    Ok(false)
+                } else if opt.contains("Advanced Options") {
+                    if let Some(adv_idx) = self.handle_advanced_options()? {
+                        // Force ask the selected optional question
+                        self.force_ask_question(adv_idx).await?;
                     }
                     Ok(false)
                 } else if opt.contains("Abort Installation") {
-                    std::process::exit(0);
+                    if let Ok(crate::menu_utils::ConfirmResult::Yes) =
+                        crate::menu_utils::FzfWrapper::confirm("Are you sure you want to abort?")
+                    {
+                        std::process::exit(0);
+                    }
+                    Ok(false)
                 } else {
                     Ok(false)
                 }
             }
             _ => Ok(false),
         }
+    }
+
+    fn handle_advanced_options(&self) -> Result<Option<usize>> {
+        let mut options = Vec::new();
+        let back_opt = format!("{} Back", NerdFont::ArrowLeft);
+        options.push(back_opt.clone());
+
+        for (i, q) in self.questions.iter().enumerate() {
+            if q.is_optional() && q.should_ask(&self.context) {
+                let status = if self.context.is_answered(q.id()) {
+                    let ans = self.context.get_answer(&q.id()).unwrap();
+                    format!("{:?} (Current: {})", q.id(), ans)
+                } else {
+                    format!("{:?}", q.id())
+                };
+                options.push(format!("{} {}", NerdFont::Gear, status));
+            }
+        }
+
+        let result = crate::menu_utils::FzfWrapper::builder()
+            .header("Advanced Options")
+            .select(options)?;
+
+        if let crate::menu_utils::FzfResult::Selected(selection) = result {
+            if selection == back_opt {
+                return Ok(None);
+            }
+
+            // Parse selection to find question index
+            // Format: "ICON QuestionId (Current: ...)" or "ICON QuestionId"
+            // We can iterate and check which question ID matches the string
+            for (i, q) in self.questions.iter().enumerate() {
+                if q.is_optional() {
+                    let id_str = format!("{:?}", q.id());
+                    if selection.contains(&id_str) {
+                        return Ok(Some(i));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    async fn force_ask_question(&mut self, idx: usize) -> Result<()> {
+        loop {
+            let result = self.questions[idx].ask(&self.context).await?;
+            match result {
+                QuestionResult::Answer(answer) => {
+                    match self.questions[idx].validate(&self.context, &answer) {
+                        Ok(()) => {
+                            let id = self.questions[idx].id();
+                            self.context.answers.insert(id, answer);
+                            break;
+                        }
+                        Err(msg) => {
+                            crate::menu_utils::FzfWrapper::message(&format!(
+                                "{} {}",
+                                NerdFont::Warning,
+                                msg
+                            ))?;
+                        }
+                    }
+                }
+                QuestionResult::Cancelled => break,
+            }
+        }
+        Ok(())
     }
 }
 

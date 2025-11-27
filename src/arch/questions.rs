@@ -383,6 +383,44 @@ impl Question for PasswordQuestion {
     // but we could add complexity checks here if desired.
 }
 
+pub struct KernelQuestion;
+
+#[async_trait::async_trait]
+impl Question for KernelQuestion {
+    fn id(&self) -> QuestionId {
+        QuestionId::Kernel
+    }
+
+    fn is_optional(&self) -> bool {
+        true
+    }
+
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        let kernels = vec![
+            "linux".to_string(),
+            "linux-lts".to_string(),
+            "linux-zen".to_string(),
+        ];
+
+        let result = FzfWrapper::builder()
+            .header(format!("{} Select Kernel", NerdFont::Gear))
+            .select(kernels)?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(k) => Ok(QuestionResult::Answer(k)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
+        }
+    }
+
+    fn validate(&self, _context: &InstallContext, answer: &str) -> Result<(), String> {
+        if answer.is_empty() {
+            return Err("You must select a kernel.".to_string());
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
