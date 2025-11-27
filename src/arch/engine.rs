@@ -427,7 +427,12 @@ impl QuestionEngine {
                         Ok(false)
                     }
                 } else if opt.contains("Abort Installation") {
-                    std::process::exit(0);
+                    if let Ok(crate::menu_utils::ConfirmResult::Yes) =
+                        crate::menu_utils::FzfWrapper::confirm("Are you sure you want to abort?")
+                    {
+                        std::process::exit(0);
+                    }
+                    Ok(false)
                 } else {
                     Ok(false)
                 }
@@ -467,7 +472,12 @@ impl QuestionEngine {
                     }
                     Ok(false)
                 } else if opt.contains("Abort Installation") {
-                    std::process::exit(0);
+                    if let Ok(crate::menu_utils::ConfirmResult::Yes) =
+                        crate::menu_utils::FzfWrapper::confirm("Are you sure you want to abort?")
+                    {
+                        std::process::exit(0);
+                    }
+                    Ok(false)
                 } else {
                     Ok(false)
                 }
