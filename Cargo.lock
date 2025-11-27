@@ -1131,11 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "ins"
-<<<<<<< Updated upstream
-version = "0.7.8"
-=======
 version = "0.7.10"
->>>>>>> Stashed changes
 dependencies = [
  "anyhow",
  "async-trait",

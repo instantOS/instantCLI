@@ -24,6 +24,14 @@ jobs:
       - name: Sync PKGBUILD version
         run: |
           set -euo pipefail
+
+          # Check for merge conflict markers in Cargo.toml before parsing
+          if grep -q "<<<<<<<\|=======\|>>>>>>>" Cargo.toml; then
+            echo "Error: Cargo.toml contains merge conflict markers. Cannot parse version."
+            echo "Please resolve merge conflicts before running sync-pkgbuild."
+            exit 1
+          fi
+
           version="$(python3 - <<'PY'
           import sys
 
