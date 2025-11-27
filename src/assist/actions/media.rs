@@ -27,7 +27,6 @@ pub fn next_track() -> Result<()> {
 
 pub fn control_media() -> Result<()> {
     use crate::menu::client::MenuClient;
-    use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
     use std::collections::HashMap;
 
     // Get list of players
@@ -40,13 +39,21 @@ pub fn control_media() -> Result<()> {
     let players: Vec<&str> = players_str.lines().collect();
 
     if players.is_empty() {
-        println!("No media players found.");
         return Ok(());
     }
 
-    let mut items = Vec::new();
+    let mut chords = Vec::new();
+    let mut player_map = HashMap::new();
 
-    for player in players {
+    // Keys to use for players: 1-9, then a-z
+    let keys = "123456789abcdefghijklmnopqrstuvwxyz";
+
+    for (i, player) in players.iter().enumerate() {
+        if i >= keys.len() {
+            break;
+        }
+        let key = keys.chars().nth(i).unwrap();
+
         // Get status
         let status_output = Command::new("playerctl")
             .arg("-p")
@@ -87,35 +94,22 @@ pub fn control_media() -> Result<()> {
             _ => "?",
         };
 
-        let display_text = format!("{} {}: {}", icon, player, track_info);
-
-        let mut metadata_map = HashMap::new();
-        metadata_map.insert("player".to_string(), player.to_string());
-
-        items.push(SerializableMenuItem {
-            display_text,
-            preview: FzfPreview::None,
-            metadata: Some(metadata_map),
-        });
+        let description = format!("{} {}: {}", icon, player, track_info);
+        chords.push(format!("{}:{}", key, description));
+        player_map.insert(key.to_string(), player.to_string());
     }
 
     let client = MenuClient::new();
-    let selected = client.choice(
-        "Select media player to toggle play/pause:".to_string(),
-        items,
-        false,
-    )?;
+    let selected_key = client.chord(chords)?;
 
-    if let Some(item) = selected.first() {
-        if let Some(metadata) = &item.metadata {
-            if let Some(player) = metadata.get("player") {
-                Command::new("playerctl")
-                    .arg("-p")
-                    .arg(player)
-                    .arg("play-pause")
-                    .spawn()
-                    .context("Failed to toggle playback")?;
-            }
+    if let Some(key) = selected_key {
+        if let Some(player) = player_map.get(&key) {
+            Command::new("playerctl")
+                .arg("-p")
+                .arg(player)
+                .arg("play-pause")
+                .spawn()
+                .context("Failed to toggle playback")?;
         }
     }
 
