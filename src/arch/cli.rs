@@ -54,7 +54,8 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
         DiskQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion,
-        MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion, UsernameQuestion,
+        LogUploadQuestion, MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion,
+        UsernameQuestion,
     };
     use crate::common::distro::{Distro, detect_distro, is_live_iso};
 
@@ -77,6 +78,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         Box::new(TimezoneQuestion),
         Box::new(LocaleQuestion),
         Box::new(KernelQuestion),
+        Box::new(LogUploadQuestion),
     ];
 
     match command {
@@ -321,7 +323,6 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 Reboot,
                 Shutdown,
                 Continue,
-                UploadLogs,
             }
 
             impl FzfSelectable for FinishedMenuOption {
@@ -332,14 +333,16 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                         FinishedMenuOption::Continue => {
                             format!("{} Continue in Live Session", NerdFont::Continue)
                         }
-                        FinishedMenuOption::UploadLogs => {
-                            format!("{} Upload Installation Logs", NerdFont::Debug)
-                        }
                     }
                 }
             }
 
             let state = crate::arch::execution::state::InstallState::load()?;
+
+            // Check if we should upload logs
+            if let Ok(context) = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE) {
+                crate::arch::logging::process_log_upload(&context);
+            }
 
             println!("\n{}", "Installation Finished!".green().bold());
 
@@ -372,7 +375,6 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 FinishedMenuOption::Reboot,
                 FinishedMenuOption::Shutdown,
                 FinishedMenuOption::Continue,
-                FinishedMenuOption::UploadLogs,
             ];
 
             let result = FzfWrapper::builder()
@@ -391,13 +393,6 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                     }
                     FinishedMenuOption::Continue => {
                         println!("Exiting to live session...");
-                    }
-                    FinishedMenuOption::UploadLogs => {
-                        Box::pin(handle_arch_command(
-                            ArchCommands::UploadLogs { path: None },
-                            _debug,
-                        ))
-                        .await?;
                     }
                 },
                 _ => println!("Exiting..."),

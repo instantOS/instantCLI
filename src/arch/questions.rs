@@ -421,6 +421,36 @@ impl Question for KernelQuestion {
     }
 }
 
+pub struct LogUploadQuestion;
+
+#[async_trait::async_trait]
+impl Question for LogUploadQuestion {
+    fn id(&self) -> QuestionId {
+        QuestionId::LogUpload
+    }
+
+    fn is_optional(&self) -> bool {
+        true
+    }
+
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        let options = vec!["yes".to_string(), "no".to_string()];
+
+        let result = FzfWrapper::builder()
+            .header(format!(
+                "{} Upload installation logs to snips.sh?",
+                NerdFont::Debug
+            ))
+            .select(options)?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(ans) => Ok(QuestionResult::Answer(ans)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
