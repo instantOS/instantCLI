@@ -228,6 +228,13 @@ pub const ASSISTS: &[AssistEntry] = &[
         icon: NerdFont::Music,
         children: &[
             AssistEntry::Action(AssistAction {
+                key: 'c',
+                description: "Control Media: Select player to play/pause",
+                icon: NerdFont::Music,
+                dependencies: &[Dependency::os(&PLAYERCTL)],
+                execute: actions::media::control_media,
+            }),
+            AssistEntry::Action(AssistAction {
                 key: 'n',
                 description: "Next Track: Go to next track",
                 icon: NerdFont::ChevronRight,
@@ -443,6 +450,15 @@ mod tests {
         assert_eq!(
             action.unwrap().description,
             "QR Code Scanner: Scan QR code from selected area"
+        );
+    }
+    #[test]
+    fn test_find_media_control_action() {
+        let action = find_action("vc");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Control Media: Select player to play/pause"
         );
     }
 }

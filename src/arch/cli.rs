@@ -42,13 +42,20 @@ pub enum ArchCommands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Upload installation logs to snips.sh
+    UploadLogs {
+        /// Path to the log file (optional, defaults to standard location)
+        #[arg(short, long)]
+        path: Option<std::path::PathBuf>,
+    },
 }
 
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
         DiskQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion,
-        MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion, UsernameQuestion,
+        LogUploadQuestion, MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion,
+        UsernameQuestion,
     };
     use crate::common::distro::{Distro, detect_distro, is_live_iso};
 
@@ -71,6 +78,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         Box::new(TimezoneQuestion),
         Box::new(LocaleQuestion),
         Box::new(KernelQuestion),
+        Box::new(LogUploadQuestion),
     ];
 
     match command {
@@ -281,7 +289,30 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             if !dry_run {
                 ensure_root()?;
             }
-            crate::arch::execution::execute_installation(questions_file, step, dry_run).await
+
+            let log_file = if !dry_run {
+                let path = std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                Some(path)
+            } else {
+                None
+            };
+
+            crate::arch::execution::execute_installation(questions_file, step, dry_run, log_file)
+                .await
+        }
+        ArchCommands::UploadLogs { path } => {
+            let log_path = path.unwrap_or_else(|| {
+                std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE)
+            });
+            println!("Uploading logs from: {}", log_path.display());
+            match crate::arch::logging::upload_logs(&log_path) {
+                Ok(url) => println!("Logs uploaded successfully: {}", url.green().bold()),
+                Err(e) => eprintln!("Failed to upload logs: {}", e),
+            }
+            Ok(())
         }
         ArchCommands::Finished => {
             use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
@@ -307,6 +338,11 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             }
 
             let state = crate::arch::execution::state::InstallState::load()?;
+
+            // Check if we should upload logs
+            if let Ok(context) = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE) {
+                crate::arch::logging::process_log_upload(&context);
+            }
 
             println!("\n{}", "Installation Finished!".green().bold());
 
@@ -382,7 +418,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 .or_else(|| std::env::var("SUDO_USER").ok())
                 .or_else(detect_single_user);
 
-            let executor = crate::arch::execution::CommandExecutor::new(dry_run);
+            let executor = crate::arch::execution::CommandExecutor::new(dry_run, None);
             crate::arch::execution::setup::setup_instantos(&executor, target_user).await
         }
     }
