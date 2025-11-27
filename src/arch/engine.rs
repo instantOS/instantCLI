@@ -410,18 +410,9 @@ impl QuestionEngine {
                     Ok(false)
                 } else if opt.contains("Review Answers") {
                     if let Some(review_idx) = self.handle_review(current_idx)? {
-                        let q_id = self.questions[review_idx].id();
-                        self.context.answers.remove(&q_id);
-
-                        if self.questions[review_idx].is_optional() {
-                            self.force_ask_question(review_idx).await?;
-                            Ok(false)
-                        } else {
-                            Ok(true)
-                        }
-                    } else {
-                        Ok(false)
+                        self.force_ask_question(review_idx).await?;
                     }
+                    Ok(false)
                 } else if opt.contains("Go Back") {
                     let prev_idx = self.handle_go_back(current_idx);
                     if prev_idx != current_idx {
@@ -458,14 +449,7 @@ impl QuestionEngine {
                     Ok(true)
                 } else if opt.contains("Review Answers") {
                     if let Some(review_idx) = self.handle_review(self.questions.len())? {
-                        let q_id = self.questions[review_idx].id();
-                        self.context.answers.remove(&q_id);
-
-                        // If the question is optional, the main loop will skip it,
-                        // so we must ask it explicitly here.
-                        if self.questions[review_idx].is_optional() {
-                            self.force_ask_question(review_idx).await?;
-                        }
+                        self.force_ask_question(review_idx).await?;
                     }
                     Ok(false)
                 } else if opt.contains("Advanced Options") {
