@@ -6,6 +6,7 @@ pub mod engine;
 pub mod execution;
 pub mod keymaps;
 pub mod locales;
+pub mod logging;
 pub mod mirrors;
 pub mod questions;
 

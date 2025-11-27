@@ -42,6 +42,12 @@ pub enum ArchCommands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Upload installation logs to snips.sh
+    UploadLogs {
+        /// Path to the log file (optional, defaults to standard location)
+        #[arg(short, long)]
+        path: Option<std::path::PathBuf>,
+    },
 }
 
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
@@ -281,7 +287,27 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             if !dry_run {
                 ensure_root()?;
             }
-            crate::arch::execution::execute_installation(questions_file, step, dry_run).await
+            
+            let log_file = if !dry_run {
+                let path = std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                Some(path)
+            } else {
+                None
+            };
+
+            crate::arch::execution::execute_installation(questions_file, step, dry_run, log_file).await
+        }
+        ArchCommands::UploadLogs { path } => {
+            let log_path = path.unwrap_or_else(|| std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE));
+            println!("Uploading logs from: {}", log_path.display());
+            match crate::arch::logging::upload_logs(&log_path) {
+                Ok(url) => println!("Logs uploaded successfully: {}", url.green().bold()),
+                Err(e) => eprintln!("Failed to upload logs: {}", e),
+            }
+            Ok(())
         }
         ArchCommands::Finished => {
             use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
@@ -292,6 +318,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 Reboot,
                 Shutdown,
                 Continue,
+                UploadLogs,
             }
 
             impl FzfSelectable for FinishedMenuOption {
@@ -301,6 +328,9 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                         FinishedMenuOption::Shutdown => format!("{} Shutdown", NerdFont::PowerOff),
                         FinishedMenuOption::Continue => {
                             format!("{} Continue in Live Session", NerdFont::Continue)
+                        }
+                        FinishedMenuOption::UploadLogs => {
+                            format!("{} Upload Installation Logs", NerdFont::Debug)
                         }
                     }
                 }
@@ -339,6 +369,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 FinishedMenuOption::Reboot,
                 FinishedMenuOption::Shutdown,
                 FinishedMenuOption::Continue,
+                FinishedMenuOption::UploadLogs,
             ];
 
             let result = FzfWrapper::builder()
@@ -357,6 +388,13 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                     }
                     FinishedMenuOption::Continue => {
                         println!("Exiting to live session...");
+                    }
+                    FinishedMenuOption::UploadLogs => {
+                        Box::pin(handle_arch_command(
+                            ArchCommands::UploadLogs { path: None },
+                            _debug,
+                        ))
+                        .await?;
                     }
                 },
                 _ => println!("Exiting..."),
@@ -382,7 +420,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 .or_else(|| std::env::var("SUDO_USER").ok())
                 .or_else(detect_single_user);
 
-            let executor = crate::arch::execution::CommandExecutor::new(dry_run);
+            let executor = crate::arch::execution::CommandExecutor::new(dry_run, None);
             crate::arch::execution::setup::setup_instantos(&executor, target_user).await
         }
     }
