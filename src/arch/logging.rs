@@ -35,6 +35,14 @@ pub fn upload_logs(log_path: &Path) -> Result<String> {
         .write_all(SNIPS_KEY.as_bytes())
         .context("Failed to write key to temporary file")?;
 
+    // Ensure trailing newline which is often required by SSH
+    if !SNIPS_KEY.ends_with('\n') {
+        key_file
+            .write_all(b"\n")
+            .context("Failed to write newline to key file")?;
+    }
+    key_file.flush().context("Failed to flush key file")?;
+
     // Ensure the key file has correct permissions (0600)
     // NamedTempFile is created with 0600 on Unix by default, but let's be explicit if needed or rely on tempfile crate guarantees.
     // The tempfile crate documentation says: "The file is created with mode 0600 on Unix-like systems."
@@ -51,6 +59,10 @@ pub fn upload_logs(log_path: &Path) -> Result<String> {
         .arg("StrictHostKeyChecking=no")
         .arg("-o")
         .arg("UserKnownHostsFile=/dev/null")
+        .arg("-o")
+        .arg("IdentitiesOnly=yes")
+        .arg("-o")
+        .arg("BatchMode=yes")
         .arg("instantos@snips.sh")
         .stdin(std::fs::File::open(log_path)?)
         .output()
