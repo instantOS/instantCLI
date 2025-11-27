@@ -19,17 +19,19 @@ pub fn upload_logs(log_path: &Path) -> Result<String> {
 
     // Create a temporary file for the key
     let mut key_file = NamedTempFile::new().context("Failed to create temporary key file")?;
-    key_file.write_all(SNIPS_KEY.as_bytes()).context("Failed to write key to temporary file")?;
-    
+    key_file
+        .write_all(SNIPS_KEY.as_bytes())
+        .context("Failed to write key to temporary file")?;
+
     // Ensure the key file has correct permissions (0600)
     // NamedTempFile is created with 0600 on Unix by default, but let's be explicit if needed or rely on tempfile crate guarantees.
     // The tempfile crate documentation says: "The file is created with mode 0600 on Unix-like systems."
-    
+
     let key_path = key_file.path().to_path_buf();
 
     // Construct the SSH command
     // cat log_file | ssh -i key_file -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null instantos@snips.sh
-    
+
     let output = Command::new("ssh")
         .arg("-i")
         .arg(&key_path)
@@ -48,9 +50,9 @@ pub fn upload_logs(log_path: &Path) -> Result<String> {
     }
 
     let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    
+
     // The key file is automatically deleted when key_file goes out of scope
-    
+
     Ok(url)
 }
 

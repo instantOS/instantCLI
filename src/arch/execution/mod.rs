@@ -67,7 +67,7 @@ impl CommandExecutor {
         let program = command.get_program().to_string_lossy();
         let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
         let cmd_str = format!("{} {}", program, args.join(" "));
-        
+
         self.log_to_file(&format!("RUN: {}", cmd_str));
 
         if self.dry_run {
@@ -91,7 +91,7 @@ impl CommandExecutor {
         let program = command.get_program().to_string_lossy();
         let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
         let cmd_str = format!("{} {}", program, args.join(" "));
-        
+
         self.log_to_file(&format!("RUN WITH INPUT: {}", cmd_str));
         // Don't log potentially sensitive input like passwords, but maybe log length?
         // For now let's just log that input was provided.
@@ -127,7 +127,7 @@ impl CommandExecutor {
         let program = command.get_program().to_string_lossy();
         let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
         let cmd_str = format!("{} {}", program, args.join(" "));
-        
+
         self.log_to_file(&format!("RUN WITH OUTPUT: {}", cmd_str));
 
         if self.dry_run {
@@ -197,7 +197,10 @@ pub async fn execute_installation(
     let executor = CommandExecutor::new(dry_run, log_file.clone());
 
     if let Some(log_path) = &log_file {
-        executor.log(&format!("Starting installation execution. Dry run: {}", dry_run));
+        executor.log(&format!(
+            "Starting installation execution. Dry run: {}",
+            dry_run
+        ));
     }
 
     println!("Loading configuration from: {}", config_path.display());
