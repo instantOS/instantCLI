@@ -37,20 +37,46 @@ pub fn is_chroot() -> bool {
 
 pub struct CommandExecutor {
     pub dry_run: bool,
+    pub log_file: Option<PathBuf>,
 }
 
 impl CommandExecutor {
-    pub fn new(dry_run: bool) -> Self {
-        Self { dry_run }
+    pub fn new(dry_run: bool, log_file: Option<PathBuf>) -> Self {
+        Self { dry_run, log_file }
+    }
+
+    fn log_to_file(&self, message: &str) {
+        if let Some(log_path) = &self.log_file {
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_path)
+            {
+                let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+                let _ = writeln!(file, "[{}] {}", timestamp, message);
+            }
+        }
+    }
+
+    pub fn log(&self, message: &str) {
+        self.log_to_file(message);
     }
 
     pub fn run(&self, command: &mut std::process::Command) -> anyhow::Result<()> {
+        let program = command.get_program().to_string_lossy();
+        let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
+        let cmd_str = format!("{} {}", program, args.join(" "));
+        
+        self.log_to_file(&format!("RUN: {}", cmd_str));
+
         if self.dry_run {
             self.print_dry_run(command, None);
             Ok(())
         } else {
             let status = command.status()?;
             if !status.success() {
+                self.log_to_file(&format!("FAILED: {}", cmd_str));
                 anyhow::bail!("Command failed: {:?}", command);
             }
             Ok(())
@@ -62,6 +88,15 @@ impl CommandExecutor {
         command: &mut std::process::Command,
         input: &str,
     ) -> anyhow::Result<()> {
+        let program = command.get_program().to_string_lossy();
+        let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
+        let cmd_str = format!("{} {}", program, args.join(" "));
+        
+        self.log_to_file(&format!("RUN WITH INPUT: {}", cmd_str));
+        // Don't log potentially sensitive input like passwords, but maybe log length?
+        // For now let's just log that input was provided.
+        self.log_to_file("(Input provided)");
+
         if self.dry_run {
             self.print_dry_run(command, Some(input));
             Ok(())
@@ -78,6 +113,7 @@ impl CommandExecutor {
 
             let status = child.wait()?;
             if !status.success() {
+                self.log_to_file(&format!("FAILED: {}", cmd_str));
                 anyhow::bail!("Command failed: {:?}", command);
             }
             Ok(())
@@ -88,6 +124,12 @@ impl CommandExecutor {
         &self,
         command: &mut std::process::Command,
     ) -> anyhow::Result<Option<std::process::Output>> {
+        let program = command.get_program().to_string_lossy();
+        let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
+        let cmd_str = format!("{} {}", program, args.join(" "));
+        
+        self.log_to_file(&format!("RUN WITH OUTPUT: {}", cmd_str));
+
         if self.dry_run {
             self.print_dry_run(command, None);
             Ok(None)
@@ -98,6 +140,9 @@ impl CommandExecutor {
             // But .output() captures both.
             let output = command.output()?;
             if !output.status.success() {
+                self.log_to_file(&format!("FAILED: {}", cmd_str));
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                self.log_to_file(&format!("STDERR: {}", stderr));
                 anyhow::bail!("Command failed: {:?}", command);
             }
             Ok(Some(output))
@@ -132,6 +177,7 @@ pub async fn execute_installation(
     config_path: PathBuf,
     step: Option<String>,
     mut dry_run: bool,
+    log_file: Option<PathBuf>,
 ) -> Result<()> {
     // Check for force dry-run file
     if std::path::Path::new(paths::DRY_RUN_FLAG).exists() {
@@ -148,7 +194,11 @@ pub async fn execute_installation(
         println!("*** DRY RUN MODE ENABLED - No changes will be made ***");
     }
 
-    let executor = CommandExecutor::new(dry_run);
+    let executor = CommandExecutor::new(dry_run, log_file.clone());
+
+    if let Some(log_path) = &log_file {
+        executor.log(&format!("Starting installation execution. Dry run: {}", dry_run));
+    }
 
     println!("Loading configuration from: {}", config_path.display());
 
