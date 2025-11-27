@@ -412,7 +412,13 @@ impl QuestionEngine {
                     if let Some(review_idx) = self.handle_review(current_idx)? {
                         let q_id = self.questions[review_idx].id();
                         self.context.answers.remove(&q_id);
-                        Ok(true)
+
+                        if self.questions[review_idx].is_optional() {
+                            self.force_ask_question(review_idx).await?;
+                            Ok(false)
+                        } else {
+                            Ok(true)
+                        }
                     } else {
                         Ok(false)
                     }
@@ -454,6 +460,12 @@ impl QuestionEngine {
                     if let Some(review_idx) = self.handle_review(self.questions.len())? {
                         let q_id = self.questions[review_idx].id();
                         self.context.answers.remove(&q_id);
+
+                        // If the question is optional, the main loop will skip it,
+                        // so we must ask it explicitly here.
+                        if self.questions[review_idx].is_optional() {
+                            self.force_ask_question(review_idx).await?;
+                        }
                     }
                     Ok(false)
                 } else if opt.contains("Advanced Options") {
