@@ -36,14 +36,25 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
     let mut new_lines = Vec::new();
     for line in content.lines() {
         if line.trim().starts_with("HOOKS=") {
-            // HOOKS=(base udev autodetect modconf kms keyboard keymap consolefont block filesystems fsck)
-            // We need to insert 'encrypt lvm2 resume' before 'filesystems'
-            if line.contains("block") && line.contains("filesystems") && !line.contains("encrypt") {
-                let new_line = line.replace("block", "block encrypt lvm2 resume");
-                new_lines.push(new_line);
-            } else {
-                new_lines.push(line.to_string());
+            let mut new_line = line.to_string();
+
+            // Ensure keyboard and keymap are present (needed for LUKS password entry)
+            if !new_line.contains("keyboard") {
+                new_line = new_line.replace("block", "keyboard block");
             }
+            if !new_line.contains("keymap") {
+                new_line = new_line.replace("block", "keymap block");
+            }
+
+            // Add encryption hooks
+            if new_line.contains("block")
+                && new_line.contains("filesystems")
+                && !new_line.contains("encrypt")
+            {
+                new_line = new_line.replace("block", "block encrypt lvm2 resume");
+            }
+
+            new_lines.push(new_line);
         } else {
             new_lines.push(line.to_string());
         }

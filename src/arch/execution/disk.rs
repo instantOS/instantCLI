@@ -69,6 +69,7 @@ fn partition_uefi_luks(disk: &str, executor: &CommandExecutor) -> Result<()> {
     executor.run_with_input(Command::new("sfdisk").arg(disk), script)?;
 
     if !executor.dry_run {
+        executor.run(Command::new("udevadm").arg("settle"))?;
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
@@ -88,6 +89,7 @@ fn partition_bios_luks(disk: &str, executor: &CommandExecutor) -> Result<()> {
     executor.run_with_input(Command::new("sfdisk").arg(disk), script)?;
 
     if !executor.dry_run {
+        executor.run(Command::new("udevadm").arg("settle"))?;
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
@@ -125,6 +127,11 @@ fn format_luks(
     cmd.arg("-q").arg("luksFormat").arg(&p2).arg("-");
     executor.run_with_input(&mut cmd, password)?;
 
+    if !executor.dry_run {
+        executor.run(Command::new("udevadm").arg("settle"))?;
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+
     // 3. Open LUKS
     println!("Opening LUKS container...");
     // echo -n "password" | cryptsetup open /dev/sdX2 cryptlvm -
@@ -151,6 +158,11 @@ fn format_luks(
 
     // lvcreate -l 100%FREE instantOS -n root
     executor.run(Command::new("lvcreate").args(["-l", "100%FREE", "instantOS", "-n", "root"]))?;
+
+    if !executor.dry_run {
+        executor.run(Command::new("udevadm").arg("settle"))?;
+        executor.run(Command::new("vgchange").args(["-ay", "instantOS"]))?;
+    }
 
     // 5. Format LVs
     println!("Formatting Logical Volumes...");
@@ -212,6 +224,7 @@ fn partition_uefi(disk: &str, executor: &CommandExecutor, swap_size_gb: u64) -> 
 
     // Wait for kernel to update partition table
     if !executor.dry_run {
+        executor.run(Command::new("udevadm").arg("settle"))?;
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
@@ -235,6 +248,7 @@ fn partition_bios(disk: &str, executor: &CommandExecutor, swap_size_gb: u64) -> 
     executor.run_with_input(Command::new("sfdisk").arg(disk), &script)?;
 
     if !executor.dry_run {
+        executor.run(Command::new("udevadm").arg("settle"))?;
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
