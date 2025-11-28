@@ -41,6 +41,16 @@ impl ScratchpadProvider for Hyprland {
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
         window_exists(&config.window_class())
     }
+
+    fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool> {
+        let workspace_name = config.workspace_name();
+        let window_class = config.window_class();
+        
+        let special_workspace_active = is_special_workspace_active(&workspace_name).unwrap_or(false);
+        let window_exists = window_exists(&window_class)?;
+        
+        Ok(special_workspace_active && window_exists)
+    }
 }
 
 impl Hyprland {

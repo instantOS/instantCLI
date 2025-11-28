@@ -1,5 +1,5 @@
 use crate::common::compositor::CompositorType;
-use crate::scratchpad::{config::ScratchpadConfig, hide_scratchpad, show_scratchpad};
+use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use std::sync::{
     Arc,
@@ -27,7 +27,7 @@ impl ScratchpadManager {
     pub fn show(&self) -> Result<()> {
         // Check if already visible to avoid unnecessary operations
         if !self.visible.load(Ordering::SeqCst) {
-            show_scratchpad(&self.compositor, &self.config)
+            self.compositor.provider().show(&self.config)
                 .context("Failed to show menu server scratchpad")?;
             self.visible.store(true, Ordering::SeqCst);
         }
@@ -49,7 +49,7 @@ impl ScratchpadManager {
     pub fn hide(&self) -> Result<()> {
         // Check if currently visible to avoid unnecessary operations
         if self.visible.load(Ordering::SeqCst) {
-            hide_scratchpad(&self.compositor, &self.config)
+            self.compositor.provider().hide(&self.config)
                 .context("Failed to hide menu server scratchpad")?;
             self.visible.store(false, Ordering::SeqCst);
         }

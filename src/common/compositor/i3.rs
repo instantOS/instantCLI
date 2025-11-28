@@ -36,6 +36,10 @@ impl ScratchpadProvider for I3 {
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
         window_exists(&config.window_class())
     }
+
+    fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool> {
+        is_window_visible(&config.window_class())
+    }
 }
 
 impl I3 {

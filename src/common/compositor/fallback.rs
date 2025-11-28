@@ -28,4 +28,9 @@ impl ScratchpadProvider for Fallback {
         // Cannot reliably detect window in fallback mode
         Ok(false)
     }
+
+    fn is_visible(&self, _config: &ScratchpadConfig) -> Result<bool> {
+        // Cannot reliably detect visibility in fallback mode
+        Ok(false)
+    }
 }

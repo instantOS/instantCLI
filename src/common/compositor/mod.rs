@@ -35,6 +35,8 @@ pub trait ScratchpadProvider: Send + Sync {
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>>;
     /// Check if the scratchpad window is running
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool>;
+    /// Check if the scratchpad window is visible
+    fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool>;
 }
 
 /// Information about a scratchpad window

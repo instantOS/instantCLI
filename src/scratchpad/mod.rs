@@ -3,27 +3,10 @@ use anyhow::Result;
 use colored::*;
 
 pub mod config;
-pub mod operations;
 pub mod terminal;
-pub mod visibility;
 
 pub use config::ScratchpadConfig;
 pub use terminal::Terminal;
-
-/// Toggle scratchpad terminal visibility
-pub fn toggle_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -> Result<()> {
-    compositor.provider().toggle(config)
-}
-
-/// Show scratchpad terminal
-pub fn show_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -> Result<()> {
-    compositor.provider().show(config)
-}
-
-/// Hide scratchpad terminal
-pub fn hide_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -> Result<()> {
-    compositor.provider().hide(config)
-}
 
 /// Shared arguments for scratchpad commands that create/configure terminals
 #[derive(clap::Args, Debug, Clone)]
@@ -95,7 +78,7 @@ impl ScratchpadCommand {
                     args.height_pct,
                 );
 
-                match toggle_scratchpad(compositor, &config) {
+                match compositor.provider().toggle(&config) {
                     Ok(()) => Ok(0),
                     Err(e) => {
                         eprintln!("Error toggling scratchpad: {e}");
@@ -121,7 +104,7 @@ impl ScratchpadCommand {
                     args.height_pct,
                 );
 
-                match show_scratchpad(compositor, &config) {
+                match compositor.provider().show(&config) {
                     Ok(()) => Ok(0),
                     Err(e) => {
                         eprintln!("Error showing scratchpad: {e}");
@@ -136,7 +119,7 @@ impl ScratchpadCommand {
 
                 let config = ScratchpadConfig::new(args.name);
 
-                match hide_scratchpad(compositor, &config) {
+                match compositor.provider().hide(&config) {
                     Ok(()) => Ok(0),
                     Err(e) => {
                         eprintln!("Error hiding scratchpad: {e}");
