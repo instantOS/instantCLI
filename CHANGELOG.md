@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.11](https://github.com/instantOS/instantCLI/compare/v0.7.10...v0.7.11) - 2025-11-28
+
+### Fixed
+
+- fix scratchpad init on sway
+- fix encryption not booting
+- fix distro detection
+- fix LUKS?
+- fix logging
+
+### Other
+
+- increase cowspace
+- init dev setup command
+- init plan for devsetup
+- add option to force log upload
+- auto upload logs
+- encryption still broken, attempt fix
+- continue scrachpad refactor
+- init refactor for scratchpad
+- new plans
+- init scratchpad support for i3
+- limit retry amount for pacman
+- init pacman retry loop
+- upload install script
+- add some tests to grub config parsing
+- experimental LUKS
+- add password encryption question
+- remove plaintext password from installation
+- more plans
+- refactor logging
+- init better logging
+- Merge branch 'main' into dev
+
 ## [0.7.10](https://github.com/instantOS/instantCLI/compare/v0.7.9...v0.7.10) - 2025-11-27
 
 ### Other
