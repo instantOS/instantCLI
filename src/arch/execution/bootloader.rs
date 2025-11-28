@@ -14,7 +14,7 @@ pub async fn install_bootloader(
         BootMode::BIOS => install_grub_bios(context, executor)?,
     }
 
-    configure_grub(executor)?;
+    configure_grub(context, executor)?;
 
     Ok(())
 }
@@ -73,14 +73,71 @@ fn install_grub_bios(context: &InstallContext, executor: &CommandExecutor) -> Re
     Ok(())
 }
 
-fn configure_grub(executor: &CommandExecutor) -> Result<()> {
+fn configure_grub(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Generating GRUB configuration...");
+
+    if context.get_answer_bool(QuestionId::UseEncryption) {
+        configure_grub_encryption(executor)?;
+    }
 
     // grub-mkconfig -o /boot/grub/grub.cfg
     let mut cmd = Command::new("grub-mkconfig");
     cmd.arg("-o").arg("/boot/grub/grub.cfg");
 
     executor.run(&mut cmd)?;
+
+    Ok(())
+}
+
+fn configure_grub_encryption(executor: &CommandExecutor) -> Result<()> {
+    if executor.dry_run {
+        println!("[DRY RUN] Adding 'cryptdevice=UUID=...:cryptlvm' to GRUB_CMDLINE_LINUX");
+        return Ok(());
+    }
+
+    // Find UUID of LUKS partition
+    let output = Command::new("blkid")
+        .args(["-o", "value", "-s", "UUID", "-t", "TYPE=crypto_LUKS"])
+        .output()?;
+
+    let uuid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    if uuid.is_empty() {
+        anyhow::bail!("Could not find UUID for LUKS partition");
+    }
+
+    println!("Found LUKS UUID: {}", uuid);
+
+    let grub_default = "/etc/default/grub";
+    let content = std::fs::read_to_string(grub_default)?;
+
+    let mut new_lines = Vec::new();
+    for line in content.lines() {
+        if line.starts_with("GRUB_CMDLINE_LINUX=") {
+            let param = format!("cryptdevice=UUID={}:cryptlvm", uuid);
+            // Insert inside quotes
+            if line.contains('"') {
+                let parts: Vec<&str> = line.split('"').collect();
+                if parts.len() >= 2 {
+                    // Append to existing params
+                    let existing = parts[1];
+                    if existing.is_empty() {
+                        new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{}\"", param));
+                    } else {
+                        new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{} {}\"", existing, param));
+                    }
+                } else {
+                    new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{}\"", param));
+                }
+            } else {
+                new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{}\"", param));
+            }
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    std::fs::write(grub_default, new_lines.join("\n"))?;
 
     Ok(())
 }
