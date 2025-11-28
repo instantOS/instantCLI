@@ -27,7 +27,9 @@ impl ScratchpadManager {
     pub fn show(&self) -> Result<()> {
         // Check if already visible to avoid unnecessary operations
         if !self.visible.load(Ordering::SeqCst) {
-            self.compositor.provider().show(&self.config)
+            self.compositor
+                .provider()
+                .show(&self.config)
                 .context("Failed to show menu server scratchpad")?;
             self.visible.store(true, Ordering::SeqCst);
         }
@@ -39,7 +41,7 @@ impl ScratchpadManager {
     pub fn show_fast(&self) -> Result<()> {
         self.compositor
             .provider()
-            .show(&self.config)
+            .show_unchecked(&self.config)
             .context("Failed to show scratchpad")?;
         self.visible.store(true, Ordering::SeqCst);
         Ok(())
@@ -49,7 +51,9 @@ impl ScratchpadManager {
     pub fn hide(&self) -> Result<()> {
         // Check if currently visible to avoid unnecessary operations
         if self.visible.load(Ordering::SeqCst) {
-            self.compositor.provider().hide(&self.config)
+            self.compositor
+                .provider()
+                .hide(&self.config)
                 .context("Failed to hide menu server scratchpad")?;
             self.visible.store(false, Ordering::SeqCst);
         }
@@ -61,7 +65,7 @@ impl ScratchpadManager {
     pub fn hide_fast(&self) -> Result<()> {
         self.compositor
             .provider()
-            .hide(&self.config)
+            .hide_unchecked(&self.config)
             .context("Failed to hide scratchpad")?;
         self.visible.store(false, Ordering::SeqCst);
         Ok(())

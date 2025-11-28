@@ -40,6 +40,14 @@ impl ScratchpadProvider for I3 {
     fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool> {
         is_window_visible(&config.window_class())
     }
+
+    fn show_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        show_scratchpad(&config.window_class())
+    }
+
+    fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        hide_scratchpad(&config.window_class())
+    }
 }
 
 impl I3 {

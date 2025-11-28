@@ -40,6 +40,14 @@ impl ScratchpadProvider for Sway {
     fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool> {
         is_window_visible(&config.window_class())
     }
+
+    fn show_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        show_scratchpad(&config.window_class())
+    }
+
+    fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        hide_scratchpad(&config.window_class())
+    }
 }
 
 impl Sway {
@@ -51,6 +59,8 @@ impl Sway {
         let mut attempts = 0;
         while attempts < 30 {
             if window_exists(&window_class)? {
+                // Give the window a moment to initialize before configuring
+                std::thread::sleep(std::time::Duration::from_millis(200));
                 configure_scratchpad_window(&window_class, config.width_pct, config.height_pct)?;
                 return Ok(());
             }

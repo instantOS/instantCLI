@@ -37,6 +37,14 @@ pub trait ScratchpadProvider: Send + Sync {
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool>;
     /// Check if the scratchpad window is visible
     fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool>;
+    /// Show the scratchpad without checking if it exists (optimistic)
+    fn show_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        self.show(config)
+    }
+    /// Hide the scratchpad without checking if it exists (optimistic)
+    fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        self.hide(config)
+    }
 }
 
 /// Information about a scratchpad window

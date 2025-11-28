@@ -45,11 +45,22 @@ impl ScratchpadProvider for Hyprland {
     fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool> {
         let workspace_name = config.workspace_name();
         let window_class = config.window_class();
-        
-        let special_workspace_active = is_special_workspace_active(&workspace_name).unwrap_or(false);
+
+        let special_workspace_active =
+            is_special_workspace_active(&workspace_name).unwrap_or(false);
         let window_exists = window_exists(&window_class)?;
-        
+
         Ok(special_workspace_active && window_exists)
+    }
+
+    fn show_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        let workspace_name = config.workspace_name();
+        show_special_workspace(&workspace_name)
+    }
+
+    fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        let workspace_name = config.workspace_name();
+        hide_special_workspace(&workspace_name)
     }
 }
 

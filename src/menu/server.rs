@@ -3,9 +3,7 @@ use super::protocol::*;
 use super::scratchpad_manager::ScratchpadManager;
 use super::tui::MenuServerTui;
 use crate::common::compositor::CompositorType;
-use crate::scratchpad::{
-    config::ScratchpadConfig, show_scratchpad, visibility::is_scratchpad_visible,
-};
+use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use std::io::{self, BufRead, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -327,7 +325,7 @@ impl MenuServer {
                 let check_interval = Duration::from_millis(100);
 
                 while monitoring_active_clone.load(Ordering::SeqCst) {
-                    match is_scratchpad_visible(&compositor, &config) {
+                    match compositor.provider().is_visible(&config) {
                         Ok(false) => {
                             // Scratchpad became invisible, kill all fzf processes
                             println!("Scratchpad became invisible, cancelling menu operation");
@@ -482,7 +480,7 @@ pub async fn run_server_launch(no_scratchpad: bool) -> Result<i32> {
     println!("Launching menu server in scratchpad...");
 
     // Create and show the scratchpad with the menu server running inside
-    match show_scratchpad(&compositor, &scratchpad_config) {
+    match compositor.provider().show(&scratchpad_config) {
         Ok(()) => {
             println!("Menu server scratchpad launched successfully");
             Ok(0)
