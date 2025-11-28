@@ -254,6 +254,13 @@ pub async fn execute_installation(
         println!("*** DRY RUN MODE ENABLED - No changes will be made ***");
     }
 
+    // Increase cowspace if in live ISO
+    if crate::common::distro::is_live_iso() && !dry_run {
+        if let Err(e) = crate::common::distro::increase_cowspace() {
+            println!("Warning: Failed to increase cowspace: {}", e);
+        }
+    }
+
     let executor = CommandExecutor::new(dry_run, log_file.clone());
 
     if let Some(_) = &log_file {

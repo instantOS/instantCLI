@@ -24,6 +24,16 @@ pub async fn handle_setup(debug: bool) -> Result<()> {
             "Live ISO environment detected",
             None,
         );
+
+        // Increase cowspace
+        if let Err(e) = distro::increase_cowspace() {
+            emit(
+                Level::Warn,
+                "dev.setup.cowspace",
+                &format!("Failed to increase cowspace: {}", e),
+                None,
+            );
+        }
     }
 
     // 1. Install packages: zsh, git, mise, neovim

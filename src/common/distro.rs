@@ -62,6 +62,57 @@ pub fn is_live_iso() -> bool {
     Path::new("/run/archiso/cowspace").exists()
 }
 
+pub fn increase_cowspace() -> Result<()> {
+    if !is_live_iso() {
+        return Ok(());
+    }
+
+    let total_ram_mb = get_total_ram_mb().unwrap_or(4096); // Default to 4GB if detection fails
+
+    // Calculate 70% of RAM
+    let target_size_mb = (total_ram_mb as f64 * 0.7) as u64;
+
+    // Cap at 10GB (10 * 1024 MB)
+    let max_size_mb = 10 * 1024;
+    let size_mb = std::cmp::min(target_size_mb, max_size_mb);
+
+    let size_str = format!("{}M", size_mb);
+
+    println!(
+        "Increasing cowspace to {} (Total RAM: {}MB)...",
+        size_str, total_ram_mb
+    );
+
+    let status = std::process::Command::new("mount")
+        .arg("-o")
+        .arg(format!("remount,size={}", size_str))
+        .arg("/run/archiso/cowspace")
+        .status()
+        .context("Failed to execute mount command")?;
+
+    if !status.success() {
+        return Err(anyhow::anyhow!("Failed to remount cowspace"));
+    }
+
+    Ok(())
+}
+
+fn get_total_ram_mb() -> Option<u64> {
+    let content = std::fs::read_to_string("/proc/meminfo").ok()?;
+    for line in content.lines() {
+        if line.starts_with("MemTotal:") {
+            // Format: MemTotal:        16303832 kB
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                if let Ok(kb) = parts[1].parse::<u64>() {
+                    return Some(kb / 1024);
+                }
+            }
+        }
+    }
+    None
+}
+
 fn parse_os_release(content: &str) -> Result<Distro> {
     let mut id = String::new();
     let mut id_like = String::new();
