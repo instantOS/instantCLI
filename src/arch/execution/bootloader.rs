@@ -110,34 +110,88 @@ fn configure_grub_encryption(executor: &CommandExecutor) -> Result<()> {
 
     let grub_default = "/etc/default/grub";
     let content = std::fs::read_to_string(grub_default)?;
+    let param = format!("cryptdevice=UUID={}:cryptlvm", uuid);
 
+    let new_content = add_grub_kernel_param(&content, &param);
+
+    std::fs::write(grub_default, new_content)?;
+
+    Ok(())
+}
+
+fn add_grub_kernel_param(content: &str, param: &str) -> String {
     let mut new_lines = Vec::new();
     for line in content.lines() {
-        if line.starts_with("GRUB_CMDLINE_LINUX=") {
-            let param = format!("cryptdevice=UUID={}:cryptlvm", uuid);
-            // Insert inside quotes
-            if line.contains('"') {
-                let parts: Vec<&str> = line.split('"').collect();
-                if parts.len() >= 2 {
-                    // Append to existing params
-                    let existing = parts[1];
-                    if existing.is_empty() {
-                        new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{}\"", param));
-                    } else {
-                        new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{} {}\"", existing, param));
-                    }
-                } else {
-                    new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{}\"", param));
-                }
-            } else {
-                new_lines.push(format!("GRUB_CMDLINE_LINUX=\"{}\"", param));
+        let trimmed = line.trim();
+        if trimmed.starts_with("GRUB_CMDLINE_LINUX=") {
+            // Split key and value
+            let parts: Vec<&str> = line.splitn(2, '=').collect();
+            if parts.len() != 2 {
+                new_lines.push(line.to_string());
+                continue;
             }
+
+            let key = parts[0];
+            let val = parts[1];
+
+            // Detect quotes
+            let (_quote_char, inner_val) = if val.starts_with('"') && val.ends_with('"') {
+                ("\"", &val[1..val.len() - 1])
+            } else if val.starts_with('\'') && val.ends_with('\'') {
+                ("'", &val[1..val.len() - 1])
+            } else {
+                ("", val)
+            };
+
+            let new_val = if inner_val.is_empty() {
+                param.to_string()
+            } else {
+                format!("{} {}", inner_val, param)
+            };
+
+            // Reconstruct with double quotes for safety
+            new_lines.push(format!("{}=\"{}\"", key, new_val));
         } else {
             new_lines.push(line.to_string());
         }
     }
+    new_lines.join("\n")
+}
 
-    std::fs::write(grub_default, new_lines.join("\n"))?;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    Ok(())
+    #[test]
+    fn test_add_grub_kernel_param() {
+        let param = "cryptdevice=UUID=123:cryptlvm";
+
+        // Case 1: Empty value
+        let input = "GRUB_CMDLINE_LINUX=\"\"";
+        let expected = format!("GRUB_CMDLINE_LINUX=\"{}\"", param);
+        assert_eq!(add_grub_kernel_param(input, param), expected);
+
+        // Case 2: Existing value with double quotes
+        let input = "GRUB_CMDLINE_LINUX=\"quiet splash\"";
+        let expected = format!("GRUB_CMDLINE_LINUX=\"quiet splash {}\"", param);
+        assert_eq!(add_grub_kernel_param(input, param), expected);
+
+        // Case 3: Existing value with single quotes
+        let input = "GRUB_CMDLINE_LINUX='quiet splash'";
+        let expected = format!("GRUB_CMDLINE_LINUX=\"quiet splash {}\"", param);
+        assert_eq!(add_grub_kernel_param(input, param), expected);
+
+        // Case 4: No quotes
+        let input = "GRUB_CMDLINE_LINUX=quiet";
+        let expected = format!("GRUB_CMDLINE_LINUX=\"quiet {}\"", param);
+        assert_eq!(add_grub_kernel_param(input, param), expected);
+
+        // Case 5: Multiple lines
+        let input = "GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX=\"\"\nGRUB_TIMEOUT=5";
+        let expected = format!(
+            "GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX=\"{}\"\nGRUB_TIMEOUT=5",
+            param
+        );
+        assert_eq!(add_grub_kernel_param(input, param), expected);
+    }
 }
