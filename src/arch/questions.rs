@@ -421,6 +421,77 @@ impl Question for KernelQuestion {
     }
 }
 
+pub struct UseEncryptionQuestion;
+
+#[async_trait::async_trait]
+impl Question for UseEncryptionQuestion {
+    fn id(&self) -> QuestionId {
+        QuestionId::UseEncryption
+    }
+
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        let options = vec!["no".to_string(), "yes".to_string()];
+
+        let result = FzfWrapper::builder()
+            .header(format!("{} Encrypt the installation disk?", NerdFont::Lock))
+            .select(options)?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(ans) => Ok(QuestionResult::Answer(ans)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
+        }
+    }
+}
+
+pub struct EncryptionPasswordQuestion;
+
+#[async_trait::async_trait]
+impl Question for EncryptionPasswordQuestion {
+    fn id(&self) -> QuestionId {
+        QuestionId::EncryptionPassword
+    }
+
+    fn is_sensitive(&self) -> bool {
+        true
+    }
+
+    fn should_ask(&self, context: &InstallContext) -> bool {
+        context.get_answer_bool(QuestionId::UseEncryption)
+    }
+
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        loop {
+            let pass1 = match FzfWrapper::password(&format!(
+                "{} Please enter the encryption password",
+                NerdFont::Lock
+            )) {
+                Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
+                Ok(p) => p,
+                Err(_) => return Ok(QuestionResult::Cancelled),
+            };
+
+            let pass2 = match FzfWrapper::password(&format!(
+                "{} Please confirm the encryption password",
+                NerdFont::Check
+            )) {
+                Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
+                Ok(p) => p,
+                Err(_) => return Ok(QuestionResult::Cancelled),
+            };
+
+            if pass1 == pass2 {
+                return Ok(QuestionResult::Answer(pass1));
+            } else {
+                FzfWrapper::message(&format!(
+                    "{} Passwords do not match. Please try again.",
+                    NerdFont::Warning
+                ))?;
+            }
+        }
+    }
+}
+
 pub struct LogUploadQuestion;
 
 #[async_trait::async_trait]

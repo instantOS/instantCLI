@@ -17,6 +17,8 @@ pub enum QuestionId {
     Timezone,
     Locale,
     Kernel,
+    UseEncryption,
+    EncryptionPassword,
     LogUpload,
     ConfirmInstall,
 }

@@ -312,7 +312,9 @@ pub async fn execute_installation(
         if !dry_run {
             let chroot_config = paths::chroot_path(paths::CONFIG_FILE);
             if chroot_config.exists() {
-                println!("Securing installation: Removing configuration file from target system...");
+                println!(
+                    "Securing installation: Removing configuration file from target system..."
+                );
                 if let Err(e) = std::fs::remove_file(&chroot_config) {
                     println!("Warning: Failed to remove config file from chroot: {}", e);
                 }

@@ -53,9 +53,9 @@ pub enum ArchCommands {
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
-        DiskQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion,
-        LogUploadQuestion, MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion,
-        UsernameQuestion,
+        DiskQuestion, EncryptionPasswordQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion,
+        LocaleQuestion, LogUploadQuestion, MirrorRegionQuestion, PasswordQuestion,
+        TimezoneQuestion, UseEncryptionQuestion, UsernameQuestion,
     };
     use crate::common::distro::{Distro, detect_distro, is_live_iso};
 
@@ -74,6 +74,8 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         Box::new(HostnameQuestion),
         Box::new(UsernameQuestion),
         Box::new(PasswordQuestion),
+        Box::new(UseEncryptionQuestion),
+        Box::new(EncryptionPasswordQuestion),
         Box::new(MirrorRegionQuestion),
         Box::new(TimezoneQuestion),
         Box::new(LocaleQuestion),
