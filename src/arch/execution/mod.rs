@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::io::BufRead;
 use std::path::PathBuf;
 
 pub mod base;
@@ -74,7 +75,60 @@ impl CommandExecutor {
             self.print_dry_run(command, None);
             Ok(())
         } else {
-            let status = command.status()?;
+            // Stream stdout/stderr to terminal AND log file
+            command.stdout(std::process::Stdio::piped());
+            command.stderr(std::process::Stdio::piped());
+
+            let mut child = command.spawn()?;
+
+            let stdout = child.stdout.take().expect("Failed to capture stdout");
+            let stderr = child.stderr.take().expect("Failed to capture stderr");
+
+            let log_file = self.log_file.clone();
+            let log_file_err = self.log_file.clone();
+
+            let stdout_handle = std::thread::spawn(move || {
+                let reader = std::io::BufReader::new(stdout);
+                for line in reader.lines() {
+                    if let Ok(l) = line {
+                        println!("{}", l);
+                        if let Some(path) = &log_file {
+                            if let Ok(mut file) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(path)
+                            {
+                                let _ = writeln!(file, "{}", l);
+                            }
+                        }
+                    }
+                }
+            });
+
+            let stderr_handle = std::thread::spawn(move || {
+                let reader = std::io::BufReader::new(stderr);
+                for line in reader.lines() {
+                    if let Ok(l) = line {
+                        eprintln!("{}", l);
+                        if let Some(path) = &log_file_err {
+                            if let Ok(mut file) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(path)
+                            {
+                                let _ = writeln!(file, "STDERR: {}", l);
+                            }
+                        }
+                    }
+                }
+            });
+
+            let status = child.wait()?;
+
+            // Wait for threads to finish reading
+            let _ = stdout_handle.join();
+            let _ = stderr_handle.join();
+
             if !status.success() {
                 self.log_to_file(&format!("FAILED: {}", cmd_str));
                 anyhow::bail!("Command failed: {:?}", command);
@@ -103,7 +157,8 @@ impl CommandExecutor {
         } else {
             use std::io::Write;
             command.stdin(std::process::Stdio::piped());
-            command.stdout(std::process::Stdio::piped()); // Capture output to avoid clutter
+            command.stdout(std::process::Stdio::piped());
+            command.stderr(std::process::Stdio::piped());
 
             let mut child = command.spawn()?;
 
@@ -111,7 +166,53 @@ impl CommandExecutor {
                 stdin.write_all(input.as_bytes())?;
             }
 
+            let stdout = child.stdout.take().expect("Failed to capture stdout");
+            let stderr = child.stderr.take().expect("Failed to capture stderr");
+
+            let log_file = self.log_file.clone();
+            let log_file_err = self.log_file.clone();
+
+            let stdout_handle = std::thread::spawn(move || {
+                let reader = std::io::BufReader::new(stdout);
+                for line in reader.lines() {
+                    if let Ok(l) = line {
+                        println!("{}", l);
+                        if let Some(path) = &log_file {
+                            if let Ok(mut file) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(path)
+                            {
+                                let _ = writeln!(file, "{}", l);
+                            }
+                        }
+                    }
+                }
+            });
+
+            let stderr_handle = std::thread::spawn(move || {
+                let reader = std::io::BufReader::new(stderr);
+                for line in reader.lines() {
+                    if let Ok(l) = line {
+                        eprintln!("{}", l);
+                        if let Some(path) = &log_file_err {
+                            if let Ok(mut file) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(path)
+                            {
+                                let _ = writeln!(file, "STDERR: {}", l);
+                            }
+                        }
+                    }
+                }
+            });
+
             let status = child.wait()?;
+
+            let _ = stdout_handle.join();
+            let _ = stderr_handle.join();
+
             if !status.success() {
                 self.log_to_file(&format!("FAILED: {}", cmd_str));
                 anyhow::bail!("Command failed: {:?}", command);
@@ -315,6 +416,21 @@ async fn execute_step(
         }
 
         executor.run(&mut cmd)?;
+
+        // Collect logs from chroot
+        if !executor.dry_run {
+            let chroot_log = paths::chroot_path(paths::LOG_FILE);
+            if chroot_log.exists() {
+                if let Ok(content) = std::fs::read_to_string(&chroot_log) {
+                    executor.log(&format!("--- BEGIN CHROOT LOG ({:?}) ---", step));
+                    executor.log(&content);
+                    executor.log(&format!("--- END CHROOT LOG ({:?}) ---", step));
+
+                    // Remove the chroot log file to avoid duplication in subsequent steps
+                    let _ = std::fs::remove_file(&chroot_log);
+                }
+            }
+        }
 
         // Mark complete on host after successful chroot execution
         state.mark_complete(step);
