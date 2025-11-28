@@ -19,9 +19,14 @@ pub fn install(packages: &[&str], executor: &CommandExecutor) -> Result<()> {
 
     loop {
         attempt += 1;
+        if attempt > 10 {
+            anyhow::bail!(
+                "Package installation failed after 10 attempts. Please check your internet connection."
+            );
+        }
         if attempt > 1 {
             println!(
-                "Retry attempt {} for packages: {}",
+                "Retry attempt {}/10 for packages: {}",
                 attempt,
                 packages.join(" ")
             );
@@ -68,7 +73,7 @@ pub fn install(packages: &[&str], executor: &CommandExecutor) -> Result<()> {
 
                 // Update mirrors
                 println!("Updating mirrors...");
-                if command_exists("reflector") {
+                if which::which("reflector").is_ok() {
                     let mut ref_cmd = Command::new("reflector");
                     ref_cmd.args(&[
                         "--latest",
@@ -115,8 +120,13 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &CommandExecutor
 
     loop {
         attempt += 1;
+        if attempt > 10 {
+            anyhow::bail!(
+                "Pacstrap failed after 10 attempts. Please check your internet connection."
+            );
+        }
         if attempt > 1 {
-            println!("Retry attempt {} for pacstrap", attempt);
+            println!("Retry attempt {}/10 for pacstrap", attempt);
         }
 
         let mut cmd = Command::new("pacstrap");
@@ -145,12 +155,4 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &CommandExecutor
             }
         }
     }
-}
-
-fn command_exists(cmd: &str) -> bool {
-    Command::new("which")
-        .arg(cmd)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
 }
