@@ -263,7 +263,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             .await?;
 
             // 2. Execute
-            Box::pin(handle_arch_command(
+            let exec_result = Box::pin(handle_arch_command(
                 ArchCommands::Exec {
                     step: None,
                     questions_file: std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE),
@@ -271,7 +271,27 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 },
                 _debug,
             ))
-            .await?;
+            .await;
+
+            if let Err(_) = exec_result {
+                // Try to upload logs if forced or requested
+                if let Ok(context) =
+                    crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE)
+                {
+                    crate::arch::logging::process_log_upload(&context);
+                } else if std::path::Path::new("/etc/instantos/uploadlogs").exists() {
+                    println!(
+                        "Uploading installation logs (forced by /etc/instantos/uploadlogs)..."
+                    );
+                    let log_path =
+                        std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
+                    if let Err(e) = crate::arch::logging::upload_logs(&log_path) {
+                        eprintln!("Failed to upload logs: {}", e);
+                    }
+                }
+            }
+
+            exec_result?;
 
             // 3. Finished
             Box::pin(handle_arch_command(ArchCommands::Finished, _debug)).await?;

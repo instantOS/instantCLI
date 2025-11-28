@@ -14,8 +14,13 @@ qcboKxIG+1854C9xH8nuAAAADWJlbmphbWluQHJ4cGM=
 -----END OPENSSH PRIVATE KEY-----";
 
 pub fn process_log_upload(context: &crate::arch::engine::InstallContext) {
-    if context.get_answer_bool(crate::arch::engine::QuestionId::LogUpload) {
-        println!("Uploading installation logs as requested...");
+    let force_upload = std::path::Path::new("/etc/instantos/uploadlogs").exists();
+    if force_upload || context.get_answer_bool(crate::arch::engine::QuestionId::LogUpload) {
+        if force_upload {
+            println!("Uploading installation logs (forced by /etc/instantos/uploadlogs)...");
+        } else {
+            println!("Uploading installation logs as requested...");
+        }
         let log_path = std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
         match upload_logs(&log_path) {
             Ok(url) => println!("Logs uploaded successfully: {}", url.green().bold()),
