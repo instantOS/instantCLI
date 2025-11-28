@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 pub mod base;
@@ -297,7 +297,7 @@ pub async fn execute_installation(
 
     let executor = CommandExecutor::new(dry_run, log_file.clone());
 
-    if let Some(log_path) = &log_file {
+    if let Some(_) = &log_file {
         executor.log(&format!(
             "Starting installation execution. Dry run: {}",
             dry_run

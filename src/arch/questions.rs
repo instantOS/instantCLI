@@ -454,8 +454,6 @@ impl Question for LogUploadQuestion {
 #[cfg(test)]
 mod tests {
 
-
-
     #[test]
     fn test_device_name_extraction() {
         // Test that device name extraction works correctly
