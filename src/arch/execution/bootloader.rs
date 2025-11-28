@@ -77,7 +77,7 @@ fn configure_grub(context: &InstallContext, executor: &CommandExecutor) -> Resul
     println!("Generating GRUB configuration...");
 
     if context.get_answer_bool(QuestionId::UseEncryption) {
-        configure_grub_encryption(executor)?;
+        configure_grub_encryption(context, executor)?;
     }
 
     // grub-mkconfig -o /boot/grub/grub.cfg
@@ -89,21 +89,31 @@ fn configure_grub(context: &InstallContext, executor: &CommandExecutor) -> Resul
     Ok(())
 }
 
-fn configure_grub_encryption(executor: &CommandExecutor) -> Result<()> {
+fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     if executor.dry_run {
         println!("[DRY RUN] Adding 'cryptdevice=UUID=...:cryptlvm' to GRUB_CMDLINE_LINUX");
         return Ok(());
     }
 
+    let disk_answer = context
+        .get_answer(&QuestionId::Disk)
+        .context("Disk not selected")?;
+    let disk = disk_answer.split('(').next().unwrap_or(disk_answer).trim();
+    
+    // LUKS is always on partition 2 in our layout
+    let luks_part = crate::arch::execution::disk::get_part_path(disk, 2);
+
+    println!("Getting UUID for LUKS partition: {}", luks_part);
+
     // Find UUID of LUKS partition
     let output = Command::new("blkid")
-        .args(["-o", "value", "-s", "UUID", "-t", "TYPE=crypto_LUKS"])
+        .args(["-o", "value", "-s", "UUID", &luks_part])
         .output()?;
 
     let uuid = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     if uuid.is_empty() {
-        anyhow::bail!("Could not find UUID for LUKS partition");
+        anyhow::bail!("Could not find UUID for LUKS partition {}", luks_part);
     }
 
     println!("Found LUKS UUID: {}", uuid);

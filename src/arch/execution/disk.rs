@@ -241,7 +241,7 @@ fn partition_bios(disk: &str, executor: &CommandExecutor, swap_size_gb: u64) -> 
     Ok(())
 }
 
-fn get_part_path(disk: &str, part_num: u32) -> String {
+pub fn get_part_path(disk: &str, part_num: u32) -> String {
     // Handle nvme0n1 -> nvme0n1p1, sda -> sda1
     if disk.chars().last().unwrap_or(' ').is_numeric() {
         format!("{}p{}", disk, part_num)
