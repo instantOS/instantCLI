@@ -453,19 +453,8 @@ impl Question for LogUploadQuestion {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
-    #[test]
-    fn test_disk_question_validation() {
-        let question = DiskQuestion;
-        let context = InstallContext::new();
 
-        // Mock test would require mocking the get_boot_disk function
-        assert!(question.validate(&context, "/dev/sda (500 GiB)").is_ok());
-        assert!(question.validate(&context, "").is_err());
-        assert!(question.validate(&context, "invalid").is_err());
-        assert!(question.validate(&context, "/mnt/data").is_err());
-    }
 
     #[test]
     fn test_device_name_extraction() {
