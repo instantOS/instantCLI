@@ -122,7 +122,7 @@ fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
 }
 
 /// Clone a new repository
-fn clone_repository(
+pub fn clone_repository(
     config: &mut Config,
     db: &Database,
     url: &str,

@@ -7,6 +7,7 @@ mod fuzzy;
 mod github;
 mod install;
 mod package;
+mod setup;
 
 pub use clone::*;
 pub use fuzzy::*;
@@ -17,12 +18,15 @@ pub use install::*;
 pub enum DevCommands {
     Clone,
     Install,
+    /// Setup development environment (Arch live ISO)
+    Setup,
 }
 
 pub async fn handle_dev_command(command: DevCommands, debug: bool) -> Result<()> {
     match command {
         DevCommands::Clone => handle_clone(debug).await,
         DevCommands::Install => handle_install(debug).await,
+        DevCommands::Setup => setup::handle_setup(debug).await,
     }
 }
 
