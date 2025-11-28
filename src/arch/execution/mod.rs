@@ -84,44 +84,8 @@ impl CommandExecutor {
             let stdout = child.stdout.take().expect("Failed to capture stdout");
             let stderr = child.stderr.take().expect("Failed to capture stderr");
 
-            let log_file = self.log_file.clone();
-            let log_file_err = self.log_file.clone();
-
-            let stdout_handle = std::thread::spawn(move || {
-                let reader = std::io::BufReader::new(stdout);
-                for line in reader.lines() {
-                    if let Ok(l) = line {
-                        println!("{}", l);
-                        if let Some(path) = &log_file {
-                            if let Ok(mut file) = std::fs::OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open(path)
-                            {
-                                let _ = writeln!(file, "{}", l);
-                            }
-                        }
-                    }
-                }
-            });
-
-            let stderr_handle = std::thread::spawn(move || {
-                let reader = std::io::BufReader::new(stderr);
-                for line in reader.lines() {
-                    if let Ok(l) = line {
-                        eprintln!("{}", l);
-                        if let Some(path) = &log_file_err {
-                            if let Ok(mut file) = std::fs::OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open(path)
-                            {
-                                let _ = writeln!(file, "STDERR: {}", l);
-                            }
-                        }
-                    }
-                }
-            });
+            let stdout_handle = Self::spawn_logger(stdout, self.log_file.clone(), false);
+            let stderr_handle = Self::spawn_logger(stderr, self.log_file.clone(), true);
 
             let status = child.wait()?;
 
@@ -169,44 +133,8 @@ impl CommandExecutor {
             let stdout = child.stdout.take().expect("Failed to capture stdout");
             let stderr = child.stderr.take().expect("Failed to capture stderr");
 
-            let log_file = self.log_file.clone();
-            let log_file_err = self.log_file.clone();
-
-            let stdout_handle = std::thread::spawn(move || {
-                let reader = std::io::BufReader::new(stdout);
-                for line in reader.lines() {
-                    if let Ok(l) = line {
-                        println!("{}", l);
-                        if let Some(path) = &log_file {
-                            if let Ok(mut file) = std::fs::OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open(path)
-                            {
-                                let _ = writeln!(file, "{}", l);
-                            }
-                        }
-                    }
-                }
-            });
-
-            let stderr_handle = std::thread::spawn(move || {
-                let reader = std::io::BufReader::new(stderr);
-                for line in reader.lines() {
-                    if let Ok(l) = line {
-                        eprintln!("{}", l);
-                        if let Some(path) = &log_file_err {
-                            if let Ok(mut file) = std::fs::OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open(path)
-                            {
-                                let _ = writeln!(file, "STDERR: {}", l);
-                            }
-                        }
-                    }
-                }
-            });
+            let stdout_handle = Self::spawn_logger(stdout, self.log_file.clone(), false);
+            let stderr_handle = Self::spawn_logger(stderr, self.log_file.clone(), true);
 
             let status = child.wait()?;
 
@@ -219,6 +147,36 @@ impl CommandExecutor {
             }
             Ok(())
         }
+    }
+
+    fn spawn_logger<R: std::io::Read + Send + 'static>(
+        reader: R,
+        log_file: Option<PathBuf>,
+        is_stderr: bool,
+    ) -> std::thread::JoinHandle<()> {
+        std::thread::spawn(move || {
+            let reader = std::io::BufReader::new(reader);
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    if is_stderr {
+                        eprintln!("{}", l);
+                    } else {
+                        println!("{}", l);
+                    }
+
+                    if let Some(path) = &log_file {
+                        if let Ok(mut file) = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(path)
+                        {
+                            let prefix = if is_stderr { "STDERR: " } else { "" };
+                            let _ = writeln!(file, "{}{}", prefix, l);
+                        }
+                    }
+                }
+            }
+        })
     }
 
     pub fn run_with_output(
