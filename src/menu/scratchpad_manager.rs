@@ -38,6 +38,11 @@ impl ScratchpadManager {
     /// Use this when you know the scratchpad should be shown regardless of current state
     pub fn show_fast(&self) -> Result<()> {
         match &self.compositor {
+            CompositorType::I3 => {
+                let window_class = self.config.window_class();
+                crate::common::compositor::i3::show_scratchpad(&window_class)
+                    .context("Failed to show scratchpad in i3")?;
+            }
             CompositorType::Sway => {
                 let window_class = self.config.window_class();
                 crate::common::compositor::sway::show_scratchpad(&window_class)
@@ -73,6 +78,11 @@ impl ScratchpadManager {
     /// Use this when you need the absolute fastest hide operation
     pub fn hide_fast(&self) -> Result<()> {
         match &self.compositor {
+            CompositorType::I3 => {
+                let window_class = self.config.window_class();
+                crate::common::compositor::i3::hide_scratchpad(&window_class)
+                    .context("Failed to hide scratchpad in i3")?;
+            }
             CompositorType::Sway => {
                 let window_class = self.config.window_class();
                 crate::common::compositor::sway::hide_scratchpad(&window_class)

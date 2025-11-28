@@ -1,5 +1,5 @@
 use super::config::ScratchpadConfig;
-use crate::common::compositor::{CompositorType, hyprland, sway};
+use crate::common::compositor::{CompositorType, hyprland, i3, sway};
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -19,6 +19,7 @@ fn create_terminal_process(config: &ScratchpadConfig) -> Result<()> {
 /// Check if a window exists using the appropriate compositor method
 pub fn check_window_exists(compositor: &CompositorType, window_class: &str) -> Result<bool> {
     match compositor {
+        CompositorType::I3 => i3::window_exists(window_class),
         CompositorType::Sway => sway::window_exists(window_class),
         CompositorType::Hyprland => hyprland::window_exists(window_class),
         CompositorType::Other(_) => Ok(false),
@@ -114,6 +115,38 @@ pub fn create_and_configure_hyprland_scratchpad(config: &ScratchpadConfig) -> Re
     Ok(())
 }
 
+/// Create and configure a new scratchpad terminal for i3-wm
+pub fn create_and_configure_i3_scratchpad(config: &ScratchpadConfig) -> Result<()> {
+    println!("Creating new scratchpad terminal '{}'...", config.name);
+
+    // Launch the terminal in background
+    create_terminal_process(config)?;
+
+    // Give the terminal process a moment to start up
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // Wait for the window to appear by polling
+    let window_class = config.window_class();
+    let window_appeared = wait_for_window_to_appear(
+        &CompositorType::I3,
+        &window_class,
+        30,  // max attempts
+        200, // poll every 200ms
+    )?;
+
+    if !window_appeared {
+        return Err(anyhow::anyhow!(
+            "Terminal window did not appear after waiting. The terminal command may have failed to start."
+        ));
+    }
+
+    // Configure the new window
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    i3::configure_scratchpad_window(&window_class, config.width_pct, config.height_pct)?;
+
+    Ok(())
+}
+
 /// Toggle scratchpad terminal for Sway
 pub fn toggle_scratchpad_sway(config: &ScratchpadConfig) -> Result<()> {
     // Check if scratchpad terminal exists
@@ -155,6 +188,30 @@ pub fn toggle_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
 
         // Show it immediately (toggle means show when creating)
         hyprland::show_special_workspace(&workspace_name)?;
+
+        println!("Scratchpad terminal '{}' created and shown", config.name);
+    }
+
+    Ok(())
+}
+
+/// Toggle scratchpad terminal for i3-wm
+pub fn toggle_scratchpad_i3(config: &ScratchpadConfig) -> Result<()> {
+    let window_class = config.window_class();
+
+    // Check if terminal with specific class exists
+    let window_exists = check_window_exists(&CompositorType::I3, &window_class)?;
+
+    if window_exists {
+        // Terminal exists, toggle its visibility using the dedicated toggle function
+        i3::toggle_scratchpad(&window_class)?;
+        println!("Toggled scratchpad terminal '{}' visibility", config.name);
+    } else {
+        // Terminal doesn't exist, create and configure it
+        create_and_configure_i3_scratchpad(config)?;
+
+        // Show it immediately (toggle means show when creating)
+        i3::show_scratchpad(&window_class)?;
 
         println!("Scratchpad terminal '{}' created and shown", config.name);
     }

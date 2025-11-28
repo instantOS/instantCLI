@@ -4,6 +4,7 @@ use std::env;
 use std::process::Command;
 
 pub mod hyprland;
+pub mod i3;
 pub mod sway;
 
 /// Information about a scratchpad window
@@ -18,6 +19,8 @@ pub struct ScratchpadWindowInfo {
 /// Window compositor types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CompositorType {
+    /// i3-wm compositor (X11 tiling window manager)
+    I3,
     /// Sway compositor (i3-compatible Wayland compositor)
     Sway,
     /// Hyprland compositor (dynamic tiling Wayland compositor)
@@ -32,6 +35,7 @@ impl CompositorType {
         // Check environment variables first
         if let Ok(session) = env::var("XDG_SESSION_DESKTOP") {
             match session.to_lowercase().as_str() {
+                "i3" => return CompositorType::I3,
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
                 _ => {}
@@ -40,6 +44,7 @@ impl CompositorType {
 
         if let Ok(desktop) = env::var("DESKTOP_SESSION") {
             match desktop.to_lowercase().as_str() {
+                "i3" => return CompositorType::I3,
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
                 _ => {}
@@ -59,7 +64,10 @@ impl CompositorType {
                 CompositorType::Other("wayland".to_string())
             }
             DisplayServer::X11 => {
-                // Could check for X11 window managers here if needed
+                // Check for X11 window managers
+                if CompositorType::is_process_running("i3") {
+                    return CompositorType::I3;
+                }
                 CompositorType::Other("x11".to_string())
             }
             DisplayServer::Unknown => CompositorType::Other("unknown".to_string()),
@@ -89,6 +97,7 @@ impl CompositorType {
     /// Get a human-readable name for the compositor
     pub fn name(&self) -> String {
         match self {
+            CompositorType::I3 => "i3".to_string(),
             CompositorType::Sway => "Sway".to_string(),
             CompositorType::Hyprland => "Hyprland".to_string(),
             CompositorType::Other(name) => name.clone(),
@@ -101,6 +110,7 @@ impl CompositorType {
         match self {
             CompositorType::Sway | CompositorType::Hyprland => true,
             CompositorType::Other(name) => name.to_lowercase().contains("wayland"),
+            _ => false,
         }
     }
 
@@ -108,6 +118,7 @@ impl CompositorType {
     #[allow(dead_code)]
     pub fn is_x11(&self) -> bool {
         match self {
+            CompositorType::I3 => true,
             CompositorType::Other(name) => name.to_lowercase().contains("x11"),
             _ => false,
         }
@@ -118,6 +129,7 @@ impl CompositorType {
     pub fn display_server(&self) -> DisplayServer {
         match self {
             CompositorType::Sway | CompositorType::Hyprland => DisplayServer::Wayland,
+            CompositorType::I3 => DisplayServer::X11,
             CompositorType::Other(name) => {
                 if name.to_lowercase().contains("wayland") {
                     DisplayServer::Wayland
@@ -133,6 +145,17 @@ impl CompositorType {
     /// Get all scratchpad windows for this compositor
     pub fn get_all_scratchpad_windows(&self) -> anyhow::Result<Vec<ScratchpadWindowInfo>> {
         match self {
+            CompositorType::I3 => i3::get_all_scratchpad_windows().map(|windows| {
+                windows
+                    .into_iter()
+                    .map(|w| ScratchpadWindowInfo {
+                        name: w.name,
+                        window_class: w.window_class,
+                        title: w.title,
+                        visible: w.visible,
+                    })
+                    .collect()
+            }),
             CompositorType::Sway => sway::get_all_scratchpad_windows().map(|windows| {
                 windows
                     .into_iter()

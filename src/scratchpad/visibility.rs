@@ -2,10 +2,10 @@ use super::{
     config::ScratchpadConfig,
     operations::{
         check_window_exists, create_and_configure_hyprland_scratchpad,
-        create_and_configure_sway_scratchpad,
+        create_and_configure_i3_scratchpad, create_and_configure_sway_scratchpad,
     },
 };
-use crate::common::compositor::{CompositorType, hyprland, sway};
+use crate::common::compositor::{CompositorType, hyprland, i3, sway};
 use anyhow::Result;
 
 /// Check if scratchpad terminal is currently visible
@@ -15,6 +15,7 @@ pub fn is_scratchpad_visible(
 ) -> Result<bool> {
     let window_class = config.window_class();
     match compositor {
+        CompositorType::I3 => i3::is_window_visible(&window_class),
         CompositorType::Sway => sway::is_window_visible(&window_class),
         CompositorType::Hyprland => {
             // For Hyprland, check if special workspace is active AND window exists using direct IPC
@@ -123,6 +124,54 @@ pub fn hide_scratchpad_hyprland(config: &ScratchpadConfig) -> Result<()> {
         if is_visible {
             // Terminal is visible, hide special workspace using direct IPC
             hyprland::hide_special_workspace(&workspace_name)?;
+            println!("Hid scratchpad terminal '{}'", config.name);
+        } else {
+            println!("Scratchpad terminal '{}' is already hidden", config.name);
+        }
+    } else {
+        println!("Scratchpad terminal '{}' does not exist", config.name);
+    }
+
+    Ok(())
+}
+
+/// Show scratchpad terminal for i3-wm
+pub fn show_scratchpad_i3(config: &ScratchpadConfig) -> Result<()> {
+    // Check if scratchpad terminal exists
+    let window_class = config.window_class();
+    let window_exists = check_window_exists(&CompositorType::I3, &window_class)?;
+
+    if window_exists {
+        // Check if it's currently visible (not in scratchpad)
+        let is_visible = i3::is_window_visible(&window_class)?;
+
+        if !is_visible {
+            // Terminal is hidden, show it
+            i3::show_scratchpad(&window_class)?;
+            println!("Showed scratchpad terminal '{}'", config.name);
+        } else {
+            println!("Scratchpad terminal '{}' is already visible", config.name);
+        }
+    } else {
+        println!("Scratchpad terminal '{}' does not exist", config.name);
+    }
+
+    Ok(())
+}
+
+/// Hide scratchpad terminal for i3-wm
+pub fn hide_scratchpad_i3(config: &ScratchpadConfig) -> Result<()> {
+    // Check if scratchpad terminal exists
+    let window_class = config.window_class();
+    let window_exists = check_window_exists(&CompositorType::I3, &window_class)?;
+
+    if window_exists {
+        // Check if it's currently visible (not in scratchpad)
+        let is_visible = i3::is_window_visible(&window_class)?;
+
+        if is_visible {
+            // Terminal is visible, move it to scratchpad (hide it)
+            i3::hide_scratchpad(&window_class)?;
             println!("Hid scratchpad terminal '{}'", config.name);
         } else {
             println!("Scratchpad terminal '{}' is already hidden", config.name);

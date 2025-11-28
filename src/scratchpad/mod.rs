@@ -13,6 +13,7 @@ pub use terminal::Terminal;
 /// Toggle scratchpad terminal visibility
 pub fn toggle_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -> Result<()> {
     match compositor {
+        CompositorType::I3 => operations::toggle_scratchpad_i3(config),
         CompositorType::Sway => operations::toggle_scratchpad_sway(config),
         CompositorType::Hyprland => operations::toggle_scratchpad_hyprland(config),
         CompositorType::Other(_) => {
@@ -25,6 +26,7 @@ pub fn toggle_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig)
 /// Show scratchpad terminal
 pub fn show_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -> Result<()> {
     match compositor {
+        CompositorType::I3 => visibility::show_scratchpad_i3(config),
         CompositorType::Sway => visibility::show_scratchpad_sway(config),
         CompositorType::Hyprland => visibility::show_scratchpad_hyprland(config),
         CompositorType::Other(_) => {
@@ -37,6 +39,7 @@ pub fn show_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -
 /// Hide scratchpad terminal
 pub fn hide_scratchpad(compositor: &CompositorType, config: &ScratchpadConfig) -> Result<()> {
     match compositor {
+        CompositorType::I3 => visibility::hide_scratchpad_i3(config),
         CompositorType::Sway => visibility::hide_scratchpad_sway(config),
         CompositorType::Hyprland => visibility::hide_scratchpad_hyprland(config),
         CompositorType::Other(_) => {
