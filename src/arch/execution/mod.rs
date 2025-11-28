@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 pub mod base;
@@ -6,6 +7,7 @@ pub mod bootloader;
 pub mod config;
 pub mod disk;
 pub mod fstab;
+pub mod pacman;
 pub mod paths;
 pub mod post;
 pub mod setup;
@@ -67,14 +69,31 @@ impl CommandExecutor {
         let program = command.get_program().to_string_lossy();
         let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
         let cmd_str = format!("{} {}", program, args.join(" "));
-        
+
         self.log_to_file(&format!("RUN: {}", cmd_str));
 
         if self.dry_run {
             self.print_dry_run(command, None);
             Ok(())
         } else {
-            let status = command.status()?;
+            // Stream stdout/stderr to terminal AND log file
+            command.stdout(std::process::Stdio::piped());
+            command.stderr(std::process::Stdio::piped());
+
+            let mut child = command.spawn()?;
+
+            let stdout = child.stdout.take().expect("Failed to capture stdout");
+            let stderr = child.stderr.take().expect("Failed to capture stderr");
+
+            let stdout_handle = Self::spawn_logger(stdout, self.log_file.clone(), false);
+            let stderr_handle = Self::spawn_logger(stderr, self.log_file.clone(), true);
+
+            let status = child.wait()?;
+
+            // Wait for threads to finish reading
+            let _ = stdout_handle.join();
+            let _ = stderr_handle.join();
+
             if !status.success() {
                 self.log_to_file(&format!("FAILED: {}", cmd_str));
                 anyhow::bail!("Command failed: {:?}", command);
@@ -91,7 +110,7 @@ impl CommandExecutor {
         let program = command.get_program().to_string_lossy();
         let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
         let cmd_str = format!("{} {}", program, args.join(" "));
-        
+
         self.log_to_file(&format!("RUN WITH INPUT: {}", cmd_str));
         // Don't log potentially sensitive input like passwords, but maybe log length?
         // For now let's just log that input was provided.
@@ -103,7 +122,8 @@ impl CommandExecutor {
         } else {
             use std::io::Write;
             command.stdin(std::process::Stdio::piped());
-            command.stdout(std::process::Stdio::piped()); // Capture output to avoid clutter
+            command.stdout(std::process::Stdio::piped());
+            command.stderr(std::process::Stdio::piped());
 
             let mut child = command.spawn()?;
 
@@ -111,13 +131,53 @@ impl CommandExecutor {
                 stdin.write_all(input.as_bytes())?;
             }
 
+            let stdout = child.stdout.take().expect("Failed to capture stdout");
+            let stderr = child.stderr.take().expect("Failed to capture stderr");
+
+            let stdout_handle = Self::spawn_logger(stdout, self.log_file.clone(), false);
+            let stderr_handle = Self::spawn_logger(stderr, self.log_file.clone(), true);
+
             let status = child.wait()?;
+
+            let _ = stdout_handle.join();
+            let _ = stderr_handle.join();
+
             if !status.success() {
                 self.log_to_file(&format!("FAILED: {}", cmd_str));
                 anyhow::bail!("Command failed: {:?}", command);
             }
             Ok(())
         }
+    }
+
+    fn spawn_logger<R: std::io::Read + Send + 'static>(
+        reader: R,
+        log_file: Option<PathBuf>,
+        is_stderr: bool,
+    ) -> std::thread::JoinHandle<()> {
+        std::thread::spawn(move || {
+            let reader = std::io::BufReader::new(reader);
+            for line in reader.lines() {
+                if let Ok(l) = line {
+                    if is_stderr {
+                        eprintln!("{}", l);
+                    } else {
+                        println!("{}", l);
+                    }
+
+                    if let Some(path) = &log_file {
+                        if let Ok(mut file) = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(path)
+                        {
+                            let prefix = if is_stderr { "STDERR: " } else { "" };
+                            let _ = writeln!(file, "{}{}", prefix, l);
+                        }
+                    }
+                }
+            }
+        })
     }
 
     pub fn run_with_output(
@@ -127,7 +187,7 @@ impl CommandExecutor {
         let program = command.get_program().to_string_lossy();
         let args: Vec<_> = command.get_args().map(|a| a.to_string_lossy()).collect();
         let cmd_str = format!("{} {}", program, args.join(" "));
-        
+
         self.log_to_file(&format!("RUN WITH OUTPUT: {}", cmd_str));
 
         if self.dry_run {
@@ -194,10 +254,20 @@ pub async fn execute_installation(
         println!("*** DRY RUN MODE ENABLED - No changes will be made ***");
     }
 
+    // Increase cowspace if in live ISO
+    if crate::common::distro::is_live_iso() && !dry_run {
+        if let Err(e) = crate::common::distro::increase_cowspace() {
+            println!("Warning: Failed to increase cowspace: {}", e);
+        }
+    }
+
     let executor = CommandExecutor::new(dry_run, log_file.clone());
 
-    if let Some(log_path) = &log_file {
-        executor.log(&format!("Starting installation execution. Dry run: {}", dry_run));
+    if let Some(_) = &log_file {
+        executor.log(&format!(
+            "Starting installation execution. Dry run: {}",
+            dry_run
+        ));
     }
 
     println!("Loading configuration from: {}", config_path.display());
@@ -244,6 +314,19 @@ pub async fn execute_installation(
 
         for step in steps {
             execute_step(step, &context, &executor, &config_path).await?;
+        }
+
+        // Remove the config file from the chroot to prevent leaking sensitive data (passwords)
+        if !dry_run {
+            let chroot_config = paths::chroot_path(paths::CONFIG_FILE);
+            if chroot_config.exists() {
+                println!(
+                    "Securing installation: Removing configuration file from target system..."
+                );
+                if let Err(e) = std::fs::remove_file(&chroot_config) {
+                    println!("Warning: Failed to remove config file from chroot: {}", e);
+                }
+            }
         }
     }
 
@@ -312,6 +395,21 @@ async fn execute_step(
         }
 
         executor.run(&mut cmd)?;
+
+        // Collect logs from chroot
+        if !executor.dry_run {
+            let chroot_log = paths::chroot_path(paths::LOG_FILE);
+            if chroot_log.exists() {
+                if let Ok(content) = std::fs::read_to_string(&chroot_log) {
+                    executor.log(&format!("--- BEGIN CHROOT LOG ({:?}) ---", step));
+                    executor.log(&content);
+                    executor.log(&format!("--- END CHROOT LOG ({:?}) ---", step));
+
+                    // Remove the chroot log file to avoid duplication in subsequent steps
+                    let _ = std::fs::remove_file(&chroot_log);
+                }
+            }
+        }
 
         // Mark complete on host after successful chroot execution
         state.mark_complete(step);

@@ -12,6 +12,58 @@ pub async fn install_config(context: &InstallContext, executor: &CommandExecutor
     configure_users(context, executor)?;
     configure_vconsole(context, executor)?;
     configure_sudo(context, executor)?;
+    configure_mkinitcpio(context, executor)?;
+
+    Ok(())
+}
+
+fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    if !context.get_answer_bool(QuestionId::UseEncryption) {
+        return Ok(());
+    }
+
+    println!("Configuring mkinitcpio for encryption...");
+
+    if executor.dry_run {
+        println!("[DRY RUN] Adding 'encrypt lvm2' to HOOKS in /etc/mkinitcpio.conf");
+        println!("[DRY RUN] mkinitcpio -P");
+        return Ok(());
+    }
+
+    let conf_path = "/etc/mkinitcpio.conf";
+    let content = std::fs::read_to_string(conf_path).context("Failed to read mkinitcpio.conf")?;
+
+    let mut new_lines = Vec::new();
+    for line in content.lines() {
+        if line.trim().starts_with("HOOKS=") {
+            let mut new_line = line.to_string();
+
+            // Ensure keyboard and keymap are present (needed for LUKS password entry)
+            if !new_line.contains("keyboard") {
+                new_line = new_line.replace("block", "keyboard block");
+            }
+            if !new_line.contains("keymap") {
+                new_line = new_line.replace("block", "keymap block");
+            }
+
+            // Add encryption hooks
+            if new_line.contains("block")
+                && new_line.contains("filesystems")
+                && !new_line.contains("encrypt")
+            {
+                new_line = new_line.replace("block", "block encrypt lvm2 resume");
+            }
+
+            new_lines.push(new_line);
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    std::fs::write(conf_path, new_lines.join("\n"))?;
+
+    // Regenerate initramfs
+    executor.run(Command::new("mkinitcpio").arg("-P"))?;
 
     Ok(())
 }

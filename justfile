@@ -16,6 +16,7 @@ appimage:
 stuff:
     cargo build --profile upload
     rsync ./target/upload/ins ubuntu@stuff.paperbenni.xyz:/data/stuff/ins
+    rsync ./scripts/archinstall.sh ubuntu@stuff.paperbenni.xyz:/data/stuff/install
 
 format:
     yamlfmt .github

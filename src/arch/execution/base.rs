@@ -83,13 +83,16 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         packages.push("nvidia");
     }
 
+    // Encryption support
+    if context.get_answer_bool(QuestionId::UseEncryption) {
+        println!("Encryption enabled, adding lvm2 and cryptsetup");
+        packages.push("lvm2");
+        packages.push("cryptsetup");
+    }
+
     println!("Packages to install: {}", packages.join(" "));
 
-    let mut cmd = Command::new("pacstrap");
-    cmd.arg("/mnt");
-    cmd.args(&packages);
-
-    executor.run(&mut cmd)?;
+    super::pacman::pacstrap("/mnt", &packages, executor)?;
 
     Ok(())
 }

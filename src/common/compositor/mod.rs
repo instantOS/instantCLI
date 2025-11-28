@@ -1,10 +1,51 @@
 use super::display_server::DisplayServer;
+use crate::scratchpad::config::ScratchpadConfig;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::process::Command;
 
+pub mod fallback;
 pub mod hyprland;
+pub mod i3;
 pub mod sway;
+
+/// Create and launch terminal in background
+pub fn create_terminal_process(config: &ScratchpadConfig) -> Result<()> {
+    let term_cmd = config.terminal_command();
+    let bg_cmd = format!("nohup {term_cmd} >/dev/null 2>&1 &");
+
+    Command::new("sh")
+        .args(["-c", &bg_cmd])
+        .output()
+        .context("Failed to launch terminal in background")?;
+
+    Ok(())
+}
+
+/// Trait for scratchpad providers
+pub trait ScratchpadProvider: Send + Sync {
+    /// Show the scratchpad
+    fn show(&self, config: &ScratchpadConfig) -> Result<()>;
+    /// Hide the scratchpad
+    fn hide(&self, config: &ScratchpadConfig) -> Result<()>;
+    /// Toggle the scratchpad
+    fn toggle(&self, config: &ScratchpadConfig) -> Result<()>;
+    /// Get all scratchpad windows
+    fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>>;
+    /// Check if the scratchpad window is running
+    fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool>;
+    /// Check if the scratchpad window is visible
+    fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool>;
+    /// Show the scratchpad without checking if it exists (optimistic)
+    fn show_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        self.show(config)
+    }
+    /// Hide the scratchpad without checking if it exists (optimistic)
+    fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        self.hide(config)
+    }
+}
 
 /// Information about a scratchpad window
 #[derive(Debug, Clone)]
@@ -18,6 +59,8 @@ pub struct ScratchpadWindowInfo {
 /// Window compositor types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CompositorType {
+    /// i3-wm compositor (X11 tiling window manager)
+    I3,
     /// Sway compositor (i3-compatible Wayland compositor)
     Sway,
     /// Hyprland compositor (dynamic tiling Wayland compositor)
@@ -32,6 +75,7 @@ impl CompositorType {
         // Check environment variables first
         if let Ok(session) = env::var("XDG_SESSION_DESKTOP") {
             match session.to_lowercase().as_str() {
+                "i3" => return CompositorType::I3,
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
                 _ => {}
@@ -40,6 +84,7 @@ impl CompositorType {
 
         if let Ok(desktop) = env::var("DESKTOP_SESSION") {
             match desktop.to_lowercase().as_str() {
+                "i3" => return CompositorType::I3,
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
                 _ => {}
@@ -59,10 +104,23 @@ impl CompositorType {
                 CompositorType::Other("wayland".to_string())
             }
             DisplayServer::X11 => {
-                // Could check for X11 window managers here if needed
+                // Check for X11 window managers
+                if CompositorType::is_process_running("i3") {
+                    return CompositorType::I3;
+                }
                 CompositorType::Other("x11".to_string())
             }
             DisplayServer::Unknown => CompositorType::Other("unknown".to_string()),
+        }
+    }
+
+    /// Get the scratchpad provider for this compositor
+    pub fn provider(&self) -> Box<dyn ScratchpadProvider> {
+        match self {
+            CompositorType::I3 => Box::new(i3::I3),
+            CompositorType::Sway => Box::new(sway::Sway),
+            CompositorType::Hyprland => Box::new(hyprland::Hyprland),
+            CompositorType::Other(_) => Box::new(fallback::Fallback),
         }
     }
 
@@ -89,6 +147,7 @@ impl CompositorType {
     /// Get a human-readable name for the compositor
     pub fn name(&self) -> String {
         match self {
+            CompositorType::I3 => "i3".to_string(),
             CompositorType::Sway => "Sway".to_string(),
             CompositorType::Hyprland => "Hyprland".to_string(),
             CompositorType::Other(name) => name.clone(),
@@ -101,6 +160,7 @@ impl CompositorType {
         match self {
             CompositorType::Sway | CompositorType::Hyprland => true,
             CompositorType::Other(name) => name.to_lowercase().contains("wayland"),
+            _ => false,
         }
     }
 
@@ -108,6 +168,7 @@ impl CompositorType {
     #[allow(dead_code)]
     pub fn is_x11(&self) -> bool {
         match self {
+            CompositorType::I3 => true,
             CompositorType::Other(name) => name.to_lowercase().contains("x11"),
             _ => false,
         }
@@ -118,6 +179,7 @@ impl CompositorType {
     pub fn display_server(&self) -> DisplayServer {
         match self {
             CompositorType::Sway | CompositorType::Hyprland => DisplayServer::Wayland,
+            CompositorType::I3 => DisplayServer::X11,
             CompositorType::Other(name) => {
                 if name.to_lowercase().contains("wayland") {
                     DisplayServer::Wayland
@@ -132,34 +194,7 @@ impl CompositorType {
 
     /// Get all scratchpad windows for this compositor
     pub fn get_all_scratchpad_windows(&self) -> anyhow::Result<Vec<ScratchpadWindowInfo>> {
-        match self {
-            CompositorType::Sway => sway::get_all_scratchpad_windows().map(|windows| {
-                windows
-                    .into_iter()
-                    .map(|w| ScratchpadWindowInfo {
-                        name: w.name,
-                        window_class: w.window_class,
-                        title: w.title,
-                        visible: w.visible,
-                    })
-                    .collect()
-            }),
-            CompositorType::Hyprland => hyprland::get_all_scratchpad_windows().map(|windows| {
-                windows
-                    .into_iter()
-                    .map(|w| ScratchpadWindowInfo {
-                        name: w.name,
-                        window_class: w.window_class,
-                        title: w.title,
-                        visible: w.visible,
-                    })
-                    .collect()
-            }),
-            CompositorType::Other(_) => {
-                // For unsupported compositors, return empty list
-                Ok(Vec::new())
-            }
-        }
+        self.provider().get_all_windows()
     }
 }
 

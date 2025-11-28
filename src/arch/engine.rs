@@ -17,6 +17,9 @@ pub enum QuestionId {
     Timezone,
     Locale,
     Kernel,
+    UseEncryption,
+    EncryptionPassword,
+    LogUpload,
     ConfirmInstall,
 }
 
@@ -103,6 +106,13 @@ impl InstallContext {
     pub fn to_toml(&self) -> Result<String> {
         Ok(toml::to_string_pretty(self)?)
     }
+
+    pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let content = std::fs::read_to_string(path)?;
+        let context: Self = toml::from_str(&content)?;
+        Ok(context)
+    }
+
     pub fn new() -> Self {
         Self {
             answers: HashMap::new(),
@@ -124,7 +134,10 @@ impl InstallContext {
     }
 
     pub fn get_answer_bool(&self, id: QuestionId) -> bool {
-        self.answers.get(&id).map(|s| s == "true").unwrap_or(false)
+        self.answers
+            .get(&id)
+            .map(|s| s == "true" || s == "yes")
+            .unwrap_or(false)
     }
 
     /// Set a value in the data map using a strongly-typed key

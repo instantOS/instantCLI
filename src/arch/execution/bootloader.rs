@@ -14,7 +14,7 @@ pub async fn install_bootloader(
         BootMode::BIOS => install_grub_bios(context, executor)?,
     }
 
-    configure_grub(executor)?;
+    configure_grub(context, executor)?;
 
     Ok(())
 }
@@ -73,8 +73,12 @@ fn install_grub_bios(context: &InstallContext, executor: &CommandExecutor) -> Re
     Ok(())
 }
 
-fn configure_grub(executor: &CommandExecutor) -> Result<()> {
+fn configure_grub(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Generating GRUB configuration...");
+
+    if context.get_answer_bool(QuestionId::UseEncryption) {
+        configure_grub_encryption(context, executor)?;
+    }
 
     // grub-mkconfig -o /boot/grub/grub.cfg
     let mut cmd = Command::new("grub-mkconfig");
@@ -83,4 +87,135 @@ fn configure_grub(executor: &CommandExecutor) -> Result<()> {
     executor.run(&mut cmd)?;
 
     Ok(())
+}
+
+fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    if executor.dry_run {
+        println!("[DRY RUN] Adding 'cryptdevice=UUID=...:cryptlvm' to GRUB_CMDLINE_LINUX");
+        return Ok(());
+    }
+
+    let disk_answer = context
+        .get_answer(&QuestionId::Disk)
+        .context("Disk not selected")?;
+    let disk = disk_answer.split('(').next().unwrap_or(disk_answer).trim();
+
+    // LUKS is always on partition 2 in our layout
+    let luks_part = crate::arch::execution::disk::get_part_path(disk, 2);
+
+    println!("Getting UUID for LUKS partition: {}", luks_part);
+
+    // Find UUID of LUKS partition
+    // Use -o value -s UUID to get just the UUID
+    let output = Command::new("blkid")
+        .args(["-o", "value", "-s", "UUID", &luks_part])
+        .output()?;
+
+    if !output.status.success() {
+        anyhow::bail!("blkid failed to get UUID for {}", luks_part);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Take the first line and trim it to avoid issues if multiple lines are returned (unlikely with specific device)
+    let uuid = stdout.lines().next().unwrap_or("").trim().to_string();
+
+    if uuid.is_empty() {
+        anyhow::bail!("Could not find UUID for LUKS partition {}", luks_part);
+    }
+
+    println!("Found LUKS UUID: {}", uuid);
+
+    let grub_default = "/etc/default/grub";
+    let content = std::fs::read_to_string(grub_default)?;
+
+    // Add root and resume parameters for LVM
+    // root=/dev/mapper/instantOS-root
+    // resume=/dev/mapper/instantOS-swap
+    let param = format!(
+        "cryptdevice=UUID={}:cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap",
+        uuid
+    );
+
+    let new_content = add_grub_kernel_param(&content, &param);
+
+    std::fs::write(grub_default, new_content)?;
+
+    Ok(())
+}
+
+fn add_grub_kernel_param(content: &str, param: &str) -> String {
+    let mut new_lines = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("GRUB_CMDLINE_LINUX=") {
+            // Split key and value
+            let parts: Vec<&str> = line.splitn(2, '=').collect();
+            if parts.len() != 2 {
+                new_lines.push(line.to_string());
+                continue;
+            }
+
+            let key = parts[0];
+            let val = parts[1];
+
+            // Detect quotes
+            let (_quote_char, inner_val) = if val.starts_with('"') && val.ends_with('"') {
+                ("\"", &val[1..val.len() - 1])
+            } else if val.starts_with('\'') && val.ends_with('\'') {
+                ("'", &val[1..val.len() - 1])
+            } else {
+                ("", val)
+            };
+
+            let new_val = if inner_val.is_empty() {
+                param.to_string()
+            } else {
+                format!("{} {}", inner_val, param)
+            };
+
+            // Reconstruct with double quotes for safety
+            new_lines.push(format!("{}=\"{}\"", key, new_val));
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+    new_lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_add_grub_kernel_param() {
+        let param = "cryptdevice=UUID=123:cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap";
+
+        // Case 1: Empty value
+        let input = "GRUB_CMDLINE_LINUX=\"\"";
+        let expected = format!("GRUB_CMDLINE_LINUX=\"{}\"", param);
+        assert_eq!(add_grub_kernel_param(input, param), expected);
+
+        // Case 2: Existing value with double quotes
+        let input = "GRUB_CMDLINE_LINUX=\"quiet splash\"";
+        let expected = format!("GRUB_CMDLINE_LINUX=\"quiet splash {}\"", param);
+        assert_eq!(add_grub_kernel_param(input, param), expected);
+
+        // Case 3: Existing value with single quotes
+        let input = "GRUB_CMDLINE_LINUX='quiet splash'";
+        let expected = format!("GRUB_CMDLINE_LINUX=\"quiet splash {}\"", param);
+        assert_eq!(add_grub_kernel_param(input, param), expected);
+
+        // Case 4: No quotes
+        let input = "GRUB_CMDLINE_LINUX=quiet";
+        let expected = format!("GRUB_CMDLINE_LINUX=\"quiet {}\"", param);
+        assert_eq!(add_grub_kernel_param(input, param), expected);
+
+        // Case 5: Multiple lines
+        let input = "GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX=\"\"\nGRUB_TIMEOUT=5";
+        let expected = format!(
+            "GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX=\"{}\"\nGRUB_TIMEOUT=5",
+            param
+        );
+        assert_eq!(add_grub_kernel_param(input, param), expected);
+    }
 }

@@ -53,8 +53,9 @@ pub enum ArchCommands {
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
-        DiskQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion,
-        MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion, UsernameQuestion,
+        DiskQuestion, EncryptionPasswordQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion,
+        LocaleQuestion, LogUploadQuestion, MirrorRegionQuestion, PasswordQuestion,
+        TimezoneQuestion, UseEncryptionQuestion, UsernameQuestion,
     };
     use crate::common::distro::{Distro, detect_distro, is_live_iso};
 
@@ -73,10 +74,13 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         Box::new(HostnameQuestion),
         Box::new(UsernameQuestion),
         Box::new(PasswordQuestion),
+        Box::new(UseEncryptionQuestion),
+        Box::new(EncryptionPasswordQuestion),
         Box::new(MirrorRegionQuestion),
         Box::new(TimezoneQuestion),
         Box::new(LocaleQuestion),
         Box::new(KernelQuestion),
+        Box::new(LogUploadQuestion),
     ];
 
     match command {
@@ -157,16 +161,11 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                     if !missing_packages.is_empty() {
                         println!("Installing {} missing packages...", missing_packages.len());
 
-                        let mut pacman_args = vec!["-Sy", "--noconfirm", "--needed"];
-                        pacman_args.extend(&missing_packages);
-
-                        let status = std::process::Command::new("pacman")
-                            .args(&pacman_args)
-                            .status()
-                            .context("Failed to install packages with pacman")?;
-
-                        if !status.success() {
-                            eprintln!("Warning: Failed to install some packages");
+                        let executor = crate::arch::execution::CommandExecutor::new(false, None);
+                        if let Err(e) =
+                            crate::arch::execution::pacman::install(&missing_packages, &executor)
+                        {
+                            eprintln!("Warning: Failed to install some packages: {}", e);
                         } else {
                             println!("Successfully installed {} packages", missing_packages.len());
                         }
@@ -264,7 +263,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             .await?;
 
             // 2. Execute
-            Box::pin(handle_arch_command(
+            let exec_result = Box::pin(handle_arch_command(
                 ArchCommands::Exec {
                     step: None,
                     questions_file: std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE),
@@ -272,7 +271,27 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 },
                 _debug,
             ))
-            .await?;
+            .await;
+
+            if let Err(_) = exec_result {
+                // Try to upload logs if forced or requested
+                if let Ok(context) =
+                    crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE)
+                {
+                    crate::arch::logging::process_log_upload(&context);
+                } else if std::path::Path::new("/etc/instantos/uploadlogs").exists() {
+                    println!(
+                        "Uploading installation logs (forced by /etc/instantos/uploadlogs)..."
+                    );
+                    let log_path =
+                        std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
+                    if let Err(e) = crate::arch::logging::upload_logs(&log_path) {
+                        eprintln!("Failed to upload logs: {}", e);
+                    }
+                }
+            }
+
+            exec_result?;
 
             // 3. Finished
             Box::pin(handle_arch_command(ArchCommands::Finished, _debug)).await?;
@@ -287,7 +306,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             if !dry_run {
                 ensure_root()?;
             }
-            
+
             let log_file = if !dry_run {
                 let path = std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
                 if let Some(parent) = path.parent() {
@@ -298,10 +317,13 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 None
             };
 
-            crate::arch::execution::execute_installation(questions_file, step, dry_run, log_file).await
+            crate::arch::execution::execute_installation(questions_file, step, dry_run, log_file)
+                .await
         }
         ArchCommands::UploadLogs { path } => {
-            let log_path = path.unwrap_or_else(|| std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE));
+            let log_path = path.unwrap_or_else(|| {
+                std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE)
+            });
             println!("Uploading logs from: {}", log_path.display());
             match crate::arch::logging::upload_logs(&log_path) {
                 Ok(url) => println!("Logs uploaded successfully: {}", url.green().bold()),
@@ -318,7 +340,6 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 Reboot,
                 Shutdown,
                 Continue,
-                UploadLogs,
             }
 
             impl FzfSelectable for FinishedMenuOption {
@@ -329,14 +350,16 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                         FinishedMenuOption::Continue => {
                             format!("{} Continue in Live Session", NerdFont::Continue)
                         }
-                        FinishedMenuOption::UploadLogs => {
-                            format!("{} Upload Installation Logs", NerdFont::Debug)
-                        }
                     }
                 }
             }
 
             let state = crate::arch::execution::state::InstallState::load()?;
+
+            // Check if we should upload logs
+            if let Ok(context) = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE) {
+                crate::arch::logging::process_log_upload(&context);
+            }
 
             println!("\n{}", "Installation Finished!".green().bold());
 
@@ -369,7 +392,6 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 FinishedMenuOption::Reboot,
                 FinishedMenuOption::Shutdown,
                 FinishedMenuOption::Continue,
-                FinishedMenuOption::UploadLogs,
             ];
 
             let result = FzfWrapper::builder()
@@ -388,13 +410,6 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                     }
                     FinishedMenuOption::Continue => {
                         println!("Exiting to live session...");
-                    }
-                    FinishedMenuOption::UploadLogs => {
-                        Box::pin(handle_arch_command(
-                            ArchCommands::UploadLogs { path: None },
-                            _debug,
-                        ))
-                        .await?;
                     }
                 },
                 _ => println!("Exiting..."),
