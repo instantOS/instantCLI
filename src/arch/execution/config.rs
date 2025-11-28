@@ -37,9 +37,9 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
     for line in content.lines() {
         if line.trim().starts_with("HOOKS=") {
             // HOOKS=(base udev autodetect modconf kms keyboard keymap consolefont block filesystems fsck)
-            // We need to insert 'encrypt lvm2' before 'filesystems'
+            // We need to insert 'encrypt lvm2 resume' before 'filesystems'
             if line.contains("block") && line.contains("filesystems") && !line.contains("encrypt") {
-                let new_line = line.replace("block", "block encrypt lvm2");
+                let new_line = line.replace("block", "block encrypt lvm2 resume");
                 new_lines.push(new_line);
             } else {
                 new_lines.push(line.to_string());

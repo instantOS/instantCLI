@@ -99,18 +99,25 @@ fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecuto
         .get_answer(&QuestionId::Disk)
         .context("Disk not selected")?;
     let disk = disk_answer.split('(').next().unwrap_or(disk_answer).trim();
-    
+
     // LUKS is always on partition 2 in our layout
     let luks_part = crate::arch::execution::disk::get_part_path(disk, 2);
 
     println!("Getting UUID for LUKS partition: {}", luks_part);
 
     // Find UUID of LUKS partition
+    // Use -o value -s UUID to get just the UUID
     let output = Command::new("blkid")
         .args(["-o", "value", "-s", "UUID", &luks_part])
         .output()?;
 
-    let uuid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !output.status.success() {
+        anyhow::bail!("blkid failed to get UUID for {}", luks_part);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Take the first line and trim it to avoid issues if multiple lines are returned (unlikely with specific device)
+    let uuid = stdout.lines().next().unwrap_or("").trim().to_string();
 
     if uuid.is_empty() {
         anyhow::bail!("Could not find UUID for LUKS partition {}", luks_part);
@@ -120,7 +127,14 @@ fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecuto
 
     let grub_default = "/etc/default/grub";
     let content = std::fs::read_to_string(grub_default)?;
-    let param = format!("cryptdevice=UUID={}:cryptlvm", uuid);
+
+    // Add root and resume parameters for LVM
+    // root=/dev/mapper/instantOS-root
+    // resume=/dev/mapper/instantOS-swap
+    let param = format!(
+        "cryptdevice=UUID={}:cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap",
+        uuid
+    );
 
     let new_content = add_grub_kernel_param(&content, &param);
 
@@ -174,7 +188,7 @@ mod tests {
 
     #[test]
     fn test_add_grub_kernel_param() {
-        let param = "cryptdevice=UUID=123:cryptlvm";
+        let param = "cryptdevice=UUID=123:cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap";
 
         // Case 1: Empty value
         let input = "GRUB_CMDLINE_LINUX=\"\"";

@@ -32,7 +32,7 @@ impl std::fmt::Display for Distro {
                     }
                 }
                 write!(f, "Arch Linux")
-            },
+            }
             Distro::Debian => write!(f, "Debian"),
             Distro::Ubuntu => write!(f, "Ubuntu"),
             Distro::Fedora => write!(f, "Fedora"),
@@ -92,7 +92,7 @@ fn parse_os_release(content: &str) -> Result<Distro> {
             } else {
                 Ok(Distro::Unknown(id))
             }
-        },
+        }
         _ => {
             // For unknown IDs, check if they are Arch-based
             if id_like.contains("arch") {
