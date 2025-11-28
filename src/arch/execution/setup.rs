@@ -45,13 +45,7 @@ fn install_instant_packages(executor: &CommandExecutor) -> Result<()> {
         "lightdm-gtk-greeter",
     ];
 
-    let mut cmd = Command::new("pacman");
-    cmd.arg("-S")
-        .arg("--noconfirm")
-        .arg("--needed")
-        .args(&packages);
-
-    executor.run(&mut cmd)?;
+    super::pacman::install(&packages, executor)?;
 
     Ok(())
 }
