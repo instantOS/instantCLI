@@ -92,11 +92,7 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
 
     println!("Packages to install: {}", packages.join(" "));
 
-    let mut cmd = Command::new("pacstrap");
-    cmd.arg("/mnt");
-    cmd.args(&packages);
-
-    executor.run(&mut cmd)?;
+    super::pacman::pacstrap("/mnt", &packages, executor)?;
 
     Ok(())
 }

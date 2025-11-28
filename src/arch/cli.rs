@@ -161,16 +161,11 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                     if !missing_packages.is_empty() {
                         println!("Installing {} missing packages...", missing_packages.len());
 
-                        let mut pacman_args = vec!["-Sy", "--noconfirm", "--needed"];
-                        pacman_args.extend(&missing_packages);
-
-                        let status = std::process::Command::new("pacman")
-                            .args(&pacman_args)
-                            .status()
-                            .context("Failed to install packages with pacman")?;
-
-                        if !status.success() {
-                            eprintln!("Warning: Failed to install some packages");
+                        let executor = crate::arch::execution::CommandExecutor::new(false, None);
+                        if let Err(e) =
+                            crate::arch::execution::pacman::install(&missing_packages, &executor)
+                        {
+                            eprintln!("Warning: Failed to install some packages: {}", e);
                         } else {
                             println!("Successfully installed {} packages", missing_packages.len());
                         }

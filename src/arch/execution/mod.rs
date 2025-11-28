@@ -7,6 +7,7 @@ pub mod bootloader;
 pub mod config;
 pub mod disk;
 pub mod fstab;
+pub mod pacman;
 pub mod paths;
 pub mod post;
 pub mod setup;
