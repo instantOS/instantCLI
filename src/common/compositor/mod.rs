@@ -208,7 +208,7 @@ mod tests {
         // We can't test the exact result since it depends on the environment
         // but we can test that it returns a valid variant
         match compositor {
-            CompositorType::Sway | CompositorType::Hyprland | CompositorType::Other(_) => {
+            CompositorType::I3 | CompositorType::Sway | CompositorType::Hyprland | CompositorType::Other(_) => {
                 // Test passes
             }
         }
