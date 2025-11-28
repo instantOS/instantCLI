@@ -1,6 +1,62 @@
+use super::{ScratchpadProvider, ScratchpadWindowInfo};
+use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::process::Command;
+
+pub struct I3;
+
+impl ScratchpadProvider for I3 {
+    fn show(&self, config: &ScratchpadConfig) -> Result<()> {
+        if !self.is_window_running(config)? {
+            self.create_and_wait(config)?;
+        }
+        show_scratchpad(&config.window_class())
+    }
+
+    fn hide(&self, config: &ScratchpadConfig) -> Result<()> {
+        hide_scratchpad(&config.window_class())
+    }
+
+    fn toggle(&self, config: &ScratchpadConfig) -> Result<()> {
+        let window_class = config.window_class();
+        if self.is_window_running(config)? {
+            toggle_scratchpad(&window_class)?;
+        } else {
+            self.create_and_wait(config)?;
+            show_scratchpad(&window_class)?;
+        }
+        Ok(())
+    }
+
+    fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
+        get_all_scratchpad_windows()
+    }
+
+    fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
+        window_exists(&config.window_class())
+    }
+}
+
+impl I3 {
+    fn create_and_wait(&self, config: &ScratchpadConfig) -> Result<()> {
+        let window_class = config.window_class();
+        super::create_terminal_process(config)?;
+
+        // Wait for window
+        let mut attempts = 0;
+        while attempts < 30 {
+            if window_exists(&window_class)? {
+                configure_scratchpad_window(&window_class, config.width_pct, config.height_pct)?;
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            attempts += 1;
+        }
+
+        Err(anyhow::anyhow!("Terminal window did not appear"))
+    }
+}
 
 /// Execute i3-msg command
 pub fn i3msg(command: &str) -> Result<String> {
@@ -141,15 +197,6 @@ pub fn get_all_scratchpad_windows() -> Result<Vec<ScratchpadWindowInfo>> {
 /// Get the visible field from a node directly
 fn get_node_visible_field(node: &Value) -> Option<bool> {
     node.get("visible").and_then(|v| v.as_bool())
-}
-
-/// Information about a scratchpad window
-#[derive(Debug, Clone)]
-pub struct ScratchpadWindowInfo {
-    pub name: String,
-    pub window_class: String,
-    pub title: String,
-    pub visible: bool,
 }
 
 /// Recursively find all scratchpad nodes in the i3 tree

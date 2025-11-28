@@ -1,14 +1,68 @@
+use super::{ScratchpadProvider, ScratchpadWindowInfo};
+use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
-/// Information about a scratchpad window
-#[derive(Debug, Clone)]
-pub struct ScratchpadWindowInfo {
-    pub name: String,
-    pub window_class: String,
-    pub title: String,
-    pub visible: bool,
+pub struct Hyprland;
+
+impl ScratchpadProvider for Hyprland {
+    fn show(&self, config: &ScratchpadConfig) -> Result<()> {
+        let workspace_name = config.workspace_name();
+
+        if !self.is_window_running(config)? {
+            self.create_and_wait(config)?;
+        }
+
+        show_special_workspace(&workspace_name)
+    }
+
+    fn hide(&self, config: &ScratchpadConfig) -> Result<()> {
+        let workspace_name = config.workspace_name();
+        hide_special_workspace(&workspace_name)
+    }
+
+    fn toggle(&self, config: &ScratchpadConfig) -> Result<()> {
+        let workspace_name = config.workspace_name();
+
+        if self.is_window_running(config)? {
+            toggle_special_workspace(&workspace_name)?;
+        } else {
+            self.create_and_wait(config)?;
+            show_special_workspace(&workspace_name)?;
+        }
+        Ok(())
+    }
+
+    fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
+        get_all_scratchpad_windows()
+    }
+
+    fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
+        window_exists(&config.window_class())
+    }
+}
+
+impl Hyprland {
+    fn create_and_wait(&self, config: &ScratchpadConfig) -> Result<()> {
+        let workspace_name = config.workspace_name();
+        let window_class = config.window_class();
+
+        setup_window_rules(&workspace_name, &window_class)?;
+        super::create_terminal_process(config)?;
+
+        // Wait for window
+        let mut attempts = 0;
+        while attempts < 30 {
+            if window_exists(&window_class)? {
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            attempts += 1;
+        }
+
+        Err(anyhow::anyhow!("Terminal window did not appear"))
+    }
 }
 
 /// Client information from hyprctl clients -j

@@ -1,11 +1,41 @@
 use super::display_server::DisplayServer;
+use crate::scratchpad::config::ScratchpadConfig;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::process::Command;
 
+pub mod fallback;
 pub mod hyprland;
 pub mod i3;
 pub mod sway;
+
+/// Create and launch terminal in background
+pub fn create_terminal_process(config: &ScratchpadConfig) -> Result<()> {
+    let term_cmd = config.terminal_command();
+    let bg_cmd = format!("nohup {term_cmd} >/dev/null 2>&1 &");
+
+    Command::new("sh")
+        .args(["-c", &bg_cmd])
+        .output()
+        .context("Failed to launch terminal in background")?;
+
+    Ok(())
+}
+
+/// Trait for scratchpad providers
+pub trait ScratchpadProvider: Send + Sync {
+    /// Show the scratchpad
+    fn show(&self, config: &ScratchpadConfig) -> Result<()>;
+    /// Hide the scratchpad
+    fn hide(&self, config: &ScratchpadConfig) -> Result<()>;
+    /// Toggle the scratchpad
+    fn toggle(&self, config: &ScratchpadConfig) -> Result<()>;
+    /// Get all scratchpad windows
+    fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>>;
+    /// Check if the scratchpad window is running
+    fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool>;
+}
 
 /// Information about a scratchpad window
 #[derive(Debug, Clone)]
@@ -71,6 +101,16 @@ impl CompositorType {
                 CompositorType::Other("x11".to_string())
             }
             DisplayServer::Unknown => CompositorType::Other("unknown".to_string()),
+        }
+    }
+
+    /// Get the scratchpad provider for this compositor
+    pub fn provider(&self) -> Box<dyn ScratchpadProvider> {
+        match self {
+            CompositorType::I3 => Box::new(i3::I3),
+            CompositorType::Sway => Box::new(sway::Sway),
+            CompositorType::Hyprland => Box::new(hyprland::Hyprland),
+            CompositorType::Other(_) => Box::new(fallback::Fallback),
         }
     }
 
@@ -144,45 +184,7 @@ impl CompositorType {
 
     /// Get all scratchpad windows for this compositor
     pub fn get_all_scratchpad_windows(&self) -> anyhow::Result<Vec<ScratchpadWindowInfo>> {
-        match self {
-            CompositorType::I3 => i3::get_all_scratchpad_windows().map(|windows| {
-                windows
-                    .into_iter()
-                    .map(|w| ScratchpadWindowInfo {
-                        name: w.name,
-                        window_class: w.window_class,
-                        title: w.title,
-                        visible: w.visible,
-                    })
-                    .collect()
-            }),
-            CompositorType::Sway => sway::get_all_scratchpad_windows().map(|windows| {
-                windows
-                    .into_iter()
-                    .map(|w| ScratchpadWindowInfo {
-                        name: w.name,
-                        window_class: w.window_class,
-                        title: w.title,
-                        visible: w.visible,
-                    })
-                    .collect()
-            }),
-            CompositorType::Hyprland => hyprland::get_all_scratchpad_windows().map(|windows| {
-                windows
-                    .into_iter()
-                    .map(|w| ScratchpadWindowInfo {
-                        name: w.name,
-                        window_class: w.window_class,
-                        title: w.title,
-                        visible: w.visible,
-                    })
-                    .collect()
-            }),
-            CompositorType::Other(_) => {
-                // For unsupported compositors, return empty list
-                Ok(Vec::new())
-            }
-        }
+        self.provider().get_all_windows()
     }
 }
 
