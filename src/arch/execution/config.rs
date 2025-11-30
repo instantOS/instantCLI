@@ -13,19 +13,33 @@ pub async fn install_config(context: &InstallContext, executor: &CommandExecutor
     configure_vconsole(context, executor)?;
     configure_sudo(context, executor)?;
     configure_mkinitcpio(context, executor)?;
+    configure_plymouth(context, executor)?;
 
     Ok(())
 }
 
 fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
-    if !context.get_answer_bool(QuestionId::UseEncryption) {
+    let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
+    let use_plymouth = context.get_answer_bool(QuestionId::UsePlymouth);
+
+    if !use_encryption && !use_plymouth {
         return Ok(());
     }
 
-    println!("Configuring mkinitcpio for encryption...");
+    if use_encryption {
+        println!("Configuring mkinitcpio for encryption...");
+    }
+    if use_plymouth {
+        println!("Configuring mkinitcpio for Plymouth...");
+    }
 
     if executor.dry_run {
-        println!("[DRY RUN] Adding 'encrypt lvm2' to HOOKS in /etc/mkinitcpio.conf");
+        if use_plymouth {
+            println!("[DRY RUN] Adding 'plymouth' to HOOKS in /etc/mkinitcpio.conf");
+        }
+        if use_encryption {
+            println!("[DRY RUN] Adding 'encrypt lvm2' to HOOKS in /etc/mkinitcpio.conf");
+        }
         println!("[DRY RUN] mkinitcpio -P");
         return Ok(());
     }
@@ -41,6 +55,17 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
             // Switch to systemd hooks
             if new_line.contains("base") && new_line.contains("udev") {
                 new_line = new_line.replace("base udev", "base systemd");
+            }
+
+            // Add Plymouth hook if enabled
+            if use_plymouth && !new_line.contains("plymouth") {
+                // Plymouth should be after systemd but before encrypt/sd-encrypt
+                if new_line.contains("systemd") {
+                    new_line = new_line.replace("systemd", "systemd plymouth");
+                } else {
+                    // If no systemd hook, add after base
+                    new_line = new_line.replace("base", "base plymouth");
+                }
             }
 
             // Ensure keyboard and keymap are present (needed for LUKS password entry)
@@ -59,15 +84,17 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
             }
 
             // Add encryption hooks
-            if new_line.contains("block")
-                && new_line.contains("filesystems")
-                && !new_line.contains("sd-encrypt")
-            {
-                // Replace legacy encrypt hook if present, or just add sd-encrypt
-                if new_line.contains("encrypt") {
-                    new_line = new_line.replace("encrypt", "sd-encrypt");
-                } else {
-                    new_line = new_line.replace("block", "block sd-encrypt lvm2 resume");
+            if use_encryption {
+                if new_line.contains("block")
+                    && new_line.contains("filesystems")
+                    && !new_line.contains("sd-encrypt")
+                {
+                    // Replace legacy encrypt hook if present, or just add sd-encrypt
+                    if new_line.contains("encrypt") {
+                        new_line = new_line.replace("encrypt", "sd-encrypt");
+                    } else {
+                        new_line = new_line.replace("block", "block sd-encrypt lvm2 resume");
+                    }
                 }
             }
 
@@ -302,6 +329,40 @@ fn configure_sudo(_context: &InstallContext, executor: &CommandExecutor) -> Resu
 
         std::fs::write(sudoers_path, new_lines.join("\n"))?;
     }
+
+    Ok(())
+}
+
+fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    if !context.get_answer_bool(QuestionId::UsePlymouth) {
+        return Ok(());
+    }
+
+    println!("Configuring Plymouth...");
+
+    if executor.dry_run {
+        println!("[DRY RUN] Setting Plymouth theme to spinner");
+        println!("[DRY RUN] plymouth-set-default-theme -R spinner");
+        return Ok(());
+    }
+
+    // Configure Plymouth theme
+    let plymouth_conf = "/etc/plymouth/plymouthd.conf";
+    
+    // Create Plymouth config directory if it doesn't exist
+    std::fs::create_dir_all("/etc/plymouth")?;
+    
+    let config_content = r#"[Daemon]
+Theme=spinner
+ShowDelay=0
+"#;
+    
+    std::fs::write(plymouth_conf, config_content)?;
+
+    // Set the theme and rebuild initramfs
+    let mut cmd = Command::new("plymouth-set-default-theme");
+    cmd.arg("-R").arg("spinner");
+    executor.run(&mut cmd)?;
 
     Ok(())
 }

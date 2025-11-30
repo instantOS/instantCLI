@@ -80,6 +80,10 @@ fn configure_grub(context: &InstallContext, executor: &CommandExecutor) -> Resul
         configure_grub_encryption(context, executor)?;
     }
 
+    if context.get_answer_bool(QuestionId::UsePlymouth) {
+        configure_grub_plymouth(context, executor)?;
+    }
+
     // grub-mkconfig -o /boot/grub/grub.cfg
     let mut cmd = Command::new("grub-mkconfig");
     cmd.arg("-o").arg("/boot/grub/grub.cfg");
@@ -154,6 +158,24 @@ fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecuto
             new_content.push_str("\nGRUB_ENABLE_CRYPTODISK=y\n");
         }
     }
+
+    std::fs::write(grub_default, new_content)?;
+
+    Ok(())
+}
+
+fn configure_grub_plymouth(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    if executor.dry_run {
+        println!("[DRY RUN] Adding 'splash quiet' to GRUB_CMDLINE_LINUX");
+        return Ok(());
+    }
+
+    let grub_default = "/etc/default/grub";
+    let content = std::fs::read_to_string(grub_default)?;
+
+    // Add splash and quiet parameters for Plymouth
+    let param = "splash quiet";
+    let new_content = add_grub_kernel_param(&content, param);
 
     std::fs::write(grub_default, new_content)?;
 

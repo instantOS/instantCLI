@@ -444,6 +444,33 @@ impl Question for UseEncryptionQuestion {
     }
 }
 
+pub struct UsePlymouthQuestion;
+
+#[async_trait::async_trait]
+impl Question for UsePlymouthQuestion {
+    fn id(&self) -> QuestionId {
+        QuestionId::UsePlymouth
+    }
+
+    fn is_optional(&self) -> bool {
+        true
+    }
+
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        let options = vec!["no".to_string(), "yes".to_string()];
+
+        let result = FzfWrapper::builder()
+            .header(format!("{} Enable Plymouth boot splash screen?", NerdFont::Monitor))
+            .select(options)?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(ans) => Ok(QuestionResult::Answer(ans)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
+        }
+    }
+}
+
 pub struct EncryptionPasswordQuestion;
 
 #[async_trait::async_trait]

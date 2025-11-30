@@ -55,7 +55,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
     use crate::arch::questions::{
         DiskQuestion, EncryptionPasswordQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion,
         LocaleQuestion, LogUploadQuestion, MirrorRegionQuestion, PasswordQuestion,
-        TimezoneQuestion, UseEncryptionQuestion, UsernameQuestion,
+        TimezoneQuestion, UseEncryptionQuestion, UsePlymouthQuestion, UsernameQuestion,
     };
     use crate::common::distro::{Distro, detect_distro, is_live_iso};
 
@@ -80,6 +80,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         Box::new(TimezoneQuestion),
         Box::new(LocaleQuestion),
         Box::new(KernelQuestion),
+        Box::new(UsePlymouthQuestion),
         Box::new(LogUploadQuestion),
     ];
 

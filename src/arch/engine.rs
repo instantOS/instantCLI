@@ -19,6 +19,7 @@ pub enum QuestionId {
     Kernel,
     UseEncryption,
     EncryptionPassword,
+    UsePlymouth,
     LogUpload,
     ConfirmInstall,
 }
