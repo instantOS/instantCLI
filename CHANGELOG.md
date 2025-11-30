@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.13](https://github.com/instantOS/instantCLI/compare/v0.7.12...v0.7.13) - 2025-11-30
+
+### Fixed
+
+- fix LUKS for ins arch
+
+### Other
+
+- refactor repo init
+- init support for stow/yadm repos
+- fmt
+
 ## [0.7.12](https://github.com/instantOS/instantCLI/compare/v0.7.11...v0.7.12) - 2025-11-28
 
 ### Fixed
