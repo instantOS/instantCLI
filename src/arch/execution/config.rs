@@ -1,5 +1,6 @@
 use super::CommandExecutor;
 use crate::arch::engine::{InstallContext, QuestionId};
+use crate::arch::mkinitcpio::MkinitcpioConfig;
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -47,64 +48,54 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
     let conf_path = "/etc/mkinitcpio.conf";
     let content = std::fs::read_to_string(conf_path).context("Failed to read mkinitcpio.conf")?;
 
-    let mut new_lines = Vec::new();
-    for line in content.lines() {
-        if line.trim().starts_with("HOOKS=") {
-            let mut new_line = line.to_string();
+    let mut config = MkinitcpioConfig::parse(&content)?;
 
-            // Switch to systemd hooks
-            if new_line.contains("base") && new_line.contains("udev") {
-                new_line = new_line.replace("base udev", "base systemd");
-            }
+    // Switch to systemd hooks
+    if config.contains_hook("base") && config.contains_hook("udev") {
+        config.replace_hook("udev", "systemd");
+    }
 
-            // Add Plymouth hook if enabled
-            if use_plymouth && !new_line.contains("plymouth") {
-                // Plymouth should be after systemd but before encrypt/sd-encrypt
-                if new_line.contains("systemd") {
-                    new_line = new_line.replace("systemd", "systemd plymouth");
-                } else {
-                    // If no systemd hook, add after base
-                    new_line = new_line.replace("base", "base plymouth");
-                }
-            }
-
-            // Ensure keyboard and keymap are present (needed for LUKS password entry)
-            // With systemd hooks, we use sd-vconsole instead of keymap/consolefont
-            if !new_line.contains("sd-vconsole") {
-                if new_line.contains("keymap") {
-                    new_line = new_line.replace("keymap", "sd-vconsole");
-                } else if new_line.contains("keyboard") {
-                    new_line = new_line.replace("keyboard", "keyboard sd-vconsole");
-                }
-            }
-
-            // Remove consolefont if present as sd-vconsole handles it
-            if new_line.contains("consolefont") {
-                new_line = new_line.replace("consolefont", "");
-            }
-
-            // Add encryption hooks
-            if use_encryption {
-                if new_line.contains("block")
-                    && new_line.contains("filesystems")
-                    && !new_line.contains("sd-encrypt")
-                {
-                    // Replace legacy encrypt hook if present, or just add sd-encrypt
-                    if new_line.contains("encrypt") {
-                        new_line = new_line.replace("encrypt", "sd-encrypt");
-                    } else {
-                        new_line = new_line.replace("block", "block sd-encrypt lvm2 resume");
-                    }
-                }
-            }
-
-            new_lines.push(new_line);
+    // Add Plymouth hook if enabled
+    if use_plymouth {
+        // Plymouth should be after systemd but before encrypt/sd-encrypt
+        if config.contains_hook("systemd") {
+            config.insert_after("plymouth", "systemd");
         } else {
-            new_lines.push(line.to_string());
+            config.insert_after("plymouth", "base");
         }
     }
 
-    std::fs::write(conf_path, new_lines.join("\n"))?;
+    // Ensure keyboard and keymap/sd-vconsole are present
+    if !config.contains_hook("sd-vconsole") {
+        if config.contains_hook("keymap") {
+            config.replace_hook("keymap", "sd-vconsole");
+        } else if config.contains_hook("keyboard") {
+            config.insert_after("sd-vconsole", "keyboard");
+        } else {
+            // Fallback if neither exists, though usually keyboard is there
+            config.ensure_hook("sd-vconsole");
+        }
+    }
+
+    // Remove consolefont if present as sd-vconsole handles it
+    config.remove_hook("consolefont");
+
+    // Add encryption hooks
+    if use_encryption {
+        if config.contains_hook("block") && config.contains_hook("filesystems") {
+            // Replace legacy encrypt hook if present
+            if config.contains_hook("encrypt") {
+                config.replace_hook("encrypt", "sd-encrypt");
+            } else {
+                // Add sd-encrypt after block
+                config.insert_after("sd-encrypt", "block");
+                config.insert_after("lvm2", "sd-encrypt");
+                config.insert_after("resume", "lvm2");
+            }
+        }
+    }
+
+    std::fs::write(conf_path, config.to_string())?;
 
     // Regenerate initramfs
     executor.run(Command::new("mkinitcpio").arg("-P"))?;
@@ -348,15 +339,15 @@ fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) -> R
 
     // Configure Plymouth theme
     let plymouth_conf = "/etc/plymouth/plymouthd.conf";
-    
+
     // Create Plymouth config directory if it doesn't exist
     std::fs::create_dir_all("/etc/plymouth")?;
-    
+
     let config_content = r#"[Daemon]
 Theme=spinner
 ShowDelay=0
 "#;
-    
+
     std::fs::write(plymouth_conf, config_content)?;
 
     // Set the theme and rebuild initramfs

@@ -460,7 +460,10 @@ impl Question for UsePlymouthQuestion {
         let options = vec!["no".to_string(), "yes".to_string()];
 
         let result = FzfWrapper::builder()
-            .header(format!("{} Enable Plymouth boot splash screen?", NerdFont::Monitor))
+            .header(format!(
+                "{} Enable Plymouth boot splash screen?",
+                NerdFont::Monitor
+            ))
             .select(options)?;
 
         match result {

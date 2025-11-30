@@ -8,6 +8,7 @@ pub mod keymaps;
 pub mod locales;
 pub mod logging;
 pub mod mirrors;
+pub mod mkinitcpio;
 pub mod questions;
 
 pub mod timezones;
