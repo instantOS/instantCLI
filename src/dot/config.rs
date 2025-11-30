@@ -17,6 +17,8 @@ pub struct Repo {
     pub active_subdirectories: Vec<String>,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    /// Optional metadata for repositories that don't have an instantdots.toml file (e.g. yadm/stow)
+    pub metadata: Option<crate::dot::types::RepoMetaData>,
 }
 
 fn default_active_subdirs() -> Vec<String> {

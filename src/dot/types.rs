@@ -1,6 +1,22 @@
 use crate::dot::config;
 use crate::dot::localrepo::DotfileDir;
 use crate::menu_utils::FzfSelectable;
+use serde::{Deserialize, Serialize};
+
+/// Repository metadata structure.
+/// This is used for reading from instantdots.toml OR from the main config.
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct RepoMetaData {
+    pub name: String,
+    pub author: Option<String>,
+    pub description: Option<String>,
+    #[serde(default = "default_dots_dirs")]
+    pub dots_dirs: Vec<String>,
+}
+
+fn default_dots_dirs() -> Vec<String> {
+    vec!["dots".to_string()]
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RepoName(String);

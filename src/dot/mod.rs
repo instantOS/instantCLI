@@ -15,6 +15,8 @@ pub mod types;
 pub mod utils;
 
 #[cfg(test)]
+mod external_metadata_tests;
+#[cfg(test)]
 mod path_tests;
 
 // Re-exports for convenience

@@ -141,6 +141,7 @@ pub fn clone_repository(
         branch: branch.map(|s| s.to_string()),
         active_subdirectories: vec!["dots".to_string()],
         enabled: true,
+        metadata: None,
     };
 
     // Add the repo to config

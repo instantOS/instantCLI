@@ -16,20 +16,7 @@ fn ensure_git_repo(repo_path: &Path) -> Result<()> {
         .with_context(|| format!("Not a git repository: {}", repo_path.display()))
 }
 
-/// Repository metadata structure for reading from instantdots.toml.
-/// This must stay in sync with the `MetaWrite` struct in `write_instantdots_toml()`.
-#[derive(Deserialize, Debug, Clone)]
-pub struct RepoMetaData {
-    pub name: String,
-    pub author: Option<String>,
-    pub description: Option<String>,
-    #[serde(default = "default_dots_dirs")]
-    pub dots_dirs: Vec<String>,
-}
-
-fn default_dots_dirs() -> Vec<String> {
-    vec!["dots".to_string()]
-}
+use crate::dot::types::RepoMetaData;
 
 pub fn read_meta(repo_path: &Path) -> Result<RepoMetaData> {
     let p = repo_path.join("instantdots.toml");
@@ -357,7 +344,57 @@ pub fn init_or_create_default_repo(
             println!("Location: {}", current_dir.display());
             println!();
         }
-        init_repo(current_dir, name, non_interactive)?;
+
+        let toml_path = current_dir.join("instantdots.toml");
+        if toml_path.exists() {
+            // Standard instantCLI repo
+            init_repo(current_dir, name, non_interactive)?;
+        } else {
+            // Auto-detect for Yadm/Stow compatibility
+            let default_name = current_dir
+                .file_name()
+                .and_then(|os| os.to_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "dotfiles".to_string());
+
+            let repo_name = name
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.trim().to_string())
+                .unwrap_or(default_name);
+
+            // Check for common dotfile roots
+            let dots_dirs =
+                if current_dir.join(".config").exists() || current_dir.join("config").exists() {
+                    vec![".".to_string()]
+                } else {
+                    // Default to root as best effort
+                    vec![".".to_string()]
+                };
+
+            let metadata = RepoMetaData {
+                name: repo_name.clone(),
+                author: None,
+                description: None,
+                dots_dirs: dots_dirs.clone(),
+            };
+
+            let repo_config = config::Repo {
+                url: current_dir.to_string_lossy().to_string(),
+                name: repo_name,
+                branch: None,
+                active_subdirectories: dots_dirs,
+                enabled: true,
+                metadata: Some(metadata),
+            };
+
+            config.add_repo(repo_config, None)?;
+
+            println!(
+                "{} Detected external dotfile repository (Yadm/Stow compatible)",
+                char::from(NerdFont::Info)
+            );
+        }
+
         return Ok(InitOutcome::InitializedInPlace {
             path: current_dir.to_path_buf(),
         });
@@ -482,6 +519,7 @@ pub fn init_or_create_default_repo(
         branch: None,
         active_subdirectories: vec!["dots".to_string()],
         enabled: true,
+        metadata: None,
     };
 
     config.add_repo(repo_config, None)?;

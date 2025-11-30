@@ -35,7 +35,7 @@ pub struct LocalRepo {
     pub name: String,
     pub branch: Option<String>,
     pub dotfile_dirs: Vec<DotfileDir>,
-    pub meta: crate::dot::meta::RepoMetaData,
+    pub meta: crate::dot::types::RepoMetaData,
 }
 
 impl LocalRepo {
@@ -58,9 +58,13 @@ impl LocalRepo {
             ));
         }
 
-        // Read metadata file
-        let meta = crate::dot::meta::read_meta(&local_path)
-            .with_context(|| format!("Failed to read metadata for repository '{name}'"))?;
+        // Read metadata file or use config metadata
+        let meta = if let Some(meta) = &repo_config.metadata {
+            meta.clone()
+        } else {
+            crate::dot::meta::read_meta(&local_path)
+                .with_context(|| format!("Failed to read metadata for repository '{name}'"))?
+        };
 
         // Note: We allow metadata name to differ from config name to support flexible naming
 
