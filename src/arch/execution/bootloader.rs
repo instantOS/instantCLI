@@ -91,7 +91,8 @@ fn configure_grub(context: &InstallContext, executor: &CommandExecutor) -> Resul
 
 fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     if executor.dry_run {
-        println!("[DRY RUN] Adding 'cryptdevice=UUID=...:cryptlvm' to GRUB_CMDLINE_LINUX");
+        println!("[DRY RUN] Adding 'rd.luks.name=...=cryptlvm' to GRUB_CMDLINE_LINUX");
+        println!("[DRY RUN] Setting GRUB_ENABLE_CRYPTODISK=y in /etc/default/grub");
         return Ok(());
     }
 
@@ -129,14 +130,30 @@ fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecuto
     let content = std::fs::read_to_string(grub_default)?;
 
     // Add root and resume parameters for LVM
-    // root=/dev/mapper/instantOS-root
-    // resume=/dev/mapper/instantOS-swap
+    // rd.luks.name=UUID=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap
     let param = format!(
-        "cryptdevice=UUID={}:cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap",
+        "rd.luks.name={}=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap",
         uuid
     );
 
-    let new_content = add_grub_kernel_param(&content, &param);
+    let mut new_content = add_grub_kernel_param(&content, &param);
+
+    // Enable GRUB_ENABLE_CRYPTODISK=y
+    if !new_content.contains("GRUB_ENABLE_CRYPTODISK=y") {
+        if new_content.contains("GRUB_ENABLE_CRYPTODISK=") {
+            // Replace existing
+            let mut lines: Vec<String> = new_content.lines().map(|s| s.to_string()).collect();
+            for line in &mut lines {
+                if line.trim().starts_with("GRUB_ENABLE_CRYPTODISK=") {
+                    *line = "GRUB_ENABLE_CRYPTODISK=y".to_string();
+                }
+            }
+            new_content = lines.join("\n");
+        } else {
+            // Append
+            new_content.push_str("\nGRUB_ENABLE_CRYPTODISK=y\n");
+        }
+    }
 
     std::fs::write(grub_default, new_content)?;
 
@@ -188,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_add_grub_kernel_param() {
-        let param = "cryptdevice=UUID=123:cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap";
+        let param = "rd.luks.name=123=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap";
 
         // Case 1: Empty value
         let input = "GRUB_CMDLINE_LINUX=\"\"";

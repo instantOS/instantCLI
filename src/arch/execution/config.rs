@@ -38,20 +38,37 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
         if line.trim().starts_with("HOOKS=") {
             let mut new_line = line.to_string();
 
-            // Ensure keyboard and keymap are present (needed for LUKS password entry)
-            if !new_line.contains("keyboard") {
-                new_line = new_line.replace("block", "keyboard block");
+            // Switch to systemd hooks
+            if new_line.contains("base") && new_line.contains("udev") {
+                new_line = new_line.replace("base udev", "base systemd");
             }
-            if !new_line.contains("keymap") {
-                new_line = new_line.replace("block", "keymap block");
+
+            // Ensure keyboard and keymap are present (needed for LUKS password entry)
+            // With systemd hooks, we use sd-vconsole instead of keymap/consolefont
+            if !new_line.contains("sd-vconsole") {
+                if new_line.contains("keymap") {
+                    new_line = new_line.replace("keymap", "sd-vconsole");
+                } else if new_line.contains("keyboard") {
+                    new_line = new_line.replace("keyboard", "keyboard sd-vconsole");
+                }
+            }
+
+            // Remove consolefont if present as sd-vconsole handles it
+            if new_line.contains("consolefont") {
+                new_line = new_line.replace("consolefont", "");
             }
 
             // Add encryption hooks
             if new_line.contains("block")
                 && new_line.contains("filesystems")
-                && !new_line.contains("encrypt")
+                && !new_line.contains("sd-encrypt")
             {
-                new_line = new_line.replace("block", "block encrypt lvm2 resume");
+                // Replace legacy encrypt hook if present, or just add sd-encrypt
+                if new_line.contains("encrypt") {
+                    new_line = new_line.replace("encrypt", "sd-encrypt");
+                } else {
+                    new_line = new_line.replace("block", "block sd-encrypt lvm2 resume");
+                }
             }
 
             new_lines.push(new_line);
