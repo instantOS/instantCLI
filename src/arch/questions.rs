@@ -480,9 +480,6 @@ impl Question for BooleanQuestion {
     }
 }
 
-
-
-
 pub struct EncryptionPasswordQuestion;
 
 #[async_trait::async_trait]
@@ -530,8 +527,6 @@ impl Question for EncryptionPasswordQuestion {
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
