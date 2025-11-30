@@ -421,49 +421,55 @@ impl Question for KernelQuestion {
     }
 }
 
-pub struct UseEncryptionQuestion;
+pub struct BooleanQuestion {
+    pub id: QuestionId,
+    pub prompt: String,
+    pub icon: NerdFont,
+    pub is_optional: bool,
+    pub default_yes: bool,
+}
 
-#[async_trait::async_trait]
-impl Question for UseEncryptionQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::UseEncryption
+impl BooleanQuestion {
+    pub fn new(id: QuestionId, prompt: impl Into<String>, icon: NerdFont) -> Self {
+        Self {
+            id,
+            prompt: prompt.into(),
+            icon,
+            is_optional: false,
+            default_yes: false,
+        }
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        let options = vec!["no".to_string(), "yes".to_string()];
+    pub fn optional(mut self) -> Self {
+        self.is_optional = true;
+        self
+    }
 
-        let result = FzfWrapper::builder()
-            .header(format!("{} Encrypt the installation disk?", NerdFont::Lock))
-            .select(options)?;
-
-        match result {
-            crate::menu_utils::FzfResult::Selected(ans) => Ok(QuestionResult::Answer(ans)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
+    pub fn default_yes(mut self) -> Self {
+        self.default_yes = true;
+        self
     }
 }
 
-pub struct UsePlymouthQuestion;
-
 #[async_trait::async_trait]
-impl Question for UsePlymouthQuestion {
+impl Question for BooleanQuestion {
     fn id(&self) -> QuestionId {
-        QuestionId::UsePlymouth
+        self.id.clone()
     }
 
     fn is_optional(&self) -> bool {
-        true
+        self.is_optional
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        let options = vec!["no".to_string(), "yes".to_string()];
+        let options = if self.default_yes {
+            vec!["yes".to_string(), "no".to_string()]
+        } else {
+            vec!["no".to_string(), "yes".to_string()]
+        };
 
         let result = FzfWrapper::builder()
-            .header(format!(
-                "{} Enable Plymouth boot splash screen?",
-                NerdFont::Monitor
-            ))
+            .header(format!("{} {}", self.icon, self.prompt))
             .select(options)?;
 
         match result {
@@ -473,6 +479,9 @@ impl Question for UsePlymouthQuestion {
         }
     }
 }
+
+
+
 
 pub struct EncryptionPasswordQuestion;
 
@@ -522,35 +531,7 @@ impl Question for EncryptionPasswordQuestion {
     }
 }
 
-pub struct LogUploadQuestion;
 
-#[async_trait::async_trait]
-impl Question for LogUploadQuestion {
-    fn id(&self) -> QuestionId {
-        QuestionId::LogUpload
-    }
-
-    fn is_optional(&self) -> bool {
-        true
-    }
-
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        let options = vec!["yes".to_string(), "no".to_string()];
-
-        let result = FzfWrapper::builder()
-            .header(format!(
-                "{} Upload installation logs to snips.sh?",
-                NerdFont::Debug
-            ))
-            .select(options)?;
-
-        match result {
-            crate::menu_utils::FzfResult::Selected(ans) => Ok(QuestionResult::Answer(ans)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

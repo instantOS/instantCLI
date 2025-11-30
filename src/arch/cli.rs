@@ -53,9 +53,9 @@ pub enum ArchCommands {
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
-        DiskQuestion, EncryptionPasswordQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion,
-        LocaleQuestion, LogUploadQuestion, MirrorRegionQuestion, PasswordQuestion,
-        TimezoneQuestion, UseEncryptionQuestion, UsePlymouthQuestion, UsernameQuestion,
+        BooleanQuestion, DiskQuestion, EncryptionPasswordQuestion, HostnameQuestion, KernelQuestion,
+        KeymapQuestion, LocaleQuestion, MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion,
+        UsernameQuestion,
     };
     use crate::common::distro::{Distro, detect_distro, is_live_iso};
 
@@ -74,14 +74,33 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         Box::new(HostnameQuestion),
         Box::new(UsernameQuestion),
         Box::new(PasswordQuestion),
-        Box::new(UseEncryptionQuestion),
+        Box::new(BooleanQuestion::new(
+            crate::arch::engine::QuestionId::UseEncryption,
+            "Encrypt the installation disk?",
+            crate::ui::nerd_font::NerdFont::Lock,
+        )),
         Box::new(EncryptionPasswordQuestion),
         Box::new(MirrorRegionQuestion),
         Box::new(TimezoneQuestion),
         Box::new(LocaleQuestion),
         Box::new(KernelQuestion),
-        Box::new(UsePlymouthQuestion),
-        Box::new(LogUploadQuestion),
+        Box::new(
+            BooleanQuestion::new(
+                crate::arch::engine::QuestionId::UsePlymouth,
+                "Enable Plymouth boot splash screen?",
+                crate::ui::nerd_font::NerdFont::Monitor,
+            )
+            .optional(),
+        ),
+        Box::new(
+            BooleanQuestion::new(
+                crate::arch::engine::QuestionId::LogUpload,
+                "Upload installation logs to snips.sh?",
+                crate::ui::nerd_font::NerdFont::Debug,
+            )
+            .optional()
+            .default_yes(),
+        ),
     ];
 
     match command {
