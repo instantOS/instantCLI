@@ -90,7 +90,8 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 "Enable Plymouth boot splash screen?",
                 crate::ui::nerd_font::NerdFont::Monitor,
             )
-            .optional(),
+            .optional()
+            .default_yes(),
         ),
         Box::new(
             BooleanQuestion::new(
