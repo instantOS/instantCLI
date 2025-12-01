@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::ui::nerd_font::NerdFont;
+use colored::Colorize;
 use serde::{Deserialize, Serialize};
 
 /// Represents a unique identifier for a question
@@ -57,6 +58,31 @@ impl std::fmt::Display for GpuKind {
             GpuKind::Amd => write!(f, "AMD"),
             GpuKind::Intel => write!(f, "Intel"),
             GpuKind::Other(name) => write!(f, "{}", name),
+        }
+    }
+}
+
+impl GpuKind {
+    pub fn to_colored_string(&self) -> colored::ColoredString {
+        match self {
+            GpuKind::Nvidia => self.to_string().bright_green(),
+            GpuKind::Amd => self.to_string().bright_red(),
+            GpuKind::Intel => self.to_string().bright_blue(),
+            GpuKind::Other(_) => self.to_string().normal(),
+        }
+    }
+
+    pub fn get_driver_packages(&self) -> Vec<&'static str> {
+        match self {
+            GpuKind::Nvidia => vec!["nvidia", "nvidia-utils", "nvidia-settings"],
+            GpuKind::Amd => vec![
+                "vulkan-radeon",
+                "lib32-vulkan-radeon",
+                "libva-mesa-driver",
+                "lib32-libva-mesa-driver",
+            ],
+            GpuKind::Intel => vec!["vulkan-intel", "lib32-vulkan-intel", "intel-media-driver"],
+            GpuKind::Other(_) => vec!["mesa", "lib32-mesa"],
         }
     }
 }

@@ -64,34 +64,24 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
 
     // GPU packages
     for gpu in &context.system_info.gpus {
+        let driver_packages = gpu.get_driver_packages();
+
         match gpu {
             crate::arch::engine::GpuKind::Nvidia => {
                 println!("Detected NVIDIA GPU, adding nvidia");
-                packages.push("nvidia");
-                packages.push("nvidia-utils");
-                packages.push("nvidia-settings");
             }
             crate::arch::engine::GpuKind::Amd => {
                 println!("Detected AMD GPU, adding vulkan support");
-                packages.push("vulkan-radeon");
-                packages.push("lib32-vulkan-radeon");
-                // Optional AMD GPU packages for better support
-                packages.push("libva-mesa-driver");
-                packages.push("lib32-libva-mesa-driver");
             }
             crate::arch::engine::GpuKind::Intel => {
                 println!("Detected Intel GPU, adding vulkan support");
-                packages.push("vulkan-intel");
-                packages.push("lib32-vulkan-intel");
-                // Intel media driver for video acceleration
-                packages.push("intel-media-driver");
             }
             crate::arch::engine::GpuKind::Other(name) => {
                 println!("Detected unknown GPU: {}, adding basic mesa support", name);
-                packages.push("mesa");
-                packages.push("lib32-mesa");
             }
         }
+
+        packages.extend(driver_packages);
     }
 
     // VM Guest Tools

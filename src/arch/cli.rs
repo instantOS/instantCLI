@@ -536,12 +536,7 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
         let gpu_str = gpu_strs.join(", ");
 
         let colored_gpu_str = if info.gpus.len() == 1 {
-            match &info.gpus[0] {
-                crate::arch::engine::GpuKind::Nvidia => gpu_str.bright_green(),
-                crate::arch::engine::GpuKind::Amd => gpu_str.bright_red(),
-                crate::arch::engine::GpuKind::Intel => gpu_str.bright_blue(),
-                crate::arch::engine::GpuKind::Other(_) => gpu_str.normal(),
-            }
+            info.gpus[0].to_colored_string()
         } else {
             gpu_str.normal()
         };
