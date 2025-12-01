@@ -85,8 +85,13 @@ impl SystemInfo {
         if let Ok(lspci) = std::process::Command::new("lspci").output() {
             let output = String::from_utf8_lossy(&lspci.stdout);
             info.has_nvidia_gpu = output.to_lowercase().contains("nvidia");
-            info.has_amd_gpu = output.to_lowercase().contains("amd") || output.to_lowercase().contains("radeon") || output.to_lowercase().contains("advanced micro devices");
-            info.has_intel_gpu = output.to_lowercase().contains("intel") || output.to_lowercase().contains("integrated graphics") || output.to_lowercase().contains("hd graphics") || output.to_lowercase().contains("iris");
+            info.has_amd_gpu = output.to_lowercase().contains("amd")
+                || output.to_lowercase().contains("radeon")
+                || output.to_lowercase().contains("advanced micro devices");
+            info.has_intel_gpu = output.to_lowercase().contains("intel")
+                || output.to_lowercase().contains("integrated graphics")
+                || output.to_lowercase().contains("hd graphics")
+                || output.to_lowercase().contains("iris");
         }
 
         // VM check
