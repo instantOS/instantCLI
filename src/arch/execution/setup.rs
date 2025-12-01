@@ -70,6 +70,13 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
         packages.push("nvidia-settings");
     }
 
+    // AMD GPU
+    if context.system_info.has_amd_gpu {
+        println!("Detected AMD GPU, adding vulkan support");
+        packages.push("vulkan-radeon");
+        packages.push("lib32-vulkan-radeon");
+    }
+
     // VM Guest Tools
     if let Some(vm_type) = &context.system_info.vm_type {
         println!("Detected VM: {}, adding guest tools", vm_type);
