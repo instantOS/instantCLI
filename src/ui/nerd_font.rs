@@ -239,6 +239,13 @@ pub enum NerdFont {
     Flask,
     BugReport,
     CodeReview,
+
+    // Hardware and Graphics
+    Gpu,
+    MemoryModule,
+    Ssd,
+    HardDisk,
+    Fan,
 }
 
 impl NerdFont {
@@ -478,6 +485,13 @@ impl NerdFont {
             Self::Flask => '󰂓',      // md-flask
             Self::BugReport => '',  // cod-bug
             Self::CodeReview => '', // cod-code
+
+            // Hardware and Graphics
+            Self::Gpu => '󰢮',          // md-expansion-card
+            Self::MemoryModule => '󰍛', // md-memory
+            Self::Ssd => '󰋊',          // md-ssd
+            Self::HardDisk => '󰋊',     // md-harddisk
+            Self::Fan => '󰈐',          // md-fan
         }
     }
 }

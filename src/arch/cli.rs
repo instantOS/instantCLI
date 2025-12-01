@@ -508,11 +508,11 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
 
     println!();
     println!(
-        "{} {}",
+        "  {} {}",
         NerdFont::Desktop.to_string().bright_cyan(),
         "System Information".bright_white().bold()
     );
-    println!("{}", "─".repeat(50).bright_black());
+    println!("  {}", "─".repeat(50).bright_black());
 
     // Boot Mode
     let boot_mode_str = match info.boot_mode {
@@ -521,7 +521,7 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
         crate::arch::engine::BootMode::BIOS => "BIOS",
     };
     println!(
-        "{} {:<20} {}",
+        "  {}   {:<20} {}",
         NerdFont::PowerOff.to_string().bright_green(),
         "Boot Mode:",
         boot_mode_str.bright_green()
@@ -529,7 +529,7 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
 
     // Architecture
     println!(
-        "{} {:<20} {}",
+        "  {}   {:<20} {}",
         NerdFont::Cpu.to_string().bright_magenta(),
         "Architecture:",
         info.architecture.bright_magenta()
@@ -538,14 +538,14 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
     // CPU
     if info.has_intel_cpu {
         println!(
-            "{} {:<20} {}",
+            "  {}   {:<20} {}",
             NerdFont::Cpu.to_string().bright_blue(),
             "CPU:",
             "Intel".bright_blue()
         );
     } else if info.has_amd_cpu {
         println!(
-            "{} {:<20} {}",
+            "  {}   {:<20} {}",
             NerdFont::Cpu.to_string().bright_red(),
             "CPU:",
             "AMD".bright_red()
@@ -564,8 +564,8 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
         };
 
         println!(
-            "{} {:<20} {}",
-            NerdFont::Monitor.to_string().bright_cyan(),
+            "  {}   {:<20} {}",
+            NerdFont::Gpu.to_string().bright_cyan(),
             "GPU:",
             colored_gpu_str
         );
@@ -574,18 +574,15 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
     // Virtualization
     if let Some(vm_type) = &info.vm_type {
         println!(
-            "{} {:<20} {}",
+            "  {}   {:<20} {} ({})",
             NerdFont::Server.to_string().bright_yellow(),
             "Virtualization:",
-            format!(
-                "{} ({})",
-                vm_type.bright_yellow(),
-                "Virtual Machine".bright_black()
-            )
+            vm_type.bright_yellow(),
+            "Virtual Machine".bright_black()
         );
     } else {
         println!(
-            "{} {:<20} {}",
+            "  {}   {:<20} {}",
             NerdFont::Server.to_string().bright_green(),
             "Virtualization:",
             "Bare Metal".bright_green()
@@ -595,20 +592,20 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
     // Internet
     if info.internet_connected {
         println!(
-            "{} {:<20} {}",
+            "  {}   {:<20} {}",
             NerdFont::Globe.to_string().bright_green(),
             "Internet:",
             "Connected".bright_green()
         );
     } else {
         println!(
-            "{} {:<20} {}",
+            "  {}   {:<20} {}",
             NerdFont::Globe.to_string().bright_red(),
             "Internet:",
             "Disconnected".bright_red()
         );
     }
 
-    println!("{}", "─".repeat(50).bright_black());
+    println!("  {}", "─".repeat(50).bright_black());
     println!();
 }
