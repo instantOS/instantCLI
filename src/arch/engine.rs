@@ -98,7 +98,7 @@ impl SystemInfo {
                 }
             }
         }
-        
+
         // Fallback to lspci if drm detection didn't find anything
         if !info.has_nvidia_gpu && !info.has_amd_gpu && !info.has_intel_gpu {
             if let Ok(lspci) = std::process::Command::new("lspci").output() {
