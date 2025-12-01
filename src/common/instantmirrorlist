@@ -1,7 +1,7 @@
 # mirror list for instantOS $arch
 
 # official main repo
-Server = https://packages.instantos.io
+Server = https://instantos.io/packages
 
 # mirrors
 Server = https://instantos.surge.sh
