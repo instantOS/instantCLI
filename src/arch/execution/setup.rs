@@ -36,6 +36,11 @@ async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
     println!("Setting up instantOS repository...");
     crate::common::pacman::setup_instant_repo(executor.dry_run).await?;
 
+    // Enable multilib for 32-bit support (Steam, Wine, etc.)
+    // This is required for lib32-vulkan-intel which caused the issue
+    println!("Enabling multilib repository...");
+    crate::common::pacman::enable_multilib(executor.dry_run).await?;
+
     // Update repositories
     println!("Updating repositories...");
     let mut cmd = Command::new("pacman");
