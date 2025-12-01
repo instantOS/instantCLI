@@ -57,7 +57,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
     use crate::arch::questions::{
         BooleanQuestion, DiskQuestion, EncryptionPasswordQuestion, HostnameQuestion,
         KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion, PasswordQuestion,
-        TimezoneQuestion, UsernameQuestion,
+        TimezoneQuestion, UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
     };
     use crate::common::distro::{Distro, detect_distro, is_live_iso};
 
@@ -71,6 +71,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
     }
 
     let questions: Vec<Box<dyn crate::arch::engine::Question>> = vec![
+        Box::new(VirtualBoxWarning),
         Box::new(KeymapQuestion),
         Box::new(DiskQuestion),
         Box::new(HostnameQuestion),
@@ -82,6 +83,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             crate::ui::nerd_font::NerdFont::Lock,
         )),
         Box::new(EncryptionPasswordQuestion),
+        Box::new(WeakPasswordWarning),
         Box::new(MirrorRegionQuestion),
         Box::new(TimezoneQuestion),
         Box::new(LocaleQuestion),

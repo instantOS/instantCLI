@@ -528,6 +528,64 @@ impl Question for EncryptionPasswordQuestion {
     }
 }
 
+pub struct VirtualBoxWarning;
+
+#[async_trait::async_trait]
+impl Question for VirtualBoxWarning {
+    fn id(&self) -> QuestionId {
+        QuestionId::VirtualBoxWarning
+    }
+
+    fn should_ask(&self, context: &InstallContext) -> bool {
+        if let Some(vm_type) = &context.system_info.vm_type {
+            let vm = vm_type.to_lowercase();
+            vm.contains("oracle") || vm.contains("virtualbox")
+        } else {
+            false
+        }
+    }
+
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        FzfWrapper::message(&format!(
+            "{} VirtualBox Detected!\n\n\
+             Wayland does not work properly in VirtualBox.\n\
+             Please use X11 or another hypervisor for the best experience.",
+            NerdFont::Warning
+        ))?;
+        Ok(QuestionResult::Answer("acknowledged".to_string()))
+    }
+}
+
+pub struct WeakPasswordWarning;
+
+#[async_trait::async_trait]
+impl Question for WeakPasswordWarning {
+    fn id(&self) -> QuestionId {
+        QuestionId::WeakPasswordWarning
+    }
+
+    fn should_ask(&self, context: &InstallContext) -> bool {
+        if !context.get_answer_bool(QuestionId::UseEncryption) {
+            return false;
+        }
+        if let Some(pass) = context.get_answer(&QuestionId::EncryptionPassword) {
+            pass.len() < 4
+        } else {
+            false
+        }
+    }
+
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        FzfWrapper::message(&format!(
+            "{} Weak Password Warning\n\n\
+             The encryption password is shorter than 4 characters.\n\
+             This is considered insecure.",
+            NerdFont::Warning
+        ))?;
+        Ok(QuestionResult::Answer("acknowledged".to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -545,5 +603,49 @@ mod tests {
             let device_name = input.split('(').next().unwrap_or(input).trim();
             assert_eq!(device_name, expected, "Failed for input: {}", input);
         }
+    }
+
+    #[test]
+    fn test_virtualbox_warning_condition() {
+        use crate::arch::engine::{InstallContext, Question, QuestionId};
+        use crate::arch::questions::VirtualBoxWarning;
+
+        let warning = VirtualBoxWarning;
+        let mut context = InstallContext::new();
+
+        // Case 1: No VM
+        context.system_info.vm_type = None;
+        assert!(!warning.should_ask(&context));
+
+        // Case 2: VirtualBox
+        context.system_info.vm_type = Some("Oracle VirtualBox".to_string());
+        assert!(warning.should_ask(&context));
+
+        // Case 3: Other VM
+        context.system_info.vm_type = Some("KVM".to_string());
+        assert!(!warning.should_ask(&context));
+    }
+
+    #[test]
+    fn test_weak_password_warning_condition() {
+        use crate::arch::engine::{InstallContext, Question, QuestionId};
+        use crate::arch::questions::WeakPasswordWarning;
+
+        let warning = WeakPasswordWarning;
+        let mut context = InstallContext::new();
+
+        // Case 1: Encryption disabled
+        context.set_answer(QuestionId::UseEncryption, "false".to_string());
+        context.set_answer(QuestionId::EncryptionPassword, "123".to_string());
+        assert!(!warning.should_ask(&context));
+
+        // Case 2: Encryption enabled, short password
+        context.set_answer(QuestionId::UseEncryption, "true".to_string());
+        context.set_answer(QuestionId::EncryptionPassword, "123".to_string());
+        assert!(warning.should_ask(&context));
+
+        // Case 3: Encryption enabled, long password
+        context.set_answer(QuestionId::EncryptionPassword, "1234".to_string());
+        assert!(!warning.should_ask(&context));
     }
 }

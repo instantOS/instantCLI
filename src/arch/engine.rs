@@ -23,6 +23,8 @@ pub enum QuestionId {
     UsePlymouth,
     LogUpload,
     ConfirmInstall,
+    VirtualBoxWarning,
+    WeakPasswordWarning,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
