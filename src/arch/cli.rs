@@ -145,10 +145,8 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 println!("Starting Arch Linux installation wizard...");
 
                 // Perform system checks
-                let mut system_info = crate::arch::engine::SystemInfo::default();
+                let system_info = crate::arch::engine::SystemInfo::detect();
 
-                // Internet check
-                system_info.internet_connected = crate::common::network::check_internet();
                 if !system_info.internet_connected {
                     eprintln!(
                         "Error: No internet connection detected. Arch installation requires internet."
@@ -193,38 +191,13 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                     }
                 }
 
-                // Boot mode check
-                if std::path::Path::new("/sys/firmware/efi/fw_platform_size").exists() {
-                    let content = std::fs::read_to_string("/sys/firmware/efi/fw_platform_size")
-                        .unwrap_or_default();
-                    if content.trim() == "64" {
-                        system_info.boot_mode = crate::arch::engine::BootMode::UEFI64;
-                    } else if content.trim() == "32" {
-                        system_info.boot_mode = crate::arch::engine::BootMode::UEFI32;
-                    }
-                } else if std::path::Path::new("/sys/firmware/efi").exists() {
-                    // Fallback if fw_platform_size doesn't exist but efi does
-                    system_info.boot_mode = crate::arch::engine::BootMode::UEFI64;
-                }
-
-                // CPU check
-                if let Ok(cpuinfo) = std::fs::read_to_string("/proc/cpuinfo") {
-                    system_info.has_amd_cpu = cpuinfo.contains("AuthenticAMD");
-                    system_info.has_intel_cpu = cpuinfo.contains("GenuineIntel");
-                }
-
-                // GPU check (simple lspci check)
-                if let Ok(lspci) = std::process::Command::new("lspci").output() {
-                    let output = String::from_utf8_lossy(&lspci.stdout);
-                    system_info.has_nvidia_gpu = output.to_lowercase().contains("nvidia");
-                }
-
                 println!("System Checks:");
                 println!("  Boot Mode: {}", system_info.boot_mode);
                 println!("  Internet: {}", system_info.internet_connected);
                 println!("  AMD CPU: {}", system_info.has_amd_cpu);
                 println!("  Intel CPU: {}", system_info.has_intel_cpu);
                 println!("  NVIDIA GPU: {}", system_info.has_nvidia_gpu);
+                println!("  Virtual Machine: {:?}", system_info.vm_type);
 
                 let mut engine = QuestionEngine::new(questions);
                 engine.context.system_info = system_info;
@@ -456,8 +429,17 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 .or_else(|| std::env::var("SUDO_USER").ok())
                 .or_else(detect_single_user);
 
+            // Create a context for setup
+            let mut context = crate::arch::engine::InstallContext::new();
+            context.system_info = crate::arch::engine::SystemInfo::detect();
+
+            // If we found a user, set it in context too, though we pass it as override
+            if let Some(u) = &target_user {
+                context.set_answer(crate::arch::engine::QuestionId::Username, u.clone());
+            }
+
             let executor = crate::arch::execution::CommandExecutor::new(dry_run, None);
-            crate::arch::execution::setup::setup_instantos(&executor, target_user).await
+            crate::arch::execution::setup::setup_instantos(&context, &executor, target_user).await
         }
     }
 }

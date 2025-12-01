@@ -54,16 +54,12 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         "grub",           // Bootloader
         "efibootmgr",     // Required for GRUB on UEFI
         "os-prober",      // Detect other OSes
-        "sway",
-        "git",           // Required for instantCLI
-        "libgit2",       // Required for instantCLI
-        "base-devel",    // Generally useful and often required
-        "fzf",           // Required for menu_utils
-        "gum",           // Required for some UI elements
-        "openssh",       // Required for sshd
-        "mesa",          // Required for OpenGL (Sway)
-        "xorg-xwayland", // Required for X11 apps in Sway
-        "polkit",        // Required for privilege escalation
+        // Dependencies for instantCLI and menus (required for chroot steps)
+        "git",
+        "libgit2",
+        "fzf",
+        "gum",
+        "base-devel",
     ];
 
     // CPU Microcode
@@ -76,24 +72,11 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         packages.push("intel-ucode");
     }
 
-    // NVIDIA GPU (if requested by plan, though often better in post-install)
-    // Plan says: "check if nvidia gpu is present, if yes, add nvidia package to the list"
-    if context.system_info.has_nvidia_gpu {
-        println!("Detected NVIDIA GPU, adding nvidia");
-        packages.push("nvidia");
-    }
-
     // Encryption support
     if context.get_answer_bool(QuestionId::UseEncryption) {
         println!("Encryption enabled, adding lvm2 and cryptsetup");
         packages.push("lvm2");
         packages.push("cryptsetup");
-    }
-
-    // Plymouth support
-    if context.get_answer_bool(QuestionId::UsePlymouth) {
-        println!("Plymouth enabled, adding plymouth package");
-        packages.push("plymouth");
     }
 
     println!("Packages to install: {}", packages.join(" "));

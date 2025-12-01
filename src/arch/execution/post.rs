@@ -9,7 +9,7 @@ pub async fn install_post(context: &InstallContext, executor: &CommandExecutor) 
         .get_answer(&QuestionId::Username)
         .context("Username not set")?;
 
-    super::setup::setup_instantos(executor, Some(username.clone())).await?;
+    super::setup::setup_instantos(context, executor, Some(username.clone())).await?;
 
     Ok(())
 }

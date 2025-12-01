@@ -48,7 +48,52 @@ pub struct SystemInfo {
     pub has_amd_cpu: bool,
     pub has_intel_cpu: bool,
     pub has_nvidia_gpu: bool,
+    pub vm_type: Option<String>,
     pub internet_connected: bool,
+}
+
+impl SystemInfo {
+    pub fn detect() -> Self {
+        let mut info = SystemInfo::default();
+
+        // Internet check
+        info.internet_connected = crate::common::network::check_internet();
+
+        // Boot mode check
+        if std::path::Path::new("/sys/firmware/efi/fw_platform_size").exists() {
+            let content =
+                std::fs::read_to_string("/sys/firmware/efi/fw_platform_size").unwrap_or_default();
+            if content.trim() == "64" {
+                info.boot_mode = BootMode::UEFI64;
+            } else if content.trim() == "32" {
+                info.boot_mode = BootMode::UEFI32;
+            }
+        } else if std::path::Path::new("/sys/firmware/efi").exists() {
+            // Fallback if fw_platform_size doesn't exist but efi does
+            info.boot_mode = BootMode::UEFI64;
+        }
+
+        // CPU check
+        if let Ok(cpuinfo) = std::fs::read_to_string("/proc/cpuinfo") {
+            info.has_amd_cpu = cpuinfo.contains("AuthenticAMD");
+            info.has_intel_cpu = cpuinfo.contains("GenuineIntel");
+        }
+
+        // GPU check (simple lspci check)
+        if let Ok(lspci) = std::process::Command::new("lspci").output() {
+            let output = String::from_utf8_lossy(&lspci.stdout);
+            info.has_nvidia_gpu = output.to_lowercase().contains("nvidia");
+        }
+
+        // VM check
+        if let Ok(virt) = std::process::Command::new("systemd-detect-virt").output() {
+            if virt.status.success() {
+                info.vm_type = Some(String::from_utf8_lossy(&virt.stdout).trim().to_string());
+            }
+        }
+
+        info
+    }
 }
 
 use std::any::Any;

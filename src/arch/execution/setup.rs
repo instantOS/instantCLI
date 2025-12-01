@@ -2,13 +2,24 @@ use super::CommandExecutor;
 use anyhow::Result;
 use std::process::Command;
 
-pub async fn setup_instantos(executor: &CommandExecutor, username: Option<String>) -> Result<()> {
+use crate::arch::engine::{InstallContext, QuestionId};
+
+pub async fn setup_instantos(
+    context: &InstallContext,
+    executor: &CommandExecutor,
+    override_user: Option<String>,
+) -> Result<()> {
     println!("Setting up instantOS...");
 
     setup_instant_repo(executor).await?;
-    install_instant_packages(executor)?;
+
+    // Install extended packages (GUI, tools, drivers)
+    install_packages(context, executor)?;
 
     update_os_release(executor)?;
+
+    // Determine username: override > context > SUDO_USER
+    let username = override_user.or_else(|| context.get_answer(&QuestionId::Username).cloned());
 
     if let Some(user) = username {
         setup_user_dotfiles(&user, executor)?;
@@ -34,16 +45,56 @@ async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
     Ok(())
 }
 
-fn install_instant_packages(executor: &CommandExecutor) -> Result<()> {
-    println!("Installing instantOS packages...");
+fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    println!("Installing extended packages...");
 
-    let packages = vec![
+    let mut packages = vec![
+        "sway",
+        "openssh",
+        "mesa",
+        "xorg-xwayland",
+        "polkit",
+        // instantOS packages
         "instantdepend",
         "instantos",
         "instantextra",
         "lightdm",
         "lightdm-gtk-greeter",
     ];
+
+    // NVIDIA GPU
+    if context.system_info.has_nvidia_gpu {
+        println!("Detected NVIDIA GPU, adding nvidia");
+        packages.push("nvidia");
+        packages.push("nvidia-utils");
+        packages.push("nvidia-settings");
+    }
+
+    // VM Guest Tools
+    if let Some(vm_type) = &context.system_info.vm_type {
+        println!("Detected VM: {}, adding guest tools", vm_type);
+        match vm_type.as_str() {
+            "kvm" | "qemu" | "bochs" => {
+                packages.push("qemu-guest-agent");
+            }
+            "vmware" => {
+                packages.push("open-vm-tools");
+                packages.push("xf86-video-vmware");
+            }
+            "oracle" => {
+                packages.push("virtualbox-guest-utils");
+            }
+            _ => {
+                println!("No specific guest tools for VM type: {}", vm_type);
+            }
+        }
+    }
+
+    // Plymouth support
+    if context.get_answer_bool(QuestionId::UsePlymouth) {
+        println!("Plymouth enabled, adding plymouth package");
+        packages.push("plymouth");
+    }
 
     super::pacman::install(&packages, executor)?;
 
