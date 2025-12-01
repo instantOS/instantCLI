@@ -27,7 +27,7 @@ pub async fn setup_instantos(
         println!("Skipping dotfiles setup: No user specified and SUDO_USER not found.");
     }
 
-    enable_services(executor)?;
+    enable_services(executor, context)?;
 
     Ok(())
 }
@@ -79,7 +79,6 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
             }
             "vmware" => {
                 packages.push("open-vm-tools");
-                packages.push("xf86-video-vmware");
             }
             "oracle" => {
                 packages.push("virtualbox-guest-utils");
@@ -147,10 +146,26 @@ fn setup_user_dotfiles(username: &str, executor: &CommandExecutor) -> Result<()>
     Ok(())
 }
 
-fn enable_services(executor: &CommandExecutor) -> Result<()> {
+fn enable_services(executor: &CommandExecutor, context: &InstallContext) -> Result<()> {
     println!("Enabling services...");
 
     let mut services = vec!["NetworkManager", "sshd"];
+
+    // Enable VM-specific services
+    if let Some(vm_type) = &context.system_info.vm_type {
+        match vm_type.as_str() {
+            "vmware" => {
+                services.push("vmtoolsd");
+            }
+            "kvm" | "qemu" | "bochs" => {
+                services.push("qemu-guest-agent");
+            }
+            "oracle" => {
+                services.push("vboxservice");
+            }
+            _ => {}
+        }
+    }
 
     // Check if other display managers are enabled
     // We check this directly via Command because CommandExecutor errors on failure (non-zero exit),
