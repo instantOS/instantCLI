@@ -33,6 +33,17 @@ pub enum BootMode {
     BIOS,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct SystemInfo {
+    pub boot_mode: BootMode,
+    pub has_amd_cpu: bool,
+    pub has_intel_cpu: bool,
+    pub gpus: Vec<GpuKind>,
+    pub vm_type: Option<String>,
+    pub internet_connected: bool,
+    pub architecture: String,
+}
+
 impl std::fmt::Display for BootMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -85,16 +96,6 @@ impl GpuKind {
             GpuKind::Other(_) => vec!["mesa", "lib32-mesa"],
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SystemInfo {
-    pub boot_mode: BootMode,
-    pub has_amd_cpu: bool,
-    pub has_intel_cpu: bool,
-    pub gpus: Vec<GpuKind>,
-    pub vm_type: Option<String>,
-    pub internet_connected: bool,
 }
 
 impl SystemInfo {
@@ -185,6 +186,9 @@ impl SystemInfo {
                 info.vm_type = Some(String::from_utf8_lossy(&virt.stdout).trim().to_string());
             }
         }
+
+        // Architecture check
+        info.architecture = std::env::consts::ARCH.to_string();
 
         info
     }

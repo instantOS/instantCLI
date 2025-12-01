@@ -243,6 +243,20 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             }
         }
         ArchCommands::Install => {
+            // Check architecture
+            let system_info = crate::arch::engine::SystemInfo::detect();
+            if system_info.architecture != "x86_64" {
+                eprintln!(
+                    "{} {}",
+                    "Error:".red().bold(),
+                    format!(
+                        "Arch Linux installation is only supported on x86_64 architecture. Detected architecture: {}",
+                        system_info.architecture
+                    ).red()
+                );
+                return Ok(());
+            }
+
             // Mark start time
             let mut state = crate::arch::execution::state::InstallState::load()?;
             state.mark_start();
@@ -511,6 +525,14 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
         NerdFont::PowerOff.to_string().bright_green(),
         "Boot Mode:",
         boot_mode_str.bright_green()
+    );
+
+    // Architecture
+    println!(
+        "{} {:<20} {}",
+        NerdFont::Cpu.to_string().bright_magenta(),
+        "Architecture:",
+        info.architecture.bright_magenta()
     );
 
     // CPU
