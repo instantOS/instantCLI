@@ -21,8 +21,8 @@ impl PackageRepo {
 
         std::fs::create_dir_all(&cache_dir).context("Failed to create cache directory")?;
 
-        let repo_path = cache_dir.join("extra");
-        let url = "https://github.com/instantOS/extra".to_string();
+        let repo_path = cache_dir.join("packages");
+        let url = "https://github.com/instantOS/packages".to_string();
 
         Ok(PackageRepo {
             path: repo_path,
