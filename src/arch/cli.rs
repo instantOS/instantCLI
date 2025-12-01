@@ -245,6 +245,20 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         ArchCommands::Install => {
             // Check architecture
             let system_info = crate::arch::engine::SystemInfo::detect();
+
+            // Check distro
+            if !system_info.distro.contains("Arch") && !system_info.distro.contains("instantOS") {
+                eprintln!(
+                    "{} {}",
+                    "Error:".red().bold(),
+                    format!(
+                        "Arch Linux installation is only supported on Arch Linux or instantOS. Detected distro: {}",
+                        system_info.distro
+                    ).red()
+                );
+                return Ok(());
+            }
+
             if system_info.architecture != "x86_64" {
                 eprintln!(
                     "{} {}",
@@ -513,6 +527,14 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
         "System Information".bright_white().bold()
     );
     println!("  {}", "─".repeat(50).bright_black());
+
+    // Distro
+    println!(
+        "  {}   {:<20} {}",
+        NerdFont::Terminal.to_string().bright_cyan(),
+        "Distro:",
+        info.distro.bright_cyan()
+    );
 
     // Boot Mode
     let boot_mode_str = match info.boot_mode {

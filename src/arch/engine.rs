@@ -42,6 +42,7 @@ pub struct SystemInfo {
     pub vm_type: Option<String>,
     pub internet_connected: bool,
     pub architecture: String,
+    pub distro: String,
 }
 
 impl std::fmt::Display for BootMode {
@@ -189,6 +190,11 @@ impl SystemInfo {
 
         // Architecture check
         info.architecture = std::env::consts::ARCH.to_string();
+
+        // Distro check
+        info.distro = crate::common::distro::detect_distro()
+            .map(|d| d.to_string())
+            .unwrap_or_else(|_| "Unknown".to_string());
 
         info
     }
