@@ -520,6 +520,10 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
     use crate::ui::nerd_font::NerdFont;
     use colored::*;
 
+    let print_row = |icon: ColoredString, label: &str, value: &dyn std::fmt::Display| {
+        println!("  {}   {:<20} {}", icon, label, value);
+    };
+
     println!();
     println!(
         "  {} {}",
@@ -529,11 +533,10 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
     println!("  {}", "─".repeat(50).bright_black());
 
     // Distro
-    println!(
-        "  {}   {:<20} {}",
+    print_row(
         NerdFont::Terminal.to_string().bright_cyan(),
         "Distro:",
-        info.distro.bright_cyan()
+        &info.distro.bright_cyan(),
     );
 
     // Boot Mode
@@ -542,35 +545,31 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
         crate::arch::engine::BootMode::UEFI32 => "UEFI 32-bit",
         crate::arch::engine::BootMode::BIOS => "BIOS",
     };
-    println!(
-        "  {}   {:<20} {}",
+    print_row(
         NerdFont::PowerOff.to_string().bright_green(),
         "Boot Mode:",
-        boot_mode_str.bright_green()
+        &boot_mode_str.bright_green(),
     );
 
     // Architecture
-    println!(
-        "  {}   {:<20} {}",
+    print_row(
         NerdFont::Cpu.to_string().bright_magenta(),
         "Architecture:",
-        info.architecture.bright_magenta()
+        &info.architecture.bright_magenta(),
     );
 
     // CPU
     if info.has_intel_cpu {
-        println!(
-            "  {}   {:<20} {}",
+        print_row(
             NerdFont::Cpu.to_string().bright_blue(),
             "CPU:",
-            "Intel".bright_blue()
+            &"Intel".bright_blue(),
         );
     } else if info.has_amd_cpu {
-        println!(
-            "  {}   {:<20} {}",
+        print_row(
             NerdFont::Cpu.to_string().bright_red(),
             "CPU:",
-            "AMD".bright_red()
+            &"AMD".bright_red(),
         );
     }
 
@@ -585,11 +584,10 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
             gpu_str.normal()
         };
 
-        println!(
-            "  {}   {:<20} {}",
+        print_row(
             NerdFont::Gpu.to_string().bright_cyan(),
             "GPU:",
-            colored_gpu_str
+            &colored_gpu_str,
         );
     }
 
@@ -603,28 +601,25 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
             "Virtual Machine".bright_black()
         );
     } else {
-        println!(
-            "  {}   {:<20} {}",
+        print_row(
             NerdFont::Server.to_string().bright_green(),
             "Virtualization:",
-            "Bare Metal".bright_green()
+            &"Bare Metal".bright_green(),
         );
     }
 
     // Internet
     if info.internet_connected {
-        println!(
-            "  {}   {:<20} {}",
+        print_row(
             NerdFont::Globe.to_string().bright_green(),
             "Internet:",
-            "Connected".bright_green()
+            &"Connected".bright_green(),
         );
     } else {
-        println!(
-            "  {}   {:<20} {}",
+        print_row(
             NerdFont::Globe.to_string().bright_red(),
             "Internet:",
-            "Disconnected".bright_red()
+            &"Disconnected".bright_red(),
         );
     }
 
