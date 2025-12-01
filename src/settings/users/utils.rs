@@ -13,27 +13,23 @@ pub(super) fn prompt_password_with_confirmation(
     ctx: &SettingsContext,
     prompt: &str,
 ) -> Result<Option<String>> {
-    let password1 = FzfWrapper::builder()
+    let password_result = FzfWrapper::builder()
         .prompt(prompt)
         .password()
-        .show_password()?;
+        .with_confirmation()
+        .password_dialog()?;
 
-    if password1.trim().is_empty() {
+    let password = match password_result {
+        FzfResult::Selected(s) => s,
+        _ => return Ok(None),
+    };
+
+    if password.trim().is_empty() {
         ctx.emit_info("settings.users.password", "Password cannot be empty.");
         return Ok(None);
     }
 
-    let password2 = FzfWrapper::builder()
-        .prompt("Confirm password")
-        .password()
-        .show_password()?;
-
-    if password1 != password2 {
-        ctx.emit_info("settings.users.password", "Passwords do not match.");
-        return Ok(None);
-    }
-
-    Ok(Some(password1))
+    Ok(Some(password))
 }
 
 /// Set a user's password using chpasswd

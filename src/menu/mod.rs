@@ -410,10 +410,16 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 client::handle_gui_request(&command)
             } else {
                 match FzfWrapper::password(prompt) {
-                    Ok(password) => {
+                    Ok(crate::menu_utils::FzfResult::Selected(password)) => {
                         println!("{password}");
                         Ok(0) // Success
                     }
+                    Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(1), // Cancelled
+                    Ok(crate::menu_utils::FzfResult::Error(e)) => {
+                        eprintln!("Error: {e}");
+                        Ok(2) // Error
+                    }
+                    Ok(_) => Ok(1),
                     Err(e) => {
                         eprintln!("Error: {e}");
                         Ok(2) // Error

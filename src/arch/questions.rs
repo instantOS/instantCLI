@@ -337,45 +337,19 @@ impl Question for PasswordQuestion {
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        loop {
-            // NOTE: FzfWrapper::password currently returns Result<String>, not FzfResult.
-            // It uses `gum` or fallback. `gum` cancellation returns error or empty string?
-            // FzfWrapper::password implementation calls `execute_password`.
-            // `execute_password` returns `Ok(stdout.trim())` or fallback.
-            // If gum is cancelled (Ctrl+C), it might return error or empty.
-            // For now, let's assume if we get empty string (and we require password), it's a cancel?
-            // But password CAN be empty? No, we validate against it.
-            // So if `password()` returns empty, we can treat as cancel?
-            // But `PasswordQuestion` has its own loop for confirmation.
-
-            // Let's try to use `password()` and if it returns empty, treat as cancel.
-
-            let pass1 = match FzfWrapper::password(&format!(
+        let result = FzfWrapper::builder()
+            .prompt(format!(
                 "{} Please enter the password for the new user (and root)",
                 NerdFont::Lock
-            )) {
-                Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
-                Ok(p) => p,
-                Err(_) => return Ok(QuestionResult::Cancelled),
-            };
+            ))
+            .password()
+            .with_confirmation()
+            .password_dialog()?;
 
-            let pass2 = match FzfWrapper::password(&format!(
-                "{} Please confirm the password",
-                NerdFont::Check
-            )) {
-                Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
-                Ok(p) => p,
-                Err(_) => return Ok(QuestionResult::Cancelled),
-            };
-
-            if pass1 == pass2 {
-                return Ok(QuestionResult::Answer(pass1));
-            } else {
-                FzfWrapper::message(&format!(
-                    "{} Passwords do not match. Please try again.",
-                    NerdFont::Warning
-                ))?;
-            }
+        match result {
+            crate::menu_utils::FzfResult::Selected(p) => Ok(QuestionResult::Answer(p)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
         }
     }
 
@@ -497,33 +471,19 @@ impl Question for EncryptionPasswordQuestion {
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        loop {
-            let pass1 = match FzfWrapper::password(&format!(
+        let result = FzfWrapper::builder()
+            .prompt(format!(
                 "{} Please enter the encryption password",
                 NerdFont::Lock
-            )) {
-                Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
-                Ok(p) => p,
-                Err(_) => return Ok(QuestionResult::Cancelled),
-            };
+            ))
+            .password()
+            .with_confirmation()
+            .password_dialog()?;
 
-            let pass2 = match FzfWrapper::password(&format!(
-                "{} Please confirm the encryption password",
-                NerdFont::Check
-            )) {
-                Ok(p) if p.is_empty() => return Ok(QuestionResult::Cancelled),
-                Ok(p) => p,
-                Err(_) => return Ok(QuestionResult::Cancelled),
-            };
-
-            if pass1 == pass2 {
-                return Ok(QuestionResult::Answer(pass1));
-            } else {
-                FzfWrapper::message(&format!(
-                    "{} Passwords do not match. Please try again.",
-                    NerdFont::Warning
-                ))?;
-            }
+        match result {
+            crate::menu_utils::FzfResult::Selected(p) => Ok(QuestionResult::Answer(p)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
         }
     }
 }

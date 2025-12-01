@@ -138,7 +138,14 @@ impl RequestProcessor {
     /// Handle password input request
     fn handle_password_request(&self, prompt: String) -> Result<MenuResponse> {
         match FzfWrapper::password(&prompt) {
-            Ok(password) => Ok(MenuResponse::PasswordResult(password)),
+            Ok(crate::menu_utils::FzfResult::Selected(password)) => {
+                Ok(MenuResponse::PasswordResult(password))
+            }
+            Ok(crate::menu_utils::FzfResult::Cancelled) => Ok(MenuResponse::Cancelled),
+            Ok(crate::menu_utils::FzfResult::Error(e)) => {
+                Ok(MenuResponse::Error(format!("Password error: {e}")))
+            }
+            Ok(_) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!(
                 "Failed to show password dialog: {e}"
             ))),

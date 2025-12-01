@@ -382,11 +382,11 @@ impl FzfWrapper {
         Self::builder().confirm(message).confirm_dialog()
     }
 
-    pub fn password(prompt: &str) -> Result<String> {
+    pub fn password(prompt: &str) -> Result<FzfResult<String>> {
         Self::builder().prompt(prompt).password().password_dialog()
     }
 
-    pub fn password_dialog(prompt: &str) -> Result<String> {
+    pub fn password_dialog(prompt: &str) -> Result<FzfResult<String>> {
         Self::builder().prompt(prompt).password().password_dialog()
     }
 
@@ -399,7 +399,7 @@ impl FzfWrapper {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum FzfResult<T> {
     Selected(T),
     MultiSelected(Vec<T>),
@@ -428,7 +428,9 @@ pub struct FzfBuilder {
 enum DialogType {
     Selection,
     Input,
-    Password,
+    Password {
+        confirm: bool,
+    },
     Confirmation {
         yes_text: String,
         no_text: String,
@@ -493,8 +495,15 @@ impl FzfBuilder {
     }
 
     pub fn password(mut self) -> Self {
-        self.dialog_type = DialogType::Password;
+        self.dialog_type = DialogType::Password { confirm: false };
         self.additional_args = Self::password_args();
+        self
+    }
+
+    pub fn with_confirmation(mut self) -> Self {
+        if let DialogType::Password { ref mut confirm } = self.dialog_type {
+            *confirm = true;
+        }
         self
     }
 
@@ -575,11 +584,13 @@ impl FzfBuilder {
         self.execute_input()
     }
 
-    pub fn password_dialog(self) -> Result<String> {
-        if !matches!(self.dialog_type, DialogType::Password) {
+    pub fn password_dialog(self) -> Result<FzfResult<String>> {
+        let confirm = if let DialogType::Password { confirm } = self.dialog_type {
+            confirm
+        } else {
             return Err(anyhow::anyhow!("Builder not configured for password"));
-        }
-        self.execute_password()
+        };
+        self.execute_password(confirm)
     }
 
     pub fn confirm_dialog(self) -> Result<ConfirmResult> {
@@ -600,7 +611,7 @@ impl FzfBuilder {
         self.select(items)
     }
 
-    pub fn show_password(self) -> Result<String> {
+    pub fn show_password(self) -> Result<FzfResult<String>> {
         self.password_dialog()
     }
 
@@ -678,19 +689,51 @@ impl FzfBuilder {
         }
     }
 
-    fn execute_password(self) -> Result<String> {
+    fn execute_password(self, confirm: bool) -> Result<FzfResult<String>> {
+        loop {
+            let pass1 = self.run_password_prompt(self.prompt.as_deref(), self.header.as_deref())?;
+
+            if !confirm {
+                return Ok(pass1);
+            }
+
+            let pass1_str = match pass1 {
+                FzfResult::Selected(s) => s,
+                _ => return Ok(pass1),
+            };
+
+            let pass2 = self.run_password_prompt(Some("Confirm password"), None)?;
+
+            let pass2_str = match pass2 {
+                FzfResult::Selected(s) => s,
+                _ => return Ok(pass2),
+            };
+
+            if pass1_str == pass2_str {
+                return Ok(FzfResult::Selected(pass1_str));
+            }
+
+            FzfWrapper::message("Passwords do not match. Please try again.")?;
+        }
+    }
+
+    fn run_password_prompt(
+        &self,
+        prompt: Option<&str>,
+        header: Option<&str>,
+    ) -> Result<FzfResult<String>> {
         let mut cmd = Command::new("gum");
         cmd.arg("input").arg("--password");
 
-        if let Some(prompt) = &self.prompt {
-            cmd.arg("--prompt").arg(format!("{prompt} "));
+        if let Some(p) = prompt {
+            cmd.arg("--prompt").arg(format!("{p} "));
         }
 
         cmd.arg("--padding").arg("1 2");
         cmd.arg("--width").arg("60");
 
-        if let Some(header) = &self.header {
-            cmd.arg("--placeholder").arg(header);
+        if let Some(h) = header {
+            cmd.arg("--placeholder").arg(h);
         } else {
             cmd.arg("--placeholder").arg("Enter your password");
         }
@@ -699,28 +742,43 @@ impl FzfBuilder {
             .stdin(Stdio::inherit())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
-            .spawn()?;
+            .spawn();
 
-        let output = child.wait_with_output()?;
+        match child {
+            Ok(mut child) => {
+                let output = child.wait_with_output()?;
 
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            Ok(stdout.trim().to_string())
-        } else {
-            self.fallback_password_input()
+                if let Some(code) = output.status.code() {
+                    if code == 130 || code == 143 {
+                        return Ok(FzfResult::Cancelled);
+                    }
+                }
+
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    Ok(FzfResult::Selected(stdout.trim().to_string()))
+                } else {
+                    self.fallback_password_input(prompt)
+                }
+            }
+            Err(_) => self.fallback_password_input(prompt),
         }
     }
 
-    fn fallback_password_input(&self) -> Result<String> {
+    fn fallback_password_input(&self, prompt: Option<&str>) -> Result<FzfResult<String>> {
         use std::io::Write as _;
 
-        eprint!("{}: ", self.prompt.as_deref().unwrap_or("Enter password"));
+        eprint!("{}: ", prompt.unwrap_or("Enter password"));
         let _ = std::io::stderr().flush();
 
         let mut password = String::new();
-        std::io::stdin().read_line(&mut password)?;
+        let bytes = std::io::stdin().read_line(&mut password)?;
 
-        Ok(password.trim().to_string())
+        if bytes == 0 {
+            return Ok(FzfResult::Cancelled);
+        }
+
+        Ok(FzfResult::Selected(password.trim().to_string()))
     }
 
     fn execute_confirm(self) -> Result<ConfirmResult> {
