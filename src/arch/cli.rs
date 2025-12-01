@@ -198,7 +198,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 println!("  Internet: {}", system_info.internet_connected);
                 println!("  AMD CPU: {}", system_info.has_amd_cpu);
                 println!("  Intel CPU: {}", system_info.has_intel_cpu);
-                println!("  NVIDIA GPU: {}", system_info.has_nvidia_gpu);
+                println!("  GPUs: {:?}", system_info.gpus);
                 println!("  Virtual Machine: {:?}", system_info.vm_type);
 
                 let mut engine = QuestionEngine::new(questions);
@@ -531,29 +531,21 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
     }
 
     // GPUs
-    let mut gpu_list = Vec::new();
-    if info.has_nvidia_gpu {
-        gpu_list.push("NVIDIA");
-    }
-    if info.has_amd_gpu {
-        gpu_list.push("AMD");
-    }
-    if info.has_intel_gpu {
-        gpu_list.push("Intel");
-    }
+    if !info.gpus.is_empty() {
+        let gpu_strs: Vec<String> = info.gpus.iter().map(|gpu| gpu.to_string()).collect();
+        let gpu_str = gpu_strs.join(", ");
 
-    if !gpu_list.is_empty() {
-        let gpu_str = gpu_list.join(", ");
-        let colored_gpu_str = if gpu_list.len() == 1 {
-            match gpu_list[0] {
-                "NVIDIA" => gpu_str.bright_green(),
-                "AMD" => gpu_str.bright_red(),
-                "Intel" => gpu_str.bright_blue(),
-                _ => gpu_str.normal(),
+        let colored_gpu_str = if info.gpus.len() == 1 {
+            match &info.gpus[0] {
+                crate::arch::engine::GpuKind::Nvidia => gpu_str.bright_green(),
+                crate::arch::engine::GpuKind::Amd => gpu_str.bright_red(),
+                crate::arch::engine::GpuKind::Intel => gpu_str.bright_blue(),
+                crate::arch::engine::GpuKind::Other(_) => gpu_str.normal(),
             }
         } else {
             gpu_str.normal()
         };
+
         println!(
             "{} {:<20} {}",
             NerdFont::Monitor.to_string().bright_cyan(),
