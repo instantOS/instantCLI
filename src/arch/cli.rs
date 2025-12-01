@@ -48,6 +48,8 @@ pub enum ArchCommands {
         #[arg(short, long)]
         path: Option<std::path::PathBuf>,
     },
+    /// Show system information in a pretty format
+    Info,
 }
 
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
@@ -325,6 +327,11 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             }
             Ok(())
         }
+        ArchCommands::Info => {
+            let info = crate::arch::engine::SystemInfo::detect();
+            print_system_info(&info);
+            Ok(())
+        }
         ArchCommands::Finished => {
             use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
             use crate::ui::nerd_font::NerdFont;
@@ -479,4 +486,61 @@ fn ensure_root() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("Failed to escalate privileges: {}", e))?;
     }
     Ok(())
+}
+
+fn print_system_info(info: &crate::arch::engine::SystemInfo) {
+    use crate::ui::nerd_font::NerdFont;
+    use colored::*;
+    
+    println!();
+    println!("{} {}", NerdFont::Desktop.to_colored_string(), "System Information".bright_white().bold());
+    println!("{}", "─".repeat(50).bright_black());
+    
+    // Boot Mode
+    let boot_mode_str = match info.boot_mode {
+        crate::arch::engine::BootMode::UEFI64 => "UEFI 64-bit",
+        crate::arch::engine::BootMode::UEFI32 => "UEFI 32-bit", 
+        crate::arch::engine::BootMode::BIOS => "BIOS",
+    };
+    println!("{} {:<20} {}", NerdFont::PowerOff.to_colored_string(), "Boot Mode:", boot_mode_str.bright_green());
+    
+    // CPU
+    if info.has_intel_cpu {
+        println!("{} {:<20} {}", NerdFont::Cpu.to_colored_string(), "CPU:", "Intel".bright_blue());
+    } else if info.has_amd_cpu {
+        println!("{} {:<20} {}", NerdFont::Cpu.to_colored_string(), "CPU:", "AMD".bright_red());
+    }
+    
+    // GPUs
+    let mut gpu_list = Vec::new();
+    if info.has_nvidia_gpu {
+        gpu_list.push("NVIDIA".bright_green());
+    }
+    if info.has_amd_gpu {
+        gpu_list.push("AMD".bright_red());
+    }
+    if info.has_intel_gpu {
+        gpu_list.push("Intel".bright_blue());
+    }
+    
+    if !gpu_list.is_empty() {
+        println!("{} {:<20} {}", NerdFont::Monitor.to_colored_string(), "GPU:", gpu_list.join(", "));
+    }
+    
+    // Virtualization
+    if let Some(vm_type) = &info.vm_type {
+        println!("{} {:<20} {}", NerdFont::Server.to_colored_string(), "Virtualization:", format!("{} ({})", vm_type.bright_yellow(), "Virtual Machine".bright_black()));
+    } else {
+        println!("{} {:<20} {}", NerdFont::Server.to_colored_string(), "Virtualization:", "Bare Metal".bright_green());
+    }
+    
+    // Internet
+    if info.internet_connected {
+        println!("{} {:<20} {}", NerdFont::Globe.to_colored_string(), "Internet:", "Connected".bright_green());
+    } else {
+        println!("{} {:<20} {}", NerdFont::Globe.to_colored_string(), "Internet:", "Disconnected".bright_red());
+    }
+    
+    println!("{}", "─".repeat(50).bright_black());
+    println!();
 }

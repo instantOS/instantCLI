@@ -81,17 +81,37 @@ impl SystemInfo {
             info.has_intel_cpu = cpuinfo.contains("GenuineIntel");
         }
 
-        // GPU check (simple lspci check)
-        if let Ok(lspci) = std::process::Command::new("lspci").output() {
-            let output = String::from_utf8_lossy(&lspci.stdout);
-            info.has_nvidia_gpu = output.to_lowercase().contains("nvidia");
-            info.has_amd_gpu = output.to_lowercase().contains("amd")
-                || output.to_lowercase().contains("radeon")
-                || output.to_lowercase().contains("advanced micro devices");
-            info.has_intel_gpu = output.to_lowercase().contains("intel")
-                || output.to_lowercase().contains("integrated graphics")
-                || output.to_lowercase().contains("hd graphics")
-                || output.to_lowercase().contains("iris");
+        // GPU check using /sys/class/drm/ approach
+        if let Ok(drm_entries) = std::fs::read_dir("/sys/class/drm") {
+            for entry in drm_entries.flatten() {
+                if let Ok(path) = entry.path().join("device").read_link() {
+                    if let Some(path_str) = path.to_str() {
+                        let path_lower = path_str.to_lowercase();
+                        if path_lower.contains("nvidia") {
+                            info.has_nvidia_gpu = true;
+                        } else if path_lower.contains("amd") || path_lower.contains("radeon") {
+                            info.has_amd_gpu = true;
+                        } else if path_lower.contains("intel") {
+                            info.has_intel_gpu = true;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Fallback to lspci if drm detection didn't find anything
+        if !info.has_nvidia_gpu && !info.has_amd_gpu && !info.has_intel_gpu {
+            if let Ok(lspci) = std::process::Command::new("lspci").output() {
+                let output = String::from_utf8_lossy(&lspci.stdout);
+                info.has_nvidia_gpu = output.to_lowercase().contains("nvidia");
+                info.has_amd_gpu = output.to_lowercase().contains("amd")
+                    || output.to_lowercase().contains("radeon")
+                    || output.to_lowercase().contains("advanced micro devices");
+                info.has_intel_gpu = output.to_lowercase().contains("intel")
+                    || output.to_lowercase().contains("integrated graphics")
+                    || output.to_lowercase().contains("hd graphics")
+                    || output.to_lowercase().contains("iris");
+            }
         }
 
         // VM check
