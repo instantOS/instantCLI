@@ -75,6 +75,18 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
         println!("Detected AMD GPU, adding vulkan support");
         packages.push("vulkan-radeon");
         packages.push("lib32-vulkan-radeon");
+        // Optional AMD GPU packages for better support
+        packages.push("libva-mesa-driver");
+        packages.push("lib32-libva-mesa-driver");
+    }
+
+    // Intel GPU
+    if context.system_info.has_intel_gpu {
+        println!("Detected Intel GPU, adding vulkan support");
+        packages.push("vulkan-intel");
+        packages.push("lib32-vulkan-intel");
+        // Intel media driver for video acceleration
+        packages.push("intel-media-driver");
     }
 
     // VM Guest Tools

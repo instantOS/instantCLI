@@ -49,6 +49,7 @@ pub struct SystemInfo {
     pub has_intel_cpu: bool,
     pub has_nvidia_gpu: bool,
     pub has_amd_gpu: bool,
+    pub has_intel_gpu: bool,
     pub vm_type: Option<String>,
     pub internet_connected: bool,
 }
@@ -85,6 +86,7 @@ impl SystemInfo {
             let output = String::from_utf8_lossy(&lspci.stdout);
             info.has_nvidia_gpu = output.to_lowercase().contains("nvidia");
             info.has_amd_gpu = output.to_lowercase().contains("amd") || output.to_lowercase().contains("radeon") || output.to_lowercase().contains("advanced micro devices");
+            info.has_intel_gpu = output.to_lowercase().contains("intel") || output.to_lowercase().contains("integrated graphics") || output.to_lowercase().contains("hd graphics") || output.to_lowercase().contains("iris");
         }
 
         // VM check
