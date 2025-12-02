@@ -35,7 +35,11 @@ pub enum DotCommands {
         all: bool,
     },
     /// Pull updates for all configured repos and apply changes
-    Update,
+    Update {
+        /// Do not apply dotfiles after updating
+        #[arg(long)]
+        no_apply: bool,
+    },
     /// Check dotfile status
     Status {
         /// Optional path to a dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
@@ -212,8 +216,8 @@ pub fn handle_dot_command(
         DotCommands::Add { path, all } => {
             super::add_dotfile(&config, &db, path, *all)?;
         }
-        DotCommands::Update => {
-            super::update_all(&config, debug)?;
+        DotCommands::Update { no_apply } => {
+            super::update_all(&config, debug, &db, !*no_apply)?;
         }
         DotCommands::Status { path, all } => {
             super::status_all(&config, debug, path.as_deref(), &db, *all)?;

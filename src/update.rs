@@ -48,7 +48,10 @@ pub async fn handle_update_command(debug: bool) -> Result<()> {
         None,
     );
 
-    dot::update_all(&dot::config::Config::load(None)?, debug)?;
+    let config = dot::config::Config::load(None)?;
+    config.ensure_directories()?;
+    let db = dot::db::Database::new(config.database_path().to_path_buf())?;
+    dot::update_all(&config, debug, &db, true)?;
 
     emit(
         Level::Success,

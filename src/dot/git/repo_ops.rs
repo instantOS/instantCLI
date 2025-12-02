@@ -117,7 +117,12 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
     Ok(target)
 }
 
-pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
+pub fn update_all(
+    cfg: &config::Config,
+    debug: bool,
+    db: &crate::dot::db::Database,
+    should_apply: bool,
+) -> Result<()> {
     let repos = cfg.repos.clone();
     if repos.is_empty() {
         println!("No repos configured.");
@@ -139,6 +144,10 @@ pub fn update_all(cfg: &config::Config, debug: bool) -> Result<()> {
             }
             any_failed = true;
         }
+    }
+
+    if should_apply {
+        crate::dot::operations::apply_all(cfg, db)?;
     }
 
     if any_failed {
