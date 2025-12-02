@@ -117,6 +117,14 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             .optional()
             .default_yes(),
         ),
+        Box::new(
+            BooleanQuestion::new(
+                crate::arch::engine::QuestionId::MinimalMode,
+                "Enable Minimal Mode (Vanilla Arch Install)?",
+                crate::ui::nerd_font::NerdFont::Package,
+            )
+            .optional(),
+        ),
     ];
 
     match command {

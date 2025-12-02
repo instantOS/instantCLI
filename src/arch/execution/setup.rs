@@ -11,20 +11,28 @@ pub async fn setup_instantos(
 ) -> Result<()> {
     println!("Setting up instantOS...");
 
-    setup_instant_repo(executor).await?;
+    let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
+
+    if !minimal_mode {
+        setup_instant_repo(executor).await?;
+    }
 
     // Install extended packages (GUI, tools, drivers)
     install_packages(context, executor)?;
 
-    update_os_release(executor)?;
+    if !minimal_mode {
+        update_os_release(executor)?;
+    }
 
     // Determine username: override > context > SUDO_USER
     let username = override_user.or_else(|| context.get_answer(&QuestionId::Username).cloned());
 
-    if let Some(user) = username {
-        setup_user_dotfiles(&user, executor)?;
-    } else {
-        println!("Skipping dotfiles setup: No user specified and SUDO_USER not found.");
+    if !minimal_mode {
+        if let Some(user) = username {
+            setup_user_dotfiles(&user, executor)?;
+        } else {
+            println!("Skipping dotfiles setup: No user specified and SUDO_USER not found.");
+        }
     }
 
     enable_services(executor, context)?;
@@ -53,19 +61,29 @@ async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
 fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Installing extended packages...");
 
-    let mut packages = vec![
-        "sway",
-        "openssh",
-        "mesa",
-        "xorg-xwayland",
-        "polkit",
-        // instantOS packages
-        "instantdepend",
-        "instantos",
-        "instantextra",
-        "lightdm",
-        "lightdm-gtk-greeter",
-    ];
+    let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
+
+    let mut packages = if minimal_mode {
+        vec![
+            "openssh",
+            "mesa",
+            "polkit",
+        ]
+    } else {
+        vec![
+            "sway",
+            "openssh",
+            "mesa",
+            "xorg-xwayland",
+            "polkit",
+            // instantOS packages
+            "instantdepend",
+            "instantos",
+            "instantextra",
+            "lightdm",
+            "lightdm-gtk-greeter",
+        ]
+    };
 
     // GPU packages
     for gpu in &context.system_info.gpus {
@@ -206,7 +224,7 @@ fn enable_services(executor: &CommandExecutor, context: &InstallContext) -> Resu
         }
     }
 
-    if !other_dm_enabled {
+    if !other_dm_enabled && !context.get_answer_bool(QuestionId::MinimalMode) {
         services.push("lightdm");
 
         // Handle Autologin

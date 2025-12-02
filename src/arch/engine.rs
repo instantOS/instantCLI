@@ -26,6 +26,7 @@ pub enum QuestionId {
     ConfirmInstall,
     VirtualBoxWarning,
     WeakPasswordWarning,
+    MinimalMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
