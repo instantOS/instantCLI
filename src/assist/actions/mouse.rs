@@ -14,6 +14,12 @@ pub fn mouse_speed_slider() -> Result<()> {
         );
     }
 
+    // Ensure accel profile is flat
+    Command::new("swaymsg")
+        .arg("input type:pointer accel_profile flat")
+        .output()
+        .context("Failed to set mouse accel profile to flat")?;
+
     // Detect current speed
     let current_speed = get_sway_mouse_speed().unwrap_or(0.0);
 
