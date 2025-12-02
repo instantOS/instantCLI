@@ -1,6 +1,6 @@
+use crate::common::compositor::CompositorType;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
-use crate::common::compositor::CompositorType;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::process::Command;
@@ -8,7 +8,10 @@ use std::process::Command;
 pub fn mouse_speed_slider() -> Result<()> {
     let compositor = CompositorType::detect();
     if compositor != CompositorType::Sway {
-        anyhow::bail!("Mouse speed adjustment is currently only supported on Sway. Detected: {}", compositor.name());
+        anyhow::bail!(
+            "Mouse speed adjustment is currently only supported on Sway. Detected: {}",
+            compositor.name()
+        );
     }
 
     // Detect current speed
@@ -51,11 +54,11 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
 
     // Apply to sway
     // swaymsg input type:pointer pointer_accel <value>
+    // Need to pass as a single argument to avoid swaymsg interpreting negative values as options
+    let sway_command = format!("input type:pointer pointer_accel {}", speed);
+
     Command::new("swaymsg")
-        .arg("input")
-        .arg("type:pointer")
-        .arg("pointer_accel")
-        .arg(speed.to_string())
+        .arg(sway_command)
         .output()
         .context("Failed to set mouse speed")?;
 
