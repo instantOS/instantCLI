@@ -55,15 +55,13 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
         config.replace_hook("udev", "systemd");
     }
 
-    // Add Plymouth hook if enabled
-    if use_plymouth {
-        // Plymouth should be after systemd but before encrypt/sd-encrypt
-        if config.contains_hook("systemd") {
-            config.insert_after("plymouth", "systemd");
-        } else {
-            config.insert_after("plymouth", "base");
-        }
-    }
+    // Plymouth should be after systemd but before encrypt/sd-encrypt
+    // And definitely before sd-encrypt to show password prompt
+    config.ensure_hook_position(
+        "plymouth",
+        &["base", "systemd", "udev"],       // After these
+        &["sd-encrypt", "encrypt", "lvm2"], // Before these
+    );
 
     // Ensure keyboard and keymap/sd-vconsole are present
     if !config.contains_hook("sd-vconsole") {

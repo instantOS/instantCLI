@@ -108,6 +108,148 @@ impl MkinitcpioConfig {
         self.hooks.iter().any(|h| h == hook)
     }
 
+    pub fn ensure_hook_position(&mut self, hook: &str, after: &[&str], before: &[&str]) {
+        self.ensure_hook(hook);
+
+        let mut changed = true;
+        // Simple iterative approach to satisfy constraints
+        // We limit iterations to avoid infinite loops in case of cyclic dependencies (though unlikely here)
+        for _ in 0..10 {
+            if !changed {
+                break;
+            }
+            changed = false;
+
+            let current_idx = self.hooks.iter().position(|h| h == hook).unwrap();
+
+            // Check 'after' constraints
+            let mut max_after_idx = -1isize;
+            for &a in after {
+                if let Some(idx) = self.hooks.iter().position(|h| h == a) {
+                    if (idx as isize) > max_after_idx {
+                        max_after_idx = idx as isize;
+                    }
+                }
+            }
+
+            if max_after_idx >= current_idx as isize {
+                // Need to move hook after max_after_idx
+                let removed = self.hooks.remove(current_idx);
+                self.hooks.insert((max_after_idx) as usize, removed); // insert at same index pushes it after? No.
+                // If we want it AFTER index X, we insert at X+1.
+                // But we removed it.
+                // Example: [A, B, HOOK], max_after is B (1). current is 2. 1 < 2. OK.
+                // Example: [HOOK, A, B]. max_after is B (2). current is 0. 2 >= 0. Move.
+                // Remove HOOK -> [A, B]. Insert at 2+1? No, indices shifted.
+                // Let's re-evaluate indices after removal? Or just use swap?
+                // Easier: Remove, then insert at target.
+                // Target: max_after_idx. If we insert at max_after_idx + 1 (original index), it will be after.
+                // But wait, if we remove, indices > current_idx shift down.
+                // If max_after_idx > current_idx, it shifts down by 1.
+                // So target index in new list is max_after_idx.
+                // insert(i, e) inserts before element at i. So to be after element at i, insert at i+1.
+                // So target is max_after_idx.
+                // Let's verify. [H, A]. remove H -> [A]. A is at 0. max_after is A (0).
+                // We want [A, H]. Insert at 1.
+                // max_after_idx (original) = 1.
+                // So insert at max_after_idx.
+
+                // Let's just do: remove, then find index of 'after' again, then insert after it.
+                // This is safer.
+                // But we have multiple 'after's.
+                // We know max_after_idx was the constraint violator.
+                // Let's just move it to the end, then check 'before' constraints?
+                // Or move it strictly after the constraint.
+
+                // Let's use a simpler logic:
+                // 1. Remove hook.
+                // 2. Calculate valid range [min, max].
+                //    min = max(indices of 'after') + 1
+                //    max = min(indices of 'before') (if exists, else len)
+                // 3. Insert at max(min, current_idx) clamped to max?
+                //    Actually we just want to satisfy constraints.
+                //    If we just place it at 'min', it satisfies 'after'.
+                //    Does it satisfy 'before'? Hopefully.
+
+                let removed = self.hooks.remove(current_idx);
+
+                let mut min_idx = 0;
+                for &a in after {
+                    if let Some(idx) = self.hooks.iter().position(|h| h == a) {
+                        if idx + 1 > min_idx {
+                            min_idx = idx + 1;
+                        }
+                    }
+                }
+
+                let mut max_idx = self.hooks.len();
+                for &b in before {
+                    if let Some(idx) = self.hooks.iter().position(|h| h == b) {
+                        if idx < max_idx {
+                            max_idx = idx;
+                        }
+                    }
+                }
+
+                // If min > max, we have a conflict. We prioritize 'after' (dependencies) usually?
+                // Or just clamp.
+                let target = if min_idx > max_idx {
+                    min_idx // Conflict, but respect 'after'
+                } else {
+                    // Try to keep it close to where it was, or just put it at min?
+                    // Putting it at min is safe.
+                    min_idx
+                };
+
+                self.hooks.insert(target, removed);
+                changed = true;
+            } else {
+                // Check 'before' constraints
+                let mut min_before_idx = self.hooks.len() as isize;
+                for &b in before {
+                    if let Some(idx) = self.hooks.iter().position(|h| h == b) {
+                        if (idx as isize) < min_before_idx {
+                            min_before_idx = idx as isize;
+                        }
+                    }
+                }
+
+                if min_before_idx <= current_idx as isize {
+                    // Need to move hook before min_before_idx
+                    let removed = self.hooks.remove(current_idx);
+
+                    // Re-calculate indices
+                    let mut min_idx = 0;
+                    for &a in after {
+                        if let Some(idx) = self.hooks.iter().position(|h| h == a) {
+                            if idx + 1 > min_idx {
+                                min_idx = idx + 1;
+                            }
+                        }
+                    }
+
+                    let mut max_idx = self.hooks.len();
+                    for &b in before {
+                        if let Some(idx) = self.hooks.iter().position(|h| h == b) {
+                            if idx < max_idx {
+                                max_idx = idx;
+                            }
+                        }
+                    }
+
+                    let target = if max_idx < min_idx {
+                        max_idx // Conflict, respect 'before' this time? No, let's stick to valid range logic.
+                    } else {
+                        max_idx
+                    };
+
+                    self.hooks.insert(target, removed);
+                    changed = true;
+                }
+            }
+        }
+    }
+
     pub fn to_string(&self) -> String {
         let mut lines: Vec<String> = self.original_content.lines().map(String::from).collect();
 
