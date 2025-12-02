@@ -175,9 +175,10 @@ fn configure_grub_plymouth(_context: &InstallContext, executor: &CommandExecutor
     let grub_default = "/etc/default/grub";
     let content = std::fs::read_to_string(grub_default)?;
 
-    // Add splash and quiet parameters for Plymouth
-    let param = "splash quiet";
-    let new_content = add_grub_kernel_param(&content, param);
+    // Add splash and quiet parameters for Plymouth to GRUB_CMDLINE_LINUX_DEFAULT
+    // This is where splash usually goes in Arch
+    let param = "splash";
+    let new_content = add_grub_param(&content, "GRUB_CMDLINE_LINUX_DEFAULT", param);
 
     std::fs::write(grub_default, new_content)?;
 
@@ -216,11 +217,15 @@ fn configure_grub_theme(_context: &InstallContext, executor: &CommandExecutor) -
     Ok(())
 }
 
-fn add_grub_kernel_param(content: &str, param: &str) -> String {
+fn add_grub_param(content: &str, key: &str, param: &str) -> String {
     let mut new_lines = Vec::new();
+    let mut found = false;
+    let key_eq = format!("{}=", key);
+
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("GRUB_CMDLINE_LINUX=") {
+        if trimmed.starts_with(&key_eq) {
+            found = true;
             // Split key and value
             let parts: Vec<&str> = line.splitn(2, '=').collect();
             if parts.len() != 2 {
@@ -228,7 +233,6 @@ fn add_grub_kernel_param(content: &str, param: &str) -> String {
                 continue;
             }
 
-            let key = parts[0];
             let val = parts[1];
 
             // Detect quotes
@@ -243,16 +247,31 @@ fn add_grub_kernel_param(content: &str, param: &str) -> String {
             let new_val = if inner_val.is_empty() {
                 param.to_string()
             } else {
-                format!("{} {}", inner_val, param)
+                // Check if param is already present to avoid duplication
+                if inner_val.contains(param) {
+                    inner_val.to_string()
+                } else {
+                    format!("{} {}", inner_val, param)
+                }
             };
 
             // Reconstruct with double quotes for safety
-            new_lines.push(format!("{}=\"{}\"", key, new_val));
+            new_lines.push(format!("{}=\"{}\"", parts[0], new_val));
         } else {
             new_lines.push(line.to_string());
         }
     }
+
+    if !found {
+        // If not found, add it
+        new_lines.push(format!("{}=\"{}\"", key, param));
+    }
+
     new_lines.join("\n")
+}
+
+fn add_grub_kernel_param(content: &str, param: &str) -> String {
+    add_grub_param(content, "GRUB_CMDLINE_LINUX", param)
 }
 
 #[cfg(test)]
@@ -260,35 +279,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_add_grub_kernel_param() {
-        let param = "rd.luks.name=123=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap";
+    fn test_add_grub_param() {
+        let param = "test_param";
+        let key = "TEST_KEY";
 
         // Case 1: Empty value
+        let input = "TEST_KEY=\"\"";
+        let expected = format!("TEST_KEY=\"{}\"", param);
+        assert_eq!(add_grub_param(input, key, param), expected);
+
+        // Case 2: Existing value
+        let input = "TEST_KEY=\"existing\"";
+        let expected = format!("TEST_KEY=\"existing {}\"", param);
+        assert_eq!(add_grub_param(input, key, param), expected);
+
+        // Case 3: Already present
+        let input = "TEST_KEY=\"existing test_param\"";
+        let expected = "TEST_KEY=\"existing test_param\"";
+        assert_eq!(add_grub_param(input, key, param), expected);
+
+        // Case 4: Not present in file
+        let input = "OTHER_KEY=1";
+        let expected = format!("OTHER_KEY=1\nTEST_KEY=\"{}\"", param);
+        assert_eq!(add_grub_param(input, key, param), expected);
+
+        // Case 5: Existing value with single quotes
+        let input = "TEST_KEY='existing'";
+        let expected = format!("TEST_KEY=\"existing {}\"", param);
+        assert_eq!(add_grub_param(input, key, param), expected);
+
+        // Case 6: No quotes
+        let input = "TEST_KEY=existing";
+        let expected = format!("TEST_KEY=\"existing {}\"", param);
+        assert_eq!(add_grub_param(input, key, param), expected);
+
+        // Case 7: Multiple lines
+        let input = "GRUB_DEFAULT=0\nTEST_KEY=\"\"\nGRUB_TIMEOUT=5";
+        let expected = format!("GRUB_DEFAULT=0\nTEST_KEY=\"{}\"\nGRUB_TIMEOUT=5", param);
+        assert_eq!(add_grub_param(input, key, param), expected);
+    }
+
+    #[test]
+    fn test_add_grub_kernel_param() {
+        let param = "rd.luks.name=123=cryptlvm root=/dev/mapper/instantOS-root resume=/dev/mapper/instantOS-swap";
         let input = "GRUB_CMDLINE_LINUX=\"\"";
         let expected = format!("GRUB_CMDLINE_LINUX=\"{}\"", param);
         assert_eq!(add_grub_kernel_param(input, param), expected);
 
-        // Case 2: Existing value with double quotes
         let input = "GRUB_CMDLINE_LINUX=\"quiet splash\"";
         let expected = format!("GRUB_CMDLINE_LINUX=\"quiet splash {}\"", param);
-        assert_eq!(add_grub_kernel_param(input, param), expected);
-
-        // Case 3: Existing value with single quotes
-        let input = "GRUB_CMDLINE_LINUX='quiet splash'";
-        let expected = format!("GRUB_CMDLINE_LINUX=\"quiet splash {}\"", param);
-        assert_eq!(add_grub_kernel_param(input, param), expected);
-
-        // Case 4: No quotes
-        let input = "GRUB_CMDLINE_LINUX=quiet";
-        let expected = format!("GRUB_CMDLINE_LINUX=\"quiet {}\"", param);
-        assert_eq!(add_grub_kernel_param(input, param), expected);
-
-        // Case 5: Multiple lines
-        let input = "GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX=\"\"\nGRUB_TIMEOUT=5";
-        let expected = format!(
-            "GRUB_DEFAULT=0\nGRUB_CMDLINE_LINUX=\"{}\"\nGRUB_TIMEOUT=5",
-            param
-        );
         assert_eq!(add_grub_kernel_param(input, param), expected);
     }
 }

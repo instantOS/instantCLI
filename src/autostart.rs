@@ -93,7 +93,11 @@ pub async fn run(debug: bool) -> Result<()> {
         if debug {
             println!("Internet connection detected, running dot update");
         }
-        crate::dot::commands::handle_dot_command(&DotCommands::Update, None, debug)?;
+        crate::dot::commands::handle_dot_command(
+            &DotCommands::Update { no_apply: false },
+            None,
+            debug,
+        )?;
     } else if debug {
         println!("No internet connection detected");
     }

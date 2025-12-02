@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.14](https://github.com/instantOS/instantCLI/compare/v0.7.13...v0.7.14) - 2025-12-01
+
+### Other
+
+- better password loop
+- init warnings
+- more plans
+- better inf arch info print
+- add distro to `ins arch info`
+- better looking `ins arch info`
+- add architecture detection to instantARCH
+- move more stuff to GpuKind
+- add GpuKind enum
+- fmt
+- init arch info
+- fmt
+- add intel GPU support
+- amd detection
+- better vm support
+- auto install drivers
+- make plymouth on the default
+- fmt
+- refactor boolean questions
+- simplify initramfs handling
+- init plymouth
+
 ## [0.7.13](https://github.com/instantOS/instantCLI/compare/v0.7.12...v0.7.13) - 2025-11-30
 
 ### Fixed
