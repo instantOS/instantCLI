@@ -231,12 +231,6 @@ fn scan_and_categorize_files(
 
 /// Update a single tracked dotfile and return whether it was updated or unchanged
 fn update_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<bool> {
-    let was_modified = !dotfile.is_target_unmodified(db)?;
-
-    if !was_modified {
-        return Ok(false); // unchanged
-    }
-
     let old_source_hash = if dotfile.source_path.exists() {
         Some(Dotfile::compute_hash(&dotfile.source_path)?)
     } else {

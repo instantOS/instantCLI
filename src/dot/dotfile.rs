@@ -15,6 +15,13 @@ fn get_hash_cache() -> &'static Mutex<HashMap<String, String>> {
     HASH_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn invalidate_cache(path: &Path) {
+    let path_str = path.to_string_lossy().to_string();
+    if let Ok(mut cache) = get_hash_cache().lock() {
+        cache.remove(&path_str);
+    }
+}
+
 #[derive(Clone)]
 pub struct Dotfile {
     pub source_path: PathBuf,
@@ -179,6 +186,7 @@ impl Dotfile {
         }
 
         fs::copy(&self.source_path, &self.target_path)?;
+        invalidate_cache(&self.target_path);
 
         // After applying, record the target hash with source_file=false since we just copied from source
         let source_hash = self.get_file_hash(&self.source_path, true, db)?;
@@ -188,8 +196,22 @@ impl Dotfile {
     }
 
     pub fn fetch(&self, db: &Database) -> Result<(), anyhow::Error> {
-        if !self.is_target_unmodified(db)? {
+        if !self.target_path.exists() {
+            return Ok(());
+        }
+
+        let target_hash = self.get_file_hash(&self.target_path, false, db)?;
+
+        let should_copy = if self.source_path.exists() {
+            let source_hash = self.get_file_hash(&self.source_path, true, db)?;
+            target_hash != source_hash
+        } else {
+            true
+        };
+
+        if should_copy {
             fs::copy(&self.target_path, &self.source_path)?;
+            invalidate_cache(&self.source_path);
             let _ = self.get_file_hash(&self.target_path, false, db);
         }
         Ok(())
@@ -206,6 +228,7 @@ impl Dotfile {
 
         // Force copy source -> target, overwriting any modifications
         fs::copy(&self.source_path, &self.target_path)?;
+        invalidate_cache(&self.target_path);
 
         // After reset, record the target hash with source_file=false since we just copied from source
         let source_hash = self.get_file_hash(&self.source_path, true, db)?;
@@ -224,6 +247,7 @@ impl Dotfile {
 
         // Copy target -> source
         fs::copy(&self.target_path, &self.source_path)?;
+        invalidate_cache(&self.source_path);
 
         // Compute the hash of the copied content
         let hash = Self::compute_hash(&self.source_path)?;
@@ -273,5 +297,35 @@ mod tests {
             fs::read_to_string(repo_path.join("test.txt")).unwrap(),
             "modified"
         );
+    }
+
+    #[test]
+    fn test_fetch_updates_hash_cache() {
+        let dir = tempdir().unwrap();
+        let repo_path = dir.path().join("repo");
+        let target_path = dir.path().join("target");
+        fs::create_dir_all(&repo_path).unwrap();
+        fs::create_dir_all(&target_path).unwrap();
+
+        fs::write(repo_path.join("test.txt"), "initial").unwrap();
+        fs::write(target_path.join("test.txt"), "modified").unwrap();
+
+        let db_path = dir.path().join("test.db");
+        let db = Database::new(db_path).unwrap();
+        let dotfile = Dotfile {
+            source_path: repo_path.join("test.txt"),
+            target_path: target_path.join("test.txt"),
+        };
+
+        // 1. Compute hash of source (populates cache with "initial")
+        let initial_hash = Dotfile::compute_hash(&dotfile.source_path).unwrap();
+
+        // 2. Fetch (updates source file to "modified")
+        dotfile.fetch(&db).unwrap();
+
+        // 3. Compute hash of source again (should return hash of "modified")
+        let new_hash = Dotfile::compute_hash(&dotfile.source_path).unwrap();
+
+        assert_ne!(initial_hash, new_hash, "Hash should change after fetch");
     }
 }
