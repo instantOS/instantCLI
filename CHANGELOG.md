@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/instantOS/instantCLI/compare/v0.8.0...v0.8.1) - 2025-12-02
+
+### Fixed
+
+- fix swaymsg bug
+- fix mouse assist
+
+### Other
+
+- better icons
+- refactor questions
+- validate ESP partition
+- make mouse accell flat
+- init manual partitioning
+- init mouse instantassist
+- add mouse plan
+- fmt
+- init color picker assist
+- skip plymouth in minimal mode
+- refactor minimal mode
+- init minimal mode
+- allow dynamic defaults for booleanquestions
+- make lightdm question a boolquestion
+- configure lightdm
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- set GRUB theme
+
 ## [0.7.14](https://github.com/instantOS/instantCLI/compare/v0.7.13...v0.7.14) - 2025-12-01
 
 ### Other
