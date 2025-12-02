@@ -63,27 +63,20 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
 
     let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
 
-    let mut packages = if minimal_mode {
-        vec![
-            "openssh",
-            "mesa",
-            "polkit",
-        ]
-    } else {
-        vec![
+    let mut packages = vec!["openssh", "mesa", "polkit"];
+
+    if !minimal_mode {
+        packages.extend(vec![
             "sway",
-            "openssh",
-            "mesa",
             "xorg-xwayland",
-            "polkit",
             // instantOS packages
             "instantdepend",
             "instantos",
             "instantextra",
             "lightdm",
             "lightdm-gtk-greeter",
-        ]
-    };
+        ]);
+    }
 
     // GPU packages
     for gpu in &context.system_info.gpus {
