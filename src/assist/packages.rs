@@ -58,6 +58,16 @@ pub(super) static LIBNOTIFY: RequiredPackage = RequiredPackage {
     )],
 };
 
+pub(super) static HYPRPICKER: RequiredPackage = pkg!("hyprpicker");
+pub(super) static XCOLOR: RequiredPackage = RequiredPackage {
+    name: "xcolor",
+    arch_package_name: Some("xcolor"),
+    ubuntu_package_name: None, // Not available in Ubuntu repos, needs cargo install
+    tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+        "xcolor",
+    )],
+};
+
 pub(super) static EMOTE: FlatpakPackage = FlatpakPackage {
     name: "Emote",
     app_id: "com.tomjwatson.Emote",

@@ -114,6 +114,21 @@ pub const ASSISTS: &[AssistEntry] = &[
         dependencies: &[Dependency::flatpak(&EMOTE)],
         execute: actions::emoji::emoji_picker,
     }),
+    AssistEntry::Action(AssistAction {
+        key: 'k',
+        description: "Color Picker: Pick color from screen",
+        icon: NerdFont::Palette,
+        dependencies: &[
+            Dependency::os(&HYPRPICKER),
+            Dependency::os(&XCOLOR),
+            Dependency::os(&GRABC),
+            Dependency::os(&IMAGEMAGICK),
+            Dependency::os(&WL_CLIPBOARD),
+            Dependency::os(&XCLIP),
+            Dependency::os(&LIBNOTIFY),
+        ],
+        execute: actions::color_picker::pick_color,
+    }),
     AssistEntry::Group(AssistGroup {
         key: 's',
         description: "Screenshot: Screenshot and annotation tools",
@@ -410,6 +425,16 @@ mod tests {
         assert_eq!(
             action.unwrap().description,
             "Emoji Picker: Open emoji picker"
+        );
+    }
+
+    #[test]
+    fn test_find_color_picker_action() {
+        let action = find_action("k");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Color Picker: Pick color from screen"
         );
     }
 
