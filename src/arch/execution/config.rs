@@ -67,29 +67,29 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
     if !config.contains_hook("sd-vconsole") {
         if config.contains_hook("keymap") {
             config.replace_hook("keymap", "sd-vconsole");
-        } else if config.contains_hook("keyboard") {
-            config.insert_after("sd-vconsole", "keyboard");
         } else {
-            // Fallback if neither exists, though usually keyboard is there
-            config.ensure_hook("sd-vconsole");
+            // Ensure sd-vconsole comes after keyboard (or just add it if keyboard not present)
+            config.ensure_hook_position("sd-vconsole", &["keyboard"], &[]);
         }
     }
 
     // Remove consolefont if present as sd-vconsole handles it
     config.remove_hook("consolefont");
 
-    // Add encryption hooks
+    // Add encryption hooks in correct order: block -> sd-encrypt -> lvm2 -> resume -> filesystems
     if use_encryption {
         if config.contains_hook("block") && config.contains_hook("filesystems") {
             // Replace legacy encrypt hook if present
             if config.contains_hook("encrypt") {
                 config.replace_hook("encrypt", "sd-encrypt");
             } else {
-                // Add sd-encrypt after block
-                config.insert_after("sd-encrypt", "block");
-                config.insert_after("lvm2", "sd-encrypt");
-                config.insert_after("resume", "lvm2");
+                config.ensure_hook("sd-encrypt");
             }
+
+            // Ensure correct ordering for full disk encryption with LVM and resume
+            config.ensure_hook_position("sd-encrypt", &["block"], &["filesystems"]);
+            config.ensure_hook_position("lvm2", &["sd-encrypt"], &["filesystems"]);
+            config.ensure_hook_position("resume", &["lvm2"], &["filesystems"]);
         }
     }
 

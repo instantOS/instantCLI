@@ -80,18 +80,6 @@ impl MkinitcpioConfig {
         }
     }
 
-    pub fn ensure_order(&mut self, before: &str, after: &str) {
-        if let (Some(before_idx), Some(after_idx)) = (
-            self.hooks.iter().position(|h| h == before),
-            self.hooks.iter().position(|h| h == after),
-        ) {
-            if before_idx > after_idx {
-                let removed = self.hooks.remove(before_idx);
-                self.hooks.insert(after_idx, removed);
-            }
-        }
-    }
-
     pub fn insert_after(&mut self, hook: &str, after: &str) {
         if self.contains_hook(hook) {
             self.remove_hook(hook);
@@ -112,8 +100,7 @@ impl MkinitcpioConfig {
         self.ensure_hook(hook);
 
         let mut changed = true;
-        // Simple iterative approach to satisfy constraints
-        // We limit iterations to avoid infinite loops in case of cyclic dependencies (though unlikely here)
+        // Iteratively reposition the hook to satisfy all constraints
         for _ in 0..10 {
             if !changed {
                 break;
@@ -122,7 +109,7 @@ impl MkinitcpioConfig {
 
             let current_idx = self.hooks.iter().position(|h| h == hook).unwrap();
 
-            // Check 'after' constraints
+            // Find the rightmost 'after' constraint (hook must come after this)
             let mut max_after_idx = -1isize;
             for &a in after {
                 if let Some(idx) = self.hooks.iter().position(|h| h == a) {
@@ -133,46 +120,10 @@ impl MkinitcpioConfig {
             }
 
             if max_after_idx >= current_idx as isize {
-                // Need to move hook after max_after_idx
-                let removed = self.hooks.remove(current_idx);
-                self.hooks.insert((max_after_idx) as usize, removed); // insert at same index pushes it after? No.
-                // If we want it AFTER index X, we insert at X+1.
-                // But we removed it.
-                // Example: [A, B, HOOK], max_after is B (1). current is 2. 1 < 2. OK.
-                // Example: [HOOK, A, B]. max_after is B (2). current is 0. 2 >= 0. Move.
-                // Remove HOOK -> [A, B]. Insert at 2+1? No, indices shifted.
-                // Let's re-evaluate indices after removal? Or just use swap?
-                // Easier: Remove, then insert at target.
-                // Target: max_after_idx. If we insert at max_after_idx + 1 (original index), it will be after.
-                // But wait, if we remove, indices > current_idx shift down.
-                // If max_after_idx > current_idx, it shifts down by 1.
-                // So target index in new list is max_after_idx.
-                // insert(i, e) inserts before element at i. So to be after element at i, insert at i+1.
-                // So target is max_after_idx.
-                // Let's verify. [H, A]. remove H -> [A]. A is at 0. max_after is A (0).
-                // We want [A, H]. Insert at 1.
-                // max_after_idx (original) = 1.
-                // So insert at max_after_idx.
-
-                // Let's just do: remove, then find index of 'after' again, then insert after it.
-                // This is safer.
-                // But we have multiple 'after's.
-                // We know max_after_idx was the constraint violator.
-                // Let's just move it to the end, then check 'before' constraints?
-                // Or move it strictly after the constraint.
-
-                // Let's use a simpler logic:
-                // 1. Remove hook.
-                // 2. Calculate valid range [min, max].
-                //    min = max(indices of 'after') + 1
-                //    max = min(indices of 'before') (if exists, else len)
-                // 3. Insert at max(min, current_idx) clamped to max?
-                //    Actually we just want to satisfy constraints.
-                //    If we just place it at 'min', it satisfies 'after'.
-                //    Does it satisfy 'before'? Hopefully.
-
+                // Violates 'after' constraint - reposition the hook
                 let removed = self.hooks.remove(current_idx);
 
+                // Calculate valid insertion range after removal
                 let mut min_idx = 0;
                 for &a in after {
                     if let Some(idx) = self.hooks.iter().position(|h| h == a) {
@@ -191,20 +142,16 @@ impl MkinitcpioConfig {
                     }
                 }
 
-                // If min > max, we have a conflict. We prioritize 'after' (dependencies) usually?
-                // Or just clamp.
                 let target = if min_idx > max_idx {
-                    min_idx // Conflict, but respect 'after'
+                    min_idx // Conflicting constraints - prioritize 'after' (dependencies)
                 } else {
-                    // Try to keep it close to where it was, or just put it at min?
-                    // Putting it at min is safe.
                     min_idx
                 };
 
                 self.hooks.insert(target, removed);
                 changed = true;
             } else {
-                // Check 'before' constraints
+                // Find the leftmost 'before' constraint (hook must come before this)
                 let mut min_before_idx = self.hooks.len() as isize;
                 for &b in before {
                     if let Some(idx) = self.hooks.iter().position(|h| h == b) {
@@ -215,10 +162,10 @@ impl MkinitcpioConfig {
                 }
 
                 if min_before_idx <= current_idx as isize {
-                    // Need to move hook before min_before_idx
+                    // Violates 'before' constraint - reposition the hook
                     let removed = self.hooks.remove(current_idx);
 
-                    // Re-calculate indices
+                    // Calculate valid insertion range after removal
                     let mut min_idx = 0;
                     for &a in after {
                         if let Some(idx) = self.hooks.iter().position(|h| h == a) {
@@ -237,11 +184,7 @@ impl MkinitcpioConfig {
                         }
                     }
 
-                    let target = if max_idx < min_idx {
-                        max_idx // Conflict, respect 'before' this time? No, let's stick to valid range logic.
-                    } else {
-                        max_idx
-                    };
+                    let target = if max_idx < min_idx { max_idx } else { max_idx };
 
                     self.hooks.insert(target, removed);
                     changed = true;
@@ -255,11 +198,9 @@ impl MkinitcpioConfig {
 
         if let Some(idx) = self.hooks_line_idx {
             let hooks_str = self.hooks.join(" ");
-            let quote = self.quote_char.unwrap_or('"'); // Default to quotes if not parentheses
-            // Arch defaults usually use parentheses HOOKS=(...), but sometimes quotes HOOKS="..."
-            // We try to preserve what was there, or default to parentheses if it was parentheses (quote_char is None)
 
-            let new_line = if self.quote_char.is_some() {
+            // Preserve original quote style: parentheses HOOKS=(...) or quotes HOOKS="..."
+            let new_line = if let Some(quote) = self.quote_char {
                 format!("HOOKS={}{}{}", quote, hooks_str, quote)
             } else {
                 format!("HOOKS=({})", hooks_str)
@@ -321,21 +262,22 @@ HOOKS=(base udev autodetect modconf block filesystems keyboard fsck)
     }
 
     #[test]
-    fn test_ensure_order() {
-        let content = "HOOKS=(c a b)";
+    fn test_ensure_hook_position_basic() {
+        let content = "HOOKS=(base udev block filesystems)";
         let mut config = MkinitcpioConfig::parse(content).unwrap();
 
-        config.ensure_order("a", "b"); // a is already before b
-        assert_eq!(config.hooks(), &["c", "a", "b"]);
+        // Ensure plymouth comes after base and udev, but before filesystems
+        config.ensure_hook_position("plymouth", &["base", "udev"], &["filesystems"]);
 
-        config.ensure_order("b", "c"); // b is after c, should move b before c? No, ensure_order(before, after) means 'before' should be before 'after'.
-        // Wait, my implementation:
-        // if before_idx > after_idx { remove before, insert at after }
-        // c (0), a (1), b (2)
-        // ensure_order("b", "c") -> before=b(2), after=c(0). 2 > 0. remove b. insert at 0. -> b, c, a
+        let hooks = config.hooks();
+        let base_idx = hooks.iter().position(|h| h == "base").unwrap();
+        let udev_idx = hooks.iter().position(|h| h == "udev").unwrap();
+        let plymouth_idx = hooks.iter().position(|h| h == "plymouth").unwrap();
+        let fs_idx = hooks.iter().position(|h| h == "filesystems").unwrap();
 
-        config.ensure_order("b", "c");
-        assert_eq!(config.hooks(), &["b", "c", "a"]);
+        assert!(base_idx < plymouth_idx);
+        assert!(udev_idx < plymouth_idx);
+        assert!(plymouth_idx < fs_idx);
     }
 
     #[test]
@@ -361,5 +303,70 @@ HOOKS=(base udev autodetect modconf block filesystems keyboard fsck)
         let mut config_quotes = MkinitcpioConfig::parse(content_quotes).unwrap();
         config_quotes.ensure_hook("test");
         assert_eq!(config_quotes.to_string(), "HOOKS=\"base udev test\"");
+    }
+
+    #[test]
+    fn test_encryption_hooks_order_with_insert_after() {
+        let content = "HOOKS=(base systemd autodetect modconf block filesystems keyboard fsck)";
+        let mut config = MkinitcpioConfig::parse(content).unwrap();
+
+        // Old approach using insert_after
+        config.insert_after("sd-encrypt", "block");
+        config.insert_after("lvm2", "sd-encrypt");
+        config.insert_after("resume", "lvm2");
+
+        let hooks = config.hooks();
+        let block_idx = hooks.iter().position(|h| h == "block").unwrap();
+        let encrypt_idx = hooks.iter().position(|h| h == "sd-encrypt").unwrap();
+        let lvm2_idx = hooks.iter().position(|h| h == "lvm2").unwrap();
+        let resume_idx = hooks.iter().position(|h| h == "resume").unwrap();
+        let fs_idx = hooks.iter().position(|h| h == "filesystems").unwrap();
+
+        // Verify correct order: block < sd-encrypt < lvm2 < resume < filesystems
+        assert!(block_idx < encrypt_idx);
+        assert!(encrypt_idx < lvm2_idx);
+        assert!(lvm2_idx < resume_idx);
+        assert!(resume_idx < fs_idx);
+    }
+
+    #[test]
+    fn test_encryption_hooks_order_with_ensure_position() {
+        let content = "HOOKS=(base systemd autodetect modconf block filesystems keyboard fsck)";
+        let mut config = MkinitcpioConfig::parse(content).unwrap();
+
+        // New approach using ensure_hook_position (more declarative)
+        config.ensure_hook_position("sd-encrypt", &["block"], &["filesystems"]);
+        config.ensure_hook_position("lvm2", &["sd-encrypt"], &["filesystems"]);
+        config.ensure_hook_position("resume", &["lvm2"], &["filesystems"]);
+
+        let hooks = config.hooks();
+        let block_idx = hooks.iter().position(|h| h == "block").unwrap();
+        let encrypt_idx = hooks.iter().position(|h| h == "sd-encrypt").unwrap();
+        let lvm2_idx = hooks.iter().position(|h| h == "lvm2").unwrap();
+        let resume_idx = hooks.iter().position(|h| h == "resume").unwrap();
+        let fs_idx = hooks.iter().position(|h| h == "filesystems").unwrap();
+
+        // Verify correct order: block < sd-encrypt < lvm2 < resume < filesystems
+        assert!(block_idx < encrypt_idx);
+        assert!(encrypt_idx < lvm2_idx);
+        assert!(lvm2_idx < resume_idx);
+        assert!(resume_idx < fs_idx);
+    }
+
+    #[test]
+    fn test_ensure_hook_position_moves_existing_hook() {
+        let content = "HOOKS=(base plymouth udev block)";
+        let mut config = MkinitcpioConfig::parse(content).unwrap();
+
+        // Plymouth should move after udev
+        config.ensure_hook_position("plymouth", &["udev"], &["block"]);
+
+        let hooks = config.hooks();
+        let udev_idx = hooks.iter().position(|h| h == "udev").unwrap();
+        let plymouth_idx = hooks.iter().position(|h| h == "plymouth").unwrap();
+        let block_idx = hooks.iter().position(|h| h == "block").unwrap();
+
+        assert!(udev_idx < plymouth_idx);
+        assert!(plymouth_idx < block_idx);
     }
 }
