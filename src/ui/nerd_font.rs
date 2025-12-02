@@ -507,15 +507,15 @@ impl NerdFont {
 
             // Input Devices
             Self::MousePointer => '', // fa-mouse-pointer
-            Self::Mouse => '󰍽',       // md-mouse
+            Self::Mouse => '󰍽',        // md-mouse
 
             // Food and Beverages
-            Self::Coffee => '',       // fa-coffee
+            Self::Coffee => '', // fa-coffee
 
             // Faces and Emotions
-            Self::Frown => '',        // md-emoticon-frown
-            Self::FishBowl => '󰻳',     // md-fishbowl
-            Self::Waves => '󰞍',        // md-waves
+            Self::Frown => '',    // md-emoticon-frown
+            Self::FishBowl => '󰻳', // md-fishbowl
+            Self::Waves => '󰞍',    // md-waves
         }
     }
 }

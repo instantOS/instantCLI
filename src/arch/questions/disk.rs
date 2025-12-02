@@ -1,4 +1,4 @@
-use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult, DataKey};
+use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
@@ -159,18 +159,17 @@ impl Question for RunCfdiskQuestion {
             }
         }
 
-        // Run cfdisk
-        // We need to release the terminal for cfdisk
-        // But FzfWrapper doesn't hold it.
-        // We just run Command with inherit stdio.
-
         println!("Starting cfdisk on {}...", disk_path);
-        println!("Please create your partitions.");
-        println!("Press Enter to continue...");
-        let _ = std::io::stdin().read_line(&mut String::new());
+        println!("Please create your partitions and save changes before exiting.");
 
+        // Use std::process::Command with explicit stdio inheritance
+        // This gives cfdisk direct control of the terminal
+        use std::process::Stdio;
         let status = std::process::Command::new("cfdisk")
             .arg(disk_path)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .status()?;
 
         if !status.success() {
