@@ -1,10 +1,16 @@
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
+use crate::common::compositor::CompositorType;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::process::Command;
 
 pub fn mouse_speed_slider() -> Result<()> {
+    let compositor = CompositorType::detect();
+    if compositor != CompositorType::Sway {
+        anyhow::bail!("Mouse speed adjustment is currently only supported on Sway. Detected: {}", compositor.name());
+    }
+
     // Detect current speed
     let current_speed = get_sway_mouse_speed().unwrap_or(0.0);
 
@@ -65,14 +71,17 @@ fn get_sway_mouse_speed() -> Result<f64> {
 
     let json: Value = serde_json::from_slice(&output.stdout)?;
 
-    // Find first pointer device and get its accel
+    // Find first pointer device that actually has accel_speed property
     if let Some(inputs) = json.as_array() {
         for input in inputs {
             if let Some(type_) = input.get("type").and_then(|v| v.as_str()) {
                 if type_ == "pointer" {
                     if let Some(libinput) = input.get("libinput") {
-                        if let Some(accel) = libinput.get("accel_speed").and_then(|v| v.as_f64()) {
-                            return Ok(accel);
+                        // Only consider devices that have accel_speed property
+                        if let Some(accel) = libinput.get("accel_speed") {
+                            if let Some(speed) = accel.as_f64() {
+                                return Ok(speed);
+                            }
                         }
                     }
                 }
