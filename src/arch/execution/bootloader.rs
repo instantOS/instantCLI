@@ -84,6 +84,8 @@ fn configure_grub(context: &InstallContext, executor: &CommandExecutor) -> Resul
         configure_grub_plymouth(context, executor)?;
     }
 
+    configure_grub_theme(context, executor)?;
+
     // grub-mkconfig -o /boot/grub/grub.cfg
     let mut cmd = Command::new("grub-mkconfig");
     cmd.arg("-o").arg("/boot/grub/grub.cfg");
@@ -178,6 +180,38 @@ fn configure_grub_plymouth(_context: &InstallContext, executor: &CommandExecutor
     let new_content = add_grub_kernel_param(&content, param);
 
     std::fs::write(grub_default, new_content)?;
+
+    Ok(())
+}
+
+fn configure_grub_theme(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    if executor.dry_run {
+        println!("[DRY RUN] Setting GRUB_THEME in /etc/default/grub");
+        return Ok(());
+    }
+
+    let grub_default = "/etc/default/grub";
+    let content = std::fs::read_to_string(grub_default)?;
+    let theme_path = "/usr/share/grub/themes/instantos/theme.txt";
+
+    let mut new_lines = Vec::new();
+    let mut theme_set = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("GRUB_THEME=") || trimmed.starts_with("#GRUB_THEME=") {
+            new_lines.push(format!("GRUB_THEME=\"{}\"", theme_path));
+            theme_set = true;
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    if !theme_set {
+        new_lines.push(format!("GRUB_THEME=\"{}\"", theme_path));
+    }
+
+    std::fs::write(grub_default, new_lines.join("\n"))?;
 
     Ok(())
 }
