@@ -80,11 +80,15 @@ fn configure_grub(context: &InstallContext, executor: &CommandExecutor) -> Resul
         configure_grub_encryption(context, executor)?;
     }
 
-    if context.get_answer_bool(QuestionId::UsePlymouth) {
+    if context.get_answer_bool(QuestionId::UsePlymouth)
+        && !context.get_answer_bool(QuestionId::MinimalMode)
+    {
         configure_grub_plymouth(context, executor)?;
     }
 
-    configure_grub_theme(context, executor)?;
+    if !context.get_answer_bool(QuestionId::MinimalMode) {
+        configure_grub_theme(context, executor)?;
+    }
 
     // grub-mkconfig -o /boot/grub/grub.cfg
     let mut cmd = Command::new("grub-mkconfig");

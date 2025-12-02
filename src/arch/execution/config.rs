@@ -14,7 +14,9 @@ pub async fn install_config(context: &InstallContext, executor: &CommandExecutor
     configure_vconsole(context, executor)?;
     configure_sudo(context, executor)?;
     configure_mkinitcpio(context, executor)?;
-    configure_plymouth(context, executor)?;
+    if !context.get_answer_bool(QuestionId::MinimalMode) {
+        configure_plymouth(context, executor)?;
+    }
 
     Ok(())
 }
@@ -30,12 +32,12 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
     if use_encryption {
         println!("Configuring mkinitcpio for encryption...");
     }
-    if use_plymouth {
+    if use_plymouth && !context.get_answer_bool(QuestionId::MinimalMode) {
         println!("Configuring mkinitcpio for Plymouth...");
     }
 
     if executor.dry_run {
-        if use_plymouth {
+        if use_plymouth && !context.get_answer_bool(QuestionId::MinimalMode) {
             println!("[DRY RUN] Adding 'plymouth' to HOOKS in /etc/mkinitcpio.conf");
         }
         if use_encryption {
@@ -57,11 +59,13 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
 
     // Plymouth should be after systemd but before encrypt/sd-encrypt
     // And definitely before sd-encrypt to show password prompt
-    config.ensure_hook_position(
-        "plymouth",
-        &["base", "systemd", "udev"],       // After these
-        &["sd-encrypt", "encrypt", "lvm2"], // Before these
-    );
+    if !context.get_answer_bool(QuestionId::MinimalMode) {
+        config.ensure_hook_position(
+            "plymouth",
+            &["base", "systemd", "udev"],       // After these
+            &["sd-encrypt", "encrypt", "lvm2"], // Before these
+        );
+    }
 
     // Ensure keyboard and keymap/sd-vconsole are present
     if !config.contains_hook("sd-vconsole") {

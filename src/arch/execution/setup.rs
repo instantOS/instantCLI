@@ -120,7 +120,7 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
     }
 
     // Plymouth support
-    if context.get_answer_bool(QuestionId::UsePlymouth) {
+    if context.get_answer_bool(QuestionId::UsePlymouth) && !minimal_mode {
         println!("Plymouth enabled, adding plymouth package");
         packages.push("plymouth");
     }
