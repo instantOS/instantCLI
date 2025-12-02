@@ -237,6 +237,18 @@ pub const ASSISTS: &[AssistEntry] = &[
         ],
     }),
     AssistEntry::Group(AssistGroup {
+        key: 't',
+        description: "Tools: System tools and tweaks",
+        icon: NerdFont::Gear,
+        children: &[AssistEntry::Action(AssistAction {
+            key: 'm',
+            description: "Mouse Speed: Adjust mouse sensitivity",
+            icon: NerdFont::Sliders,
+            dependencies: &[],
+            execute: actions::mouse::mouse_speed_slider,
+        })],
+    }),
+    AssistEntry::Group(AssistGroup {
         key: 'v',
         description: "Media Navigation: Control media playback tracks",
         icon: NerdFont::Music,

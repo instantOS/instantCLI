@@ -33,6 +33,12 @@ pub enum AssistCommands {
     },
     /// Set up Sway integration (export config and add include to main config)
     Setup,
+    #[command(hide = true)]
+    /// Set mouse speed (internal use for slider)
+    MouseSet {
+        /// Speed value (0-100)
+        value: i64,
+    },
 }
 
 /// Handle assist command
@@ -40,6 +46,7 @@ pub fn dispatch_assist_command(_debug: bool, command: Option<AssistCommands>) ->
     match command {
         None => run_assist_selector(),
         Some(AssistCommands::List) => list_assists(),
+        Some(AssistCommands::MouseSet { value }) => super::actions::mouse::set_mouse_speed(value),
         Some(AssistCommands::Run { key_sequence }) => {
             // Check if this is a help request (ends with 'h')
             if key_sequence.ends_with('h') && key_sequence.len() > 1 {
