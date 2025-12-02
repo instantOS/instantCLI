@@ -210,13 +210,7 @@ fn enable_services(executor: &CommandExecutor, context: &InstallContext) -> Resu
         services.push("lightdm");
 
         // Handle Autologin
-        let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
-        let autologin_answer = context.get_answer(&QuestionId::Autologin);
-
-        let enable_autologin = match autologin_answer {
-            Some(ans) => ans == "yes",
-            None => use_encryption, // Default: Yes if encrypted, No if not
-        };
+        let enable_autologin = context.get_answer_bool(QuestionId::Autologin);
 
         if enable_autologin {
             configure_lightdm_autologin(context, executor)?;

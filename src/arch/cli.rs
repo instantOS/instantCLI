@@ -55,7 +55,7 @@ pub enum ArchCommands {
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
-        AutologinQuestion, BooleanQuestion, DiskQuestion, EncryptionPasswordQuestion,
+        BooleanQuestion, DiskQuestion, EncryptionPasswordQuestion,
         HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion,
         PasswordQuestion, TimezoneQuestion, UsernameQuestion, VirtualBoxWarning,
         WeakPasswordWarning,
@@ -98,7 +98,14 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             .optional()
             .default_yes(),
         ),
-        Box::new(AutologinQuestion),
+        Box::new(
+            BooleanQuestion::new(
+                crate::arch::engine::QuestionId::Autologin,
+                "Enable LightDM Autologin?",
+                crate::ui::nerd_font::NerdFont::User,
+            )
+            .optional()
+        ),
         Box::new(
             BooleanQuestion::new(
                 crate::arch::engine::QuestionId::LogUpload,
