@@ -395,13 +395,13 @@ impl Question for KernelQuestion {
     }
 }
 
-
 pub struct BooleanQuestion {
     pub id: QuestionId,
     pub prompt: String,
     pub icon: NerdFont,
     pub is_optional: bool,
     pub default_yes: bool,
+    pub dynamic_default: Option<Box<dyn Fn(&InstallContext) -> bool + Send + Sync>>,
 }
 
 impl BooleanQuestion {
@@ -412,6 +412,7 @@ impl BooleanQuestion {
             icon,
             is_optional: false,
             default_yes: false,
+            dynamic_default: None,
         }
     }
 
@@ -422,6 +423,14 @@ impl BooleanQuestion {
 
     pub fn default_yes(mut self) -> Self {
         self.default_yes = true;
+        self
+    }
+
+    pub fn dynamic_default<F>(mut self, func: F) -> Self
+    where
+        F: Fn(&InstallContext) -> bool + 'static + Send + Sync,
+    {
+        self.dynamic_default = Some(Box::new(func));
         self
     }
 }
@@ -436,8 +445,15 @@ impl Question for BooleanQuestion {
         self.is_optional
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        let options = if self.default_yes {
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+        // Determine the effective default based on dynamic function or static setting
+        let effective_default = if let Some(dynamic_func) = &self.dynamic_default {
+            dynamic_func(context)
+        } else {
+            self.default_yes
+        };
+
+        let options = if effective_default {
             vec!["yes".to_string(), "no".to_string()]
         } else {
             vec!["no".to_string(), "yes".to_string()]

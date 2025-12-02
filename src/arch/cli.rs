@@ -55,10 +55,9 @@ pub enum ArchCommands {
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
-        BooleanQuestion, DiskQuestion, EncryptionPasswordQuestion,
-        HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion,
-        PasswordQuestion, TimezoneQuestion, UsernameQuestion, VirtualBoxWarning,
-        WeakPasswordWarning,
+        BooleanQuestion, DiskQuestion, EncryptionPasswordQuestion, HostnameQuestion,
+        KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion, PasswordQuestion,
+        TimezoneQuestion, UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
     };
     use crate::common::distro::{Distro, detect_distro, is_live_iso};
 
@@ -105,6 +104,9 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 crate::ui::nerd_font::NerdFont::User,
             )
             .optional()
+            .dynamic_default(|context| {
+                context.get_answer_bool(crate::arch::engine::QuestionId::UseEncryption)
+            }),
         ),
         Box::new(
             BooleanQuestion::new(
