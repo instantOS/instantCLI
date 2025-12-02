@@ -3,6 +3,93 @@ use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
+/// Represents size in megabytes with parsing capabilities
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartitionSize(u64);
+
+impl PartitionSize {
+    /// Parse a size string (e.g., "512M", "1G", "100MB") and return size in MB
+    pub fn parse(size_str: &str) -> Option<Self> {
+        if size_str.is_empty() {
+            return None;
+        }
+
+        let size_str = size_str.trim().to_uppercase();
+
+        // Remove any non-alphanumeric characters except digits and common size indicators
+        let cleaned: String = size_str.chars()
+            .filter(|c| c.is_ascii_digit() || c.is_ascii_alphabetic() || c.is_ascii_whitespace())
+            .collect();
+
+        // Try to parse with common suffixes
+        if cleaned.ends_with("MB") || cleaned.ends_with("M") {
+            if let Ok(size) = cleaned.trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<u64>() {
+                return Some(Self(size));
+            }
+        } else if cleaned.ends_with("GB") || cleaned.ends_with("G") {
+            if let Ok(size) = cleaned.trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<u64>() {
+                return Some(Self(size * 1024));
+            }
+        } else if cleaned.ends_with("TB") || cleaned.ends_with("T") {
+            if let Ok(size) = cleaned.trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<u64>() {
+                return Some(Self(size * 1024 * 1024));
+            }
+        } else if cleaned.ends_with("KB") || cleaned.ends_with("K") {
+            if let Ok(size) = cleaned.trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<u64>() {
+                // Convert KB to MB, rounding up
+                return Some(Self((size + 1023) / 1024));
+            }
+        } else {
+            // Try to parse as raw number (assume MB)
+            if let Ok(size) = size_str.parse::<u64>() {
+                return Some(Self(size));
+            }
+        }
+
+        None
+    }
+
+    /// Get the size in megabytes
+    pub fn in_mb(&self) -> u64 {
+        self.0
+    }
+}
+
+/// Trait for partition-specific validation
+pub trait PartitionValidator {
+    /// Validate partition-specific requirements
+    fn validate_partition(&self, partition_path: &str, size: Option<PartitionSize>) -> Result<(), String>;
+}
+
+/// Default partition validator (no special requirements)
+pub struct DefaultPartitionValidator;
+
+impl PartitionValidator for DefaultPartitionValidator {
+    fn validate_partition(&self, _partition_path: &str, _size: Option<PartitionSize>) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// ESP partition validator with size requirements
+pub struct EspPartitionValidator;
+
+impl PartitionValidator for EspPartitionValidator {
+    fn validate_partition(&self, _partition_path: &str, size: Option<PartitionSize>) -> Result<(), String> {
+        // ESP partition must be at least 100MB for UEFI systems
+        if let Some(size) = size {
+            if size.in_mb() < 100 {
+                return Err(format!(
+                    "ESP partition must be at least 100MB. Current size: {}MB",
+                    size.in_mb()
+                ));
+            }
+        } else {
+            return Err("Could not determine ESP partition size. Please ensure the partition has a valid size.".to_string());
+        }
+        Ok(())
+    }
+}
+
 pub struct HostnameQuestion;
 
 #[async_trait::async_trait]
@@ -643,6 +730,58 @@ mod tests {
         context.set_answer(QuestionId::EncryptionPassword, "1234".to_string());
         assert!(!warning.should_ask(&context));
     }
+
+    #[test]
+    fn test_partition_size_parsing() {
+        use super::PartitionSize;
+
+        // Test the PartitionSize parsing functionality
+        assert_eq!(PartitionSize::parse("512M"), Some(PartitionSize(512)));
+        assert_eq!(PartitionSize::parse("1G"), Some(PartitionSize(1024)));
+        assert_eq!(PartitionSize::parse("100MB"), Some(PartitionSize(100)));
+        assert_eq!(PartitionSize::parse("1TB"), Some(PartitionSize(1024 * 1024)));
+        assert_eq!(PartitionSize::parse("2048KB"), Some(PartitionSize(2))); // 2048KB = 2MB (rounded up)
+        assert_eq!(PartitionSize::parse("100"), Some(PartitionSize(100))); // Raw number assumed to be MB
+        assert_eq!(PartitionSize::parse(""), None);
+        assert_eq!(PartitionSize::parse("invalid"), None);
+    }
+
+    #[test]
+    fn test_esp_partition_validation() {
+        use crate::arch::engine::{InstallContext, Question, QuestionId};
+        use crate::arch::questions::PartitionSelectorQuestion;
+
+        let esp_question = PartitionSelectorQuestion::new(
+            QuestionId::BootPartition,
+            "Select Boot/EFI Partition",
+            crate::ui::nerd_font::NerdFont::Folder,
+        );
+
+        let mut context = InstallContext::new();
+
+        // Test valid ESP partition (512MB)
+        let result = esp_question.validate(&context, "/dev/sda1 (512M)");
+        assert!(result.is_ok());
+
+        // Test too small ESP partition (50MB)
+        let result = esp_question.validate(&context, "/dev/sda1 (50M)");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ESP partition must be at least 100MB"));
+
+        // Test valid large ESP partition (1G)
+        let result = esp_question.validate(&context, "/dev/sda1 (1G)");
+        assert!(result.is_ok());
+
+        // Test non-ESP partition (should not trigger ESP validation)
+        let root_question = PartitionSelectorQuestion::new(
+            QuestionId::RootPartition,
+            "Select Root Partition",
+            crate::ui::nerd_font::NerdFont::HardDrive,
+        );
+
+        let result = root_question.validate(&context, "/dev/sda2 (50M)");
+        assert!(result.is_ok()); // Root partition can be any size
+    }
 }
 
 pub struct PartitioningMethodQuestion;
@@ -850,6 +989,19 @@ impl Question for PartitionSelectorQuestion {
                 }
             }
         }
+
+        // Extract size from the partition description (e.g., "/dev/sda1 (512M)")
+        let size_str = answer.split('(').nth(1).and_then(|s| s.split(')').next()).unwrap_or("");
+        let size = PartitionSize::parse(size_str.trim());
+
+        // Use appropriate validator based on partition type
+        let validator: Box<dyn PartitionValidator> = match current_id {
+            QuestionId::BootPartition => Box::new(EspPartitionValidator),
+            _ => Box::new(DefaultPartitionValidator),
+        };
+
+        validator.validate_partition(part_path, size)?;
+
         Ok(())
     }
 }
