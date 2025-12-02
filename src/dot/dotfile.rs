@@ -6,7 +6,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-// Simple in-memory cache for file hashes
+// Simple in-memory cache for file hashes.
+// This is distinct from the persistent Database. It is used to avoid re-computing
+// SHA256 hashes for the same file path multiple times within a single process run.
+// It does not persist across runs.
 static HASH_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 const HASH_CACHE_SIZE: usize = 1000; // Limit cache size to prevent memory bloat
@@ -15,6 +18,8 @@ fn get_hash_cache() -> &'static Mutex<HashMap<String, String>> {
     HASH_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Remove a path from the in-memory hash cache.
+/// Should be called whenever a file is modified by the program.
 fn invalidate_cache(path: &Path) {
     let path_str = path.to_string_lossy().to_string();
     if let Ok(mut cache) = get_hash_cache().lock() {
@@ -124,6 +129,7 @@ impl Dotfile {
     pub fn compute_hash(path: &Path) -> Result<String, anyhow::Error> {
         // Check cache first
         let path_str = path.to_string_lossy().to_string();
+
         {
             let cache = get_hash_cache().lock().unwrap();
             if let Some(cached_hash) = cache.get(&path_str) {
