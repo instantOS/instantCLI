@@ -162,15 +162,25 @@ impl Question for RunCfdiskQuestion {
         println!("Starting cfdisk on {}...", disk_path);
         println!("Please create your partitions and save changes before exiting.");
 
-        // Use std::process::Command with explicit stdio inheritance
-        // This gives cfdisk direct control of the terminal
-        use std::process::Stdio;
-        let status = std::process::Command::new("cfdisk")
-            .arg(disk_path)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()?;
+        // Use spawn_blocking to run cfdisk in a sync context
+        // This avoids async runtime interference with terminal control
+        let disk_path = disk_path.to_string();
+        let status = tokio::task::spawn_blocking(move || {
+            use std::process::{Command, Stdio};
+
+            let mut child = Command::new("cfdisk")
+                .arg(disk_path)
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .expect("Failed to spawn cfdisk");
+
+            // Just wait for cfdisk to complete - no menu server registration needed
+            // cfdisk is a system utility, not a disposable menu process
+            child.wait()
+        })
+        .await??;
 
         if !status.success() {
             return Ok(QuestionResult::Cancelled);
