@@ -121,7 +121,6 @@ pub const ASSISTS: &[AssistEntry] = &[
         dependencies: &[
             Dependency::os(&HYPRPICKER),
             Dependency::os(&XCOLOR),
-            Dependency::os(&GRABC),
             Dependency::os(&IMAGEMAGICK),
             Dependency::os(&WL_CLIPBOARD),
             Dependency::os(&XCLIP),

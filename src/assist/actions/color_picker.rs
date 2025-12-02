@@ -24,10 +24,9 @@ pub fn pick_color() -> Result<()> {
         }
 
         copy_to_clipboard(color.as_bytes(), &display_server)?;
-        
+
         // Optional: notify user
         show_notification("Color copied", &color)?;
-
     } else if display_server.is_x11() {
         // X11: xcolor
         let output = Command::new("xcolor")
@@ -62,7 +61,7 @@ pub fn pick_color() -> Result<()> {
                 "",
                 icon_path.to_str().unwrap_or(""),
             )?;
-            
+
             // Clean up the temp file after a short delay to ensure notification server reads it
             // We spawn a thread to avoid blocking the main thread
             let path_clone = icon_path.clone();
@@ -71,7 +70,7 @@ pub fn pick_color() -> Result<()> {
                 let _ = std::fs::remove_file(path_clone);
             });
         } else {
-             show_notification(&format!("{} copied to clipboard", color), "")?;
+            show_notification(&format!("{} copied to clipboard", color), "")?;
         }
     } else {
         anyhow::bail!("Unknown display server - cannot pick color");
