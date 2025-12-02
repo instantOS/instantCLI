@@ -52,21 +52,21 @@ pub const ASSISTS: &[AssistEntry] = &[
             AssistEntry::Action(AssistAction {
                 key: 'b',
                 description: "Bruh: Display a bruh moment",
-                icon: NerdFont::Cross,
+                icon: NerdFont::Frown,
                 dependencies: &[Dependency::os(&MPV)],
                 execute: actions::joke::bruh,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'c',
                 description: "CMatrix: Run the Matrix rain",
-                icon: NerdFont::Terminal,
+                icon: NerdFont::Waves,
                 dependencies: &[Dependency::os(&CMATRIX)],
                 execute: actions::joke::cmatrix,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'q',
                 description: "Asciiquarium: Launch the terminal aquarium",
-                icon: NerdFont::Terminal,
+                icon: NerdFont::FishBowl,
                 dependencies: &[Dependency::os(&ASCIIQUARIUM)],
                 execute: actions::joke::asciiquarium,
             }),
@@ -75,7 +75,7 @@ pub const ASSISTS: &[AssistEntry] = &[
     AssistEntry::Action(AssistAction {
         key: 'c',
         description: "Caffeine: Keep system awake",
-        icon: NerdFont::Lightbulb,
+        icon: NerdFont::Coffee,
         dependencies: &[],
         execute: actions::system::caffeine,
     }),
@@ -243,7 +243,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         children: &[AssistEntry::Action(AssistAction {
             key: 'm',
             description: "Mouse Speed: Adjust mouse sensitivity",
-            icon: NerdFont::Sliders,
+            icon: NerdFont::MousePointer,
             dependencies: &[],
             execute: actions::mouse::mouse_speed_slider,
         })],

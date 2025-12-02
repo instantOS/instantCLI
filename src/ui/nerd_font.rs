@@ -246,6 +246,18 @@ pub enum NerdFont {
     Ssd,
     HardDisk,
     Fan,
+
+    // Input Devices
+    MousePointer,
+    Mouse,
+
+    // Food and Beverages
+    Coffee,
+
+    // Faces and Emotions
+    Frown,
+    FishBowl,
+    Waves,
 }
 
 impl NerdFont {
@@ -492,6 +504,18 @@ impl NerdFont {
             Self::Ssd => '󰋊',          // md-ssd
             Self::HardDisk => '󰋊',     // md-harddisk
             Self::Fan => '󰈐',          // md-fan
+
+            // Input Devices
+            Self::MousePointer => '', // fa-mouse-pointer
+            Self::Mouse => '󰍽',       // md-mouse
+
+            // Food and Beverages
+            Self::Coffee => '',       // fa-coffee
+
+            // Faces and Emotions
+            Self::Frown => '',        // md-emoticon-frown
+            Self::FishBowl => '󰻳',     // md-fishbowl
+            Self::Waves => '󰞍',        // md-waves
         }
     }
 }
