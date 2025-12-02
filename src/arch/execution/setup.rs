@@ -1,5 +1,5 @@
 use super::CommandExecutor;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::arch::engine::{InstallContext, QuestionId};
@@ -208,6 +208,19 @@ fn enable_services(executor: &CommandExecutor, context: &InstallContext) -> Resu
 
     if !other_dm_enabled {
         services.push("lightdm");
+
+        // Handle Autologin
+        let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
+        let autologin_answer = context.get_answer(&QuestionId::Autologin);
+
+        let enable_autologin = match autologin_answer {
+            Some(ans) => ans == "yes",
+            None => use_encryption, // Default: Yes if encrypted, No if not
+        };
+
+        if enable_autologin {
+            configure_lightdm_autologin(context, executor)?;
+        }
     } else {
         println!("Skipping lightdm setup because another display manager is enabled.");
     }
@@ -285,4 +298,92 @@ fn update_os_release(executor: &CommandExecutor) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn configure_lightdm_autologin(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    println!("Configuring LightDM autologin...");
+
+    let username = context
+        .get_answer(&QuestionId::Username)
+        .context("Username not set for autologin")?;
+
+    if executor.dry_run {
+        println!("[DRY RUN] Enable autologin for user: {}", username);
+        return Ok(());
+    }
+
+    let config_path = "/etc/lightdm/lightdm.conf";
+    if !std::path::Path::new(config_path).exists() {
+        println!(
+            "Warning: {} not found, cannot configure autologin",
+            config_path
+        );
+        return Ok(());
+    }
+
+    // Enable autologin-user
+    let content = std::fs::read_to_string(config_path)?;
+    let new_content = update_lightdm_conf(&content, username);
+
+    if content != new_content {
+        std::fs::write(config_path, new_content)?;
+        println!("Updated lightdm.conf with autologin settings");
+    } else {
+        println!("lightdm.conf already configured or keys not found");
+    }
+
+    Ok(())
+}
+
+fn update_lightdm_conf(content: &str, username: &str) -> String {
+    let mut new_lines = Vec::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        // Check for autologin-user (commented or not)
+        if trimmed.starts_with("autologin-user=") || trimmed.starts_with("#autologin-user=") {
+            new_lines.push(format!("autologin-user={}", username));
+        }
+        // Check for autologin-user-timeout (commented or not)
+        else if trimmed.starts_with("autologin-user-timeout=")
+            || trimmed.starts_with("#autologin-user-timeout=")
+        {
+            new_lines.push("autologin-user-timeout=0".to_string());
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    new_lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_update_lightdm_conf() {
+        let input = r#"
+[Seat:*]
+#autologin-guest=false
+#autologin-user=
+#autologin-user-timeout=0
+"#;
+        let expected = r#"
+[Seat:*]
+#autologin-guest=false
+autologin-user=testuser
+autologin-user-timeout=0
+"#;
+        let result = update_lightdm_conf(input, "testuser");
+        assert_eq!(result.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_update_lightdm_conf_already_set() {
+        let input = "autologin-user=olduser\nautologin-user-timeout=5";
+        let expected = "autologin-user=newuser\nautologin-user-timeout=0";
+        let result = update_lightdm_conf(input, "newuser");
+        assert_eq!(result, expected);
+    }
 }

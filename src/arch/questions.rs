@@ -395,6 +395,41 @@ impl Question for KernelQuestion {
     }
 }
 
+pub struct AutologinQuestion;
+
+#[async_trait::async_trait]
+impl Question for AutologinQuestion {
+    fn id(&self) -> QuestionId {
+        QuestionId::Autologin
+    }
+
+    fn is_optional(&self) -> bool {
+        true
+    }
+
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+        let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
+
+        // Default: Yes if encrypted, No if not encrypted
+        // The first option is the default selection in FzfWrapper if not specified otherwise
+        let options = if use_encryption {
+            vec!["yes".to_string(), "no".to_string()]
+        } else {
+            vec!["no".to_string(), "yes".to_string()]
+        };
+
+        let result = FzfWrapper::builder()
+            .header(format!("{} Enable LightDM Autologin?", NerdFont::User))
+            .select(options)?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(ans) => Ok(QuestionResult::Answer(ans)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
+        }
+    }
+}
+
 pub struct BooleanQuestion {
     pub id: QuestionId,
     pub prompt: String,

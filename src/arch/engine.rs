@@ -21,6 +21,7 @@ pub enum QuestionId {
     UseEncryption,
     EncryptionPassword,
     UsePlymouth,
+    Autologin,
     LogUpload,
     ConfirmInstall,
     VirtualBoxWarning,
