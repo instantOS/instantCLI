@@ -55,8 +55,8 @@ pub enum ArchCommands {
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
-        BooleanQuestion, DiskQuestion, EncryptionPasswordQuestion, HostnameQuestion,
-        KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion,
+        BooleanQuestion, DiskQuestion, EncryptionPasswordQuestion, EspPartitionValidator,
+        HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion,
         PartitionSelectorQuestion, PartitioningMethodQuestion, PasswordQuestion, RunCfdiskQuestion,
         TimezoneQuestion, UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
     };
@@ -81,17 +81,20 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             crate::arch::engine::QuestionId::RootPartition,
             "Select Root Partition",
             crate::ui::nerd_font::NerdFont::HardDrive,
+            None,
         )),
         Box::new(PartitionSelectorQuestion::new(
             crate::arch::engine::QuestionId::BootPartition,
             "Select Boot/EFI Partition",
             crate::ui::nerd_font::NerdFont::Folder,
+            Some(Box::new(EspPartitionValidator)),
         )),
         Box::new(
             PartitionSelectorQuestion::new(
                 crate::arch::engine::QuestionId::SwapPartition,
                 "Select Swap Partition",
                 crate::ui::nerd_font::NerdFont::File,
+                None,
             )
             .optional(),
         ),
@@ -100,6 +103,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 crate::arch::engine::QuestionId::HomePartition,
                 "Select Home Partition",
                 crate::ui::nerd_font::NerdFont::Home,
+                None,
             )
             .optional(),
         ),
