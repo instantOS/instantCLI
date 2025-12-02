@@ -56,7 +56,8 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
         BooleanQuestion, DiskQuestion, EncryptionPasswordQuestion, HostnameQuestion,
-        KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion, PasswordQuestion,
+        KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion,
+        PartitionSelectorQuestion, PartitioningMethodQuestion, PasswordQuestion, RunCfdiskQuestion,
         TimezoneQuestion, UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
     };
     use crate::common::distro::{Distro, detect_distro, is_live_iso};
@@ -74,14 +75,59 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         Box::new(VirtualBoxWarning),
         Box::new(KeymapQuestion),
         Box::new(DiskQuestion),
+        Box::new(PartitioningMethodQuestion),
+        Box::new(RunCfdiskQuestion),
+        Box::new(PartitionSelectorQuestion::new(
+            crate::arch::engine::QuestionId::RootPartition,
+            "Select Root Partition",
+            crate::ui::nerd_font::NerdFont::HardDrive,
+        )),
+        Box::new(PartitionSelectorQuestion::new(
+            crate::arch::engine::QuestionId::BootPartition,
+            "Select Boot/EFI Partition",
+            crate::ui::nerd_font::NerdFont::Folder,
+        )),
+        Box::new(
+            PartitionSelectorQuestion::new(
+                crate::arch::engine::QuestionId::SwapPartition,
+                "Select Swap Partition",
+                crate::ui::nerd_font::NerdFont::File,
+            )
+            .optional(),
+        ),
+        Box::new(
+            PartitionSelectorQuestion::new(
+                crate::arch::engine::QuestionId::HomePartition,
+                "Select Home Partition",
+                crate::ui::nerd_font::NerdFont::Home,
+            )
+            .optional(),
+        ),
         Box::new(HostnameQuestion),
         Box::new(UsernameQuestion),
         Box::new(PasswordQuestion),
-        Box::new(BooleanQuestion::new(
-            crate::arch::engine::QuestionId::UseEncryption,
-            "Encrypt the installation disk?",
-            crate::ui::nerd_font::NerdFont::Lock,
-        )),
+        Box::new(
+            BooleanQuestion::new(
+                crate::arch::engine::QuestionId::UseEncryption,
+                "Encrypt the installation disk?",
+                crate::ui::nerd_font::NerdFont::Lock,
+            )
+            .dynamic_default(|context| {
+                // Encryption features are only available for automatic partitioning
+                // If manual partitioning is selected, encryption is not supported
+                context
+                    .get_answer(&crate::arch::engine::QuestionId::PartitioningMethod)
+                    .map(|method| !method.contains("Manual"))
+                    .unwrap_or(false)
+            })
+            .should_ask(|context| {
+                // Only ask about encryption if automatic partitioning is selected
+                context
+                    .get_answer(&crate::arch::engine::QuestionId::PartitioningMethod)
+                    .map(|method| !method.contains("Manual"))
+                    .unwrap_or(true) // Default to true if partitioning method not yet answered
+            }),
+        ),
         Box::new(EncryptionPasswordQuestion),
         Box::new(WeakPasswordWarning),
         Box::new(MirrorRegionQuestion),
@@ -186,6 +232,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                         crate::common::requirements::GIT_PACKAGE,
                         crate::common::requirements::LIBGIT2_PACKAGE,
                         crate::common::requirements::GUM_PACKAGE,
+                        crate::common::requirements::CFDISK_PACKAGE,
                     ];
 
                     // Collect all missing packages first

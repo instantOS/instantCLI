@@ -662,3 +662,10 @@ pub const GUM_PACKAGE: RequiredPackage = RequiredPackage {
     ubuntu_package_name: Some("gum"),
     tests: &[InstallTest::WhichSucceeds("gum")],
 };
+
+pub const CFDISK_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "cfdisk",
+    arch_package_name: Some("util-linux"),
+    ubuntu_package_name: Some("util-linux"),
+    tests: &[InstallTest::WhichSucceeds("cfdisk")],
+};

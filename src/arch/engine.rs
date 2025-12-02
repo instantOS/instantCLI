@@ -27,6 +27,12 @@ pub enum QuestionId {
     VirtualBoxWarning,
     WeakPasswordWarning,
     MinimalMode,
+    PartitioningMethod,
+    RunCfdisk,
+    RootPartition,
+    SwapPartition,
+    BootPartition,
+    HomePartition,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

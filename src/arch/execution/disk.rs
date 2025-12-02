@@ -28,29 +28,99 @@ pub fn prepare_disk(context: &InstallContext, executor: &CommandExecutor) -> Res
     );
 
     // Partitioning
-    let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
+    let partitioning_method = context
+        .get_answer(&QuestionId::PartitioningMethod)
+        .map(|s| s.as_str())
+        .unwrap_or("Automatic");
 
-    match (boot_mode, use_encryption) {
-        (BootMode::UEFI64 | BootMode::UEFI32, false) => {
-            partition_uefi(disk_path, executor, swap_size_gb)?;
-            format_uefi(disk_path, executor)?;
-            mount_uefi(disk_path, executor)?;
+    if partitioning_method.contains("Manual") {
+        prepare_manual_disk(context, executor)?;
+    } else {
+        let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
+
+        match (boot_mode, use_encryption) {
+            (BootMode::UEFI64 | BootMode::UEFI32, false) => {
+                partition_uefi(disk_path, executor, swap_size_gb)?;
+                format_uefi(disk_path, executor)?;
+                mount_uefi(disk_path, executor)?;
+            }
+            (BootMode::BIOS, false) => {
+                partition_bios(disk_path, executor, swap_size_gb)?;
+                format_bios(disk_path, executor)?;
+                mount_bios(disk_path, executor)?;
+            }
+            (BootMode::UEFI64 | BootMode::UEFI32, true) => {
+                partition_uefi_luks(disk_path, executor)?;
+                format_luks(context, disk_path, executor, true, swap_size_gb)?;
+                mount_luks(executor, true, disk_path)?;
+            }
+            (BootMode::BIOS, true) => {
+                partition_bios_luks(disk_path, executor)?;
+                format_luks(context, disk_path, executor, false, swap_size_gb)?;
+                mount_luks(executor, false, disk_path)?;
+            }
         }
-        (BootMode::BIOS, false) => {
-            partition_bios(disk_path, executor, swap_size_gb)?;
-            format_bios(disk_path, executor)?;
-            mount_bios(disk_path, executor)?;
+    }
+
+    Ok(())
+}
+
+fn prepare_manual_disk(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    println!("Preparing manual partitions...");
+
+    let root_part = context
+        .get_answer(&QuestionId::RootPartition)
+        .context("Root partition not selected")?;
+    let root_path = root_part.split('(').next().unwrap_or(root_part).trim();
+
+    let boot_mode = &context.system_info.boot_mode;
+
+    // Format Root
+    println!("Formatting Root partition: {}", root_path);
+    executor.run(Command::new("mkfs.ext4").args(["-F", root_path]))?;
+
+    // Mount Root
+    println!("Mounting Root partition...");
+    executor.run(Command::new("mount").args([root_path, "/mnt"]))?;
+
+    // Handle Boot/EFI
+    if let Some(boot_part) = context.get_answer(&QuestionId::BootPartition) {
+        let boot_path = boot_part.split('(').next().unwrap_or(boot_part).trim();
+        println!("Formatting Boot partition: {}", boot_path);
+
+        // If UEFI, it must be FAT32. If BIOS, usually ext4 or just a directory on root.
+        // But if they selected a separate boot partition, we should format it.
+        // For UEFI it is mandatory.
+        match boot_mode {
+            BootMode::UEFI64 | BootMode::UEFI32 => {
+                executor.run(Command::new("mkfs.fat").args(["-F32", boot_path]))?;
+            }
+            BootMode::BIOS => {
+                // For BIOS, a separate boot partition is usually ext4
+                executor.run(Command::new("mkfs.ext4").args(["-F", boot_path]))?;
+            }
         }
-        (BootMode::UEFI64 | BootMode::UEFI32, true) => {
-            partition_uefi_luks(disk_path, executor)?;
-            format_luks(context, disk_path, executor, true, swap_size_gb)?;
-            mount_luks(executor, true, disk_path)?;
-        }
-        (BootMode::BIOS, true) => {
-            partition_bios_luks(disk_path, executor)?;
-            format_luks(context, disk_path, executor, false, swap_size_gb)?;
-            mount_luks(executor, false, disk_path)?;
-        }
+
+        println!("Mounting Boot partition...");
+        executor.run(Command::new("mount").args(["--mkdir", boot_path, "/mnt/boot"]))?;
+    }
+
+    // Handle Swap
+    if let Some(swap_part) = context.get_answer(&QuestionId::SwapPartition) {
+        let swap_path = swap_part.split('(').next().unwrap_or(swap_part).trim();
+        println!("Formatting Swap partition: {}", swap_path);
+        executor.run(Command::new("mkswap").arg(swap_path))?;
+        println!("Activating Swap...");
+        executor.run(Command::new("swapon").arg(swap_path))?;
+    }
+
+    // Handle Home
+    if let Some(home_part) = context.get_answer(&QuestionId::HomePartition) {
+        let home_path = home_part.split('(').next().unwrap_or(home_part).trim();
+        println!("Formatting Home partition: {}", home_path);
+        executor.run(Command::new("mkfs.ext4").args(["-F", home_path]))?;
+        println!("Mounting Home partition...");
+        executor.run(Command::new("mount").args(["--mkdir", home_path, "/mnt/home"]))?;
     }
 
     Ok(())

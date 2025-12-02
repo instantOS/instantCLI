@@ -1,7 +1,7 @@
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub struct HostnameQuestion;
 
@@ -402,6 +402,7 @@ pub struct BooleanQuestion {
     pub is_optional: bool,
     pub default_yes: bool,
     pub dynamic_default: Option<Box<dyn Fn(&InstallContext) -> bool + Send + Sync>>,
+    pub should_ask_predicate: Option<Box<dyn Fn(&InstallContext) -> bool + Send + Sync>>,
 }
 
 impl BooleanQuestion {
@@ -413,6 +414,7 @@ impl BooleanQuestion {
             is_optional: false,
             default_yes: false,
             dynamic_default: None,
+            should_ask_predicate: None,
         }
     }
 
@@ -433,6 +435,14 @@ impl BooleanQuestion {
         self.dynamic_default = Some(Box::new(func));
         self
     }
+
+    pub fn should_ask<F>(mut self, func: F) -> Self
+    where
+        F: Fn(&InstallContext) -> bool + 'static + Send + Sync,
+    {
+        self.should_ask_predicate = Some(Box::new(func));
+        self
+    }
 }
 
 #[async_trait::async_trait]
@@ -443,6 +453,14 @@ impl Question for BooleanQuestion {
 
     fn is_optional(&self) -> bool {
         self.is_optional
+    }
+
+    fn should_ask(&self, context: &InstallContext) -> bool {
+        if let Some(predicate) = &self.should_ask_predicate {
+            predicate(context)
+        } else {
+            true
+        }
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
@@ -624,5 +642,214 @@ mod tests {
         // Case 3: Encryption enabled, long password
         context.set_answer(QuestionId::EncryptionPassword, "1234".to_string());
         assert!(!warning.should_ask(&context));
+    }
+}
+
+pub struct PartitioningMethodQuestion;
+
+#[async_trait::async_trait]
+impl Question for PartitioningMethodQuestion {
+    fn id(&self) -> QuestionId {
+        QuestionId::PartitioningMethod
+    }
+
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        let options = vec![
+            "Automatic (Erase Disk)".to_string(),
+            "Manual (cfdisk)".to_string(),
+        ];
+
+        let result = FzfWrapper::builder()
+            .header(format!(
+                "{} Select Partitioning Method",
+                NerdFont::HardDrive
+            ))
+            .select(options)?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(s) => Ok(QuestionResult::Answer(s)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
+        }
+    }
+}
+
+pub struct RunCfdiskQuestion;
+
+#[async_trait::async_trait]
+impl Question for RunCfdiskQuestion {
+    fn id(&self) -> QuestionId {
+        QuestionId::RunCfdisk
+    }
+
+    fn should_ask(&self, context: &InstallContext) -> bool {
+        context
+            .get_answer(&QuestionId::PartitioningMethod)
+            .map(|s| s.contains("Manual"))
+            .unwrap_or(false)
+    }
+
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+        let disk = context
+            .get_answer(&QuestionId::Disk)
+            .context("No disk selected")?;
+
+        let disk_path = disk.split('(').next().unwrap_or(disk).trim();
+
+        // Check for cfdisk
+        if !crate::common::requirements::CFDISK_PACKAGE.is_installed() {
+            // Try to install cfdisk if missing
+            if let Err(e) = crate::common::requirements::CFDISK_PACKAGE.ensure() {
+                return Err(anyhow::anyhow!(
+                    "cfdisk is required for manual partitioning but could not be installed: {}",
+                    e
+                ));
+            }
+        }
+
+        // Run cfdisk
+        // We need to release the terminal for cfdisk
+        // But FzfWrapper doesn't hold it.
+        // We just run Command with inherit stdio.
+
+        println!("Starting cfdisk on {}...", disk_path);
+        println!("Please create your partitions.");
+        println!("Press Enter to continue...");
+        let _ = std::io::stdin().read_line(&mut String::new());
+
+        let status = std::process::Command::new("cfdisk")
+            .arg(disk_path)
+            .status()?;
+
+        if !status.success() {
+            return Ok(QuestionResult::Cancelled);
+        }
+
+        Ok(QuestionResult::Answer("done".to_string()))
+    }
+}
+
+pub struct PartitionSelectorQuestion {
+    pub id: QuestionId,
+    pub prompt: String,
+    pub icon: NerdFont,
+    pub is_optional: bool,
+}
+
+impl PartitionSelectorQuestion {
+    pub fn new(id: QuestionId, prompt: impl Into<String>, icon: NerdFont) -> Self {
+        Self {
+            id,
+            prompt: prompt.into(),
+            icon,
+            is_optional: false,
+        }
+    }
+
+    pub fn optional(mut self) -> Self {
+        self.is_optional = true;
+        self
+    }
+}
+
+#[async_trait::async_trait]
+impl Question for PartitionSelectorQuestion {
+    fn id(&self) -> QuestionId {
+        self.id.clone()
+    }
+
+    fn is_optional(&self) -> bool {
+        self.is_optional
+    }
+
+    fn should_ask(&self, context: &InstallContext) -> bool {
+        context
+            .get_answer(&QuestionId::PartitioningMethod)
+            .map(|s| s.contains("Manual"))
+            .unwrap_or(false)
+    }
+
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+        let disk = context
+            .get_answer(&QuestionId::Disk)
+            .context("No disk selected")?;
+        let disk_path = disk.split('(').next().unwrap_or(disk).trim();
+
+        // Run lsblk to get partitions on this disk
+        // We do this here to get fresh data after cfdisk
+        let output = std::process::Command::new("lsblk")
+            .args(["-n", "-o", "NAME,SIZE,TYPE", "-r", disk_path])
+            .output()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut partitions = Vec::new();
+
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 3 {
+                let name = parts[0];
+                let size = parts[1];
+                let type_ = parts[2];
+
+                if type_ == "part" {
+                    // Full path
+                    let path = if name.starts_with("/") {
+                        name.to_string()
+                    } else {
+                        format!("/dev/{}", name)
+                    };
+                    partitions.push(format!("{} ({})", path, size));
+                }
+            }
+        }
+
+        if partitions.is_empty() {
+            FzfWrapper::message(&format!(
+                "{} No partitions found on {}.\nDid you save your changes in cfdisk?",
+                NerdFont::Warning,
+                disk_path
+            ))?;
+            return Ok(QuestionResult::Cancelled);
+        }
+
+        let result = FzfWrapper::builder()
+            .header(format!("{} {}", self.icon, self.prompt))
+            .select(partitions)?;
+
+        match result {
+            crate::menu_utils::FzfResult::Selected(s) => Ok(QuestionResult::Answer(s)),
+            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
+            _ => Ok(QuestionResult::Cancelled),
+        }
+    }
+
+    fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
+        // Check if this partition is already used by another answer
+        let current_id = self.id();
+        let part_path = answer.split('(').next().unwrap_or(answer).trim();
+
+        for (id, val) in &context.answers {
+            if id == &current_id {
+                continue;
+            }
+
+            // Check against other partition questions
+            if matches!(
+                id,
+                QuestionId::RootPartition
+                    | QuestionId::BootPartition
+                    | QuestionId::HomePartition
+                    | QuestionId::SwapPartition
+            ) {
+                let other_path = val.split('(').next().unwrap_or(val).trim();
+                if part_path == other_path {
+                    return Err(format!(
+                        "Partition {} is already selected for {:?}",
+                        part_path, id
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 }
