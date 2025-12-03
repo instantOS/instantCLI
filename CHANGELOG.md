@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3](https://github.com/instantOS/instantCLI/compare/v0.8.2...v0.8.3) - 2025-12-03
+
+### Fixed
+
+- fix aliasing
+- fix outline
+- fix logo compositing
+- fix random wallpaper
+- fix swaymsg path quoting
+- fix arg parsing
+
+### Other
+
+- init random wallpaper
+- add wallpaper setting
+- add dwm support for `ins wallpaper`
+- X11 support for `ins wallpaper`
+- make autostart apply wallpaper
+- init sway wallpaper support
+- init wallpaper command
+- cleanup
+- make ins dot use menu utils
+- better icons
+- better logging for read-only
+- init read-only dotfile repos
+- plans
+- more plans
+- plan
+- document stuff
+
 ## [0.8.2](https://github.com/instantOS/instantCLI/compare/v0.8.1...v0.8.2) - 2025-12-03
 
 ### Fixed
