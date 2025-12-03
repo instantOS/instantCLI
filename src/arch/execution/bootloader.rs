@@ -10,7 +10,7 @@ pub async fn install_bootloader(
     println!("Installing bootloader (inside chroot)...");
 
     match context.system_info.boot_mode {
-        BootMode::UEFI64 | BootMode::UEFI32 => install_grub_uefi(executor)?,
+        BootMode::UEFI64 | BootMode::UEFI32 => install_grub_uefi(context, executor)?,
         BootMode::BIOS => install_grub_bios(context, executor)?,
     }
 
@@ -19,30 +19,26 @@ pub async fn install_bootloader(
     Ok(())
 }
 
-fn install_grub_uefi(executor: &CommandExecutor) -> Result<()> {
+fn install_grub_uefi(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Detected UEFI mode. Installing GRUB for UEFI...");
 
-    // Install packages if not already present (pacstrap should have installed them if added to list)
-    // But here we assume they are installed or we are just configuring.
-    // Actually, we should probably ensure grub and efibootmgr are installed.
-    // But `base` step usually installs packages.
-    // For now, let's assume `grub` and `efibootmgr` were in the package list.
-    // If not, we might need to install them here using pacman.
+    // Determine the appropriate target based on UEFI mode
+    let target = match context.system_info.boot_mode {
+        BootMode::UEFI64 => "x86_64-efi",
+        BootMode::UEFI32 => "i386-efi",
+        _ => anyhow::bail!("Invalid boot mode for UEFI installation"),
+    };
 
-    // Check if we need to install packages?
-    // The plan didn't explicitly say to install packages here, but `base` step might have missed them.
-    // Let's assume they are installed for now.
+    println!("Installing GRUB with target: {}", target);
 
-    // grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
-    // Note: /boot is usually where ESP is mounted in Arch if using systemd-boot,
-    // but for GRUB it can be /boot/efi or just /boot.
-    // The plan said: "mount --mkdir /dev/efi_system_partition /mnt/boot"
-    // So ESP is at /boot.
-
+    // Install GRUB for UEFI
+    // Note: ESP (EFI System Partition) is mounted at /boot according to the installation plan
+    // This ensures GRUB is properly installed for UEFI boot
     let mut cmd = Command::new("grub-install");
-    cmd.arg("--target=x86_64-efi")
+    cmd.arg(format!("--target={}", target))
         .arg("--efi-directory=/boot")
-        .arg("--bootloader-id=GRUB");
+        .arg("--bootloader-id=GRUB")
+        .arg("--recheck");  // Ensure GRUB is properly installed
 
     executor.run(&mut cmd)?;
 
