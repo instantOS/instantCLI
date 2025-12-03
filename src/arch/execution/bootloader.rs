@@ -203,6 +203,8 @@ pub fn configure_grub_theme(_context: &InstallContext, executor: &CommandExecuto
     }
 
     let content = std::fs::read_to_string(grub_default)?;
+    // Note: If encryption is used, the theme will not be visible during the initial
+    // boot phase (GRUB password prompt) because /usr is on the encrypted partition.
     let theme_path = "/usr/share/grub/themes/instantos/theme.txt";
 
     let mut new_lines = Vec::new();

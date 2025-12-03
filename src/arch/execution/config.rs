@@ -353,6 +353,8 @@ fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) -> R
     // Create Plymouth config directory if it doesn't exist
     std::fs::create_dir_all("/etc/plymouth")?;
 
+    // Note: If encryption is used, the Plymouth theme will not be visible during the
+    // password prompt because the theme files are on the encrypted partition.
     let config_content = r#"[Daemon]
 Theme=spinner
 ShowDelay=0
