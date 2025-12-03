@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2](https://github.com/instantOS/instantCLI/compare/v0.8.1...v0.8.2) - 2025-12-03
+
+### Fixed
+
+- fix ins binary conflict
+- fix plymouth
+- fix cfdisk sigint handling
+- fix cfdisk again
+- fix cfdisk
+
+### Other
+
+- make ins arch setup better
+- ilovecandy
+- add clipmenud dep
+- fmt
+- fmt
+- tty is finicky
+- better get_default
+- add mirror shuffling
+
 ## [0.8.1](https://github.com/instantOS/instantCLI/compare/v0.8.0...v0.8.1) - 2025-12-02
 
 ### Fixed
