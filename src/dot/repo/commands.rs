@@ -41,12 +41,7 @@ pub fn handle_repo_command(
         RepoCommands::Disable { name } => disable_repository(config, name),
         RepoCommands::Subdirs { command } => handle_subdir_command(config, db, command),
         RepoCommands::SetReadOnly { name, read_only } => {
-            let read_only_bool = match read_only.to_lowercase().as_str() {
-                "true" | "yes" | "y" | "1" => true,
-                "false" | "no" | "n" | "0" => false,
-                _ => return Err(anyhow::anyhow!("Invalid boolean value: {}", read_only)),
-            };
-            set_read_only_status(config, name, read_only_bool)
+            set_read_only_status(config, name, *read_only)
         }
     }
 }
