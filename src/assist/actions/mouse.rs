@@ -12,24 +12,35 @@ pub fn mouse_speed_slider() -> Result<()> {
 
 pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
     let compositor = CompositorType::detect();
-    if compositor != CompositorType::Sway {
-        anyhow::bail!(
-            "Mouse speed adjustment is currently only supported on Sway. Detected: {}",
-            compositor.name()
-        );
-    }
 
-    // Ensure accel profile is flat
-    Command::new("swaymsg")
-        .arg("input type:pointer accel_profile flat")
-        .output()
-        .context("Failed to set mouse accel profile to flat")?;
+    // Set accel profile based on compositor
+    match compositor {
+        CompositorType::Sway => {
+            Command::new("swaymsg")
+                .arg("input type:pointer accel_profile flat")
+                .output()
+                .context("Failed to set mouse accel profile to flat")?;
+        }
+        _ if compositor.is_x11() => {
+            // X11 doesn't need explicit accel profile setting for libinput
+        }
+        _ => {
+            anyhow::bail!(
+                "Mouse speed adjustment is only supported on Sway and X11. Detected: {}",
+                compositor.name()
+            );
+        }
+    }
 
     let start_value = if let Some(v) = initial_value {
         v
     } else {
-        // Detect current speed
-        let current_speed = get_sway_mouse_speed().unwrap_or(0.0);
+        // Detect current speed based on compositor
+        let current_speed = match compositor {
+            CompositorType::Sway => get_sway_mouse_speed().unwrap_or(0.0),
+            _ if compositor.is_x11() => get_x11_mouse_speed().unwrap_or(0.0),
+            _ => 0.0,
+        };
 
         // Map -1.0..1.0 to 0..100
         // speed = (value / 50.0) - 1.0
@@ -66,15 +77,30 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
     // Clamp to -1.0..1.0 just in case
     let speed = speed.clamp(-1.0, 1.0);
 
-    // Apply to sway
-    // swaymsg input type:pointer pointer_accel <value>
-    // Need to pass as a single argument to avoid swaymsg interpreting negative values as options
-    let sway_command = format!("input type:pointer pointer_accel {}", speed);
+    let compositor = CompositorType::detect();
 
-    Command::new("swaymsg")
-        .arg(sway_command)
-        .output()
-        .context("Failed to set mouse speed")?;
+    match compositor {
+        CompositorType::Sway => {
+            // Apply to sway
+            // swaymsg input type:pointer pointer_accel <value>
+            // Need to pass as a single argument to avoid swaymsg interpreting negative values as options
+            let sway_command = format!("input type:pointer pointer_accel {}", speed);
+
+            Command::new("swaymsg")
+                .arg(sway_command)
+                .output()
+                .context("Failed to set mouse speed")?;
+        }
+        _ if compositor.is_x11() => {
+            set_x11_mouse_speed(speed)?;
+        }
+        _ => {
+            anyhow::bail!(
+                "Mouse speed adjustment is only supported on Sway and X11. Detected: {}",
+                compositor.name()
+            );
+        }
+    }
 
     Ok(())
 }
@@ -106,4 +132,86 @@ fn get_sway_mouse_speed() -> Result<f64> {
     }
 
     Ok(0.0) // Default
+}
+
+fn get_x11_mouse_devices() -> Result<Vec<String>> {
+    let output = Command::new("xinput")
+        .arg("list")
+        .output()
+        .context("Failed to run xinput list")?;
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+
+    // Extract device IDs
+    let mut device_ids = Vec::new();
+    for line in output_str.lines() {
+        if let Some(id_str) = line.split("id=").nth(1) {
+            if let Some(id) = id_str.split_whitespace().next() {
+                device_ids.push(id.to_string());
+            }
+        }
+    }
+
+    // Filter to devices that support libinput Accel Speed
+    let mut mouse_devices = Vec::new();
+    for id in device_ids {
+        let props_output = Command::new("xinput").args(["list-props", &id]).output();
+
+        if let Ok(props) = props_output {
+            let props_str = String::from_utf8_lossy(&props.stdout);
+            if props_str.contains("libinput Accel Speed") {
+                mouse_devices.push(id);
+            }
+        }
+    }
+
+    Ok(mouse_devices)
+}
+
+fn get_x11_mouse_speed() -> Result<f64> {
+    let devices = get_x11_mouse_devices()?;
+
+    if let Some(first_device) = devices.first() {
+        let output = Command::new("xinput")
+            .args(["list-props", first_device])
+            .output()
+            .context("Failed to get xinput properties")?;
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+
+        // Parse "libinput Accel Speed (nnn):	-0.400000" format
+        for line in output_str.lines() {
+            if line.contains("libinput Accel Speed") {
+                if let Some(value_str) = line.split(':').nth(1) {
+                    if let Ok(speed) = value_str.trim().parse::<f64>() {
+                        return Ok(speed);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(0.0) // Default
+}
+
+fn set_x11_mouse_speed(speed: f64) -> Result<()> {
+    let devices = get_x11_mouse_devices()?;
+
+    if devices.is_empty() {
+        anyhow::bail!("No mouse devices with libinput support found");
+    }
+
+    for device_id in devices {
+        Command::new("xinput")
+            .args([
+                "set-prop",
+                &device_id,
+                "libinput Accel Speed",
+                &speed.to_string(),
+            ])
+            .output()
+            .with_context(|| format!("Failed to set mouse speed for device {}", device_id))?;
+    }
+
+    Ok(())
 }
