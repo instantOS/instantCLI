@@ -1,4 +1,4 @@
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use clap::builder::BoolishValueParser;
 use clap_complete::engine::ArgValueCompleter;
 
@@ -7,17 +7,7 @@ pub enum RepoCommands {
     /// List all configured repositories
     List,
     /// Clone a new repository (and immediately apply)
-    Clone {
-        url: String,
-        #[arg(long)]
-        name: Option<String>,
-        #[arg(long, short = 'b')]
-        branch: Option<String>,
-        #[arg(long)]
-        read_only: bool,
-        #[arg(long)]
-        force_write: bool,
-    },
+    Clone(CloneArgs),
     /// Remove a repository
     Remove {
         #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
@@ -69,4 +59,16 @@ pub enum SubdirCommands {
         name: String,
         subdirs: Vec<String>,
     },
+}
+#[derive(Args, Debug, Clone)]
+pub struct CloneArgs {
+    pub url: String,
+    #[arg(long)]
+    pub name: Option<String>,
+    #[arg(long, short = 'b')]
+    pub branch: Option<String>,
+    #[arg(long)]
+    pub read_only: bool,
+    #[arg(long)]
+    pub force_write: bool,
 }

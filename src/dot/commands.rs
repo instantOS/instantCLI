@@ -4,7 +4,7 @@ use colored::Colorize;
 
 use super::config::Config;
 use super::db::Database;
-use super::repo::cli::RepoCommands;
+use super::repo::cli::{CloneArgs, RepoCommands};
 use crate::ui::prelude::*;
 
 #[derive(Subcommand, Debug)]
@@ -15,17 +15,7 @@ pub enum DotCommands {
         command: RepoCommands,
     },
     /// Clone a new repository (alias for 'repo clone')
-    Clone {
-        url: String,
-        #[arg(long)]
-        name: Option<String>,
-        #[arg(long, short = 'b')]
-        branch: Option<String>,
-        #[arg(long)]
-        read_only: bool,
-        #[arg(long)]
-        force_write: bool,
-    },
+    Clone(CloneArgs),
     /// Reset modified dotfiles to their original state in the given path
     Reset {
         /// Path to reset (relative to ~)
@@ -219,23 +209,11 @@ pub fn handle_dot_command(
         DotCommands::Repo { command } => {
             super::repo::commands::handle_repo_command(&mut config, &db, command, debug)?;
         }
-        DotCommands::Clone {
-            url,
-            name,
-            branch,
-            read_only,
-            force_write,
-        } => {
+        DotCommands::Clone(args) => {
             super::repo::commands::handle_repo_command(
                 &mut config,
                 &db,
-                &RepoCommands::Clone {
-                    url: url.clone(),
-                    name: name.clone(),
-                    branch: branch.clone(),
-                    read_only: *read_only,
-                    force_write: *force_write,
-                },
+                &RepoCommands::Clone(args.clone()),
                 debug,
             )?;
         }

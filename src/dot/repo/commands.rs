@@ -17,20 +17,14 @@ pub fn handle_repo_command(
 ) -> Result<()> {
     match command {
         RepoCommands::List => list_repositories(config, db),
-        RepoCommands::Clone {
-            url,
-            name,
-            branch,
-            read_only,
-            force_write,
-        } => clone_repository(
+        RepoCommands::Clone(args) => clone_repository(
             config,
             db,
-            url,
-            name.as_deref(),
-            branch.as_deref(),
-            *read_only,
-            *force_write,
+            &args.url,
+            args.name.as_deref(),
+            args.branch.as_deref(),
+            args.read_only,
+            args.force_write,
             debug,
         ),
         RepoCommands::Remove { name, keep_files } => {

@@ -28,6 +28,7 @@ mod tests {
             name: "test-repo".to_string(),
             author: None,
             description: None,
+            read_only: None,
             dots_dirs: vec![".".to_string()],
         };
 
@@ -37,6 +38,7 @@ mod tests {
             branch: None,
             active_subdirectories: vec![".".to_string()],
             enabled: true,
+            read_only: false,
             metadata: Some(metadata.clone()),
         };
 
@@ -72,6 +74,7 @@ mod tests {
             branch: None,
             active_subdirectories: vec!["dots".to_string()],
             enabled: true,
+            read_only: false,
             metadata: None,
         };
 
