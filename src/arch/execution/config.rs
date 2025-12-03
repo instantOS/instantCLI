@@ -7,6 +7,7 @@ use std::process::Command;
 pub async fn install_config(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Configuring system (inside chroot)...");
 
+    configure_pacman_target(executor).await?;
     configure_timezone(context, executor)?;
     configure_locale(context, executor)?;
     configure_network(context, executor)?;
@@ -18,6 +19,13 @@ pub async fn install_config(context: &InstallContext, executor: &CommandExecutor
         configure_plymouth(context, executor)?;
     }
 
+    Ok(())
+}
+
+async fn configure_pacman_target(executor: &CommandExecutor) -> Result<()> {
+    println!("Configuring target pacman settings...");
+    crate::common::pacman::configure_pacman_settings(Some("/etc/pacman.conf"), executor.dry_run)
+        .await?;
     Ok(())
 }
 

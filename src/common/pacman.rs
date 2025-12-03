@@ -99,6 +99,90 @@ fn enable_multilib_in_string(content: &str) -> Option<String> {
     }
 }
 
+pub async fn configure_pacman_settings(path: Option<&str>, dry_run: bool) -> Result<()> {
+    let config_path = path.unwrap_or("/etc/pacman.conf");
+    if dry_run {
+        println!(
+            "[DRY RUN] Configuring pacman settings (Candy, Color, ParallelDownloads) in {}",
+            config_path
+        );
+        return Ok(());
+    }
+
+    match tokio::fs::read_to_string(config_path).await {
+        Ok(content) => {
+            if let Some(new_content) = process_pacman_settings(&content) {
+                tokio::fs::write(config_path, new_content).await?;
+                println!("Configured pacman settings in {}", config_path);
+            } else {
+                println!("Pacman settings already configured in {}", config_path);
+            }
+        }
+        Err(e) => {
+            println!("Warning: Could not read {}: {}", config_path, e);
+        }
+    }
+    Ok(())
+}
+
+fn process_pacman_settings(content: &str) -> Option<String> {
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let mut changed = false;
+    let mut has_candy = false;
+    let mut options_idx = None;
+    let mut verbose_pkg_lists_idx = None;
+
+    // First pass: analyze structure
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed == "[options]" {
+            options_idx = Some(i);
+        } else if trimmed == "ILoveCandy" {
+            has_candy = true;
+        } else if trimmed == "VerbosePkgLists" {
+            verbose_pkg_lists_idx = Some(i);
+        }
+    }
+
+    // Second pass: modifications
+    for line in &mut lines {
+        let trimmed = line.trim();
+        if trimmed == "#Color" {
+            *line = "Color".to_string();
+            changed = true;
+        } else if trimmed.starts_with("#ParallelDownloads") {
+            *line = line.replacen('#', "", 1);
+            changed = true;
+        }
+    }
+
+    // Handle ILoveCandy insertion
+    // We need to re-calculate indices or just insert if we haven't found it
+    if !has_candy {
+        if let Some(idx) = verbose_pkg_lists_idx {
+            // Insert after VerbosePkgLists
+            // Note: indices might have shifted if we modified lines? No, we only modified in place.
+            // But we need to be careful if we iterate.
+            // Vec::insert shifts elements.
+            if idx + 1 <= lines.len() {
+                lines.insert(idx + 1, "ILoveCandy".to_string());
+                changed = true;
+            }
+        } else if let Some(idx) = options_idx {
+            if idx + 1 <= lines.len() {
+                lines.insert(idx + 1, "ILoveCandy".to_string());
+                changed = true;
+            }
+        }
+    }
+
+    if changed {
+        Some(lines.join("\n"))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,18 +205,8 @@ Include = /etc/pacman.d/mirrorlist
 #[custom]
 #Include = ...
 "#;
-        // Note: lines.join("\n") might not preserve trailing newline exactly as input if input has one,
-        // but for config files it's usually fine.
-        // Our input has a leading newline which split gives as empty string at start?
-        // lines() iterator handles newlines.
-
         let processed = enable_multilib_in_string(input).unwrap();
-
-        // Normalize newlines for comparison
-        let processed_trim = processed.trim();
-        let expected_trim = expected.trim();
-
-        assert_eq!(processed_trim, expected_trim);
+        assert_eq!(processed.trim(), expected.trim());
     }
 
     #[test]
@@ -142,5 +216,45 @@ Include = /etc/pacman.d/mirrorlist
 Include = /etc/pacman.d/mirrorlist
 "#;
         assert_eq!(enable_multilib_in_string(input), None);
+    }
+
+    #[test]
+    fn test_process_pacman_settings() {
+        let input = r#"
+[options]
+#VerbosePkgLists
+#Color
+#ParallelDownloads = 5
+"#;
+        let expected = r#"
+[options]
+ILoveCandy
+#VerbosePkgLists
+Color
+ParallelDownloads = 5
+"#;
+        // Note: ILoveCandy inserted after [options] because VerbosePkgLists is commented out
+        // Wait, in my logic: if VerbosePkgLists is commented, verbose_pkg_lists_idx is None.
+        // So it falls back to options_idx.
+
+        let processed = process_pacman_settings(input).unwrap();
+        assert_eq!(processed.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_process_pacman_settings_with_verbose() {
+        let input = r#"
+[options]
+VerbosePkgLists
+#Color
+"#;
+        let expected = r#"
+[options]
+VerbosePkgLists
+ILoveCandy
+Color
+"#;
+        let processed = process_pacman_settings(input).unwrap();
+        assert_eq!(processed.trim(), expected.trim());
     }
 }

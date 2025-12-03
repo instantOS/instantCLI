@@ -6,6 +6,9 @@ pub async fn install_base(context: &InstallContext, executor: &CommandExecutor) 
     println!("Setting up mirrors...");
     setup_mirrors(context, executor).await?;
 
+    println!("Configuring pacman settings...");
+    crate::common::pacman::configure_pacman_settings(None, executor.dry_run).await?;
+
     println!("Installing base system...");
     run_pacstrap(context, executor)?;
 
