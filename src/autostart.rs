@@ -82,6 +82,20 @@ pub async fn run(debug: bool) -> Result<()> {
         }
     }
 
+    if debug {
+        println!("Applying settings");
+    }
+    if let Err(e) = crate::settings::commands::dispatch_settings_command(
+        debug,
+        false,
+        Some(crate::settings::commands::SettingsCommands::Apply),
+        None,
+    ) {
+        if debug {
+            eprintln!("Failed to apply settings: {}", e);
+        }
+    }
+
     if let CompositorType::Sway = compositor {
         if debug {
             println!("Running assist setup for Sway");
