@@ -59,7 +59,7 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
 
     // Plymouth should be after systemd but before encrypt/sd-encrypt
     // And definitely before sd-encrypt to show password prompt
-    if !context.get_answer_bool(QuestionId::MinimalMode) {
+    if use_plymouth && !context.get_answer_bool(QuestionId::MinimalMode) {
         config.ensure_hook_position(
             "plymouth",
             &["base", "systemd", "udev"],       // After these

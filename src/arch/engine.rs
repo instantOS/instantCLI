@@ -399,6 +399,11 @@ pub trait Question: Send + Sync {
     fn data_providers(&self) -> Vec<Box<dyn AsyncDataProvider>> {
         vec![]
     }
+
+    /// Returns the default value for this question if one exists
+    fn get_default(&self, _context: &InstallContext) -> Option<String> {
+        None
+    }
 }
 
 pub struct QuestionEngine {
@@ -551,6 +556,12 @@ impl QuestionEngine {
 
             // Skip optional questions in the main flow
             if q.is_optional() {
+                // If not answered, try to set default
+                if !self.context.is_answered(q.id()) {
+                    if let Some(default) = q.get_default(&self.context) {
+                        self.context.answers.insert(q.id(), default);
+                    }
+                }
                 continue;
             }
 

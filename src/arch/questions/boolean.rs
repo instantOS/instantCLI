@@ -71,19 +71,18 @@ impl Question for BooleanQuestion {
         }
     }
 
-    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
-        // Determine the effective default based on dynamic function or static setting
+    fn get_default(&self, context: &InstallContext) -> Option<String> {
         let effective_default = if let Some(dynamic_func) = &self.dynamic_default {
             dynamic_func(context)
         } else {
             self.default_yes
         };
+        Some(if effective_default { "yes".to_string() } else { "no".to_string() })
+    }
 
-        let options = if effective_default {
-            vec!["yes".to_string(), "no".to_string()]
-        } else {
-            vec!["no".to_string(), "yes".to_string()]
-        };
+    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
+        // Always present Yes/No in a consistent order, ignoring the default for UI purposes
+        let options = vec!["yes".to_string(), "no".to_string()];
 
         let result = FzfWrapper::builder()
             .header(format!("{} {}", self.icon, self.prompt))
