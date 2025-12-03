@@ -17,6 +17,8 @@ pub struct Repo {
     pub active_subdirectories: Vec<String>,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    #[serde(default = "default_read_only")]
+    pub read_only: bool,
     /// Optional metadata for repositories that don't have an instantdots.toml file (e.g. yadm/stow)
     pub metadata: Option<crate::dot::types::RepoMetaData>,
 }
@@ -28,6 +30,10 @@ fn default_active_subdirs() -> Vec<String> {
 
 fn default_enabled() -> bool {
     true
+}
+
+fn default_read_only() -> bool {
+    false
 }
 
 fn default_clone_depth() -> u32 {

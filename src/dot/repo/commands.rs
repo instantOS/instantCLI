@@ -17,9 +17,22 @@ pub fn handle_repo_command(
 ) -> Result<()> {
     match command {
         RepoCommands::List => list_repositories(config, db),
-        RepoCommands::Clone { url, name, branch } => {
-            clone_repository(config, db, url, name.as_deref(), branch.as_deref(), debug)
-        }
+        RepoCommands::Clone {
+            url,
+            name,
+            branch,
+            read_only,
+            force_write,
+        } => clone_repository(
+            config,
+            db,
+            url,
+            name.as_deref(),
+            branch.as_deref(),
+            *read_only,
+            *force_write,
+            debug,
+        ),
         RepoCommands::Remove { name, keep_files } => {
             remove_repository(config, db, name, !*keep_files)
         }
@@ -27,6 +40,14 @@ pub fn handle_repo_command(
         RepoCommands::Enable { name } => enable_repository(config, name),
         RepoCommands::Disable { name } => disable_repository(config, name),
         RepoCommands::Subdirs { command } => handle_subdir_command(config, db, command),
+        RepoCommands::SetReadOnly { name, read_only } => {
+            let read_only_bool = match read_only.to_lowercase().as_str() {
+                "true" | "yes" | "y" | "1" => true,
+                "false" | "no" | "n" | "0" => false,
+                _ => return Err(anyhow::anyhow!("Invalid boolean value: {}", read_only)),
+            };
+            set_read_only_status(config, name, read_only_bool)
+        }
     }
 }
 
@@ -68,7 +89,8 @@ fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
                             vec!["dots"]
                         } else {
                             repo_config.active_subdirectories.iter().map(|s| s.as_str()).collect::<Vec<_>>()
-                        }
+                        },
+                        "read_only": repo_config.read_only
                     })
                 })
                 .collect();
@@ -94,6 +116,12 @@ fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
                     "disabled".yellow()
                 };
 
+                let read_only = if repo_config.read_only {
+                    " [read-only]".yellow()
+                } else {
+                    "".clear()
+                };
+
                 let branch_info = repo_config
                     .branch
                     .as_deref()
@@ -107,11 +135,12 @@ fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
                 };
 
                 println!(
-                    "  {}{} - {} [{}]",
+                    "  {}{} - {} [{}]{}",
                     repo_config.name.cyan(),
                     branch_info,
                     repo_config.url,
-                    status
+                    status,
+                    read_only
                 );
                 println!("    Active subdirs: {active_subdirs}");
             }
@@ -128,6 +157,8 @@ pub fn clone_repository(
     url: &str,
     name: Option<&str>,
     branch: Option<&str>,
+    read_only_flag: bool,
+    force_write_flag: bool,
     debug: bool,
 ) -> Result<()> {
     let repo_name = name
@@ -141,6 +172,7 @@ pub fn clone_repository(
         branch: branch.map(|s| s.to_string()),
         active_subdirectories: vec!["dots".to_string()],
         enabled: true,
+        read_only: read_only_flag,
         metadata: None,
     };
 
@@ -193,6 +225,31 @@ pub fn clone_repository(
                     ),
                     None,
                 );
+            }
+
+            // Check metadata for read-only request
+            if !read_only_flag && !force_write_flag {
+                if let Ok(local_repo) = crate::dot::repo::RepositoryManager::new(config, db).get_repository_info(&repo_name) {
+                    if let Some(true) = local_repo.meta.read_only {
+                         emit(
+                            Level::Info,
+                            "dot.repo.clone.read_only",
+                            &format!(
+                                "{} Repository requested read-only mode. Marking as read-only.",
+                                char::from(NerdFont::Info)
+                            ),
+                            None,
+                        );
+                        // Update config to set read_only to true
+                        for repo in &mut config.repos {
+                            if repo.name == repo_name {
+                                repo.read_only = true;
+                                break;
+                            }
+                        }
+                        config.save(None)?;
+                    }
+                }
             }
         }
         Err(e) => {
@@ -271,6 +328,12 @@ fn show_repository_info(config: &Config, db: &Database, name: &str) -> Result<()
         "Disabled".yellow().to_string()
     };
 
+    let read_only_text = if repo_config.read_only {
+        "Yes".yellow().to_string()
+    } else {
+        "No".green().to_string()
+    };
+
     let mut rows: Vec<(char, &str, String)> = vec![
         (
             char::from(NerdFont::Folder),
@@ -288,6 +351,7 @@ fn show_repository_info(config: &Config, db: &Database, name: &str) -> Result<()
                 .to_string(),
         ),
         (char::from(NerdFont::Check), "Status", status_text),
+        (char::from(NerdFont::Lock), "Read-only", read_only_text),
         (char::from(NerdFont::Folder), "Local Path", local_path),
     ];
 
@@ -482,4 +546,22 @@ fn apply_all_repos(config: &Config, db: &Database) -> Result<()> {
 
     apply_all(config, db)?;
     Ok(())
+}
+
+/// Set read-only status for a repository
+fn set_read_only_status(config: &mut Config, name: &str, read_only: bool) -> Result<()> {
+    for repo in &mut config.repos {
+        if repo.name == name {
+            repo.read_only = read_only;
+            config.save(None)?;
+            println!(
+                "{} read-only status for repository '{}' to {}",
+                "Set".green(),
+                name,
+                read_only
+            );
+            return Ok(());
+        }
+    }
+    Err(anyhow::anyhow!("Repository '{}' not found", name))
 }

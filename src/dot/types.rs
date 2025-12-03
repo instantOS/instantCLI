@@ -10,6 +10,7 @@ pub struct RepoMetaData {
     pub name: String,
     pub author: Option<String>,
     pub description: Option<String>,
+    pub read_only: Option<bool>,
     #[serde(default = "default_dots_dirs")]
     pub dots_dirs: Vec<String>,
 }

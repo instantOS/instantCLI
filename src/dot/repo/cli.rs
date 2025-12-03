@@ -12,6 +12,10 @@ pub enum RepoCommands {
         name: Option<String>,
         #[arg(long, short = 'b')]
         branch: Option<String>,
+        #[arg(long)]
+        read_only: bool,
+        #[arg(long)]
+        force_write: bool,
     },
     /// Remove a repository
     Remove {
@@ -39,6 +43,12 @@ pub enum RepoCommands {
     Subdirs {
         #[command(subcommand)]
         command: SubdirCommands,
+    },
+    /// Set read-only status for a repository
+    SetReadOnly {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: String,
+        read_only: String,
     },
 }
 

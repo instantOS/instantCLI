@@ -115,6 +115,8 @@ fn setup_dotfiles(debug: bool) -> Result<()> {
             Some(repo_name),
             None, // Default branch
             debug,
+            false, // read_only
+            false, // force_write
         )?;
     }
 

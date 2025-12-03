@@ -40,15 +40,24 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
     }
 
     if config.repos.len() == 1 {
-        return Ok(config.repos[0].clone());
+        let repo = &config.repos[0];
+        if !repo.read_only {
+            return Ok(repo.clone());
+        }
+        // If the only repo is read-only, fall through to filtering logic which will return error
     }
 
     let items: Vec<RepoSelectItem> = config
         .repos
         .iter()
+        .filter(|r| !r.read_only)
         .cloned()
         .map(|repo| RepoSelectItem { repo })
         .collect();
+
+    if items.is_empty() {
+        return Err(anyhow::anyhow!("No writable repositories configured"));
+    }
 
     match FzfWrapper::builder()
         .prompt("Select repository to add the dotfile to: ")

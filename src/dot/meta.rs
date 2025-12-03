@@ -102,6 +102,7 @@ struct RepoInputs {
     name: String,
     author: Option<String>,
     description: Option<String>,
+    read_only: bool,
 }
 
 /// Gather repository metadata inputs interactively or non-interactively.
@@ -115,6 +116,7 @@ fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoI
             name: default_name.to_string(),
             author: None,
             description: None,
+            read_only: false,
         });
     }
 
@@ -152,10 +154,19 @@ fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoI
         s => Some(s.to_string()),
     };
 
+    print!("Read-only (y/n) [n]: ");
+    io::stdout().flush().ok();
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("reading read-only from stdin")?;
+    let read_only = input.trim().to_lowercase() == "y";
+
     Ok(RepoInputs {
         name,
         author,
         description,
+        read_only,
     })
 }
 
@@ -170,6 +181,7 @@ fn write_instantdots_toml(repo_path: &Path, inputs: &RepoInputs) -> Result<()> {
         name: String,
         author: Option<String>,
         description: Option<String>,
+        read_only: Option<bool>,
         dots_dirs: Vec<String>,
     }
 
@@ -177,6 +189,7 @@ fn write_instantdots_toml(repo_path: &Path, inputs: &RepoInputs) -> Result<()> {
         name: inputs.name.clone(),
         author: inputs.author.clone(),
         description: inputs.description.clone(),
+        read_only: if inputs.read_only { Some(true) } else { None },
         dots_dirs: vec!["dots".to_string()],
     };
 
@@ -395,6 +408,7 @@ fn handle_existing_git_repo(
             name: repo_name.clone(),
             author: None,
             description: None,
+            read_only: None,
             dots_dirs: dots_dirs.clone(),
         };
 
@@ -404,6 +418,7 @@ fn handle_existing_git_repo(
             branch: None,
             active_subdirectories: dots_dirs,
             enabled: true,
+            read_only: false,
             metadata: Some(metadata),
         };
 
@@ -421,9 +436,11 @@ fn handle_existing_git_repo(
 }
 
 fn check_already_configured(config: &Config) -> Option<InitOutcome> {
-    if !config.repos.is_empty() {
-        let existing = config
-            .repos
+    // Filter out read-only repositories
+    let writable_repos: Vec<&config::Repo> = config.repos.iter().filter(|r| !r.read_only).collect();
+
+    if !writable_repos.is_empty() {
+        let existing = writable_repos
             .iter()
             .map(|repo| ExistingRepoInfo {
                 name: repo.name.clone(),
@@ -547,6 +564,7 @@ fn create_new_default_repo(
         branch: None,
         active_subdirectories: vec!["dots".to_string()],
         enabled: true,
+        read_only: false,
         metadata: None,
     };
 
