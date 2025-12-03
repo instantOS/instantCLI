@@ -1,5 +1,4 @@
 use crate::assist::{self, AssistCommands};
-use crate::common::compositor::CompositorType;
 use crate::common::paths;
 use crate::dot::commands::DotCommands;
 use anyhow::{Context, Result};
@@ -64,11 +63,6 @@ pub async fn run(debug: bool) -> Result<()> {
         return Ok(());
     }
 
-    let compositor = CompositorType::detect();
-    if debug {
-        println!("Detected compositor: {:?}", compositor);
-    }
-
     if which::which("nvidia-settings").is_ok() {
         if debug {
             println!("Found nvidia-settings, loading settings");
@@ -96,20 +90,14 @@ pub async fn run(debug: bool) -> Result<()> {
         }
     }
 
-    match compositor {
-        CompositorType::Sway => {
-            if debug {
-                println!("Running assist setup for Sway");
-            }
-            assist::dispatch_assist_command(debug, Some(AssistCommands::Setup { wm: "sway".to_string() }))?;
+    if debug {
+        println!("Running assist setup");
+    }
+    if let Err(e) = assist::dispatch_assist_command(debug, Some(AssistCommands::Setup { wm: None }))
+    {
+        if debug {
+            eprintln!("Assist setup failed: {}", e);
         }
-        CompositorType::I3 => {
-            if debug {
-                println!("Running assist setup for i3");
-            }
-            assist::dispatch_assist_command(debug, Some(AssistCommands::Setup { wm: "i3".to_string() }))?;
-        }
-        _ => {}
     }
 
     if crate::common::network::check_internet() {

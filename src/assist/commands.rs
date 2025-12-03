@@ -3,6 +3,7 @@ use clap::Subcommand;
 use std::fs::File;
 use std::io::{self, Write};
 
+use crate::common::compositor::CompositorType;
 use crate::menu::client;
 use crate::ui::prelude::*;
 
@@ -36,9 +37,9 @@ pub enum AssistCommands {
     },
     /// Set up Window Manager integration (export config and add include to main config)
     Setup {
-        /// Window manager to setup (sway or i3)
-        #[arg(long, default_value = "sway")]
-        wm: String,
+        /// Window manager to setup (sway or i3). Auto-detected if not specified.
+        #[arg(long)]
+        wm: Option<String>,
     },
     #[command(hide = true)]
     /// Set mouse speed (internal use for slider)
@@ -84,8 +85,17 @@ pub fn dispatch_assist_command(_debug: bool, command: Option<AssistCommands>) ->
                 );
             }
         }
-        Some(AssistCommands::Export { output_path, format }) => export_wm_config(output_path, &format),
-        Some(AssistCommands::Setup { wm }) => setup_wm_integration(&wm),
+        Some(AssistCommands::Export {
+            output_path,
+            format,
+        }) => export_wm_config(output_path, &format),
+        Some(AssistCommands::Setup { wm }) => {
+            let wm_name = wm.unwrap_or_else(|| match CompositorType::detect() {
+                CompositorType::I3 => "i3".to_string(),
+                _ => "sway".to_string(),
+            });
+            setup_wm_integration(&wm_name)
+        }
     }
 }
 
@@ -461,13 +471,24 @@ fn setup_wm_integration(wm_name: &str) -> Result<()> {
         );
 
         // Reload wm
-        let reload_cmd = if wm_name == "sway" { "swaymsg" } else { "i3-msg" };
-        match std::process::Command::new(reload_cmd).arg("reload").status() {
+        let reload_cmd = if wm_name == "sway" {
+            "swaymsg"
+        } else {
+            "i3-msg"
+        };
+        match std::process::Command::new(reload_cmd)
+            .arg("reload")
+            .status()
+        {
             Ok(status) if status.success() => {
                 emit(
                     Level::Success,
                     "assist.setup.reloaded",
-                    &format!("{} {} configuration reloaded", char::from(NerdFont::Sync), wm_name),
+                    &format!(
+                        "{} {} configuration reloaded",
+                        char::from(NerdFont::Sync),
+                        wm_name
+                    ),
                     None,
                 );
             }

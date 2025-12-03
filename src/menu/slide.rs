@@ -212,10 +212,7 @@ impl SliderApp {
                         .bg(Color::Black)
                         .add_modifier(Modifier::BOLD),
                 )
-                .label(Span::styled(
-                    label_text,
-                    Style::default().fg(label_color),
-                ));
+                .label(Span::styled(label_text, Style::default().fg(label_color)));
 
             frame.render_widget(title, vertical[0]);
             frame.render_widget(value_line, vertical[1]);
