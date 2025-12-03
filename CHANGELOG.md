@@ -44,9 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - better icons
 - better logging for read-only
 - init read-only dotfile repos
-- plans
-- more plans
-- plan
 - document stuff
 
 ## [0.8.2](https://github.com/instantOS/instantCLI/compare/v0.8.1...v0.8.2) - 2025-12-03
@@ -64,8 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - make ins arch setup better
 - ilovecandy
 - add clipmenud dep
-- fmt
-- fmt
 - tty is finicky
 - better get_default
 - add mirror shuffling
@@ -85,8 +80,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - make mouse accell flat
 - init manual partitioning
 - init mouse instantassist
-- add mouse plan
-- fmt
 - init color picker assist
 - skip plymouth in minimal mode
 - refactor minimal mode
@@ -103,22 +96,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - better password loop
 - init warnings
-- more plans
 - better inf arch info print
 - add distro to `ins arch info`
 - better looking `ins arch info`
 - add architecture detection to instantARCH
 - move more stuff to GpuKind
 - add GpuKind enum
-- fmt
 - init arch info
-- fmt
 - add intel GPU support
 - amd detection
 - better vm support
 - auto install drivers
 - make plymouth on the default
-- fmt
 - refactor boolean questions
 - simplify initramfs handling
 - init plymouth
@@ -133,7 +122,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - refactor repo init
 - init support for stow/yadm repos
-- fmt
 
 ## [0.7.12](https://github.com/instantOS/instantCLI/compare/v0.7.11...v0.7.12) - 2025-11-28
 
@@ -161,7 +149,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - encryption still broken, attempt fix
 - continue scrachpad refactor
 - init refactor for scratchpad
-- new plans
 - init scratchpad support for i3
 - limit retry amount for pacman
 - init pacman retry loop
@@ -170,7 +157,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - experimental LUKS
 - add password encryption question
 - remove plaintext password from installation
-- more plans
 - refactor logging
 - init better logging
 - Merge branch 'main' into dev
@@ -181,7 +167,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - better error handling
 - remove problematic test
-- plans
 
 ## [0.7.9](https://github.com/instantOS/instantCLI/compare/v0.7.8...v0.7.9) - 2025-11-26
 
@@ -192,10 +177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - add install script
-- clippy
 - init "finished" menu
 - improve live iso dep installation
-- plans
 - add missing deps
 
 ## [0.7.8](https://github.com/instantOS/instantCLI/compare/v0.7.7...v0.7.8) - 2025-11-26
@@ -237,7 +220,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- clippy
 - update os-release
 - add sway
 - make autostart run nvidia-settings -l
@@ -247,13 +229,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - be mindful of other display managers
 - init `ins arch setup`
 - use localectl instead of editing /etc...
-- more plans
-- fmt
 - deduplicate internet check
 - init autostart command
-- more plans
-- fmt
-- clippy
 
 ## [0.7.4](https://github.com/instantOS/instantCLI/compare/v0.7.3...v0.7.4) - 2025-11-25
 
@@ -277,8 +254,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- clippy
-- clippy
 - rename repo.rs
 - init postinstall step
 - sync PKGBUILD version
@@ -295,7 +270,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - make RAM determine swap space
 - better command runner
 - init disk step
-- move
 - add dry-run mode
 - scaffold install execution
 
@@ -313,7 +287,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - make RAM determine swap space
 - better command runner
 - init disk step
-- move
 - add dry-run mode
 - scaffold install execution
 
@@ -339,20 +312,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - better annotation provider
 - init annotations
 - add proper keymap provider
-- more plans
 - more icons
 - add icons
 - refactor very long engine function
 - better question fetching system
 - trigger review at the end of question asking
-- fmt
 - add question review
-- clippy
 - add output option
 - utf
 - better locale ask
 - implement real time zone provider
-- fmt
 - better requirement handling
 - add proper locale asking
 - make arch install require root
@@ -395,7 +364,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- clippy
 - Merge branch 'dev'
 
 ## [0.6.9](https://github.com/instantOS/instantCLI/compare/v0.6.8...v0.6.9) - 2025-11-18
@@ -444,7 +412,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - horrible awk code to find newest working release
-- format
 - init ARM support
 
 ## [0.6.4](https://github.com/instantOS/instantCLI/compare/v0.6.3...v0.6.4) - 2025-11-17
@@ -462,7 +429,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - update agents
 - init ignore command
-- new plans
 - refactor main function
 - remove old help message
 - add steamOS installer
@@ -553,8 +519,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - unify dependencies and descriptions
 - add password assist
 - auphonic plans
-- more plans
-- add plans
 - better help assist
 - add help assist
 - add assist sway setup command
@@ -568,14 +532,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - swap p and n assists
 - format
 - init flatpak dependency system
-- clippy
 - dedup packages
 - format
 - add full screen screenshot assist
 - abstract away area selection
 - make imgur uploader more rusty
 - refactor assist registry
-- new plan
 
 ## [0.5.1](https://github.com/instantOS/instantCLI/compare/v0.5.0...v0.5.1) - 2025-11-11
 
@@ -596,13 +558,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- clippy
 - replace unsafe usage
 - add menu fallback
 - init fallback plans
 - remove old function
 - add chord support to menu server
-- clippy
 - add chords ability from stdin
 - some fixes
 - init more generic chords
@@ -612,8 +572,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- add plans
-- add plans
 - deduplicate single file logic
 - init work on single file dependencies
 - simplify restic handling
@@ -631,7 +589,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - try another fix
 - refactor setup
-- add plans
 - add ability to cancel setup
 - resolve single file conflicts
 
@@ -659,57 +616,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - validate usernames
-- clippy
 - make system the single source of truth for user settings
 - refactor users module
-- clippy
 - unify launch settings
 - prettier settings
-- clippy fix
 - implement network settings
 - init network settings
-- add plans
 - rename more settings
 - more friendly setting names
-- new plans
 - refactor handle_settings
 - better multiple choice settings
 - better settings serialization
 - init cockpit settings
-- clippy
 - remove old fields
 - add bug md
 - init editor refactor
-- clippy
 - refactor game install
 - format
 - refactor game display
 - resolve game add details
 - init game manager refactor
-- clippy
 - init refactor
 - more setup flow
 - tests and further implementation
 - init better setup
 - add TODO comments
-- new plan
 - more filegone
 - init filegone
 - filegone
 - hacky single file fix
 - make tests more silent
 - debug
-- clippy
 - init single file tests
 - init supporting files as saves and deps
 - fetchadd plans
 - file support plans
 - better deps flow
-- plans
-- cleanup
-- add message
-- new plans
-- add plans
 
 ## [0.2.6](https://github.com/instantOS/instantCLI/compare/v0.2.5...v0.2.6) - 2025-10-17
 
@@ -752,8 +694,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Other
 
 - init binstall compatibility
-- clippy
-- format
 - add comment tests
 
 ## [0.2.1](https://github.com/instantOS/instantCLI/compare/v0.2.0...v0.2.1) - 2025-10-14
@@ -786,29 +726,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- clippy
-- format
 - move css to own file
 - do not make overlays transparent
 - init new NLE pipeline
 - init new NLE
-- add example to plan
-- better plan
 - init video render dry run
 - more wine plans
 - downscale overlays
-- clippy
 - init new stats command and prerendering
-- format
-- init timing plan
-- more planning
 - init overlay support
 - improve markdown card caching
 - parse separators
 - init titlecard command
-- new plans
 - improve fetch pring
-- remove old plans
 
 ## [0.1.11](https://github.com/instantOS/instantCLI/compare/v0.1.10...v0.1.11) - 2025-10-07
 
@@ -840,10 +770,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - init video feature
 - video plans
 - init wineprefix plans
-- update plans
 - add confirm dialog for adding game save paths
-- clippy
-- format
 - refactor settings menu logic
 - init icons for default settings
 - make mime type settings faster
@@ -857,9 +784,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - deps display
 - game deps CLI
 - init deps
-- plans
-- remove old plans
-- remove old md
 - ensure restic package on ins game commands
 
 ## [0.1.10](https://github.com/instantOS/instantCLI/compare/v0.1.9...v0.1.10) - 2025-10-03
@@ -895,7 +819,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add easier setup for uninstalled games
 - add path picker to game manager
 - file path picker in add
-- clippy
 - add placeholder notices
 - make picker return a pathbuf
 - refactor
@@ -903,12 +826,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add yazi picker
 - rename menu wrapper
 - init file picker plan
-- clippy
-- format
 - remove configmanager wrapper
 - update further
 - update agents files
-- format
 - finish toggle rework
 - init better toggle icons
 - init migration to own nerd fonts crate
@@ -928,18 +848,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add systemd management module
 - add disk settings
 - better settings requirements
-- update plans
 - bluetooth plans
 - what
 - huh
-- format
-- clippy
 - init bluetooth setting
-- clippy
 - styling
 - remove initialkey
 - more settings value stuff
-- format
 - init settings value preselection
 - init optional preselection
 - improve toggling
@@ -949,25 +864,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - further refactor
 - more refactor
 - init settings menu refactor
-- new plans
 - style
 - add password to server
 - implement password prompt
-- clippy
 - add requirements prompt
 - manageduser stuff
 - init user editing mod
 - init user settings
 - init arch for applying settings
-- new plans
-- more plans
 - more implementation for external stuff
 - init requirements system
 - better category preview
-- new plans
 - more intuitive stuff
 - add search and back and new plans
-- format
 - init settings
 - add old settings
 
@@ -993,9 +902,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - add restic to CI
 - fix runuser
-- format
 - init mise toml
-- format
 - better path arg handling
 - add json tests
 - more json output
@@ -1008,8 +915,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactor git
 - more output fixes
 - remove duplicate icons
-- format and fix
-- format
 - more nerd icons
 - use nerd_fonts crate
 - more json output
