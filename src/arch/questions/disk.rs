@@ -162,10 +162,13 @@ impl Question for RunCfdiskQuestion {
         println!("Starting cfdisk on {}...", disk_path);
         println!("Please create your partitions and save changes before exiting.");
 
+        // Register signal handler BEFORE spawning child to catch the signal
+        let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+
         // Use spawn_blocking to run cfdisk in a sync context
         // This avoids async runtime interference with terminal control
         let disk_path = disk_path.to_string();
-        let status = tokio::task::spawn_blocking(move || {
+        let child_task = tokio::task::spawn_blocking(move || {
             use std::fs::OpenOptions;
             use std::process::{Command, Stdio};
 
@@ -190,16 +193,30 @@ impl Question for RunCfdiskQuestion {
                 .spawn()
                 .expect("Failed to spawn cfdisk");
 
-            // Just wait for cfdisk to complete - no menu server registration needed
-            // cfdisk is a system utility, not a disposable menu process
+            // Just wait for cfdisk to complete
             child.wait()
-        })
-        .await??;
+        });
 
-        if !status.success() {
-            return Ok(QuestionResult::Cancelled);
+        tokio::select! {
+            res = child_task => {
+                // Task completed (cfdisk exited normally)
+                match res {
+                    Ok(Ok(status)) => {
+                        if status.success() {
+                            Ok(QuestionResult::Answer("done".to_string()))
+                        } else {
+                            Ok(QuestionResult::Cancelled)
+                        }
+                    }
+                    Ok(Err(e)) => Err(anyhow::anyhow!("Failed to wait for cfdisk: {}", e)),
+                    Err(e) => Err(anyhow::anyhow!("Task join error: {}", e)),
+                }
+            }
+            _ = sigint.recv() => {
+                // User pressed Ctrl+C
+                println!("\ncfdisk cancelled by user.");
+                Ok(QuestionResult::Cancelled)
+            }
         }
-
-        Ok(QuestionResult::Answer("done".to_string()))
     }
 }
