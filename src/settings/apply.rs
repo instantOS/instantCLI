@@ -25,6 +25,16 @@ pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()>
                 apply_definition(&mut ctx, definition, None)?;
                 applied += 1;
             }
+            crate::settings::registry::SettingKind::Action { .. }
+                if definition.id == "language.keyboard_layout" =>
+            {
+                ctx.emit_info(
+                    "settings.apply.reapply",
+                    &format!("Reapplying {}", definition.title),
+                );
+                crate::settings::actions::restore_keyboard_layout(&mut ctx)?;
+                applied += 1;
+            }
             _ => {}
         }
     }

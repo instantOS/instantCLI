@@ -1,8 +1,11 @@
 use anyhow::{Context, Result, bail};
 use duct::cmd;
 
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::process::Command;
 
+use crate::common::compositor::{CompositorType, sway};
 use crate::common::systemd::{SystemdManager, UserServiceConfig};
 use crate::menu_utils::{
     ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuWrapper,
@@ -485,6 +488,157 @@ pub fn pick_and_set_wallpaper(_context: &mut SettingsContext) -> Result<()> {
                 .message("Failed to set wallpaper.")
                 .title("Error")
                 .show_message()?;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Clone)]
+struct LayoutChoice {
+    code: String,
+    name: String,
+}
+
+impl FzfSelectable for LayoutChoice {
+    fn fzf_display_text(&self) -> String {
+        format!("{} ({})", self.name, self.code)
+    }
+
+    fn fzf_key(&self) -> String {
+        self.code.clone()
+    }
+}
+
+fn parse_xkb_layouts() -> Result<Vec<LayoutChoice>> {
+    let file = File::open("/usr/share/X11/xkb/rules/evdev.lst")
+        .context("Failed to open /usr/share/X11/xkb/rules/evdev.lst")?;
+    let reader = BufReader::new(file);
+
+    let mut layouts = Vec::new();
+    let mut in_layout_section = false;
+
+    for line in reader.lines() {
+        let line = line?;
+        let trimmed = line.trim();
+
+        if trimmed == "! layout" {
+            in_layout_section = true;
+            continue;
+        }
+
+        if trimmed == "! variant" {
+            break;
+        }
+
+        if in_layout_section && !trimmed.starts_with('!') && !trimmed.is_empty() {
+            // Parse line: "code   description"
+            let parts: Vec<&str> = trimmed.splitn(2, |c: char| c.is_whitespace()).collect();
+            if parts.len() == 2 {
+                let code = parts[0].trim().to_string();
+                let name = parts[1].trim().to_string();
+                layouts.push(LayoutChoice { code, name });
+            }
+        }
+    }
+
+    Ok(layouts)
+}
+
+pub fn configure_keyboard_layout(ctx: &mut SettingsContext) -> Result<()> {
+    let compositor = CompositorType::detect();
+
+    // Currently only Sway is supported for this specific implementation
+    if !matches!(compositor, CompositorType::Sway) {
+        ctx.emit_info(
+            "settings.keyboard.unsupported",
+            "Keyboard layout configuration is currently only supported on Sway.",
+        );
+        return Ok(());
+    }
+
+    let layouts = match parse_xkb_layouts() {
+        Ok(l) => l,
+        Err(e) => {
+            ctx.emit_info(
+                "settings.keyboard.parse_error",
+                &format!("Failed to parse keyboard layouts: {e}"),
+            );
+            return Ok(());
+        }
+    };
+
+    let current_layout_key = super::store::StringSettingKey::new("language.keyboard.sway", "");
+    let current_code = ctx.string(current_layout_key);
+
+    // Find initial index if possible
+    let initial_index = layouts.iter().position(|l| l.code == current_code);
+
+    let result = FzfWrapper::builder()
+        .header("Select Keyboard Layout")
+        .prompt("Layout > ")
+        .initial_index(initial_index.unwrap_or(0))
+        .select(layouts)?;
+
+    match result {
+        FzfResult::Selected(layout) => {
+            // Apply for Sway
+            let cmd = format!("input type:keyboard xkb_layout {}", layout.code);
+            if let Err(e) = sway::swaymsg(&cmd) {
+                ctx.emit_info(
+                    "settings.keyboard.apply_error",
+                    &format!("Failed to apply keyboard layout: {e}"),
+                );
+                return Ok(());
+            }
+
+            // Save to settings
+            ctx.set_string(current_layout_key, &layout.code);
+
+            ctx.notify(
+                "Keyboard Layout",
+                &format!("Set to: {} ({})", layout.name, layout.code),
+            );
+        }
+        FzfResult::Error(e) => {
+            bail!("fzf error: {e}");
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+pub fn restore_keyboard_layout(ctx: &mut SettingsContext) -> Result<()> {
+    let compositor = CompositorType::detect();
+
+    match compositor {
+        CompositorType::Sway => {
+            let key = super::store::StringSettingKey::new("language.keyboard.sway", "");
+            let code = ctx.string(key);
+
+            if !code.is_empty() {
+                let cmd = format!("input type:keyboard xkb_layout {}", code);
+                // We suppress errors here as this might run during startup/apply where we don't want to crash
+                if let Err(e) = sway::swaymsg(&cmd) {
+                    emit(
+                        Level::Warn,
+                        "settings.keyboard.restore_failed",
+                        &format!("Failed to restore Sway keyboard layout: {e}"),
+                        None,
+                    );
+                } else {
+                    emit(
+                        Level::Debug,
+                        "settings.keyboard.restored",
+                        &format!("Restored Sway keyboard layout: {code}"),
+                        None,
+                    );
+                }
+            }
+        }
+        _ => {
+            // Other compositors not yet supported for keyboard restoration
         }
     }
 

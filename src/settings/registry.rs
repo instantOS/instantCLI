@@ -403,6 +403,19 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[],
     },
     SettingDefinition {
+        id: "language.keyboard_layout",
+        title: "Keyboard Layout",
+        category: "language",
+        icon: NerdFont::Keyboard,
+        breadcrumbs: &["Language", "Keyboard Layout"],
+        kind: SettingKind::Action {
+            summary: "Select and set the keyboard layout (e.g., us, de, fr).\n\nCurrently supports Sway window manager.",
+            run: super::actions::configure_keyboard_layout,
+        },
+        requires_reapply: true,
+        requirements: &[],
+    },
+    SettingDefinition {
         id: "language.main",
         title: "Language",
         category: "language",
