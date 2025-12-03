@@ -233,6 +233,8 @@ mod tests {
             CompositorType::I3
             | CompositorType::Sway
             | CompositorType::Hyprland
+            | CompositorType::Dwm
+            | CompositorType::InstantWM
             | CompositorType::Other(_) => {
                 // Test passes
             }

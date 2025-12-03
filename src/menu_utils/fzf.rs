@@ -745,7 +745,7 @@ impl FzfBuilder {
             .spawn();
 
         match child {
-            Ok(mut child) => {
+            Ok(child) => {
                 let output = child.wait_with_output()?;
 
                 if let Some(code) = output.status.code() {

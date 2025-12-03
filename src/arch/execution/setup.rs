@@ -150,9 +150,9 @@ fn setup_user_dotfiles(username: &str, executor: &CommandExecutor) -> Result<()>
 
     if !repo_exists {
         // Clone dotfiles
-        // su -c "ins dot repo clone https://github.com/instantOS/dotfiles" username
+        // su -c "ins dot repo clone https://github.com/instantOS/dotfiles --read-only" username
         // TODO: make repo url a constant
-        let clone_cmd_str = "ins dot repo clone https://github.com/instantOS/dotfiles";
+        let clone_cmd_str = "ins dot repo clone https://github.com/instantOS/dotfiles --read-only";
         let mut cmd_clone = Command::new("su");
         cmd_clone.arg("-c").arg(clone_cmd_str).arg(username);
 
