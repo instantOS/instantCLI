@@ -1,10 +1,47 @@
 use anyhow::{Context, Result};
+use rand::seq::SliceRandom;
 use std::path::Path;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
 use super::CommandExecutor;
+
+fn shuffle_mirrors() -> Result<()> {
+    let path = Path::new("/etc/pacman.d/mirrorlist");
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(path).context("Failed to read mirrorlist")?;
+    let mut new_lines = Vec::new();
+    let mut server_pool = Vec::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("Server") && trimmed.contains('=') {
+            server_pool.push(line.to_string());
+        } else {
+            if !server_pool.is_empty() {
+                let mut rng = rand::thread_rng();
+                server_pool.shuffle(&mut rng);
+                new_lines.extend(server_pool.drain(..));
+            }
+            new_lines.push(line.to_string());
+        }
+    }
+    if !server_pool.is_empty() {
+        let mut rng = rand::thread_rng();
+        server_pool.shuffle(&mut rng);
+        new_lines.extend(server_pool.drain(..));
+    }
+
+    let output = new_lines.join("\n");
+    std::fs::write(path, output + "\n").context("Failed to write mirrorlist")?;
+
+    println!("Shuffled mirrors in /etc/pacman.d/mirrorlist");
+    Ok(())
+}
 
 /// Installs packages using pacman with a retry mechanism similar to `pacloop`
 pub fn install(packages: &[&str], executor: &CommandExecutor) -> Result<()> {
@@ -95,6 +132,10 @@ pub fn install(packages: &[&str], executor: &CommandExecutor) -> Result<()> {
                     println!("Reflector not found, skipping mirror optimization.");
                 }
 
+                if let Err(e) = shuffle_mirrors() {
+                    println!("Warning: Failed to shuffle mirrors: {}", e);
+                }
+
                 // Update repos
                 println!("Updating repositories...");
                 let mut up_cmd = Command::new("pacman");
@@ -150,6 +191,11 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &CommandExecutor
             Err(e) => {
                 println!("Pacstrap failed: {}", e);
                 println!("Ensure you are connected to the internet.");
+
+                if let Err(e) = shuffle_mirrors() {
+                    println!("Warning: Failed to shuffle mirrors: {}", e);
+                }
+
                 println!("Retrying in 2 seconds...");
                 thread::sleep(Duration::from_secs(2));
             }
