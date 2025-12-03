@@ -163,15 +163,15 @@ fn process_pacman_settings(content: &str) -> Option<String> {
             // Note: indices might have shifted if we modified lines? No, we only modified in place.
             // But we need to be careful if we iterate.
             // Vec::insert shifts elements.
-            if idx + 1 <= lines.len() {
+            if idx < lines.len() {
                 lines.insert(idx + 1, "ILoveCandy".to_string());
                 changed = true;
             }
-        } else if let Some(idx) = options_idx {
-            if idx + 1 <= lines.len() {
-                lines.insert(idx + 1, "ILoveCandy".to_string());
-                changed = true;
-            }
+        } else if let Some(idx) = options_idx
+            && idx < lines.len()
+        {
+            lines.insert(idx + 1, "ILoveCandy".to_string());
+            changed = true;
         }
     }
 

@@ -102,15 +102,15 @@ pub fn control_media() -> Result<()> {
     let client = MenuClient::new();
     let selected_key = client.chord(chords)?;
 
-    if let Some(key) = selected_key {
-        if let Some(player) = player_map.get(&key) {
-            Command::new("playerctl")
-                .arg("-p")
-                .arg(player)
-                .arg("play-pause")
-                .spawn()
-                .context("Failed to toggle playback")?;
-        }
+    if let Some(key) = selected_key
+        && let Some(player) = player_map.get(&key)
+    {
+        Command::new("playerctl")
+            .arg("-p")
+            .arg(player)
+            .arg("play-pause")
+            .spawn()
+            .context("Failed to toggle playback")?;
     }
 
     Ok(())

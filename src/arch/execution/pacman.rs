@@ -25,7 +25,7 @@ fn shuffle_mirrors() -> Result<()> {
             if !server_pool.is_empty() {
                 let mut rng = rand::thread_rng();
                 server_pool.shuffle(&mut rng);
-                new_lines.extend(server_pool.drain(..));
+                new_lines.append(&mut server_pool);
             }
             new_lines.push(line.to_string());
         }
@@ -33,7 +33,7 @@ fn shuffle_mirrors() -> Result<()> {
     if !server_pool.is_empty() {
         let mut rng = rand::thread_rng();
         server_pool.shuffle(&mut rng);
-        new_lines.extend(server_pool.drain(..));
+        new_lines.append(&mut server_pool);
     }
 
     let output = new_lines.join("\n");
@@ -94,7 +94,7 @@ pub fn install(packages: &[&str], executor: &CommandExecutor) -> Result<()> {
                 if !keyring_already_refreshed && !installing_keyring {
                     println!("Attempting to refresh archlinux-keyring...");
                     let mut key_cmd = Command::new("pacman");
-                    key_cmd.args(&["-Sy", "archlinux-keyring", "--noconfirm"]);
+                    key_cmd.args(["-Sy", "archlinux-keyring", "--noconfirm"]);
 
                     if let Err(e) = executor.run(&mut key_cmd) {
                         println!("Warning: Failed to refresh keyring: {}", e);
@@ -112,7 +112,7 @@ pub fn install(packages: &[&str], executor: &CommandExecutor) -> Result<()> {
                 println!("Updating mirrors...");
                 if which::which("reflector").is_ok() {
                     let mut ref_cmd = Command::new("reflector");
-                    ref_cmd.args(&[
+                    ref_cmd.args([
                         "--latest",
                         "40",
                         "--protocol",
@@ -178,7 +178,7 @@ pub fn pacstrap(mount_point: &str, packages: &[&str], executor: &CommandExecutor
             Ok(_) => {
                 // Clean up cache
                 let mut clean_cmd = Command::new("pacman");
-                clean_cmd.args(&["-Scc", "--noconfirm"]);
+                clean_cmd.args(["-Scc", "--noconfirm"]);
                 // We pipe "yes" to it effectively by using noconfirm, but pacman -Scc asks twice usually.
                 // The bash script used `yes | pacman -Scc`.
                 // `pacman -Scc --noconfirm` still asks for confirmation in some versions?

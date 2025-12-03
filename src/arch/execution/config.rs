@@ -89,20 +89,18 @@ fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) ->
     config.remove_hook("consolefont");
 
     // Add encryption hooks in correct order: block -> sd-encrypt -> lvm2 -> resume -> filesystems
-    if use_encryption {
-        if config.contains_hook("block") && config.contains_hook("filesystems") {
-            // Replace legacy encrypt hook if present
-            if config.contains_hook("encrypt") {
-                config.replace_hook("encrypt", "sd-encrypt");
-            } else {
-                config.ensure_hook("sd-encrypt");
-            }
-
-            // Ensure correct ordering for full disk encryption with LVM and resume
-            config.ensure_hook_position("sd-encrypt", &["block"], &["filesystems"]);
-            config.ensure_hook_position("lvm2", &["sd-encrypt"], &["filesystems"]);
-            config.ensure_hook_position("resume", &["lvm2"], &["filesystems"]);
+    if use_encryption && config.contains_hook("block") && config.contains_hook("filesystems") {
+        // Replace legacy encrypt hook if present
+        if config.contains_hook("encrypt") {
+            config.replace_hook("encrypt", "sd-encrypt");
+        } else {
+            config.ensure_hook("sd-encrypt");
         }
+
+        // Ensure correct ordering for full disk encryption with LVM and resume
+        config.ensure_hook_position("sd-encrypt", &["block"], &["filesystems"]);
+        config.ensure_hook_position("lvm2", &["sd-encrypt"], &["filesystems"]);
+        config.ensure_hook_position("resume", &["lvm2"], &["filesystems"]);
     }
 
     std::fs::write(conf_path, config.to_string())?;

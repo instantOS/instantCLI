@@ -106,10 +106,10 @@ pub async fn run(debug: bool) -> Result<()> {
     if debug {
         println!("Applying wallpaper");
     }
-    if let Err(e) = crate::wallpaper::commands::apply_configured_wallpaper().await {
-        if debug {
-            eprintln!("Failed to apply wallpaper: {}", e);
-        }
+    if let Err(e) = crate::wallpaper::commands::apply_configured_wallpaper().await
+        && debug
+    {
+        eprintln!("Failed to apply wallpaper: {}", e);
     }
 
     Ok(())

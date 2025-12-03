@@ -24,10 +24,10 @@ impl std::fmt::Display for Distro {
                 // Check if we're running on instantOS specifically
                 if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
                     for line in content.lines() {
-                        if let Some(val) = line.strip_prefix("ID=") {
-                            if val.trim_matches('"') == "instantos" {
-                                return write!(f, "instantOS (Arch-based)");
-                            }
+                        if let Some(val) = line.strip_prefix("ID=")
+                            && val.trim_matches('"') == "instantos"
+                        {
+                            return write!(f, "instantOS (Arch-based)");
                         }
                     }
                 }
@@ -103,10 +103,10 @@ fn get_total_ram_mb() -> Option<u64> {
         if line.starts_with("MemTotal:") {
             // Format: MemTotal:        16303832 kB
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 2 {
-                if let Ok(kb) = parts[1].parse::<u64>() {
-                    return Some(kb / 1024);
-                }
+            if parts.len() >= 2
+                && let Ok(kb) = parts[1].parse::<u64>()
+            {
+                return Some(kb / 1024);
             }
         }
     }

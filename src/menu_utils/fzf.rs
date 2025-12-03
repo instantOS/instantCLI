@@ -748,10 +748,10 @@ impl FzfBuilder {
             Ok(child) => {
                 let output = child.wait_with_output()?;
 
-                if let Some(code) = output.status.code() {
-                    if code == 130 || code == 143 {
-                        return Ok(FzfResult::Cancelled);
-                    }
+                if let Some(code) = output.status.code()
+                    && (code == 130 || code == 143)
+                {
+                    return Ok(FzfResult::Cancelled);
                 }
 
                 if output.status.success() {

@@ -32,13 +32,13 @@ impl MkinitcpioConfig {
                         _ => unreachable!(),
                     };
 
-                    if let Some(end) = line.rfind(end_char) {
-                        if end > start {
-                            let hooks_str = &line[start + 1..end];
-                            hooks = hooks_str.split_whitespace().map(String::from).collect();
-                            if line.chars().nth(start).unwrap() != '(' {
-                                quote_char = Some(line.chars().nth(start).unwrap());
-                            }
+                    if let Some(end) = line.rfind(end_char)
+                        && end > start
+                    {
+                        let hooks_str = &line[start + 1..end];
+                        hooks = hooks_str.split_whitespace().map(String::from).collect();
+                        if line.chars().nth(start).unwrap() != '(' {
+                            quote_char = Some(line.chars().nth(start).unwrap());
                         }
                     }
                 }
@@ -108,10 +108,10 @@ impl MkinitcpioConfig {
             // Find the rightmost 'after' constraint (hook must come after this)
             let mut max_after_idx = -1isize;
             for &a in after {
-                if let Some(idx) = self.hooks.iter().position(|h| h == a) {
-                    if (idx as isize) > max_after_idx {
-                        max_after_idx = idx as isize;
-                    }
+                if let Some(idx) = self.hooks.iter().position(|h| h == a)
+                    && (idx as isize) > max_after_idx
+                {
+                    max_after_idx = idx as isize;
                 }
             }
 
@@ -122,19 +122,19 @@ impl MkinitcpioConfig {
                 // Calculate valid insertion range after removal
                 let mut min_idx = 0;
                 for &a in after {
-                    if let Some(idx) = self.hooks.iter().position(|h| h == a) {
-                        if idx + 1 > min_idx {
-                            min_idx = idx + 1;
-                        }
+                    if let Some(idx) = self.hooks.iter().position(|h| h == a)
+                        && idx + 1 > min_idx
+                    {
+                        min_idx = idx + 1;
                     }
                 }
 
                 let mut max_idx = self.hooks.len();
                 for &b in before {
-                    if let Some(idx) = self.hooks.iter().position(|h| h == b) {
-                        if idx < max_idx {
-                            max_idx = idx;
-                        }
+                    if let Some(idx) = self.hooks.iter().position(|h| h == b)
+                        && idx < max_idx
+                    {
+                        max_idx = idx;
                     }
                 }
 
@@ -150,10 +150,10 @@ impl MkinitcpioConfig {
                 // Find the leftmost 'before' constraint (hook must come before this)
                 let mut min_before_idx = self.hooks.len() as isize;
                 for &b in before {
-                    if let Some(idx) = self.hooks.iter().position(|h| h == b) {
-                        if (idx as isize) < min_before_idx {
-                            min_before_idx = idx as isize;
-                        }
+                    if let Some(idx) = self.hooks.iter().position(|h| h == b)
+                        && (idx as isize) < min_before_idx
+                    {
+                        min_before_idx = idx as isize;
                     }
                 }
 
@@ -164,19 +164,19 @@ impl MkinitcpioConfig {
                     // Calculate valid insertion range after removal
                     let mut min_idx = 0;
                     for &a in after {
-                        if let Some(idx) = self.hooks.iter().position(|h| h == a) {
-                            if idx + 1 > min_idx {
-                                min_idx = idx + 1;
-                            }
+                        if let Some(idx) = self.hooks.iter().position(|h| h == a)
+                            && idx + 1 > min_idx
+                        {
+                            min_idx = idx + 1;
                         }
                     }
 
                     let mut max_idx = self.hooks.len();
                     for &b in before {
-                        if let Some(idx) = self.hooks.iter().position(|h| h == b) {
-                            if idx < max_idx {
-                                max_idx = idx;
-                            }
+                        if let Some(idx) = self.hooks.iter().position(|h| h == b)
+                            && idx < max_idx
+                        {
+                            max_idx = idx;
                         }
                     }
 

@@ -50,7 +50,7 @@ impl PartitionSize {
                 .parse::<u64>()
             {
                 // Convert KB to MB, rounding up
-                return Some(Self((size + 1023) / 1024));
+                return Some(Self(size.div_ceil(1024)));
             }
         } else {
             // Try to parse as raw number (assume MB)

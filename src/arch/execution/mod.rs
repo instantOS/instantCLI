@@ -157,24 +157,21 @@ impl CommandExecutor {
     ) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
             let reader = std::io::BufReader::new(reader);
-            for line in reader.lines() {
-                if let Ok(l) = line {
-                    if is_stderr {
-                        eprintln!("{}", l);
-                    } else {
-                        println!("{}", l);
-                    }
+            for l in reader.lines().flatten() {
+                if is_stderr {
+                    eprintln!("{}", l);
+                } else {
+                    println!("{}", l);
+                }
 
-                    if let Some(path) = &log_file {
-                        if let Ok(mut file) = std::fs::OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(path)
-                        {
-                            let prefix = if is_stderr { "STDERR: " } else { "" };
-                            let _ = writeln!(file, "{}{}", prefix, l);
-                        }
-                    }
+                if let Some(path) = &log_file
+                    && let Ok(mut file) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                {
+                    let prefix = if is_stderr { "STDERR: " } else { "" };
+                    let _ = writeln!(file, "{}{}", prefix, l);
                 }
             }
         })
@@ -255,15 +252,16 @@ pub async fn execute_installation(
     }
 
     // Increase cowspace if in live ISO
-    if crate::common::distro::is_live_iso() && !dry_run {
-        if let Err(e) = crate::common::distro::increase_cowspace() {
-            println!("Warning: Failed to increase cowspace: {}", e);
-        }
+    if crate::common::distro::is_live_iso()
+        && !dry_run
+        && let Err(e) = crate::common::distro::increase_cowspace()
+    {
+        println!("Warning: Failed to increase cowspace: {}", e);
     }
 
     let executor = CommandExecutor::new(dry_run, log_file.clone());
 
-    if let Some(_) = &log_file {
+    if log_file.is_some() {
         executor.log(&format!(
             "Starting installation execution. Dry run: {}",
             dry_run
@@ -329,13 +327,13 @@ pub async fn execute_installation(
             }
 
             let chroot_bin = paths::chroot_path("/usr/bin/ins-install");
-            if chroot_bin.exists() {
-                if let Err(e) = std::fs::remove_file(&chroot_bin) {
-                    println!(
-                        "Warning: Failed to remove installer binary from chroot: {}",
-                        e
-                    );
-                }
+            if chroot_bin.exists()
+                && let Err(e) = std::fs::remove_file(&chroot_bin)
+            {
+                println!(
+                    "Warning: Failed to remove installer binary from chroot: {}",
+                    e
+                );
             }
         }
     }
@@ -409,15 +407,15 @@ async fn execute_step(
         // Collect logs from chroot
         if !executor.dry_run {
             let chroot_log = paths::chroot_path(paths::LOG_FILE);
-            if chroot_log.exists() {
-                if let Ok(content) = std::fs::read_to_string(&chroot_log) {
-                    executor.log(&format!("--- BEGIN CHROOT LOG ({:?}) ---", step));
-                    executor.log(&content);
-                    executor.log(&format!("--- END CHROOT LOG ({:?}) ---", step));
+            if chroot_log.exists()
+                && let Ok(content) = std::fs::read_to_string(&chroot_log)
+            {
+                executor.log(&format!("--- BEGIN CHROOT LOG ({:?}) ---", step));
+                executor.log(&content);
+                executor.log(&format!("--- END CHROOT LOG ({:?}) ---", step));
 
-                    // Remove the chroot log file to avoid duplication in subsequent steps
-                    let _ = std::fs::remove_file(&chroot_log);
-                }
+                // Remove the chroot log file to avoid duplication in subsequent steps
+                let _ = std::fs::remove_file(&chroot_log);
             }
         }
 

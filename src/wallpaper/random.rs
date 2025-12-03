@@ -114,7 +114,7 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
     let overlay_path_buf = overlay_path.to_path_buf();
     let output_path_buf = output_path.to_path_buf();
 
-    let _status = tokio::task::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let bg = bg_path_buf.to_string_lossy();
         let overlay = overlay_path_buf.to_string_lossy();
         let out = output_path_buf.to_string_lossy();
@@ -197,13 +197,13 @@ fn get_resolution() -> Result<String> {
             // Get first active output
             if let Some(outputs) = json.as_array() {
                 for out in outputs {
-                    if out["active"].as_bool().unwrap_or(false) {
-                        if let (Some(w), Some(h)) = (
+                    if out["active"].as_bool().unwrap_or(false)
+                        && let (Some(w), Some(h)) = (
                             out["rect"]["width"].as_i64(),
                             out["rect"]["height"].as_i64(),
-                        ) {
-                            return Ok(format!("{}x{}", w, h));
-                        }
+                        )
+                    {
+                        return Ok(format!("{}x{}", w, h));
                     }
                 }
             }

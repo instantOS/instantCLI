@@ -83,16 +83,15 @@ fn get_sway_mouse_speed() -> Result<f64> {
     // Find first pointer device that actually has accel_speed property
     if let Some(inputs) = json.as_array() {
         for input in inputs {
-            if let Some(type_) = input.get("type").and_then(|v| v.as_str()) {
-                if type_ == "pointer" {
-                    if let Some(libinput) = input.get("libinput") {
-                        // Only consider devices that have accel_speed property
-                        if let Some(accel) = libinput.get("accel_speed") {
-                            if let Some(speed) = accel.as_f64() {
-                                return Ok(speed);
-                            }
-                        }
-                    }
+            if let Some(type_) = input.get("type").and_then(|v| v.as_str())
+                && type_ == "pointer"
+                && let Some(libinput) = input.get("libinput")
+            {
+                // Only consider devices that have accel_speed property
+                if let Some(accel) = libinput.get("accel_speed")
+                    && let Some(speed) = accel.as_f64()
+                {
+                    return Ok(speed);
                 }
             }
         }

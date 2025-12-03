@@ -142,19 +142,19 @@ impl SystemInfo {
             let mut detected_gpus = std::collections::HashSet::new();
 
             for entry in drm_entries.flatten() {
-                if let Ok(path) = entry.path().join("device").read_link() {
-                    if let Some(path_str) = path.to_str() {
-                        let path_lower = path_str.to_lowercase();
-                        if path_lower.contains("nvidia") {
-                            detected_gpus.insert(GpuKind::Nvidia);
-                            found_gpus = true;
-                        } else if path_lower.contains("amd") || path_lower.contains("radeon") {
-                            detected_gpus.insert(GpuKind::Amd);
-                            found_gpus = true;
-                        } else if path_lower.contains("intel") {
-                            detected_gpus.insert(GpuKind::Intel);
-                            found_gpus = true;
-                        }
+                if let Ok(path) = entry.path().join("device").read_link()
+                    && let Some(path_str) = path.to_str()
+                {
+                    let path_lower = path_str.to_lowercase();
+                    if path_lower.contains("nvidia") {
+                        detected_gpus.insert(GpuKind::Nvidia);
+                        found_gpus = true;
+                    } else if path_lower.contains("amd") || path_lower.contains("radeon") {
+                        detected_gpus.insert(GpuKind::Amd);
+                        found_gpus = true;
+                    } else if path_lower.contains("intel") {
+                        detected_gpus.insert(GpuKind::Intel);
+                        found_gpus = true;
                     }
                 }
             }
@@ -165,37 +165,35 @@ impl SystemInfo {
         }
 
         // Fallback to lspci if drm detection didn't find anything
-        if !found_gpus {
-            if let Ok(lspci) = std::process::Command::new("lspci").output() {
-                let output = String::from_utf8_lossy(&lspci.stdout);
-                let mut detected_gpus = std::collections::HashSet::new();
+        if !found_gpus && let Ok(lspci) = std::process::Command::new("lspci").output() {
+            let output = String::from_utf8_lossy(&lspci.stdout);
+            let mut detected_gpus = std::collections::HashSet::new();
 
-                if output.to_lowercase().contains("nvidia") {
-                    detected_gpus.insert(GpuKind::Nvidia);
-                }
-                if output.to_lowercase().contains("amd")
-                    || output.to_lowercase().contains("radeon")
-                    || output.to_lowercase().contains("advanced micro devices")
-                {
-                    detected_gpus.insert(GpuKind::Amd);
-                }
-                if output.to_lowercase().contains("intel")
-                    || output.to_lowercase().contains("integrated graphics")
-                    || output.to_lowercase().contains("hd graphics")
-                    || output.to_lowercase().contains("iris")
-                {
-                    detected_gpus.insert(GpuKind::Intel);
-                }
-
-                info.gpus = detected_gpus.into_iter().collect();
+            if output.to_lowercase().contains("nvidia") {
+                detected_gpus.insert(GpuKind::Nvidia);
             }
+            if output.to_lowercase().contains("amd")
+                || output.to_lowercase().contains("radeon")
+                || output.to_lowercase().contains("advanced micro devices")
+            {
+                detected_gpus.insert(GpuKind::Amd);
+            }
+            if output.to_lowercase().contains("intel")
+                || output.to_lowercase().contains("integrated graphics")
+                || output.to_lowercase().contains("hd graphics")
+                || output.to_lowercase().contains("iris")
+            {
+                detected_gpus.insert(GpuKind::Intel);
+            }
+
+            info.gpus = detected_gpus.into_iter().collect();
         }
 
         // VM check
-        if let Ok(virt) = std::process::Command::new("systemd-detect-virt").output() {
-            if virt.status.success() {
-                info.vm_type = Some(String::from_utf8_lossy(&virt.stdout).trim().to_string());
-            }
+        if let Ok(virt) = std::process::Command::new("systemd-detect-virt").output()
+            && virt.status.success()
+        {
+            info.vm_type = Some(String::from_utf8_lossy(&virt.stdout).trim().to_string());
         }
 
         // Architecture check
@@ -551,10 +549,10 @@ impl QuestionEngine {
             // Skip optional questions in the main flow
             if q.is_optional() {
                 // If not answered, try to set default
-                if !self.context.is_answered(q.id()) {
-                    if let Some(default) = q.get_default(&self.context) {
-                        self.context.answers.insert(q.id(), default);
-                    }
+                if !self.context.is_answered(q.id())
+                    && let Some(default) = q.get_default(&self.context)
+                {
+                    self.context.answers.insert(q.id(), default);
                 }
                 continue;
             }

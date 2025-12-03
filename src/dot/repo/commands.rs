@@ -223,30 +223,29 @@ pub fn clone_repository(
             }
 
             // Check metadata for read-only request
-            if !read_only_flag && !force_write_flag {
-                if let Ok(local_repo) = crate::dot::repo::RepositoryManager::new(config, db)
+            if !read_only_flag
+                && !force_write_flag
+                && let Ok(local_repo) = crate::dot::repo::RepositoryManager::new(config, db)
                     .get_repository_info(&repo_name)
-                {
-                    if let Some(true) = local_repo.meta.read_only {
-                        emit(
-                            Level::Info,
-                            "dot.repo.clone.read_only",
-                            &format!(
-                                "{} Repository requested read-only mode. Marking as read-only.",
-                                char::from(NerdFont::Info)
-                            ),
-                            None,
-                        );
-                        // Update config to set read_only to true
-                        for repo in &mut config.repos {
-                            if repo.name == repo_name {
-                                repo.read_only = true;
-                                break;
-                            }
-                        }
-                        config.save(None)?;
+                && let Some(true) = local_repo.meta.read_only
+            {
+                emit(
+                    Level::Info,
+                    "dot.repo.clone.read_only",
+                    &format!(
+                        "{} Repository requested read-only mode. Marking as read-only.",
+                        char::from(NerdFont::Info)
+                    ),
+                    None,
+                );
+                // Update config to set read_only to true
+                for repo in &mut config.repos {
+                    if repo.name == repo_name {
+                        repo.read_only = true;
+                        break;
                     }
                 }
+                config.save(None)?;
             }
         }
         Err(e) => {

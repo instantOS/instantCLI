@@ -66,7 +66,7 @@ fn install_packages(debug: bool) -> Result<()> {
     );
 
     let mut cmd = Command::new("pacman");
-    cmd.arg("-Sy").arg("--noconfirm").args(&packages);
+    cmd.arg("-Sy").arg("--noconfirm").args(packages);
 
     if debug {
         println!("Running: {:?}", cmd);

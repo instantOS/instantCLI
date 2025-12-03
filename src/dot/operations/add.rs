@@ -289,15 +289,15 @@ fn update_tracked_dotfiles(
     for dotfile in dotfiles {
         // Check if repo is read-only
         let repo_name = crate::dot::git::get_repo_name_for_dotfile(dotfile, config);
-        if let Some(repo) = config.repos.iter().find(|r| r.name == repo_name.as_str()) {
-            if repo.read_only {
-                println!(
-                    "{} Skipping update for read-only repository '{}'",
-                    char::from(NerdFont::ArrowRight).to_string().blue(),
-                    repo.name
-                );
-                continue;
-            }
+        if let Some(repo) = config.repos.iter().find(|r| r.name == repo_name.as_str())
+            && repo.read_only
+        {
+            println!(
+                "{} Skipping update for read-only repository '{}'",
+                char::from(NerdFont::ArrowRight).to_string().blue(),
+                repo.name
+            );
+            continue;
         }
 
         let was_updated = update_single_dotfile(dotfile, db)?;

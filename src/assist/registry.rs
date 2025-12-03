@@ -37,6 +37,41 @@ pub const ASSISTS: &[AssistEntry] = &[
         dependencies: &[],
         execute: actions::help::show_help,
     }),
+    AssistEntry::Group(AssistGroup {
+        key: 'i',
+        description: "Info: AI assistants and man pages",
+        icon: NerdFont::Info,
+        children: &[
+            AssistEntry::Action(AssistAction {
+                key: 'a',
+                description: "Ask Claude: Ask Claude AI about clipboard content",
+                icon: NerdFont::Lightbulb,
+                dependencies: &[],
+                execute: actions::ai::ask_claude,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'c',
+                description: "Ask ChatGPT: Ask ChatGPT about clipboard content",
+                icon: NerdFont::Lightbulb,
+                dependencies: &[],
+                execute: actions::ai::ask_chatgpt,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'g',
+                description: "Ask Gemini: Ask Google Gemini about clipboard content",
+                icon: NerdFont::Lightbulb,
+                dependencies: &[],
+                execute: actions::ai::ask_gemini,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'm',
+                description: "Man Pages: Search and view man pages",
+                icon: NerdFont::FileText,
+                dependencies: &[],
+                execute: actions::man::search_man_pages,
+            }),
+        ],
+    }),
     AssistEntry::Action(AssistAction {
         key: 'b',
         description: "Brightness: Adjust display brightness",
