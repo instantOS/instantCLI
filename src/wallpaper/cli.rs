@@ -4,6 +4,8 @@ use clap::{Args, Subcommand};
 pub enum WallpaperCommands {
     /// Set the wallpaper
     Set(SetArgs),
+    /// Apply the currently configured wallpaper
+    Apply,
 }
 
 #[derive(Args, Debug, Clone)]
