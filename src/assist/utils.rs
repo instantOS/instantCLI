@@ -140,7 +140,7 @@ impl ColorConfiguration {
         }
     }
 
-    /// Get color name for debugging/logging
+
 
 }
 

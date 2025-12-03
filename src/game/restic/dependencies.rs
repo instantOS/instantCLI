@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::game::config::{GameDependency, InstantGameConfig, PathContentKind};
 use crate::game::restic::{cache, single_file, tags};
-use crate::restic::wrapper::{BackupProgress, ResticWrapper, Snapshot};
+use crate::restic::wrapper::{ResticWrapper, Snapshot};
 use anyhow::{Context, Result, anyhow};
 
 /// Result of creating or reusing a dependency snapshot
