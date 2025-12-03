@@ -38,6 +38,14 @@ pub(super) static PLAYERCTL: RequiredPackage = pkg!("playerctl");
 pub(super) static QRENCODE: RequiredPackage = pkg!("qrencode");
 pub(super) static ZBAR: RequiredPackage = pkg!("zbar", "zbarimg");
 pub(super) static FLAMESHOT: RequiredPackage = pkg!("flameshot");
+pub(super) static INSTANTPASS: RequiredPackage = RequiredPackage {
+    name: "instantpass",
+    arch_package_name: Some("instantpass"),
+    ubuntu_package_name: None,
+    tests: &[crate::common::requirements::InstallTest::WhichSucceeds(
+        "instantpass",
+    )],
+};
 pub(super) static MPV: RequiredPackage = pkg!("mpv");
 pub(super) static TESSERACT: RequiredPackage = pkg!("tesseract");
 pub(super) static BRIGHTNESSCTL: RequiredPackage = pkg!("brightnessctl");
