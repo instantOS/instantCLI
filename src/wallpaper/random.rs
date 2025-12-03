@@ -128,7 +128,7 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
         // 4. Delete the mask (index 1)
         // 5. Composite the Inverted Cutout over the original BG
         run_magick(&[
-            // 1. Load and process Background
+            // 1. Load and process Background (Dest)
             &bg,
             "-resize",
             &format!("{}^", resolution),
@@ -136,7 +136,13 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
             "center",
             "-extent",
             &resolution,
-            // 2. Load Overlay inside parenthesis
+            // 2. Create Inverted Background (Source)
+            "(",
+            "-clone",
+            "0",
+            "-negate",
+            ")",
+            // 3. Load Overlay and create Mask (Mask)
             "(",
             &overlay,
             "-background",
@@ -147,20 +153,14 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
             "center",
             "-extent",
             &resolution,
-            // Extract alpha converts the transparency to grayscale:
-            // Opaque (Logo) becomes White, Transparent becomes Black
             "-alpha",
             "extract",
-            // Threshold to ensure binary mask (removes anti-aliasing artifacts that cause outlines)
-            "-threshold", "50%",
             ")",
-            // 3. Composite using Difference
-            // White (Logo) vs BG = Inverted Colors
-            // Black (Empty) vs BG = Original Colors
-            "-gravity",
-            "center",
+            // 4. Composite Source over Dest using Mask
+            // This blends the Inverted BG onto the Original BG based on the mask opacity
+            // Preserves anti-aliasing and soft edges correctly
             "-compose",
-            "Difference",
+            "Over",
             "-composite",
             &out,
         ])?;
