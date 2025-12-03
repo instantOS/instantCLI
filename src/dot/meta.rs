@@ -105,12 +105,12 @@ struct RepoInputs {
     read_only: bool,
 }
 
+use crate::menu_utils::{ConfirmResult, FzfWrapper};
+
 /// Gather repository metadata inputs interactively or non-interactively.
 /// This is the single source of truth for prompting users for repo metadata.
 /// When adding new fields to instantdots.toml, add them here.
 fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoInputs> {
-    use std::io::{self, Write};
-
     if non_interactive {
         return Ok(RepoInputs {
             name: default_name.to_string(),
@@ -120,47 +120,43 @@ fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoI
         });
     }
 
-    print!("Name [{}]: ", default_name);
-    io::stdout().flush().ok();
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .context("reading name from stdin")?;
-    let name = if input.trim().is_empty() {
-        default_name.to_string()
-    } else {
-        input.trim().to_string()
-    };
+    let name = FzfWrapper::input(&format!("Name [{}]: ", default_name))
+        .map(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                default_name.to_string()
+            } else {
+                trimmed.to_string()
+            }
+        })
+        .unwrap_or_else(|_| default_name.to_string());
 
-    print!("Author (optional): ");
-    io::stdout().flush().ok();
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .context("reading author from stdin")?;
-    let author = match input.trim() {
-        "" => None,
-        s => Some(s.to_string()),
-    };
+    let author = FzfWrapper::input("Author (optional): ")
+        .map(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .unwrap_or(None);
 
-    print!("Description (optional): ");
-    io::stdout().flush().ok();
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .context("reading description from stdin")?;
-    let description = match input.trim() {
-        "" => None,
-        s => Some(s.to_string()),
-    };
+    let description = FzfWrapper::input("Description (optional): ")
+        .map(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .unwrap_or(None);
 
-    print!("Read-only (y/n) [n]: ");
-    io::stdout().flush().ok();
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .context("reading read-only from stdin")?;
-    let read_only = input.trim().to_lowercase() == "y";
+    let read_only = matches!(
+        FzfWrapper::confirm("Read-only?"),
+        Ok(ConfirmResult::Yes)
+    );
 
     Ok(RepoInputs {
         name,
