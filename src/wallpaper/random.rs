@@ -109,31 +109,6 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
 
     let output_path = dir.join("instantwallpaper.png");
 
-    // We'll use blocking Command for ImageMagick as it's CPU intensive and external
-    // Replicating the bash script logic:
-    // 1. Resize background to resolution -> wall.png
-    // 2. Resize overlay to resolution -> overlay_resized.png
-    // 3. Create mask from overlay
-    // 4. Composite CopyOpacity mask wall.png -> cut.png
-    // 5. Negate cut.png -> invert.png
-    // 6. Composite wall.png invert.png -> instantwallpaper.png
-
-    // Simplified approach using a single complex magick command if possible,
-    // but sticking to the script's logic step-by-step for fidelity might be safer
-    // or we can chain them.
-
-    // Let's try to chain it a bit more efficiently but keep the logic.
-    // The script does:
-    // imgresize photo.jpg RES wall.png
-    // imgresize overlay.png RES (implicit in script logic, it resizes overlay)
-    // magick overlay.png -alpha extract mask.png
-    // composite -compose CopyOpacity mask.png wall.png cut.png
-    // magick cut.png -channel RGB -negate invert.png
-    // magick wall.png invert.png -gravity center -composite instantwallpaper.png
-
-    // Note: The script logic seems to create an "inverted" logo effect where the logo
-    // is the inverted color of the background.
-
     // Clone paths to move into the closure
     let bg_path_buf = bg_path.to_path_buf();
     let overlay_path_buf = overlay_path.to_path_buf();
@@ -144,9 +119,15 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
         let overlay = overlay_path_buf.to_string_lossy();
         let out = output_path_buf.to_string_lossy();
 
-        // 1. Resize background
+        // Use a single modern ImageMagick command to process everything
+        // This avoids deprecated 'convert' subcommand and temporary files
+        // Logic:
+        // 1. Load and resize background
+        // 2. Load and resize overlay, extract alpha (mask)
+        // 3. Clone BG and Mask, apply CopyOpacity to create cutout, then Negate RGB to invert colors
+        // 4. Delete the Mask (index 1)
+        // 5. Composite the Inverted Cutout over the original BG
         run_magick(&[
-            "convert",
             &bg,
             "-resize",
             &format!("{}^", resolution),
@@ -154,12 +135,7 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
             "center",
             "-extent",
             &resolution,
-            "/tmp/iw_wall.png",
-        ])?;
-
-        // 2. Resize overlay
-        run_magick(&[
-            "convert",
+            "(",
             &overlay,
             "-resize",
             &format!("{}^", resolution),
@@ -167,55 +143,33 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
             "center",
             "-extent",
             &resolution,
-            "/tmp/iw_overlay.png",
-        ])?;
-
-        // 3. Create mask
-        run_magick(&[
-            "convert",
-            "/tmp/iw_overlay.png",
             "-alpha",
             "extract",
-            "/tmp/iw_mask.png",
-        ])?;
-
-        // 4. Cut
-        run_magick(&[
-            "composite",
+            ")",
+            "(",
+            "-clone",
+            "0",
+            "-clone",
+            "1",
+            "-alpha",
+            "off",
             "-compose",
             "CopyOpacity",
-            "/tmp/iw_mask.png",
-            "/tmp/iw_wall.png",
-            "/tmp/iw_cut.png",
-        ])?;
-
-        // 5. Invert
-        run_magick(&[
-            "convert",
-            "/tmp/iw_cut.png",
+            "-composite",
             "-channel",
             "RGB",
             "-negate",
-            "/tmp/iw_invert.png",
-        ])?;
-
-        // 6. Composite final
-        run_magick(&[
-            "convert",
-            "/tmp/iw_wall.png",
-            "/tmp/iw_invert.png",
+            "+channel",
+            ")",
+            "-delete",
+            "1",
             "-gravity",
             "center",
+            "-compose",
+            "Over",
             "-composite",
             &out,
         ])?;
-
-        // Cleanup
-        let _ = std::fs::remove_file("/tmp/iw_wall.png");
-        let _ = std::fs::remove_file("/tmp/iw_overlay.png");
-        let _ = std::fs::remove_file("/tmp/iw_mask.png");
-        let _ = std::fs::remove_file("/tmp/iw_cut.png");
-        let _ = std::fs::remove_file("/tmp/iw_invert.png");
 
         Ok::<(), anyhow::Error>(())
     })
