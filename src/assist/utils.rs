@@ -141,15 +141,7 @@ impl ColorConfiguration {
     }
 
     /// Get color name for debugging/logging
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Red => "red",
-            Self::Green => "green",
-            Self::Blue => "blue",
-            Self::Yellow => "yellow",
-            Self::Default => "default",
-        }
-    }
+
 }
 
 /// Cached display server and compositor detection

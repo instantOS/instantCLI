@@ -314,11 +314,7 @@ impl InstallContext {
             .cloned()
     }
 
-    /// Check if a key exists
-    pub fn contains_key(&self, key: &str) -> bool {
-        let data = self.data.lock().unwrap();
-        data.contains_key(key)
-    }
+
 }
 
 /// Result of asking a question
@@ -675,7 +671,7 @@ impl QuestionEngine {
         let back_opt = format!("{} Back", NerdFont::ArrowLeft);
         options.push(back_opt.clone());
 
-        for (i, q) in self.questions.iter().enumerate() {
+        for q in self.questions.iter() {
             if q.is_optional() && q.should_ask(&self.context) {
                 let status = if self.context.is_answered(q.id()) {
                     let ans = self.context.get_answer(&q.id()).unwrap();

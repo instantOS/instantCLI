@@ -3,7 +3,7 @@ use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
-use colored::Colorize;
+
 use std::process::Command;
 
 pub async fn handle_setup(debug: bool) -> Result<()> {

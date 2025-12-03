@@ -169,9 +169,7 @@ pub struct GameInstallation {
 }
 
 impl GameInstallation {
-    pub fn new(game_name: impl Into<GameName>, save_path: impl Into<TildePath>) -> Self {
-        Self::with_kind(game_name, save_path, PathContentKind::Directory)
-    }
+
 
     pub fn with_kind(
         game_name: impl Into<GameName>,

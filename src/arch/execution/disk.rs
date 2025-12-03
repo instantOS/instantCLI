@@ -52,12 +52,12 @@ pub fn prepare_disk(context: &InstallContext, executor: &CommandExecutor) -> Res
             (BootMode::UEFI64 | BootMode::UEFI32, true) => {
                 partition_uefi_luks(disk_path, executor)?;
                 format_luks(context, disk_path, executor, true, swap_size_gb)?;
-                mount_luks(executor, true, disk_path)?;
+                mount_luks(executor, disk_path)?;
             }
             (BootMode::BIOS, true) => {
                 partition_bios_luks(disk_path, executor)?;
                 format_luks(context, disk_path, executor, false, swap_size_gb)?;
-                mount_luks(executor, false, disk_path)?;
+                mount_luks(executor, disk_path)?;
             }
         }
     }
@@ -242,7 +242,7 @@ fn format_luks(
     Ok(())
 }
 
-fn mount_luks(executor: &CommandExecutor, is_uefi: bool, disk: &str) -> Result<()> {
+fn mount_luks(executor: &CommandExecutor, disk: &str) -> Result<()> {
     println!("Mounting LVM volumes...");
 
     // Mount root

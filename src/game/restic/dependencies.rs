@@ -11,7 +11,6 @@ use anyhow::{Context, Result, anyhow};
 pub struct DependencyBackupResult {
     pub snapshot_id: String,
     pub reused_existing: bool,
-    pub progress: BackupProgress,
 }
 
 /// Result of restoring a dependency snapshot
@@ -121,7 +120,6 @@ pub fn backup_dependency(
     Ok(DependencyBackupResult {
         snapshot_id,
         reused_existing,
-        progress,
     })
 }
 

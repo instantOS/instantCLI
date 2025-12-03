@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, bail};
 use duct::cmd;
-use std::env;
+
 use std::process::Command;
 
 use crate::common::systemd::{SystemdManager, UserServiceConfig};

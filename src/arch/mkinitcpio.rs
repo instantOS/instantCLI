@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 #[derive(Debug, Clone)]
 pub struct MkinitcpioConfig {
@@ -58,9 +58,7 @@ impl MkinitcpioConfig {
         &self.hooks
     }
 
-    pub fn hooks_mut(&mut self) -> &mut Vec<String> {
-        &mut self.hooks
-    }
+
 
     pub fn ensure_hook(&mut self, hook: &str) {
         if !self.contains_hook(hook) {

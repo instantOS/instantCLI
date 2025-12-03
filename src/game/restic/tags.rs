@@ -106,19 +106,7 @@ pub fn create_dependency_tags(game_name: &str, dependency_id: &str) -> Vec<Strin
     ]
 }
 
-/// Extract dependency info (game name & dependency id) from tags
-pub fn extract_dependency_info_from_tags(tags: &[String]) -> Option<(String, String)> {
-    let game_tag = tags.iter().find(|tag| tag.starts_with("game:"))?;
-    let dep_tag = tags.iter().find(|tag| tag.starts_with("dep:"))?;
 
-    let encoded_game = game_tag.strip_prefix("game:")?;
-    let encoded_dep = dep_tag.strip_prefix("dep:")?;
-
-    let game = decode_game_name_from_tag(encoded_game).ok()?;
-    let dependency = decode_dependency_id_from_tag(encoded_dep).ok()?;
-
-    Some((game, dependency))
-}
 
 /// Extract game name from snapshot tags
 ///
