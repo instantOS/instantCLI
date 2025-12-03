@@ -5,7 +5,7 @@ use crate::common::compositor::CompositorType;
 use crate::wallpaper::cli::{SetArgs, WallpaperCommands};
 use crate::wallpaper::config::WallpaperConfig;
 
-use crate::wallpaper::sway;
+use crate::wallpaper::{sway, x11};
 
 pub async fn handle_wallpaper_command(command: WallpaperCommands, _debug: bool) -> Result<()> {
     match command {
@@ -38,6 +38,10 @@ pub async fn apply_configured_wallpaper() -> Result<()> {
     match compositor {
         CompositorType::Sway => {
             sway::apply_wallpaper(&path)?;
+            println!("{}", "Wallpaper applied successfully".green());
+        }
+        CompositorType::I3 | CompositorType::InstantWM => {
+            x11::apply_wallpaper(&path)?;
             println!("{}", "Wallpaper applied successfully".green());
         }
         _ => {
