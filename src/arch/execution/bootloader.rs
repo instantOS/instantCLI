@@ -38,7 +38,7 @@ fn install_grub_uefi(context: &InstallContext, executor: &CommandExecutor) -> Re
     cmd.arg(format!("--target={}", target))
         .arg("--efi-directory=/boot")
         .arg("--bootloader-id=GRUB")
-        .arg("--recheck");  // Ensure GRUB is properly installed
+        .arg("--recheck"); // Ensure GRUB is properly installed
 
     executor.run(&mut cmd)?;
 

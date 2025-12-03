@@ -1,7 +1,9 @@
+pub mod ai;
 pub mod color_picker;
 pub mod emoji;
 pub mod help;
 pub mod joke;
+pub mod man;
 pub mod media;
 pub mod mouse;
 pub mod password;

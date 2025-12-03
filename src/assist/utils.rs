@@ -419,3 +419,32 @@ pub fn generate_screenshot_filename() -> String {
     let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S");
     format!("{}.png", timestamp)
 }
+
+/// Get text content from clipboard using the appropriate tool for the display server
+pub fn get_clipboard_content(display_server: &DisplayServer) -> Result<String> {
+    let output = if display_server.is_wayland() {
+        Command::new("wl-paste")
+            .output()
+            .context("Failed to run wl-paste")?
+    } else if display_server.is_x11() {
+        Command::new("xclip")
+            .args(["-selection", "clipboard", "-o"])
+            .output()
+            .context("Failed to run xclip")?
+    } else {
+        anyhow::bail!("Unknown display server - cannot get clipboard content");
+    };
+
+    if !output.status.success() {
+        anyhow::bail!("Failed to get clipboard content");
+    }
+
+    let content =
+        String::from_utf8(output.stdout).context("Clipboard content is not valid UTF-8")?;
+
+    if content.trim().is_empty() {
+        anyhow::bail!("Clipboard is empty");
+    }
+
+    Ok(content)
+}
