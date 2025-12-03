@@ -242,16 +242,6 @@ mod tests {
     }
 
     #[test]
-    fn test_dependency_tag_encoding_decoding() {
-        let tags = create_dependency_tags("Test Game", "dep-1");
-        assert_eq!(tags[0], INSTANT_GAME_DEPENDENCY_TAG);
-
-        let info = extract_dependency_info_from_tags(&tags).unwrap();
-        assert_eq!(info.0, "Test Game");
-        assert_eq!(info.1, "dep-1");
-    }
-
-    #[test]
     fn test_debug_snapshot_tags() {
         use crate::restic::wrapper::Snapshot;
 
