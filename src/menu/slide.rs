@@ -193,6 +193,16 @@ impl SliderApp {
                 .title(format!(" {label} "))
                 .title_alignment(Alignment::Left);
 
+            // Calculate label color based on whether it's over the gauge or background
+            let label_text = format!(" {value} ");
+            let label_color = if ratio > 0.5 {
+                // When slider is more than halfway, use dark text (visible over green gauge)
+                Color::Black
+            } else {
+                // When slider is less than halfway, use light text (visible over dark background)
+                Color::White
+            };
+
             let gauge = Gauge::default()
                 .block(slider_block)
                 .ratio(ratio.clamp(0.0, 1.0))
@@ -203,8 +213,8 @@ impl SliderApp {
                         .add_modifier(Modifier::BOLD),
                 )
                 .label(Span::styled(
-                    format!(" {value} "),
-                    Style::default().fg(Color::Black),
+                    label_text,
+                    Style::default().fg(label_color),
                 ));
 
             frame.render_widget(title, vertical[0]);
