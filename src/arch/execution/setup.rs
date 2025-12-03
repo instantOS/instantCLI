@@ -15,6 +15,7 @@ pub async fn setup_instantos(
 
     if !minimal_mode {
         setup_instant_repo(executor).await?;
+        crate::common::pacman::configure_pacman_settings(None, executor.dry_run).await?;
     }
 
     // Install extended packages (GUI, tools, drivers)
@@ -33,6 +34,8 @@ pub async fn setup_instantos(
         } else {
             println!("Skipping dotfiles setup: No user specified and SUDO_USER not found.");
         }
+
+        crate::arch::execution::bootloader::configure_grub_theme(context, executor)?;
     }
 
     enable_services(executor, context)?;

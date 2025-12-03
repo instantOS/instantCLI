@@ -189,13 +189,19 @@ fn configure_grub_plymouth(_context: &InstallContext, executor: &CommandExecutor
     Ok(())
 }
 
-fn configure_grub_theme(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub fn configure_grub_theme(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    let grub_default = "/etc/default/grub";
+
+    if !std::path::Path::new(grub_default).exists() {
+        println!("GRUB configuration file not found, skipping theme setup.");
+        return Ok(());
+    }
+
     if executor.dry_run {
         println!("[DRY RUN] Setting GRUB_THEME in /etc/default/grub");
         return Ok(());
     }
 
-    let grub_default = "/etc/default/grub";
     let content = std::fs::read_to_string(grub_default)?;
     let theme_path = "/usr/share/grub/themes/instantos/theme.txt";
 
@@ -216,7 +222,24 @@ fn configure_grub_theme(_context: &InstallContext, executor: &CommandExecutor) -
         new_lines.push(format!("GRUB_THEME=\"{}\"", theme_path));
     }
 
-    std::fs::write(grub_default, new_lines.join("\n"))?;
+    // Only write if changed to ensure idempotency
+    let new_content = new_lines.join("\n");
+    if new_content != content {
+        std::fs::write(grub_default, new_content)?;
+        println!("Updated GRUB theme configuration.");
+
+        // Update grub config
+        // Try to detect where grub-mkconfig writes to. Usually /boot/grub/grub.cfg
+        let grub_cfg = "/boot/grub/grub.cfg";
+        if std::path::Path::new(grub_cfg).exists() {
+            println!("Regenerating GRUB configuration...");
+            let mut cmd = Command::new("grub-mkconfig");
+            cmd.arg("-o").arg(grub_cfg);
+            executor.run(&mut cmd)?;
+        }
+    } else {
+        println!("GRUB theme already configured.");
+    }
 
     Ok(())
 }
