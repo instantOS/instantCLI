@@ -96,11 +96,20 @@ pub async fn run(debug: bool) -> Result<()> {
         }
     }
 
-    if let CompositorType::Sway = compositor {
-        if debug {
-            println!("Running assist setup for Sway");
+    match compositor {
+        CompositorType::Sway => {
+            if debug {
+                println!("Running assist setup for Sway");
+            }
+            assist::dispatch_assist_command(debug, Some(AssistCommands::Setup { wm: "sway".to_string() }))?;
         }
-        assist::dispatch_assist_command(debug, Some(AssistCommands::Setup))?;
+        CompositorType::I3 => {
+            if debug {
+                println!("Running assist setup for i3");
+            }
+            assist::dispatch_assist_command(debug, Some(AssistCommands::Setup { wm: "i3".to_string() }))?;
+        }
+        _ => {}
     }
 
     if crate::common::network::check_internet() {
