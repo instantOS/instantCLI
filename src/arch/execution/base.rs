@@ -1,7 +1,6 @@
 use super::CommandExecutor;
 use crate::arch::engine::{InstallContext, QuestionId};
 use anyhow::{Context, Result};
-use std::process::Command;
 
 pub async fn install_base(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Setting up mirrors...");

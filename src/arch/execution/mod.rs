@@ -327,6 +327,13 @@ pub async fn execute_installation(
                     println!("Warning: Failed to remove config file from chroot: {}", e);
                 }
             }
+
+            let chroot_bin = paths::chroot_path("/usr/bin/ins-install");
+            if chroot_bin.exists() {
+                if let Err(e) = std::fs::remove_file(&chroot_bin) {
+                    println!("Warning: Failed to remove installer binary from chroot: {}", e);
+                }
+            }
         }
     }
 
@@ -382,7 +389,7 @@ async fn execute_step(
 
         let mut cmd = std::process::Command::new("arch-chroot");
         cmd.arg(paths::CHROOT_MOUNT)
-            .arg("/usr/bin/ins")
+            .arg("/usr/bin/ins-install")
             .arg("arch")
             .arg("exec")
             .arg(step_name)
@@ -465,7 +472,7 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
 
     // Copy binary
     let current_exe = std::env::current_exe()?;
-    let target_bin = paths::chroot_path("/usr/bin/ins");
+    let target_bin = paths::chroot_path("/usr/bin/ins-install");
 
     if executor.dry_run {
         println!("[DRY RUN] cp {:?} {:?}", current_exe, target_bin);
