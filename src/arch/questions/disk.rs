@@ -166,13 +166,27 @@ impl Question for RunCfdiskQuestion {
         // This avoids async runtime interference with terminal control
         let disk_path = disk_path.to_string();
         let status = tokio::task::spawn_blocking(move || {
+            use std::fs::OpenOptions;
             use std::process::{Command, Stdio};
+
+            // Open /dev/tty explicitly to ensure we have a valid terminal
+            // This fixes issues where sudo/tokio might interfere with stdin/stdout inheritance
+            let tty = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open("/dev/tty")
+                .expect("Failed to open /dev/tty");
+
+            // We need separate handles for each stream
+            let tty_in = tty.try_clone().expect("Failed to clone tty handle");
+            let tty_out = tty.try_clone().expect("Failed to clone tty handle");
+            let tty_err = tty.try_clone().expect("Failed to clone tty handle");
 
             let mut child = Command::new("cfdisk")
                 .arg(disk_path)
-                .stdin(Stdio::inherit())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
+                .stdin(Stdio::from(tty_in))
+                .stdout(Stdio::from(tty_out))
+                .stderr(Stdio::from(tty_err))
                 .spawn()
                 .expect("Failed to spawn cfdisk");
 
