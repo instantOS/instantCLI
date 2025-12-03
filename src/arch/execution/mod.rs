@@ -331,7 +331,10 @@ pub async fn execute_installation(
             let chroot_bin = paths::chroot_path("/usr/bin/ins-install");
             if chroot_bin.exists() {
                 if let Err(e) = std::fs::remove_file(&chroot_bin) {
-                    println!("Warning: Failed to remove installer binary from chroot: {}", e);
+                    println!(
+                        "Warning: Failed to remove installer binary from chroot: {}",
+                        e
+                    );
                 }
             }
         }
