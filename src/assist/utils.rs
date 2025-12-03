@@ -139,9 +139,6 @@ impl ColorConfiguration {
             Self::Default => "0.5058823529411764,0.788235294117647,0.5843137254901961", // Default to green
         }
     }
-
-
-
 }
 
 /// Cached display server and compositor detection

@@ -1,4 +1,3 @@
-
 use clap::{Args, Subcommand};
 use clap_complete::engine::ArgValueCompleter;
 

@@ -106,8 +106,6 @@ pub fn create_dependency_tags(game_name: &str, dependency_id: &str) -> Vec<Strin
     ]
 }
 
-
-
 /// Extract game name from snapshot tags
 ///
 /// Looks for the encoded game name tag in a snapshot's tags and decodes it.

@@ -169,8 +169,6 @@ pub struct GameInstallation {
 }
 
 impl GameInstallation {
-
-
     pub fn with_kind(
         game_name: impl Into<GameName>,
         save_path: impl Into<TildePath>,

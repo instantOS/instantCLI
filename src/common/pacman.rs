@@ -2,7 +2,6 @@ use anyhow::Result;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 
-
 pub const INSTANT_MIRRORLIST: &str = include_str!("instantmirrorlist");
 
 pub async fn setup_instant_repo(dry_run: bool) -> Result<()> {

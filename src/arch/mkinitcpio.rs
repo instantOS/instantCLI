@@ -58,8 +58,6 @@ impl MkinitcpioConfig {
         &self.hooks
     }
 
-
-
     pub fn ensure_hook(&mut self, hook: &str) {
         if !self.contains_hook(hook) {
             self.hooks.push(hook.to_string());

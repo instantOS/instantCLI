@@ -313,8 +313,6 @@ impl InstallContext {
             .and_then(|boxed| boxed.downcast_ref::<K::Value>())
             .cloned()
     }
-
-
 }
 
 /// Result of asking a question
