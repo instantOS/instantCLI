@@ -1,9 +1,12 @@
 use anyhow::{Context, Result, bail};
 use duct::cmd;
+use std::env;
 use std::process::Command;
 
 use crate::common::systemd::{SystemdManager, UserServiceConfig};
-use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{
+    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuWrapper,
+};
 use crate::ui::prelude::*;
 
 use super::context::SettingsContext;
@@ -13,6 +16,7 @@ use super::registry::{
 };
 use super::sources;
 use crate::common::requirements::UDISKIE_PACKAGE;
+
 
 const BLUETOOTH_SERVICE_NAME: &str = "bluetooth";
 const UDISKIE_SERVICE_NAME: &str = "udiskie";
@@ -453,6 +457,36 @@ pub fn apply_pacman_autoclean(ctx: &mut SettingsContext, enabled: bool) -> Resul
                 "Automatic pacman cache cleanup disabled."
             },
         );
+    }
+
+    Ok(())
+}
+
+pub fn pick_and_set_wallpaper(_context: &mut SettingsContext) -> Result<()> {
+    // Launch file picker for images
+    let path = MenuWrapper::file_picker()
+        .hint("Select a wallpaper image")
+        .pick_one()?;
+
+    if let Some(path) = path {
+        let exe = std::env::current_exe().context("Failed to get current executable path")?;
+
+        let status = Command::new(exe)
+            .args(["wallpaper", "set", &path.to_string_lossy()])
+            .status()
+            .context("Failed to execute wallpaper command")?;
+
+        if status.success() {
+            FzfWrapper::builder()
+                .message("Wallpaper updated successfully!")
+                .title("Wallpaper")
+                .show_message()?;
+        } else {
+            FzfWrapper::builder()
+                .message("Failed to set wallpaper.")
+                .title("Error")
+                .show_message()?;
+        }
     }
 
     Ok(())

@@ -2,7 +2,7 @@ use crate::common::requirements::{
     BLUEMAN_PACKAGE, BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE, CHROMIUM_PACKAGE, CLIPMENU_PACKAGE,
     COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_DISKS_PACKAGE, GNOME_FIRMWARE_PACKAGE,
     GPARTED_PACKAGE, NM_CONNECTION_EDITOR_PACKAGE, PACMAN_CONTRIB_PACKAGE, RequiredPackage,
-    TOPGRADE_PACKAGE, WIREMIX_PACKAGE, XDG_UTILS_PACKAGE,
+    TOPGRADE_PACKAGE, WIREMIX_PACKAGE, XDG_UTILS_PACKAGE, YAZI_PACKAGE,
 };
 use crate::ui::prelude::NerdFont;
 
@@ -274,6 +274,19 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: false,
         requirements: &[],
+    },
+    SettingDefinition {
+        id: "appearance.wallpaper",
+        title: "Wallpaper",
+        category: "appearance",
+        icon: NerdFont::Image,
+        breadcrumbs: &["Wallpaper"],
+        kind: SettingKind::Action {
+            summary: "Select and set a new wallpaper image.",
+            run: super::actions::pick_and_set_wallpaper,
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(YAZI_PACKAGE)],
     },
     SettingDefinition {
         id: "desktop.clipboard",

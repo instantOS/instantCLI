@@ -676,3 +676,10 @@ pub const CFDISK_PACKAGE: RequiredPackage = RequiredPackage {
     ubuntu_package_name: Some("util-linux"),
     tests: &[InstallTest::WhichSucceeds("cfdisk")],
 };
+
+pub const YAZI_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "yazi",
+    arch_package_name: Some("yazi"),
+    ubuntu_package_name: None, // yazi is not in default ubuntu repos yet, usually installed via cargo or prebuilt binary
+    tests: &[InstallTest::WhichSucceeds("yazi")],
+};
