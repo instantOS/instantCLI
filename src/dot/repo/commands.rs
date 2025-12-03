@@ -344,11 +344,11 @@ fn show_repository_info(config: &Config, db: &Database, name: &str) -> Result<()
 
     let mut rows: Vec<(char, &str, String)> = vec![
         (
-            char::from(NerdFont::Folder),
+            char::from(NerdFont::FolderGit),
             "Repository",
             name.cyan().to_string(),
         ),
-        (char::from(NerdFont::Info), "URL", repo_config.url.clone()),
+        (char::from(NerdFont::Link), "URL", repo_config.url.clone()),
         (
             char::from(NerdFont::GitBranch),
             "Branch",
@@ -364,11 +364,11 @@ fn show_repository_info(config: &Config, db: &Database, name: &str) -> Result<()
     ];
 
     if let Some(author) = &local_repo.meta.author {
-        rows.push((char::from(NerdFont::Info), "Author", author.clone()));
+        rows.push((char::from(NerdFont::User), "Author", author.clone()));
     }
     if let Some(description) = &local_repo.meta.description {
         rows.push((
-            char::from(NerdFont::Info),
+            char::from(NerdFont::FileText),
             "Description",
             description.clone(),
         ));

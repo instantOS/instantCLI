@@ -54,7 +54,7 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
             if r.read_only {
                 println!(
                     "{} Skipping read-only repository '{}'",
-                    char::from(NerdFont::Info).to_string().blue(),
+                    char::from(NerdFont::ArrowRight).to_string().blue(),
                     r.name
                 );
                 false
@@ -293,7 +293,7 @@ fn update_tracked_dotfiles(
             if repo.read_only {
                 println!(
                     "{} Skipping update for read-only repository '{}'",
-                    char::from(NerdFont::Info).to_string().blue(),
+                    char::from(NerdFont::ArrowRight).to_string().blue(),
                     repo.name
                 );
                 continue;
