@@ -600,17 +600,16 @@ pub fn configure_keyboard_layout(ctx: &mut SettingsContext) -> Result<()> {
                     );
                     return Ok(());
                 }
-            } else if is_x11 {
-                if let Err(e) = std::process::Command::new("setxkbmap")
+            } else if is_x11
+                && let Err(e) = std::process::Command::new("setxkbmap")
                     .arg(&layout.code)
                     .status()
-                {
-                    ctx.emit_info(
-                        "settings.keyboard.apply_error",
-                        &format!("Failed to execute setxkbmap: {e}"),
-                    );
-                    return Ok(());
-                }
+            {
+                ctx.emit_info(
+                    "settings.keyboard.apply_error",
+                    &format!("Failed to execute setxkbmap: {e}"),
+                );
+                return Ok(());
             }
 
             // Save to settings
