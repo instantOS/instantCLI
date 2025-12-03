@@ -79,6 +79,14 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         packages.push("cryptsetup");
     }
 
+    // Plymouth support
+    if context.get_answer_bool(QuestionId::UsePlymouth)
+        && !context.get_answer_bool(QuestionId::MinimalMode)
+    {
+        println!("Plymouth enabled, adding plymouth package");
+        packages.push("plymouth");
+    }
+
     println!("Packages to install: {}", packages.join(" "));
 
     super::pacman::pacstrap("/mnt", &packages, executor)?;
