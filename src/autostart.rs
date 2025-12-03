@@ -102,5 +102,15 @@ pub async fn run(debug: bool) -> Result<()> {
         println!("No internet connection detected");
     }
 
+    // Apply wallpaper
+    if debug {
+        println!("Applying wallpaper");
+    }
+    if let Err(e) = crate::wallpaper::commands::apply_configured_wallpaper().await {
+        if debug {
+            eprintln!("Failed to apply wallpaper: {}", e);
+        }
+    }
+
     Ok(())
 }

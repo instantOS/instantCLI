@@ -10,7 +10,7 @@ use crate::wallpaper::sway;
 pub async fn handle_wallpaper_command(command: WallpaperCommands, _debug: bool) -> Result<()> {
     match command {
         WallpaperCommands::Set(args) => handle_set(args).await,
-        WallpaperCommands::Apply => handle_apply().await,
+        WallpaperCommands::Apply => apply_configured_wallpaper().await,
     }
 }
 
@@ -20,10 +20,10 @@ async fn handle_set(args: SetArgs) -> Result<()> {
     println!("Wallpaper configured to: {}", args.path.green());
 
     // Apply the wallpaper after setting it
-    handle_apply().await
+    apply_configured_wallpaper().await
 }
 
-async fn handle_apply() -> Result<()> {
+pub async fn apply_configured_wallpaper() -> Result<()> {
     let config = WallpaperConfig::load()?;
     let path = match config.path {
         Some(p) => p,
