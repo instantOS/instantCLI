@@ -96,13 +96,15 @@ async fn fetch_random_wallhaven_wallpaper(dir: &Path) -> Result<PathBuf> {
 async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
     let overlay_path = dir.join("overlay.png");
 
-    // Download overlay if missing
-    if !overlay_path.exists() {
-        println!("Downloading overlay image...");
-        let bytes = reqwest::get(OVERLAY_URL).await?.bytes().await?;
-        let mut file = fs::File::create(&overlay_path).await?;
-        file.write_all(&bytes).await?;
+    // Always remove and redownload overlay to ensure it's correct
+    if overlay_path.exists() {
+        let _ = fs::remove_file(&overlay_path).await;
     }
+
+    println!("Downloading overlay image...");
+    let bytes = reqwest::get(OVERLAY_URL).await?.bytes().await?;
+    let mut file = fs::File::create(&overlay_path).await?;
+    file.write_all(&bytes).await?;
 
     let resolution = get_resolution().unwrap_or_else(|_| "1920x1080".to_string());
     println!("Target resolution: {}", resolution);
@@ -114,20 +116,21 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
     let overlay_path_buf = overlay_path.to_path_buf();
     let output_path_buf = output_path.to_path_buf();
 
-    let status = tokio::task::spawn_blocking(move || {
+    let _status = tokio::task::spawn_blocking(move || {
         let bg = bg_path_buf.to_string_lossy();
         let overlay = overlay_path_buf.to_string_lossy();
         let out = output_path_buf.to_string_lossy();
 
         // Use a single modern ImageMagick command to process everything
         // This avoids deprecated 'convert' subcommand and temporary files
-        // Logic:
+        // Logic (matching working bash implementation):
         // 1. Load and resize background
         // 2. Load and resize overlay, extract alpha (mask)
-        // 3. Clone BG and Mask, apply CopyOpacity to create cutout, then Negate RGB to invert colors
-        // 4. Delete the Mask (index 1)
+        // 3. Clone BG and apply CopyOpacity with mask to create cutout, then Negate RGB to invert colors
+        // 4. Delete the mask (index 1)
         // 5. Composite the Inverted Cutout over the original BG
         run_magick(&[
+            // 1. Load and process Background
             &bg,
             "-resize",
             &format!("{}^", resolution),
@@ -135,38 +138,29 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
             "center",
             "-extent",
             &resolution,
+            // 2. Load Overlay inside parenthesis
             "(",
             &overlay,
+            "-background",
+            "none", // Ensure background is transparent for resize/extent
             "-resize",
             &format!("{}^", resolution),
             "-gravity",
             "center",
             "-extent",
             &resolution,
+            // Extract alpha converts the transparency to grayscale:
+            // Opaque (Logo) becomes White, Transparent becomes Black
             "-alpha",
             "extract",
             ")",
-            "(",
-            "-clone",
-            "0",
-            "-clone",
-            "1",
-            "-alpha",
-            "off",
-            "-compose",
-            "CopyOpacity",
-            "-composite",
-            "-channel",
-            "RGB",
-            "-negate",
-            "+channel",
-            ")",
-            "-delete",
-            "1",
+            // 3. Composite using Difference
+            // White (Logo) vs BG = Inverted Colors
+            // Black (Empty) vs BG = Original Colors
             "-gravity",
             "center",
             "-compose",
-            "Over",
+            "Difference",
             "-composite",
             &out,
         ])?;
