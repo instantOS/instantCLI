@@ -21,6 +21,7 @@ mod settings;
 mod ui;
 mod update;
 mod video;
+mod wallpaper;
 
 use clap::{CommandFactory, Parser, Subcommand};
 
@@ -171,6 +172,11 @@ enum Commands {
         #[command(subcommand)]
         command: video::VideoCommands,
     },
+    /// Wallpaper management commands
+    Wallpaper {
+        #[command(subcommand)]
+        command: wallpaper::cli::WallpaperCommands,
+    },
     /// Debugging and diagnostic utilities
     Debug {
         #[command(subcommand)]
@@ -282,6 +288,13 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             execute_with_error_handling(
                 video::handle_video_command(command.clone(), cli.debug).await,
                 "Error handling video command",
+                None,
+            )?;
+        }
+        Some(Commands::Wallpaper { command }) => {
+            execute_with_error_handling(
+                wallpaper::commands::handle_wallpaper_command(command.clone(), cli.debug).await,
+                "Error handling wallpaper command",
                 None,
             )?;
         }
