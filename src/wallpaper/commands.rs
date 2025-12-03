@@ -40,7 +40,7 @@ pub async fn apply_configured_wallpaper() -> Result<()> {
             sway::apply_wallpaper(&path)?;
             println!("{}", "Wallpaper applied successfully".green());
         }
-        CompositorType::I3 | CompositorType::InstantWM => {
+        CompositorType::I3 | CompositorType::Dwm | CompositorType::InstantWM => {
             x11::apply_wallpaper(&path)?;
             println!("{}", "Wallpaper applied successfully".green());
         }

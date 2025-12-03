@@ -61,6 +61,8 @@ pub struct ScratchpadWindowInfo {
 pub enum CompositorType {
     /// i3-wm compositor (X11 tiling window manager)
     I3,
+    /// dwm (dynamic window manager)
+    Dwm,
     /// InstantWM (dwm fork)
     InstantWM,
     /// Sway compositor (i3-compatible Wayland compositor)
@@ -78,6 +80,7 @@ impl CompositorType {
         if let Ok(session) = env::var("XDG_SESSION_DESKTOP") {
             match session.to_lowercase().as_str() {
                 "i3" => return CompositorType::I3,
+                "dwm" => return CompositorType::Dwm,
                 "instantwm" => return CompositorType::InstantWM,
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
@@ -88,6 +91,7 @@ impl CompositorType {
         if let Ok(desktop) = env::var("DESKTOP_SESSION") {
             match desktop.to_lowercase().as_str() {
                 "i3" => return CompositorType::I3,
+                "dwm" => return CompositorType::Dwm,
                 "instantwm" => return CompositorType::InstantWM,
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
@@ -112,6 +116,9 @@ impl CompositorType {
                 if CompositorType::is_process_running("i3") {
                     return CompositorType::I3;
                 }
+                if CompositorType::is_process_running("dwm") {
+                    return CompositorType::Dwm;
+                }
                 if CompositorType::is_process_running("instantwm") {
                     return CompositorType::InstantWM;
                 }
@@ -125,6 +132,7 @@ impl CompositorType {
     pub fn provider(&self) -> Box<dyn ScratchpadProvider> {
         match self {
             CompositorType::I3 => Box::new(i3::I3),
+            CompositorType::Dwm => Box::new(fallback::Fallback), // TODO: Add dwm scratchpad support if needed
             CompositorType::InstantWM => Box::new(fallback::Fallback), // TODO: Add InstantWM scratchpad support if needed
             CompositorType::Sway => Box::new(sway::Sway),
             CompositorType::Hyprland => Box::new(hyprland::Hyprland),
@@ -156,6 +164,7 @@ impl CompositorType {
     pub fn name(&self) -> String {
         match self {
             CompositorType::I3 => "i3".to_string(),
+            CompositorType::Dwm => "dwm".to_string(),
             CompositorType::InstantWM => "instantwm".to_string(),
             CompositorType::Sway => "Sway".to_string(),
             CompositorType::Hyprland => "Hyprland".to_string(),
@@ -178,6 +187,7 @@ impl CompositorType {
     pub fn is_x11(&self) -> bool {
         match self {
             CompositorType::I3 => true,
+            CompositorType::Dwm => true,
             CompositorType::InstantWM => true,
             CompositorType::Other(name) => name.to_lowercase().contains("x11"),
             _ => false,
@@ -190,6 +200,7 @@ impl CompositorType {
         match self {
             CompositorType::Sway | CompositorType::Hyprland => DisplayServer::Wayland,
             CompositorType::I3 => DisplayServer::X11,
+            CompositorType::Dwm => DisplayServer::X11,
             CompositorType::InstantWM => DisplayServer::X11,
             CompositorType::Other(name) => {
                 if name.to_lowercase().contains("wayland") {
