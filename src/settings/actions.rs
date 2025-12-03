@@ -548,11 +548,14 @@ fn parse_xkb_layouts() -> Result<Vec<LayoutChoice>> {
 pub fn configure_keyboard_layout(ctx: &mut SettingsContext) -> Result<()> {
     let compositor = CompositorType::detect();
 
-    // Currently only Sway is supported for this specific implementation
-    if !matches!(compositor, CompositorType::Sway) {
+    let is_sway = matches!(compositor, CompositorType::Sway);
+    let is_x11 = compositor.is_x11();
+
+    // Check support
+    if !is_sway && !is_x11 {
         ctx.emit_info(
             "settings.keyboard.unsupported",
-            "Keyboard layout configuration is currently only supported on Sway.",
+            "Keyboard layout configuration is currently only supported on Sway and X11 window managers.",
         );
         return Ok(());
     }
@@ -568,7 +571,12 @@ pub fn configure_keyboard_layout(ctx: &mut SettingsContext) -> Result<()> {
         }
     };
 
-    let current_layout_key = super::store::StringSettingKey::new("language.keyboard.sway", "");
+    let current_layout_key = if is_sway {
+        super::store::StringSettingKey::new("language.keyboard.sway", "")
+    } else {
+        super::store::StringSettingKey::new("language.keyboard.x11", "")
+    };
+
     let current_code = ctx.string(current_layout_key);
 
     // Find initial index if possible
@@ -582,14 +590,27 @@ pub fn configure_keyboard_layout(ctx: &mut SettingsContext) -> Result<()> {
 
     match result {
         FzfResult::Selected(layout) => {
-            // Apply for Sway
-            let cmd = format!("input type:keyboard xkb_layout {}", layout.code);
-            if let Err(e) = sway::swaymsg(&cmd) {
-                ctx.emit_info(
-                    "settings.keyboard.apply_error",
-                    &format!("Failed to apply keyboard layout: {e}"),
-                );
-                return Ok(());
+            // Apply
+            if is_sway {
+                let cmd = format!("input type:keyboard xkb_layout {}", layout.code);
+                if let Err(e) = sway::swaymsg(&cmd) {
+                    ctx.emit_info(
+                        "settings.keyboard.apply_error",
+                        &format!("Failed to apply keyboard layout: {e}"),
+                    );
+                    return Ok(());
+                }
+            } else if is_x11 {
+                if let Err(e) = std::process::Command::new("setxkbmap")
+                    .arg(&layout.code)
+                    .status()
+                {
+                    ctx.emit_info(
+                        "settings.keyboard.apply_error",
+                        &format!("Failed to execute setxkbmap: {e}"),
+                    );
+                    return Ok(());
+                }
             }
 
             // Save to settings
@@ -612,33 +633,49 @@ pub fn configure_keyboard_layout(ctx: &mut SettingsContext) -> Result<()> {
 pub fn restore_keyboard_layout(ctx: &mut SettingsContext) -> Result<()> {
     let compositor = CompositorType::detect();
 
-    match compositor {
-        CompositorType::Sway => {
-            let key = super::store::StringSettingKey::new("language.keyboard.sway", "");
-            let code = ctx.string(key);
+    if matches!(compositor, CompositorType::Sway) {
+        let key = super::store::StringSettingKey::new("language.keyboard.sway", "");
+        let code = ctx.string(key);
 
-            if !code.is_empty() {
-                let cmd = format!("input type:keyboard xkb_layout {}", code);
-                // We suppress errors here as this might run during startup/apply where we don't want to crash
-                if let Err(e) = sway::swaymsg(&cmd) {
-                    emit(
-                        Level::Warn,
-                        "settings.keyboard.restore_failed",
-                        &format!("Failed to restore Sway keyboard layout: {e}"),
-                        None,
-                    );
-                } else {
-                    emit(
-                        Level::Debug,
-                        "settings.keyboard.restored",
-                        &format!("Restored Sway keyboard layout: {code}"),
-                        None,
-                    );
-                }
+        if !code.is_empty() {
+            let cmd = format!("input type:keyboard xkb_layout {}", code);
+            // We suppress errors here as this might run during startup/apply where we don't want to crash
+            if let Err(e) = sway::swaymsg(&cmd) {
+                emit(
+                    Level::Warn,
+                    "settings.keyboard.restore_failed",
+                    &format!("Failed to restore Sway keyboard layout: {e}"),
+                    None,
+                );
+            } else {
+                emit(
+                    Level::Debug,
+                    "settings.keyboard.restored",
+                    &format!("Restored Sway keyboard layout: {code}"),
+                    None,
+                );
             }
         }
-        _ => {
-            // Other compositors not yet supported for keyboard restoration
+    } else if compositor.is_x11() {
+        let key = super::store::StringSettingKey::new("language.keyboard.x11", "");
+        let code = ctx.string(key);
+
+        if !code.is_empty() {
+            if let Err(e) = std::process::Command::new("setxkbmap").arg(&code).status() {
+                emit(
+                    Level::Warn,
+                    "settings.keyboard.restore_failed",
+                    &format!("Failed to restore X11 keyboard layout: {e}"),
+                    None,
+                );
+            } else {
+                emit(
+                    Level::Debug,
+                    "settings.keyboard.restored",
+                    &format!("Restored X11 keyboard layout: {code}"),
+                    None,
+                );
+            }
         }
     }
 
