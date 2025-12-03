@@ -96,15 +96,13 @@ async fn fetch_random_wallhaven_wallpaper(dir: &Path) -> Result<PathBuf> {
 async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
     let overlay_path = dir.join("overlay.png");
 
-    // Always remove and redownload overlay to ensure it's correct
-    if overlay_path.exists() {
-        let _ = fs::remove_file(&overlay_path).await;
+    // Download overlay if missing
+    if !overlay_path.exists() {
+        println!("Downloading overlay image...");
+        let bytes = reqwest::get(OVERLAY_URL).await?.bytes().await?;
+        let mut file = fs::File::create(&overlay_path).await?;
+        file.write_all(&bytes).await?;
     }
-
-    println!("Downloading overlay image...");
-    let bytes = reqwest::get(OVERLAY_URL).await?.bytes().await?;
-    let mut file = fs::File::create(&overlay_path).await?;
-    file.write_all(&bytes).await?;
 
     let resolution = get_resolution().unwrap_or_else(|_| "1920x1080".to_string());
     println!("Target resolution: {}", resolution);
@@ -153,6 +151,8 @@ async fn apply_overlay(bg_path: &Path, dir: &Path) -> Result<PathBuf> {
             // Opaque (Logo) becomes White, Transparent becomes Black
             "-alpha",
             "extract",
+            // Threshold to ensure binary mask (removes anti-aliasing artifacts that cause outlines)
+            "-threshold", "50%",
             ")",
             // 3. Composite using Difference
             // White (Logo) vs BG = Inverted Colors
