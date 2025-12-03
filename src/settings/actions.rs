@@ -17,7 +17,6 @@ use super::registry::{
 use super::sources;
 use crate::common::requirements::UDISKIE_PACKAGE;
 
-
 const BLUETOOTH_SERVICE_NAME: &str = "bluetooth";
 const UDISKIE_SERVICE_NAME: &str = "udiskie";
 const COCKPIT_SOCKET_NAME: &str = "cockpit.socket";

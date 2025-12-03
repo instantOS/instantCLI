@@ -11,7 +11,26 @@ pub async fn handle_wallpaper_command(command: WallpaperCommands, _debug: bool) 
     match command {
         WallpaperCommands::Set(args) => handle_set(args).await,
         WallpaperCommands::Apply => apply_configured_wallpaper().await,
+        WallpaperCommands::Random(args) => handle_random(args).await,
     }
+}
+
+async fn handle_random(args: crate::wallpaper::cli::RandomArgs) -> Result<()> {
+    let path = crate::wallpaper::random::run(crate::wallpaper::random::RandomOptions {
+        no_logo: args.no_logo,
+    })
+    .await?;
+
+    println!(
+        "Generated wallpaper at: {}",
+        path.display().to_string().green()
+    );
+
+    // Set and apply
+    handle_set(SetArgs {
+        path: path.to_string_lossy().to_string(),
+    })
+    .await
 }
 
 async fn handle_set(args: SetArgs) -> Result<()> {
