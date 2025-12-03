@@ -303,6 +303,19 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[SettingRequirement::Package(CLIPMENU_PACKAGE)],
     },
     SettingDefinition {
+        id: "desktop.mouse.sensitivity",
+        title: "Mouse Sensitivity",
+        category: "desktop",
+        icon: NerdFont::Mouse,
+        breadcrumbs: &["Mouse Sensitivity"],
+        kind: SettingKind::Action {
+            summary: "Adjust mouse pointer speed using an interactive slider.\n\nThe setting will be automatically restored on login.",
+            run: super::actions::configure_mouse_sensitivity,
+        },
+        requires_reapply: true,
+        requirements: &[],
+    },
+    SettingDefinition {
         id: "workspace.layout",
         title: "Window Layout",
         category: "workspace",

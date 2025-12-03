@@ -6,6 +6,11 @@ use serde_json::Value;
 use std::process::Command;
 
 pub fn mouse_speed_slider() -> Result<()> {
+    run_mouse_speed_slider(None)?;
+    Ok(())
+}
+
+pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
     let compositor = CompositorType::detect();
     if compositor != CompositorType::Sway {
         anyhow::bail!(
@@ -20,13 +25,17 @@ pub fn mouse_speed_slider() -> Result<()> {
         .output()
         .context("Failed to set mouse accel profile to flat")?;
 
-    // Detect current speed
-    let current_speed = get_sway_mouse_speed().unwrap_or(0.0);
+    let start_value = if let Some(v) = initial_value {
+        v
+    } else {
+        // Detect current speed
+        let current_speed = get_sway_mouse_speed().unwrap_or(0.0);
 
-    // Map -1.0..1.0 to 0..100
-    // speed = (value / 50.0) - 1.0
-    // value = (speed + 1.0) * 50.0
-    let initial_value = ((current_speed + 1.0) * 50.0) as i64;
+        // Map -1.0..1.0 to 0..100
+        // speed = (value / 50.0) - 1.0
+        // value = (speed + 1.0) * 50.0
+        ((current_speed + 1.0) * 50.0) as i64
+    };
 
     let client = MenuClient::new();
     client.ensure_server_running()?;
@@ -40,15 +49,14 @@ pub fn mouse_speed_slider() -> Result<()> {
     let request = SliderRequest {
         min: 0,
         max: 100,
-        value: Some(initial_value),
+        value: Some(start_value),
         step: Some(1),
         big_step: Some(10),
         label: Some("Mouse Speed".to_string()),
         command: args,
     };
 
-    client.slide(request)?;
-    Ok(())
+    client.slide(request)
 }
 
 pub fn set_mouse_speed(value: i64) -> Result<()> {

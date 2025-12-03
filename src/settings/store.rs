@@ -95,6 +95,18 @@ impl StringSettingKey {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct IntSettingKey {
+    pub key: &'static str,
+    pub default: i64,
+}
+
+impl IntSettingKey {
+    pub const fn new(key: &'static str, default: i64) -> Self {
+        Self { key, default }
+    }
+}
+
 #[derive(Debug)]
 pub struct SettingsStore {
     path: PathBuf,
@@ -159,8 +171,23 @@ impl SettingsStore {
         self.data.set(key.key, toml::Value::String(value.into()));
     }
 
+    pub fn int(&self, key: IntSettingKey) -> i64 {
+        self.data
+            .get(key.key)
+            .and_then(|value| value.as_integer())
+            .unwrap_or(key.default)
+    }
+
+    pub fn set_int(&mut self, key: IntSettingKey, value: i64) {
+        self.data.set(key.key, toml::Value::Integer(value));
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.data.get(key).is_some()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -272,6 +299,28 @@ mod tests {
         store.save().unwrap();
         let reloaded = SettingsStore::load_from_path(path).unwrap();
         assert_eq!(reloaded.string(key), "grid");
+    }
+
+    #[test]
+    fn test_settings_store_int() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_path_buf();
+
+        let mut store = SettingsStore::load_from_path(path.clone()).unwrap();
+
+        let key = IntSettingKey::new("desktop.mouse.sensitivity", 50);
+
+        // Test default value
+        assert_eq!(store.int(key), 50);
+
+        // Set and verify
+        store.set_int(key, 75);
+        assert_eq!(store.int(key), 75);
+
+        // Save and reload
+        store.save().unwrap();
+        let reloaded = SettingsStore::load_from_path(path).unwrap();
+        assert_eq!(reloaded.int(key), 75);
     }
 
     #[test]
