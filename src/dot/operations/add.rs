@@ -50,7 +50,18 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
     let items: Vec<RepoSelectItem> = config
         .repos
         .iter()
-        .filter(|r| !r.read_only)
+        .filter(|r| {
+            if r.read_only {
+                println!(
+                    "{} Skipping read-only repository '{}'",
+                    char::from(NerdFont::Info).to_string().blue(),
+                    r.name
+                );
+                false
+            } else {
+                true
+            }
+        })
         .cloned()
         .map(|repo| RepoSelectItem { repo })
         .collect();
@@ -129,7 +140,7 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str, add_all: bool) ->
 
     // Update tracked files
     if !tracked_dotfiles.is_empty() {
-        update_tracked_dotfiles(&tracked_dotfiles, db, &mut stats)?;
+        update_tracked_dotfiles(&tracked_dotfiles, config, db, &mut stats)?;
     }
 
     // Handle untracked files
@@ -271,10 +282,24 @@ fn update_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<bool> {
 /// Update multiple tracked dotfiles
 fn update_tracked_dotfiles(
     dotfiles: &[&Dotfile],
+    config: &Config,
     db: &Database,
     stats: &mut DirectoryAddStats,
 ) -> Result<()> {
     for dotfile in dotfiles {
+        // Check if repo is read-only
+        let repo_name = crate::dot::git::get_repo_name_for_dotfile(dotfile, config);
+        if let Some(repo) = config.repos.iter().find(|r| r.name == repo_name.as_str()) {
+            if repo.read_only {
+                println!(
+                    "{} Skipping update for read-only repository '{}'",
+                    char::from(NerdFont::Info).to_string().blue(),
+                    repo.name
+                );
+                continue;
+            }
+        }
+
         let was_updated = update_single_dotfile(dotfile, db)?;
         if was_updated {
             stats.updated_count += 1;

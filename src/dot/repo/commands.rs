@@ -161,6 +161,12 @@ pub fn clone_repository(
     force_write_flag: bool,
     debug: bool,
 ) -> Result<()> {
+    if read_only_flag && force_write_flag {
+        return Err(anyhow::anyhow!(
+            "Cannot use both --read-only and --force-write flags at the same time"
+        ));
+    }
+
     let repo_name = name
         .map(|s| s.to_string())
         .unwrap_or_else(|| extract_repo_name(url));
@@ -229,9 +235,11 @@ pub fn clone_repository(
 
             // Check metadata for read-only request
             if !read_only_flag && !force_write_flag {
-                if let Ok(local_repo) = crate::dot::repo::RepositoryManager::new(config, db).get_repository_info(&repo_name) {
+                if let Ok(local_repo) = crate::dot::repo::RepositoryManager::new(config, db)
+                    .get_repository_info(&repo_name)
+                {
                     if let Some(true) = local_repo.meta.read_only {
-                         emit(
+                        emit(
                             Level::Info,
                             "dot.repo.clone.read_only",
                             &format!(
