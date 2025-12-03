@@ -90,7 +90,7 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
                     "dot.apply.skipped",
                     &format!(
                         "{} Skipped (user modified): {}",
-                        char::from(NerdFont::Warning),
+                        char::from(NerdFont::ShieldAlert),
                         path_str.yellow()
                     ),
                     Some(serde_json::json!({
@@ -207,7 +207,7 @@ fn print_apply_summary(created: usize, updated: usize, skipped: usize, unchanged
             ),
             (
                 Level::Warn,
-                Some(char::from(NerdFont::Warning)),
+                Some(char::from(NerdFont::ShieldAlert)),
                 "Skipped",
                 skipped,
                 "dot.apply.summary.skipped",

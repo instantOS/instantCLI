@@ -14,6 +14,18 @@ pub enum DotCommands {
         #[command(subcommand)]
         command: RepoCommands,
     },
+    /// Clone a new repository (alias for 'repo clone')
+    Clone {
+        url: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long, short = 'b')]
+        branch: Option<String>,
+        #[arg(long)]
+        read_only: bool,
+        #[arg(long)]
+        force_write: bool,
+    },
     /// Reset modified dotfiles to their original state in the given path
     Reset {
         /// Path to reset (relative to ~)
@@ -206,6 +218,26 @@ pub fn handle_dot_command(
     match command {
         DotCommands::Repo { command } => {
             super::repo::commands::handle_repo_command(&mut config, &db, command, debug)?;
+        }
+        DotCommands::Clone {
+            url,
+            name,
+            branch,
+            read_only,
+            force_write,
+        } => {
+            super::repo::commands::handle_repo_command(
+                &mut config,
+                &db,
+                &RepoCommands::Clone {
+                    url: url.clone(),
+                    name: name.clone(),
+                    branch: branch.clone(),
+                    read_only: *read_only,
+                    force_write: *force_write,
+                },
+                debug,
+            )?;
         }
         DotCommands::Reset { path } => {
             super::reset_modified(&config, &db, path)?;
