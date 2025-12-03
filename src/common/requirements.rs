@@ -663,6 +663,13 @@ pub const GUM_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::WhichSucceeds("gum")],
 };
 
+pub const CLIPMENU_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "clipmenu",
+    arch_package_name: Some("clipmenu"),
+    ubuntu_package_name: None,
+    tests: &[InstallTest::WhichSucceeds("clipmenud")],
+};
+
 pub const CFDISK_PACKAGE: RequiredPackage = RequiredPackage {
     name: "cfdisk",
     arch_package_name: Some("util-linux"),

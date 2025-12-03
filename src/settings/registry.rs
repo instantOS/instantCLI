@@ -1,8 +1,8 @@
 use crate::common::requirements::{
-    BLUEMAN_PACKAGE, BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE, CHROMIUM_PACKAGE, COCKPIT_PACKAGE,
-    FASTFETCH_PACKAGE, GNOME_DISKS_PACKAGE, GNOME_FIRMWARE_PACKAGE, GPARTED_PACKAGE,
-    NM_CONNECTION_EDITOR_PACKAGE, PACMAN_CONTRIB_PACKAGE, RequiredPackage, TOPGRADE_PACKAGE,
-    WIREMIX_PACKAGE, XDG_UTILS_PACKAGE,
+    BLUEMAN_PACKAGE, BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE, CHROMIUM_PACKAGE, CLIPMENU_PACKAGE,
+    COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_DISKS_PACKAGE, GNOME_FIRMWARE_PACKAGE,
+    GPARTED_PACKAGE, NM_CONNECTION_EDITOR_PACKAGE, PACMAN_CONTRIB_PACKAGE, RequiredPackage,
+    TOPGRADE_PACKAGE, WIREMIX_PACKAGE, XDG_UTILS_PACKAGE,
 };
 use crate::ui::prelude::NerdFont;
 
@@ -287,7 +287,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
             apply: Some(super::actions::apply_clipboard_manager),
         },
         requires_reapply: false,
-        requirements: &[],
+        requirements: &[SettingRequirement::Package(CLIPMENU_PACKAGE)],
     },
     SettingDefinition {
         id: "workspace.layout",
