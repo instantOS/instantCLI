@@ -153,10 +153,7 @@ fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoI
         })
         .unwrap_or(None);
 
-    let read_only = matches!(
-        FzfWrapper::confirm("Read-only?"),
-        Ok(ConfirmResult::Yes)
-    );
+    let read_only = matches!(FzfWrapper::confirm("Read-only?"), Ok(ConfirmResult::Yes));
 
     Ok(RepoInputs {
         name,

@@ -1,6 +1,6 @@
 use clap::Subcommand;
-use clap_complete::engine::ArgValueCompleter;
 use clap::builder::BoolishValueParser;
+use clap_complete::engine::ArgValueCompleter;
 
 #[derive(Subcommand, Debug)]
 pub enum RepoCommands {
@@ -49,12 +49,10 @@ pub enum RepoCommands {
     SetReadOnly {
         #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
         name: String,
-        #[arg(value_parser = BoolishValueParser::new())]
+        #[arg(action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
         read_only: bool,
     },
 }
-
-
 
 #[derive(Subcommand, Debug)]
 pub enum SubdirCommands {
