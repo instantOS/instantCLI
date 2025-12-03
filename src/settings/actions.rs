@@ -685,7 +685,7 @@ pub fn configure_mouse_sensitivity(ctx: &mut SettingsContext) -> Result<()> {
     let key = super::store::IntSettingKey::new("desktop.mouse.sensitivity", 50);
 
     // Try to get stored value first, to initialize slider
-    let initial_value = if ctx.store.contains(key.key) {
+    let initial_value = if ctx.contains(key.key) {
         Some(ctx.int(key))
     } else {
         None
@@ -710,7 +710,7 @@ pub fn restore_mouse_sensitivity(ctx: &mut SettingsContext) -> Result<()> {
     let key = super::store::IntSettingKey::new("desktop.mouse.sensitivity", 50);
 
     // Only restore if explicitly set in config
-    if ctx.store.contains(key.key) {
+    if ctx.contains(key.key) {
         let value = ctx.int(key);
         // We use set_mouse_speed from assist module
         if let Err(e) = crate::assist::actions::mouse::set_mouse_speed(value) {

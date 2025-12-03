@@ -35,6 +35,16 @@ pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()>
                 crate::settings::actions::restore_keyboard_layout(&mut ctx)?;
                 applied += 1;
             }
+            crate::settings::registry::SettingKind::Action { .. }
+                if definition.id == "desktop.mouse.sensitivity" =>
+            {
+                ctx.emit_info(
+                    "settings.apply.reapply",
+                    &format!("Reapplying {}", definition.title),
+                );
+                crate::settings::actions::restore_mouse_sensitivity(&mut ctx)?;
+                applied += 1;
+            }
             _ => {}
         }
     }

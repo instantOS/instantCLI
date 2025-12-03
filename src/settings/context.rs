@@ -9,7 +9,7 @@ use crate::ui::prelude::*;
 
 use super::registry::{SettingDefinition, SettingKind, SettingOption};
 use super::sources;
-use super::store::{BoolSettingKey, SettingsStore, StringSettingKey};
+use super::store::{BoolSettingKey, IntSettingKey, SettingsStore, StringSettingKey};
 
 #[derive(Debug)]
 pub struct SettingsContext {
@@ -81,6 +81,21 @@ impl SettingsContext {
             self.store.set_string(key, value);
             self.dirty = true;
         }
+    }
+
+    pub fn int(&self, key: IntSettingKey) -> i64 {
+        self.store.int(key)
+    }
+
+    pub fn set_int(&mut self, key: IntSettingKey, value: i64) {
+        if self.store.int(key) != value {
+            self.store.set_int(key, value);
+            self.dirty = true;
+        }
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.store.contains(key)
     }
 
     fn sync_external_states(&mut self) {
