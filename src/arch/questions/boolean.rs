@@ -77,7 +77,11 @@ impl Question for BooleanQuestion {
         } else {
             self.default_yes
         };
-        Some(if effective_default { "yes".to_string() } else { "no".to_string() })
+        Some(if effective_default {
+            "yes".to_string()
+        } else {
+            "no".to_string()
+        })
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
