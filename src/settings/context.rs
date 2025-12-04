@@ -9,7 +9,9 @@ use crate::ui::prelude::*;
 
 use super::registry::{SettingDefinition, SettingKind, SettingOption};
 use super::sources;
-use super::store::{BoolSettingKey, IntSettingKey, OptionalStringSettingKey, SettingsStore, StringSettingKey};
+use super::store::{
+    BoolSettingKey, IntSettingKey, OptionalStringSettingKey, SettingsStore, StringSettingKey,
+};
 
 #[derive(Debug)]
 pub struct SettingsContext {
