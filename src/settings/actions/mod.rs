@@ -4,6 +4,7 @@
 //! settings are applied or configured.
 
 mod bluetooth;
+pub mod brightness;
 mod desktop;
 mod keyboard;
 mod mouse;
@@ -12,6 +13,7 @@ mod system;
 
 // Re-export all public functions
 pub use bluetooth::apply_bluetooth_service;
+pub use brightness::{configure_brightness, restore_brightness};
 pub use desktop::{apply_clipboard_manager, pick_and_set_wallpaper};
 pub use keyboard::{configure_keyboard_layout, restore_keyboard_layout};
 pub use mouse::{

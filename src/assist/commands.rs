@@ -47,6 +47,12 @@ pub enum AssistCommands {
         /// Speed value (0-100)
         value: i64,
     },
+    #[command(hide = true)]
+    /// Set brightness (internal use for slider)
+    BrightnessSet {
+        /// Brightness percentage (0-100)
+        value: i64,
+    },
 }
 
 /// Handle assist command
@@ -55,6 +61,9 @@ pub fn dispatch_assist_command(_debug: bool, command: Option<AssistCommands>) ->
         None => run_assist_selector(),
         Some(AssistCommands::List) => list_assists(),
         Some(AssistCommands::MouseSet { value }) => super::actions::mouse::set_mouse_speed(value),
+        Some(AssistCommands::BrightnessSet { value }) => {
+            crate::settings::actions::brightness::set_brightness(value)
+        }
         Some(AssistCommands::Run { key_sequence }) => {
             // Check if this is a help request (ends with 'h')
             if key_sequence.ends_with('h') && key_sequence.len() > 1 {

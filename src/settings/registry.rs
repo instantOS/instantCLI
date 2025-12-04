@@ -289,6 +289,19 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[SettingRequirement::Package(YAZI_PACKAGE)],
     },
     SettingDefinition {
+        id: "appearance.brightness",
+        title: "Screen Brightness",
+        category: "appearance",
+        icon: NerdFont::Lightbulb,
+        breadcrumbs: &["Screen Brightness"],
+        kind: SettingKind::Action {
+            summary: "Adjust screen brightness using an interactive slider.\n\nThe setting will be automatically restored on login.\n\nTip: You can also access this via instantASSIST (Super+A b).",
+            run: super::actions::configure_brightness,
+        },
+        requires_reapply: true,
+        requirements: &[],
+    },
+    SettingDefinition {
         id: "desktop.clipboard",
         title: "Clipboard History",
         category: "desktop",
