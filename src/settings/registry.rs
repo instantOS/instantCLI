@@ -191,6 +191,12 @@ pub const CATEGORIES: &[SettingCategory] = &[
         icon: NerdFont::Lightbulb,
     },
     SettingCategory {
+        id: "mouse",
+        title: "Mouse & Touchpad",
+        description: "Pointer speed, scrolling, and button settings.",
+        icon: NerdFont::Mouse,
+    },
+    SettingCategory {
         id: "desktop",
         title: "Desktop",
         description: "Interactive desktop behaviour and helpers.",
@@ -316,9 +322,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[SettingRequirement::Package(CLIPMENU_PACKAGE)],
     },
     SettingDefinition {
-        id: "desktop.mouse.sensitivity",
+        id: "mouse.sensitivity",
         title: "Mouse Sensitivity",
-        category: "desktop",
+        category: "mouse",
         icon: NerdFont::Mouse,
         breadcrumbs: &["Mouse Sensitivity"],
         kind: SettingKind::Action {
@@ -329,13 +335,13 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[],
     },
     SettingDefinition {
-        id: "desktop.mouse.natural_scroll",
+        id: "mouse.natural_scroll",
         title: "Natural Scrolling",
-        category: "desktop",
+        category: "mouse",
         icon: NerdFont::Mouse,
         breadcrumbs: &["Natural Scrolling"],
         kind: SettingKind::Toggle {
-            key: BoolSettingKey::new("desktop.mouse.natural_scroll", false),
+            key: BoolSettingKey::new("mouse.natural_scroll", false),
             summary: "Reverse the scroll direction to match touchpad/touchscreen behavior.\n\nWhen enabled, scrolling up moves the content up (like pushing paper).\n\nSupports Sway and X11 window managers.",
             apply: Some(super::actions::apply_natural_scroll),
         },
@@ -343,13 +349,13 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[],
     },
     SettingDefinition {
-        id: "desktop.mouse.swap_buttons",
+        id: "mouse.swap_buttons",
         title: "Swap Mouse Buttons",
-        category: "desktop",
+        category: "mouse",
         icon: NerdFont::Mouse,
         breadcrumbs: &["Swap Mouse Buttons"],
         kind: SettingKind::Toggle {
-            key: BoolSettingKey::new("desktop.mouse.swap_buttons", false),
+            key: BoolSettingKey::new("mouse.swap_buttons", false),
             summary: "Swap left and right mouse buttons for left-handed use.\n\nWhen enabled, the right button becomes the primary click.\n\nCurrently only supported on X11.",
             apply: Some(super::actions::apply_swap_buttons),
         },

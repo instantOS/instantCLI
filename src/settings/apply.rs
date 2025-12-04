@@ -36,7 +36,7 @@ pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()>
                 applied += 1;
             }
             crate::settings::registry::SettingKind::Action { .. }
-                if definition.id == "desktop.mouse.sensitivity" =>
+                if definition.id == "mouse.sensitivity" =>
             {
                 ctx.emit_info(
                     "settings.apply.reapply",
