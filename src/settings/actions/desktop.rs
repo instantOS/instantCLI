@@ -81,3 +81,35 @@ pub fn pick_and_set_wallpaper(_context: &mut SettingsContext) -> Result<()> {
 
     Ok(())
 }
+
+pub fn set_random_wallpaper(_context: &mut SettingsContext) -> Result<()> {
+    // Load wallpaper config to check logo preference
+    let config =
+        crate::wallpaper::config::WallpaperConfig::load().context("Failed to load config")?;
+
+    let exe = std::env::current_exe().context("Failed to get current executable path")?;
+
+    let mut args = vec!["wallpaper", "random"];
+    if !config.show_logo {
+        args.push("--no-logo");
+    }
+
+    let status = Command::new(exe)
+        .args(&args)
+        .status()
+        .context("Failed to execute wallpaper random command")?;
+
+    if status.success() {
+        FzfWrapper::builder()
+            .message("Random wallpaper applied!")
+            .title("Wallpaper")
+            .show_message()?;
+    } else {
+        FzfWrapper::builder()
+            .message("Failed to fetch random wallpaper.")
+            .title("Error")
+            .show_message()?;
+    }
+
+    Ok(())
+}

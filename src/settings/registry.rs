@@ -152,6 +152,16 @@ fn bluetooth_service_active() -> bool {
 // Requirement definitions for common use cases
 pub const WIREMIX_REQUIREMENT: SettingRequirement = SettingRequirement::Package(WIREMIX_PACKAGE);
 
+/// Apply wallpaper logo setting to WallpaperConfig
+fn apply_wallpaper_logo_setting(
+    _ctx: &mut super::SettingsContext,
+    enabled: bool,
+) -> anyhow::Result<()> {
+    let mut config = crate::wallpaper::config::WallpaperConfig::load()?;
+    config.set_show_logo(enabled)?;
+    Ok(())
+}
+
 pub const BLUETOOTH_SERVICE_REQUIREMENT: SettingRequirement = SettingRequirement::Condition {
     description: "Bluetooth service must be running",
     check: bluetooth_service_active,
@@ -293,6 +303,33 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: false,
         requirements: &[SettingRequirement::Package(YAZI_PACKAGE)],
+    },
+    SettingDefinition {
+        id: "appearance.wallpaper_logo",
+        title: "Show Logo on Wallpaper",
+        category: "appearance",
+        icon: NerdFont::Image,
+        breadcrumbs: &["Wallpaper", "Show Logo"],
+        kind: SettingKind::Toggle {
+            key: BoolSettingKey::new("appearance.wallpaper_logo", true),
+            summary: "Show the instantOS logo on top of random wallpapers.\n\nWhen enabled, a logo overlay is applied when fetching random wallpapers.",
+            apply: Some(apply_wallpaper_logo_setting),
+        },
+        requires_reapply: false,
+        requirements: &[],
+    },
+    SettingDefinition {
+        id: "appearance.wallpaper_random",
+        title: "Random Wallpaper",
+        category: "appearance",
+        icon: NerdFont::Refresh,
+        breadcrumbs: &["Wallpaper", "Random"],
+        kind: SettingKind::Action {
+            summary: "Fetch and set a random wallpaper from Wallhaven.\n\nRespects the 'Show Logo on Wallpaper' setting.",
+            run: super::actions::set_random_wallpaper,
+        },
+        requires_reapply: false,
+        requirements: &[],
     },
     SettingDefinition {
         id: "appearance.brightness",

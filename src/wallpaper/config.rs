@@ -4,9 +4,15 @@ use std::{fs, path::PathBuf};
 
 use crate::common::paths;
 
+fn default_show_logo() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct WallpaperConfig {
     pub path: Option<String>,
+    #[serde(default = "default_show_logo")]
+    pub show_logo: bool,
 }
 
 impl WallpaperConfig {
@@ -50,6 +56,11 @@ impl WallpaperConfig {
         };
 
         self.path = Some(abs_path);
+        self.save()
+    }
+
+    pub fn set_show_logo(&mut self, show_logo: bool) -> Result<()> {
+        self.show_logo = show_logo;
         self.save()
     }
 }
