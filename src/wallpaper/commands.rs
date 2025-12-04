@@ -3,7 +3,10 @@ use colored::*;
 use std::path::PathBuf;
 
 use crate::common::compositor::CompositorType;
-use crate::settings::store::{SettingsStore, WALLPAPER_LOGO_KEY, WALLPAPER_PATH_KEY};
+use crate::settings::store::{
+    SettingsStore, WALLPAPER_BG_COLOR_KEY, WALLPAPER_FG_COLOR_KEY, WALLPAPER_LOGO_KEY,
+    WALLPAPER_PATH_KEY,
+};
 use crate::wallpaper::cli::{SetArgs, WallpaperCommands};
 
 use crate::wallpaper::{sway, x11};
@@ -13,6 +16,7 @@ pub async fn handle_wallpaper_command(command: WallpaperCommands, _debug: bool) 
         WallpaperCommands::Set(args) => handle_set(args).await,
         WallpaperCommands::Apply => apply_configured_wallpaper().await,
         WallpaperCommands::Random(args) => handle_random(args).await,
+        WallpaperCommands::Colored(args) => handle_colored(args).await,
     }
 }
 
@@ -97,4 +101,40 @@ pub async fn apply_configured_wallpaper() -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn handle_colored(args: crate::wallpaper::cli::ColoredArgs) -> Result<()> {
+    let mut store = SettingsStore::load().context("loading settings")?;
+
+    // Use CLI args or fall back to saved settings, or use defaults
+    let bg_color = args
+        .bg
+        .or_else(|| store.optional_string(WALLPAPER_BG_COLOR_KEY))
+        .unwrap_or_else(|| "#1a1a2e".to_string());
+    let fg_color = args
+        .fg
+        .or_else(|| store.optional_string(WALLPAPER_FG_COLOR_KEY))
+        .unwrap_or_else(|| "#eaeaea".to_string());
+
+    // Save colors for future use
+    store.set_optional_string(WALLPAPER_BG_COLOR_KEY, Some(bg_color.clone()));
+    store.set_optional_string(WALLPAPER_FG_COLOR_KEY, Some(fg_color.clone()));
+    store.save().context("saving settings")?;
+
+    let path = crate::wallpaper::colored::run(crate::wallpaper::colored::ColoredOptions {
+        bg_color,
+        fg_color,
+    })
+    .await?;
+
+    println!(
+        "Generated wallpaper at: {}",
+        path.display().to_string().green()
+    );
+
+    // Set and apply
+    handle_set(SetArgs {
+        path: path.to_string_lossy().to_string(),
+    })
+    .await
 }

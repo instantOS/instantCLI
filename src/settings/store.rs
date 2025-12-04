@@ -155,6 +155,10 @@ pub const WALLPAPER_PATH_KEY: OptionalStringSettingKey =
     OptionalStringSettingKey::new("appearance.wallpaper_path");
 pub const WALLPAPER_LOGO_KEY: BoolSettingKey =
     BoolSettingKey::new("appearance.wallpaper_logo", true);
+pub const WALLPAPER_BG_COLOR_KEY: OptionalStringSettingKey =
+    OptionalStringSettingKey::new("appearance.wallpaper_bg_color");
+pub const WALLPAPER_FG_COLOR_KEY: OptionalStringSettingKey =
+    OptionalStringSettingKey::new("appearance.wallpaper_fg_color");
 
 #[derive(Debug)]
 pub struct SettingsStore {
