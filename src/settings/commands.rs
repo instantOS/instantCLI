@@ -152,9 +152,15 @@ pub fn handle_settings_command(
     setting: &Option<String>,
     category: &Option<String>,
     search: bool,
+    gui: bool,
     debug: bool,
     internal_privileged_mode: bool,
 ) -> Result<()> {
+    // If --gui is set, launch settings in a kitty terminal
+    if gui {
+        return launch_settings_in_terminal(setting, category, search, debug);
+    }
+
     let navigation = if let Some(setting_id) = setting {
         Some(SettingsNavigation::Setting(setting_id.clone()))
     } else if let Some(category_id) = category {
@@ -166,4 +172,51 @@ pub fn handle_settings_command(
     };
 
     dispatch_settings_command(debug, internal_privileged_mode, command.clone(), navigation)
+}
+
+/// Launch the settings UI in a kitty terminal window
+///
+/// The terminal will automatically close when settings exits.
+fn launch_settings_in_terminal(
+    setting: &Option<String>,
+    category: &Option<String>,
+    search: bool,
+    debug: bool,
+) -> Result<()> {
+    use anyhow::Context;
+    use std::process::Command;
+
+    let current_exe = std::env::current_exe().context("Failed to get current executable path")?;
+
+    let mut args: Vec<String> = vec!["settings".to_string()];
+
+    // Forward navigation options
+    if let Some(setting_id) = setting {
+        args.push("--setting".to_string());
+        args.push(setting_id.clone());
+    } else if let Some(category_id) = category {
+        args.push("--category".to_string());
+        args.push(category_id.clone());
+    } else if search {
+        args.push("--search".to_string());
+    }
+
+    if debug {
+        args.insert(0, "--debug".to_string());
+    }
+
+    // Launch kitty with settings
+    // Using -- to separate kitty args from the command
+    Command::new("kitty")
+        .arg("--class")
+        .arg("ins-settings")
+        .arg("--title")
+        .arg("Settings")
+        .arg("--")
+        .arg(&current_exe)
+        .args(&args)
+        .spawn()
+        .context("Failed to launch kitty terminal for settings")?;
+
+    Ok(())
 }

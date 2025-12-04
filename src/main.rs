@@ -166,6 +166,9 @@ enum Commands {
         /// Start in search mode to browse all settings
         #[arg(long = "search", conflicts_with_all = ["setting", "category"])]
         search: bool,
+        /// Open settings in a GUI terminal window (uses kitty)
+        #[arg(long = "gui")]
+        gui: bool,
     },
     /// Video transcription and editing utilities
     Video {
@@ -270,6 +273,7 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             setting,
             category,
             search,
+            gui,
         }) => {
             execute_with_error_handling(
                 settings::commands::handle_settings_command(
@@ -277,6 +281,7 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                     setting,
                     category,
                     *search,
+                    *gui,
                     cli.debug,
                     cli.internal_privileged_mode,
                 ),
