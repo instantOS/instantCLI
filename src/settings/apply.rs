@@ -45,26 +45,6 @@ pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()>
                 crate::settings::actions::restore_mouse_sensitivity(&mut ctx)?;
                 applied += 1;
             }
-            crate::settings::registry::SettingKind::Toggle { .. }
-                if definition.id == "desktop.mouse.natural_scroll" =>
-            {
-                ctx.emit_info(
-                    "settings.apply.reapply",
-                    &format!("Reapplying {}", definition.title),
-                );
-                crate::settings::actions::restore_natural_scroll(&mut ctx)?;
-                applied += 1;
-            }
-            crate::settings::registry::SettingKind::Toggle { .. }
-                if definition.id == "desktop.mouse.swap_buttons" =>
-            {
-                ctx.emit_info(
-                    "settings.apply.reapply",
-                    &format!("Reapplying {}", definition.title),
-                );
-                crate::settings::actions::restore_swap_buttons(&mut ctx)?;
-                applied += 1;
-            }
             _ => {}
         }
     }

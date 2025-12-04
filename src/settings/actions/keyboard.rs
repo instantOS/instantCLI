@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-use crate::common::compositor::{sway, CompositorType};
+use crate::common::compositor::{CompositorType, sway};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 

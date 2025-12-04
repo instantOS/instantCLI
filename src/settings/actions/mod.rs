@@ -16,7 +16,7 @@ pub use desktop::{apply_clipboard_manager, pick_and_set_wallpaper};
 pub use keyboard::{configure_keyboard_layout, restore_keyboard_layout};
 pub use mouse::{
     apply_natural_scroll, apply_swap_buttons, configure_mouse_sensitivity,
-    restore_mouse_sensitivity, restore_natural_scroll, restore_swap_buttons,
+    restore_mouse_sensitivity,
 };
 pub use storage::apply_udiskie_automount;
 pub use system::{apply_pacman_autoclean, configure_timezone, launch_cockpit};

@@ -164,57 +164,6 @@ pub fn apply_natural_scroll(ctx: &mut SettingsContext, enabled: bool) -> Result<
     Ok(())
 }
 
-/// Restore natural scrolling setting on login
-pub fn restore_natural_scroll(ctx: &mut SettingsContext) -> Result<()> {
-    let key = super::super::store::BoolSettingKey::new("desktop.mouse.natural_scroll", false);
-
-    // Only restore if explicitly set in config
-    if ctx.contains(key.key) {
-        let value = ctx.bool(key);
-        let compositor = CompositorType::detect();
-
-        if !compositor.is_x11() {
-            return Ok(());
-        }
-
-        let xinput_value = if value { "1" } else { "0" };
-        let device_ids = get_pointer_device_ids().unwrap_or_default();
-
-        for id in device_ids {
-            if let Ok(props_output) = Command::new("xinput").arg("list-props").arg(&id).output() {
-                let props = String::from_utf8_lossy(&props_output.stdout);
-                if props.contains("libinput Natural Scrolling Enabled") {
-                    if let Err(e) = Command::new("xinput")
-                        .args([
-                            "--set-prop",
-                            &id,
-                            "libinput Natural Scrolling Enabled",
-                            xinput_value,
-                        ])
-                        .status()
-                    {
-                        emit(
-                            Level::Warn,
-                            "settings.mouse.natural_scroll.restore_failed",
-                            &format!("Failed to restore natural scrolling for device {id}: {e}"),
-                            None,
-                        );
-                    }
-                }
-            }
-        }
-
-        emit(
-            Level::Debug,
-            "settings.mouse.natural_scroll.restored",
-            &format!("Restored natural scrolling: {value}"),
-            None,
-        );
-    }
-
-    Ok(())
-}
-
 /// Apply swap mouse buttons setting (X11 only for now)
 pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let compositor = CompositorType::detect();
@@ -270,57 +219,6 @@ pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()
         ctx.emit_info(
             "settings.mouse.swap_buttons.no_devices",
             "No devices found that support button swapping.",
-        );
-    }
-
-    Ok(())
-}
-
-/// Restore swap mouse buttons setting on login
-pub fn restore_swap_buttons(ctx: &mut SettingsContext) -> Result<()> {
-    let key = super::super::store::BoolSettingKey::new("desktop.mouse.swap_buttons", false);
-
-    // Only restore if explicitly set in config
-    if ctx.contains(key.key) {
-        let value = ctx.bool(key);
-        let compositor = CompositorType::detect();
-
-        if !compositor.is_x11() {
-            return Ok(());
-        }
-
-        let xinput_value = if value { "1" } else { "0" };
-        let device_ids = get_pointer_device_ids().unwrap_or_default();
-
-        for id in device_ids {
-            if let Ok(props_output) = Command::new("xinput").arg("list-props").arg(&id).output() {
-                let props = String::from_utf8_lossy(&props_output.stdout);
-                if props.contains("libinput Left Handed Enabled") {
-                    if let Err(e) = Command::new("xinput")
-                        .args([
-                            "--set-prop",
-                            &id,
-                            "libinput Left Handed Enabled",
-                            xinput_value,
-                        ])
-                        .status()
-                    {
-                        emit(
-                            Level::Warn,
-                            "settings.mouse.swap_buttons.restore_failed",
-                            &format!("Failed to restore left-handed mode for device {id}: {e}"),
-                            None,
-                        );
-                    }
-                }
-            }
-        }
-
-        emit(
-            Level::Debug,
-            "settings.mouse.swap_buttons.restored",
-            &format!("Restored swap mouse buttons: {value}"),
-            None,
         );
     }
 

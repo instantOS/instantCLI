@@ -4,7 +4,6 @@ use anyhow::Result;
 
 use crate::common::systemd::SystemdManager;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
-use crate::ui::prelude::*;
 
 use super::super::context::SettingsContext;
 use super::super::registry::{
