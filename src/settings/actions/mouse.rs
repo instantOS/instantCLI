@@ -145,14 +145,25 @@ pub fn apply_natural_scroll(ctx: &mut SettingsContext, enabled: bool) -> Result<
     }
 
     if is_sway {
-        // Apply natural scrolling to all pointer devices in sway
+        // Apply natural scrolling to both pointer (mouse) and touchpad devices in sway
+        // Sway treats these as separate device types
         let value = if enabled { "enabled" } else { "disabled" };
-        let cmd = format!("input type:pointer natural_scroll {}", value);
 
-        if let Err(e) = sway::swaymsg(&cmd) {
+        // Apply to pointer devices (mice)
+        let pointer_cmd = format!("input type:pointer natural_scroll {}", value);
+        let pointer_result = sway::swaymsg(&pointer_cmd);
+
+        // Apply to touchpad devices (trackpads)
+        let touchpad_cmd = format!("input type:touchpad natural_scroll {}", value);
+        let touchpad_result = sway::swaymsg(&touchpad_cmd);
+
+        // Report error only if both fail
+        if let (Err(e1), Err(e2)) = (&pointer_result, &touchpad_result) {
             ctx.emit_info(
                 "settings.mouse.natural_scroll.sway_failed",
-                &format!("Failed to apply natural scrolling in Sway: {e}"),
+                &format!(
+                    "Failed to apply natural scrolling in Sway: pointer: {e1}, touchpad: {e2}"
+                ),
             );
             return Ok(());
         }
