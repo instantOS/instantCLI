@@ -98,6 +98,35 @@ fn get_pointer_device_ids() -> Result<Vec<String>> {
     Ok(pointer_ids)
 }
 
+/// Apply a libinput property to all pointer devices that support it
+fn apply_libinput_property(property_name: &str, value: &str, error_key: &str) -> Result<usize> {
+    let device_ids = get_pointer_device_ids()?;
+    let mut applied = 0;
+
+    for id in device_ids {
+        if let Ok(props_output) = Command::new("xinput").arg("list-props").arg(&id).output() {
+            let props = String::from_utf8_lossy(&props_output.stdout);
+            if props.contains(property_name) {
+                if let Err(e) = Command::new("xinput")
+                    .args(["--set-prop", &id, property_name, value])
+                    .status()
+                {
+                    emit(
+                        Level::Warn,
+                        error_key,
+                        &format!("Failed to set {property_name} for device {id}: {e}"),
+                        None,
+                    );
+                } else {
+                    applied += 1;
+                }
+            }
+        }
+    }
+
+    Ok(applied)
+}
+
 /// Apply natural scrolling setting (X11 only for now)
 pub fn apply_natural_scroll(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let compositor = CompositorType::detect();
@@ -114,36 +143,11 @@ pub fn apply_natural_scroll(ctx: &mut SettingsContext, enabled: bool) -> Result<
     }
 
     let value = if enabled { "1" } else { "0" };
-
-    let device_ids = get_pointer_device_ids()?;
-    let mut applied = 0;
-
-    for id in device_ids {
-        // Check if this device supports natural scrolling
-        if let Ok(props_output) = Command::new("xinput").arg("list-props").arg(&id).output() {
-            let props = String::from_utf8_lossy(&props_output.stdout);
-            if props.contains("libinput Natural Scrolling Enabled") {
-                if let Err(e) = Command::new("xinput")
-                    .args([
-                        "--set-prop",
-                        &id,
-                        "libinput Natural Scrolling Enabled",
-                        value,
-                    ])
-                    .status()
-                {
-                    emit(
-                        Level::Warn,
-                        "settings.mouse.natural_scroll.device_failed",
-                        &format!("Failed to set natural scrolling for device {id}: {e}"),
-                        None,
-                    );
-                } else {
-                    applied += 1;
-                }
-            }
-        }
-    }
+    let applied = apply_libinput_property(
+        "libinput Natural Scrolling Enabled",
+        value,
+        "settings.mouse.natural_scroll.device_failed",
+    )?;
 
     if applied > 0 {
         ctx.notify(
@@ -179,32 +183,12 @@ pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()
         return Ok(());
     }
 
-    let device_ids = get_pointer_device_ids()?;
-    let mut applied = 0;
-
-    for id in device_ids {
-        // Check if this device has button map
-        if let Ok(props_output) = Command::new("xinput").arg("list-props").arg(&id).output() {
-            let props = String::from_utf8_lossy(&props_output.stdout);
-            if props.contains("libinput Left Handed Enabled") {
-                // Use libinput left-handed mode if available
-                let value = if enabled { "1" } else { "0" };
-                if let Err(e) = Command::new("xinput")
-                    .args(["--set-prop", &id, "libinput Left Handed Enabled", value])
-                    .status()
-                {
-                    emit(
-                        Level::Warn,
-                        "settings.mouse.swap_buttons.device_failed",
-                        &format!("Failed to set left-handed mode for device {id}: {e}"),
-                        None,
-                    );
-                } else {
-                    applied += 1;
-                }
-            }
-        }
-    }
+    let value = if enabled { "1" } else { "0" };
+    let applied = apply_libinput_property(
+        "libinput Left Handed Enabled",
+        value,
+        "settings.mouse.swap_buttons.device_failed",
+    )?;
 
     if applied > 0 {
         ctx.notify(
