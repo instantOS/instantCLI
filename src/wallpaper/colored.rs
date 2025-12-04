@@ -2,17 +2,12 @@
 //!
 //! Creates solid-color wallpapers with the instantOS logo overlay.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::*;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
 
-use crate::common::compositor::CompositorType;
-
-const OVERLAY_URL: &str =
-    "https://raw.githubusercontent.com/instantOS/instantLOGO/main/wallpaper/overlay.png";
+use super::common::{ensure_overlay, get_resolution, get_wallpaper_dir, run_magick};
 
 /// Options for generating a colored wallpaper
 pub struct ColoredOptions {
@@ -27,14 +22,7 @@ pub async fn run(options: ColoredOptions) -> Result<PathBuf> {
     let wallpaper_dir = get_wallpaper_dir()?;
     fs::create_dir_all(&wallpaper_dir).await?;
 
-    // Download overlay if missing
-    let overlay_path = wallpaper_dir.join("overlay.png");
-    if !overlay_path.exists() {
-        println!("{}", "Downloading overlay image...".cyan());
-        let bytes = reqwest::get(OVERLAY_URL).await?.bytes().await?;
-        let mut file = fs::File::create(&overlay_path).await?;
-        file.write_all(&bytes).await?;
-    }
+    let overlay_path = ensure_overlay(&wallpaper_dir).await?;
 
     let resolution = get_resolution().unwrap_or_else(|_| "1920x1080".to_string());
     println!("Target resolution: {}", resolution);
@@ -47,35 +35,11 @@ pub async fn run(options: ColoredOptions) -> Result<PathBuf> {
     let output_path = wallpaper_dir.join("instantwallpaper.png");
 
     // Generate the wallpaper
-    generate_colored_wallpaper(
-        &overlay_path,
-        &options.bg_color,
-        &options.fg_color,
-        &resolution,
-        &output_path,
-    )
-    .await?;
-
-    Ok(output_path)
-}
-
-fn get_wallpaper_dir() -> Result<PathBuf> {
-    let home = dirs::data_local_dir().context("Could not find local data directory")?;
-    Ok(home.join("instant").join("wallpaper"))
-}
-
-async fn generate_colored_wallpaper(
-    overlay_path: &Path,
-    bg_color: &str,
-    fg_color: &str,
-    resolution: &str,
-    output_path: &Path,
-) -> Result<()> {
     let overlay = overlay_path.to_string_lossy().to_string();
     let out = output_path.to_string_lossy().to_string();
-    let bg = bg_color.to_string();
-    let fg = fg_color.to_string();
-    let res = resolution.to_string();
+    let bg = options.bg_color;
+    let fg = options.fg_color;
+    let res = resolution;
 
     println!("{}", "Generating colored wallpaper...".cyan());
 
@@ -122,54 +86,5 @@ async fn generate_colored_wallpaper(
     .await??;
 
     println!("{}", "Colored wallpaper generated!".green());
-    Ok(())
-}
-
-fn run_magick(args: &[&str]) -> Result<()> {
-    let status = Command::new("magick")
-        .args(args)
-        .status()
-        .or_else(|_| Command::new("convert").args(args).status())
-        .context("Failed to run ImageMagick command")?;
-
-    if !status.success() {
-        anyhow::bail!("ImageMagick command failed");
-    }
-    Ok(())
-}
-
-fn get_resolution() -> Result<String> {
-    let compositor = CompositorType::detect();
-    match compositor {
-        CompositorType::Sway => {
-            let output = Command::new("swaymsg")
-                .arg("-t")
-                .arg("get_outputs")
-                .output()?;
-            let json: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-            if let Some(outputs) = json.as_array() {
-                for out in outputs {
-                    if out["active"].as_bool().unwrap_or(false)
-                        && let (Some(w), Some(h)) = (
-                            out["rect"]["width"].as_i64(),
-                            out["rect"]["height"].as_i64(),
-                        )
-                    {
-                        return Ok(format!("{}x{}", w, h));
-                    }
-                }
-            }
-        }
-        _ => {
-            // Try xrandr for X11
-            if let Ok(output) = Command::new("xrandr").output() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let re = regex::Regex::new(r"connected (?:primary )?([0-9]+x[0-9]+)")?;
-                if let Some(caps) = re.captures(&stdout) {
-                    return Ok(caps[1].to_string());
-                }
-            }
-        }
-    }
-    anyhow::bail!("Could not detect resolution")
+    Ok(output_path)
 }
