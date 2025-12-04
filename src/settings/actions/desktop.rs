@@ -83,19 +83,11 @@ pub fn pick_and_set_wallpaper(_context: &mut SettingsContext) -> Result<()> {
 }
 
 pub fn set_random_wallpaper(_context: &mut SettingsContext) -> Result<()> {
-    // Load wallpaper config to check logo preference
-    let config =
-        crate::wallpaper::config::WallpaperConfig::load().context("Failed to load config")?;
-
     let exe = std::env::current_exe().context("Failed to get current executable path")?;
 
-    let mut args = vec!["wallpaper", "random"];
-    if !config.show_logo {
-        args.push("--no-logo");
-    }
-
+    // Logo preference is read from settings inside `ins wallpaper random`
     let status = Command::new(exe)
-        .args(&args)
+        .args(["wallpaper", "random"])
         .status()
         .context("Failed to execute wallpaper random command")?;
 

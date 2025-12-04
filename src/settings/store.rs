@@ -69,6 +69,37 @@ impl SettingsFile {
             table.insert(final_key.to_string(), value);
         }
     }
+
+    /// Remove a value by its dotted key path
+    fn remove(&mut self, key: &str) {
+        let parts: Vec<&str> = key.split('.').collect();
+        if parts.is_empty() {
+            return;
+        }
+
+        if parts.len() == 1 {
+            self.sections.remove(parts[0]);
+            return;
+        }
+
+        // Navigate to parent and remove the final key
+        let mut current = match self.sections.get_mut(parts[0]) {
+            Some(v) => v,
+            None => return,
+        };
+
+        for &part in &parts[1..parts.len() - 1] {
+            current = match current.as_table_mut().and_then(|t| t.get_mut(part)) {
+                Some(v) => v,
+                None => return,
+            };
+        }
+
+        let final_key = parts[parts.len() - 1];
+        if let Some(table) = current.as_table_mut() {
+            table.remove(final_key);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -106,6 +137,24 @@ impl IntSettingKey {
         Self { key, default }
     }
 }
+
+/// Key for optional string settings (no default value - may be unset)
+#[derive(Debug, Clone, Copy)]
+pub struct OptionalStringSettingKey {
+    pub key: &'static str,
+}
+
+impl OptionalStringSettingKey {
+    pub const fn new(key: &'static str) -> Self {
+        Self { key }
+    }
+}
+
+// Wallpaper setting keys
+pub const WALLPAPER_PATH_KEY: OptionalStringSettingKey =
+    OptionalStringSettingKey::new("appearance.wallpaper_path");
+pub const WALLPAPER_LOGO_KEY: BoolSettingKey =
+    BoolSettingKey::new("appearance.wallpaper_logo", true);
 
 #[derive(Debug)]
 pub struct SettingsStore {
@@ -180,6 +229,24 @@ impl SettingsStore {
 
     pub fn set_int(&mut self, key: IntSettingKey, value: i64) {
         self.data.set(key.key, toml::Value::Integer(value));
+    }
+
+    pub fn optional_string(&self, key: OptionalStringSettingKey) -> Option<String> {
+        self.data
+            .get(key.key)
+            .and_then(|value| value.as_str())
+            .map(|s| s.to_string())
+    }
+
+    pub fn set_optional_string<S: Into<String>>(
+        &mut self,
+        key: OptionalStringSettingKey,
+        value: Option<S>,
+    ) {
+        match value {
+            Some(v) => self.data.set(key.key, toml::Value::String(v.into())),
+            None => self.data.remove(key.key),
+        }
     }
 
     pub fn path(&self) -> &Path {

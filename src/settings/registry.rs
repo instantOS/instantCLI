@@ -7,7 +7,7 @@ use crate::common::requirements::{
 use crate::ui::prelude::NerdFont;
 
 use super::printer;
-use super::store::{BoolSettingKey, StringSettingKey};
+use super::store::{BoolSettingKey, StringSettingKey, WALLPAPER_LOGO_KEY};
 use super::users;
 
 /// A requirement that must be satisfied before a setting can be used
@@ -151,16 +151,6 @@ fn bluetooth_service_active() -> bool {
 
 // Requirement definitions for common use cases
 pub const WIREMIX_REQUIREMENT: SettingRequirement = SettingRequirement::Package(WIREMIX_PACKAGE);
-
-/// Apply wallpaper logo setting to WallpaperConfig
-fn apply_wallpaper_logo_setting(
-    _ctx: &mut super::SettingsContext,
-    enabled: bool,
-) -> anyhow::Result<()> {
-    let mut config = crate::wallpaper::config::WallpaperConfig::load()?;
-    config.set_show_logo(enabled)?;
-    Ok(())
-}
 
 pub const BLUETOOTH_SERVICE_REQUIREMENT: SettingRequirement = SettingRequirement::Condition {
     description: "Bluetooth service must be running",
@@ -311,9 +301,9 @@ pub const SETTINGS: &[SettingDefinition] = &[
         icon: NerdFont::Image,
         breadcrumbs: &["Wallpaper", "Show Logo"],
         kind: SettingKind::Toggle {
-            key: BoolSettingKey::new("appearance.wallpaper_logo", true),
+            key: WALLPAPER_LOGO_KEY,
             summary: "Show the instantOS logo on top of random wallpapers.\n\nWhen enabled, a logo overlay is applied when fetching random wallpapers.",
-            apply: Some(apply_wallpaper_logo_setting),
+            apply: None,
         },
         requires_reapply: false,
         requirements: &[],

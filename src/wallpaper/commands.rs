@@ -1,9 +1,10 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::*;
+use std::path::PathBuf;
 
 use crate::common::compositor::CompositorType;
+use crate::settings::store::{SettingsStore, WALLPAPER_LOGO_KEY, WALLPAPER_PATH_KEY};
 use crate::wallpaper::cli::{SetArgs, WallpaperCommands};
-use crate::wallpaper::config::WallpaperConfig;
 
 use crate::wallpaper::{sway, x11};
 
@@ -16,10 +17,16 @@ pub async fn handle_wallpaper_command(command: WallpaperCommands, _debug: bool) 
 }
 
 async fn handle_random(args: crate::wallpaper::cli::RandomArgs) -> Result<()> {
-    let path = crate::wallpaper::random::run(crate::wallpaper::random::RandomOptions {
-        no_logo: args.no_logo,
-    })
-    .await?;
+    // If --no-logo flag is explicitly passed, use it; otherwise check settings
+    let no_logo = if args.no_logo {
+        true
+    } else {
+        let store = SettingsStore::load().context("loading settings")?;
+        !store.bool(WALLPAPER_LOGO_KEY)
+    };
+
+    let path = crate::wallpaper::random::run(crate::wallpaper::random::RandomOptions { no_logo })
+        .await?;
 
     println!(
         "Generated wallpaper at: {}",
@@ -34,17 +41,31 @@ async fn handle_random(args: crate::wallpaper::cli::RandomArgs) -> Result<()> {
 }
 
 async fn handle_set(args: SetArgs) -> Result<()> {
-    let mut config = WallpaperConfig::load()?;
-    config.set_wallpaper(args.path.clone())?;
-    println!("Wallpaper configured to: {}", args.path.green());
+    let mut store = SettingsStore::load().context("loading settings")?;
+
+    // Resolve absolute path
+    let path_buf = PathBuf::from(&args.path);
+    let abs_path = if path_buf.is_absolute() {
+        args.path.clone()
+    } else {
+        std::env::current_dir()
+            .context("getting current directory")?
+            .join(&args.path)
+            .to_string_lossy()
+            .to_string()
+    };
+
+    store.set_optional_string(WALLPAPER_PATH_KEY, Some(abs_path.clone()));
+    store.save().context("saving settings")?;
+    println!("Wallpaper configured to: {}", abs_path.green());
 
     // Apply the wallpaper after setting it
     apply_configured_wallpaper().await
 }
 
 pub async fn apply_configured_wallpaper() -> Result<()> {
-    let config = WallpaperConfig::load()?;
-    let path = match config.path {
+    let store = SettingsStore::load().context("loading settings")?;
+    let path = match store.optional_string(WALLPAPER_PATH_KEY) {
         Some(p) => p,
         None => {
             anyhow::bail!("No wallpaper configured. Use 'ins wallpaper set <path>' first.");
