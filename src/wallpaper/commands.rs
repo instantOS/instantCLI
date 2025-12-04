@@ -25,8 +25,8 @@ async fn handle_random(args: crate::wallpaper::cli::RandomArgs) -> Result<()> {
         !store.bool(WALLPAPER_LOGO_KEY)
     };
 
-    let path = crate::wallpaper::random::run(crate::wallpaper::random::RandomOptions { no_logo })
-        .await?;
+    let path =
+        crate::wallpaper::random::run(crate::wallpaper::random::RandomOptions { no_logo }).await?;
 
     println!(
         "Generated wallpaper at: {}",
