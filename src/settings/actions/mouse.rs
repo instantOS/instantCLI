@@ -5,7 +5,7 @@
 use anyhow::{Context, Result, bail};
 use std::process::Command;
 
-use crate::common::compositor::CompositorType;
+use crate::common::compositor::{CompositorType, sway};
 use crate::ui::prelude::*;
 
 use super::super::context::SettingsContext;
@@ -127,11 +127,13 @@ fn apply_libinput_property(property_name: &str, value: &str, error_key: &str) ->
     Ok(applied)
 }
 
-/// Apply natural scrolling setting (X11 only for now)
+/// Apply natural scrolling setting (Sway and X11)
 pub fn apply_natural_scroll(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let compositor = CompositorType::detect();
+    let is_sway = matches!(compositor, CompositorType::Sway);
+    let is_x11 = compositor.is_x11();
 
-    if !compositor.is_x11() {
+    if !is_sway && !is_x11 {
         ctx.emit_info(
             "settings.mouse.natural_scroll.unsupported",
             &format!(
@@ -142,14 +144,19 @@ pub fn apply_natural_scroll(ctx: &mut SettingsContext, enabled: bool) -> Result<
         return Ok(());
     }
 
-    let value = if enabled { "1" } else { "0" };
-    let applied = apply_libinput_property(
-        "libinput Natural Scrolling Enabled",
-        value,
-        "settings.mouse.natural_scroll.device_failed",
-    )?;
+    if is_sway {
+        // Apply natural scrolling to all pointer devices in sway
+        let value = if enabled { "enabled" } else { "disabled" };
+        let cmd = format!("input type:pointer natural_scroll {}", value);
 
-    if applied > 0 {
+        if let Err(e) = sway::swaymsg(&cmd) {
+            ctx.emit_info(
+                "settings.mouse.natural_scroll.sway_failed",
+                &format!("Failed to apply natural scrolling in Sway: {e}"),
+            );
+            return Ok(());
+        }
+
         ctx.notify(
             "Natural Scrolling",
             if enabled {
@@ -159,10 +166,29 @@ pub fn apply_natural_scroll(ctx: &mut SettingsContext, enabled: bool) -> Result<
             },
         );
     } else {
-        ctx.emit_info(
-            "settings.mouse.natural_scroll.no_devices",
-            "No devices found that support natural scrolling.",
-        );
+        // X11 path
+        let value = if enabled { "1" } else { "0" };
+        let applied = apply_libinput_property(
+            "libinput Natural Scrolling Enabled",
+            value,
+            "settings.mouse.natural_scroll.device_failed",
+        )?;
+
+        if applied > 0 {
+            ctx.notify(
+                "Natural Scrolling",
+                if enabled {
+                    "Natural scrolling enabled"
+                } else {
+                    "Natural scrolling disabled"
+                },
+            );
+        } else {
+            ctx.emit_info(
+                "settings.mouse.natural_scroll.no_devices",
+                "No devices found that support natural scrolling.",
+            );
+        }
     }
 
     Ok(())

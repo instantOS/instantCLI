@@ -323,7 +323,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         breadcrumbs: &["Natural Scrolling"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("desktop.mouse.natural_scroll", false),
-            summary: "Reverse the scroll direction to match touchpad/touchscreen behavior.\n\nWhen enabled, scrolling up moves the content up (like pushing paper).\n\nCurrently only supported on X11.",
+            summary: "Reverse the scroll direction to match touchpad/touchscreen behavior.\n\nWhen enabled, scrolling up moves the content up (like pushing paper).\n\nSupports Sway and X11 window managers.",
             apply: Some(super::actions::apply_natural_scroll),
         },
         requires_reapply: true,

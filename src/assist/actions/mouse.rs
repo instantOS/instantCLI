@@ -145,10 +145,10 @@ fn get_x11_mouse_devices() -> Result<Vec<String>> {
     // Extract device IDs
     let mut device_ids = Vec::new();
     for line in output_str.lines() {
-        if let Some(id_str) = line.split("id=").nth(1) {
-            if let Some(id) = id_str.split_whitespace().next() {
-                device_ids.push(id.to_string());
-            }
+        if let Some(id_str) = line.split("id=").nth(1)
+            && let Some(id) = id_str.split_whitespace().next()
+        {
+            device_ids.push(id.to_string());
         }
     }
 
@@ -181,12 +181,11 @@ fn get_x11_mouse_speed() -> Result<f64> {
 
         // Parse "libinput Accel Speed (nnn):	-0.400000" format
         for line in output_str.lines() {
-            if line.contains("libinput Accel Speed") {
-                if let Some(value_str) = line.split(':').nth(1) {
-                    if let Ok(speed) = value_str.trim().parse::<f64>() {
-                        return Ok(speed);
-                    }
-                }
+            if line.contains("libinput Accel Speed")
+                && let Some(value_str) = line.split(':').nth(1)
+                && let Ok(speed) = value_str.trim().parse::<f64>()
+            {
+                return Ok(speed);
             }
         }
     }
