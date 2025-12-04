@@ -9,7 +9,7 @@ use crate::ui::prelude::*;
 
 use super::registry::{SettingDefinition, SettingKind, SettingOption};
 use super::sources;
-use super::store::{BoolSettingKey, IntSettingKey, SettingsStore, StringSettingKey};
+use super::store::{BoolSettingKey, IntSettingKey, OptionalStringSettingKey, SettingsStore, StringSettingKey};
 
 #[derive(Debug)]
 pub struct SettingsContext {
@@ -92,6 +92,19 @@ impl SettingsContext {
             self.store.set_int(key, value);
             self.dirty = true;
         }
+    }
+
+    pub fn optional_string(&self, key: OptionalStringSettingKey) -> Option<String> {
+        self.store.optional_string(key)
+    }
+
+    pub fn set_optional_string<S: Into<String>>(
+        &mut self,
+        key: OptionalStringSettingKey,
+        value: Option<S>,
+    ) {
+        self.store.set_optional_string(key, value);
+        self.dirty = true;
     }
 
     pub fn contains(&self, key: &str) -> bool {

@@ -3,6 +3,7 @@ use crate::common::requirements::{
     COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_DISKS_PACKAGE, GNOME_FIRMWARE_PACKAGE,
     GPARTED_PACKAGE, NM_CONNECTION_EDITOR_PACKAGE, PACMAN_CONTRIB_PACKAGE, PIPER_PACKAGE,
     RequiredPackage, TOPGRADE_PACKAGE, WIREMIX_PACKAGE, XDG_UTILS_PACKAGE, YAZI_PACKAGE,
+    ZENITY_PACKAGE,
 };
 use crate::ui::prelude::NerdFont;
 
@@ -317,6 +318,45 @@ pub const SETTINGS: &[SettingDefinition] = &[
         kind: SettingKind::Action {
             summary: "Fetch and set a random wallpaper from Wallhaven.\n\nRespects the 'Show Logo on Wallpaper' setting.",
             run: super::actions::set_random_wallpaper,
+        },
+        requires_reapply: false,
+        requirements: &[],
+    },
+    SettingDefinition {
+        id: "appearance.wallpaper_bg_color",
+        title: "Background Color",
+        category: "appearance",
+        icon: NerdFont::Palette,
+        breadcrumbs: &["Wallpaper", "Colored", "Background"],
+        kind: SettingKind::Action {
+            summary: "Choose a background color for colored wallpapers.\n\nUses zenity color picker.",
+            run: super::actions::pick_wallpaper_bg_color,
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(ZENITY_PACKAGE)],
+    },
+    SettingDefinition {
+        id: "appearance.wallpaper_fg_color",
+        title: "Foreground Color",
+        category: "appearance",
+        icon: NerdFont::Palette,
+        breadcrumbs: &["Wallpaper", "Colored", "Foreground"],
+        kind: SettingKind::Action {
+            summary: "Choose a foreground/logo color for colored wallpapers.\n\nUses zenity color picker.",
+            run: super::actions::pick_wallpaper_fg_color,
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(ZENITY_PACKAGE)],
+    },
+    SettingDefinition {
+        id: "appearance.wallpaper_colored",
+        title: "Apply Colored Wallpaper",
+        category: "appearance",
+        icon: NerdFont::Image,
+        breadcrumbs: &["Wallpaper", "Colored", "Apply"],
+        kind: SettingKind::Action {
+            summary: "Generate a solid-color wallpaper with the instantOS logo.\n\nUses the chosen background and foreground colors.",
+            run: super::actions::apply_colored_wallpaper,
         },
         requires_reapply: false,
         requirements: &[],

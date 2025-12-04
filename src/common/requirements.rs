@@ -690,3 +690,10 @@ pub const PIPER_PACKAGE: RequiredPackage = RequiredPackage {
     ubuntu_package_name: Some("piper"),
     tests: &[InstallTest::WhichSucceeds("piper")],
 };
+
+pub const ZENITY_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Zenity",
+    arch_package_name: Some("zenity"),
+    ubuntu_package_name: Some("zenity"),
+    tests: &[InstallTest::WhichSucceeds("zenity")],
+};
