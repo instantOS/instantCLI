@@ -1,8 +1,8 @@
 use crate::common::requirements::{
     BLUEMAN_PACKAGE, BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE, CHROMIUM_PACKAGE, CLIPMENU_PACKAGE,
     COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_DISKS_PACKAGE, GNOME_FIRMWARE_PACKAGE,
-    GPARTED_PACKAGE, NM_CONNECTION_EDITOR_PACKAGE, PACMAN_CONTRIB_PACKAGE, RequiredPackage,
-    TOPGRADE_PACKAGE, WIREMIX_PACKAGE, XDG_UTILS_PACKAGE, YAZI_PACKAGE,
+    GPARTED_PACKAGE, NM_CONNECTION_EDITOR_PACKAGE, PACMAN_CONTRIB_PACKAGE, PIPER_PACKAGE,
+    RequiredPackage, TOPGRADE_PACKAGE, WIREMIX_PACKAGE, XDG_UTILS_PACKAGE, YAZI_PACKAGE,
 };
 use crate::ui::prelude::NerdFont;
 
@@ -361,6 +361,19 @@ pub const SETTINGS: &[SettingDefinition] = &[
         },
         requires_reapply: true,
         requirements: &[],
+    },
+    SettingDefinition {
+        id: "mouse.gaming",
+        title: "Gaming Mouse Customization",
+        category: "mouse",
+        icon: NerdFont::Mouse,
+        breadcrumbs: &["Gaming Mouse Customization"],
+        kind: SettingKind::Command {
+            summary: "Configure gaming mice with customizable buttons, RGB lighting, and DPI settings.\n\nUses Piper to configure Logitech and other gaming mice supported by libratbag.",
+            command: CommandSpec::detached("piper", &[]),
+        },
+        requires_reapply: false,
+        requirements: &[SettingRequirement::Package(PIPER_PACKAGE)],
     },
     SettingDefinition {
         id: "workspace.layout",

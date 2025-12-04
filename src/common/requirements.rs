@@ -683,3 +683,10 @@ pub const YAZI_PACKAGE: RequiredPackage = RequiredPackage {
     ubuntu_package_name: None, // yazi is not in default ubuntu repos yet, usually installed via cargo or prebuilt binary
     tests: &[InstallTest::WhichSucceeds("yazi")],
 };
+
+pub const PIPER_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Piper",
+    arch_package_name: Some("piper"),
+    ubuntu_package_name: Some("piper"),
+    tests: &[InstallTest::WhichSucceeds("piper")],
+};
