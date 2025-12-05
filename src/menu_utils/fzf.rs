@@ -61,6 +61,46 @@ fn log_fzf_failure(stderr: &[u8], exit_code: Option<i32>) {
     }
 }
 
+/// Extract the icon's colored background from display text and create matching padding.
+/// The icon format is: \x1b[48;2;R;G;Bm\x1b[38;2;r;g;bm  {icon}  \x1b[49;39m ...
+/// This returns a string with the same colored block to use on padding lines.
+fn extract_icon_padding(display: &str) -> String {
+    // Look for ANSI 24-bit background color code: \x1b[48;2;R;G;Bm
+    if let Some(start) = display.find("\x1b[48;2;") {
+        // Find the end of the color code (the 'm')
+        if let Some(end_offset) = display[start..].find('m') {
+            let bg_code = &display[start..start + end_offset + 1];
+            // The icon badge is: 2 spaces + icon (2 cells for Nerd Fonts) + 2 spaces = 6 cells
+            // But we have 2 leading spaces on content line, so colored area starts at position 2
+            // Use reset that only resets bg/fg: \x1b[49;39m
+            let reset = "\x1b[49;39m";
+            return format!("  {bg_code}     {reset}");
+        }
+    }
+    // Fallback: just return spaces for padding
+    " ".to_string()
+}
+
+/// Strip ANSI escape codes from a string
+fn strip_ansi_codes(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip until we find 'm' (end of color code)
+            while let Some(&next) = chars.peek() {
+                chars.next();
+                if next == 'm' {
+                    break;
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FzfPreview {
     Text(String),
@@ -590,9 +630,12 @@ impl FzfBuilder {
 
         for item in &items {
             let display = item.fzf_display_text();
-            // Create padded multi-line item - empty padding lines above and below
-            // --highlight-line will fill the background width automatically
-            let padded_item = format!(" \n  {display}\n ");
+            // Extract background color from display text to create matching padding
+            // The icon badge format is: {bg}{fg}  {icon}  {reset} ...
+            // We want padding lines to have the same colored block at the start
+            let padding_prefix = extract_icon_padding(&display);
+            // Create padded multi-line item with colored padding to match icon
+            let padded_item = format!("{padding_prefix}\n  {display}\n{padding_prefix}");
             input_lines.push(padded_item);
         }
 
@@ -619,6 +662,7 @@ impl FzfBuilder {
 
         // Core options for multi-line items
         cmd.arg("--read0");           // NUL-separated input
+        cmd.arg("--print0");          // NUL-terminated output (matches input format)
         cmd.arg("--ansi");            // ANSI color support
         cmd.arg("--highlight-line");  // Highlight entire multi-line item
         cmd.arg("--layout=reverse");
@@ -684,25 +728,49 @@ impl FzfBuilder {
                 }
 
                 let stdout = String::from_utf8_lossy(&result.stdout);
-                let selected = stdout.trim();
+                // With --print0, output is NUL-terminated; strip NUL and whitespace
+                let selected = stdout.trim_matches(|c| c == '\0' || c == '\n' || c == '\r' || c == ' ');
 
                 if selected.is_empty() {
                     return Ok(FzfResult::Cancelled);
                 }
 
-                // Match by trimmed display text
-                if let Some(item) = display_map.get(selected).cloned() {
-                    Ok(FzfResult::Selected(item))
-                } else {
-                    // Try fuzzy matching
-                    for item in &items {
-                        let item_display = item.fzf_display_text();
-                        if item_display.trim() == selected {
-                            return Ok(FzfResult::Selected(item.clone()));
-                        }
-                    }
-                    Ok(FzfResult::Cancelled)
+                // FZF returns the full multi-line item, extract the content line
+                // Format was: "{padding}\n  {display}\n{padding}"
+                // The content line has actual text content, not just colored padding
+                // Find the line with the most non-space, non-ANSI content
+                let content_line = selected
+                    .lines()
+                    .max_by_key(|line| {
+                        // Strip ANSI codes and count remaining non-whitespace chars
+                        let stripped = strip_ansi_codes(line);
+                        stripped.chars().filter(|c| !c.is_whitespace()).count()
+                    })
+                    .map(|s| s.trim())
+                    .unwrap_or("");
+
+                if content_line.is_empty() {
+                    return Ok(FzfResult::Cancelled);
                 }
+
+                // Match by display text - first try exact match on trimmed content
+                if let Some(item) = display_map.get(content_line).cloned() {
+                    return Ok(FzfResult::Selected(item));
+                }
+
+                // Try matching by comparing trimmed display texts
+                for item in &items {
+                    let item_display = item.fzf_display_text();
+                    if item_display.trim() == content_line {
+                        return Ok(FzfResult::Selected(item.clone()));
+                    }
+                    // Also try exact match (with potential ANSI codes)
+                    if item_display == content_line {
+                        return Ok(FzfResult::Selected(item.clone()));
+                    }
+                }
+
+                Ok(FzfResult::Cancelled)
             }
             Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {e}"))),
         }
