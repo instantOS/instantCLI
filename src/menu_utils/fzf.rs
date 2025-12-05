@@ -63,22 +63,43 @@ fn log_fzf_failure(stderr: &[u8], exit_code: Option<i32>) {
 
 /// Extract the icon's colored background from display text and create matching padding.
 /// The icon format is: \x1b[48;2;R;G;Bm\x1b[38;2;r;g;bm  {icon}  \x1b[49;39m ...
-/// This returns a string with the same colored block to use on padding lines.
-fn extract_icon_padding(display: &str) -> String {
+/// Returns (top_padding, bottom_separator) where bottom_separator has a darkened color
+/// to create visual separation between items.
+fn extract_icon_padding(display: &str) -> (String, String) {
     // Look for ANSI 24-bit background color code: \x1b[48;2;R;G;Bm
     if let Some(start) = display.find("\x1b[48;2;") {
         // Find the end of the color code (the 'm')
         if let Some(end_offset) = display[start..].find('m') {
             let bg_code = &display[start..start + end_offset + 1];
-            // The icon badge is: 2 spaces + icon (2 cells for Nerd Fonts) + 2 spaces = 6 cells
-            // But we have 2 leading spaces on content line, so colored area starts at position 2
-            // Use reset that only resets bg/fg: \x1b[49;39m
+            // Parse RGB values to create a darkened version for the separator
+            let rgb_part = &display[start + 7..start + end_offset]; // "R;G;B"
+            let parts: Vec<&str> = rgb_part.split(';').collect();
+
             let reset = "\x1b[49;39m";
-            return format!("  {bg_code}     {reset}");
+            let top_padding = format!("  {bg_code}     {reset}");
+
+            // Create darkened color for separator (multiply each channel by ~0.5)
+            if parts.len() == 3 {
+                if let (Ok(r), Ok(g), Ok(b)) = (
+                    parts[0].parse::<u8>(),
+                    parts[1].parse::<u8>(),
+                    parts[2].parse::<u8>(),
+                ) {
+                    let dark_r = r / 2;
+                    let dark_g = g / 2;
+                    let dark_b = b / 2;
+                    let dark_bg = format!("\x1b[48;2;{};{};{}m", dark_r, dark_g, dark_b);
+                    let separator = format!("  {dark_bg}     {reset}");
+                    return (top_padding, separator);
+                }
+            }
+
+            // Fallback if RGB parsing fails
+            return (top_padding.clone(), top_padding);
         }
     }
     // Fallback: just return spaces for padding
-    " ".to_string()
+    (" ".to_string(), " ".to_string())
 }
 
 /// Strip ANSI escape codes from a string
@@ -617,20 +638,23 @@ impl FzfBuilder {
             return Ok(FzfResult::Cancelled);
         }
 
-        // Build NUL-separated input with padding - each item is 3 lines:
+        // Build NUL-separated input with padding - each item is 4 lines:
         // Line 1: blank padding with colored block
         // Line 2: content with indent
         // Line 3: blank padding with colored block
+        // Line 4: darker separator line for visual distinction
         let mut input_lines = Vec::new();
 
         for item in &items {
             let display = item.fzf_display_text();
             // Extract background color from display text to create matching padding
             // The icon badge format is: {bg}{fg}  {icon}  {reset} ...
-            // We want padding lines to have the same colored block at the start
-            let padding_prefix = extract_icon_padding(&display);
-            // Create padded multi-line item with colored padding to match icon
-            let padded_item = format!("{padding_prefix}\n  {display}\n{padding_prefix}");
+            // We want padding lines to have the same colored block at the start,
+            // and a darkened separator line at the bottom
+            let (padding_prefix, separator) = extract_icon_padding(&display);
+            // Create padded multi-line item with colored padding and darker separator
+            let padded_item =
+                format!("{padding_prefix}\n  {display}\n{padding_prefix}\n{separator}");
             input_lines.push(padded_item);
         }
 
@@ -656,9 +680,9 @@ impl FzfBuilder {
         cmd.env_remove("FZF_DEFAULT_OPTS");
 
         // Core options for multi-line items
-        cmd.arg("--read0");           // NUL-separated input
-        cmd.arg("--ansi");            // ANSI color support
-        cmd.arg("--highlight-line");  // Highlight entire multi-line item
+        cmd.arg("--read0"); // NUL-separated input
+        cmd.arg("--ansi"); // ANSI color support
+        cmd.arg("--highlight-line"); // Highlight entire multi-line item
         cmd.arg("--layout=reverse");
         cmd.arg("--tiebreak=index");
         cmd.arg("--info=inline-right");

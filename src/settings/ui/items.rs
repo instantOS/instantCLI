@@ -1,8 +1,12 @@
 use crate::menu_utils::FzfSelectable;
 use crate::ui::prelude::*;
 
-use super::super::context::{format_back_icon, format_icon, format_icon_colored, format_search_icon};
-use super::super::registry::{SettingCategory, SettingDefinition, SettingKind, SettingOption, category_by_id};
+use super::super::context::{
+    format_back_icon, format_icon, format_icon_colored, format_search_icon,
+};
+use super::super::registry::{
+    SettingCategory, SettingDefinition, SettingKind, SettingOption, category_by_id,
+};
 
 #[derive(Clone, Copy)]
 pub struct CategoryItem {
@@ -88,7 +92,9 @@ impl FzfSelectable for CategoryItem {
             char::from(self.category.icon),
             self.category.title
         ));
-        lines.push(format!("{surface}───────────────────────────────────{reset}"));
+        lines.push(format!(
+            "{surface}───────────────────────────────────{reset}"
+        ));
         lines.push(String::new());
 
         // Description (text colored)
@@ -100,7 +106,9 @@ impl FzfSelectable for CategoryItem {
 
         if !all_settings.is_empty() {
             // Separator before settings
-            lines.push(format!("{surface}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{reset}"));
+            lines.push(format!(
+                "{surface}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{reset}"
+            ));
             lines.push(String::new());
 
             for (i, definition) in all_settings.iter().enumerate() {
@@ -162,7 +170,9 @@ impl FzfSelectable for CategoryMenuItem {
                     "{mauve}{}  Search All{reset}",
                     char::from(NerdFont::Search)
                 ));
-                lines.push(format!("{surface}───────────────────────────────────{reset}"));
+                lines.push(format!(
+                    "{surface}───────────────────────────────────{reset}"
+                ));
                 lines.push(String::new());
                 lines.push(format!("{text}Browse all available settings in one{reset}"));
                 lines.push(format!("{text}searchable list.{reset}"));
@@ -223,7 +233,11 @@ impl FzfSelectable for SettingItem {
                     },
                     _ => self.definition.icon,
                 };
-                format!("{} {}", format_icon_colored(glyph, icon_color), self.definition.title)
+                format!(
+                    "{} {}",
+                    format_icon_colored(glyph, icon_color),
+                    self.definition.title
+                )
             }
         }
     }
@@ -341,10 +355,19 @@ impl FzfSelectable for SearchItem {
                     } else {
                         "Not set"
                     };
-                format!("{} {}  [{}]", format_icon_colored(glyph, icon_color), path, current_label)
+                format!(
+                    "{} {}  [{}]",
+                    format_icon_colored(glyph, icon_color),
+                    path,
+                    current_label
+                )
             }
             SettingState::Action => {
-                format!("{} {}", format_icon_colored(self.definition.icon, icon_color), path)
+                format!(
+                    "{} {}",
+                    format_icon_colored(self.definition.icon, icon_color),
+                    path
+                )
             }
             SettingState::Command => {
                 let glyph = match &self.definition.kind {
