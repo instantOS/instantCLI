@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1](https://github.com/instantOS/instantCLI/compare/v0.9.0...v0.9.1) - 2025-12-05
+
+### Other
+
+- fmt
+- add path displays
+- refactor writable repo handling
+- remove old plan
+- add git convenience helpers
+- display modified repos path
+- adjust pkgbuild
+
 ## [0.8.6](https://github.com/instantOS/instantCLI/compare/v0.8.5...v0.8.6) - 2025-12-03
 
 ### Fixed
