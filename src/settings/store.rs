@@ -402,7 +402,7 @@ mod tests {
 [appearance]
 autotheming = true
 
-[workspace]
+[desktop]
 layout = "monocle"
 "#;
         fs::write(temp_file.path(), hierarchical_content).unwrap();

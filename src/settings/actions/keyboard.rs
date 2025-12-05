@@ -196,3 +196,94 @@ pub fn restore_keyboard_layout(ctx: &mut SettingsContext) -> Result<()> {
 
     Ok(())
 }
+
+/// Apply swap escape/caps lock setting (X11 only for now)
+pub fn apply_swap_escape(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+    let compositor = CompositorType::detect();
+
+    if !compositor.is_x11() {
+        ctx.emit_info(
+            "settings.keyboard.swap_escape.unsupported",
+            &format!(
+                "Swap Escape/Caps Lock configuration is not yet supported on {}. Setting saved but not applied.",
+                compositor.name()
+            ),
+        );
+        return Ok(());
+    }
+
+    // Use setxkbmap -option to set or clear the caps:swapescape option
+    // First, we need to get the current layout to preserve it
+    let result = if enabled {
+        // Apply the swap option
+        std::process::Command::new("setxkbmap")
+            .args(["-option", "caps:swapescape"])
+            .status()
+    } else {
+        // Clear xkb options to reset to default
+        std::process::Command::new("setxkbmap")
+            .args(["-option", ""])
+            .status()
+    };
+
+    match result {
+        Ok(status) if status.success() => {
+            ctx.notify(
+                "Swap Escape/Caps Lock",
+                if enabled {
+                    "Escape and Caps Lock keys swapped"
+                } else {
+                    "Escape and Caps Lock keys restored to normal"
+                },
+            );
+        }
+        Ok(_) => {
+            ctx.emit_info(
+                "settings.keyboard.swap_escape.failed",
+                "setxkbmap command failed to apply the setting.",
+            );
+        }
+        Err(e) => {
+            ctx.emit_info(
+                "settings.keyboard.swap_escape.error",
+                &format!("Failed to execute setxkbmap: {e}"),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+pub fn restore_swap_escape(ctx: &mut SettingsContext) -> Result<()> {
+    let compositor = CompositorType::detect();
+
+    if !compositor.is_x11() {
+        return Ok(());
+    }
+
+    let key = super::super::store::BoolSettingKey::new("desktop.swap_escape", false);
+    let enabled = ctx.bool(key);
+
+    if enabled {
+        if let Err(e) = std::process::Command::new("setxkbmap")
+            .args(["-option", "caps:swapescape"])
+            .status()
+        {
+            emit(
+                Level::Warn,
+                "settings.keyboard.swap_escape.restore_failed",
+                &format!("Failed to restore swap escape setting: {e}"),
+                None,
+            );
+        } else {
+            emit(
+                Level::Debug,
+                "settings.keyboard.swap_escape.restored",
+                "Restored swap escape setting",
+                None,
+            );
+        }
+    }
+
+    Ok(())
+}

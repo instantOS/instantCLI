@@ -55,6 +55,16 @@ pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()>
                 crate::settings::actions::restore_brightness(&mut ctx)?;
                 applied += 1;
             }
+            crate::settings::registry::SettingKind::Toggle { .. }
+                if definition.id == "desktop.swap_escape" =>
+            {
+                ctx.emit_info(
+                    "settings.apply.reapply",
+                    &format!("Reapplying {}", definition.title),
+                );
+                crate::settings::actions::restore_swap_escape(&mut ctx)?;
+                applied += 1;
+            }
             _ => {}
         }
     }

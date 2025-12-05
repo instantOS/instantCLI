@@ -513,6 +513,20 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[],
     },
     SettingDefinition {
+        id: "desktop.swap_escape",
+        title: "Swap Escape and Caps Lock",
+        category: "desktop",
+        icon: NerdFont::Keyboard,
+        breadcrumbs: &["Swap Escape and Caps Lock"],
+        kind: SettingKind::Toggle {
+            key: BoolSettingKey::new("desktop.swap_escape", false),
+            summary: "Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nCurrently only supported on X11.",
+            apply: Some(super::actions::apply_swap_escape),
+        },
+        requires_reapply: true,
+        requirements: &[],
+    },
+    SettingDefinition {
         id: "audio.wiremix",
         title: "General audio settings",
         category: "audio",
