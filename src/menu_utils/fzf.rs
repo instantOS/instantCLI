@@ -574,31 +574,45 @@ impl FzfBuilder {
             return Ok(FzfResult::Cancelled);
         }
 
-        // Build key-based lookup for reliable matching after selection
-        let mut key_map: HashMap<String, T> = HashMap::new();
-        let mut preview_map: HashMap<String, String> = HashMap::new();
+        // Build display text to item lookup
+        let mut display_map: HashMap<String, T> = HashMap::new();
 
         for item in &items {
-            let key = item.fzf_key();
-            key_map.insert(key.clone(), item.clone());
-            if let FzfPreview::Text(preview) = item.fzf_preview() {
-                preview_map.insert(key, preview);
+            let display = item.fzf_display_text();
+            display_map.insert(display.trim().to_string(), item.clone());
+        }
+
+        // Build NUL-separated input with padding - each item is 3 lines:
+        // Line 1: blank padding
+        // Line 2: content with indent
+        // Line 3: blank padding
+        let mut input_lines = Vec::new();
+
+        for item in &items {
+            let display = item.fzf_display_text();
+            // Create padded multi-line item - empty padding lines above and below
+            // --highlight-line will fill the background width automatically
+            let padded_item = format!(" \n  {display}\n ");
+            input_lines.push(padded_item);
+        }
+
+        // Write previews to individual files for reliable lookup by index
+        let preview_dir = std::env::temp_dir().join(format!("fzf_preview_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&preview_dir);
+        {
+            use std::io::Write;
+            for (idx, item) in items.iter().enumerate() {
+                if let FzfPreview::Text(preview) = item.fzf_preview() {
+                    let preview_path = preview_dir.join(format!("{}.txt", idx));
+                    if let Ok(mut file) = std::fs::File::create(&preview_path) {
+                        let _ = file.write_all(preview.as_bytes());
+                    }
+                }
             }
         }
 
-        // Build NUL-separated input with padding newlines as part of each item
-        // Format: empty line, content with indent, empty line (symmetric padding)
-        let mut input_bytes = Vec::new();
-        for item in &items {
-            let display = item.fzf_display_text();
-            let key = item.fzf_key();
-            let preview = preview_map.get(&key).cloned().unwrap_or_default();
-            let encoded_preview = general_purpose::STANDARD.encode(preview.as_bytes());
-            // Symmetric padding: empty line above, content, empty line below
-            let padded_item = format!("\n  {display}\t{key}\t{encoded_preview}\n \n");
-            input_bytes.extend_from_slice(padded_item.as_bytes());
-            input_bytes.push(0); // NUL separator
-        }
+        // Build NUL-separated input
+        let input_text = input_lines.join("\0");
 
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
@@ -609,12 +623,14 @@ impl FzfBuilder {
         cmd.arg("--highlight-line");  // Highlight entire multi-line item
         cmd.arg("--layout=reverse");
         cmd.arg("--tiebreak=index");
+        cmd.arg("--info=inline-right");
 
-        // Hide the tab-separated key/preview data from display, show only first field
-        cmd.arg("--delimiter=\t");
-        cmd.arg("--with-nth=1");
-        // Preview command: extract field 3 (base64 preview) and decode
-        cmd.arg("--preview").arg("echo {} | cut -f3 | base64 -d");
+        // Preview command using {n} for the 0-based item index
+        let preview_cmd = format!(
+            "cat {}/{{n}}.txt 2>/dev/null || echo ''",
+            preview_dir.display()
+        );
+        cmd.arg("--preview").arg(&preview_cmd);
 
         // Apply prompt and header
         if let Some(prompt) = &self.prompt {
@@ -644,11 +660,14 @@ impl FzfBuilder {
         let _ = crate::menu::server::register_menu_process(pid);
 
         if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(&input_bytes)?;
+            stdin.write_all(input_text.as_bytes())?;
         }
 
         let output = child.wait_with_output();
         crate::menu::server::unregister_menu_process(pid);
+
+        // Clean up temp preview directory
+        let _ = std::fs::remove_dir_all(&preview_dir);
 
         match output {
             Ok(result) => {
@@ -671,23 +690,14 @@ impl FzfBuilder {
                     return Ok(FzfResult::Cancelled);
                 }
 
-                // Extract key (field 2) for lookup - the display text may have been trimmed
-                let parts: Vec<&str> = selected.split('\t').collect();
-                let key = if parts.len() >= 2 {
-                    parts[1].trim()
-                } else {
-                    // Fallback: try to match by trimmed display text
-                    parts[0].trim()
-                };
-
-                if let Some(item) = key_map.get(key).cloned() {
+                // Match by trimmed display text
+                if let Some(item) = display_map.get(selected).cloned() {
                     Ok(FzfResult::Selected(item))
                 } else {
-                    // Try matching by display text as fallback
+                    // Try fuzzy matching
                     for item in &items {
-                        if item.fzf_display_text().trim() == key
-                            || item.fzf_display_text() == key
-                        {
+                        let item_display = item.fzf_display_text();
+                        if item_display.trim() == selected {
                             return Ok(FzfResult::Selected(item.clone()));
                         }
                     }

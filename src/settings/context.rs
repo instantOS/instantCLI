@@ -334,11 +334,14 @@ pub fn format_icon(icon: NerdFont) -> String {
 }
 
 /// Format an icon with a colored background badge (hex format like "#89b4fa")
-/// Creates a pill-shaped badge with dark text on colored background
+/// Creates a pill-shaped badge with dark text on colored background.
+/// Uses targeted ANSI reset (not \x1b[0m) to preserve FZF color compatibility.
 pub fn format_icon_colored(icon: NerdFont, bg_color: &str) -> String {
     let bg = hex_to_ansi_bg(bg_color);
-    let fg = hex_to_ansi_fg(colors::CRUST); // Dark text
-    let reset = "\x1b[0m";
+    let fg = hex_to_ansi_fg(colors::CRUST); // Dark text for badge
+    // Reset background (49) and set foreground to match FZF's text color
+    // Using \x1b[49m resets only background; \x1b[39m uses default foreground
+    let reset = "\x1b[49;39m";
     // Padding inside the colored badge
     format!("{bg}{fg}  {}  {reset} ", char::from(icon))
 }
