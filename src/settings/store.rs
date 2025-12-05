@@ -281,7 +281,7 @@ mod tests {
 
         // Set some values with dotted keys
         settings.set("appearance.autotheming", toml::Value::Boolean(true));
-        settings.set("workspace.layout", toml::Value::String("tile".to_string()));
+        settings.set("desktop.layout", toml::Value::String("tile".to_string()));
         settings.set("printers.services", toml::Value::Boolean(false));
         settings.set("desktop.clipboard.enabled", toml::Value::Boolean(true));
 
@@ -291,7 +291,7 @@ mod tests {
         // Verify it creates proper hierarchical structure
         assert!(toml_str.contains("[appearance]"));
         assert!(toml_str.contains("autotheming = true"));
-        assert!(toml_str.contains("[workspace]"));
+        assert!(toml_str.contains("[desktop]"));
         assert!(toml_str.contains("layout = \"tile\""));
         assert!(toml_str.contains("[printers]"));
         assert!(toml_str.contains("services = false"));
@@ -314,8 +314,8 @@ mod tests {
         assert_eq!(value.as_bool(), Some(true));
 
         // Test setting and getting string
-        settings.set("workspace.layout", toml::Value::String("grid".to_string()));
-        let value = settings.get("workspace.layout").unwrap();
+        settings.set("desktop.layout", toml::Value::String("grid".to_string()));
+        let value = settings.get("desktop.layout").unwrap();
         assert_eq!(value.as_str(), Some("grid"));
 
         // Test deeply nested value
@@ -357,7 +357,7 @@ mod tests {
 
         let mut store = SettingsStore::load_from_path(path.clone()).unwrap();
 
-        let key = StringSettingKey::new("workspace.layout", "tile");
+        let key = StringSettingKey::new("desktop.layout", "tile");
 
         // Test default value
         assert_eq!(store.string(key), "tile");
@@ -413,7 +413,7 @@ layout = "monocle"
         let store = SettingsStore::load_from_path(path.clone()).unwrap();
 
         let bool_key = BoolSettingKey::new("appearance.autotheming", false);
-        let string_key = StringSettingKey::new("workspace.layout", "tile");
+        let string_key = StringSettingKey::new("desktop.layout", "tile");
 
         assert_eq!(store.bool(bool_key), true);
         assert_eq!(store.string(string_key), "monocle");
@@ -423,7 +423,7 @@ layout = "monocle"
 
         let saved_content = fs::read_to_string(&path).unwrap();
         assert!(saved_content.contains("[appearance]"));
-        assert!(saved_content.contains("[workspace]"));
+        assert!(saved_content.contains("[desktop]"));
         assert!(!saved_content.contains("[values]"));
         assert!(!saved_content.contains("\"appearance.autotheming\""));
     }

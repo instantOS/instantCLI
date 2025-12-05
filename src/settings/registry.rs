@@ -207,16 +207,9 @@ pub const CATEGORIES: &[SettingCategory] = &[
     SettingCategory {
         id: "desktop",
         title: "Desktop",
-        description: "Interactive desktop behaviour and helpers.",
+        description: "Desktop behaviour, window management, and layout preferences.",
         icon: NerdFont::Desktop,
         icon_color: colors::MAUVE,
-    },
-    SettingCategory {
-        id: "workspace",
-        title: "Workspace",
-        description: "Window manager defaults and layout preferences.",
-        icon: NerdFont::Workspace,
-        icon_color: colors::LAVENDER,
     },
     SettingCategory {
         id: "audio",
@@ -459,13 +452,13 @@ pub const SETTINGS: &[SettingDefinition] = &[
         requirements: &[SettingRequirement::Package(PIPER_PACKAGE)],
     },
     SettingDefinition {
-        id: "workspace.layout",
+        id: "desktop.layout",
         title: "Window Layout",
-        category: "workspace",
+        category: "desktop",
         icon: NerdFont::List,
         breadcrumbs: &["Window Layout"],
         kind: SettingKind::Choice {
-            key: StringSettingKey::new("workspace.layout", "tile"),
+            key: StringSettingKey::new("desktop.layout", "tile"),
             summary: "Choose how windows are arranged on your screen by default.\n\nYou can always change the layout temporarily with keyboard shortcuts.",
             options: &[
                 SettingOption {
