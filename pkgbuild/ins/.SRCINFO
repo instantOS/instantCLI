@@ -1,8 +1,8 @@
 pkgbase = ins
-	pkgdesc = A powerful command-line tool for managing dotfiles, system diagnostics, and instantOS configurations
+	pkgdesc = Instant CLI - command-line utilities
 	pkgver = 0.9.0
 	pkgrel = 1
-	url = https://github.com/instantOS/instantCLI
+	url = https://instantos.io
 	arch = x86_64
 	license = GPL-2.0-only
 	makedepends = rust
@@ -14,7 +14,7 @@ pkgbase = ins
 	optdepends = restic: for backup functionality
 	optdepends = kitty: default terminal for scratchpad
 	options = !lto
-	source = ins-0.8.6.tar.gz::https://github.com/instantOS/instantCLI/archive/refs/tags/v0.8.6.tar.gz
+	source = ins-0.9.0.tar.gz::https://github.com/instantOS/instantCLI/archive/refs/tags/v0.9.0.tar.gz
 	sha256sums = SKIP
 
 pkgname = ins

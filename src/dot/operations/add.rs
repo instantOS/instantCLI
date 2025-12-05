@@ -8,7 +8,7 @@ use crate::menu_utils::{FzfResult, FzfWrapper};
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -17,6 +17,7 @@ pub struct DirectoryAddStats {
     pub updated_count: usize,
     pub unchanged_count: usize,
     pub added_count: usize,
+    pub modified_repos: HashSet<PathBuf>,
 }
 
 impl DirectoryAddStats {
@@ -25,6 +26,7 @@ impl DirectoryAddStats {
             updated_count: 0,
             unchanged_count: 0,
             added_count: 0,
+            modified_repos: HashSet::new(),
         }
     }
 
@@ -147,11 +149,12 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str, add_all: bool) ->
     if add_all {
         // Scan for untracked files and add them
         let (_, untracked_files) = scan_and_categorize_files(&target_path, &all_dotfiles);
-        stats.added_count = add_untracked_files(&untracked_files, config, db)?;
+        add_untracked_files(&untracked_files, config, db, &mut stats)?;
     } else if target_path.is_file() && tracked_dotfiles.is_empty() {
         // Single untracked file - prompt to add it
-        add_new_file(config, db, &target_path)?;
-        return Ok(());
+        let repo_path = add_new_file(config, db, &target_path)?;
+        stats.added_count += 1;
+        stats.modified_repos.insert(repo_path);
     } else if tracked_dotfiles.is_empty() {
         // Directory with no tracked files
         let relative_dir = target_path.strip_prefix(&home).unwrap_or(&target_path);
@@ -175,8 +178,8 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str, add_all: bool) ->
     Ok(())
 }
 
-/// Add a new untracked file
-fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<()> {
+/// Add a new untracked file and return the repo path
+fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<PathBuf> {
     // Repository selection
     let repo_config = select_repo(config)?;
     let local_repo = LocalRepo::new(config, repo_config.name.clone())?;
@@ -216,7 +219,7 @@ fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<()> 
         chosen_dir_name
     );
 
-    Ok(())
+    Ok(repo_base)
 }
 
 /// Scan directory and categorize files as tracked or untracked
@@ -303,6 +306,9 @@ fn update_tracked_dotfiles(
         let was_updated = update_single_dotfile(dotfile, db)?;
         if was_updated {
             stats.updated_count += 1;
+            let local_repo = LocalRepo::new(config, repo_name.to_string())?;
+            let repo_path = local_repo.local_path(config)?;
+            stats.modified_repos.insert(repo_path);
         } else {
             stats.unchanged_count += 1;
         }
@@ -311,9 +317,14 @@ fn update_tracked_dotfiles(
 }
 
 /// Add multiple untracked files
-fn add_untracked_files(file_paths: &[PathBuf], config: &Config, db: &Database) -> Result<usize> {
+fn add_untracked_files(
+    file_paths: &[PathBuf],
+    config: &Config,
+    db: &Database,
+    stats: &mut DirectoryAddStats,
+) -> Result<()> {
     if file_paths.is_empty() {
-        return Ok(0);
+        return Ok(());
     }
 
     println!(
@@ -323,10 +334,12 @@ fn add_untracked_files(file_paths: &[PathBuf], config: &Config, db: &Database) -
     );
 
     for file_path in file_paths {
-        add_new_file(config, db, file_path)?;
+        let repo_path = add_new_file(config, db, file_path)?;
+        stats.added_count += 1;
+        stats.modified_repos.insert(repo_path);
     }
 
-    Ok(file_paths.len())
+    Ok(())
 }
 
 /// Print summary of directory add operation
@@ -348,6 +361,19 @@ fn print_directory_add_summary(stats: &DirectoryAddStats) {
             ),
             None,
         );
+
+        if !stats.modified_repos.is_empty() {
+            let mut repos: Vec<_> = stats.modified_repos.iter().collect();
+            repos.sort();
+            
+            println!(
+                "{} Modified repositories:",
+                char::from(NerdFont::Info).to_string().blue()
+            );
+            for repo_path in repos {
+                println!("  {}", repo_path.display().to_string().cyan());
+            }
+        }
     } else {
         emit(
             Level::Info,
