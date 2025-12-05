@@ -430,7 +430,7 @@ fn handle_existing_git_repo(
 
 fn check_already_configured(config: &Config) -> Option<InitOutcome> {
     // Filter out read-only repositories
-    let writable_repos: Vec<&config::Repo> = config.repos.iter().filter(|r| !r.read_only).collect();
+    let writable_repos = config.get_writable_repos();
 
     if !writable_repos.is_empty() {
         let existing = writable_repos

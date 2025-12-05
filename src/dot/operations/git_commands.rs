@@ -6,19 +6,9 @@ use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
 
-/// Get all writable repositories
-fn get_writable_repos(config: &Config) -> Vec<Repo> {
-    config
-        .repos
-        .iter()
-        .filter(|r| !r.read_only)
-        .cloned()
-        .collect()
-}
-
 /// Run git commit across all writable repositories
 pub fn git_commit_all(config: &Config, debug: bool) -> Result<()> {
-    let repos = get_writable_repos(config);
+    let repos = config.get_writable_repos();
 
     if repos.is_empty() {
         println!("No writable repositories found.");
@@ -26,8 +16,8 @@ pub fn git_commit_all(config: &Config, debug: bool) -> Result<()> {
     }
 
     // First check if there are changes to commit in any repo
-    let mut repos_with_changes = Vec::new();
-    for repo in &repos {
+    let mut repos_with_changes: Vec<(&Repo, std::path::PathBuf)> = Vec::new();
+    for repo in repos {
         let local_repo = LocalRepo::new(config, repo.name.clone())?;
         let repo_path = local_repo.local_path(config)?;
 
@@ -38,7 +28,7 @@ pub fn git_commit_all(config: &Config, debug: bool) -> Result<()> {
             .output()?;
 
         if !status.stdout.is_empty() {
-            repos_with_changes.push((repo.clone(), repo_path));
+            repos_with_changes.push((repo, repo_path));
         }
     }
 
@@ -65,7 +55,7 @@ pub fn git_commit_all(config: &Config, debug: bool) -> Result<()> {
 
 /// Run git push across all writable repositories
 pub fn git_push_all(config: &Config, debug: bool) -> Result<()> {
-    let repos = get_writable_repos(config);
+    let repos = config.get_writable_repos();
 
     if repos.is_empty() {
         println!("No writable repositories found.");
@@ -97,7 +87,7 @@ pub fn git_run_any(config: &Config, args: &[String], debug: bool) -> Result<()> 
         return Err(anyhow::anyhow!("No git command provided"));
     }
 
-    let repos = get_writable_repos(config);
+    let repos = config.get_writable_repos();
 
     if repos.is_empty() {
         println!("No writable repositories found.");
@@ -110,8 +100,7 @@ pub fn git_run_any(config: &Config, args: &[String], debug: bool) -> Result<()> 
         // Let user choose a repo
         let items: Vec<crate::dot::types::RepoSelectItem> = repos
             .iter()
-            .cloned()
-            .map(|repo| crate::dot::types::RepoSelectItem { repo })
+            .map(|&repo| crate::dot::types::RepoSelectItem { repo: repo.clone() })
             .collect();
 
         match FzfWrapper::builder()

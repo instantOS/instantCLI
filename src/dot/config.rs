@@ -112,6 +112,11 @@ impl Config {
             .unwrap_or_else(default_active_subdirs)
     }
 
+    /// Get all writable repositories
+    pub fn get_writable_repos(&self) -> Vec<&Repo> {
+        self.repos.iter().filter(|r| !r.read_only).collect()
+    }
+
     /// Get the database path as a PathBuf
     pub fn database_path(&self) -> &Path {
         self.database_dir.as_path()
