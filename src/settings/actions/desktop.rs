@@ -120,7 +120,7 @@ pub fn pick_wallpaper_bg_color(ctx: &mut SettingsContext) -> Result<()> {
         // Show preview if foreground color is also set
         if let Some(fg) = ctx.optional_string(WALLPAPER_FG_COLOR_KEY) {
             FzfWrapper::builder()
-                .message(&format!(
+                .message(format!(
                     "Background: {}\nForeground: {}\n\nUse 'Apply Colored Wallpaper' to generate.",
                     color, fg
                 ))
@@ -128,7 +128,7 @@ pub fn pick_wallpaper_bg_color(ctx: &mut SettingsContext) -> Result<()> {
                 .show_message()?;
         } else {
             FzfWrapper::builder()
-                .message(&format!(
+                .message(format!(
                     "Background: {}\n\nNow pick a foreground color.",
                     color
                 ))
@@ -154,7 +154,7 @@ pub fn pick_wallpaper_fg_color(ctx: &mut SettingsContext) -> Result<()> {
         // Show preview if background color is also set
         if let Some(bg) = ctx.optional_string(WALLPAPER_BG_COLOR_KEY) {
             FzfWrapper::builder()
-                .message(&format!(
+                .message(format!(
                     "Background: {}\nForeground: {}\n\nUse 'Apply Colored Wallpaper' to generate.",
                     bg, color
                 ))
@@ -162,7 +162,7 @@ pub fn pick_wallpaper_fg_color(ctx: &mut SettingsContext) -> Result<()> {
                 .show_message()?;
         } else {
             FzfWrapper::builder()
-                .message(&format!(
+                .message(format!(
                     "Foreground: {}\n\nNow pick a background color.",
                     color
                 ))

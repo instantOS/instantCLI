@@ -79,21 +79,21 @@ fn extract_icon_padding(display: &str) -> (String, String) {
             let top_padding = format!("  {bg_code}       {reset}");
 
             // Create shadow effect using lower block character with darkened foreground
-            if parts.len() == 3 {
-                if let (Ok(r), Ok(g), Ok(b)) = (
+            if parts.len() == 3
+                && let (Ok(r), Ok(g), Ok(b)) = (
                     parts[0].parse::<u8>(),
                     parts[1].parse::<u8>(),
                     parts[2].parse::<u8>(),
-                ) {
-                    let dark_r = r / 2;
-                    let dark_g = g / 2;
-                    let dark_b = b / 2;
-                    // Use lower one-quarter block (▂) with darkened foreground on same background
-                    let shadow_fg = format!("\x1b[38;2;{};{};{}m", dark_r, dark_g, dark_b);
-                    // The shadow character is at the bottom, creating a subtle border effect
-                    let bottom_with_shadow = format!("  {bg_code}{shadow_fg}▂▂▂▂▂▂▂{reset}");
-                    return (top_padding, bottom_with_shadow);
-                }
+                )
+            {
+                let dark_r = r / 2;
+                let dark_g = g / 2;
+                let dark_b = b / 2;
+                // Use lower one-quarter block (▂) with darkened foreground on same background
+                let shadow_fg = format!("\x1b[38;2;{};{};{}m", dark_r, dark_g, dark_b);
+                // The shadow character is at the bottom, creating a subtle border effect
+                let bottom_with_shadow = format!("  {bg_code}{shadow_fg}▂▂▂▂▂▂▂{reset}");
+                return (top_padding, bottom_with_shadow);
             }
 
             // Fallback if RGB parsing fails
@@ -738,10 +738,10 @@ impl FzfBuilder {
         match output {
             Ok(result) => {
                 // Handle cancellation (Esc or Ctrl-C)
-                if let Some(code) = result.status.code() {
-                    if code == 130 || code == 143 {
-                        return Ok(FzfResult::Cancelled);
-                    }
+                if let Some(code) = result.status.code()
+                    && (code == 130 || code == 143)
+                {
+                    return Ok(FzfResult::Cancelled);
                 }
 
                 if !result.status.success() {
@@ -758,10 +758,10 @@ impl FzfBuilder {
                 }
 
                 // Parse the index from FZF's output
-                if let Ok(index) = index_str.parse::<usize>() {
-                    if let Some(item) = items.get(index) {
-                        return Ok(FzfResult::Selected(item.clone()));
-                    }
+                if let Ok(index) = index_str.parse::<usize>()
+                    && let Some(item) = items.get(index)
+                {
+                    return Ok(FzfResult::Selected(item.clone()));
                 }
 
                 Ok(FzfResult::Cancelled)
