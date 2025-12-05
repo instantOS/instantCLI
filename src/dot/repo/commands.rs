@@ -2,6 +2,7 @@ use super::cli::{RepoCommands, SubdirCommands};
 use crate::dot::config::{Config, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::git::add_repo as git_clone_repo;
+use crate::dot::path_serde::TildePath;
 use crate::dot::repo::RepositoryManager;
 use crate::ui::Level;
 use crate::ui::prelude::*;
@@ -40,8 +41,20 @@ pub fn handle_repo_command(
     }
 }
 
+/// Get local path in tilde notation for a repository
+fn get_local_path_tilde(config: &Config, repo_manager: &RepositoryManager, repo_name: &str) -> String {
+    repo_manager
+        .get_repository_info(repo_name)
+        .map(|local_repo| {
+            let path = local_repo.local_path(config).unwrap_or_default();
+            let tilde_path = TildePath::new(path.clone());
+            tilde_path.to_tilde_string().unwrap_or_else(|_| path.display().to_string())
+        })
+        .unwrap_or_else(|_| "Not found".to_string())
+}
+
 /// List all configured repositories
-fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
+fn list_repositories(config: &Config, db: &Database) -> Result<()> {
     if config.repos.is_empty() {
         match get_output_format() {
             OutputFormat::Json => {
@@ -63,12 +76,16 @@ fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
         return Ok(());
     }
 
+    let repo_manager = RepositoryManager::new(config, db);
+
     match get_output_format() {
         OutputFormat::Json => {
             let repos_data: Vec<_> = config
                 .repos
                 .iter()
                 .map(|repo_config| {
+                    let local_path = get_local_path_tilde(config, &repo_manager, &repo_config.name);
+
                     serde_json::json!({
                         "name": repo_config.name,
                         "url": repo_config.url,
@@ -79,7 +96,8 @@ fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
                         } else {
                             repo_config.active_subdirectories.iter().map(|s| s.as_str()).collect::<Vec<_>>()
                         },
-                        "read_only": repo_config.read_only
+                        "read_only": repo_config.read_only,
+                        "local_path": local_path
                     })
                 })
                 .collect();
@@ -123,6 +141,9 @@ fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
                     repo_config.active_subdirectories.join(", ")
                 };
 
+                // Get local path in tilde notation
+                let local_path = get_local_path_tilde(config, &repo_manager, &repo_config.name);
+
                 println!(
                     "  {}{} - {} [{}]{}",
                     repo_config.name.cyan(),
@@ -131,6 +152,7 @@ fn list_repositories(config: &Config, _db: &Database) -> Result<()> {
                     status,
                     read_only
                 );
+                println!("    Local path: {}", local_path.dimmed());
                 println!("    Active subdirs: {active_subdirs}");
             }
         }
