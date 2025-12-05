@@ -355,7 +355,7 @@ pub fn format_icon_colored(icon: NerdFont, bg_color: &str) -> String {
     // Using \x1b[49m resets only background; \x1b[39m uses default foreground
     let reset = "\x1b[49;39m";
     // Padding inside the colored badge
-    format!("{bg}{fg}  {}  {reset} ", char::from(icon))
+    format!("{bg}{fg}   {}   {reset} ", char::from(icon))
 }
 
 /// Format the back button icon with a neutral color
@@ -478,27 +478,30 @@ where
     T: crate::menu_utils::FzfSelectable + Clone,
 {
     // Build styled fzf with modern Catppuccin Mocha theme
-    let mut builder = crate::menu_utils::FzfWrapper::builder().args([
-        // Visual styling
-        "--no-separator",
-        "--padding=1,2",
-        "--list-border=none",
-        "--input-border=none",
-        "--preview-border=left",
-        "--pointer=▌",
-        // Catppuccin Mocha color scheme
-        "--color=bg:#1e1e2e",         // Base - main background
-        "--color=bg+:#313244",        // Surface0 - highlighted item bg
-        "--color=fg:#cdd6f4",         // Text - normal foreground
-        "--color=fg+:#cdd6f4",        // Text - highlighted foreground
-        "--color=preview-bg:#181825", // Mantle - preview pane bg
-        "--color=hl:#f9e2af",         // Yellow - matched text
-        "--color=hl+:#f9e2af",        // Yellow - matched text on highlight
-        "--color=prompt:#cba6f7",     // Mauve - prompt color
-        "--color=pointer:#f5e0dc",    // Rosewater - pointer
-        "--color=border:#45475a",     // Surface1 - border color
-        "--color=gutter:#1e1e2e",     // Base - gutter matches background
-    ]);
+    let mut builder = crate::menu_utils::FzfWrapper::builder()
+        .prompt(format!("{} ", char::from(NerdFont::Search)))
+        .header(" ") // Add gap between prompt and list
+        .args([
+            // Visual styling
+            "--no-separator",
+            "--padding=1,2",
+            "--list-border=none",
+            "--input-border=none",
+            "--preview-border=left",
+            "--pointer=▌",
+            // Catppuccin Mocha color scheme
+            "--color=bg:#1e1e2e",         // Base - main background
+            "--color=bg+:#313244",        // Surface0 - highlighted item bg
+            "--color=fg:#cdd6f4",         // Text - normal foreground
+            "--color=fg+:#cdd6f4",        // Text - highlighted foreground
+            "--color=preview-bg:#181825", // Mantle - preview pane bg
+            "--color=hl:#f9e2af",         // Yellow - matched text
+            "--color=hl+:#f9e2af",        // Yellow - matched text on highlight
+            "--color=prompt:#cdd6f4",     // Text - prompt color
+            "--color=pointer:#f5e0dc",    // Rosewater - pointer
+            "--color=border:#45475a",     // Surface1 - border color
+            "--color=gutter:#1e1e2e",     // Base - gutter matches background
+        ]);
 
     if let Some(index) = initial_index {
         builder = builder.initial_index(index);

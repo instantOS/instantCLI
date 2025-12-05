@@ -76,7 +76,7 @@ impl FzfSelectable for CategoryItem {
 
         let reset = "\x1b[0m";
         let mauve = hex_to_ansi_fg(colors::MAUVE);
-        let overlay = hex_to_ansi_fg(colors::OVERLAY0);
+        let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
         let text = hex_to_ansi_fg(colors::TEXT);
         let teal = hex_to_ansi_fg(colors::TEAL);
         let surface = hex_to_ansi_fg(colors::SURFACE1);
@@ -118,8 +118,8 @@ impl FzfSelectable for CategoryItem {
                     char::from(definition.icon),
                     definition.title
                 ));
-                // Setting summary (overlay colored, no indent)
-                lines.push(format!("{overlay}{}{reset}", setting_summary(definition)));
+                // Setting summary (subtext colored, no indent)
+                lines.push(format!("{subtext}{}{reset}", setting_summary(definition)));
 
                 // Spacing between settings
                 if i < all_settings.len() - 1 {
@@ -131,7 +131,7 @@ impl FzfSelectable for CategoryItem {
             if self.total > all_settings.len() {
                 lines.push(String::new());
                 lines.push(format!(
-                    "{overlay}… and {} more{reset}",
+                    "{subtext}… and {} more{reset}",
                     self.total - all_settings.len()
                 ));
             }

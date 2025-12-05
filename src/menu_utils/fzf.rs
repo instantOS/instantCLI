@@ -63,22 +63,22 @@ fn log_fzf_failure(stderr: &[u8], exit_code: Option<i32>) {
 
 /// Extract the icon's colored background from display text and create matching padding.
 /// The icon format is: \x1b[48;2;R;G;Bm\x1b[38;2;r;g;bm  {icon}  \x1b[49;39m ...
-/// Returns (top_padding, bottom_separator) where bottom_separator has a darkened color
-/// to create visual separation between items.
+/// Returns (top_padding, bottom_padding_with_shadow) where the bottom padding has a
+/// subtle darkened shadow effect using a Unicode lower block character.
 fn extract_icon_padding(display: &str) -> (String, String) {
     // Look for ANSI 24-bit background color code: \x1b[48;2;R;G;Bm
     if let Some(start) = display.find("\x1b[48;2;") {
         // Find the end of the color code (the 'm')
         if let Some(end_offset) = display[start..].find('m') {
             let bg_code = &display[start..start + end_offset + 1];
-            // Parse RGB values to create a darkened version for the separator
+            // Parse RGB values to create a darkened version for the shadow
             let rgb_part = &display[start + 7..start + end_offset]; // "R;G;B"
             let parts: Vec<&str> = rgb_part.split(';').collect();
 
             let reset = "\x1b[49;39m";
-            let top_padding = format!("  {bg_code}     {reset}");
+            let top_padding = format!("  {bg_code}       {reset}");
 
-            // Create darkened color for separator (multiply each channel by ~0.5)
+            // Create shadow effect using lower block character with darkened foreground
             if parts.len() == 3 {
                 if let (Ok(r), Ok(g), Ok(b)) = (
                     parts[0].parse::<u8>(),
@@ -88,9 +88,11 @@ fn extract_icon_padding(display: &str) -> (String, String) {
                     let dark_r = r / 2;
                     let dark_g = g / 2;
                     let dark_b = b / 2;
-                    let dark_bg = format!("\x1b[48;2;{};{};{}m", dark_r, dark_g, dark_b);
-                    let separator = format!("  {dark_bg}     {reset}");
-                    return (top_padding, separator);
+                    // Use lower one-quarter block (▂) with darkened foreground on same background
+                    let shadow_fg = format!("\x1b[38;2;{};{};{}m", dark_r, dark_g, dark_b);
+                    // The shadow character is at the bottom, creating a subtle border effect
+                    let bottom_with_shadow = format!("  {bg_code}{shadow_fg}▂▂▂▂▂▂▂{reset}");
+                    return (top_padding, bottom_with_shadow);
                 }
             }
 
@@ -638,11 +640,10 @@ impl FzfBuilder {
             return Ok(FzfResult::Cancelled);
         }
 
-        // Build NUL-separated input with padding - each item is 4 lines:
+        // Build NUL-separated input with padding - each item is 3 lines:
         // Line 1: blank padding with colored block
         // Line 2: content with indent
-        // Line 3: blank padding with colored block
-        // Line 4: darker separator line for visual distinction
+        // Line 3: blank padding with colored block + shadow effect at bottom
         let mut input_lines = Vec::new();
 
         for item in &items {
@@ -650,11 +651,10 @@ impl FzfBuilder {
             // Extract background color from display text to create matching padding
             // The icon badge format is: {bg}{fg}  {icon}  {reset} ...
             // We want padding lines to have the same colored block at the start,
-            // and a darkened separator line at the bottom
-            let (padding_prefix, separator) = extract_icon_padding(&display);
-            // Create padded multi-line item with colored padding and darker separator
-            let padded_item =
-                format!("{padding_prefix}\n  {display}\n{padding_prefix}\n{separator}");
+            // with a subtle shadow on the bottom padding using a lower block character
+            let (top_padding, bottom_with_shadow) = extract_icon_padding(&display);
+            // Create padded multi-line item with shadow on bottom
+            let padded_item = format!("{top_padding}\n  {display}\n{bottom_with_shadow}");
             input_lines.push(padded_item);
         }
 
