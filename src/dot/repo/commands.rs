@@ -42,13 +42,19 @@ pub fn handle_repo_command(
 }
 
 /// Get local path in tilde notation for a repository
-fn get_local_path_tilde(config: &Config, repo_manager: &RepositoryManager, repo_name: &str) -> String {
+fn get_local_path_tilde(
+    config: &Config,
+    repo_manager: &RepositoryManager,
+    repo_name: &str,
+) -> String {
     repo_manager
         .get_repository_info(repo_name)
         .map(|local_repo| {
             let path = local_repo.local_path(config).unwrap_or_default();
             let tilde_path = TildePath::new(path.clone());
-            tilde_path.to_tilde_string().unwrap_or_else(|_| path.display().to_string())
+            tilde_path
+                .to_tilde_string()
+                .unwrap_or_else(|_| path.display().to_string())
         })
         .unwrap_or_else(|_| "Not found".to_string())
 }
