@@ -305,8 +305,66 @@ impl SettingsContext {
     // }
 }
 
+/// Catppuccin Mocha color palette for ANSI output
+pub mod colors {
+    // Accent colors
+    pub const ROSEWATER: &str = "#f5e0dc";
+    pub const FLAMINGO: &str = "#f2cdcd";
+    pub const PINK: &str = "#f5c2e7";
+    pub const MAUVE: &str = "#cba6f7";
+    pub const RED: &str = "#f38ba8";
+    pub const MAROON: &str = "#eba0ac";
+    pub const PEACH: &str = "#fab387";
+    pub const YELLOW: &str = "#f9e2af";
+    pub const GREEN: &str = "#a6e3a1";
+    pub const TEAL: &str = "#94e2d5";
+    pub const SKY: &str = "#89dceb";
+    pub const SAPPHIRE: &str = "#74c7ec";
+    pub const BLUE: &str = "#89b4fa";
+    pub const LAVENDER: &str = "#b4befe";
+    // Base colors (backgrounds)
+    pub const BASE: &str = "#1e1e2e";
+    pub const MANTLE: &str = "#181825";
+    pub const CRUST: &str = "#11111b";
+}
+
+/// Format an icon with colored background badge (uses Catppuccin Blue by default)
 pub fn format_icon(icon: NerdFont) -> String {
-    format!("  {}  ", char::from(icon))
+    format_icon_colored(icon, colors::BLUE)
+}
+
+/// Format an icon with a colored background badge (hex format like "#89b4fa")
+/// Creates a pill-shaped badge with dark text on colored background
+pub fn format_icon_colored(icon: NerdFont, bg_color: &str) -> String {
+    let bg = hex_to_ansi_bg(bg_color);
+    let fg = hex_to_ansi_fg(colors::CRUST); // Dark text
+    let reset = "\x1b[0m";
+    // Padding inside the colored badge
+    format!("{bg}{fg}  {}  {reset} ", char::from(icon))
+}
+
+/// Convert hex color to ANSI 24-bit true color foreground escape sequence
+fn hex_to_ansi_fg(hex: &str) -> String {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return String::new();
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(255);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(255);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(255);
+    format!("\x1b[38;2;{r};{g};{b}m")
+}
+
+/// Convert hex color to ANSI 24-bit true color background escape sequence
+fn hex_to_ansi_bg(hex: &str) -> String {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return String::new();
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(255);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(255);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(255);
+    format!("\x1b[48;2;{r};{g};{b}m")
 }
 
 pub fn make_apply_override(
@@ -394,28 +452,21 @@ pub fn select_one_with_style_at<T>(items: Vec<T>, initial_index: Option<usize>) 
 where
     T: crate::menu_utils::FzfSelectable + Clone,
 {
-    // Modern, minimal styling with Catppuccin Mocha theme
-    // Different background colors distinguish list from preview pane
+    // Build styled fzf with modern Catppuccin Mocha theme
     let mut builder = crate::menu_utils::FzfWrapper::builder().args([
-        // Item spacing without separator characters
-        "--gap",
-        "--gap-line=",
-        // Highlight entire line (including multi-line items)
-        "--highlight-line",
-        // Remove separators for cleaner look
+        // Visual styling
         "--no-separator",
-        // Padding around input area
         "--padding=1,2",
-        // Minimal borders - preview separated with left border only
         "--list-border=none",
         "--input-border=none",
         "--preview-border=left",
+        "--pointer=▌",
         // Catppuccin Mocha color scheme
         "--color=bg:#1e1e2e",         // Base - main background
         "--color=bg+:#313244",        // Surface0 - highlighted item bg
         "--color=fg:#cdd6f4",         // Text - normal foreground
         "--color=fg+:#cdd6f4",        // Text - highlighted foreground
-        "--color=preview-bg:#181825", // Mantle - preview pane bg (darker)
+        "--color=preview-bg:#181825", // Mantle - preview pane bg
         "--color=hl:#f9e2af",         // Yellow - matched text
         "--color=hl+:#f9e2af",        // Yellow - matched text on highlight
         "--color=prompt:#cba6f7",     // Mauve - prompt color
@@ -423,11 +474,12 @@ where
         "--color=border:#45475a",     // Surface1 - border color
         "--color=gutter:#1e1e2e",     // Base - gutter matches background
     ]);
+
     if let Some(index) = initial_index {
         builder = builder.initial_index(index);
     }
 
-    match builder.select(items)? {
+    match builder.select_padded(items)? {
         crate::menu_utils::FzfResult::Selected(item) => Ok(Some(item)),
         _ => Ok(None),
     }

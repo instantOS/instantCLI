@@ -566,6 +566,138 @@ impl FzfBuilder {
         wrapper.select(items)
     }
 
+    /// Select with vertical padding around each item.
+    /// Uses NUL-separated multi-line items so the entire padded area is highlighted.
+    /// This is ideal for modern, spacious menu layouts.
+    pub fn select_padded<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
+        if items.is_empty() {
+            return Ok(FzfResult::Cancelled);
+        }
+
+        // Build key-based lookup for reliable matching after selection
+        let mut key_map: HashMap<String, T> = HashMap::new();
+        let mut preview_map: HashMap<String, String> = HashMap::new();
+
+        for item in &items {
+            let key = item.fzf_key();
+            key_map.insert(key.clone(), item.clone());
+            if let FzfPreview::Text(preview) = item.fzf_preview() {
+                preview_map.insert(key, preview);
+            }
+        }
+
+        // Build NUL-separated input with padding newlines as part of each item
+        // Format: empty line, content with indent, empty line (symmetric padding)
+        let mut input_bytes = Vec::new();
+        for item in &items {
+            let display = item.fzf_display_text();
+            let key = item.fzf_key();
+            let preview = preview_map.get(&key).cloned().unwrap_or_default();
+            let encoded_preview = general_purpose::STANDARD.encode(preview.as_bytes());
+            // Symmetric padding: empty line above, content, empty line below
+            let padded_item = format!("\n  {display}\t{key}\t{encoded_preview}\n \n");
+            input_bytes.extend_from_slice(padded_item.as_bytes());
+            input_bytes.push(0); // NUL separator
+        }
+
+        let mut cmd = Command::new("fzf");
+        cmd.env_remove("FZF_DEFAULT_OPTS");
+
+        // Core options for multi-line items
+        cmd.arg("--read0");           // NUL-separated input
+        cmd.arg("--ansi");            // ANSI color support
+        cmd.arg("--highlight-line");  // Highlight entire multi-line item
+        cmd.arg("--layout=reverse");
+        cmd.arg("--tiebreak=index");
+
+        // Hide the tab-separated key/preview data from display, show only first field
+        cmd.arg("--delimiter=\t");
+        cmd.arg("--with-nth=1");
+        // Preview command: extract field 3 (base64 preview) and decode
+        cmd.arg("--preview").arg("echo {} | cut -f3 | base64 -d");
+
+        // Apply prompt and header
+        if let Some(prompt) = &self.prompt {
+            cmd.arg("--prompt").arg(format!("{prompt} > "));
+        }
+        if let Some(header) = &self.header {
+            cmd.arg("--header").arg(header);
+        }
+
+        // Apply initial cursor position
+        if let Some(InitialCursor::Index(index)) = self.initial_cursor {
+            cmd.arg("--bind").arg(format!("load:pos({})", index + 1));
+        }
+
+        // Apply all additional args (styling, colors, etc.)
+        for arg in &self.additional_args {
+            cmd.arg(arg);
+        }
+
+        let mut child = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        let pid = child.id();
+        let _ = crate::menu::server::register_menu_process(pid);
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(&input_bytes)?;
+        }
+
+        let output = child.wait_with_output();
+        crate::menu::server::unregister_menu_process(pid);
+
+        match output {
+            Ok(result) => {
+                // Handle cancellation
+                if let Some(code) = result.status.code() {
+                    if code == 130 || code == 143 {
+                        return Ok(FzfResult::Cancelled);
+                    }
+                }
+
+                if !result.status.success() {
+                    check_for_old_fzf_and_exit(&result.stderr);
+                    log_fzf_failure(&result.stderr, result.status.code());
+                }
+
+                let stdout = String::from_utf8_lossy(&result.stdout);
+                let selected = stdout.trim();
+
+                if selected.is_empty() {
+                    return Ok(FzfResult::Cancelled);
+                }
+
+                // Extract key (field 2) for lookup - the display text may have been trimmed
+                let parts: Vec<&str> = selected.split('\t').collect();
+                let key = if parts.len() >= 2 {
+                    parts[1].trim()
+                } else {
+                    // Fallback: try to match by trimmed display text
+                    parts[0].trim()
+                };
+
+                if let Some(item) = key_map.get(key).cloned() {
+                    Ok(FzfResult::Selected(item))
+                } else {
+                    // Try matching by display text as fallback
+                    for item in &items {
+                        if item.fzf_display_text().trim() == key
+                            || item.fzf_display_text() == key
+                        {
+                            return Ok(FzfResult::Selected(item.clone()));
+                        }
+                    }
+                    Ok(FzfResult::Cancelled)
+                }
+            }
+            Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {e}"))),
+        }
+    }
+
     pub fn select_streaming(self, command: &str) -> Result<FzfResult<String>> {
         let wrapper = FzfWrapper::new(
             self.multi_select,
