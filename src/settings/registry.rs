@@ -7,6 +7,7 @@ use crate::common::requirements::{
 };
 use crate::ui::prelude::NerdFont;
 
+use super::context::colors;
 use super::printer;
 use super::store::{BoolSettingKey, StringSettingKey, WALLPAPER_LOGO_KEY};
 use super::users;
@@ -56,6 +57,7 @@ pub struct SettingCategory {
     pub title: &'static str,
     pub description: &'static str,
     pub icon: NerdFont,
+    pub icon_color: &'static str,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -172,84 +174,98 @@ pub const CATEGORIES: &[SettingCategory] = &[
         title: "Install Applications",
         description: "Browse and install system packages.",
         icon: NerdFont::Download,
+        icon_color: colors::GREEN,
     },
     SettingCategory {
         id: "network",
         title: "Network & Internet",
         description: "Internet connection and network settings.",
         icon: NerdFont::Wifi,
+        icon_color: colors::SKY,
     },
     SettingCategory {
         id: "bluetooth",
         title: "Bluetooth & Devices",
         description: "Pair and manage Bluetooth devices.",
         icon: NerdFont::Bluetooth,
+        icon_color: colors::BLUE,
     },
     SettingCategory {
         id: "appearance",
         title: "Appearance",
         description: "Theme and visual presentation of the desktop.",
         icon: NerdFont::Lightbulb,
+        icon_color: colors::PINK,
     },
     SettingCategory {
         id: "mouse",
         title: "Mouse & Touchpad",
         description: "Pointer speed, scrolling, and button settings.",
         icon: NerdFont::Mouse,
+        icon_color: colors::PEACH,
     },
     SettingCategory {
         id: "desktop",
         title: "Desktop",
         description: "Interactive desktop behaviour and helpers.",
         icon: NerdFont::Desktop,
+        icon_color: colors::MAUVE,
     },
     SettingCategory {
         id: "workspace",
         title: "Workspace",
         description: "Window manager defaults and layout preferences.",
         icon: NerdFont::Workspace,
+        icon_color: colors::LAVENDER,
     },
     SettingCategory {
         id: "audio",
         title: "Sound",
         description: "Sound routing tools and audio behaviour.",
         icon: NerdFont::VolumeUp,
+        icon_color: colors::TEAL,
     },
     SettingCategory {
         id: "apps",
         title: "Default Apps",
         description: "Default applications and file associations.",
         icon: NerdFont::Package,
+        icon_color: colors::SAPPHIRE,
     },
     SettingCategory {
         id: "storage",
         title: "Storage",
         description: "Disk management and auto-mounting.",
         icon: NerdFont::Database2,
+        icon_color: colors::YELLOW,
     },
     SettingCategory {
         id: "printers",
         title: "Printers",
         description: "Discover, configure, and manage printers.",
         icon: NerdFont::Printer,
+        icon_color: colors::FLAMINGO,
     },
     SettingCategory {
         id: "users",
         title: "Users & Accounts",
         description: "Create and manage user accounts.",
         icon: NerdFont::Users,
+        icon_color: colors::MAROON,
     },
     SettingCategory {
         id: "language",
         title: "Language & Region",
         description: "Manage system locales and language defaults.",
         icon: NerdFont::Globe,
+        icon_color: colors::ROSEWATER,
     },
     SettingCategory {
         id: "system",
         title: "System & Updates",
         description: "System administration and maintenance.",
         icon: NerdFont::Server,
+        icon_color: colors::RED,
     },
 ];
 

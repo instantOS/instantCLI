@@ -1,8 +1,8 @@
 use crate::menu_utils::FzfSelectable;
 use crate::ui::prelude::*;
 
-use super::super::context::format_icon;
-use super::super::registry::{SettingCategory, SettingDefinition, SettingKind, SettingOption};
+use super::super::context::{format_back_icon, format_icon, format_icon_colored, format_search_icon};
+use super::super::registry::{SettingCategory, SettingDefinition, SettingKind, SettingOption, category_by_id};
 
 #[derive(Clone, Copy)]
 pub struct CategoryItem {
@@ -61,7 +61,7 @@ impl FzfSelectable for CategoryItem {
     fn fzf_display_text(&self) -> String {
         format!(
             "{} {} ({} settings)",
-            format_icon(self.category.icon),
+            format_icon_colored(self.category.icon, self.category.icon_color),
             self.category.title,
             self.total
         )
@@ -137,7 +137,7 @@ impl FzfSelectable for CategoryMenuItem {
     fn fzf_display_text(&self) -> String {
         match self {
             CategoryMenuItem::SearchAll => {
-                format!("{} Search all settings", format_icon(NerdFont::Search))
+                format!("{} Search all settings", format_search_icon())
             }
             CategoryMenuItem::Category(item) => item.fzf_display_text(),
         }
@@ -179,12 +179,15 @@ impl FzfSelectable for CategoryMenuItem {
 
 impl FzfSelectable for SettingItem {
     fn fzf_display_text(&self) -> String {
+        let icon_color = category_by_id(self.definition.category)
+            .map(|c| c.icon_color)
+            .unwrap_or(super::super::context::colors::BLUE);
         match self.state {
             SettingState::Toggle { enabled } => {
                 let status_text = if enabled { "[ON]" } else { "[OFF]" };
                 format!(
                     "{} {} {}",
-                    format_icon(self.definition.icon),
+                    format_icon_colored(self.definition.icon, icon_color),
                     self.definition.title,
                     status_text
                 )
@@ -202,14 +205,14 @@ impl FzfSelectable for SettingItem {
                     };
                 format!(
                     "{} {}  [{}]",
-                    format_icon(glyph),
+                    format_icon_colored(glyph, icon_color),
                     self.definition.title,
                     current_label
                 )
             }
             SettingState::Action => format!(
                 "{} {}",
-                format_icon(self.definition.icon),
+                format_icon_colored(self.definition.icon, icon_color),
                 self.definition.title
             ),
             SettingState::Command => {
@@ -220,7 +223,7 @@ impl FzfSelectable for SettingItem {
                     },
                     _ => self.definition.icon,
                 };
-                format!("{} {}", format_icon(glyph), self.definition.title)
+                format!("{} {}", format_icon_colored(glyph, icon_color), self.definition.title)
             }
         }
     }
@@ -256,7 +259,7 @@ impl FzfSelectable for CategoryPageItem {
         match self {
             CategoryPageItem::Setting(item) => item.fzf_display_text(),
             CategoryPageItem::Back => {
-                format!("{} Back", format_icon(NerdFont::ArrowLeft))
+                format!("{} Back", format_back_icon())
             }
         }
     }
@@ -299,7 +302,7 @@ impl FzfSelectable for ChoiceMenuItem {
     fn fzf_display_text(&self) -> String {
         match self {
             ChoiceMenuItem::Option(item) => item.fzf_display_text(),
-            ChoiceMenuItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
+            ChoiceMenuItem::Back => format!("{} Back", format_back_icon()),
         }
     }
 
@@ -316,12 +319,13 @@ impl FzfSelectable for ChoiceMenuItem {
 impl FzfSelectable for SearchItem {
     fn fzf_display_text(&self) -> String {
         let path = super::format_setting_path(self.category, self.definition);
+        let icon_color = self.category.icon_color;
         match self.state {
             SettingState::Toggle { enabled } => {
                 let status_text = if enabled { "[ON]" } else { "[OFF]" };
                 format!(
                     "{} {} {}",
-                    format_icon(self.definition.icon),
+                    format_icon_colored(self.definition.icon, icon_color),
                     path,
                     status_text
                 )
@@ -337,10 +341,10 @@ impl FzfSelectable for SearchItem {
                     } else {
                         "Not set"
                     };
-                format!("{} {}  [{}]", format_icon(glyph), path, current_label)
+                format!("{} {}  [{}]", format_icon_colored(glyph, icon_color), path, current_label)
             }
             SettingState::Action => {
-                format!("{} {}", format_icon(self.definition.icon), path)
+                format!("{} {}", format_icon_colored(self.definition.icon, icon_color), path)
             }
             SettingState::Command => {
                 let glyph = match &self.definition.kind {
@@ -350,7 +354,7 @@ impl FzfSelectable for SearchItem {
                     },
                     _ => self.definition.icon,
                 };
-                format!("{} {}", format_icon(glyph), path)
+                format!("{} {}", format_icon_colored(glyph, icon_color), path)
             }
         }
     }

@@ -358,6 +358,16 @@ pub fn format_icon_colored(icon: NerdFont, bg_color: &str) -> String {
     format!("{bg}{fg}  {}  {reset} ", char::from(icon))
 }
 
+/// Format the back button icon with a neutral color
+pub fn format_back_icon() -> String {
+    format_icon_colored(NerdFont::ArrowLeft, colors::OVERLAY1)
+}
+
+/// Format the search icon with its own color
+pub fn format_search_icon() -> String {
+    format_icon_colored(NerdFont::Search, colors::MAUVE)
+}
+
 /// Convert hex color to ANSI 24-bit true color foreground escape sequence
 pub fn hex_to_ansi_fg(hex: &str) -> String {
     let hex = hex.trim_start_matches('#');
