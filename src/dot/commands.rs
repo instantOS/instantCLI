@@ -70,6 +70,16 @@ pub enum DotCommands {
         #[command(subcommand)]
         command: IgnoreCommands,
     },
+    /// Commit changes in all writable repositories
+    Commit,
+    /// Push changes in all writable repositories
+    Push,
+    /// Run an arbitrary git command in a repository
+    Git {
+        /// Git command and arguments (e.g. "log --oneline")
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -224,7 +234,7 @@ pub fn handle_dot_command(
             super::apply_all(&config, &db)?;
         }
         DotCommands::Add { path, all } => {
-            super::add_dotfile(&config, &db, path, *all)?;
+            super::add_dotfile(&config, &db, path, *all, debug)?;
         }
         DotCommands::Update { no_apply } => {
             super::update_all(&config, debug, &db, !*no_apply)?;
@@ -245,6 +255,15 @@ pub fn handle_dot_command(
         }
         DotCommands::Ignore { command } => {
             handle_ignore_command(&mut config, command, config_path)?;
+        }
+        DotCommands::Commit => {
+            super::git_commit_all(&config, debug)?;
+        }
+        DotCommands::Push => {
+            super::git_push_all(&config, debug)?;
+        }
+        DotCommands::Git { args } => {
+            super::git_run_any(&config, args, debug)?;
         }
     }
 

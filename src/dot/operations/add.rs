@@ -130,7 +130,13 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
 /// - For untracked files: Prompt to add them to a repository
 /// - For directories without --all: Only update tracked files
 /// - For directories with --all: Update tracked files AND add untracked files
-pub fn add_dotfile(config: &Config, db: &Database, path: &str, add_all: bool) -> Result<()> {
+pub fn add_dotfile(
+    config: &Config,
+    db: &Database,
+    path: &str,
+    add_all: bool,
+    debug: bool,
+) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db)?;
     let target_path = resolve_dotfile_path(path)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
@@ -142,17 +148,17 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str, add_all: bool) ->
 
     // Update tracked files
     if !tracked_dotfiles.is_empty() {
-        update_tracked_dotfiles(&tracked_dotfiles, config, db, &mut stats)?;
+        update_tracked_dotfiles(&tracked_dotfiles, config, db, &mut stats, debug)?;
     }
 
     // Handle untracked files
     if add_all {
         // Scan for untracked files and add them
         let (_, untracked_files) = scan_and_categorize_files(&target_path, &all_dotfiles);
-        add_untracked_files(&untracked_files, config, db, &mut stats)?;
+        add_untracked_files(&untracked_files, config, db, &mut stats, debug)?;
     } else if target_path.is_file() && tracked_dotfiles.is_empty() {
         // Single untracked file - prompt to add it
-        let repo_path = add_new_file(config, db, &target_path)?;
+        let repo_path = add_new_file(config, db, &target_path, debug)?;
         stats.added_count += 1;
         stats.modified_repos.insert(repo_path);
     } else if tracked_dotfiles.is_empty() {
@@ -179,7 +185,7 @@ pub fn add_dotfile(config: &Config, db: &Database, path: &str, add_all: bool) ->
 }
 
 /// Add a new untracked file and return the repo path
-fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<PathBuf> {
+fn add_new_file(config: &Config, db: &Database, full_path: &Path, debug: bool) -> Result<PathBuf> {
     // Repository selection
     let repo_config = select_repo(config)?;
     let local_repo = LocalRepo::new(config, repo_config.name.clone())?;
@@ -203,6 +209,16 @@ fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<Path
     };
 
     dotfile.create_source_from_target(db)?;
+
+    // Automatically stage the new file
+    if let Err(e) = crate::dot::git::repo_ops::git_add(&repo_base, &dest_path, debug) {
+        // Just warn if git add fails, don't fail the whole operation
+        eprintln!(
+            "{} Failed to stage file: {}",
+            char::from(NerdFont::Warning).to_string().yellow(),
+            e
+        );
+    }
 
     let chosen_dir_name = chosen_dir
         .path
@@ -288,6 +304,7 @@ fn update_tracked_dotfiles(
     config: &Config,
     db: &Database,
     stats: &mut DirectoryAddStats,
+    debug: bool,
 ) -> Result<()> {
     for dotfile in dotfiles {
         // Check if repo is read-only
@@ -308,6 +325,20 @@ fn update_tracked_dotfiles(
             stats.updated_count += 1;
             let local_repo = LocalRepo::new(config, repo_name.to_string())?;
             let repo_path = local_repo.local_path(config)?;
+
+            // Automatically stage the updated file
+            // resolve_dotfile_path might be needed if source_path is not absolute, but Dotfile struct seems to keep absolute paths.
+            // checking dotfile.rs... source_path should be absolute.
+            if let Err(e) =
+                crate::dot::git::repo_ops::git_add(&repo_path, &dotfile.source_path, debug)
+            {
+                eprintln!(
+                    "{} Failed to stage file: {}",
+                    char::from(NerdFont::Warning).to_string().yellow(),
+                    e
+                );
+            }
+
             stats.modified_repos.insert(repo_path);
         } else {
             stats.unchanged_count += 1;
@@ -322,6 +353,7 @@ fn add_untracked_files(
     config: &Config,
     db: &Database,
     stats: &mut DirectoryAddStats,
+    debug: bool,
 ) -> Result<()> {
     if file_paths.is_empty() {
         return Ok(());
@@ -334,7 +366,7 @@ fn add_untracked_files(
     );
 
     for file_path in file_paths {
-        let repo_path = add_new_file(config, db, file_path)?;
+        let repo_path = add_new_file(config, db, file_path, debug)?;
         stats.added_count += 1;
         stats.modified_repos.insert(repo_path);
     }
@@ -365,7 +397,7 @@ fn print_directory_add_summary(stats: &DirectoryAddStats) {
         if !stats.modified_repos.is_empty() {
             let mut repos: Vec<_> = stats.modified_repos.iter().collect();
             repos.sort();
-            
+
             println!(
                 "{} Modified repositories:",
                 char::from(NerdFont::Info).to_string().blue()

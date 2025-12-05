@@ -158,3 +158,67 @@ pub fn update_all(
         Ok(())
     }
 }
+
+/// Run a git command in the specified repository
+pub fn run_git_command(repo_path: &std::path::Path, args: &[&str], debug: bool) -> Result<()> {
+    if debug {
+        println!("Running git {:?} in {}", args, repo_path.display());
+    }
+
+    let status = std::process::Command::new("git")
+        .current_dir(repo_path)
+        .args(args)
+        .status()
+        .context("Failed to execute git command")?;
+
+    if !status.success() {
+        return Err(anyhow::anyhow!(
+            "Git command failed with status: {}",
+            status
+        ));
+    }
+
+    Ok(())
+}
+
+/// Run an interactive git command (connected to TTY)
+pub fn run_interactive_git_command(
+    repo_path: &std::path::Path,
+    args: &[&str],
+    debug: bool,
+) -> Result<()> {
+    if debug {
+        println!(
+            "Running interactive git {:?} in {}",
+            args,
+            repo_path.display()
+        );
+    }
+
+    let status = std::process::Command::new("git")
+        .current_dir(repo_path)
+        .args(args)
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+        .context("Failed to execute interactive git command")?;
+
+    if !status.success() {
+        return Err(anyhow::anyhow!(
+            "Git command failed with status: {}",
+            status
+        ));
+    }
+
+    Ok(())
+}
+
+/// Run git add for a specific file in a repository
+pub fn git_add(
+    repo_path: &std::path::Path,
+    file_path: &std::path::Path,
+    debug: bool,
+) -> Result<()> {
+    run_git_command(repo_path, &["add", &file_path.to_string_lossy()], debug)
+}
