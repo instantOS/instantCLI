@@ -609,23 +609,18 @@ impl FzfBuilder {
     /// Select with vertical padding around each item.
     /// Uses NUL-separated multi-line items so the entire padded area is highlighted.
     /// This is ideal for modern, spacious menu layouts.
+    /// Select with vertical padding around each item.
+    /// Uses NUL-separated multi-line items so the entire padded area is highlighted.
+    /// Uses FZF's {n} index for reliable item matching instead of parsing display text.
     pub fn select_padded<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
         if items.is_empty() {
             return Ok(FzfResult::Cancelled);
         }
 
-        // Build display text to item lookup
-        let mut display_map: HashMap<String, T> = HashMap::new();
-
-        for item in &items {
-            let display = item.fzf_display_text();
-            display_map.insert(display.trim().to_string(), item.clone());
-        }
-
         // Build NUL-separated input with padding - each item is 3 lines:
-        // Line 1: blank padding
+        // Line 1: blank padding with colored block
         // Line 2: content with indent
-        // Line 3: blank padding
+        // Line 3: blank padding with colored block
         let mut input_lines = Vec::new();
 
         for item in &items {
@@ -662,12 +657,15 @@ impl FzfBuilder {
 
         // Core options for multi-line items
         cmd.arg("--read0");           // NUL-separated input
-        cmd.arg("--print0");          // NUL-terminated output (matches input format)
         cmd.arg("--ansi");            // ANSI color support
         cmd.arg("--highlight-line");  // Highlight entire multi-line item
         cmd.arg("--layout=reverse");
         cmd.arg("--tiebreak=index");
         cmd.arg("--info=inline-right");
+
+        // Use --bind to print the index on accept instead of the selection text
+        // {n} is the 0-based index of the selected item
+        cmd.arg("--bind").arg("enter:become(echo {n})");
 
         // Preview command using {n} for the 0-based item index
         let preview_cmd = format!(
@@ -715,7 +713,7 @@ impl FzfBuilder {
 
         match output {
             Ok(result) => {
-                // Handle cancellation
+                // Handle cancellation (Esc or Ctrl-C)
                 if let Some(code) = result.status.code() {
                     if code == 130 || code == 143 {
                         return Ok(FzfResult::Cancelled);
@@ -725,47 +723,19 @@ impl FzfBuilder {
                 if !result.status.success() {
                     check_for_old_fzf_and_exit(&result.stderr);
                     log_fzf_failure(&result.stderr, result.status.code());
+                    return Ok(FzfResult::Cancelled);
                 }
 
                 let stdout = String::from_utf8_lossy(&result.stdout);
-                // With --print0, output is NUL-terminated; strip NUL and whitespace
-                let selected = stdout.trim_matches(|c| c == '\0' || c == '\n' || c == '\r' || c == ' ');
+                let index_str = stdout.trim();
 
-                if selected.is_empty() {
+                if index_str.is_empty() {
                     return Ok(FzfResult::Cancelled);
                 }
 
-                // FZF returns the full multi-line item, extract the content line
-                // Format was: "{padding}\n  {display}\n{padding}"
-                // The content line has actual text content, not just colored padding
-                // Find the line with the most non-space, non-ANSI content
-                let content_line = selected
-                    .lines()
-                    .max_by_key(|line| {
-                        // Strip ANSI codes and count remaining non-whitespace chars
-                        let stripped = strip_ansi_codes(line);
-                        stripped.chars().filter(|c| !c.is_whitespace()).count()
-                    })
-                    .map(|s| s.trim())
-                    .unwrap_or("");
-
-                if content_line.is_empty() {
-                    return Ok(FzfResult::Cancelled);
-                }
-
-                // Match by display text - first try exact match on trimmed content
-                if let Some(item) = display_map.get(content_line).cloned() {
-                    return Ok(FzfResult::Selected(item));
-                }
-
-                // Try matching by comparing trimmed display texts
-                for item in &items {
-                    let item_display = item.fzf_display_text();
-                    if item_display.trim() == content_line {
-                        return Ok(FzfResult::Selected(item.clone()));
-                    }
-                    // Also try exact match (with potential ANSI codes)
-                    if item_display == content_line {
+                // Parse the index from FZF's output
+                if let Ok(index) = index_str.parse::<usize>() {
+                    if let Some(item) = items.get(index) {
                         return Ok(FzfResult::Selected(item.clone()));
                     }
                 }
