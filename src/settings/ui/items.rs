@@ -73,7 +73,7 @@ impl FzfSelectable for CategoryItem {
         let reset = "\x1b[0m";
         let mauve = hex_to_ansi_fg(colors::MAUVE);
         let overlay = hex_to_ansi_fg(colors::OVERLAY0);
-        let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
+        let text = hex_to_ansi_fg(colors::TEXT);
         let teal = hex_to_ansi_fg(colors::TEAL);
         let surface = hex_to_ansi_fg(colors::SURFACE1);
 
@@ -91,8 +91,8 @@ impl FzfSelectable for CategoryItem {
         lines.push(format!("{surface}───────────────────────────────────{reset}"));
         lines.push(String::new());
 
-        // Description (subtext colored)
-        lines.push(format!("{subtext}{}{reset}", self.category.description));
+        // Description (text colored)
+        lines.push(format!("{text}{}{reset}", self.category.description));
         lines.push(String::new());
 
         // Show settings in this category
@@ -150,7 +150,7 @@ impl FzfSelectable for CategoryMenuItem {
 
                 let reset = "\x1b[0m";
                 let mauve = hex_to_ansi_fg(colors::MAUVE);
-                let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
+                let text = hex_to_ansi_fg(colors::TEXT);
                 let surface = hex_to_ansi_fg(colors::SURFACE1);
 
                 let mut lines = Vec::new();
@@ -164,11 +164,11 @@ impl FzfSelectable for CategoryMenuItem {
                 ));
                 lines.push(format!("{surface}───────────────────────────────────{reset}"));
                 lines.push(String::new());
-                lines.push(format!("{subtext}Browse all available settings in one{reset}"));
-                lines.push(format!("{subtext}searchable list.{reset}"));
+                lines.push(format!("{text}Browse all available settings in one{reset}"));
+                lines.push(format!("{text}searchable list.{reset}"));
                 lines.push(String::new());
-                lines.push(format!("{subtext}Start typing to filter settings by{reset}"));
-                lines.push(format!("{subtext}name, category, or description.{reset}"));
+                lines.push(format!("{text}Start typing to filter settings by{reset}"));
+                lines.push(format!("{text}name, category, or description.{reset}"));
 
                 crate::menu_utils::FzfPreview::Text(lines.join("\n"))
             }
