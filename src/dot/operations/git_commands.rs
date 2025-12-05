@@ -34,7 +34,7 @@ pub fn git_commit_all(config: &Config, debug: bool) -> Result<()> {
         // Check for changes (staged or unstaged)
         let status = std::process::Command::new("git")
             .current_dir(&repo_path)
-            .args(&["status", "--porcelain"])
+            .args(["status", "--porcelain"])
             .output()?;
 
         if !status.stdout.is_empty() {
