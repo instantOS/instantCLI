@@ -394,7 +394,35 @@ pub fn select_one_with_style_at<T>(items: Vec<T>, initial_index: Option<usize>) 
 where
     T: crate::menu_utils::FzfSelectable + Clone,
 {
-    let mut builder = crate::menu_utils::FzfWrapper::builder().args(["--gap-line=-", "--gap"]);
+    // Modern, minimal styling with Catppuccin Mocha theme
+    // Different background colors distinguish list from preview pane
+    let mut builder = crate::menu_utils::FzfWrapper::builder().args([
+        // Item spacing without separator characters
+        "--gap",
+        "--gap-line=",
+        // Highlight entire line (including multi-line items)
+        "--highlight-line",
+        // Remove separators for cleaner look
+        "--no-separator",
+        // Padding around input area
+        "--padding=1,2",
+        // Minimal borders - preview separated with left border only
+        "--list-border=none",
+        "--input-border=none",
+        "--preview-border=left",
+        // Catppuccin Mocha color scheme
+        "--color=bg:#1e1e2e",         // Base - main background
+        "--color=bg+:#313244",        // Surface0 - highlighted item bg
+        "--color=fg:#cdd6f4",         // Text - normal foreground
+        "--color=fg+:#cdd6f4",        // Text - highlighted foreground
+        "--color=preview-bg:#181825", // Mantle - preview pane bg (darker)
+        "--color=hl:#f9e2af",         // Yellow - matched text
+        "--color=hl+:#f9e2af",        // Yellow - matched text on highlight
+        "--color=prompt:#cba6f7",     // Mauve - prompt color
+        "--color=pointer:#f5e0dc",    // Rosewater - pointer
+        "--color=border:#45475a",     // Surface1 - border color
+        "--color=gutter:#1e1e2e",     // Base - gutter matches background
+    ]);
     if let Some(index) = initial_index {
         builder = builder.initial_index(index);
     }
