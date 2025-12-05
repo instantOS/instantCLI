@@ -322,6 +322,18 @@ pub mod colors {
     pub const SAPPHIRE: &str = "#74c7ec";
     pub const BLUE: &str = "#89b4fa";
     pub const LAVENDER: &str = "#b4befe";
+    // Surface colors
+    pub const SURFACE0: &str = "#313244";
+    pub const SURFACE1: &str = "#45475a";
+    pub const SURFACE2: &str = "#585b70";
+    // Overlay colors
+    pub const OVERLAY0: &str = "#6c7086";
+    pub const OVERLAY1: &str = "#7f849c";
+    pub const OVERLAY2: &str = "#9399b2";
+    // Text colors
+    pub const SUBTEXT0: &str = "#a6adc8";
+    pub const SUBTEXT1: &str = "#bac2de";
+    pub const TEXT: &str = "#cdd6f4";
     // Base colors (backgrounds)
     pub const BASE: &str = "#1e1e2e";
     pub const MANTLE: &str = "#181825";
@@ -347,7 +359,7 @@ pub fn format_icon_colored(icon: NerdFont, bg_color: &str) -> String {
 }
 
 /// Convert hex color to ANSI 24-bit true color foreground escape sequence
-fn hex_to_ansi_fg(hex: &str) -> String {
+pub fn hex_to_ansi_fg(hex: &str) -> String {
     let hex = hex.trim_start_matches('#');
     if hex.len() != 6 {
         return String::new();

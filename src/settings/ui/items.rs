@@ -8,7 +8,7 @@ use super::super::registry::{SettingCategory, SettingDefinition, SettingKind, Se
 pub struct CategoryItem {
     pub category: &'static SettingCategory,
     pub total: usize,
-    pub highlights: [Option<&'static SettingDefinition>; 3],
+    pub highlights: [Option<&'static SettingDefinition>; 6],
 }
 
 #[derive(Clone, Copy)]
@@ -68,40 +68,66 @@ impl FzfSelectable for CategoryItem {
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        use super::super::context::{colors, hex_to_ansi_fg};
+
+        let reset = "\x1b[0m";
+        let mauve = hex_to_ansi_fg(colors::MAUVE);
+        let overlay = hex_to_ansi_fg(colors::OVERLAY0);
+        let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
+        let teal = hex_to_ansi_fg(colors::TEAL);
+        let surface = hex_to_ansi_fg(colors::SURFACE1);
+
         let mut lines = Vec::new();
 
+        // Top padding
+        lines.push(String::new());
+
+        // Header with category title (mauve colored)
         lines.push(format!(
-            "{} {}",
-            char::from(NerdFont::Info),
-            self.category.description
+            "{mauve}{}  {}{reset}",
+            char::from(self.category.icon),
+            self.category.title
         ));
+        lines.push(format!("{surface}───────────────────────────────────{reset}"));
+        lines.push(String::new());
 
-        let highlights: Vec<_> = self.highlights.iter().flatten().take(3).collect();
+        // Description (subtext colored)
+        lines.push(format!("{subtext}{}{reset}", self.category.description));
+        lines.push(String::new());
 
-        if !highlights.is_empty() {
+        // Show settings in this category
+        let all_settings: Vec<_> = self.highlights.iter().flatten().collect();
+
+        if !all_settings.is_empty() {
+            // Separator before settings
+            lines.push(format!("{surface}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{reset}"));
             lines.push(String::new());
-            lines.push(format!(
-                "{} Featured settings:",
-                char::from(NerdFont::Lightbulb)
-            ));
 
-            for definition in highlights {
+            for (i, definition) in all_settings.iter().enumerate() {
+                // Setting title with icon (teal colored)
                 lines.push(format!(
-                    "  {} {}",
+                    "{teal}{} {}{reset}",
                     char::from(definition.icon),
-                    definition.title,
+                    definition.title
                 ));
-                lines.push(format!("    {}", setting_summary(definition)));
+                // Setting summary (overlay colored, no indent)
+                lines.push(format!("{overlay}{}{reset}", setting_summary(definition)));
+
+                // Spacing between settings
+                if i < all_settings.len() - 1 {
+                    lines.push(String::new());
+                }
+            }
+
+            // Show count if there are more settings not listed
+            if self.total > all_settings.len() {
+                lines.push(String::new());
+                lines.push(format!(
+                    "{overlay}… and {} more{reset}",
+                    self.total - all_settings.len()
+                ));
             }
         }
-
-        lines.push(String::new());
-        lines.push(format!(
-            "{} {} total setting{}",
-            char::from(NerdFont::List),
-            self.total,
-            if self.total == 1 { "" } else { "s" }
-        ));
 
         crate::menu_utils::FzfPreview::Text(lines.join("\n"))
     }
@@ -119,9 +145,33 @@ impl FzfSelectable for CategoryMenuItem {
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match self {
-            CategoryMenuItem::SearchAll => crate::menu_utils::FzfPreview::Text(
-                "Browse and edit any available setting".to_string(),
-            ),
+            CategoryMenuItem::SearchAll => {
+                use super::super::context::{colors, hex_to_ansi_fg};
+
+                let reset = "\x1b[0m";
+                let mauve = hex_to_ansi_fg(colors::MAUVE);
+                let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
+                let surface = hex_to_ansi_fg(colors::SURFACE1);
+
+                let mut lines = Vec::new();
+
+                // Top padding
+                lines.push(String::new());
+
+                lines.push(format!(
+                    "{mauve}{}  Search All{reset}",
+                    char::from(NerdFont::Search)
+                ));
+                lines.push(format!("{surface}───────────────────────────────────{reset}"));
+                lines.push(String::new());
+                lines.push(format!("{subtext}Browse all available settings in one{reset}"));
+                lines.push(format!("{subtext}searchable list.{reset}"));
+                lines.push(String::new());
+                lines.push(format!("{subtext}Start typing to filter settings by{reset}"));
+                lines.push(format!("{subtext}name, category, or description.{reset}"));
+
+                crate::menu_utils::FzfPreview::Text(lines.join("\n"))
+            }
             CategoryMenuItem::Category(item) => item.fzf_preview(),
         }
     }

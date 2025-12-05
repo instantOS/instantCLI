@@ -179,7 +179,7 @@ fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> R
         let definitions = registry::settings_for_category(category.id);
         total_settings += definitions.len();
 
-        let mut highlights = [None, None, None];
+        let mut highlights = [None, None, None, None, None, None];
 
         for (idx, definition) in definitions.iter().enumerate() {
             if idx < highlights.len() {
