@@ -20,6 +20,7 @@ impl Setting for ManageUsers {
             title: "Manage Users",
             category: Category::Users,
             icon: NerdFont::Users,
+            icon_color: None,
             breadcrumbs: &["Manage Users"],
             summary: "Create, modify, and delete user accounts.\n\nManage user groups, shells, and permissions.",
             requires_reapply: false,

@@ -22,6 +22,7 @@ impl Setting for InstallPackages {
             title: "Install packages",
             category: Category::Install,
             icon: NerdFont::Download,
+            icon_color: None,
             breadcrumbs: &["Install packages"],
             summary: "Browse and install system packages using an interactive fuzzy finder.",
             requires_reapply: false,

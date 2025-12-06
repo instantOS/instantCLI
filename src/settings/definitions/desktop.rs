@@ -93,6 +93,7 @@ impl Setting for WindowLayout {
             title: "Window Layout",
             category: Category::Desktop,
             icon: NerdFont::List,
+            icon_color: None,
             breadcrumbs: &["Window Layout"],
             summary: "Choose how windows are arranged on your screen by default.\n\nYou can always change the layout temporarily with keyboard shortcuts.",
             requires_reapply: false,

@@ -201,6 +201,8 @@ pub struct SettingMetadata {
     pub title: &'static str,
     pub category: Category,
     pub icon: NerdFont,
+    /// Override icon color (if None, uses category color)
+    pub icon_color: Option<&'static str>,
     pub breadcrumbs: &'static [&'static str],
     pub summary: &'static str,
     pub requires_reapply: bool,

@@ -6,12 +6,13 @@ use anyhow::Result;
 
 use crate::common::requirements::XDG_UTILS_PACKAGE;
 use crate::settings::context::SettingsContext;
+use crate::settings::context::colors;
 use crate::settings::defaultapps;
 use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
 macro_rules! default_app_setting {
-    ($struct_name:ident, $id:expr, $title:expr, $icon:expr, $summary:expr, $handler:path) => {
+    ($struct_name:ident, $id:expr, $title:expr, $icon:expr, $color:expr, $summary:expr, $handler:path) => {
         pub struct $struct_name;
 
         impl Setting for $struct_name {
@@ -21,6 +22,7 @@ macro_rules! default_app_setting {
                     title: $title,
                     category: Category::Apps,
                     icon: $icon,
+                    icon_color: $color,
                     breadcrumbs: &[$title],
                     summary: $summary,
                     requires_reapply: false,
@@ -46,6 +48,7 @@ default_app_setting!(
     "apps.browser",
     "Web Browser",
     NerdFont::Globe,
+    None,
     "Set your default web browser for opening links and HTML files.",
     defaultapps::set_default_browser
 );
@@ -55,6 +58,7 @@ default_app_setting!(
     "apps.email",
     "Email Client",
     NerdFont::ExternalLink,
+    None,
     "Set your default email client for mailto: links.",
     defaultapps::set_default_email
 );
@@ -64,6 +68,7 @@ default_app_setting!(
     "apps.file_manager",
     "File Manager",
     NerdFont::Folder,
+    None,
     "Set your default file manager for browsing folders.",
     defaultapps::set_default_file_manager
 );
@@ -73,6 +78,7 @@ default_app_setting!(
     "apps.text_editor",
     "Text Editor",
     NerdFont::FileText,
+    None,
     "Set your default text editor for opening text files.",
     defaultapps::set_default_text_editor
 );
@@ -82,6 +88,7 @@ default_app_setting!(
     "apps.image_viewer",
     "Image Viewer",
     NerdFont::Image,
+    None,
     "Set your default image viewer for photos and pictures.",
     defaultapps::set_default_image_viewer
 );
@@ -91,6 +98,7 @@ default_app_setting!(
     "apps.video_player",
     "Video Player",
     NerdFont::Video,
+    None,
     "Set your default video player for movies and videos.",
     defaultapps::set_default_video_player
 );
@@ -100,6 +108,7 @@ default_app_setting!(
     "apps.music_player",
     "Music Player",
     NerdFont::Music,
+    None,
     "Set your default music player for audio files.",
     defaultapps::set_default_music_player
 );
@@ -109,6 +118,7 @@ default_app_setting!(
     "apps.pdf_viewer",
     "PDF Viewer",
     NerdFont::FilePdf,
+    None,
     "Set your default PDF viewer for documents.",
     defaultapps::set_default_pdf_viewer
 );
@@ -118,6 +128,7 @@ default_app_setting!(
     "apps.archive_manager",
     "Archive Manager",
     NerdFont::Archive,
+    None,
     "Set your default archive manager for ZIP, TAR, and other compressed files.",
     defaultapps::set_default_archive_manager
 );
@@ -127,6 +138,7 @@ default_app_setting!(
     "apps.default",
     "All File Types",
     NerdFont::Link,
+    Some(colors::YELLOW),
     "Advanced: Manage default applications for all file types and MIME types.",
     defaultapps::manage_default_apps
 );
