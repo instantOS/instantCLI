@@ -54,7 +54,9 @@ macro_rules! gui_command_setting {
                     breadcrumbs: &[$title],
                     summary: $summary,
                     requires_reapply: false,
-                    requirements: &[$crate::settings::setting::Requirement::Package($requirement)],
+                    requirements: &[$crate::settings::setting::Requirement::Package(
+                        $requirement,
+                    )],
                 }
             }
 
@@ -142,7 +144,9 @@ macro_rules! tui_command_setting {
                     breadcrumbs: &[$title],
                     summary: $summary,
                     requires_reapply: false,
-                    requirements: &[$crate::settings::setting::Requirement::Package($requirement)],
+                    requirements: &[$crate::settings::setting::Requirement::Package(
+                        $requirement,
+                    )],
                 }
             }
 
@@ -161,11 +165,10 @@ macro_rules! tui_command_setting {
                     "settings.command.launching",
                     &format!("Launching {}...", $title),
                 );
-                cmd!($command).run().context(concat!("running ", $command))?;
-                ctx.emit_success(
-                    "settings.command.completed",
-                    &format!("Exited {}", $title),
-                );
+                cmd!($command)
+                    .run()
+                    .context(concat!("running ", $command))?;
+                ctx.emit_success("settings.command.completed", &format!("Exited {}", $title));
                 Ok(())
             }
         }
@@ -173,4 +176,3 @@ macro_rules! tui_command_setting {
         inventory::submit! { &$struct_name as &'static dyn $crate::settings::setting::Setting }
     };
 }
-

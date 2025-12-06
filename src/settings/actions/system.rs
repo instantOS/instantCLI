@@ -239,6 +239,8 @@ pub fn launch_cockpit(ctx: &mut SettingsContext) -> Result<()> {
     // Launch chromium in app mode
     std::process::Command::new("chromium")
         .arg("--app=http://localhost:9090")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()?;
 
     Ok(())
