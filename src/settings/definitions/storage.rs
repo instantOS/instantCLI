@@ -36,7 +36,9 @@ impl Setting for DiskManagement {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         ctx.emit_info("settings.command.launching", "Launching GNOME Disks...");
-        Command::new("gnome-disks").spawn().context("launching gnome-disks")?;
+        Command::new("gnome-disks")
+            .spawn()
+            .context("launching gnome-disks")?;
         ctx.emit_success("settings.command.completed", "Launched GNOME Disks");
         Ok(())
     }
@@ -70,7 +72,9 @@ impl Setting for PartitionEditor {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         ctx.emit_info("settings.command.launching", "Launching GParted...");
-        Command::new("gparted").spawn().context("launching gparted")?;
+        Command::new("gparted")
+            .spawn()
+            .context("launching gparted")?;
         ctx.emit_success("settings.command.completed", "Launched GParted");
         Ok(())
     }

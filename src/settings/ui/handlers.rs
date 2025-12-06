@@ -250,3 +250,69 @@ pub fn handle_setting(
 
     Ok(())
 }
+
+// ============================================================================
+// New Trait-Based Setting Handlers
+// ============================================================================
+
+use crate::settings::setting::{Requirement, Setting};
+
+/// Check and handle requirements for a trait-based setting
+fn ensure_trait_requirements(setting: &'static dyn Setting) -> Result<bool> {
+    let metadata = setting.metadata();
+    let mut unmet = Vec::new();
+
+    for requirement in metadata.requirements {
+        if !requirement.is_satisfied() {
+            unmet.push(requirement);
+        }
+    }
+
+    if !unmet.is_empty() {
+        let mut messages = Vec::new();
+        messages.push(format!(
+            "Cannot use '{}' - requirements not met:",
+            metadata.title
+        ));
+        messages.push(String::new());
+        for req in &unmet {
+            messages.push(format!("  • {}", req.description()));
+            messages.push(format!("    {}", req.resolve_hint()));
+            messages.push(String::new());
+        }
+
+        // Try to install missing packages
+        for req in &unmet {
+            if let Requirement::Package(pkg) = req {
+                if !pkg.ensure()? {
+                    FzfWrapper::builder()
+                        .message(messages.join("\n"))
+                        .title("Requirements Not Met")
+                        .show_message()?;
+                    return Ok(false);
+                }
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+/// Handle a trait-based setting
+pub fn handle_trait_setting(
+    ctx: &mut SettingsContext,
+    setting: &'static dyn Setting,
+) -> Result<()> {
+    // Check requirements before allowing any action
+    if !setting.metadata().requirements.is_empty() && !ensure_trait_requirements(setting)? {
+        return Ok(());
+    }
+
+    // Simply call the trait's apply method
+    setting.apply(ctx)?;
+
+    // Persist after applying
+    ctx.persist()?;
+
+    Ok(())
+}

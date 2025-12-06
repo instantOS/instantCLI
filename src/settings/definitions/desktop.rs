@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
 use crate::settings::store::StringSettingKey;
 use crate::ui::prelude::*;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 
 // ============================================================================
 // Window Layout
@@ -38,15 +38,51 @@ impl FzfSelectable for LayoutChoice {
 }
 
 const LAYOUT_OPTIONS: &[LayoutChoice] = &[
-    LayoutChoice { value: "tile", label: "Tile", description: "Windows split the screen side-by-side (recommended for most users)" },
-    LayoutChoice { value: "grid", label: "Grid", description: "Windows arranged in an even grid pattern" },
-    LayoutChoice { value: "float", label: "Float", description: "Windows can be freely moved and resized (like Windows/macOS)" },
-    LayoutChoice { value: "monocle", label: "Monocle", description: "One window fills the entire screen at a time" },
-    LayoutChoice { value: "tcl", label: "Three Columns", description: "Main window in center, others on sides" },
-    LayoutChoice { value: "deck", label: "Deck", description: "Large main window with smaller windows stacked on the side" },
-    LayoutChoice { value: "overviewlayout", label: "Overview", description: "See all your workspaces at once" },
-    LayoutChoice { value: "bstack", label: "Bottom Stack", description: "Main window on top, others stacked below" },
-    LayoutChoice { value: "bstackhoriz", label: "Bottom Stack (Horizontal)", description: "Main window on top, others arranged horizontally below" },
+    LayoutChoice {
+        value: "tile",
+        label: "Tile",
+        description: "Windows split the screen side-by-side (recommended for most users)",
+    },
+    LayoutChoice {
+        value: "grid",
+        label: "Grid",
+        description: "Windows arranged in an even grid pattern",
+    },
+    LayoutChoice {
+        value: "float",
+        label: "Float",
+        description: "Windows can be freely moved and resized (like Windows/macOS)",
+    },
+    LayoutChoice {
+        value: "monocle",
+        label: "Monocle",
+        description: "One window fills the entire screen at a time",
+    },
+    LayoutChoice {
+        value: "tcl",
+        label: "Three Columns",
+        description: "Main window in center, others on sides",
+    },
+    LayoutChoice {
+        value: "deck",
+        label: "Deck",
+        description: "Large main window with smaller windows stacked on the side",
+    },
+    LayoutChoice {
+        value: "overviewlayout",
+        label: "Overview",
+        description: "See all your workspaces at once",
+    },
+    LayoutChoice {
+        value: "bstack",
+        label: "Bottom Stack",
+        description: "Main window on top, others stacked below",
+    },
+    LayoutChoice {
+        value: "bstackhoriz",
+        label: "Bottom Stack (Horizontal)",
+        description: "Main window on top, others arranged horizontally below",
+    },
 ];
 
 impl Setting for WindowLayout {
@@ -69,7 +105,10 @@ impl Setting for WindowLayout {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         let current = ctx.string(Self::KEY);
-        let initial_index = LAYOUT_OPTIONS.iter().position(|l| l.value == current).unwrap_or(0);
+        let initial_index = LAYOUT_OPTIONS
+            .iter()
+            .position(|l| l.value == current)
+            .unwrap_or(0);
 
         let result = FzfWrapper::builder()
             .header("Select Window Layout")
@@ -108,7 +147,9 @@ impl Setting for GamingMouse {
             breadcrumbs: &["Gaming Mouse Customization"],
             summary: "Configure gaming mice with customizable buttons, RGB lighting, and DPI settings.\n\nUses Piper to configure Logitech and other gaming mice supported by libratbag.",
             requires_reapply: false,
-            requirements: &[crate::settings::setting::Requirement::Package(PIPER_PACKAGE)],
+            requirements: &[crate::settings::setting::Requirement::Package(
+                PIPER_PACKAGE,
+            )],
         }
     }
 
@@ -143,7 +184,9 @@ impl Setting for BluetoothManager {
             breadcrumbs: &["Manage Devices"],
             summary: "Pair new devices and manage connected Bluetooth devices.\n\nUse this to connect headphones, speakers, keyboards, mice, and other wireless devices.",
             requires_reapply: false,
-            requirements: &[crate::settings::setting::Requirement::Package(BLUEMAN_PACKAGE)],
+            requirements: &[crate::settings::setting::Requirement::Package(
+                BLUEMAN_PACKAGE,
+            )],
         }
     }
 

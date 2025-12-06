@@ -47,7 +47,11 @@ impl Setting for AutoTheming {
         // Placeholder - no actual effect yet
         ctx.notify(
             "Automatic Theming",
-            if target { "Enabled (no effect yet)" } else { "Disabled (no effect yet)" },
+            if target {
+                "Enabled (no effect yet)"
+            } else {
+                "Disabled (no effect yet)"
+            },
         );
         Ok(())
     }
@@ -89,7 +93,11 @@ impl Setting for Animations {
         ctx.set_bool(Self::KEY, target);
         ctx.notify(
             "Animations",
-            if target { "Enabled (no effect yet)" } else { "Disabled (no effect yet)" },
+            if target {
+                "Enabled (no effect yet)"
+            } else {
+                "Disabled (no effect yet)"
+            },
         );
         Ok(())
     }
@@ -181,7 +189,11 @@ impl Setting for WallpaperLogo {
         ctx.set_bool(Self::KEY, target);
         ctx.notify(
             "Wallpaper Logo",
-            if target { "Logo will be shown on random wallpapers" } else { "Logo hidden on random wallpapers" },
+            if target {
+                "Logo will be shown on random wallpapers"
+            } else {
+                "Logo hidden on random wallpapers"
+            },
         );
         Ok(())
     }
@@ -234,8 +246,10 @@ impl Setting for RandomWallpaper {
 inventory::submit! { &RandomWallpaper as &'static dyn Setting }
 
 // Color wallpaper settings
-const WALLPAPER_BG_COLOR_KEY: OptionalStringSettingKey = OptionalStringSettingKey::new("wallpaper.bg_color");
-const WALLPAPER_FG_COLOR_KEY: OptionalStringSettingKey = OptionalStringSettingKey::new("wallpaper.fg_color");
+const WALLPAPER_BG_COLOR_KEY: OptionalStringSettingKey =
+    OptionalStringSettingKey::new("wallpaper.bg_color");
+const WALLPAPER_FG_COLOR_KEY: OptionalStringSettingKey =
+    OptionalStringSettingKey::new("wallpaper.fg_color");
 
 pub struct WallpaperBgColor;
 
@@ -258,7 +272,9 @@ impl Setting for WallpaperBgColor {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let current = ctx.optional_string(WALLPAPER_BG_COLOR_KEY).unwrap_or_else(|| "#1a1a2e".to_string());
+        let current = ctx
+            .optional_string(WALLPAPER_BG_COLOR_KEY)
+            .unwrap_or_else(|| "#1a1a2e".to_string());
         if let Some(color) = pick_color_with_zenity("Background Color", &current)? {
             ctx.set_optional_string(WALLPAPER_BG_COLOR_KEY, Some(color.clone()));
             ctx.persist()?;
@@ -291,7 +307,9 @@ impl Setting for WallpaperFgColor {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let current = ctx.optional_string(WALLPAPER_FG_COLOR_KEY).unwrap_or_else(|| "#eaeaea".to_string());
+        let current = ctx
+            .optional_string(WALLPAPER_FG_COLOR_KEY)
+            .unwrap_or_else(|| "#eaeaea".to_string());
         if let Some(color) = pick_color_with_zenity("Foreground Color", &current)? {
             ctx.set_optional_string(WALLPAPER_FG_COLOR_KEY, Some(color.clone()));
             ctx.persist()?;

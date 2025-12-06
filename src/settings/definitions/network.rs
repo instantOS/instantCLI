@@ -67,7 +67,10 @@ impl Setting for SpeedTest {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        ctx.emit_info("settings.command.launching", "Opening fast.com in Chromium...");
+        ctx.emit_info(
+            "settings.command.launching",
+            "Opening fast.com in Chromium...",
+        );
         Command::new("chromium")
             .args(["--app=https://fast.com"])
             .spawn()
@@ -104,7 +107,10 @@ impl Setting for EditConnections {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        ctx.emit_info("settings.command.launching", "Opening NetworkManager connection editor...");
+        ctx.emit_info(
+            "settings.command.launching",
+            "Opening NetworkManager connection editor...",
+        );
         Command::new("nm-connection-editor")
             .spawn()
             .context("launching nm-connection-editor")?;

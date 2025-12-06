@@ -87,14 +87,20 @@ fn apply_natural_scroll_impl(ctx: &mut SettingsContext, enabled: bool) -> Result
         if let (Err(e1), Err(e2)) = (&pointer_result, &touchpad_result) {
             ctx.emit_info(
                 "settings.mouse.natural_scroll.sway_failed",
-                &format!("Failed to apply natural scrolling in Sway: pointer: {e1}, touchpad: {e2}"),
+                &format!(
+                    "Failed to apply natural scrolling in Sway: pointer: {e1}, touchpad: {e2}"
+                ),
             );
             return Ok(());
         }
 
         ctx.notify(
             "Natural Scrolling",
-            if enabled { "Natural scrolling enabled" } else { "Natural scrolling disabled" },
+            if enabled {
+                "Natural scrolling enabled"
+            } else {
+                "Natural scrolling disabled"
+            },
         );
     } else {
         let value = if enabled { "1" } else { "0" };
@@ -107,7 +113,11 @@ fn apply_natural_scroll_impl(ctx: &mut SettingsContext, enabled: bool) -> Result
         if applied > 0 {
             ctx.notify(
                 "Natural Scrolling",
-                if enabled { "Natural scrolling enabled" } else { "Natural scrolling disabled" },
+                if enabled {
+                    "Natural scrolling enabled"
+                } else {
+                    "Natural scrolling disabled"
+                },
             );
         } else {
             ctx.emit_info(
@@ -190,7 +200,11 @@ fn apply_swap_buttons_impl(ctx: &mut SettingsContext, enabled: bool) -> Result<(
     if applied > 0 {
         ctx.notify(
             "Swap Mouse Buttons",
-            if enabled { "Mouse buttons swapped (left-handed mode)" } else { "Mouse buttons normal (right-handed mode)" },
+            if enabled {
+                "Mouse buttons swapped (left-handed mode)"
+            } else {
+                "Mouse buttons normal (right-handed mode)"
+            },
         );
     } else {
         ctx.emit_info(
@@ -240,7 +254,10 @@ impl Setting for MouseSensitivity {
         match run_mouse_speed_slider(initial_value)? {
             Some(value) => {
                 ctx.set_int(Self::KEY, value);
-                ctx.notify("Mouse Sensitivity", &format!("Mouse sensitivity set to {}", value));
+                ctx.notify(
+                    "Mouse Sensitivity",
+                    &format!("Mouse sensitivity set to {}", value),
+                );
             }
             None => {}
         }
@@ -326,7 +343,9 @@ fn get_pointer_device_ids() -> Result<Vec<String>> {
     for id in all_ids {
         if let Ok(props_output) = Command::new("xinput").arg("list-props").arg(&id).output() {
             let props = String::from_utf8_lossy(&props_output.stdout);
-            if props.contains("libinput Natural Scrolling Enabled") || props.contains("Button Labels") {
+            if props.contains("libinput Natural Scrolling Enabled")
+                || props.contains("Button Labels")
+            {
                 pointer_ids.push(id);
             }
         }

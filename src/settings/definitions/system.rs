@@ -6,7 +6,9 @@ use anyhow::{Context, Result};
 use duct::cmd;
 use std::process::Command;
 
-use crate::common::requirements::{FASTFETCH_PACKAGE, GNOME_FIRMWARE_PACKAGE, TOPGRADE_PACKAGE, COCKPIT_PACKAGE};
+use crate::common::requirements::{
+    COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_FIRMWARE_PACKAGE, TOPGRADE_PACKAGE,
+};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
@@ -36,8 +38,13 @@ impl Setting for AboutSystem {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        ctx.emit_info("settings.command.launching", "Displaying system information...");
-        cmd!("sh", "-c", "fastfetch && read -n 1").run().context("running fastfetch")?;
+        ctx.emit_info(
+            "settings.command.launching",
+            "Displaying system information...",
+        );
+        cmd!("sh", "-c", "fastfetch && read -n 1")
+            .run()
+            .context("running fastfetch")?;
         Ok(())
     }
 }
@@ -101,7 +108,9 @@ impl Setting for FirmwareManager {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         ctx.emit_info("settings.command.launching", "Launching GNOME Firmware...");
-        Command::new("gnome-firmware").spawn().context("launching gnome-firmware")?;
+        Command::new("gnome-firmware")
+            .spawn()
+            .context("launching gnome-firmware")?;
         ctx.emit_success("settings.command.completed", "Launched Firmware Manager");
         Ok(())
     }
@@ -134,7 +143,10 @@ impl Setting for SystemUpgrade {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        ctx.emit_info("settings.command.launching", "Running system upgrade with topgrade...");
+        ctx.emit_info(
+            "settings.command.launching",
+            "Running system upgrade with topgrade...",
+        );
         cmd!("topgrade").run().context("running topgrade")?;
         ctx.emit_success("settings.command.completed", "System upgrade completed");
         Ok(())

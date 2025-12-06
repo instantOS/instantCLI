@@ -33,7 +33,9 @@ impl Setting for ClipboardManager {
             breadcrumbs: &["Clipboard History"],
             summary: "Remember your copy/paste history so you can access previously copied items.\n\nWhen enabled, you can paste from your clipboard history instead of just the last copied item.",
             requires_reapply: false,
-            requirements: &[Requirement::Package(crate::common::requirements::CLIPMENU_PACKAGE)],
+            requirements: &[Requirement::Package(
+                crate::common::requirements::CLIPMENU_PACKAGE,
+            )],
         }
     }
 
@@ -66,7 +68,10 @@ fn apply_clipboard_impl(ctx: &mut SettingsContext, enabled: bool) -> Result<()> 
             emit(
                 Level::Warn,
                 "settings.clipboard.spawn_failed",
-                &format!("{} Failed to launch clipmenud: {err}", char::from(NerdFont::Warning)),
+                &format!(
+                    "{} Failed to launch clipmenud: {err}",
+                    char::from(NerdFont::Warning)
+                ),
                 None,
             );
         } else {
@@ -77,7 +82,10 @@ fn apply_clipboard_impl(ctx: &mut SettingsContext, enabled: bool) -> Result<()> 
             emit(
                 Level::Warn,
                 "settings.clipboard.stop_failed",
-                &format!("{} Failed to stop clipmenud: {err}", char::from(NerdFont::Warning)),
+                &format!(
+                    "{} Failed to stop clipmenud: {err}",
+                    char::from(NerdFont::Warning)
+                ),
                 None,
             );
         } else {
@@ -154,7 +162,10 @@ fn apply_automount_impl(ctx: &mut SettingsContext, enabled: bool) -> Result<()> 
             emit(
                 Level::Warn,
                 "settings.storage.udiskie.service_creation_failed",
-                &format!("{} Failed to create udiskie service file: {err}", char::from(NerdFont::Warning)),
+                &format!(
+                    "{} Failed to create udiskie service file: {err}",
+                    char::from(NerdFont::Warning)
+                ),
                 None,
             );
             return Err(err);
@@ -166,7 +177,10 @@ fn apply_automount_impl(ctx: &mut SettingsContext, enabled: bool) -> Result<()> 
             systemd_manager.start(UDISKIE_SERVICE_NAME)?;
         }
 
-        ctx.notify("Auto-mount", "udiskie service enabled - removable drives will auto-mount");
+        ctx.notify(
+            "Auto-mount",
+            "udiskie service enabled - removable drives will auto-mount",
+        );
     } else if systemd_manager.is_enabled(UDISKIE_SERVICE_NAME)
         || systemd_manager.is_active(UDISKIE_SERVICE_NAME)
     {
@@ -185,7 +199,8 @@ pub struct BluetoothService;
 
 impl BluetoothService {
     const KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.service", false);
-    const HARDWARE_OVERRIDE_KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.hardware_override", false);
+    const HARDWARE_OVERRIDE_KEY: BoolSettingKey =
+        BoolSettingKey::new("bluetooth.hardware_override", false);
 }
 
 impl Setting for BluetoothService {
@@ -229,14 +244,18 @@ fn detect_bluetooth_hardware() -> bool {
 
     if let Ok(output) = std::process::Command::new("lsusb").output()
         && output.status.success()
-        && String::from_utf8_lossy(&output.stdout).to_lowercase().contains("bluetooth")
+        && String::from_utf8_lossy(&output.stdout)
+            .to_lowercase()
+            .contains("bluetooth")
     {
         return true;
     }
 
     if let Ok(output) = std::process::Command::new("rfkill").arg("list").output()
         && output.status.success()
-        && String::from_utf8_lossy(&output.stdout).to_lowercase().contains("bluetooth")
+        && String::from_utf8_lossy(&output.stdout)
+            .to_lowercase()
+            .contains("bluetooth")
     {
         return true;
     }
@@ -246,7 +265,7 @@ fn detect_bluetooth_hardware() -> bool {
 
 fn ensure_bluetooth_ready(ctx: &mut SettingsContext) -> Result<bool> {
     use crate::common::requirements::{BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE};
-    
+
     if !ctx.bool(BluetoothService::HARDWARE_OVERRIDE_KEY) && !detect_bluetooth_hardware() {
         let result = FzfWrapper::builder()
             .confirm("System does not appear to have Bluetooth hardware. Proceed anyway?")
@@ -291,7 +310,9 @@ fn apply_bluetooth_impl(ctx: &mut SettingsContext, enabled: bool) -> Result<()> 
         }
 
         ctx.notify("Bluetooth service", "Bluetooth service enabled");
-    } else if systemd.is_enabled(BLUETOOTH_SERVICE_NAME) || systemd.is_active(BLUETOOTH_SERVICE_NAME) {
+    } else if systemd.is_enabled(BLUETOOTH_SERVICE_NAME)
+        || systemd.is_active(BLUETOOTH_SERVICE_NAME)
+    {
         systemd.disable_and_stop(BLUETOOTH_SERVICE_NAME)?;
         ctx.notify("Bluetooth service", "Bluetooth service disabled");
     }

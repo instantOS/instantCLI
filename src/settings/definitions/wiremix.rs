@@ -35,9 +35,7 @@ impl Setting for LaunchWiremix {
             "Launch wiremix TUI to manage PipeWire routing and volumes.",
         );
 
-        cmd!("wiremix")
-            .run()
-            .context("running wiremix")?;
+        cmd!("wiremix").run().context("running wiremix")?;
 
         ctx.emit_success(
             "settings.command.completed",
