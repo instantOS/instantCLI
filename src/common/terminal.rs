@@ -1,6 +1,8 @@
 /// Common terminal emulator utilities
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::process::Command;
+
+use crate::scratchpad::terminal::Terminal;
 
 /// Detect the available terminal emulator
 ///
@@ -87,6 +89,62 @@ pub fn wrap_with_terminal(cmd: &mut Command) -> Result<()> {
 
     // Replace the original command with the terminal-wrapped version
     *cmd = term_cmd;
+
+    Ok(())
+}
+
+/// Launch a GUI terminal window for running ins subcommands
+///
+/// This function spawns a new terminal window with the specified window class and title,
+/// executing the current binary with the provided arguments. The terminal is auto-detected
+/// using `detect_terminal()`, respecting the user's `$TERMINAL` environment variable.
+///
+/// # Arguments
+/// * `class` - Window class name for the terminal (e.g., "ins-settings", "ins-welcome")
+/// * `title` - Window title to display
+/// * `args` - Arguments to pass to the ins binary
+///
+/// # Example
+/// ```ignore
+/// launch_gui_terminal(
+///     "ins-settings",
+///     "Settings",
+///     &["settings", "--category", "system"]
+/// )?;
+/// ```
+pub fn launch_gui_terminal(class: &str, title: &str, args: &[String]) -> Result<()> {
+    let terminal_str = detect_terminal();
+    let terminal: Terminal = terminal_str.as_str().into();
+    let current_exe = std::env::current_exe().context("Failed to get current executable path")?;
+
+    let mut cmd = Command::new(terminal.command());
+
+    // Add class flag (all common terminals support this)
+    let class_flag = terminal.class_flag(class);
+    for part in class_flag.split_whitespace() {
+        cmd.arg(part);
+    }
+
+    // Add title flag (kitty, alacritty, wezterm support this)
+    match terminal {
+        Terminal::Kitty | Terminal::Alacritty | Terminal::Wezterm => {
+            cmd.arg("--title");
+            cmd.arg(title);
+        }
+        _ => {
+            // Other terminals may not support --title in the same way
+        }
+    }
+
+    // Add separator before command (standard for modern terminals)
+    cmd.arg("--");
+
+    // Add the ins binary and its arguments
+    cmd.arg(&current_exe);
+    cmd.args(args);
+
+    cmd.spawn()
+        .context("Failed to launch terminal for GUI mode")?;
 
     Ok(())
 }

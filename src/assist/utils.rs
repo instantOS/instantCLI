@@ -6,15 +6,26 @@ use std::process::{Command, ExitStatus};
 use crate::common::display_server::DisplayServer;
 
 /// Launch a command in a detached terminal window
+///
+/// Auto-detects the user's preferred terminal emulator.
 pub fn launch_in_terminal(command: &str) -> Result<()> {
-    Command::new("kitty")
-        .args(["-e", "bash", "-c", command])
+    let terminal = crate::common::terminal::detect_terminal();
+    let exec_flag = crate::common::terminal::get_execute_flag(&terminal);
+
+    Command::new(terminal)
+        .arg(exec_flag)
+        .arg("bash")
+        .arg("-c")
+        .arg(command)
         .spawn()
         .context("Failed to launch terminal")?;
     Ok(())
 }
 
 /// Launch a script in a detached terminal window with title
+///
+/// Auto-detects the user's preferred terminal emulator.
+/// Note: Title support varies by terminal emulator.
 pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
     use tempfile::NamedTempFile;
 
@@ -35,11 +46,23 @@ pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
         std::fs::set_permissions(&script_path, perms)?;
     }
 
-    // Launch in kitty with title
-    Command::new("kitty")
-        .arg("--title")
-        .arg(title)
-        .args(["-e", "bash"])
+    let terminal = crate::common::terminal::detect_terminal();
+    let exec_flag = crate::common::terminal::get_execute_flag(&terminal);
+
+    let mut cmd = Command::new(&terminal);
+
+    // Add title flag for terminals that support it
+    match terminal.as_str() {
+        "kitty" | "alacritty" | "wezterm" => {
+            cmd.arg("--title").arg(title);
+        }
+        _ => {
+            // Other terminals may not support --title in the same way
+        }
+    }
+
+    cmd.arg(exec_flag)
+        .arg("bash")
         .arg(&script_path)
         .spawn()
         .context("Failed to launch terminal")?;
@@ -51,6 +74,9 @@ pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
 }
 
 /// Run a script in a terminal window and wait for completion
+///
+/// Auto-detects the user's preferred terminal emulator.
+/// Note: Hold/wait behavior varies by terminal emulator.
 pub fn run_script_in_terminal_and_wait(script: &str, title: &str) -> Result<ExitStatus> {
     use tempfile::NamedTempFile;
 
@@ -69,11 +95,27 @@ pub fn run_script_in_terminal_and_wait(script: &str, title: &str) -> Result<Exit
         std::fs::set_permissions(&script_path, perms)?;
     }
 
-    let status = Command::new("kitty")
-        .arg("--hold")
-        .arg("--title")
-        .arg(title)
-        .args(["-e", "bash"])
+    let terminal = crate::common::terminal::detect_terminal();
+    let exec_flag = crate::common::terminal::get_execute_flag(&terminal);
+
+    let mut cmd = Command::new(&terminal);
+
+    // Add terminal-specific flags for hold/wait behavior and title
+    match terminal.as_str() {
+        "kitty" => {
+            cmd.arg("--hold").arg("--title").arg(title);
+        }
+        "alacritty" | "wezterm" => {
+            cmd.arg("--title").arg(title);
+        }
+        _ => {
+            // Other terminals may not support these flags
+        }
+    }
+
+    let status = cmd
+        .arg(exec_flag)
+        .arg("bash")
         .arg(&script_path)
         .status()
         .context("Failed to run terminal command")?;

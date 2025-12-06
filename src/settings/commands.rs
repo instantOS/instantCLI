@@ -164,21 +164,23 @@ pub fn handle_settings_command(
     dispatch_settings_command(debug, internal_privileged_mode, command.clone(), navigation)
 }
 
-/// Launch the settings UI in a kitty terminal window
+/// Launch the settings UI in a terminal window
 ///
 /// The terminal will automatically close when settings exits.
+/// Respects the user's $TERMINAL environment variable.
 fn launch_settings_in_terminal(
     setting: &Option<String>,
     category: &Option<String>,
     search: bool,
     debug: bool,
 ) -> Result<()> {
-    use anyhow::Context;
-    use std::process::Command;
+    let mut args: Vec<String> = vec![];
 
-    let current_exe = std::env::current_exe().context("Failed to get current executable path")?;
+    if debug {
+        args.push("--debug".to_string());
+    }
 
-    let mut args: Vec<String> = vec!["settings".to_string()];
+    args.push("settings".to_string());
 
     // Forward navigation options
     if let Some(setting_id) = setting {
@@ -191,22 +193,5 @@ fn launch_settings_in_terminal(
         args.push("--search".to_string());
     }
 
-    if debug {
-        args.insert(0, "--debug".to_string());
-    }
-
-    // Launch kitty with settings
-    // Using -- to separate kitty args from the command
-    Command::new("kitty")
-        .arg("--class")
-        .arg("ins-settings")
-        .arg("--title")
-        .arg("Settings")
-        .arg("--")
-        .arg(&current_exe)
-        .args(&args)
-        .spawn()
-        .context("Failed to launch kitty terminal for settings")?;
-
-    Ok(())
+    crate::common::terminal::launch_gui_terminal("ins-settings", "Settings", &args)
 }
