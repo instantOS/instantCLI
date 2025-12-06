@@ -12,5 +12,4 @@ mod mouse;
 mod system;
 
 // Re-export public functions that are still used externally
-pub use system::launch_cockpit;
-
+pub use system::{apply_pacman_autoclean, configure_timezone, launch_cockpit};

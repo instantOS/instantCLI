@@ -6,10 +6,12 @@ use anyhow::{Context, Result};
 use duct::cmd;
 
 use crate::common::requirements::{
-    COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_FIRMWARE_PACKAGE, TOPGRADE_PACKAGE,
+    COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_FIRMWARE_PACKAGE, PACMAN_CONTRIB_PACKAGE,
+    TOPGRADE_PACKAGE,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::store::BoolSettingKey;
 use crate::ui::prelude::*;
 
 // ============================================================================
@@ -110,3 +112,41 @@ tui_command_setting!(
     "topgrade",
     TOPGRADE_PACKAGE
 );
+
+// ============================================================================
+// Pacman Cache Autoclean
+// ============================================================================
+
+pub struct PacmanAutoclean;
+
+impl PacmanAutoclean {
+    const KEY: BoolSettingKey = BoolSettingKey::new("system.pacman_autoclean", false);
+}
+
+impl Setting for PacmanAutoclean {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata {
+            id: "system.pacman_autoclean",
+            title: "Pacman cache autoclean",
+            category: Category::System,
+            icon: NerdFont::Trash,
+            breadcrumbs: &["Maintenance", "Pacman cache"],
+            summary: "Run paccache weekly to keep only the latest pacman packages.",
+            requires_reapply: false,
+            requirements: &[Requirement::Package(PACMAN_CONTRIB_PACKAGE)],
+        }
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Toggle { key: Self::KEY }
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let current = ctx.bool(Self::KEY);
+        let target = !current;
+        ctx.set_bool(Self::KEY, target);
+        crate::settings::actions::apply_pacman_autoclean(ctx, target)
+    }
+}
+
+inventory::submit! { &PacmanAutoclean as &'static dyn Setting }
