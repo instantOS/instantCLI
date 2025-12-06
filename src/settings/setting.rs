@@ -175,9 +175,10 @@ impl Category {
         }
     }
 
-    /// All categories in display order (excluding Install which is special)
+    /// All categories in display order
     pub fn all() -> &'static [Category] {
         &[
+            Category::Install,
             Category::Appearance,
             Category::Network,
             Category::Bluetooth,
