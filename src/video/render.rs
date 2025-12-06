@@ -550,23 +550,51 @@ impl RenderPipeline {
         audio_input_index: usize,
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();
-        let total_duration = self.timeline.total_duration();
 
-        // Process segments in timeline order, separating video/audio from overlays
-        let mut video_segments: Vec<&Segment> = Vec::new();
-        let mut overlay_segments: Vec<&Segment> = Vec::new();
-        let mut music_segments: Vec<&Segment> = Vec::new();
+        let (video_segments, overlay_segments, music_segments) = self.categorize_segments();
+
+        let has_base_track = self.build_base_track_filters(
+            &mut filters,
+            &video_segments,
+            source_map,
+            audio_input_index,
+        )?;
+
+        self.build_overlay_filters_wrapper(&mut filters, &overlay_segments, source_map)?;
+
+        self.build_audio_mix_filters(&mut filters, &music_segments, source_map, has_base_track)?;
+
+        Ok(filters.join("; "))
+    }
+
+    fn categorize_segments(&self) -> (Vec<&Segment>, Vec<&Segment>, Vec<&Segment>) {
+        let mut video = Vec::new();
+        let mut overlay = Vec::new();
+        let mut music = Vec::new();
 
         for segment in &self.timeline.segments {
             match &segment.data {
-                SegmentData::VideoSubset { .. } => video_segments.push(segment),
-                SegmentData::Image { .. } => overlay_segments.push(segment),
-                SegmentData::Music { .. } => music_segments.push(segment),
+                SegmentData::VideoSubset { .. } => video.push(segment),
+                SegmentData::Image { .. } => overlay.push(segment),
+                SegmentData::Music { .. } => music.push(segment),
             }
+        }
+        (video, overlay, music)
+    }
+
+    fn build_base_track_filters(
+        &self,
+        filters: &mut Vec<String>,
+        video_segments: &[&Segment],
+        source_map: &std::collections::HashMap<PathBuf, usize>,
+        audio_input_index: usize,
+    ) -> Result<bool> {
+        if video_segments.is_empty() {
+            return Ok(false);
         }
 
         // Sort video segments by start time to maintain timeline order
-        let mut sorted_video_segments = video_segments.clone();
+        let mut sorted_video_segments = video_segments.to_vec();
         sorted_video_segments.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
 
         // Build video concatenation in timeline order
@@ -611,32 +639,46 @@ impl RenderPipeline {
         }
 
         // Concatenate all video segments
-        if !sorted_video_segments.is_empty() {
-            filters.push(format!(
-                "{inputs}concat=n={count}:v=1:a=1[concat_v][concat_a]",
-                inputs = concat_inputs,
-                count = sorted_video_segments.len()
-            ));
-        }
+        filters.push(format!(
+            "{inputs}concat=n={count}:v=1:a=1[concat_v][concat_a]",
+            inputs = concat_inputs,
+            count = sorted_video_segments.len()
+        ));
 
-        // Apply overlays if any
+        Ok(true)
+    }
+
+    fn build_overlay_filters_wrapper(
+        &self,
+        filters: &mut Vec<String>,
+        overlay_segments: &[&Segment],
+        source_map: &std::collections::HashMap<PathBuf, usize>,
+    ) -> Result<()> {
         if overlay_segments.is_empty() {
             filters.push("[concat_v]copy[outv]".to_string());
         } else {
             // Build overlay application with time-based enabling
-            self.apply_overlays(&mut filters, &overlay_segments, source_map)?;
+            self.apply_overlays(filters, overlay_segments, source_map)?;
         }
+        Ok(())
+    }
 
+    fn build_audio_mix_filters(
+        &self,
+        filters: &mut Vec<String>,
+        music_segments: &[&Segment],
+        source_map: &std::collections::HashMap<PathBuf, usize>,
+        has_base_track: bool,
+    ) -> Result<()> {
         let mut audio_label: Option<String> = None;
 
-        if !sorted_video_segments.is_empty() {
+        if has_base_track {
             filters.push("[concat_a]anull[a_base]".to_string());
             audio_label = Some("a_base".to_string());
         }
 
         if !music_segments.is_empty() {
-            let music_label =
-                self.build_music_filters(&mut filters, &music_segments, source_map)?;
+            let music_label = self.build_music_filters(filters, music_segments, source_map)?;
             audio_label = Some(match audio_label {
                 Some(base) => {
                     let mixed = "a_mix".to_string();
@@ -655,6 +697,7 @@ impl RenderPipeline {
         let final_audio = if let Some(label) = audio_label {
             label
         } else {
+            let total_duration = self.timeline.total_duration();
             let duration = format_time(total_duration);
             filters.push(format!(
                 "anullsrc=r=48000:cl=stereo,atrim=duration={duration}[a_silence]",
@@ -663,7 +706,7 @@ impl RenderPipeline {
         };
 
         filters.push(format!("[{label}]anull[outa]", label = final_audio));
-        Ok(filters.join("; "))
+        Ok(())
     }
 
     fn apply_overlays(

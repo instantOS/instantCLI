@@ -631,90 +631,16 @@ impl FzfBuilder {
 
     /// Select with vertical padding around each item.
     /// Uses NUL-separated multi-line items so the entire padded area is highlighted.
-    /// This is ideal for modern, spacious menu layouts.
-    /// Select with vertical padding around each item.
-    /// Uses NUL-separated multi-line items so the entire padded area is highlighted.
     /// Uses FZF's {n} index for reliable item matching instead of parsing display text.
     pub fn select_padded<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
         if items.is_empty() {
             return Ok(FzfResult::Cancelled);
         }
 
-        // Build NUL-separated input with padding - each item is 3 lines:
-        // Line 1: blank padding with colored block
-        // Line 2: content with indent
-        // Line 3: blank padding with colored block + shadow effect at bottom
-        let mut input_lines = Vec::new();
+        let input_text = Self::prepare_padded_input(&items);
+        let preview_dir = Self::prepare_padded_previews(&items)?;
 
-        for item in &items {
-            let display = item.fzf_display_text();
-            // Extract background color from display text to create matching padding
-            // The icon badge format is: {bg}{fg}  {icon}  {reset} ...
-            // We want padding lines to have the same colored block at the start,
-            // with a subtle shadow on the bottom padding using a lower block character
-            let (top_padding, bottom_with_shadow) = extract_icon_padding(&display);
-            // Create padded multi-line item with shadow on bottom
-            let padded_item = format!("{top_padding}\n  {display}\n{bottom_with_shadow}");
-            input_lines.push(padded_item);
-        }
-
-        // Write previews to individual files for reliable lookup by index
-        let preview_dir = std::env::temp_dir().join(format!("fzf_preview_{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&preview_dir);
-        {
-            use std::io::Write;
-            for (idx, item) in items.iter().enumerate() {
-                if let FzfPreview::Text(preview) = item.fzf_preview() {
-                    let preview_path = preview_dir.join(format!("{}.txt", idx));
-                    if let Ok(mut file) = std::fs::File::create(&preview_path) {
-                        let _ = file.write_all(preview.as_bytes());
-                    }
-                }
-            }
-        }
-
-        // Build NUL-separated input
-        let input_text = input_lines.join("\0");
-
-        let mut cmd = Command::new("fzf");
-        cmd.env_remove("FZF_DEFAULT_OPTS");
-
-        // Core options for multi-line items
-        cmd.arg("--read0"); // NUL-separated input
-        cmd.arg("--ansi"); // ANSI color support
-        cmd.arg("--highlight-line"); // Highlight entire multi-line item
-        cmd.arg("--layout=reverse");
-        cmd.arg("--tiebreak=index");
-        cmd.arg("--info=inline-right");
-
-        // Use --bind to print the index on accept instead of the selection text
-        // {n} is the 0-based index of the selected item
-        cmd.arg("--bind").arg("enter:become(echo {n})");
-
-        // Preview command using {n} for the 0-based item index
-        let preview_cmd = format!(
-            "cat {}/{{n}}.txt 2>/dev/null || echo ''",
-            preview_dir.display()
-        );
-        cmd.arg("--preview").arg(&preview_cmd);
-
-        // Apply prompt and header
-        if let Some(prompt) = &self.prompt {
-            cmd.arg("--prompt").arg(format!("{prompt} > "));
-        }
-        if let Some(header) = &self.header {
-            cmd.arg("--header").arg(header);
-        }
-
-        // Apply initial cursor position
-        if let Some(InitialCursor::Index(index)) = self.initial_cursor {
-            cmd.arg("--bind").arg(format!("load:pos({})", index + 1));
-        }
-
-        // Apply all additional args (styling, colors, etc.)
-        for arg in &self.additional_args {
-            cmd.arg(arg);
-        }
+        let mut cmd = self.configure_padded_cmd(&preview_dir);
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -768,6 +694,83 @@ impl FzfBuilder {
             }
             Err(e) => Ok(FzfResult::Error(format!("fzf execution failed: {e}"))),
         }
+    }
+
+    fn prepare_padded_input<T: FzfSelectable>(items: &[T]) -> String {
+        let mut input_lines = Vec::new();
+
+        for item in items {
+            let display = item.fzf_display_text();
+            // Extract background color from display text to create matching padding
+            // The icon badge format is: {bg}{fg}  {icon}  {reset} ...
+            // We want padding lines to have the same colored block at the start,
+            // with a subtle shadow on the bottom padding using a lower block character
+            let (top_padding, bottom_with_shadow) = extract_icon_padding(&display);
+            // Create padded multi-line item with shadow on bottom
+            let padded_item = format!("{top_padding}\n  {display}\n{bottom_with_shadow}");
+            input_lines.push(padded_item);
+        }
+
+        input_lines.join("\0")
+    }
+
+    fn prepare_padded_previews<T: FzfSelectable>(items: &[T]) -> Result<std::path::PathBuf> {
+        let preview_dir = std::env::temp_dir().join(format!("fzf_preview_{}", std::process::id()));
+        std::fs::create_dir_all(&preview_dir)?;
+
+        for (idx, item) in items.iter().enumerate() {
+            if let FzfPreview::Text(preview) = item.fzf_preview() {
+                let preview_path = preview_dir.join(format!("{}.txt", idx));
+                if let Ok(mut file) = std::fs::File::create(&preview_path) {
+                    let _ = file.write_all(preview.as_bytes());
+                }
+            }
+        }
+        Ok(preview_dir)
+    }
+
+    fn configure_padded_cmd(&self, preview_dir: &std::path::Path) -> Command {
+        let mut cmd = Command::new("fzf");
+        cmd.env_remove("FZF_DEFAULT_OPTS");
+
+        // Core options for multi-line items
+        cmd.arg("--read0"); // NUL-separated input
+        cmd.arg("--ansi"); // ANSI color support
+        cmd.arg("--highlight-line"); // Highlight entire multi-line item
+        cmd.arg("--layout=reverse");
+        cmd.arg("--tiebreak=index");
+        cmd.arg("--info=inline-right");
+
+        // Use --bind to print the index on accept instead of the selection text
+        // {n} is the 0-based index of the selected item
+        cmd.arg("--bind").arg("enter:become(echo {n})");
+
+        // Preview command using {n} for the 0-based item index
+        let preview_cmd = format!(
+            "cat {}/{{n}}.txt 2>/dev/null || echo ''",
+            preview_dir.display()
+        );
+        cmd.arg("--preview").arg(&preview_cmd);
+
+        // Apply prompt and header
+        if let Some(prompt) = &self.prompt {
+            cmd.arg("--prompt").arg(format!("{prompt} > "));
+        }
+        if let Some(header) = &self.header {
+            cmd.arg("--header").arg(header);
+        }
+
+        // Apply initial cursor position
+        if let Some(InitialCursor::Index(index)) = self.initial_cursor {
+            cmd.arg("--bind").arg(format!("load:pos({})", index + 1));
+        }
+
+        // Apply all additional args (styling, colors, etc.)
+        for arg in &self.additional_args {
+            cmd.arg(arg);
+        }
+
+        cmd
     }
 
     pub fn select_streaming(self, command: &str) -> Result<FzfResult<String>> {

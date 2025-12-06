@@ -8,11 +8,11 @@ mod command_macros;
 
 mod appearance;
 mod apps;
-mod brightness;
+pub mod brightness;
 mod desktop;
 mod keyboard;
 mod language;
-mod mouse;
+pub mod mouse;
 mod network;
 mod packages;
 mod printers;

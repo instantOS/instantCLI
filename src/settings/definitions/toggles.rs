@@ -43,60 +43,57 @@ impl Setting for ClipboardManager {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         let current = ctx.bool(Self::KEY);
-        let target = !current;
-        ctx.set_bool(Self::KEY, target);
-        apply_clipboard_impl(ctx, target)
+        let enabled = !current;
+        ctx.set_bool(Self::KEY, enabled);
+
+        let is_running = std::process::Command::new("pgrep")
+            .arg("-f")
+            .arg("clipmenud")
+            .output()
+            .map(|output| !output.stdout.is_empty())
+            .unwrap_or(false);
+
+        if enabled && !is_running {
+            if let Err(err) = std::process::Command::new("clipmenud")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                emit(
+                    Level::Warn,
+                    "settings.clipboard.spawn_failed",
+                    &format!(
+                        "{} Failed to launch clipmenud: {err}",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
+            } else {
+                ctx.notify("Clipboard manager", "clipmenud started");
+            }
+        } else if !enabled && is_running {
+            if let Err(err) = cmd!("pkill", "-f", "clipmenud").run() {
+                emit(
+                    Level::Warn,
+                    "settings.clipboard.stop_failed",
+                    &format!(
+                        "{} Failed to stop clipmenud: {err}",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
+            } else {
+                ctx.notify("Clipboard manager", "clipmenud stopped");
+            }
+        }
+
+        Ok(())
     }
 
     // No restore needed - clipmenud isn't critical for system startup
 }
 
 inventory::submit! { &ClipboardManager as &'static dyn Setting }
-
-fn apply_clipboard_impl(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    let is_running = std::process::Command::new("pgrep")
-        .arg("-f")
-        .arg("clipmenud")
-        .output()
-        .map(|output| !output.stdout.is_empty())
-        .unwrap_or(false);
-
-    if enabled && !is_running {
-        if let Err(err) = std::process::Command::new("clipmenud")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        {
-            emit(
-                Level::Warn,
-                "settings.clipboard.spawn_failed",
-                &format!(
-                    "{} Failed to launch clipmenud: {err}",
-                    char::from(NerdFont::Warning)
-                ),
-                None,
-            );
-        } else {
-            ctx.notify("Clipboard manager", "clipmenud started");
-        }
-    } else if !enabled && is_running {
-        if let Err(err) = cmd!("pkill", "-f", "clipmenud").run() {
-            emit(
-                Level::Warn,
-                "settings.clipboard.stop_failed",
-                &format!(
-                    "{} Failed to stop clipmenud: {err}",
-                    char::from(NerdFont::Warning)
-                ),
-                None,
-            );
-        } else {
-            ctx.notify("Clipboard manager", "clipmenud stopped");
-        }
-    }
-
-    Ok(())
-}
 
 // ============================================================================
 // Auto-mount Disks
@@ -125,70 +122,67 @@ impl Setting for AutomountDisks {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         let current = ctx.bool(Self::KEY);
-        let target = !current;
-        ctx.set_bool(Self::KEY, target);
-        apply_automount_impl(ctx, target)
+        let enabled = !current;
+        ctx.set_bool(Self::KEY, enabled);
+
+        const UDISKIE_SERVICE_NAME: &str = "udiskie";
+
+        // Ensure udiskie is installed
+        if !UDISKIE_PACKAGE.ensure()? {
+            ctx.set_bool(Self::KEY, false);
+            ctx.emit_info(
+                "settings.storage.udiskie.aborted",
+                "Auto-mount setup was cancelled.",
+            );
+            return Ok(());
+        }
+
+        let systemd_manager = SystemdManager::user();
+
+        if enabled {
+            let service_config = UserServiceConfig::new(
+                UDISKIE_SERVICE_NAME,
+                "udiskie removable media automounter",
+                "/usr/bin/udiskie",
+            );
+
+            if let Err(err) = systemd_manager.create_user_service(&service_config) {
+                emit(
+                    Level::Warn,
+                    "settings.storage.udiskie.service_creation_failed",
+                    &format!(
+                        "{} Failed to create udiskie service file: {err}",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
+                return Err(err);
+            }
+
+            if !systemd_manager.is_enabled(UDISKIE_SERVICE_NAME) {
+                systemd_manager.enable_and_start(UDISKIE_SERVICE_NAME)?;
+            } else if !systemd_manager.is_active(UDISKIE_SERVICE_NAME) {
+                systemd_manager.start(UDISKIE_SERVICE_NAME)?;
+            }
+
+            ctx.notify(
+                "Auto-mount",
+                "udiskie service enabled - removable drives will auto-mount",
+            );
+        } else if systemd_manager.is_enabled(UDISKIE_SERVICE_NAME)
+            || systemd_manager.is_active(UDISKIE_SERVICE_NAME)
+        {
+            systemd_manager.disable_and_stop(UDISKIE_SERVICE_NAME)?;
+            ctx.notify("Auto-mount", "udiskie service disabled");
+        }
+
+        Ok(())
     }
 
     // No restore needed - systemd handles service persistence
 }
 
 inventory::submit! { &AutomountDisks as &'static dyn Setting }
-
-const UDISKIE_SERVICE_NAME: &str = "udiskie";
-
-fn apply_automount_impl(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    // Ensure udiskie is installed
-    if !UDISKIE_PACKAGE.ensure()? {
-        ctx.set_bool(AutomountDisks::KEY, false);
-        ctx.emit_info(
-            "settings.storage.udiskie.aborted",
-            "Auto-mount setup was cancelled.",
-        );
-        return Ok(());
-    }
-
-    let systemd_manager = SystemdManager::user();
-
-    if enabled {
-        let service_config = UserServiceConfig::new(
-            UDISKIE_SERVICE_NAME,
-            "udiskie removable media automounter",
-            "/usr/bin/udiskie",
-        );
-
-        if let Err(err) = systemd_manager.create_user_service(&service_config) {
-            emit(
-                Level::Warn,
-                "settings.storage.udiskie.service_creation_failed",
-                &format!(
-                    "{} Failed to create udiskie service file: {err}",
-                    char::from(NerdFont::Warning)
-                ),
-                None,
-            );
-            return Err(err);
-        }
-
-        if !systemd_manager.is_enabled(UDISKIE_SERVICE_NAME) {
-            systemd_manager.enable_and_start(UDISKIE_SERVICE_NAME)?;
-        } else if !systemd_manager.is_active(UDISKIE_SERVICE_NAME) {
-            systemd_manager.start(UDISKIE_SERVICE_NAME)?;
-        }
-
-        ctx.notify(
-            "Auto-mount",
-            "udiskie service enabled - removable drives will auto-mount",
-        );
-    } else if systemd_manager.is_enabled(UDISKIE_SERVICE_NAME)
-        || systemd_manager.is_active(UDISKIE_SERVICE_NAME)
-    {
-        systemd_manager.disable_and_stop(UDISKIE_SERVICE_NAME)?;
-        ctx.notify("Auto-mount", "udiskie service disabled");
-    }
-
-    Ok(())
-}
 
 // ============================================================================
 // Bluetooth Service
@@ -219,99 +213,96 @@ impl Setting for BluetoothService {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         let current = ctx.bool(Self::KEY);
-        let target = !current;
-        ctx.set_bool(Self::KEY, target);
-        apply_bluetooth_impl(ctx, target)
+        let enabled = !current;
+        ctx.set_bool(Self::KEY, enabled);
+
+        const BLUETOOTH_SERVICE_NAME: &str = "bluetooth";
+
+        fn detect_bluetooth_hardware() -> bool {
+            if let Ok(entries) = std::fs::read_dir("/sys/class/bluetooth")
+                && entries.filter_map(Result::ok).next().is_some()
+            {
+                return true;
+            }
+
+            if let Ok(output) = std::process::Command::new("lsusb").output()
+                && output.status.success()
+                && String::from_utf8_lossy(&output.stdout)
+                    .to_lowercase()
+                    .contains("bluetooth")
+            {
+                return true;
+            }
+
+            if let Ok(output) = std::process::Command::new("rfkill").arg("list").output()
+                && output.status.success()
+                && String::from_utf8_lossy(&output.stdout)
+                    .to_lowercase()
+                    .contains("bluetooth")
+            {
+                return true;
+            }
+
+            false
+        }
+
+        fn ensure_bluetooth_ready(ctx: &mut SettingsContext) -> Result<bool> {
+            use crate::common::requirements::{BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE};
+
+            if !ctx.bool(BluetoothService::HARDWARE_OVERRIDE_KEY) && !detect_bluetooth_hardware() {
+                let result = FzfWrapper::builder()
+                    .confirm("System does not appear to have Bluetooth hardware. Proceed anyway?")
+                    .yes_text("Proceed")
+                    .no_text("Cancel")
+                    .show_confirmation()?;
+
+                match result {
+                    ConfirmResult::Yes => {
+                        ctx.set_bool(BluetoothService::HARDWARE_OVERRIDE_KEY, true);
+                    }
+                    ConfirmResult::No | ConfirmResult::Cancelled => {
+                        return Ok(false);
+                    }
+                }
+            }
+
+            if !ctx.ensure_packages(&[BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE])? {
+                return Ok(false);
+            }
+
+            Ok(true)
+        }
+
+        let systemd = SystemdManager::system_with_sudo();
+
+        if enabled {
+            if !ensure_bluetooth_ready(ctx)? {
+                ctx.set_bool(Self::KEY, false);
+                ctx.emit_info(
+                    "settings.bluetooth.service.aborted",
+                    "Bluetooth service enablement was cancelled.",
+                );
+                return Ok(());
+            }
+
+            if !systemd.is_enabled(BLUETOOTH_SERVICE_NAME) {
+                systemd.enable_and_start(BLUETOOTH_SERVICE_NAME)?;
+            } else if !systemd.is_active(BLUETOOTH_SERVICE_NAME) {
+                systemd.start(BLUETOOTH_SERVICE_NAME)?;
+            }
+
+            ctx.notify("Bluetooth service", "Bluetooth service enabled");
+        } else if systemd.is_enabled(BLUETOOTH_SERVICE_NAME)
+            || systemd.is_active(BLUETOOTH_SERVICE_NAME)
+        {
+            systemd.disable_and_stop(BLUETOOTH_SERVICE_NAME)?;
+            ctx.notify("Bluetooth service", "Bluetooth service disabled");
+        }
+
+        Ok(())
     }
 
     // No restore needed - systemd handles service persistence
 }
 
 inventory::submit! { &BluetoothService as &'static dyn Setting }
-
-const BLUETOOTH_SERVICE_NAME: &str = "bluetooth";
-
-fn detect_bluetooth_hardware() -> bool {
-    if let Ok(entries) = std::fs::read_dir("/sys/class/bluetooth")
-        && entries.filter_map(Result::ok).next().is_some()
-    {
-        return true;
-    }
-
-    if let Ok(output) = std::process::Command::new("lsusb").output()
-        && output.status.success()
-        && String::from_utf8_lossy(&output.stdout)
-            .to_lowercase()
-            .contains("bluetooth")
-    {
-        return true;
-    }
-
-    if let Ok(output) = std::process::Command::new("rfkill").arg("list").output()
-        && output.status.success()
-        && String::from_utf8_lossy(&output.stdout)
-            .to_lowercase()
-            .contains("bluetooth")
-    {
-        return true;
-    }
-
-    false
-}
-
-fn ensure_bluetooth_ready(ctx: &mut SettingsContext) -> Result<bool> {
-    use crate::common::requirements::{BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE};
-
-    if !ctx.bool(BluetoothService::HARDWARE_OVERRIDE_KEY) && !detect_bluetooth_hardware() {
-        let result = FzfWrapper::builder()
-            .confirm("System does not appear to have Bluetooth hardware. Proceed anyway?")
-            .yes_text("Proceed")
-            .no_text("Cancel")
-            .show_confirmation()?;
-
-        match result {
-            ConfirmResult::Yes => {
-                ctx.set_bool(BluetoothService::HARDWARE_OVERRIDE_KEY, true);
-            }
-            ConfirmResult::No | ConfirmResult::Cancelled => {
-                return Ok(false);
-            }
-        }
-    }
-
-    if !ctx.ensure_packages(&[BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE])? {
-        return Ok(false);
-    }
-
-    Ok(true)
-}
-
-fn apply_bluetooth_impl(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    let systemd = SystemdManager::system_with_sudo();
-
-    if enabled {
-        if !ensure_bluetooth_ready(ctx)? {
-            ctx.set_bool(BluetoothService::KEY, false);
-            ctx.emit_info(
-                "settings.bluetooth.service.aborted",
-                "Bluetooth service enablement was cancelled.",
-            );
-            return Ok(());
-        }
-
-        if !systemd.is_enabled(BLUETOOTH_SERVICE_NAME) {
-            systemd.enable_and_start(BLUETOOTH_SERVICE_NAME)?;
-        } else if !systemd.is_active(BLUETOOTH_SERVICE_NAME) {
-            systemd.start(BLUETOOTH_SERVICE_NAME)?;
-        }
-
-        ctx.notify("Bluetooth service", "Bluetooth service enabled");
-    } else if systemd.is_enabled(BLUETOOTH_SERVICE_NAME)
-        || systemd.is_active(BLUETOOTH_SERVICE_NAME)
-    {
-        systemd.disable_and_stop(BLUETOOTH_SERVICE_NAME)?;
-        ctx.notify("Bluetooth service", "Bluetooth service disabled");
-    }
-
-    Ok(())
-}

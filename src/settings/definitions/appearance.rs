@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::common::compositor::CompositorType;
 use crate::common::requirements::{YAZI_PACKAGE, ZENITY_PACKAGE};
 use crate::menu_utils::{FzfWrapper, MenuWrapper};
 use crate::settings::context::SettingsContext;
@@ -29,7 +30,8 @@ impl Setting for Animations {
             .title("Animations")
             .category(Category::Appearance)
             .icon(NerdFont::Magic)
-            .summary("Enable smooth animations and visual effects on the desktop.\n\nDisable for better performance on older hardware.\n\nNote: Placeholder only; changing this setting currently has no effect.")
+            .summary("Enable smooth animations and visual effects on the desktop.\n\nDisable for better performance on older hardware.\n\nOnly supported on instantwm.")
+            .requires_reapply(true)
             .build()
     }
 
@@ -39,17 +41,97 @@ impl Setting for Animations {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         let current = ctx.bool(Self::KEY);
-        let target = !current;
-        ctx.set_bool(Self::KEY, target);
-        ctx.notify(
-            "Animations",
-            if target {
-                "Enabled (no effect yet)"
-            } else {
-                "Disabled (no effect yet)"
-            },
-        );
+        let enabled = !current;
+        ctx.set_bool(Self::KEY, enabled);
+
+        let compositor = CompositorType::detect();
+        if !matches!(compositor, CompositorType::InstantWM) {
+            ctx.emit_unsupported(
+                "settings.appearance.animations.unsupported",
+                &format!(
+                    "Animation configuration is only supported on instantwm. Detected: {}. Setting saved but not applied.",
+                    compositor.name()
+                ),
+            );
+            return Ok(());
+        }
+
+        // Note: instantwmctl animated uses inverted logic:
+        // 0 = animations enabled, 1 = animations disabled
+        let animated_value = if enabled { "0" } else { "1" };
+        let status = Command::new("instantwmctl")
+            .args(["animated", animated_value])
+            .status();
+
+        match status {
+            Ok(exit) if exit.success() => {
+                ctx.notify("Animations", if enabled { "Enabled" } else { "Disabled" });
+            }
+            Ok(exit) => {
+                ctx.emit_failure(
+                    "settings.appearance.animations.apply_failed",
+                    &format!(
+                        "Failed to apply animation setting (exit code {}).",
+                        exit.code().unwrap_or(-1)
+                    ),
+                );
+            }
+            Err(err) => {
+                ctx.emit_failure(
+                    "settings.appearance.animations.apply_error",
+                    &format!("Failed to run instantwmctl: {err}"),
+                );
+            }
+        }
+
         Ok(())
+    }
+
+    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
+        let compositor = CompositorType::detect();
+        if !matches!(compositor, CompositorType::InstantWM) {
+            return None;
+        }
+
+        let enabled = ctx.bool(Self::KEY);
+        // Note: instantwmctl animated uses inverted logic:
+        // 0 = animations enabled, 1 = animations disabled
+        let animated_value = if enabled { "0" } else { "1" };
+        let status = Command::new("instantwmctl")
+            .args(["animated", animated_value])
+            .status();
+
+        let result = match status {
+            Ok(exit) if exit.success() => {
+                ctx.emit_info(
+                    "settings.appearance.animations.restored",
+                    &format!(
+                        "Restored instantwm animations: {}",
+                        if enabled { "enabled" } else { "disabled" }
+                    ),
+                );
+                Ok(())
+            }
+            Ok(exit) => {
+                ctx.emit_failure(
+                    "settings.appearance.animations.restore_failed",
+                    &format!(
+                        "Failed to restore instantwm animations (exit code {}).",
+                        exit.code().unwrap_or(-1)
+                    ),
+                );
+                Ok(())
+            }
+            Err(err) => {
+                ctx.emit_failure(
+                    "settings.appearance.animations.restore_error",
+                    &format!("Failed to run instantwmctl: {err}"),
+                );
+                Ok(())
+            }
+        };
+
+        Some(result)
     }
 }
 
