@@ -273,6 +273,8 @@ impl Setting for WindowLayout {
     }
 }
 
+inventory::submit! { &WindowLayout as &'static dyn Setting }
+
 // ============================================================================
 // Gaming Mouse (GUI app)
 // ============================================================================

@@ -93,6 +93,8 @@ impl Setting for ClipboardManager {
     // No restore needed - clipmenud isn't critical for system startup
 }
 
+inventory::submit! { &ClipboardManager as &'static dyn Setting }
+
 // ============================================================================
 // Auto-mount Disks
 // ============================================================================
@@ -179,6 +181,8 @@ impl Setting for AutomountDisks {
 
     // No restore needed - systemd handles service persistence
 }
+
+inventory::submit! { &AutomountDisks as &'static dyn Setting }
 
 // ============================================================================
 // Bluetooth Service

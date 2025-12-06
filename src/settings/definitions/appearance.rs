@@ -135,6 +135,8 @@ impl Setting for Animations {
     }
 }
 
+inventory::submit! { &Animations as &'static dyn Setting }
+
 // ============================================================================
 // Wallpaper Settings
 // ============================================================================

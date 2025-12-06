@@ -56,6 +56,8 @@ impl Setting for NaturalScroll {
     }
 }
 
+inventory::submit! { &NaturalScroll as &'static dyn Setting }
+
 // ============================================================================
 // Swap Mouse Buttons
 // ============================================================================
@@ -98,6 +100,8 @@ impl Setting for SwapButtons {
         Some(apply_swap_buttons(ctx, enabled))
     }
 }
+
+inventory::submit! { &SwapButtons as &'static dyn Setting }
 
 // ============================================================================
 // Mouse Sensitivity
