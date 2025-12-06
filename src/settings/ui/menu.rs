@@ -140,7 +140,7 @@ fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> R
         return Ok(MenuAction::Exit);
     }
 
-    let mut menu_items = Vec::with_capacity(categories_with_settings.len() + 1);
+    let mut menu_items = Vec::with_capacity(categories_with_settings.len() + 2);
     menu_items.push(CategoryMenuItem::SearchAll);
 
     for (category, settings) in categories_with_settings {
@@ -148,6 +148,7 @@ fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> R
             category, settings,
         )));
     }
+    menu_items.push(CategoryMenuItem::Close);
 
     let selection = select_one_with_style_at(menu_items.clone(), initial_cursor)?;
     let selected_index = selection.as_ref().and_then(|item| {
@@ -156,6 +157,7 @@ fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> R
             (CategoryMenuItem::Category(a), CategoryMenuItem::Category(b)) => {
                 a.category == b.category
             }
+            (CategoryMenuItem::Close, CategoryMenuItem::Close) => true,
             _ => false,
         })
     });
@@ -167,7 +169,7 @@ fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> R
             main_menu_cursor: selected_index,
             category_cursor: None,
         },
-        None => MenuAction::Exit,
+        Some(CategoryMenuItem::Close) | None => MenuAction::Exit,
     };
 
     Ok(action)

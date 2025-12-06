@@ -30,6 +30,7 @@ impl CategoryItem {
 pub enum CategoryMenuItem {
     SearchAll,
     Category(CategoryItem),
+    Close,
 }
 
 // ============================================================================
@@ -146,6 +147,7 @@ impl FzfSelectable for CategoryMenuItem {
                 format!("{} Search all settings", format_search_icon())
             }
             CategoryMenuItem::Category(item) => item.fzf_display_text(),
+            CategoryMenuItem::Close => format!("{} Close", format_back_icon()),
         }
     }
 
@@ -174,6 +176,9 @@ impl FzfSelectable for CategoryMenuItem {
                 crate::menu_utils::FzfPreview::Text(lines.join("\n"))
             }
             CategoryMenuItem::Category(item) => item.fzf_preview(),
+            CategoryMenuItem::Close => crate::menu_utils::FzfPreview::Text(
+                "Exit settings".to_string(),
+            ),
         }
     }
 }
