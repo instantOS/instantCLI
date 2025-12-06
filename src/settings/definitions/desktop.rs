@@ -192,6 +192,7 @@ impl Setting for WindowLayout {
             .icon(NerdFont::List)
             .summary("Choose how windows are arranged on your screen by default.\n\nYou can always change the layout temporarily with keyboard shortcuts.")
             .requires_reapply(true)
+            .breadcrumbs(&crate::settings::setting::breadcrumbs_from_path(module_path!()))
             .build()
     }
 

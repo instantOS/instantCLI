@@ -296,8 +296,11 @@ impl SettingMetadataBuilder {
         self
     }
 
-    pub fn breadcrumbs(mut self, breadcrumbs: &[&'static str]) -> Self {
-        self.breadcrumbs = breadcrumbs.to_vec();
+    /// Set the module path to auto-generate breadcrumbs
+    ///
+    /// Usage: `.module_path(module_path!())`
+    pub fn module_path(mut self, path: &'static str) -> Self {
+        self.breadcrumbs = breadcrumbs_from_path(path);
         self
     }
 

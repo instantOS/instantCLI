@@ -32,6 +32,7 @@ impl Setting for NaturalScroll {
             .icon(NerdFont::Mouse)
             .summary("Reverse the scroll direction to match touchpad/touchscreen behavior.\n\nWhen enabled, scrolling up moves the content up (like pushing paper).\n\nSupports Sway and X11 window managers.")
             .requires_reapply(true)
+            .breadcrumbs(&crate::settings::setting::breadcrumbs_from_path(module_path!()))
             .build()
     }
 

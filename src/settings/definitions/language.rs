@@ -23,6 +23,7 @@ impl Setting for SystemLanguage {
             .icon(NerdFont::Globe)
             .summary("Manage system locales and choose the default language.\n\nEnable or disable locales in /etc/locale.gen and set LANG via localectl.")
             .requires_reapply(true)
+            .module_path(module_path!())
             .build()
     }
 
@@ -50,7 +51,7 @@ impl Setting for Timezone {
             .title("Timezone")
             .category(Category::Language)
             .icon(NerdFont::Clock)
-            .breadcrumbs(&["Language", "Timezone"])
+            .module_path(module_path!())
             .summary("Select the system timezone via timedatectl set-timezone.")
             .build()
     }

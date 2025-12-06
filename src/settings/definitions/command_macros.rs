@@ -55,9 +55,7 @@ macro_rules! gui_command_setting {
                     .requirements(&[$crate::settings::setting::Requirement::Package(
                         $requirement,
                     )])
-                    .breadcrumbs(&$crate::settings::setting::breadcrumbs_from_path(
-                        module_path!(),
-                    ))
+                    .module_path(module_path!())
                     .build()
             }
 
@@ -146,9 +144,7 @@ macro_rules! tui_command_setting {
                     .requirements(&[$crate::settings::setting::Requirement::Package(
                         $requirement,
                     )])
-                    .breadcrumbs(&$crate::settings::setting::breadcrumbs_from_path(
-                        module_path!(),
-                    ))
+                    .module_path(module_path!())
                     .build()
             }
 
@@ -238,7 +234,7 @@ macro_rules! simple_toggle_setting {
                     .category($category)
                     .icon($icon)
                     .summary($summary)
-                    .breadcrumbs(&$crate::settings::setting::breadcrumbs_from_path(module_path!()))
+                    .module_path(module_path!())
                     .build()
             }
 

@@ -21,6 +21,7 @@ impl Setting for ManageUsers {
             .category(Category::Users)
             .icon(NerdFont::Users)
             .summary("Create, modify, and delete user accounts.\n\nManage user groups, shells, and permissions.")
+            .module_path(module_path!())
             .build()
     }
 
