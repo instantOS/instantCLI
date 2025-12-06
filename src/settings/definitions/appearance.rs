@@ -389,6 +389,205 @@ impl Setting for ApplyColoredWallpaper {
 
 inventory::submit! { &ApplyColoredWallpaper as &'static dyn Setting }
 
+// ============================================================================
+// GTK Icon Theme
+// ============================================================================
+
+pub struct GtkIconTheme;
+
+impl Setting for GtkIconTheme {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("appearance.gtk_icon_theme")
+            .title("GTK Icon Theme")
+            .category(Category::Appearance)
+            .icon(NerdFont::Image) // Use a generic image icon or find a better one
+            .summary("Select and apply a GTK icon theme.\n\nUpdates GTK 3/4 settings and GSettings for Sway.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let themes = list_icon_themes()?;
+        if themes.is_empty() {
+            ctx.emit_failure(
+                "settings.appearance.gtk_icon_theme.no_themes",
+                "No icon themes found in standard directories.",
+            );
+            return Ok(());
+        }
+
+        let selected = FzfWrapper::builder()
+            .prompt("Select Icon Theme")
+            .header("Choose an icon theme to apply globally")
+            .select(themes)?;
+
+        if let crate::menu_utils::FzfResult::Selected(theme) = selected {
+            // 1. Apply to GSettings (Wayland/Sway primary)
+            let status = Command::new("gsettings")
+                .args(["set", "org.gnome.desktop.interface", "icon-theme", &theme])
+                .status();
+
+            match status {
+                Ok(exit) if exit.success() => {
+                    ctx.notify("Icon Theme", &format!("Applied '{}' to GSettings", theme));
+                }
+                Ok(exit) => {
+                    ctx.emit_failure(
+                        "settings.appearance.gtk_icon_theme.gsettings_failed",
+                        &format!(
+                            "GSettings failed with exit code {}",
+                            exit.code().unwrap_or(-1)
+                        ),
+                    );
+                }
+                Err(e) => {
+                    ctx.emit_failure(
+                        "settings.appearance.gtk_icon_theme.gsettings_error",
+                        &format!("Failed to execute gsettings: {e}"),
+                    );
+                }
+            }
+
+            // 2. Update settings.ini files for GTK 3 and 4
+            if let Err(e) = update_gtk_config("3.0", &theme) {
+                ctx.emit_failure(
+                    "settings.appearance.gtk_icon_theme.gtk3_error",
+                    &format!("Failed to update GTK 3.0 config: {e}"),
+                );
+            }
+
+            if let Err(e) = update_gtk_config("4.0", &theme) {
+                ctx.emit_failure(
+                    "settings.appearance.gtk_icon_theme.gtk4_error",
+                    &format!("Failed to update GTK 4.0 config: {e}"),
+                );
+            }
+        }
+
+        Ok(())
+    }
+}
+
+inventory::submit! { &GtkIconTheme as &'static dyn Setting }
+
+// Helpers for GTK Icon Theme
+
+fn list_icon_themes() -> Result<Vec<String>> {
+    let mut themes = std::collections::HashSet::new();
+    let dirs = [
+        dirs::home_dir().map(|p| p.join(".icons")),
+        dirs::data_local_dir().map(|p| p.join("icons")),
+        Some(std::path::PathBuf::from("/usr/share/icons")),
+    ];
+
+    for dir in dirs.into_iter().flatten() {
+        if !dir.exists() {
+            continue;
+        }
+
+        for entry in walkdir::WalkDir::new(dir)
+            .min_depth(1)
+            .max_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_type().is_dir() {
+                // Check for index.theme
+                if entry.path().join("index.theme").exists() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        themes.insert(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result: Vec<String> = themes.into_iter().collect();
+    result.sort();
+    Ok(result)
+}
+
+fn update_gtk_config(version: &str, theme: &str) -> Result<()> {
+    let config_dir = dirs::config_dir()
+        .context("Could not find config directory")?
+        .join(format!("gtk-{}", version));
+
+    if !config_dir.exists() {
+        std::fs::create_dir_all(&config_dir)?;
+    }
+
+    let settings_path = config_dir.join("settings.ini");
+    let content = if settings_path.exists() {
+        std::fs::read_to_string(&settings_path)?
+    } else {
+        String::new()
+    };
+
+    let mut new_lines = Vec::new();
+    let mut found_section = false;
+    let mut found_key = false;
+    let mut in_settings_section = false;
+
+    // Simple parser to update INI file
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[Settings]" {
+            found_section = true;
+            in_settings_section = true;
+            new_lines.push(line.to_string());
+            continue;
+        }
+
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_settings_section = false;
+        }
+
+        if in_settings_section && trimmed.starts_with("gtk-icon-theme-name") {
+            new_lines.push(format!("gtk-icon-theme-name={}", theme));
+            found_key = true;
+        } else {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    if !found_section {
+        if !new_lines.is_empty() && !new_lines.last().unwrap().is_empty() {
+            new_lines.push("".to_string());
+        }
+        new_lines.push("[Settings]".to_string());
+        new_lines.push(format!("gtk-icon-theme-name={}", theme));
+    } else if !found_key {
+        // Find where to insert the key in the [Settings] section
+        // We'll just append it after the [Settings] line for simplicity in this case
+        // But since we are rebuilding the list, we need to be careful.
+        // Let's re-scan new_lines to find [Settings] and insert after it.
+        let mut final_lines = Vec::new();
+        for line in new_lines {
+            final_lines.push(line.clone());
+            if line.trim() == "[Settings]" && !found_key {
+                final_lines.push(format!("gtk-icon-theme-name={}", theme));
+                found_key = true;
+            }
+        }
+        new_lines = final_lines;
+    }
+
+    let new_content = new_lines.join("\n");
+    // Ensure trailing newline
+    let final_content = if new_content.ends_with('\n') {
+        new_content
+    } else {
+        format!("{}\n", new_content)
+    };
+
+    std::fs::write(settings_path, final_content)?;
+    Ok(())
+}
+
 // Helper
 fn pick_color_with_zenity(title: &str, initial: &str) -> Result<Option<String>> {
     let output = Command::new("zenity")
