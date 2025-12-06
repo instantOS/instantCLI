@@ -121,5 +121,35 @@ pub async fn run(debug: bool) -> Result<()> {
         eprintln!("Failed to apply wallpaper: {}", e);
     }
 
+    // Launch welcome app if enabled
+    if should_show_welcome() {
+        if debug {
+            println!("Launching welcome app");
+        }
+        if let Err(e) = crate::welcome::commands::handle_welcome_command(&None, true, debug)
+            && debug
+        {
+            eprintln!("Failed to launch welcome app: {}", e);
+        }
+    } else if debug {
+        println!("Welcome app autostart is disabled");
+    }
+
     Ok(())
+}
+
+fn should_show_welcome() -> bool {
+    use crate::settings::store::{BoolSettingKey, SettingsStore};
+
+    // Try to load settings and check if welcome autostart is enabled
+    match SettingsStore::load() {
+        Ok(store) => {
+            let key = BoolSettingKey::new("system.welcome_autostart", true);
+            store.bool(key)
+        }
+        Err(_) => {
+            // If we can't load settings, default to true (show welcome on first boot)
+            true
+        }
+    }
 }

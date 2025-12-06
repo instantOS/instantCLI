@@ -29,5 +29,7 @@ Repository-wide instructions for automated agents working in this codebase.
 
 - Direct system/developer/user instructions take precedence over this file.
 
+Do not build in release mode, it takes a long time. 
+
 These rules apply to the entire repository tree rooted at this file.
 

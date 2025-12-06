@@ -22,6 +22,7 @@ mod ui;
 mod update;
 mod video;
 mod wallpaper;
+mod welcome;
 
 use clap::{CommandFactory, Parser, Subcommand};
 
@@ -62,6 +63,7 @@ use crate::doctor::DoctorCommands;
 use crate::dot::commands::DotCommands;
 use crate::scratchpad::ScratchpadCommand;
 use crate::settings::SettingsCommands;
+use crate::welcome::WelcomeCommands;
 
 /// InstantCLI main parser
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -196,6 +198,14 @@ enum Commands {
     Update,
     /// Run autostart tasks (setup assist, update dots, etc.)
     Autostart,
+    /// Welcome app for instantOS first-time setup
+    Welcome {
+        #[command(subcommand)]
+        command: Option<WelcomeCommands>,
+        /// Open welcome app in a GUI terminal window (uses kitty)
+        #[arg(long = "gui")]
+        gui: bool,
+    },
 }
 
 fn initialize_cli(cli: &Cli) {
@@ -335,6 +345,13 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             execute_with_error_handling(
                 autostart::run(cli.debug).await,
                 "Error running autostart",
+                None,
+            )?;
+        }
+        Some(Commands::Welcome { command, gui }) => {
+            execute_with_error_handling(
+                welcome::handle_welcome_command(command, *gui, cli.debug),
+                "Error running welcome",
                 None,
             )?;
         }

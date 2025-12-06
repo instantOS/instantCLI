@@ -146,3 +146,52 @@ impl Setting for PacmanAutoclean {
 }
 
 inventory::submit! { &PacmanAutoclean as &'static dyn Setting }
+
+// ============================================================================
+// Welcome App Autostart
+// ============================================================================
+
+pub struct WelcomeAutostart;
+
+impl WelcomeAutostart {
+    const KEY: BoolSettingKey = BoolSettingKey::new("system.welcome_autostart", true);
+}
+
+impl Setting for WelcomeAutostart {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("system.welcome_autostart")
+            .title("Welcome app on startup")
+            .category(Category::System)
+            .icon(NerdFont::Home)
+            .breadcrumbs(&["Autostart"])
+            .summary("Show the welcome application automatically when logging in.\n\nThe welcome app provides quick access to the instantOS website and system settings.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Toggle { key: Self::KEY }
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let current = ctx.bool(Self::KEY);
+        let target = !current;
+        ctx.set_bool(Self::KEY, target);
+
+        if target {
+            ctx.emit_success(
+                "welcome.autostart.enabled",
+                "Welcome app will appear on next startup",
+            );
+        } else {
+            ctx.emit_success(
+                "welcome.autostart.disabled",
+                "Welcome app autostart has been disabled",
+            );
+        }
+
+        Ok(())
+    }
+}
+
+inventory::submit! { &WelcomeAutostart as &'static dyn Setting }
