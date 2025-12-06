@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1](https://github.com/instantOS/instantCLI/compare/v0.10.0...v0.10.1) - 2025-12-06
+
+### Other
+
+- remove inventory crate
+- clippy
+- make setting tree the single source of truth for setting location
+- init flatpak setting
+
 ## [0.9.2](https://github.com/instantOS/instantCLI/compare/v0.9.1...v0.9.2) - 2025-12-06
 
 ### Fixed
