@@ -181,7 +181,7 @@ impl FzfSelectable for CategoryMenuItem {
 impl FzfSelectable for SettingItem {
     fn fzf_display_text(&self) -> String {
         let meta = self.setting.metadata();
-        let icon_color = meta.category.color();
+        let icon_color = meta.icon_color.unwrap_or_else(|| meta.category.color());
 
         match self.state {
             SettingState::Toggle { enabled } => {
@@ -260,7 +260,7 @@ impl FzfSelectable for SearchItem {
     fn fzf_display_text(&self) -> String {
         let meta = self.setting.metadata();
         let path = format_setting_path(self.setting);
-        let icon_color = meta.category.color();
+        let icon_color = meta.icon_color.unwrap_or_else(|| meta.category.color());
 
         match self.state {
             SettingState::Toggle { enabled } => {
@@ -327,4 +327,83 @@ pub fn format_setting_path(setting: &dyn Setting) -> String {
     segments.push(meta.category.title());
     segments.extend(meta.breadcrumbs.iter().copied());
     segments.join(" -> ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::context::SettingsContext;
+    use crate::settings::setting::{Category, SettingMetadata, SettingType};
+    use crate::ui::prelude::NerdFont;
+    use anyhow::Result;
+
+    struct TestSetting {
+        color: Option<&'static str>,
+    }
+
+    impl Setting for TestSetting {
+        fn metadata(&self) -> SettingMetadata {
+            SettingMetadata::builder()
+                .id("test.setting")
+                .title("Test Setting")
+                .category(Category::Apps) // Default color is SAPPHIRE (#74c7ec)
+                .icon(NerdFont::Gear)
+                .icon_color(self.color)
+                .summary("Test Summary")
+                .build()
+        }
+
+        fn setting_type(&self) -> SettingType {
+            SettingType::Action
+        }
+
+        fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_setting_item_respects_custom_color() {
+        // Red background: #ff0000 -> 48;2;255;0;0
+        let setting = Box::leak(Box::new(TestSetting {
+            color: Some("#ff0000"),
+        }));
+        let item = SettingItem {
+            setting,
+            state: SettingState::Action,
+        };
+
+        let display = item.fzf_display_text();
+        assert!(display.contains("48;2;255;0;0m"));
+    }
+
+    #[test]
+    fn test_setting_item_fallback_to_category_color() {
+        let setting = Box::leak(Box::new(TestSetting { color: None }));
+        let item = SettingItem {
+            setting,
+            state: SettingState::Action,
+        };
+
+        // Category::Apps is SAPPHIRE (#74c7ec)
+        // 74c7ec -> R=116, G=199, B=236
+        // Expect background color set: 48;2;116;199;236
+        let display = item.fzf_display_text();
+        assert!(display.contains("48;2;116;199;236m"));
+    }
+
+    #[test]
+    fn test_search_item_respects_custom_color() {
+        // Green background: #00ff00 -> 48;2;0;255;0
+        let setting = Box::leak(Box::new(TestSetting {
+            color: Some("#00ff00"),
+        }));
+        let item = SearchItem {
+            setting,
+            state: SettingState::Action,
+        };
+
+        let display = item.fzf_display_text();
+        assert!(display.contains("48;2;0;255;0m"));
+    }
 }
