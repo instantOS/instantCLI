@@ -24,17 +24,14 @@ impl AutoTheming {
 
 impl Setting for AutoTheming {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "appearance.autotheming",
-            title: "Automatic Theming",
-            category: Category::Appearance,
-            icon: NerdFont::Palette,
-            icon_color: None,
-            breadcrumbs: &["Automatic Theming"],
-            summary: "Automatically apply instantOS color themes to applications.\n\nDisable this if you want to use your own custom themes.\n\nNote: Placeholder only; changing this setting currently has no effect.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("appearance.autotheming")
+            .title("Automatic Theming")
+            .category(Category::Appearance)
+            .icon(NerdFont::Palette)
+            .breadcrumbs(&["Automatic Theming"])
+            .summary("Automatically apply instantOS color themes to applications.\n\nDisable this if you want to use your own custom themes.\n\nNote: Placeholder only; changing this setting currently has no effect.")
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -72,17 +69,14 @@ impl Animations {
 
 impl Setting for Animations {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "appearance.animations",
-            title: "Animations",
-            category: Category::Appearance,
-            icon: NerdFont::Magic,
-            icon_color: None,
-            breadcrumbs: &["Animations"],
-            summary: "Enable smooth animations and visual effects on the desktop.\n\nDisable for better performance on older hardware.\n\nNote: Placeholder only; changing this setting currently has no effect.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("appearance.animations")
+            .title("Animations")
+            .category(Category::Appearance)
+            .icon(NerdFont::Magic)
+            .breadcrumbs(&["Animations"])
+            .summary("Enable smooth animations and visual effects on the desktop.\n\nDisable for better performance on older hardware.\n\nNote: Placeholder only; changing this setting currently has no effect.")
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -115,17 +109,15 @@ pub struct SetWallpaper;
 
 impl Setting for SetWallpaper {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "appearance.wallpaper",
-            title: "Wallpaper",
-            category: Category::Appearance,
-            icon: NerdFont::Image,
-            icon_color: None,
-            breadcrumbs: &["Wallpaper"],
-            summary: "Select and set a new wallpaper image.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(YAZI_PACKAGE)],
-        }
+        SettingMetadata::builder()
+            .id("appearance.wallpaper")
+            .title("Wallpaper")
+            .category(Category::Appearance)
+            .icon(NerdFont::Image)
+            .breadcrumbs(&["Wallpaper"])
+            .summary("Select and set a new wallpaper image.")
+            .requirements(&[Requirement::Package(YAZI_PACKAGE)])
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -170,17 +162,14 @@ impl WallpaperLogo {
 
 impl Setting for WallpaperLogo {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "appearance.wallpaper_logo",
-            title: "Show Logo on Wallpaper",
-            category: Category::Appearance,
-            icon: NerdFont::Image,
-            icon_color: None,
-            breadcrumbs: &["Wallpaper", "Show Logo"],
-            summary: "Show the instantOS logo on top of random wallpapers.\n\nWhen enabled, a logo overlay is applied when fetching random wallpapers.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("appearance.wallpaper_logo")
+            .title("Show Logo on Wallpaper")
+            .category(Category::Appearance)
+            .icon(NerdFont::Image)
+            .breadcrumbs(&["Wallpaper", "Show Logo"])
+            .summary("Show the instantOS logo on top of random wallpapers.\n\nWhen enabled, a logo overlay is applied when fetching random wallpapers.")
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -209,17 +198,14 @@ pub struct RandomWallpaper;
 
 impl Setting for RandomWallpaper {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "appearance.wallpaper_random",
-            title: "Random Wallpaper",
-            category: Category::Appearance,
-            icon: NerdFont::Refresh,
-            icon_color: None,
-            breadcrumbs: &["Wallpaper", "Random"],
-            summary: "Fetch and set a random wallpaper from Wallhaven.\n\nRespects the 'Show Logo on Wallpaper' setting.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("appearance.wallpaper_random")
+            .title("Random Wallpaper")
+            .category(Category::Appearance)
+            .icon(NerdFont::Refresh)
+            .breadcrumbs(&["Wallpaper", "Random"])
+            .summary("Fetch and set a random wallpaper from Wallhaven.\n\nRespects the 'Show Logo on Wallpaper' setting.")
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -260,17 +246,15 @@ pub struct WallpaperBgColor;
 
 impl Setting for WallpaperBgColor {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "appearance.wallpaper_bg_color",
-            title: "Background Color",
-            category: Category::Appearance,
-            icon: NerdFont::Palette,
-            icon_color: None,
-            breadcrumbs: &["Wallpaper", "Colored", "Background"],
-            summary: "Choose a background color for colored wallpapers.\n\nUses zenity color picker.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(ZENITY_PACKAGE)],
-        }
+        SettingMetadata::builder()
+            .id("appearance.wallpaper_bg_color")
+            .title("Background Color")
+            .category(Category::Appearance)
+            .icon(NerdFont::Palette)
+            .breadcrumbs(&["Wallpaper", "Colored", "Background"])
+            .summary("Choose a background color for colored wallpapers.\n\nUses zenity color picker.")
+            .requirements(&[Requirement::Package(ZENITY_PACKAGE)])
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -296,17 +280,15 @@ pub struct WallpaperFgColor;
 
 impl Setting for WallpaperFgColor {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "appearance.wallpaper_fg_color",
-            title: "Foreground Color",
-            category: Category::Appearance,
-            icon: NerdFont::Palette,
-            icon_color: None,
-            breadcrumbs: &["Wallpaper", "Colored", "Foreground"],
-            summary: "Choose a foreground/logo color for colored wallpapers.\n\nUses zenity color picker.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(ZENITY_PACKAGE)],
-        }
+        SettingMetadata::builder()
+            .id("appearance.wallpaper_fg_color")
+            .title("Foreground Color")
+            .category(Category::Appearance)
+            .icon(NerdFont::Palette)
+            .breadcrumbs(&["Wallpaper", "Colored", "Foreground"])
+            .summary("Choose a foreground/logo color for colored wallpapers.\n\nUses zenity color picker.")
+            .requirements(&[Requirement::Package(ZENITY_PACKAGE)])
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -332,17 +314,14 @@ pub struct ApplyColoredWallpaper;
 
 impl Setting for ApplyColoredWallpaper {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "appearance.wallpaper_colored",
-            title: "Apply Colored Wallpaper",
-            category: Category::Appearance,
-            icon: NerdFont::Image,
-            icon_color: None,
-            breadcrumbs: &["Wallpaper", "Colored", "Apply"],
-            summary: "Generate a solid-color wallpaper with the instantOS logo.\n\nUses the chosen background and foreground colors.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+            SettingMetadata::builder()
+                .id("appearance.wallpaper_colored")
+                .title("Apply Colored Wallpaper")
+                .category(Category::Appearance)
+                .icon(NerdFont::Image)
+                .breadcrumbs(&["Wallpaper", "Colored", "Apply"])
+                .summary("Generate a solid-color wallpaper with the instantOS logo.\n\nUses the chosen background and foreground colors.")
+                .build()
     }
 
     fn setting_type(&self) -> SettingType {

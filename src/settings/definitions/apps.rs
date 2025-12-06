@@ -17,17 +17,16 @@ macro_rules! default_app_setting {
 
         impl Setting for $struct_name {
             fn metadata(&self) -> SettingMetadata {
-                SettingMetadata {
-                    id: $id,
-                    title: $title,
-                    category: Category::Apps,
-                    icon: $icon,
-                    icon_color: $color,
-                    breadcrumbs: &[$title],
-                    summary: $summary,
-                    requires_reapply: false,
-                    requirements: &[Requirement::Package(XDG_UTILS_PACKAGE)],
-                }
+                SettingMetadata::builder()
+                    .id($id)
+                    .title($title)
+                    .category(Category::Apps)
+                    .icon($icon)
+                    .icon_color($color)
+                    .breadcrumbs(&[$title])
+                    .summary($summary)
+                    .requirements(&[Requirement::Package(XDG_UTILS_PACKAGE)])
+                    .build()
             }
 
             fn setting_type(&self) -> SettingType {

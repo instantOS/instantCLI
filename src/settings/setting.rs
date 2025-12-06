@@ -209,6 +209,116 @@ pub struct SettingMetadata {
     pub requirements: &'static [Requirement],
 }
 
+impl SettingMetadata {
+    pub fn builder() -> SettingMetadataBuilder {
+        SettingMetadataBuilder::default()
+    }
+}
+
+pub struct SettingMetadataBuilder {
+    id: Option<&'static str>,
+    title: Option<&'static str>,
+    category: Option<Category>,
+    icon: Option<NerdFont>,
+    icon_color: Option<&'static str>,
+    breadcrumbs: &'static [&'static str],
+    summary: &'static str,
+    requires_reapply: bool,
+    requirements: &'static [Requirement],
+}
+
+impl Default for SettingMetadataBuilder {
+    fn default() -> Self {
+        Self {
+            id: None,
+            title: None,
+            category: None,
+            icon: None,
+            icon_color: None,
+            breadcrumbs: &[],
+            summary: "",
+            requires_reapply: false,
+            requirements: &[],
+        }
+    }
+}
+
+impl SettingMetadataBuilder {
+    pub fn new(
+        id: &'static str,
+        title: &'static str,
+        category: Category,
+        icon: NerdFont,
+    ) -> Self {
+        Self {
+            id: Some(id),
+            title: Some(title),
+            category: Some(category),
+            icon: Some(icon),
+            ..Default::default()
+        }
+    }
+
+    pub fn id(mut self, id: &'static str) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    pub fn title(mut self, title: &'static str) -> Self {
+        self.title = Some(title);
+        self
+    }
+
+    pub fn category(mut self, category: Category) -> Self {
+        self.category = Some(category);
+        self
+    }
+
+    pub fn icon(mut self, icon: NerdFont) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn icon_color(mut self, icon_color: &'static str) -> Self {
+        self.icon_color = Some(icon_color);
+        self
+    }
+
+    pub fn breadcrumbs(mut self, breadcrumbs: &'static [&'static str]) -> Self {
+        self.breadcrumbs = breadcrumbs;
+        self
+    }
+
+    pub fn summary(mut self, summary: &'static str) -> Self {
+        self.summary = summary;
+        self
+    }
+
+    pub fn requires_reapply(mut self, requires_reapply: bool) -> Self {
+        self.requires_reapply = requires_reapply;
+        self
+    }
+
+    pub fn requirements(mut self, requirements: &'static [Requirement]) -> Self {
+        self.requirements = requirements;
+        self
+    }
+
+    pub fn build(self) -> SettingMetadata {
+        SettingMetadata {
+            id: self.id.expect("SettingMetadata: id is required"),
+            title: self.title.expect("SettingMetadata: title is required"),
+            category: self.category.expect("SettingMetadata: category is required"),
+            icon: self.icon.expect("SettingMetadata: icon is required"),
+            icon_color: self.icon_color,
+            breadcrumbs: self.breadcrumbs,
+            summary: self.summary,
+            requires_reapply: self.requires_reapply,
+            requirements: self.requirements,
+        }
+    }
+}
+
 /// The kind of setting, determining how it's displayed and interacted with
 #[derive(Debug, Clone, Copy)]
 pub enum SettingType {

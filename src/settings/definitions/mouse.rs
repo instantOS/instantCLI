@@ -25,17 +25,15 @@ impl NaturalScroll {
 
 impl Setting for NaturalScroll {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "mouse.natural_scroll",
-            title: "Natural Scrolling",
-            category: Category::Mouse,
-            icon: NerdFont::Mouse,
-            icon_color: None,
-            breadcrumbs: &["Natural Scrolling"],
-            summary: "Reverse the scroll direction to match touchpad/touchscreen behavior.\n\nWhen enabled, scrolling up moves the content up (like pushing paper).\n\nSupports Sway and X11 window managers.",
-            requires_reapply: true,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("mouse.natural_scroll")
+            .title("Natural Scrolling")
+            .category(Category::Mouse)
+            .icon(NerdFont::Mouse)
+            .breadcrumbs(&["Natural Scrolling"])
+            .summary("Reverse the scroll direction to match touchpad/touchscreen behavior.\n\nWhen enabled, scrolling up moves the content up (like pushing paper).\n\nSupports Sway and X11 window managers.")
+            .requires_reapply(true)
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -143,17 +141,15 @@ impl SwapButtons {
 
 impl Setting for SwapButtons {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "mouse.swap_buttons",
-            title: "Swap Mouse Buttons",
-            category: Category::Mouse,
-            icon: NerdFont::Mouse,
-            icon_color: None,
-            breadcrumbs: &["Swap Mouse Buttons"],
-            summary: "Swap left and right mouse buttons for left-handed use.\n\nWhen enabled, the right button becomes the primary click.\n\nCurrently only supported on X11.",
-            requires_reapply: true,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("mouse.swap_buttons")
+            .title("Swap Mouse Buttons")
+            .category(Category::Mouse)
+            .icon(NerdFont::Mouse)
+            .breadcrumbs(&["Swap Mouse Buttons"])
+            .summary("Swap left and right mouse buttons for left-handed use.\n\nWhen enabled, the right button becomes the primary click.\n\nCurrently only supported on X11.")
+            .requires_reapply(true)
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -230,17 +226,15 @@ impl MouseSensitivity {
 
 impl Setting for MouseSensitivity {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "mouse.sensitivity",
-            title: "Mouse Sensitivity",
-            category: Category::Mouse,
-            icon: NerdFont::Mouse,
-            icon_color: None,
-            breadcrumbs: &["Mouse Sensitivity"],
-            summary: "Adjust mouse pointer speed using an interactive slider.\n\nThe setting will be automatically restored on login.",
-            requires_reapply: true,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("mouse.sensitivity")
+            .title("Mouse Sensitivity")
+            .category(Category::Mouse)
+            .icon(NerdFont::Mouse)
+            .breadcrumbs(&["Mouse Sensitivity"])
+            .summary("Adjust mouse pointer speed using an interactive slider.\n\nThe setting will be automatically restored on login.")
+            .requires_reapply(true)
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {

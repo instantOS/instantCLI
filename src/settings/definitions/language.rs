@@ -16,17 +16,15 @@ pub struct SystemLanguage;
 
 impl Setting for SystemLanguage {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "language.main",
-            title: "Language",
-            category: Category::Language,
-            icon: NerdFont::Globe,
-            icon_color: None,
-            breadcrumbs: &["Language"],
-            summary: "Manage system locales and choose the default language.\n\nEnable or disable locales in /etc/locale.gen and set LANG via localectl.",
-            requires_reapply: true,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("language.main")
+            .title("Language")
+            .category(Category::Language)
+            .icon(NerdFont::Globe)
+            .breadcrumbs(&["Language"])
+            .summary("Manage system locales and choose the default language.\n\nEnable or disable locales in /etc/locale.gen and set LANG via localectl.")
+            .requires_reapply(true)
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -48,17 +46,14 @@ pub struct Timezone;
 
 impl Setting for Timezone {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "system.timezone",
-            title: "Timezone",
-            category: Category::Language,
-            icon: NerdFont::Clock,
-            icon_color: None,
-            breadcrumbs: &["Language", "Timezone"],
-            summary: "Select the system timezone via timedatectl set-timezone.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("system.timezone")
+            .title("Timezone")
+            .category(Category::Language)
+            .icon(NerdFont::Clock)
+            .breadcrumbs(&["Language", "Timezone"])
+            .summary("Select the system timezone via timedatectl set-timezone.")
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {

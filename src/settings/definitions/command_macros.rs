@@ -46,19 +46,17 @@ macro_rules! gui_command_setting {
 
         impl $crate::settings::setting::Setting for $struct_name {
             fn metadata(&self) -> $crate::settings::setting::SettingMetadata {
-                $crate::settings::setting::SettingMetadata {
-                    id: $id,
-                    title: $title,
-                    category: $category,
-                    icon: $icon,
-                    icon_color: None,
-                    breadcrumbs: &[$title],
-                    summary: $summary,
-                    requires_reapply: false,
-                    requirements: &[$crate::settings::setting::Requirement::Package(
+                $crate::settings::setting::SettingMetadata::builder()
+                    .id($id)
+                    .title($title)
+                    .category($category)
+                    .icon($icon)
+                    .breadcrumbs(&[$title])
+                    .summary($summary)
+                    .requirements(&[$crate::settings::setting::Requirement::Package(
                         $requirement,
-                    )],
-                }
+                    )])
+                    .build()
             }
 
             fn setting_type(&self) -> $crate::settings::setting::SettingType {
@@ -137,19 +135,17 @@ macro_rules! tui_command_setting {
 
         impl $crate::settings::setting::Setting for $struct_name {
             fn metadata(&self) -> $crate::settings::setting::SettingMetadata {
-                $crate::settings::setting::SettingMetadata {
-                    id: $id,
-                    title: $title,
-                    category: $category,
-                    icon: $icon,
-                    icon_color: None,
-                    breadcrumbs: &[$title],
-                    summary: $summary,
-                    requires_reapply: false,
-                    requirements: &[$crate::settings::setting::Requirement::Package(
+                $crate::settings::setting::SettingMetadata::builder()
+                    .id($id)
+                    .title($title)
+                    .category($category)
+                    .icon($icon)
+                    .breadcrumbs(&[$title])
+                    .summary($summary)
+                    .requirements(&[$crate::settings::setting::Requirement::Package(
                         $requirement,
-                    )],
-                }
+                    )])
+                    .build()
             }
 
             fn setting_type(&self) -> $crate::settings::setting::SettingType {

@@ -25,19 +25,17 @@ impl ClipboardManager {
 
 impl Setting for ClipboardManager {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "desktop.clipboard",
-            title: "Clipboard History",
-            category: Category::Desktop,
-            icon: NerdFont::Clipboard,
-            icon_color: None,
-            breadcrumbs: &["Clipboard History"],
-            summary: "Remember your copy/paste history so you can access previously copied items.\n\nWhen enabled, you can paste from your clipboard history instead of just the last copied item.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(
+        SettingMetadata::builder()
+            .id("desktop.clipboard")
+            .title("Clipboard History")
+            .category(Category::Desktop)
+            .icon(NerdFont::Clipboard)
+            .breadcrumbs(&["Clipboard History"])
+            .summary("Remember your copy/paste history so you can access previously copied items.\n\nWhen enabled, you can paste from your clipboard history instead of just the last copied item.")
+            .requirements(&[Requirement::Package(
                 crate::common::requirements::CLIPMENU_PACKAGE,
-            )],
-        }
+            )])
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -113,17 +111,14 @@ impl AutomountDisks {
 
 impl Setting for AutomountDisks {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "storage.automount",
-            title: "Auto-mount disks",
-            category: Category::Storage,
-            icon: NerdFont::HardDrive,
-            icon_color: None,
-            breadcrumbs: &["Auto-mount disks"],
-            summary: "Automatically mount removable drives with udiskie.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("storage.automount")
+            .title("Auto-mount disks")
+            .category(Category::Storage)
+            .icon(NerdFont::HardDrive)
+            .breadcrumbs(&["Auto-mount disks"])
+            .summary("Automatically mount removable drives with udiskie.")
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -211,17 +206,14 @@ impl BluetoothService {
 
 impl Setting for BluetoothService {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "bluetooth.service",
-            title: "Enable Bluetooth",
-            category: Category::Bluetooth,
-            icon: NerdFont::Bluetooth,
-            icon_color: None,
-            breadcrumbs: &["Enable Bluetooth"],
-            summary: "Turn Bluetooth on or off.\n\nWhen enabled, you can connect wireless devices like headphones, keyboards, and mice.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("bluetooth.service")
+            .title("Enable Bluetooth")
+            .category(Category::Bluetooth)
+            .icon(NerdFont::Bluetooth)
+            .breadcrumbs(&["Enable Bluetooth"])
+            .summary("Turn Bluetooth on or off.\n\nWhen enabled, you can connect wireless devices like headphones, keyboards, and mice.")
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {

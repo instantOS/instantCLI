@@ -19,17 +19,14 @@ pub struct IpInfo;
 
 impl Setting for IpInfo {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "network.ip_info",
-            title: "IP Address Info",
-            category: Category::Network,
-            icon: NerdFont::Info,
-            icon_color: None,
-            breadcrumbs: &["IP Address Info"],
-            summary: "View your local and public IP addresses.\n\nUseful for troubleshooting network issues or setting up remote access.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("network.ip_info")
+            .title("IP Address Info")
+            .category(Category::Network)
+            .icon(NerdFont::Info)
+            .breadcrumbs(&["IP Address Info"])
+            .summary("View your local and public IP addresses.\n\nUseful for troubleshooting network issues or setting up remote access.")
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -51,17 +48,15 @@ pub struct SpeedTest;
 
 impl Setting for SpeedTest {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "network.speed_test",
-            title: "Internet Speed Test",
-            category: Category::Network,
-            icon: NerdFont::Rocket,
-            icon_color: None,
-            breadcrumbs: &["Internet Speed Test"],
-            summary: "Test your internet connection speed using fast.com.\n\nMeasures download speed from Netflix servers.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(CHROMIUM_PACKAGE)],
-        }
+        SettingMetadata::builder()
+            .id("network.speed_test")
+            .title("Internet Speed Test")
+            .category(Category::Network)
+            .icon(NerdFont::Rocket)
+            .breadcrumbs(&["Internet Speed Test"])
+            .summary("Test your internet connection speed using fast.com.\n\nMeasures download speed from Netflix servers.")
+            .requirements(&[Requirement::Package(CHROMIUM_PACKAGE)])
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {

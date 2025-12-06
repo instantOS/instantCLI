@@ -15,17 +15,14 @@ pub struct ManageUsers;
 
 impl Setting for ManageUsers {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "users.manage",
-            title: "Manage Users",
-            category: Category::Users,
-            icon: NerdFont::Users,
-            icon_color: None,
-            breadcrumbs: &["Manage Users"],
-            summary: "Create, modify, and delete user accounts.\n\nManage user groups, shells, and permissions.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("users.manage")
+            .title("Manage Users")
+            .category(Category::Users)
+            .icon(NerdFont::Users)
+            .breadcrumbs(&["Manage Users"])
+            .summary("Create, modify, and delete user accounts.\n\nManage user groups, shells, and permissions.")
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {

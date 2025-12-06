@@ -22,23 +22,21 @@ impl PrinterServices {
 
 impl Setting for PrinterServices {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "printers.enable_services",
-            title: "Printer services",
-            category: Category::Printers,
-            icon: NerdFont::Printer,
-            icon_color: None,
-            breadcrumbs: &["Printer support", "Services"],
-            summary: "Enable CUPS printing and Avahi discovery for network printers.",
-            requires_reapply: false,
-            requirements: &[
+        SettingMetadata::builder()
+            .id("printers.enable_services")
+            .title("Printer services")
+            .category(Category::Printers)
+            .icon(NerdFont::Printer)
+            .breadcrumbs(&["Printer support", "Services"])
+            .summary("Enable CUPS printing and Avahi discovery for network printers.")
+            .requirements(&[
                 Requirement::Package(printer::CUPS_PACKAGE),
                 Requirement::Package(printer::AVAHI_PACKAGE),
                 Requirement::Package(printer::CUPS_FILTERS_PACKAGE),
                 Requirement::Package(printer::GHOSTSCRIPT_PACKAGE),
                 Requirement::Package(printer::NSS_MDNS_PACKAGE),
-            ],
-        }
+            ])
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -63,17 +61,15 @@ pub struct PrinterManager;
 
 impl Setting for PrinterManager {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "printers.open_manager",
-            title: "Open printer manager",
-            category: Category::Printers,
-            icon: NerdFont::Printer,
-            icon_color: None,
-            breadcrumbs: &["Printer support", "Manage printers"],
-            summary: "Launch the graphical printer setup utility.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(printer::SYSTEM_CONFIG_PRINTER_PACKAGE)],
-        }
+        SettingMetadata::builder()
+            .id("printers.open_manager")
+            .title("Open printer manager")
+            .category(Category::Printers)
+            .icon(NerdFont::Printer)
+            .breadcrumbs(&["Printer support", "Manage printers"])
+            .summary("Launch the graphical printer setup utility.")
+            .requirements(&[Requirement::Package(printer::SYSTEM_CONFIG_PRINTER_PACKAGE)])
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {

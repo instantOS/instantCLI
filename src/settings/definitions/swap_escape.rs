@@ -17,17 +17,15 @@ impl SwapEscape {
 
 impl Setting for SwapEscape {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "desktop.swap_escape",
-            title: "Swap Escape and Caps Lock",
-            category: Category::Desktop,
-            icon: NerdFont::Keyboard,
-            icon_color: None,
-            breadcrumbs: &["Swap Escape and Caps Lock"],
-            summary: "Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports Sway and X11 window managers.",
-            requires_reapply: true,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("desktop.swap_escape")
+            .title("Swap Escape and Caps Lock")
+            .category(Category::Desktop)
+            .icon(NerdFont::Keyboard)
+            .breadcrumbs(&["Swap Escape and Caps Lock"])
+            .summary("Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports Sway and X11 window managers.")
+            .requires_reapply(true)
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {

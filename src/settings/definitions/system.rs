@@ -22,17 +22,15 @@ pub struct AboutSystem;
 
 impl Setting for AboutSystem {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "system.about",
-            title: "About",
-            category: Category::System,
-            icon: NerdFont::About,
-            icon_color: None,
-            breadcrumbs: &["About"],
-            summary: "Display system information using fastfetch.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(FASTFETCH_PACKAGE)],
-        }
+        SettingMetadata::builder()
+            .id("system.about")
+            .title("About")
+            .category(Category::System)
+            .icon(NerdFont::About)
+            .breadcrumbs(&["About"])
+            .summary("Display system information using fastfetch.")
+            .requirements(&[Requirement::Package(FASTFETCH_PACKAGE)])
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -61,17 +59,15 @@ pub struct CockpitManager;
 
 impl Setting for CockpitManager {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "system.cockpit",
-            title: "Systemd manager (Cockpit)",
-            category: Category::System,
-            icon: NerdFont::Server,
-            icon_color: None,
-            breadcrumbs: &["Systemd manager"],
-            summary: "Launch Cockpit web interface for managing systemd services, logs, and system resources.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(COCKPIT_PACKAGE)],
-        }
+        SettingMetadata::builder()
+            .id("system.cockpit")
+            .title("Systemd manager (Cockpit)")
+            .category(Category::System)
+            .icon(NerdFont::Server)
+            .breadcrumbs(&["Systemd manager"])
+            .summary("Launch Cockpit web interface for managing systemd services, logs, and system resources.")
+            .requirements(&[Requirement::Package(COCKPIT_PACKAGE)])
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
@@ -127,17 +123,15 @@ impl PacmanAutoclean {
 
 impl Setting for PacmanAutoclean {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "system.pacman_autoclean",
-            title: "Pacman cache autoclean",
-            category: Category::System,
-            icon: NerdFont::Trash,
-            icon_color: None,
-            breadcrumbs: &["Maintenance", "Pacman cache"],
-            summary: "Run paccache weekly to keep only the latest pacman packages.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(PACMAN_CONTRIB_PACKAGE)],
-        }
+        SettingMetadata::builder()
+            .id("system.pacman_autoclean")
+            .title("Pacman cache autoclean")
+            .category(Category::System)
+            .icon(NerdFont::Trash)
+            .breadcrumbs(&["Maintenance", "Pacman cache"])
+            .summary("Run paccache weekly to keep only the latest pacman packages.")
+            .requirements(&[Requirement::Package(PACMAN_CONTRIB_PACKAGE)])
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {
