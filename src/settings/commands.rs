@@ -70,81 +70,86 @@ pub fn dispatch_settings_command(
 }
 
 fn list_settings(categories_only: bool, category_filter: Option<&str>) -> Result<()> {
-    use super::registry;
+    use super::setting::{self, Category};
     use colored::Colorize;
+
+    let categories = [
+        Category::Appearance,
+        Category::Network,
+        Category::Bluetooth,
+        Category::Mouse,
+        Category::Desktop,
+        Category::Audio,
+        Category::Apps,
+        Category::Storage,
+        Category::Printers,
+        Category::Users,
+        Category::Language,
+        Category::System,
+    ];
 
     if categories_only {
         println!("{}", "Available Categories:".bold());
         println!();
-        for category in registry::CATEGORIES {
-            let count = registry::settings_for_category(category.id).len();
+        for category in &categories {
+            let count = setting::settings_in_category(*category).len();
             println!(
                 "  {} {} ({} settings)",
-                category.id.cyan(),
-                category.title.bold(),
+                category.id().cyan(),
+                category.title().bold(),
                 count
             );
-            println!("    {}", category.description.dimmed());
+            println!("    {}", category.description().dimmed());
             println!();
         }
         return Ok(());
     }
 
     if let Some(filter) = category_filter {
-        let category = registry::category_by_id(filter)
+        let category = Category::from_id(filter)
             .ok_or_else(|| anyhow::anyhow!("Category '{}' not found", filter))?;
 
-        println!("{} {}", "Category:".bold(), category.title);
-        println!("{}", category.description.dimmed());
+        println!("{} {}", "Category:".bold(), category.title());
+        println!("{}", category.description().dimmed());
         println!();
 
-        let settings = registry::settings_for_category(category.id);
+        let settings = setting::settings_in_category(category);
         if settings.is_empty() {
             println!("  {}", "No settings in this category yet.".dimmed());
             return Ok(());
         }
 
-        for setting in settings {
-            println!("  {} {}", setting.id.cyan(), setting.title.bold());
-            match &setting.kind {
-                registry::SettingKind::Toggle { summary, .. }
-                | registry::SettingKind::Choice { summary, .. }
-                | registry::SettingKind::Action { summary, .. }
-                | registry::SettingKind::Command { summary, .. } => {
-                    println!("    {}", summary.dimmed());
-                }
-            }
+        for s in settings {
+            let meta = s.metadata();
+            println!("  {} {}", meta.id.cyan(), meta.title.bold());
+            println!("    {}", first_line(meta.summary).dimmed());
             println!();
         }
     } else {
-        for category in registry::CATEGORIES {
-            println!("{} {}", "Category:".bold(), category.title);
-            println!("{}", category.description.dimmed());
-            println!();
-
-            let settings = registry::settings_for_category(category.id);
+        for category in &categories {
+            let settings = setting::settings_in_category(*category);
             if settings.is_empty() {
-                println!("  {}", "No settings in this category yet.".dimmed());
-                println!();
                 continue;
             }
 
-            for setting in settings {
-                println!("  {} {}", setting.id.cyan(), setting.title.bold());
-                match &setting.kind {
-                    registry::SettingKind::Toggle { summary, .. }
-                    | registry::SettingKind::Choice { summary, .. }
-                    | registry::SettingKind::Action { summary, .. }
-                    | registry::SettingKind::Command { summary, .. } => {
-                        println!("    {}", summary.dimmed());
-                    }
-                }
+            println!("{} {}", "Category:".bold(), category.title());
+            println!("{}", category.description().dimmed());
+            println!();
+
+            for s in settings {
+                let meta = s.metadata();
+                println!("  {} {}", meta.id.cyan(), meta.title.bold());
+                println!("    {}", first_line(meta.summary).dimmed());
             }
             println!();
         }
     }
 
     Ok(())
+}
+
+fn first_line(s: &str) -> &str {
+    s.lines().next().unwrap_or(s)
 }
 
 pub fn handle_settings_command(
