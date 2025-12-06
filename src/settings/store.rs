@@ -10,7 +10,7 @@ use crate::common::paths;
 
 /// Represents the hierarchical settings structure.
 /// Settings are organized into nested tables based on their dotted keys.
-/// For example, "appearance.autotheming" becomes appearance.autotheming in TOML.
+/// For example, "appearance.animations" becomes appearance.animations in TOML.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SettingsFile {
     #[serde(flatten)]
@@ -18,7 +18,7 @@ pub struct SettingsFile {
 }
 
 impl SettingsFile {
-    /// Get a value by its dotted key path (e.g., "appearance.autotheming")
+    /// Get a value by its dotted key path (e.g., "appearance.animations")
     fn get(&self, key: &str) -> Option<&toml::Value> {
         let parts: Vec<&str> = key.split('.').collect();
         if parts.is_empty() {
@@ -34,7 +34,7 @@ impl SettingsFile {
         Some(current)
     }
 
-    /// Set a value by its dotted key path (e.g., "appearance.autotheming")
+    /// Set a value by its dotted key path (e.g., "appearance.animations")
     fn set(&mut self, key: &str, value: toml::Value) {
         let parts: Vec<&str> = key.split('.').collect();
         if parts.is_empty() {
@@ -289,7 +289,7 @@ mod tests {
         let mut settings = SettingsFile::default();
 
         // Set some values with dotted keys
-        settings.set("appearance.autotheming", toml::Value::Boolean(true));
+        settings.set("appearance.animations", toml::Value::Boolean(true));
         settings.set("desktop.layout", toml::Value::String("tile".to_string()));
         settings.set("printers.services", toml::Value::Boolean(false));
         settings.set("desktop.clipboard.enabled", toml::Value::Boolean(true));
@@ -299,7 +299,7 @@ mod tests {
 
         // Verify it creates proper hierarchical structure
         assert!(toml_str.contains("[appearance]"));
-        assert!(toml_str.contains("autotheming = true"));
+        assert!(toml_str.contains("animations = true"));
         assert!(toml_str.contains("[desktop]"));
         assert!(toml_str.contains("layout = \"tile\""));
         assert!(toml_str.contains("[printers]"));
@@ -309,7 +309,7 @@ mod tests {
         assert!(toml_str.contains("[desktop.clipboard]") || toml_str.contains("[desktop]\n"));
 
         // Should NOT contain the old flat format with quoted keys
-        assert!(!toml_str.contains("\"appearance.autotheming\""));
+        assert!(!toml_str.contains("\"appearance.animations\""));
         assert!(!toml_str.contains("[values]"));
     }
 
@@ -318,8 +318,8 @@ mod tests {
         let mut settings = SettingsFile::default();
 
         // Test setting and getting boolean
-        settings.set("appearance.autotheming", toml::Value::Boolean(true));
-        let value = settings.get("appearance.autotheming").unwrap();
+        settings.set("appearance.animations", toml::Value::Boolean(true));
+        let value = settings.get("appearance.animations").unwrap();
         assert_eq!(value.as_bool(), Some(true));
 
         // Test setting and getting string
@@ -344,7 +344,7 @@ mod tests {
         // Create a new store
         let mut store = SettingsStore::load_from_path(path.clone()).unwrap();
 
-        let key = BoolSettingKey::new("appearance.autotheming", false);
+        let key = BoolSettingKey::new("appearance.animations", false);
 
         // Test default value
         assert_eq!(store.bool(key), false);
@@ -409,7 +409,7 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let hierarchical_content = r#"
 [appearance]
-autotheming = true
+animations = true
 
 [desktop]
 layout = "monocle"
@@ -421,7 +421,7 @@ layout = "monocle"
         // Load the hierarchical format
         let store = SettingsStore::load_from_path(path.clone()).unwrap();
 
-        let bool_key = BoolSettingKey::new("appearance.autotheming", false);
+        let bool_key = BoolSettingKey::new("appearance.animations", false);
         let string_key = StringSettingKey::new("desktop.layout", "tile");
 
         assert_eq!(store.bool(bool_key), true);
@@ -434,7 +434,7 @@ layout = "monocle"
         assert!(saved_content.contains("[appearance]"));
         assert!(saved_content.contains("[desktop]"));
         assert!(!saved_content.contains("[values]"));
-        assert!(!saved_content.contains("\"appearance.autotheming\""));
+        assert!(!saved_content.contains("\"appearance.animations\""));
     }
 
     #[test]

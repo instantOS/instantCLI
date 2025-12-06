@@ -13,50 +13,6 @@ use crate::settings::store::{BoolSettingKey, OptionalStringSettingKey};
 use crate::ui::prelude::*;
 
 // ============================================================================
-// Automatic Theming
-// ============================================================================
-
-pub struct AutoTheming;
-
-impl AutoTheming {
-    const KEY: BoolSettingKey = BoolSettingKey::new("appearance.autotheming", true);
-}
-
-impl Setting for AutoTheming {
-    fn metadata(&self) -> SettingMetadata {
-        SettingMetadata::builder()
-            .id("appearance.autotheming")
-            .title("Automatic Theming")
-            .category(Category::Appearance)
-            .icon(NerdFont::Palette)
-            .summary("Automatically apply instantOS color themes to applications.\n\nDisable this if you want to use your own custom themes.\n\nNote: Placeholder only; changing this setting currently has no effect.")
-            .build()
-    }
-
-    fn setting_type(&self) -> SettingType {
-        SettingType::Toggle { key: Self::KEY }
-    }
-
-    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let current = ctx.bool(Self::KEY);
-        let target = !current;
-        ctx.set_bool(Self::KEY, target);
-        // Placeholder - no actual effect yet
-        ctx.notify(
-            "Automatic Theming",
-            if target {
-                "Enabled (no effect yet)"
-            } else {
-                "Disabled (no effect yet)"
-            },
-        );
-        Ok(())
-    }
-}
-
-inventory::submit! { &AutoTheming as &'static dyn Setting }
-
-// ============================================================================
 // Animations
 // ============================================================================
 
