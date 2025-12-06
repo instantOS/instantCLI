@@ -5,6 +5,7 @@ use duct::cmd;
 use sudo::RunningAs;
 
 use crate::common::requirements::RequiredPackage;
+use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::*;
 
 use super::sources;
@@ -193,6 +194,11 @@ impl SettingsContext {
         }
     }
 
+    pub fn show_message(&self, message: &str) {
+        // Best-effort; user feedback in TUI context
+        let _ = FzfWrapper::message_dialog(message);
+    }
+
     pub fn emit_success(&self, code: &str, message: &str) {
         emit(
             Level::Success,
@@ -209,6 +215,16 @@ impl SettingsContext {
             &format!("{} {message}", char::from(NerdFont::Info)),
             None,
         );
+    }
+
+    pub fn emit_unsupported(&self, code: &str, message: &str) {
+        self.emit_info(code, message);
+        self.show_message(message);
+    }
+
+    pub fn emit_failure(&self, code: &str, message: &str) {
+        emit(Level::Warn, code, message, None);
+        self.show_message(message);
     }
 
     pub fn run_command_as_root<I, S>(&self, program: S, args: I) -> Result<()>
