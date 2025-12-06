@@ -83,13 +83,37 @@ inventory::submit! { &SpeedTest as &'static dyn Setting }
 // Edit Connections (GUI app)
 // ============================================================================
 
-gui_command_setting!(
-    EditConnections,
-    "network.edit_connections",
-    "Edit Connections",
-    Category::Network,
-    NerdFont::Settings,
-    "Manage WiFi, Ethernet, VPN, and other network connections.\n\nConfigure connection settings, passwords, and advanced options.",
-    "nm-connection-editor",
-    NM_CONNECTION_EDITOR_PACKAGE
-);
+pub struct EditConnections;
+
+impl Setting for EditConnections {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("network.edit_connections")
+            .title("Edit Connections")
+            .category(Category::Network)
+            .icon(NerdFont::Settings)
+            .summary("Manage WiFi, Ethernet, VPN, and other network connections.\n\nConfigure connection settings, passwords, and advanced options.")
+            .requirements(&[Requirement::Package(NM_CONNECTION_EDITOR_PACKAGE)])
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Command
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        ctx.emit_info(
+            "settings.command.launching",
+            "Launching Edit Connections...",
+        );
+        Command::new("nm-connection-editor")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .context("launching nm-connection-editor")?;
+        ctx.emit_success("settings.command.completed", "Launched Edit Connections");
+        Ok(())
+    }
+}
+
+inventory::submit! { &EditConnections as &'static dyn Setting }

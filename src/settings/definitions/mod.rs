@@ -6,22 +6,22 @@
 #[macro_use]
 mod command_macros;
 
-mod appearance;
-mod apps;
+pub mod appearance;
+pub mod apps;
 pub mod brightness;
-mod desktop;
-mod keyboard;
-mod language;
+pub mod desktop;
+pub mod keyboard;
+pub mod language;
 pub mod mouse;
-mod network;
-mod packages;
-mod printers;
-mod storage;
-mod swap_escape;
-mod system;
-mod toggles;
-mod users;
-mod wiremix;
+pub mod network;
+pub mod packages;
+pub mod printers;
+pub mod storage;
+pub mod swap_escape;
+pub mod system;
+pub mod toggles;
+pub mod users;
+pub mod wiremix;
 
 // Note: Settings are auto-registered via inventory::submit! macros in each module.
 // They don't need to be re-exported here.

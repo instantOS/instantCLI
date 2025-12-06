@@ -363,10 +363,11 @@ fn first_line(text: &str) -> &str {
 
 pub fn format_setting_path(setting: &dyn Setting) -> String {
     let meta = setting.metadata();
-    let breadcrumbs = setting.breadcrumbs();
+    let breadcrumbs =
+        crate::settings::category_tree::get_breadcrumbs_for_setting(meta.category, meta.id);
     let mut segments = Vec::with_capacity(1 + breadcrumbs.len());
-    segments.push(meta.category.title());
-    segments.extend(breadcrumbs.iter().copied());
+    segments.push(meta.category.title().to_string());
+    segments.extend(breadcrumbs);
     segments.join(" -> ")
 }
 

@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 
-use crate::settings::setting::{self, Category, Setting};
+use crate::settings::setting::{Category, Setting};
 
 use super::super::commands::SettingsNavigation;
 use super::super::context::{SettingsContext, select_one_with_style_at};
@@ -61,17 +61,18 @@ pub fn run_settings_ui(
                     main_menu_cursor,
                     category_cursor,
                 } => {
-                    let settings = setting::settings_in_category(category);
-                    if settings.len() == 1 {
-                        super::handlers::handle_trait_setting(&mut ctx, settings[0])?;
+                    let tree = build_tree(category);
+                    if tree.len() == 1 {
+                        if let TreeNode::Leaf(setting) = &tree[0] {
+                            super::handlers::handle_trait_setting(&mut ctx, *setting)?;
+                            initial_view = InitialView::MainMenu(main_menu_cursor);
+                            continue;
+                        }
+                    }
+                    if navigate_node(&mut ctx, category.title(), &tree, category_cursor)? {
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                     } else {
-                        let tree = build_tree(settings);
-                        if navigate_node(&mut ctx, category.title(), &tree, category_cursor)? {
-                            initial_view = InitialView::MainMenu(main_menu_cursor);
-                        } else {
-                            break;
-                        }
+                        break;
                     }
                 }
                 MenuAction::EnterSearch(main_menu_cursor) => {
@@ -84,8 +85,7 @@ pub fn run_settings_ui(
                 MenuAction::Exit => break,
             },
             InitialView::Category(category, cursor) => {
-                let settings = setting::settings_in_category(category);
-                let tree = build_tree(settings);
+                let tree = build_tree(category);
                 if navigate_node(&mut ctx, category.title(), &tree, cursor)? {
                     initial_view = InitialView::MainMenu(None);
                 } else {
@@ -140,78 +140,28 @@ impl TreeNode {
     }
 }
 
-fn build_tree(settings: Vec<&'static dyn Setting>) -> Vec<TreeNode> {
+fn build_tree(category: Category) -> Vec<TreeNode> {
+    use crate::settings::category_tree::category_tree;
+
+    let category_nodes = category_tree(category);
     let mut nodes = Vec::new();
-    for setting in settings {
-        insert_into_tree(&mut nodes, &setting.breadcrumbs(), setting);
+
+    for node in category_nodes {
+        nodes.push(convert_category_node(node));
     }
 
-    // Optimize: Flatten single-child folders
-    let nodes = optimize_tree(nodes);
-
-    // Sort nodes: Folders first, then Leaves. Alphabetical within groups.
-    // Note: We need to sort *after* optimization because flattening might change types
-    let mut nodes = nodes;
     sort_tree(&mut nodes);
-
     nodes
 }
-fn optimize_tree(nodes: Vec<TreeNode>) -> Vec<TreeNode> {
-    nodes
-        .into_iter()
-        .map(|node| {
-            match node {
-                TreeNode::Folder { name, children } => {
-                    let optimized_children = optimize_tree(children);
-                    if optimized_children.len() == 1 {
-                        // Hoist the single child
-                        optimized_children.into_iter().next().unwrap()
-                    } else {
-                        TreeNode::Folder {
-                            name,
-                            children: optimized_children,
-                        }
-                    }
-                }
-                leaf @ TreeNode::Leaf(_) => leaf,
-            }
-        })
-        .collect()
-}
 
-fn insert_into_tree(nodes: &mut Vec<TreeNode>, path: &[&str], setting: &'static dyn Setting) {
-    if path.is_empty() {
-        nodes.push(TreeNode::Leaf(setting));
-        return;
-    }
-
-    let current_part = path[0];
-    let remaining_path = &path[1..];
-
-    // Find existing folder
-    let mut found_idx = None;
-    for (idx, node) in nodes.iter().enumerate() {
-        if let TreeNode::Folder { name, .. } = node {
-            if name == current_part {
-                found_idx = Some(idx);
-                break;
-            }
-        }
-    }
-
-    match found_idx {
-        Some(idx) => {
-            if let TreeNode::Folder { children, .. } = &mut nodes[idx] {
-                insert_into_tree(children, remaining_path, setting);
-            }
-        }
-        None => {
-            let mut children = Vec::new();
-            insert_into_tree(&mut children, remaining_path, setting);
-            nodes.push(TreeNode::Folder {
-                name: current_part.to_string(),
-                children,
-            });
+fn convert_category_node(node: crate::settings::category_tree::CategoryNode) -> TreeNode {
+    if let Some(setting) = node.setting {
+        TreeNode::Leaf(setting)
+    } else {
+        let converted_children = node.children.into_iter().map(convert_category_node).collect();
+        TreeNode::Folder {
+            name: node.name.unwrap_or("Unknown").to_string(),
+            children: converted_children,
         }
     }
 }
@@ -236,14 +186,30 @@ fn sort_tree(nodes: &mut Vec<TreeNode>) {
 }
 
 fn settings_by_category() -> Vec<(Category, Vec<&'static dyn Setting>)> {
+    use crate::settings::category_tree::category_tree;
+
     Category::all()
         .iter()
         .map(|&cat| {
-            let settings = setting::settings_in_category(cat);
+            let tree = category_tree(cat);
+            let settings = collect_settings_from_tree(&tree);
             (cat, settings)
         })
         .filter(|(_, settings)| !settings.is_empty())
         .collect()
+}
+
+fn collect_settings_from_tree(
+    nodes: &[crate::settings::category_tree::CategoryNode],
+) -> Vec<&'static dyn Setting> {
+    let mut settings = Vec::new();
+    for node in nodes {
+        if let Some(setting) = node.setting {
+            settings.push(setting);
+        }
+        settings.extend(collect_settings_from_tree(&node.children));
+    }
+    settings
 }
 
 fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Result<MenuAction> {

@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod apply;
+pub mod category_tree;
 pub mod commands;
 pub mod constants;
 pub mod context;
