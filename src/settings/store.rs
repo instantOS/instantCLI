@@ -160,24 +160,13 @@ pub const WALLPAPER_BG_COLOR_KEY: OptionalStringSettingKey =
 pub const WALLPAPER_FG_COLOR_KEY: OptionalStringSettingKey =
     OptionalStringSettingKey::new("appearance.wallpaper_fg_color");
 
-// Bluetooth setting keys
-pub const BLUETOOTH_SERVICE_KEY: BoolSettingKey = BoolSettingKey::new("bluetooth.service", false);
-pub const BLUETOOTH_HARDWARE_OVERRIDE_KEY: BoolSettingKey =
-    BoolSettingKey::new("bluetooth.hardware_override", false);
-
-// Storage setting keys
-pub const UDISKIE_AUTOMOUNT_KEY: BoolSettingKey = BoolSettingKey::new("storage.udiskie", false);
-
 // System setting keys
 pub const PACMAN_AUTOCLEAN_KEY: BoolSettingKey =
     BoolSettingKey::new("system.pacman_autoclean", false);
 
 // Required package groups for settings
-use crate::common::requirements::{
-    BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE, CHROMIUM_PACKAGE, COCKPIT_PACKAGE, RequiredPackage,
-};
+use crate::common::requirements::{CHROMIUM_PACKAGE, COCKPIT_PACKAGE, RequiredPackage};
 
-pub const BLUETOOTH_CORE_PACKAGES: [RequiredPackage; 2] = [BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE];
 pub const COCKPIT_PACKAGES: [RequiredPackage; 2] = [COCKPIT_PACKAGE, CHROMIUM_PACKAGE];
 
 #[derive(Debug)]
