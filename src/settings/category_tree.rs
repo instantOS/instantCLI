@@ -39,26 +39,6 @@ impl CategoryNode {
         self.children.push(node);
         self
     }
-
-    /// Add multiple children (builder pattern)
-    pub fn children(mut self, nodes: Vec<CategoryNode>) -> Self {
-        self.children.extend(nodes);
-        self
-    }
-
-    /// Check if this is a leaf (setting) node
-    pub fn is_leaf(&self) -> bool {
-        self.setting.is_some()
-    }
-
-    /// Get the display name of this node
-    pub fn display_name(&self) -> &str {
-        if let Some(setting) = self.setting {
-            setting.metadata().title
-        } else {
-            self.name.unwrap_or("Unknown")
-        }
-    }
 }
 
 /// Get the tree structure for a category
