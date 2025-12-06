@@ -453,14 +453,14 @@ impl Setting for GtkIconTheme {
             }
 
             // 2. Update settings.ini files for GTK 3 and 4
-            if let Err(e) = update_gtk_config("3.0", &theme) {
+            if let Err(e) = update_gtk_config("3.0", "gtk-icon-theme-name", &theme) {
                 ctx.emit_failure(
                     "settings.appearance.gtk_icon_theme.gtk3_error",
                     &format!("Failed to update GTK 3.0 config: {e}"),
                 );
             }
 
-            if let Err(e) = update_gtk_config("4.0", &theme) {
+            if let Err(e) = update_gtk_config("4.0", "gtk-icon-theme-name", &theme) {
                 ctx.emit_failure(
                     "settings.appearance.gtk_icon_theme.gtk4_error",
                     &format!("Failed to update GTK 4.0 config: {e}"),
@@ -473,6 +473,202 @@ impl Setting for GtkIconTheme {
 }
 
 inventory::submit! { &GtkIconTheme as &'static dyn Setting }
+
+// ============================================================================
+// GTK Theme
+// ============================================================================
+
+pub struct GtkTheme;
+
+impl Setting for GtkTheme {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("appearance.gtk_theme")
+            .title("GTK Theme")
+            .category(Category::Appearance)
+            .icon(NerdFont::Image) // Use a generic image icon or find a better one
+            .summary("Select and apply a GTK theme.\n\nUpdates GTK 3/4 settings, GSettings, and applies Libadwaita overrides (via ~/.config/gtk-4.0/).")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let themes = list_gtk_themes()?;
+        if themes.is_empty() {
+            ctx.emit_failure(
+                "settings.appearance.gtk_theme.no_themes",
+                "No GTK themes found in standard directories.",
+            );
+            return Ok(());
+        }
+
+        let selected = FzfWrapper::builder()
+            .prompt("Select GTK Theme")
+            .header("Choose a GTK theme to apply globally")
+            .select(themes)?;
+
+        if let crate::menu_utils::FzfResult::Selected(theme) = selected {
+            // 1. Apply to GSettings (Wayland/Sway primary)
+            let status = Command::new("gsettings")
+                .args(["set", "org.gnome.desktop.interface", "gtk-theme", &theme])
+                .status();
+
+            match status {
+                Ok(exit) if exit.success() => {
+                    ctx.notify("GTK Theme", &format!("Applied '{}' to GSettings", theme));
+                }
+                Ok(exit) => {
+                    ctx.emit_failure(
+                        "settings.appearance.gtk_theme.gsettings_failed",
+                        &format!(
+                            "GSettings failed with exit code {}",
+                            exit.code().unwrap_or(-1)
+                        ),
+                    );
+                }
+                Err(e) => {
+                    ctx.emit_failure(
+                        "settings.appearance.gtk_theme.gsettings_error",
+                        &format!("Failed to execute gsettings: {e}"),
+                    );
+                }
+            }
+
+            // 2. Update settings.ini files for GTK 3 and 4
+            if let Err(e) = update_gtk_config("3.0", "gtk-theme-name", &theme) {
+                ctx.emit_failure(
+                    "settings.appearance.gtk_theme.gtk3_error",
+                    &format!("Failed to update GTK 3.0 config: {e}"),
+                );
+            }
+
+            if let Err(e) = update_gtk_config("4.0", "gtk-theme-name", &theme) {
+                ctx.emit_failure(
+                    "settings.appearance.gtk_theme.gtk4_error",
+                    &format!("Failed to update GTK 4.0 config: {e}"),
+                );
+            }
+
+            // 3. Libadwaita/GTK4 overrides (Symlink ~/.config/gtk-4.0/gtk.css)
+            if let Err(e) = apply_gtk4_overrides(&theme) {
+                // Not a critical failure, but worth noting
+                ctx.emit_info(
+                    "settings.appearance.gtk_theme.gtk4_override_info",
+                    &format!("Could not apply Libadwaita overrides (maybe theme lacks gtk-4.0 support?): {e}"),
+                );
+            } else {
+                ctx.notify("GTK Theme", "Applied Libadwaita overrides");
+            }
+        }
+
+        Ok(())
+    }
+}
+
+inventory::submit! { &GtkTheme as &'static dyn Setting }
+
+// Helpers for GTK Theme
+
+fn list_gtk_themes() -> Result<Vec<String>> {
+    let mut themes = std::collections::HashSet::new();
+    let dirs = [
+        dirs::home_dir().map(|p| p.join(".themes")),
+        dirs::home_dir().map(|p| p.join(".local/share/themes")),
+        Some(std::path::PathBuf::from("/usr/share/themes")),
+    ];
+
+    for dir in dirs.into_iter().flatten() {
+        if !dir.exists() {
+            continue;
+        }
+
+        for entry in walkdir::WalkDir::new(dir)
+            .min_depth(1)
+            .max_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_type().is_dir() {
+                let path = entry.path();
+                // Check for index.theme OR gtk-3.0/gtk.css OR gtk-4.0/gtk.css
+                if path.join("index.theme").exists()
+                    || path.join("gtk-3.0/gtk.css").exists()
+                    || path.join("gtk-4.0/gtk.css").exists()
+                {
+                    if let Some(name) = entry.file_name().to_str() {
+                        themes.insert(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result: Vec<String> = themes.into_iter().collect();
+    result.sort();
+    Ok(result)
+}
+
+fn apply_gtk4_overrides(theme_name: &str) -> Result<()> {
+    // Find the theme directory
+    let dirs = [
+        dirs::home_dir().map(|p| p.join(".themes")),
+        dirs::home_dir().map(|p| p.join(".local/share/themes")),
+        Some(std::path::PathBuf::from("/usr/share/themes")),
+    ];
+
+    let mut theme_path = None;
+    for dir in dirs.into_iter().flatten() {
+        let p = dir.join(theme_name);
+        if p.exists() {
+            theme_path = Some(p);
+            break;
+        }
+    }
+
+    let theme_path = theme_path.context("Theme not found")?;
+    let source_gtk4 = theme_path.join("gtk-4.0");
+
+    if !source_gtk4.exists() {
+        // Theme doesn't have explicit GTK 4 support, nothing to link
+        return Err(anyhow::anyhow!("Theme has no gtk-4.0 directory"));
+    }
+
+    // Target directory: ~/.config/gtk-4.0/
+    let config_dir = dirs::config_dir().context("No config dir")?.join("gtk-4.0");
+
+    if !config_dir.exists() {
+        std::fs::create_dir_all(&config_dir)?;
+    }
+
+    // Items to symlink
+    let items = ["gtk.css", "gtk-dark.css", "assets"];
+
+    for item in items {
+        let source = source_gtk4.join(item);
+        let target = config_dir.join(item);
+
+        // Remove existing target (file or symlink)
+        if target.is_symlink() || target.exists() {
+            // Use fs::remove_file for files and symlinks (even if they point to dirs)
+            // Use fs::remove_dir_all if it's a real directory (not symlink)
+            if target.is_dir() && !target.is_symlink() {
+                std::fs::remove_dir_all(&target)?;
+            } else {
+                std::fs::remove_file(&target)?;
+            }
+        }
+
+        if source.exists() {
+            std::os::unix::fs::symlink(&source, &target)
+                .with_context(|| format!("Failed to link {:?} -> {:?}", source, target))?;
+        }
+    }
+
+    Ok(())
+}
 
 // Helpers for GTK Icon Theme
 
@@ -511,7 +707,7 @@ fn list_icon_themes() -> Result<Vec<String>> {
     Ok(result)
 }
 
-fn update_gtk_config(version: &str, theme: &str) -> Result<()> {
+fn update_gtk_config(version: &str, key: &str, value: &str) -> Result<()> {
     let config_dir = dirs::config_dir()
         .context("Could not find config directory")?
         .join(format!("gtk-{}", version));
@@ -546,8 +742,8 @@ fn update_gtk_config(version: &str, theme: &str) -> Result<()> {
             in_settings_section = false;
         }
 
-        if in_settings_section && trimmed.starts_with("gtk-icon-theme-name") {
-            new_lines.push(format!("gtk-icon-theme-name={}", theme));
+        if in_settings_section && trimmed.starts_with(key) {
+            new_lines.push(format!("{}={}", key, value));
             found_key = true;
         } else {
             new_lines.push(line.to_string());
@@ -559,7 +755,7 @@ fn update_gtk_config(version: &str, theme: &str) -> Result<()> {
             new_lines.push("".to_string());
         }
         new_lines.push("[Settings]".to_string());
-        new_lines.push(format!("gtk-icon-theme-name={}", theme));
+        new_lines.push(format!("{}={}", key, value));
     } else if !found_key {
         // Find where to insert the key in the [Settings] section
         // We'll just append it after the [Settings] line for simplicity in this case
@@ -569,7 +765,7 @@ fn update_gtk_config(version: &str, theme: &str) -> Result<()> {
         for line in new_lines {
             final_lines.push(line.clone());
             if line.trim() == "[Settings]" && !found_key {
-                final_lines.push(format!("gtk-icon-theme-name={}", theme));
+                final_lines.push(format!("{}={}", key, value));
                 found_key = true;
             }
         }
