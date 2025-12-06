@@ -643,13 +643,12 @@ fn list_gtk_themes() -> Result<Vec<String>> {
             if entry.file_type().is_dir() {
                 let path = entry.path();
                 // Check for index.theme OR gtk-3.0/gtk.css OR gtk-4.0/gtk.css
-                if path.join("index.theme").exists()
+                if (path.join("index.theme").exists()
                     || path.join("gtk-3.0/gtk.css").exists()
-                    || path.join("gtk-4.0/gtk.css").exists()
+                    || path.join("gtk-4.0/gtk.css").exists())
+                    && let Some(name) = entry.file_name().to_str()
                 {
-                    if let Some(name) = entry.file_name().to_str() {
-                        themes.insert(name.to_string());
-                    }
+                    themes.insert(name.to_string());
                 }
             }
         }
@@ -742,10 +741,10 @@ fn list_icon_themes() -> Result<Vec<String>> {
         {
             if entry.file_type().is_dir() {
                 // Check for index.theme
-                if entry.path().join("index.theme").exists() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        themes.insert(name.to_string());
-                    }
+                if entry.path().join("index.theme").exists()
+                    && let Some(name) = entry.file_name().to_str()
+                {
+                    themes.insert(name.to_string());
                 }
             }
         }

@@ -245,8 +245,6 @@ impl SettingMetadataBuilder {
         self
     }
 
-
-
     pub fn icon(mut self, icon: NerdFont) -> Self {
         self.icon = Some(icon);
         self

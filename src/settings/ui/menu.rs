@@ -62,12 +62,12 @@ pub fn run_settings_ui(
                     category_cursor,
                 } => {
                     let tree = build_tree(category);
-                    if tree.len() == 1 {
-                        if let TreeNode::Leaf(setting) = &tree[0] {
-                            super::handlers::handle_trait_setting(&mut ctx, *setting)?;
-                            initial_view = InitialView::MainMenu(main_menu_cursor);
-                            continue;
-                        }
+                    if tree.len() == 1
+                        && let TreeNode::Leaf(setting) = &tree[0]
+                    {
+                        super::handlers::handle_trait_setting(&mut ctx, *setting)?;
+                        initial_view = InitialView::MainMenu(main_menu_cursor);
+                        continue;
                     }
                     if navigate_node(&mut ctx, category.title(), &tree, category_cursor)? {
                         initial_view = InitialView::MainMenu(main_menu_cursor);

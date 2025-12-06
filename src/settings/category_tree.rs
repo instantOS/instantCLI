@@ -167,10 +167,8 @@ fn find_setting_in_tree(nodes: &[CategoryNode], setting_id: &str) -> bool {
             if setting.metadata().id == setting_id {
                 return true;
             }
-        } else if !node.children.is_empty() {
-            if find_setting_in_tree(&node.children, setting_id) {
-                return true;
-            }
+        } else if !node.children.is_empty() && find_setting_in_tree(&node.children, setting_id) {
+            return true;
         }
     }
     false
@@ -195,14 +193,14 @@ fn find_setting_path(nodes: &[CategoryNode], setting_id: &str, path: &mut Vec<St
             if setting.metadata().id == setting_id {
                 return true;
             }
-        } else if !node.children.is_empty() {
-            if let Some(name) = node.name {
-                path.push(name.to_string());
-                if find_setting_path(&node.children, setting_id, path) {
-                    return true;
-                }
-                path.pop();
+        } else if !node.children.is_empty()
+            && let Some(name) = node.name
+        {
+            path.push(name.to_string());
+            if find_setting_path(&node.children, setting_id, path) {
+                return true;
             }
+            path.pop();
         }
     }
     false
