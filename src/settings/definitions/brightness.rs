@@ -6,7 +6,7 @@ use std::process::Command;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::IntSettingKey;
 use crate::ui::prelude::*;
 
@@ -22,7 +22,6 @@ impl Setting for Brightness {
         SettingMetadata::builder()
             .id("appearance.brightness")
             .title("Screen Brightness")
-            .category(Category::Appearance)
             .icon(NerdFont::Lightbulb)
             .summary("Adjust screen brightness using an interactive slider.\n\nThe setting will be automatically restored on login.\n\nTip: You can also access this via instantASSIST (Super+A b).")
             .requires_reapply(true)

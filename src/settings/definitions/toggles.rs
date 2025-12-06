@@ -9,7 +9,7 @@ use crate::common::requirements::UDISKIE_PACKAGE;
 use crate::common::systemd::{SystemdManager, UserServiceConfig};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
 use crate::ui::prelude::*;
 
@@ -28,7 +28,6 @@ impl Setting for ClipboardManager {
         SettingMetadata::builder()
             .id("desktop.clipboard")
             .title("Clipboard History")
-            .category(Category::Desktop)
             .icon(NerdFont::Clipboard)
             .summary("Remember your copy/paste history so you can access previously copied items.\n\nWhen enabled, you can paste from your clipboard history instead of just the last copied item.")
             .requirements(&[Requirement::Package(
@@ -110,7 +109,6 @@ impl Setting for AutomountDisks {
         SettingMetadata::builder()
             .id("storage.automount")
             .title("Auto-mount disks")
-            .category(Category::Storage)
             .icon(NerdFont::HardDrive)
             .summary("Automatically mount removable drives with udiskie.")
             .build()
@@ -201,7 +199,6 @@ impl Setting for BluetoothService {
         SettingMetadata::builder()
             .id("bluetooth.service")
             .title("Enable Bluetooth")
-            .category(Category::Bluetooth)
             .icon(NerdFont::Bluetooth)
             .summary("Turn Bluetooth on or off.\n\nWhen enabled, you can connect wireless devices like headphones, keyboards, and mice.")
             .build()

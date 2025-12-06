@@ -200,7 +200,6 @@ impl Category {
 pub struct SettingMetadata {
     pub id: &'static str,
     pub title: &'static str,
-    pub category: Category,
     pub icon: NerdFont,
     /// Override icon color (if None, uses category color)
     pub icon_color: Option<&'static str>,
@@ -219,7 +218,6 @@ impl SettingMetadata {
 pub struct SettingMetadataBuilder {
     id: Option<&'static str>,
     title: Option<&'static str>,
-    category: Option<Category>,
     icon: Option<NerdFont>,
     icon_color: Option<&'static str>,
     summary: &'static str,
@@ -228,11 +226,10 @@ pub struct SettingMetadataBuilder {
 }
 
 impl SettingMetadataBuilder {
-    pub fn new(id: &'static str, title: &'static str, category: Category, icon: NerdFont) -> Self {
+    pub fn new(id: &'static str, title: &'static str, icon: NerdFont) -> Self {
         Self {
             id: Some(id),
             title: Some(title),
-            category: Some(category),
             icon: Some(icon),
             ..Default::default()
         }
@@ -248,10 +245,7 @@ impl SettingMetadataBuilder {
         self
     }
 
-    pub fn category(mut self, category: Category) -> Self {
-        self.category = Some(category);
-        self
-    }
+
 
     pub fn icon(mut self, icon: NerdFont) -> Self {
         self.icon = Some(icon);
@@ -284,9 +278,6 @@ impl SettingMetadataBuilder {
         SettingMetadata {
             id: self.id.expect("SettingMetadata: id is required"),
             title,
-            category: self
-                .category
-                .expect("SettingMetadata: category is required"),
             icon: self.icon.expect("SettingMetadata: icon is required"),
             icon_color: self.icon_color,
             summary: self.summary,
@@ -368,13 +359,6 @@ pub fn setting_by_id(id: &str) -> Option<&'static dyn Setting> {
     all_settings().find(|s| s.metadata().id == id)
 }
 
-/// Get all settings in a category
-pub fn settings_in_category(category: Category) -> Vec<&'static dyn Setting> {
-    all_settings()
-        .filter(|s| s.metadata().category == category)
-        .collect()
-}
-
 /// Get all settings that require reapply on login
 pub fn settings_requiring_reapply() -> impl Iterator<Item = &'static dyn Setting> {
     all_settings().filter(|s| s.metadata().requires_reapply)
@@ -395,7 +379,6 @@ mod tests {
         let metadata = SettingMetadata::builder()
             .id("test.id")
             .title("Test Title")
-            .category(Category::System)
             .icon(NerdFont::Desktop)
             .icon_color(Some("red"))
             .summary("Test Summary")
@@ -404,7 +387,6 @@ mod tests {
 
         assert_eq!(metadata.id, "test.id");
         assert_eq!(metadata.title, "Test Title");
-        assert_eq!(metadata.category, Category::System);
         assert_eq!(metadata.icon_color, Some("red"));
         assert!(metadata.requires_reapply);
     }

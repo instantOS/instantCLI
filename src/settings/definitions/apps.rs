@@ -8,7 +8,7 @@ use crate::common::requirements::XDG_UTILS_PACKAGE;
 use crate::settings::context::SettingsContext;
 use crate::settings::context::colors;
 use crate::settings::defaultapps;
-use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
 macro_rules! default_app_setting {
@@ -20,7 +20,6 @@ macro_rules! default_app_setting {
                 SettingMetadata::builder()
                     .id($id)
                     .title($title)
-                    .category(Category::Apps)
                     .icon($icon)
                     .icon_color($color)
                     .summary($summary)

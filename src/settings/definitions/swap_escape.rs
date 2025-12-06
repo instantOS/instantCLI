@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::common::compositor::{CompositorType, sway};
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
 use crate::ui::prelude::*;
 
@@ -98,7 +98,6 @@ impl Setting for SwapEscape {
         SettingMetadata::builder()
             .id("desktop.swap_escape")
             .title("Swap Escape and Caps Lock")
-            .category(Category::Desktop)
             .icon(NerdFont::Keyboard)
             .summary("Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports Sway and X11 window managers.")
             .requires_reapply(true)

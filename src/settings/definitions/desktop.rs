@@ -11,7 +11,7 @@ use crate::menu_utils::FzfSelectable;
 use crate::settings::context::{
     SettingsContext, colors, format_back_icon, format_icon_colored, select_one_with_style_at,
 };
-use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::StringSettingKey;
 use crate::ui::prelude::*;
 
@@ -188,7 +188,6 @@ impl Setting for WindowLayout {
         SettingMetadata::builder()
             .id("desktop.layout")
             .title("Window Layout")
-            .category(Category::Desktop)
             .icon(NerdFont::List)
             .summary("Choose how windows are arranged on your screen by default.\n\nYou can always change the layout temporarily with keyboard shortcuts.")
             .requires_reapply(true)
@@ -283,7 +282,6 @@ gui_command_setting!(
     GamingMouse,
     "mouse.gaming",
     "Gaming Mouse Customization",
-    Category::Mouse,
     NerdFont::Mouse,
     "Configure gaming mice with customizable buttons, RGB lighting, and DPI settings.\n\nUses Piper to configure Logitech and other gaming mice supported by libratbag.",
     "piper",
@@ -298,7 +296,6 @@ gui_command_setting!(
     BluetoothManager,
     "bluetooth.manager",
     "Manage Devices",
-    Category::Bluetooth,
     NerdFont::Settings,
     "Pair new devices and manage connected Bluetooth devices.\n\nUse this to connect headphones, speakers, keyboards, mice, and other wireless devices.",
     "blueman-manager",

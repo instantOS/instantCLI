@@ -3,7 +3,7 @@
 use anyhow::Result;
 
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::users;
 use crate::ui::prelude::*;
 
@@ -18,7 +18,6 @@ impl Setting for ManageUsers {
         SettingMetadata::builder()
             .id("users.manage")
             .title("Manage Users")
-            .category(Category::Users)
             .icon(NerdFont::Users)
             .summary("Create, modify, and delete user accounts.\n\nManage user groups, shells, and permissions.")
             .build()

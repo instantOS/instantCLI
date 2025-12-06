@@ -9,7 +9,7 @@ use crate::common::compositor::CompositorType;
 use crate::common::requirements::{YAZI_PACKAGE, ZENITY_PACKAGE};
 use crate::menu_utils::{FzfWrapper, MenuWrapper};
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, OptionalStringSettingKey};
 use crate::ui::prelude::*;
 
@@ -28,7 +28,6 @@ impl Setting for Animations {
         SettingMetadata::builder()
             .id("appearance.animations")
             .title("Animations")
-            .category(Category::Appearance)
             .icon(NerdFont::Magic)
             .summary("Enable smooth animations and visual effects on the desktop.\n\nDisable for better performance on older hardware.\n\nOnly supported on instantwm.")
             .requires_reapply(true)
@@ -148,7 +147,6 @@ impl Setting for SetWallpaper {
         SettingMetadata::builder()
             .id("appearance.wallpaper")
             .title("Wallpaper")
-            .category(Category::Appearance)
             .icon(NerdFont::Image)
             .summary("Select and set a new wallpaper image.")
             .requirements(&[Requirement::Package(YAZI_PACKAGE)])
@@ -200,7 +198,6 @@ impl Setting for WallpaperLogo {
         SettingMetadata::builder()
             .id("appearance.wallpaper_logo")
             .title("Show Logo on Wallpaper")
-            .category(Category::Appearance)
             .icon(NerdFont::Image)
             .summary("Show the instantOS logo on top of random wallpapers.\n\nWhen enabled, a logo overlay is applied when fetching random wallpapers.")
             .build()
@@ -235,7 +232,6 @@ impl Setting for RandomWallpaper {
         SettingMetadata::builder()
             .id("appearance.wallpaper_random")
             .title("Random Wallpaper")
-            .category(Category::Appearance)
             .icon(NerdFont::Refresh)
             .summary("Fetch and set a random wallpaper from Wallhaven.\n\nRespects the 'Show Logo on Wallpaper' setting.")
             .build()
@@ -282,7 +278,6 @@ impl Setting for WallpaperBgColor {
         SettingMetadata::builder()
             .id("appearance.wallpaper_bg_color")
             .title("Background Color")
-            .category(Category::Appearance)
             .icon(NerdFont::Palette)
             .summary(
                 "Choose a background color for colored wallpapers.\n\nUses zenity color picker.",
@@ -317,7 +312,6 @@ impl Setting for WallpaperFgColor {
         SettingMetadata::builder()
             .id("appearance.wallpaper_fg_color")
             .title("Foreground Color")
-            .category(Category::Appearance)
             .icon(NerdFont::Palette)
             .summary("Choose a foreground/logo color for colored wallpapers.\n\nUses zenity color picker.")
             .requirements(&[Requirement::Package(ZENITY_PACKAGE)])
@@ -350,7 +344,6 @@ impl Setting for ApplyColoredWallpaper {
         SettingMetadata::builder()
                 .id("appearance.wallpaper_colored")
                 .title("Apply Colored Wallpaper")
-                .category(Category::Appearance)
                 .icon(NerdFont::Image)
                 .summary("Generate a solid-color wallpaper with the instantOS logo.\n\nUses the chosen background and foreground colors.")
                 .build()
@@ -395,7 +388,6 @@ impl Setting for GtkIconTheme {
         SettingMetadata::builder()
             .id("appearance.gtk_icon_theme")
             .title("Icon Theme")
-            .category(Category::Appearance)
             .icon(NerdFont::Image) // Use a generic image icon or find a better one
             .summary("Select and apply a GTK icon theme.\n\nUpdates GTK 3/4 settings and GSettings for Sway.")
             .build()
@@ -480,7 +472,6 @@ impl Setting for GtkTheme {
         SettingMetadata::builder()
             .id("appearance.gtk_theme")
             .title("Theme")
-            .category(Category::Appearance)
             .icon(NerdFont::Image) // Use a generic image icon or find a better one
             .summary("Select and apply a GTK theme.\n\nUpdates GTK 3/4 settings, GSettings, and applies Libadwaita overrides (via ~/.config/gtk-4.0/).")
             .build()
@@ -576,7 +567,6 @@ impl Setting for ResetGtk {
         SettingMetadata::builder()
             .id("appearance.reset_gtk")
             .title("Reset Customizations")
-            .category(Category::Appearance)
             .icon(NerdFont::Trash)
             .summary("Reset all GTK theme and icon settings to default.\n\nRemoves custom settings.ini files and GTK4 CSS overrides.")
             .build()

@@ -70,14 +70,29 @@ pub fn dispatch_settings_command(
 }
 
 fn list_settings(categories_only: bool, category_filter: Option<&str>) -> Result<()> {
-    use super::setting::{self, Category};
+    use super::category_tree::category_tree;
+    use super::setting::Category;
     use colored::Colorize;
+
+    fn collect_settings_from_tree(
+        nodes: &[super::category_tree::CategoryNode],
+    ) -> Vec<&'static dyn super::setting::Setting> {
+        let mut settings = Vec::new();
+        for node in nodes {
+            if let Some(setting) = node.setting {
+                settings.push(setting);
+            }
+            settings.extend(collect_settings_from_tree(&node.children));
+        }
+        settings
+    }
 
     if categories_only {
         println!("{}", "Available Categories:".bold());
         println!();
         for category in Category::all() {
-            let count = setting::settings_in_category(*category).len();
+            let tree = category_tree(*category);
+            let count = collect_settings_from_tree(&tree).len();
             println!(
                 "  {} {} ({} settings)",
                 category.id().cyan(),
@@ -98,7 +113,8 @@ fn list_settings(categories_only: bool, category_filter: Option<&str>) -> Result
         println!("{}", category.description().dimmed());
         println!();
 
-        let settings = setting::settings_in_category(category);
+        let tree = category_tree(category);
+        let settings = collect_settings_from_tree(&tree);
         if settings.is_empty() {
             println!("  {}", "No settings in this category yet.".dimmed());
             return Ok(());
@@ -112,7 +128,8 @@ fn list_settings(categories_only: bool, category_filter: Option<&str>) -> Result
         }
     } else {
         for category in Category::all() {
-            let settings = setting::settings_in_category(*category);
+            let tree = category_tree(*category);
+            let settings = collect_settings_from_tree(&tree);
             if settings.is_empty() {
                 continue;
             }

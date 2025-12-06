@@ -5,7 +5,7 @@
 use anyhow::Result;
 
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
 // ============================================================================
@@ -19,7 +19,6 @@ impl Setting for InstallFlatpakApps {
         SettingMetadata::builder()
             .id("system.install_flatpak_apps")
             .title("Install Flatpak apps")
-            .category(Category::Install)
             .icon(NerdFont::Download)
             .summary("Browse and install Flatpak applications using an interactive fuzzy finder.")
             .build()

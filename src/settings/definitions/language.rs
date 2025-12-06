@@ -5,7 +5,7 @@
 use anyhow::Result;
 
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
 // ============================================================================
@@ -19,7 +19,6 @@ impl Setting for SystemLanguage {
         SettingMetadata::builder()
             .id("language.main")
             .title("Language")
-            .category(Category::Language)
             .icon(NerdFont::Globe)
             .summary("Manage system locales and choose the default language.\n\nEnable or disable locales in /etc/locale.gen and set LANG via localectl.")
             .requires_reapply(true)
@@ -48,7 +47,6 @@ impl Setting for Timezone {
         SettingMetadata::builder()
             .id("system.timezone")
             .title("Timezone")
-            .category(Category::Language)
             .icon(NerdFont::Clock)
             .summary("Select the system timezone via timedatectl set-timezone.")
             .build()

@@ -10,7 +10,7 @@ use crate::common::requirements::{
     TOPGRADE_PACKAGE,
 };
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
 use crate::ui::prelude::*;
 
@@ -25,7 +25,6 @@ impl Setting for AboutSystem {
         SettingMetadata::builder()
             .id("system.about")
             .title("About")
-            .category(Category::System)
             .icon(NerdFont::About)
             .summary("Display system information using fastfetch.")
             .requirements(&[Requirement::Package(FASTFETCH_PACKAGE)])
@@ -61,7 +60,6 @@ impl Setting for CockpitManager {
         SettingMetadata::builder()
             .id("system.cockpit")
             .title("Systemd manager (Cockpit)")
-            .category(Category::System)
             .icon(NerdFont::Server)
             .summary("Launch Cockpit web interface for managing systemd services, logs, and system resources.")
             .requirements(&[Requirement::Package(COCKPIT_PACKAGE)])
@@ -87,7 +85,6 @@ gui_command_setting!(
     FirmwareManager,
     "system.firmware",
     "Firmware Manager",
-    Category::System,
     NerdFont::Cpu,
     "Launch GNOME Firmware manager to view and update device firmware.\n\nManage firmware for BIOS/UEFI, devices, and peripherals.",
     "gnome-firmware",
@@ -102,7 +99,6 @@ tui_command_setting!(
     SystemUpgrade,
     "system.upgrade",
     "Upgrade",
-    Category::System,
     NerdFont::Upgrade,
     "Upgrade all installed packages and system components using topgrade.",
     "topgrade",
@@ -124,7 +120,6 @@ impl Setting for PacmanAutoclean {
         SettingMetadata::builder()
             .id("system.pacman_autoclean")
             .title("Pacman cache autoclean")
-            .category(Category::System)
             .icon(NerdFont::Trash)
             .summary("Run paccache weekly to keep only the latest pacman packages.")
             .requirements(&[Requirement::Package(PACMAN_CONTRIB_PACKAGE)])
@@ -158,7 +153,6 @@ simple_toggle_setting!(
     WelcomeAutostart,
     "system.welcome_autostart",
     "Welcome app on startup",
-    Category::System,
     NerdFont::Home,
     "Show the welcome application automatically when logging in.\n\nThe welcome app provides quick access to the instantOS website and system settings.",
     true,

@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use crate::common::requirements::{CHROMIUM_PACKAGE, NM_CONNECTION_EDITOR_PACKAGE};
 use crate::settings::context::SettingsContext;
 use crate::settings::network;
-use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
 // ============================================================================
@@ -22,7 +22,6 @@ impl Setting for IpInfo {
         SettingMetadata::builder()
             .id("network.ip_info")
             .title("IP Address Info")
-            .category(Category::Network)
             .icon(NerdFont::Info)
             .summary("View your local and public IP addresses.\n\nUseful for troubleshooting network issues or setting up remote access.")
             .build()
@@ -50,7 +49,6 @@ impl Setting for SpeedTest {
         SettingMetadata::builder()
             .id("network.speed_test")
             .title("Internet Speed Test")
-            .category(Category::Network)
             .icon(NerdFont::Rocket)
             .summary("Test your internet connection speed using fast.com.\n\nMeasures download speed from Netflix servers.")
             .requirements(&[Requirement::Package(CHROMIUM_PACKAGE)])
@@ -90,7 +88,6 @@ impl Setting for EditConnections {
         SettingMetadata::builder()
             .id("network.edit_connections")
             .title("Edit Connections")
-            .category(Category::Network)
             .icon(NerdFont::Settings)
             .summary("Manage WiFi, Ethernet, VPN, and other network connections.\n\nConfigure connection settings, passwords, and advanced options.")
             .requirements(&[Requirement::Package(NM_CONNECTION_EDITOR_PACKAGE)])

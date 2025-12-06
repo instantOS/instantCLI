@@ -11,7 +11,6 @@
 /// - `$struct_name` - Name of the struct to create
 /// - `$id` - Setting ID (e.g. "storage.disks")
 /// - `$title` - Display title
-/// - `$category` - Category enum variant
 /// - `$icon` - NerdFont icon
 /// - `$summary` - Description text
 /// - `$command` - Command to execute (as string literal)
@@ -23,7 +22,6 @@
 ///     DiskManagement,
 ///     "storage.disks",
 ///     "Disk management",
-///     Category::Storage,
 ///     NerdFont::HardDrive,
 ///     "Launch GNOME Disks to manage drives and partitions.",
 ///     "gnome-disks",
@@ -36,7 +34,6 @@ macro_rules! gui_command_setting {
         $struct_name:ident,
         $id:expr,
         $title:expr,
-        $category:expr,
         $icon:expr,
         $summary:expr,
         $command:expr,
@@ -49,7 +46,6 @@ macro_rules! gui_command_setting {
                 $crate::settings::setting::SettingMetadata::builder()
                     .id($id)
                     .title($title)
-                    .category($category)
                     .icon($icon)
                     .summary($summary)
                     .requirements(&[$crate::settings::setting::Requirement::Package(
@@ -99,7 +95,6 @@ macro_rules! gui_command_setting {
 /// - `$struct_name` - Name of the struct to create
 /// - `$id` - Setting ID (e.g. "audio.wiremix")
 /// - `$title` - Display title
-/// - `$category` - Category enum variant
 /// - `$icon` - NerdFont icon
 /// - `$summary` - Description text
 /// - `$command` - Command to execute (as string literal)
@@ -111,7 +106,6 @@ macro_rules! gui_command_setting {
 ///     LaunchWiremix,
 ///     "audio.wiremix",
 ///     "General audio settings",
-///     Category::Audio,
 ///     NerdFont::Settings,
 ///     "Launch wiremix TUI to manage PipeWire routing and volumes.",
 ///     "wiremix",
@@ -124,7 +118,6 @@ macro_rules! tui_command_setting {
         $struct_name:ident,
         $id:expr,
         $title:expr,
-        $category:expr,
         $icon:expr,
         $summary:expr,
         $command:expr,
@@ -137,7 +130,6 @@ macro_rules! tui_command_setting {
                 $crate::settings::setting::SettingMetadata::builder()
                     .id($id)
                     .title($title)
-                    .category($category)
                     .icon($icon)
                     .summary($summary)
                     .requirements(&[$crate::settings::setting::Requirement::Package(
@@ -183,7 +175,6 @@ macro_rules! tui_command_setting {
 /// - `$struct_name` - Name of the struct to create
 /// - `$id` - Setting ID (e.g. "system.welcome_autostart")
 /// - `$title` - Display title
-/// - `$category` - Category enum variant
 /// - `$icon` - NerdFont icon
 /// - `$summary` - Description text
 /// - `$default` - Default boolean value (true or false)
@@ -196,7 +187,6 @@ macro_rules! tui_command_setting {
 ///     WelcomeAutostart,
 ///     "system.welcome_autostart",
 ///     "Welcome app on startup",
-///     Category::System,
 ///     NerdFont::Home,
 ///     "Show the welcome application automatically when logging in.",
 ///     true,
@@ -210,7 +200,6 @@ macro_rules! simple_toggle_setting {
         $struct_name:ident,
         $id:expr,
         $title:expr,
-        $category:expr,
         $icon:expr,
         $summary:expr,
         $default:expr,
@@ -229,7 +218,6 @@ macro_rules! simple_toggle_setting {
                 $crate::settings::setting::SettingMetadata::builder()
                     .id($id)
                     .title($title)
-                    .category($category)
                     .icon($icon)
                     .summary($summary)
                     .build()

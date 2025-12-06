@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::settings::context::SettingsContext;
 use crate::settings::printer;
-use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
 use crate::ui::prelude::*;
 
@@ -25,7 +25,6 @@ impl Setting for PrinterServices {
         SettingMetadata::builder()
             .id("printers.enable_services")
             .title("Printer services")
-            .category(Category::Printers)
             .icon(NerdFont::Printer)
             .summary("Enable CUPS printing and Avahi discovery for network printers.")
             .requirements(&[
@@ -63,7 +62,6 @@ impl Setting for PrinterManager {
         SettingMetadata::builder()
             .id("printers.open_manager")
             .title("Open printer manager")
-            .category(Category::Printers)
             .icon(NerdFont::Printer)
             .summary("Launch the graphical printer setup utility.")
             .requirements(&[Requirement::Package(printer::SYSTEM_CONFIG_PRINTER_PACKAGE)])

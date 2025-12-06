@@ -66,7 +66,10 @@ impl CategoryNode {
 /// Each category defines its own tree structure, specifying which settings
 /// are top-level and which are grouped into subcategories.
 pub fn category_tree(category: Category) -> Vec<CategoryNode> {
-    use crate::settings::definitions::{appearance, brightness, flatpak, network};
+    use crate::settings::definitions::{
+        appearance, apps, brightness, desktop, flatpak, keyboard, language, mouse, network,
+        packages, printers, storage, swap_escape, system, toggles, users, wiremix,
+    };
 
     match category {
         Category::Appearance => vec![
@@ -89,51 +92,88 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&network::SpeedTest),
             CategoryNode::setting(&network::EditConnections),
         ],
-        Category::Bluetooth => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
-        Category::Mouse => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
-        Category::Desktop => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
-        Category::Audio => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
-        Category::Apps => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
-        Category::Storage => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
-        Category::Printers => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
-        Category::Users => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
-        Category::Language => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
-        Category::System => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
-        Category::Install => super::setting::settings_in_category(category)
-            .into_iter()
-            .map(CategoryNode::setting)
-            .collect(),
+        Category::Bluetooth => vec![
+            CategoryNode::setting(&toggles::BluetoothService),
+            CategoryNode::setting(&desktop::BluetoothManager),
+        ],
+        Category::Mouse => vec![
+            CategoryNode::setting(&mouse::NaturalScroll),
+            CategoryNode::setting(&mouse::SwapButtons),
+            CategoryNode::setting(&mouse::MouseSensitivity),
+            CategoryNode::setting(&desktop::GamingMouse),
+        ],
+        Category::Desktop => vec![
+            CategoryNode::setting(&desktop::WindowLayout),
+            CategoryNode::setting(&toggles::ClipboardManager),
+            CategoryNode::setting(&swap_escape::SwapEscape),
+        ],
+        Category::Audio => vec![CategoryNode::setting(&wiremix::LaunchWiremix)],
+        Category::Apps => vec![
+            CategoryNode::setting(&apps::DefaultBrowser),
+            CategoryNode::setting(&apps::DefaultEmail),
+            CategoryNode::setting(&apps::DefaultFileManager),
+            CategoryNode::setting(&apps::DefaultTextEditor),
+            CategoryNode::setting(&apps::DefaultImageViewer),
+            CategoryNode::setting(&apps::DefaultVideoPlayer),
+            CategoryNode::setting(&apps::DefaultMusicPlayer),
+            CategoryNode::setting(&apps::DefaultPdfViewer),
+            CategoryNode::setting(&apps::DefaultArchiveManager),
+            CategoryNode::setting(&apps::ManageAllApps),
+        ],
+        Category::Storage => vec![
+            CategoryNode::setting(&toggles::AutomountDisks),
+            CategoryNode::setting(&storage::DiskManagement),
+            CategoryNode::setting(&storage::PartitionEditor),
+        ],
+        Category::Printers => vec![
+            CategoryNode::setting(&printers::PrinterServices),
+            CategoryNode::setting(&printers::PrinterManager),
+        ],
+        Category::Users => vec![CategoryNode::setting(&users::ManageUsers)],
+        Category::Language => vec![
+            CategoryNode::setting(&language::SystemLanguage),
+            CategoryNode::setting(&keyboard::KeyboardLayout),
+            CategoryNode::setting(&language::Timezone),
+        ],
+        Category::System => vec![
+            CategoryNode::setting(&system::AboutSystem),
+            CategoryNode::setting(&system::CockpitManager),
+            CategoryNode::setting(&system::FirmwareManager),
+            CategoryNode::setting(&system::SystemUpgrade),
+            CategoryNode::setting(&system::PacmanAutoclean),
+            CategoryNode::setting(&system::WelcomeAutostart),
+            CategoryNode::setting(&packages::InstallPackages),
+            CategoryNode::setting(&flatpak::InstallFlatpakApps),
+        ],
+        Category::Install => vec![],
     }
+}
+
+/// Get the category that a setting belongs to by searching all category trees
+pub fn get_category_for_setting(setting_id: &str) -> Option<Category> {
+    for &category in Category::all() {
+        let tree = category_tree(category);
+        if find_setting_in_tree(&tree, setting_id) {
+            return Some(category);
+        }
+    }
+    None
+}
+
+/// Check if a setting exists in a tree
+fn find_setting_in_tree(nodes: &[CategoryNode], setting_id: &str) -> bool {
+    for node in nodes {
+        if let Some(setting) = node.setting {
+            if setting.metadata().id == setting_id {
+                return true;
+            }
+        } else if !node.children.is_empty() {
+            if find_setting_in_tree(&node.children, setting_id) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Get breadcrumbs for a setting by searching the category tree

@@ -9,7 +9,7 @@ use crate::common::compositor::{CompositorType, sway};
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, IntSettingKey};
 use crate::ui::prelude::*;
 
@@ -28,7 +28,6 @@ impl Setting for NaturalScroll {
         SettingMetadata::builder()
             .id("mouse.natural_scroll")
             .title("Natural Scrolling")
-            .category(Category::Mouse)
             .icon(NerdFont::Mouse)
             .summary("Reverse the scroll direction to match touchpad/touchscreen behavior.\n\nWhen enabled, scrolling up moves the content up (like pushing paper).\n\nSupports Sway and X11 window managers.")
             .requires_reapply(true)
@@ -73,7 +72,6 @@ impl Setting for SwapButtons {
         SettingMetadata::builder()
             .id("mouse.swap_buttons")
             .title("Swap Mouse Buttons")
-            .category(Category::Mouse)
             .icon(NerdFont::Mouse)
             .summary("Swap left and right mouse buttons for left-handed use.\n\nWhen enabled, the right button becomes the primary click.\n\nCurrently only supported on X11.")
             .requires_reapply(true)
@@ -118,7 +116,6 @@ impl Setting for MouseSensitivity {
         SettingMetadata::builder()
             .id("mouse.sensitivity")
             .title("Mouse Sensitivity")
-            .category(Category::Mouse)
             .icon(NerdFont::Mouse)
             .summary("Adjust mouse pointer speed using an interactive slider.\n\nThe setting will be automatically restored on login.")
             .requires_reapply(true)

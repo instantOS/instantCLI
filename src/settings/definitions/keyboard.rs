@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader};
 use crate::common::compositor::{CompositorType, sway};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::StringSettingKey;
 use crate::ui::prelude::*;
 
@@ -23,7 +23,6 @@ impl Setting for KeyboardLayout {
         SettingMetadata::builder()
             .id("language.keyboard_layout")
             .title("Keyboard Layout")
-            .category(Category::Language)
             .icon(NerdFont::Keyboard)
             .summary("Select and set the keyboard layout (e.g., us, de, fr).\n\nSupports Sway and X11 window managers.")
             .requires_reapply(true)
