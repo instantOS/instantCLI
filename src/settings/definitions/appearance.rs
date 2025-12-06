@@ -202,7 +202,6 @@ impl Setting for WallpaperLogo {
             .title("Show Logo on Wallpaper")
             .category(Category::Appearance)
             .icon(NerdFont::Image)
-            .breadcrumbs(&["Wallpaper", "Show Logo"])
             .summary("Show the instantOS logo on top of random wallpapers.\n\nWhen enabled, a logo overlay is applied when fetching random wallpapers.")
             .build()
     }
@@ -238,7 +237,6 @@ impl Setting for RandomWallpaper {
             .title("Random Wallpaper")
             .category(Category::Appearance)
             .icon(NerdFont::Refresh)
-            .breadcrumbs(&["Wallpaper", "Random"])
             .summary("Fetch and set a random wallpaper from Wallhaven.\n\nRespects the 'Show Logo on Wallpaper' setting.")
             .build()
     }
@@ -286,7 +284,6 @@ impl Setting for WallpaperBgColor {
             .title("Background Color")
             .category(Category::Appearance)
             .icon(NerdFont::Palette)
-            .breadcrumbs(&["Wallpaper", "Colored", "Background"])
             .summary(
                 "Choose a background color for colored wallpapers.\n\nUses zenity color picker.",
             )
@@ -322,7 +319,6 @@ impl Setting for WallpaperFgColor {
             .title("Foreground Color")
             .category(Category::Appearance)
             .icon(NerdFont::Palette)
-            .breadcrumbs(&["Wallpaper", "Colored", "Foreground"])
             .summary("Choose a foreground/logo color for colored wallpapers.\n\nUses zenity color picker.")
             .requirements(&[Requirement::Package(ZENITY_PACKAGE)])
             .build()
@@ -356,7 +352,6 @@ impl Setting for ApplyColoredWallpaper {
                 .title("Apply Colored Wallpaper")
                 .category(Category::Appearance)
                 .icon(NerdFont::Image)
-                .breadcrumbs(&["Wallpaper", "Colored", "Apply"])
                 .summary("Generate a solid-color wallpaper with the instantOS logo.\n\nUses the chosen background and foreground colors.")
                 .build()
     }
@@ -402,7 +397,6 @@ impl Setting for GtkIconTheme {
             .title("Icon Theme")
             .category(Category::Appearance)
             .icon(NerdFont::Image) // Use a generic image icon or find a better one
-            .breadcrumbs(&["GTK"])
             .summary("Select and apply a GTK icon theme.\n\nUpdates GTK 3/4 settings and GSettings for Sway.")
             .build()
     }
@@ -488,7 +482,6 @@ impl Setting for GtkTheme {
             .title("Theme")
             .category(Category::Appearance)
             .icon(NerdFont::Image) // Use a generic image icon or find a better one
-            .breadcrumbs(&["GTK"])
             .summary("Select and apply a GTK theme.\n\nUpdates GTK 3/4 settings, GSettings, and applies Libadwaita overrides (via ~/.config/gtk-4.0/).")
             .build()
     }
@@ -585,7 +578,6 @@ impl Setting for ResetGtk {
             .title("Reset Customizations")
             .category(Category::Appearance)
             .icon(NerdFont::Trash)
-            .breadcrumbs(&["GTK"])
             .summary("Reset all GTK theme and icon settings to default.\n\nRemoves custom settings.ini files and GTK4 CSS overrides.")
             .build()
     }
