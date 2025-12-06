@@ -7,7 +7,6 @@ use sudo::RunningAs;
 use crate::common::requirements::RequiredPackage;
 use crate::ui::prelude::*;
 
-
 use super::sources;
 use super::store::{
     BoolSettingKey, IntSettingKey, OptionalStringSettingKey, SettingsStore, StringSettingKey,

@@ -8,10 +8,7 @@ use super::super::context::SettingsContext;
 use super::items::SettingState;
 
 /// Compute the display state for a setting
-pub fn compute_setting_state(
-    ctx: &SettingsContext,
-    setting: &'static dyn Setting,
-) -> SettingState {
+pub fn compute_setting_state(ctx: &SettingsContext, setting: &'static dyn Setting) -> SettingState {
     match setting.setting_type() {
         SettingType::Toggle { key } => SettingState::Toggle {
             enabled: ctx.bool(key),

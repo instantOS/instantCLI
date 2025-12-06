@@ -6,9 +6,7 @@ use crate::menu_utils::FzfSelectable;
 use crate::settings::setting::{Category, Setting};
 use crate::ui::prelude::*;
 
-use super::super::context::{
-    format_back_icon, format_icon_colored, format_search_icon,
-};
+use super::super::context::{format_back_icon, format_icon_colored, format_search_icon};
 
 // ============================================================================
 // Category Display
@@ -100,14 +98,18 @@ impl FzfSelectable for CategoryItem {
             char::from(self.category.icon()),
             self.category.title()
         ));
-        lines.push(format!("{surface}───────────────────────────────────{reset}"));
+        lines.push(format!(
+            "{surface}───────────────────────────────────{reset}"
+        ));
         lines.push(String::new());
         lines.push(format!("{text}{}{reset}", self.category.description()));
         lines.push(String::new());
 
         let preview_count = 6.min(self.settings.len());
         if preview_count > 0 {
-            lines.push(format!("{surface}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{reset}"));
+            lines.push(format!(
+                "{surface}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{reset}"
+            ));
             lines.push(String::new());
 
             for (i, setting) in self.settings.iter().take(preview_count).enumerate() {
@@ -180,7 +182,7 @@ impl FzfSelectable for SettingItem {
     fn fzf_display_text(&self) -> String {
         let meta = self.setting.metadata();
         let icon_color = meta.category.color();
-        
+
         match self.state {
             SettingState::Toggle { enabled } => {
                 let status = if enabled { "[ON]" } else { "[OFF]" };
@@ -259,7 +261,7 @@ impl FzfSelectable for SearchItem {
         let meta = self.setting.metadata();
         let path = format_setting_path(self.setting);
         let icon_color = meta.category.color();
-        
+
         match self.state {
             SettingState::Toggle { enabled } => {
                 let status = if enabled { "[ON]" } else { "[OFF]" };
@@ -279,11 +281,7 @@ impl FzfSelectable for SearchItem {
                 )
             }
             SettingState::Action => {
-                format!(
-                    "{} {}",
-                    format_icon_colored(meta.icon, icon_color),
-                    path
-                )
+                format!("{} {}", format_icon_colored(meta.icon, icon_color), path)
             }
             SettingState::Command => {
                 format!(

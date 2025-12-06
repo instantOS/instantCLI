@@ -126,7 +126,7 @@ fn settings_by_category() -> Vec<(Category, Vec<&'static dyn Setting>)> {
 
 fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Result<MenuAction> {
     let categories_with_settings = settings_by_category();
-    
+
     if categories_with_settings.is_empty() {
         crate::ui::prelude::emit(
             crate::ui::prelude::Level::Warn,
@@ -144,7 +144,9 @@ fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> R
     menu_items.push(CategoryMenuItem::SearchAll);
 
     for (category, settings) in categories_with_settings {
-        menu_items.push(CategoryMenuItem::Category(CategoryItem::new(category, settings)));
+        menu_items.push(CategoryMenuItem::Category(CategoryItem::new(
+            category, settings,
+        )));
     }
 
     let selection = select_one_with_style_at(menu_items.clone(), initial_cursor)?;
@@ -177,7 +179,7 @@ pub fn handle_category(
     initial_cursor: Option<usize>,
 ) -> Result<bool> {
     let settings = setting::settings_in_category(category);
-    
+
     if settings.is_empty() {
         ctx.emit_info(
             "settings.category.empty",
@@ -241,9 +243,9 @@ pub fn handle_search_all(ctx: &mut SettingsContext, initial_cursor: Option<usize
 
         match select_one_with_style_at(items.clone(), cursor)? {
             Some(selection) => {
-                cursor = items.iter().position(|i| {
-                    i.setting.metadata().id == selection.setting.metadata().id
-                });
+                cursor = items
+                    .iter()
+                    .position(|i| i.setting.metadata().id == selection.setting.metadata().id);
                 super::handlers::handle_trait_setting(ctx, selection.setting)?;
             }
             None => return Ok(true),

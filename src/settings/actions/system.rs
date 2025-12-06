@@ -10,8 +10,8 @@ use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 
 use super::super::context::SettingsContext;
-use super::super::store::{COCKPIT_PACKAGES, PACMAN_AUTOCLEAN_KEY};
 use super::super::sources;
+use super::super::store::{COCKPIT_PACKAGES, PACMAN_AUTOCLEAN_KEY};
 
 const COCKPIT_SOCKET_NAME: &str = "cockpit.socket";
 

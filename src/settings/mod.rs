@@ -10,7 +10,6 @@ pub mod language;
 pub mod network;
 pub mod packages;
 pub mod printer;
-pub mod registry;
 pub mod restore;
 pub mod setting;
 pub mod sources;

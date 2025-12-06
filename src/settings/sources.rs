@@ -1,7 +1,7 @@
 use crate::common::systemd::SystemdManager;
 use crate::settings::constants::PACCACHE_TIMER_UNIT;
-use crate::settings::store::PACMAN_AUTOCLEAN_KEY;
 use crate::settings::store::BoolSettingKey;
+use crate::settings::store::PACMAN_AUTOCLEAN_KEY;
 
 /// Abstract source of truth for a boolean setting.
 pub trait BoolStateSource: Send + Sync {
