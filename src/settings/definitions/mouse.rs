@@ -342,7 +342,11 @@ pub fn get_pointer_device_ids() -> Result<Vec<String>> {
 }
 
 /// Apply a libinput property to all pointer devices that support it
-pub fn apply_libinput_property_helper(property_name: &str, value: &str, error_key: &str) -> Result<usize> {
+pub fn apply_libinput_property_helper(
+    property_name: &str,
+    value: &str,
+    error_key: &str,
+) -> Result<usize> {
     let device_ids = get_pointer_device_ids()?;
     let mut applied = 0;
 

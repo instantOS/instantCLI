@@ -124,7 +124,10 @@ fn build_layout_items(current: &str) -> Vec<LayoutChoiceDisplay> {
 }
 
 /// Find the cursor position for a given display item
-fn find_cursor_position(items: &[LayoutChoiceDisplay], target: &LayoutChoiceDisplay) -> Option<usize> {
+fn find_cursor_position(
+    items: &[LayoutChoiceDisplay],
+    target: &LayoutChoiceDisplay,
+) -> Option<usize> {
     items.iter().position(|c| match (c.choice, target.choice) {
         (None, None) => true,
         (Some(lhs), Some(rhs)) => lhs.value == rhs.value,
