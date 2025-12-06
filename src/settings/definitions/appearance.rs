@@ -592,7 +592,9 @@ impl Setting for ResetGtk {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let confirmation = FzfWrapper::confirm("Are you sure you want to reset all GTK theme customizations? This will clear settings.ini and remove GTK4 overrides.")?;
+        let confirmation = FzfWrapper::confirm(
+            "Are you sure you want to reset all GTK theme customizations? This will clear settings.ini and remove GTK4 overrides.",
+        )?;
 
         if matches!(confirmation, crate::menu_utils::ConfirmResult::Yes) {
             // 1. Reset GSettings
@@ -616,9 +618,9 @@ impl Setting for ResetGtk {
                 for path in &paths_to_remove {
                     if path.exists() {
                         if path.is_dir() && !path.is_symlink() {
-                             let _ = std::fs::remove_dir_all(path);
+                            let _ = std::fs::remove_dir_all(path);
                         } else {
-                             let _ = std::fs::remove_file(path);
+                            let _ = std::fs::remove_file(path);
                         }
                     }
                 }
