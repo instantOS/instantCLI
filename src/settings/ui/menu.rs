@@ -114,24 +114,9 @@ enum MenuAction {
 }
 
 fn settings_by_category() -> Vec<(Category, Vec<&'static dyn Setting>)> {
-    let categories = [
-        Category::Appearance,
-        Category::Network,
-        Category::Bluetooth,
-        Category::Mouse,
-        Category::Desktop,
-        Category::Audio,
-        Category::Apps,
-        Category::Storage,
-        Category::Printers,
-        Category::Users,
-        Category::Language,
-        Category::System,
-    ];
-
-    categories
-        .into_iter()
-        .map(|cat| {
+    Category::all()
+        .iter()
+        .map(|&cat| {
             let settings = setting::settings_in_category(cat);
             (cat, settings)
         })

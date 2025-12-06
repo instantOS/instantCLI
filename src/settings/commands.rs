@@ -73,25 +73,10 @@ fn list_settings(categories_only: bool, category_filter: Option<&str>) -> Result
     use super::setting::{self, Category};
     use colored::Colorize;
 
-    let categories = [
-        Category::Appearance,
-        Category::Network,
-        Category::Bluetooth,
-        Category::Mouse,
-        Category::Desktop,
-        Category::Audio,
-        Category::Apps,
-        Category::Storage,
-        Category::Printers,
-        Category::Users,
-        Category::Language,
-        Category::System,
-    ];
-
     if categories_only {
         println!("{}", "Available Categories:".bold());
         println!();
-        for category in &categories {
+        for category in Category::all() {
             let count = setting::settings_in_category(*category).len();
             println!(
                 "  {} {} ({} settings)",
@@ -126,7 +111,7 @@ fn list_settings(categories_only: bool, category_filter: Option<&str>) -> Result
             println!();
         }
     } else {
-        for category in &categories {
+        for category in Category::all() {
             let settings = setting::settings_in_category(*category);
             if settings.is_empty() {
                 continue;

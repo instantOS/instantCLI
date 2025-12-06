@@ -174,6 +174,24 @@ impl Category {
             _ => None,
         }
     }
+
+    /// All categories in display order (excluding Install which is special)
+    pub fn all() -> &'static [Category] {
+        &[
+            Category::Appearance,
+            Category::Network,
+            Category::Bluetooth,
+            Category::Mouse,
+            Category::Desktop,
+            Category::Audio,
+            Category::Apps,
+            Category::Storage,
+            Category::Printers,
+            Category::Users,
+            Category::Language,
+            Category::System,
+        ]
+    }
 }
 
 /// UI metadata for displaying a setting
