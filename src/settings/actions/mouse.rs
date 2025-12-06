@@ -4,11 +4,9 @@
 
 use anyhow::Result;
 
-use crate::common::compositor::{CompositorType, sway};
 use crate::ui::prelude::*;
 
 use super::super::context::SettingsContext;
-use super::super::definitions::mouse::{apply_libinput_property_helper, apply_natural_scrolling, apply_swap_buttons};
 
 pub fn configure_mouse_sensitivity(ctx: &mut SettingsContext) -> Result<()> {
     let key = super::super::store::IntSettingKey::new("desktop.mouse.sensitivity", 50);
@@ -63,10 +61,10 @@ pub fn restore_mouse_sensitivity(ctx: &mut SettingsContext) -> Result<()> {
 
 /// Apply natural scrolling setting (Sway and X11)
 pub fn apply_natural_scroll(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    apply_natural_scrolling(ctx, enabled)
+    crate::settings::definitions::mouse::apply_natural_scrolling(ctx, enabled)
 }
 
 /// Apply swap mouse buttons setting (X11 only for now)
 pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    super::super::definitions::mouse::apply_swap_buttons(ctx, enabled)
+    crate::settings::definitions::mouse::apply_swap_buttons(ctx, enabled)
 }

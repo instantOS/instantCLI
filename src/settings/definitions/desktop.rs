@@ -61,6 +61,77 @@ impl FzfSelectable for LayoutChoiceDisplay {
     }
 }
 
+/// Apply a window layout via instantwmctl
+fn apply_window_layout(ctx: &mut SettingsContext, choice: &LayoutChoice) -> Result<()> {
+    let compositor = CompositorType::detect();
+    if !matches!(compositor, CompositorType::InstantWM) {
+        ctx.emit_unsupported(
+            "settings.desktop.layout.unsupported",
+            &format!(
+                "Window layout configuration is only supported on instantwm. Detected: {}. Setting saved but not applied.",
+                compositor.name()
+            ),
+        );
+        return Ok(());
+    }
+
+    let status = Command::new("instantwmctl")
+        .args(["layout", choice.value])
+        .status();
+
+    match status {
+        Ok(exit) if exit.success() => {
+            ctx.notify("Window Layout", &format!("Set to: {}", choice.label));
+        }
+        Ok(exit) => {
+            ctx.emit_failure(
+                "settings.desktop.layout.apply_failed",
+                &format!(
+                    "Failed to apply layout '{}' (exit code {}).",
+                    choice.value,
+                    exit.code().unwrap_or(-1)
+                ),
+            );
+        }
+        Err(err) => {
+            ctx.emit_failure(
+                "settings.desktop.layout.apply_error",
+                &format!("Failed to run instantwmctl: {err}"),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Build the display items list with current selection marked
+fn build_layout_items(current: &str) -> Vec<LayoutChoiceDisplay> {
+    let mut items: Vec<LayoutChoiceDisplay> = LAYOUT_OPTIONS
+        .iter()
+        .map(|choice| LayoutChoiceDisplay {
+            choice: Some(choice),
+            is_current: choice.value == current,
+        })
+        .collect();
+
+    // Add Back entry at bottom
+    items.push(LayoutChoiceDisplay {
+        choice: None,
+        is_current: false,
+    });
+
+    items
+}
+
+/// Find the cursor position for a given display item
+fn find_cursor_position(items: &[LayoutChoiceDisplay], target: &LayoutChoiceDisplay) -> Option<usize> {
+    items.iter().position(|c| match (c.choice, target.choice) {
+        (None, None) => true,
+        (Some(lhs), Some(rhs)) => lhs.value == rhs.value,
+        _ => false,
+    })
+}
+
 const LAYOUT_OPTIONS: &[LayoutChoice] = &[
     LayoutChoice {
         value: "tile",
@@ -135,76 +206,17 @@ impl Setting for WindowLayout {
         let mut cursor = Some(initial_index);
 
         loop {
-            // Rebuild items so current selection shows as checked icon
-            let mut items: Vec<LayoutChoiceDisplay> = LAYOUT_OPTIONS
-                .iter()
-                .map(|choice| LayoutChoiceDisplay {
-                    choice: Some(choice),
-                    is_current: choice.value == ctx.string(Self::KEY),
-                })
-                .collect();
-
-            // Add Back entry at bottom
-            items.push(LayoutChoiceDisplay {
-                choice: None,
-                is_current: false,
-            });
-
+            let items = build_layout_items(&ctx.string(Self::KEY));
             let selection = select_one_with_style_at(items.clone(), cursor)?;
 
             match selection {
                 Some(display) => {
-                    cursor = items.iter().position(|c| match (c.choice, display.choice) {
-                        (None, None) => true,
-                        (Some(lhs), Some(rhs)) => lhs.value == rhs.value,
-                        _ => false,
-                    });
+                    cursor = find_cursor_position(&items, &display);
 
                     match display.choice {
                         Some(choice) => {
                             ctx.set_string(Self::KEY, choice.value);
-
-                            // Apply the layout
-                            let compositor = CompositorType::detect();
-                            if !matches!(compositor, CompositorType::InstantWM) {
-                                ctx.emit_unsupported(
-                                    "settings.desktop.layout.unsupported",
-                                    &format!(
-                                        "Window layout configuration is only supported on instantwm. Detected: {}. Setting saved but not applied.",
-                                        compositor.name()
-                                    ),
-                                );
-                            } else {
-                                let status = Command::new("instantwmctl")
-                                    .args(["layout", choice.value])
-                                    .status();
-
-                                match status {
-                                    Ok(exit) if exit.success() => {
-                                        ctx.notify(
-                                            "Window Layout",
-                                            &format!("Set to: {}", choice.label),
-                                        );
-                                    }
-                                    Ok(exit) => {
-                                        ctx.emit_failure(
-                                            "settings.desktop.layout.apply_failed",
-                                            &format!(
-                                                "Failed to apply layout '{}' (exit code {}).",
-                                                choice.value,
-                                                exit.code().unwrap_or(-1)
-                                            ),
-                                        );
-                                    }
-                                    Err(err) => {
-                                        ctx.emit_failure(
-                                            "settings.desktop.layout.apply_error",
-                                            &format!("Failed to run instantwmctl: {err}"),
-                                        );
-                                    }
-                                }
-                            }
-                            // Continue loop to reflect new current selection in display
+                            apply_window_layout(ctx, choice)?;
                         }
                         None => break, // Back selected
                     }
