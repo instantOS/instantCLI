@@ -570,6 +570,69 @@ impl Setting for GtkTheme {
 
 inventory::submit! { &GtkTheme as &'static dyn Setting }
 
+// ============================================================================
+// Reset GTK Customizations
+// ============================================================================
+
+pub struct ResetGtk;
+
+impl Setting for ResetGtk {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("appearance.reset_gtk")
+            .title("Reset GTK Customizations")
+            .category(Category::Appearance)
+            .icon(NerdFont::Trash)
+            .summary("Reset all GTK theme and icon settings to default.\n\nRemoves custom settings.ini files and GTK4 CSS overrides.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let confirmation = FzfWrapper::confirm("Are you sure you want to reset all GTK theme customizations? This will clear settings.ini and remove GTK4 overrides.")?;
+
+        if matches!(confirmation, crate::menu_utils::ConfirmResult::Yes) {
+            // 1. Reset GSettings
+            let _ = Command::new("gsettings")
+                .args(["reset", "org.gnome.desktop.interface", "gtk-theme"])
+                .status();
+            let _ = Command::new("gsettings")
+                .args(["reset", "org.gnome.desktop.interface", "icon-theme"])
+                .status();
+
+            // 2. Remove configuration files
+            if let Ok(config_dir) = dirs::config_dir().context("Could not find config directory") {
+                let paths_to_remove = [
+                    config_dir.join("gtk-3.0/settings.ini"),
+                    config_dir.join("gtk-4.0/settings.ini"),
+                    config_dir.join("gtk-4.0/gtk.css"),
+                    config_dir.join("gtk-4.0/gtk-dark.css"),
+                    config_dir.join("gtk-4.0/assets"),
+                ];
+
+                for path in &paths_to_remove {
+                    if path.exists() {
+                        if path.is_dir() && !path.is_symlink() {
+                             let _ = std::fs::remove_dir_all(path);
+                        } else {
+                             let _ = std::fs::remove_file(path);
+                        }
+                    }
+                }
+            }
+
+            ctx.notify("GTK Reset", "GTK customizations have been cleared.");
+        }
+
+        Ok(())
+    }
+}
+
+inventory::submit! { &ResetGtk as &'static dyn Setting }
+
 // Helpers for GTK Theme
 
 fn list_gtk_themes() -> Result<Vec<String>> {
