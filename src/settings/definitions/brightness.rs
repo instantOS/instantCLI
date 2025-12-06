@@ -86,7 +86,7 @@ inventory::submit! {
 }
 
 /// Set screen brightness using brightnessctl
-pub(crate) fn set_brightness(value: i64) -> Result<()> {
+pub fn set_brightness(value: i64) -> Result<()> {
     let output = Command::new("brightnessctl")
         .args(["--quiet", "set", &format!("{}%", value)])
         .output()

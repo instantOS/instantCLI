@@ -62,7 +62,7 @@ pub fn dispatch_assist_command(_debug: bool, command: Option<AssistCommands>) ->
         Some(AssistCommands::List) => list_assists(),
         Some(AssistCommands::MouseSet { value }) => super::actions::mouse::set_mouse_speed(value),
         Some(AssistCommands::BrightnessSet { value }) => {
-            crate::settings::actions::brightness::set_brightness_value(value)
+            crate::settings::actions::brightness::set_brightness(value)
         }
         Some(AssistCommands::Run { key_sequence }) => {
             // Check if this is a help request (ends with 'h')

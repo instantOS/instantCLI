@@ -58,13 +58,3 @@ pub fn restore_mouse_sensitivity(ctx: &mut SettingsContext) -> Result<()> {
     }
     Ok(())
 }
-
-/// Apply natural scrolling setting (Sway and X11)
-pub fn apply_natural_scroll(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    crate::settings::definitions::mouse::apply_natural_scrolling(ctx, enabled)
-}
-
-/// Apply swap mouse buttons setting (X11 only for now)
-pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    crate::settings::definitions::mouse::apply_swap_buttons(ctx, enabled)
-}

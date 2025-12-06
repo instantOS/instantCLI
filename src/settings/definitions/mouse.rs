@@ -197,7 +197,7 @@ fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
 // ============================================================================
 
 /// Apply natural scrolling setting (shared by both apply and restore)
-pub(crate) fn apply_natural_scrolling(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+pub fn apply_natural_scrolling(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let compositor = CompositorType::detect();
     let is_sway = matches!(compositor, CompositorType::Sway);
     let is_x11 = compositor.is_x11();
@@ -268,7 +268,7 @@ pub(crate) fn apply_natural_scrolling(ctx: &mut SettingsContext, enabled: bool) 
 }
 
 /// Apply swap buttons setting (shared by both apply and restore)
-pub(crate) fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let compositor = CompositorType::detect();
 
     if !compositor.is_x11() {
@@ -309,7 +309,7 @@ pub(crate) fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Re
 }
 
 /// Get all pointer device IDs from xinput
-pub(crate) fn get_pointer_device_ids() -> Result<Vec<String>> {
+pub fn get_pointer_device_ids() -> Result<Vec<String>> {
     let output = Command::new("xinput")
         .arg("list")
         .arg("--id-only")
@@ -342,7 +342,7 @@ pub(crate) fn get_pointer_device_ids() -> Result<Vec<String>> {
 }
 
 /// Apply a libinput property to all pointer devices that support it
-pub(crate) fn apply_libinput_property_helper(property_name: &str, value: &str, error_key: &str) -> Result<usize> {
+pub fn apply_libinput_property_helper(property_name: &str, value: &str, error_key: &str) -> Result<usize> {
     let device_ids = get_pointer_device_ids()?;
     let mut applied = 0;
 
