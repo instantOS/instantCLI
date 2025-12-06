@@ -66,7 +66,7 @@ impl CategoryNode {
 /// Each category defines its own tree structure, specifying which settings
 /// are top-level and which are grouped into subcategories.
 pub fn category_tree(category: Category) -> Vec<CategoryNode> {
-    use crate::settings::definitions::{appearance, brightness, network};
+    use crate::settings::definitions::{appearance, brightness, flatpak, network};
 
     match category {
         Category::Appearance => vec![
