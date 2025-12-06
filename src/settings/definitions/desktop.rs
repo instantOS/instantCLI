@@ -116,12 +116,9 @@ impl Setting for WindowLayout {
             .initial_index(initial_index)
             .select(LAYOUT_OPTIONS.to_vec())?;
 
-        match result {
-            FzfResult::Selected(layout) => {
-                ctx.set_string(Self::KEY, layout.value);
-                ctx.notify("Window Layout", &format!("Set to: {}", layout.label));
-            }
-            _ => {}
+        if let FzfResult::Selected(layout) = result {
+            ctx.set_string(Self::KEY, layout.value);
+            ctx.notify("Window Layout", &format!("Set to: {}", layout.label));
         }
 
         Ok(())

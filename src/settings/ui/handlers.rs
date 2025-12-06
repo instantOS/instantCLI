@@ -25,27 +25,27 @@ fn ensure_requirements(setting: &'static dyn Setting) -> Result<bool> {
 
     // Try to install missing packages
     for req in &unmet {
-        if let Requirement::Package(pkg) = req {
-            if !pkg.ensure()? {
-                let mut messages = Vec::new();
-                messages.push(format!(
-                    "Cannot use '{}' - requirements not met:",
-                    metadata.title
-                ));
+        if let Requirement::Package(pkg) = req
+            && !pkg.ensure()?
+        {
+            let mut messages = Vec::new();
+            messages.push(format!(
+                "Cannot use '{}' - requirements not met:",
+                metadata.title
+            ));
+            messages.push(String::new());
+            for r in &unmet {
+                messages.push(format!("  • {}", r.description()));
+                messages.push(format!("    {}", r.resolve_hint()));
                 messages.push(String::new());
-                for r in &unmet {
-                    messages.push(format!("  • {}", r.description()));
-                    messages.push(format!("    {}", r.resolve_hint()));
-                    messages.push(String::new());
-                }
-
-                FzfWrapper::builder()
-                    .message(messages.join("\n"))
-                    .title("Requirements Not Met")
-                    .show_message()?;
-
-                return Ok(false);
             }
+
+            FzfWrapper::builder()
+                .message(messages.join("\n"))
+                .title("Requirements Not Met")
+                .show_message()?;
+
+            return Ok(false);
         }
     }
 

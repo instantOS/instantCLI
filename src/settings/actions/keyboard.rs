@@ -309,25 +309,23 @@ pub fn restore_swap_escape(ctx: &mut SettingsContext) -> Result<()> {
                 None,
             );
         }
+    } else if let Err(e) = std::process::Command::new("setxkbmap")
+        .args(["-option", "caps:swapescape"])
+        .status()
+    {
+        emit(
+            Level::Warn,
+            "settings.keyboard.swap_escape.restore_failed",
+            &format!("Failed to restore swap escape setting: {e}"),
+            None,
+        );
     } else {
-        if let Err(e) = std::process::Command::new("setxkbmap")
-            .args(["-option", "caps:swapescape"])
-            .status()
-        {
-            emit(
-                Level::Warn,
-                "settings.keyboard.swap_escape.restore_failed",
-                &format!("Failed to restore swap escape setting: {e}"),
-                None,
-            );
-        } else {
-            emit(
-                Level::Debug,
-                "settings.keyboard.swap_escape.restored",
-                "Restored swap escape setting",
-                None,
-            );
-        }
+        emit(
+            Level::Debug,
+            "settings.keyboard.swap_escape.restored",
+            "Restored swap escape setting",
+            None,
+        );
     }
 
     Ok(())

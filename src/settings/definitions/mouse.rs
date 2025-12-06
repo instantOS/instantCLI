@@ -251,15 +251,12 @@ impl Setting for MouseSensitivity {
             None
         };
 
-        match run_mouse_speed_slider(initial_value)? {
-            Some(value) => {
-                ctx.set_int(Self::KEY, value);
-                ctx.notify(
-                    "Mouse Sensitivity",
-                    &format!("Mouse sensitivity set to {}", value),
-                );
-            }
-            None => {}
+        if let Some(value) = run_mouse_speed_slider(initial_value)? {
+            ctx.set_int(Self::KEY, value);
+            ctx.notify(
+                "Mouse Sensitivity",
+                &format!("Mouse sensitivity set to {}", value),
+            );
         }
         Ok(())
     }
