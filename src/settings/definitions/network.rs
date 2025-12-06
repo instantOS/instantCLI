@@ -3,7 +3,7 @@
 //! IP info, speed test, and connection management.
 
 use anyhow::{Context, Result};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::common::requirements::{CHROMIUM_PACKAGE, NM_CONNECTION_EDITOR_PACKAGE};
 use crate::settings::context::SettingsContext;
@@ -12,7 +12,7 @@ use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, 
 use crate::ui::prelude::*;
 
 // ============================================================================
-// IP Address Info
+// IP Address Info (custom logic, can't use macro)
 // ============================================================================
 
 pub struct IpInfo;
@@ -43,7 +43,7 @@ impl Setting for IpInfo {
 inventory::submit! { &IpInfo as &'static dyn Setting }
 
 // ============================================================================
-// Internet Speed Test
+// Internet Speed Test (needs args, can't use simple macro)
 // ============================================================================
 
 pub struct SpeedTest;
@@ -73,6 +73,8 @@ impl Setting for SpeedTest {
         );
         Command::new("chromium")
             .args(["--app=https://fast.com"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
             .context("launching chromium")?;
         ctx.emit_success("settings.command.completed", "Launched speed test");
@@ -83,40 +85,16 @@ impl Setting for SpeedTest {
 inventory::submit! { &SpeedTest as &'static dyn Setting }
 
 // ============================================================================
-// Edit Connections
+// Edit Connections (GUI app)
 // ============================================================================
 
-pub struct EditConnections;
-
-impl Setting for EditConnections {
-    fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "network.edit_connections",
-            title: "Edit Connections",
-            category: Category::Network,
-            icon: NerdFont::Settings,
-            breadcrumbs: &["Edit Connections"],
-            summary: "Manage WiFi, Ethernet, VPN, and other network connections.\n\nConfigure connection settings, passwords, and advanced options.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(NM_CONNECTION_EDITOR_PACKAGE)],
-        }
-    }
-
-    fn setting_type(&self) -> SettingType {
-        SettingType::Command
-    }
-
-    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        ctx.emit_info(
-            "settings.command.launching",
-            "Opening NetworkManager connection editor...",
-        );
-        Command::new("nm-connection-editor")
-            .spawn()
-            .context("launching nm-connection-editor")?;
-        ctx.emit_success("settings.command.completed", "Launched connection editor");
-        Ok(())
-    }
-}
-
-inventory::submit! { &EditConnections as &'static dyn Setting }
+gui_command_setting!(
+    EditConnections,
+    "network.edit_connections",
+    "Edit Connections",
+    Category::Network,
+    NerdFont::Settings,
+    "Manage WiFi, Ethernet, VPN, and other network connections.\n\nConfigure connection settings, passwords, and advanced options.",
+    "nm-connection-editor",
+    NM_CONNECTION_EDITOR_PACKAGE
+);

@@ -6,6 +6,7 @@ use anyhow::Result;
 use super::context::SettingsContext;
 
 /// Show IP address information
+// TODO: this should be moved to the definition
 pub fn show_ip_info(ctx: &mut SettingsContext) -> Result<()> {
     ctx.emit_info(
         "settings.network.ip_info",

@@ -3,6 +3,9 @@
 //! This module contains individual setting implementations using the Setting trait.
 //! Settings are registered at compile time via the `inventory` crate.
 
+#[macro_use]
+mod command_macros;
+
 mod appearance;
 mod apps;
 mod brightness;

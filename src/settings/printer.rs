@@ -97,8 +97,10 @@ pub fn launch_printer_manager(ctx: &mut SettingsContext) -> Result<()> {
         return Ok(());
     }
 
-    // Launch in detached mode (non-blocking)
+    // Launch in detached mode (non-blocking) with redirected output
     Command::new("system-config-printer")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()
         .context("Failed to launch system-config-printer")?;
 

@@ -64,7 +64,11 @@ fn apply_clipboard_impl(ctx: &mut SettingsContext, enabled: bool) -> Result<()> 
         .unwrap_or(false);
 
     if enabled && !is_running {
-        if let Err(err) = std::process::Command::new("clipmenud").spawn() {
+        if let Err(err) = std::process::Command::new("clipmenud")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
             emit(
                 Level::Warn,
                 "settings.clipboard.spawn_failed",

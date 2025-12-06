@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 
+use crate::common::requirements::{BLUEMAN_PACKAGE, PIPER_PACKAGE};
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
@@ -11,7 +12,7 @@ use crate::settings::store::StringSettingKey;
 use crate::ui::prelude::*;
 
 // ============================================================================
-// Window Layout
+// Window Layout (interactive selection, can't use macro)
 // ============================================================================
 
 pub struct WindowLayout;
@@ -128,75 +129,31 @@ impl Setting for WindowLayout {
 inventory::submit! { &WindowLayout as &'static dyn Setting }
 
 // ============================================================================
-// Gaming Mouse
+// Gaming Mouse (GUI app)
 // ============================================================================
 
-pub struct GamingMouse;
-
-impl Setting for GamingMouse {
-    fn metadata(&self) -> SettingMetadata {
-        use crate::common::requirements::PIPER_PACKAGE;
-        SettingMetadata {
-            id: "mouse.gaming",
-            title: "Gaming Mouse Customization",
-            category: Category::Mouse,
-            icon: NerdFont::Mouse,
-            breadcrumbs: &["Gaming Mouse Customization"],
-            summary: "Configure gaming mice with customizable buttons, RGB lighting, and DPI settings.\n\nUses Piper to configure Logitech and other gaming mice supported by libratbag.",
-            requires_reapply: false,
-            requirements: &[crate::settings::setting::Requirement::Package(
-                PIPER_PACKAGE,
-            )],
-        }
-    }
-
-    fn setting_type(&self) -> SettingType {
-        SettingType::Command
-    }
-
-    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        ctx.emit_info("settings.command.launching", "Launching Piper...");
-        std::process::Command::new("piper").spawn()?;
-        ctx.emit_success("settings.command.completed", "Launched Piper");
-        Ok(())
-    }
-}
-
-inventory::submit! { &GamingMouse as &'static dyn Setting }
+gui_command_setting!(
+    GamingMouse,
+    "mouse.gaming",
+    "Gaming Mouse Customization",
+    Category::Mouse,
+    NerdFont::Mouse,
+    "Configure gaming mice with customizable buttons, RGB lighting, and DPI settings.\n\nUses Piper to configure Logitech and other gaming mice supported by libratbag.",
+    "piper",
+    PIPER_PACKAGE
+);
 
 // ============================================================================
-// Bluetooth Manager
+// Bluetooth Manager (GUI app)
 // ============================================================================
 
-pub struct BluetoothManager;
-
-impl Setting for BluetoothManager {
-    fn metadata(&self) -> SettingMetadata {
-        use crate::common::requirements::BLUEMAN_PACKAGE;
-        SettingMetadata {
-            id: "bluetooth.manager",
-            title: "Manage Devices",
-            category: Category::Bluetooth,
-            icon: NerdFont::Settings,
-            breadcrumbs: &["Manage Devices"],
-            summary: "Pair new devices and manage connected Bluetooth devices.\n\nUse this to connect headphones, speakers, keyboards, mice, and other wireless devices.",
-            requires_reapply: false,
-            requirements: &[crate::settings::setting::Requirement::Package(
-                BLUEMAN_PACKAGE,
-            )],
-        }
-    }
-
-    fn setting_type(&self) -> SettingType {
-        SettingType::Command
-    }
-
-    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        ctx.emit_info("settings.command.launching", "Launching Blueman Manager...");
-        std::process::Command::new("blueman-manager").spawn()?;
-        ctx.emit_success("settings.command.completed", "Launched Blueman Manager");
-        Ok(())
-    }
-}
-
-inventory::submit! { &BluetoothManager as &'static dyn Setting }
+gui_command_setting!(
+    BluetoothManager,
+    "bluetooth.manager",
+    "Manage Devices",
+    Category::Bluetooth,
+    NerdFont::Settings,
+    "Pair new devices and manage connected Bluetooth devices.\n\nUse this to connect headphones, speakers, keyboards, mice, and other wireless devices.",
+    "blueman-manager",
+    BLUEMAN_PACKAGE
+);

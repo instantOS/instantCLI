@@ -4,7 +4,6 @@
 
 use anyhow::{Context, Result};
 use duct::cmd;
-use std::process::Command;
 
 use crate::common::requirements::{
     COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_FIRMWARE_PACKAGE, TOPGRADE_PACKAGE,
@@ -14,7 +13,7 @@ use crate::settings::setting::{Category, Requirement, Setting, SettingMetadata, 
 use crate::ui::prelude::*;
 
 // ============================================================================
-// About System
+// About System (uses shell command with read, can't use macro)
 // ============================================================================
 
 pub struct AboutSystem;
@@ -52,7 +51,7 @@ impl Setting for AboutSystem {
 inventory::submit! { &AboutSystem as &'static dyn Setting }
 
 // ============================================================================
-// Cockpit (Systemd Manager)
+// Cockpit (uses custom launch logic, can't use macro)
 // ============================================================================
 
 pub struct CockpitManager;
@@ -83,74 +82,31 @@ impl Setting for CockpitManager {
 inventory::submit! { &CockpitManager as &'static dyn Setting }
 
 // ============================================================================
-// Firmware Manager
+// Firmware Manager (GUI app)
 // ============================================================================
 
-pub struct FirmwareManager;
-
-impl Setting for FirmwareManager {
-    fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "system.firmware",
-            title: "Firmware Manager",
-            category: Category::System,
-            icon: NerdFont::Cpu,
-            breadcrumbs: &["Firmware Manager"],
-            summary: "Launch GNOME Firmware manager to view and update device firmware.\n\nManage firmware for BIOS/UEFI, devices, and peripherals.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(GNOME_FIRMWARE_PACKAGE)],
-        }
-    }
-
-    fn setting_type(&self) -> SettingType {
-        SettingType::Command
-    }
-
-    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        ctx.emit_info("settings.command.launching", "Launching GNOME Firmware...");
-        Command::new("gnome-firmware")
-            .spawn()
-            .context("launching gnome-firmware")?;
-        ctx.emit_success("settings.command.completed", "Launched Firmware Manager");
-        Ok(())
-    }
-}
-
-inventory::submit! { &FirmwareManager as &'static dyn Setting }
+gui_command_setting!(
+    FirmwareManager,
+    "system.firmware",
+    "Firmware Manager",
+    Category::System,
+    NerdFont::Cpu,
+    "Launch GNOME Firmware manager to view and update device firmware.\n\nManage firmware for BIOS/UEFI, devices, and peripherals.",
+    "gnome-firmware",
+    GNOME_FIRMWARE_PACKAGE
+);
 
 // ============================================================================
-// System Upgrade
+// System Upgrade (TUI app)
 // ============================================================================
 
-pub struct SystemUpgrade;
-
-impl Setting for SystemUpgrade {
-    fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "system.upgrade",
-            title: "Upgrade",
-            category: Category::System,
-            icon: NerdFont::Upgrade,
-            breadcrumbs: &["Upgrade"],
-            summary: "Upgrade all installed packages and system components using topgrade.",
-            requires_reapply: false,
-            requirements: &[Requirement::Package(TOPGRADE_PACKAGE)],
-        }
-    }
-
-    fn setting_type(&self) -> SettingType {
-        SettingType::Command
-    }
-
-    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        ctx.emit_info(
-            "settings.command.launching",
-            "Running system upgrade with topgrade...",
-        );
-        cmd!("topgrade").run().context("running topgrade")?;
-        ctx.emit_success("settings.command.completed", "System upgrade completed");
-        Ok(())
-    }
-}
-
-inventory::submit! { &SystemUpgrade as &'static dyn Setting }
+tui_command_setting!(
+    SystemUpgrade,
+    "system.upgrade",
+    "Upgrade",
+    Category::System,
+    NerdFont::Upgrade,
+    "Upgrade all installed packages and system components using topgrade.",
+    "topgrade",
+    TOPGRADE_PACKAGE
+);
