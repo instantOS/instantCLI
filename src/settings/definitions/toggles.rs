@@ -300,3 +300,5 @@ impl Setting for BluetoothService {
 
     // No restore needed - systemd handles service persistence
 }
+
+inventory::submit! { &BluetoothService as &'static dyn Setting }
