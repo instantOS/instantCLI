@@ -49,8 +49,6 @@ impl Setting for PrinterServices {
     }
 }
 
-inventory::submit! { &PrinterServices as &'static dyn Setting }
-
 // ============================================================================
 // Open Printer Manager
 // ============================================================================
@@ -76,5 +74,3 @@ impl Setting for PrinterManager {
         printer::launch_printer_manager(ctx)
     }
 }
-
-inventory::submit! { &PrinterManager as &'static dyn Setting }

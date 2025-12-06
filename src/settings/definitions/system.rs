@@ -47,8 +47,6 @@ impl Setting for AboutSystem {
     }
 }
 
-inventory::submit! { &AboutSystem as &'static dyn Setting }
-
 // ============================================================================
 // Cockpit (uses custom launch logic, can't use macro)
 // ============================================================================
@@ -74,8 +72,6 @@ impl Setting for CockpitManager {
         crate::settings::actions::launch_cockpit(ctx)
     }
 }
-
-inventory::submit! { &CockpitManager as &'static dyn Setting }
 
 // ============================================================================
 // Firmware Manager (GUI app)
@@ -137,8 +133,6 @@ impl Setting for PacmanAutoclean {
         crate::settings::actions::apply_pacman_autoclean(ctx, target)
     }
 }
-
-inventory::submit! { &PacmanAutoclean as &'static dyn Setting }
 
 // Note: PacmanAutoclean cannot use simple_toggle_setting! macro because it has
 // custom apply logic (calls apply_pacman_autoclean) and requirements that need

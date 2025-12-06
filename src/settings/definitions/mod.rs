@@ -1,7 +1,7 @@
 //! Setting implementations
 //!
 //! This module contains individual setting implementations using the Setting trait.
-//! Settings are registered at compile time via the `inventory` crate.
+//! Settings are organized via the category tree in category_tree.rs.
 
 #[macro_use]
 mod command_macros;
@@ -24,5 +24,5 @@ pub mod toggles;
 pub mod users;
 pub mod wiremix;
 
-// Note: Settings are auto-registered via inventory::submit! macros in each module.
+// Note: Settings are organized in category_tree.rs.
 // They don't need to be re-exported here.

@@ -55,8 +55,6 @@ impl Setting for NaturalScroll {
     }
 }
 
-inventory::submit! { &NaturalScroll as &'static dyn Setting }
-
 // ============================================================================
 // Swap Mouse Buttons
 // ============================================================================
@@ -98,8 +96,6 @@ impl Setting for SwapButtons {
         Some(apply_swap_buttons(ctx, enabled))
     }
 }
-
-inventory::submit! { &SwapButtons as &'static dyn Setting }
 
 // ============================================================================
 // Mouse Sensitivity
@@ -167,8 +163,6 @@ impl Setting for MouseSensitivity {
         Some(Ok(()))
     }
 }
-
-inventory::submit! { &MouseSensitivity as &'static dyn Setting }
 
 fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
     let start_value = initial_value.unwrap_or(50);

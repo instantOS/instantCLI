@@ -31,5 +31,3 @@ impl Setting for ManageUsers {
         users::manage_users(ctx)
     }
 }
-
-inventory::submit! { &ManageUsers as &'static dyn Setting }

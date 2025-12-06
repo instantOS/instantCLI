@@ -79,11 +79,6 @@ impl Setting for Brightness {
     }
 }
 
-// Register at compile time
-inventory::submit! {
-    &Brightness as &'static dyn Setting
-}
-
 /// Set screen brightness using brightnessctl
 pub fn set_brightness(value: i64) -> Result<()> {
     let output = Command::new("brightnessctl")

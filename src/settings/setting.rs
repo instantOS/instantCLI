@@ -1,7 +1,7 @@
 //! Setting trait for unified apply/restore logic
 //!
 //! This module defines the core `Setting` trait that all settings implement.
-//! Settings are registered at compile time using the `inventory` crate.
+//! Settings are organized via the category tree in category_tree.rs.
 
 use anyhow::Result;
 
@@ -300,8 +300,7 @@ pub enum SettingType {
 
 /// A setting that can be applied and optionally restored
 ///
-/// All settings implement this trait. Settings are registered at compile time
-/// using the `inventory` crate.
+/// All settings implement this trait. Settings are organized via the category tree.
 ///
 /// # Example
 ///
@@ -313,7 +312,6 @@ pub enum SettingType {
 ///         SettingMetadata {
 ///             id: "desktop.swap_escape",
 ///             title: "Swap Escape and Caps Lock",
-///             category: Category::Desktop,
 ///             // ...
 ///         }
 ///     }
@@ -344,12 +342,10 @@ pub trait Setting: Send + Sync + 'static {
     }
 }
 
-// Register settings at compile time
-inventory::collect!(&'static dyn Setting);
-
-/// Iterate over all registered settings
+/// Iterate over all registered settings from the category tree
 pub fn all_settings() -> impl Iterator<Item = &'static dyn Setting> {
-    inventory::iter::<&'static dyn Setting>.into_iter().copied()
+    use crate::settings::category_tree::all_settings_from_tree;
+    all_settings_from_tree().into_iter()
 }
 
 /// Find a setting by its ID

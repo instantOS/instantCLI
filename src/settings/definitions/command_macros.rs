@@ -81,8 +81,6 @@ macro_rules! gui_command_setting {
                 Ok(())
             }
         }
-
-        inventory::submit! { &$struct_name as &'static dyn $crate::settings::setting::Setting }
     };
 }
 
@@ -160,8 +158,6 @@ macro_rules! tui_command_setting {
                 Ok(())
             }
         }
-
-        inventory::submit! { &$struct_name as &'static dyn $crate::settings::setting::Setting }
     };
 }
 
@@ -244,7 +240,5 @@ macro_rules! simple_toggle_setting {
                 Ok(())
             }
         }
-
-        inventory::submit! { &$struct_name as &'static dyn $crate::settings::setting::Setting }
     };
 }

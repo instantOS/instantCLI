@@ -133,7 +133,6 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         Category::Language => vec![
             CategoryNode::setting(&language::SystemLanguage),
             CategoryNode::setting(&keyboard::KeyboardLayout),
-            CategoryNode::setting(&language::Timezone),
         ],
         Category::System => vec![
             CategoryNode::setting(&system::AboutSystem),
@@ -142,10 +141,34 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&system::SystemUpgrade),
             CategoryNode::setting(&system::PacmanAutoclean),
             CategoryNode::setting(&system::WelcomeAutostart),
+            CategoryNode::setting(&language::Timezone),
+        ],
+        Category::Install => vec![
             CategoryNode::setting(&packages::InstallPackages),
             CategoryNode::setting(&flatpak::InstallFlatpakApps),
         ],
-        Category::Install => vec![],
+    }
+}
+
+/// Get all settings from all category trees
+pub fn all_settings_from_tree() -> Vec<&'static dyn Setting> {
+    let mut settings = Vec::new();
+    for &category in Category::all() {
+        let tree = category_tree(category);
+        collect_settings_from_tree(&tree, &mut settings);
+    }
+    settings
+}
+
+/// Recursively collect all settings from a tree
+fn collect_settings_from_tree(nodes: &[CategoryNode], settings: &mut Vec<&'static dyn Setting>) {
+    for node in nodes {
+        if let Some(setting) = node.setting {
+            settings.push(setting);
+        }
+        if !node.children.is_empty() {
+            collect_settings_from_tree(&node.children, settings);
+        }
     }
 }
 

@@ -134,8 +134,6 @@ impl Setting for Animations {
     }
 }
 
-inventory::submit! { &Animations as &'static dyn Setting }
-
 // ============================================================================
 // Wallpaper Settings
 // ============================================================================
@@ -185,8 +183,6 @@ impl Setting for SetWallpaper {
     }
 }
 
-inventory::submit! { &SetWallpaper as &'static dyn Setting }
-
 pub struct WallpaperLogo;
 
 impl WallpaperLogo {
@@ -222,8 +218,6 @@ impl Setting for WallpaperLogo {
         Ok(())
     }
 }
-
-inventory::submit! { &WallpaperLogo as &'static dyn Setting }
 
 pub struct RandomWallpaper;
 
@@ -263,8 +257,6 @@ impl Setting for RandomWallpaper {
     }
 }
 
-inventory::submit! { &RandomWallpaper as &'static dyn Setting }
-
 // Color wallpaper settings
 const WALLPAPER_BG_COLOR_KEY: OptionalStringSettingKey =
     OptionalStringSettingKey::new("wallpaper.bg_color");
@@ -303,8 +295,6 @@ impl Setting for WallpaperBgColor {
     }
 }
 
-inventory::submit! { &WallpaperBgColor as &'static dyn Setting }
-
 pub struct WallpaperFgColor;
 
 impl Setting for WallpaperFgColor {
@@ -334,8 +324,6 @@ impl Setting for WallpaperFgColor {
         Ok(())
     }
 }
-
-inventory::submit! { &WallpaperFgColor as &'static dyn Setting }
 
 pub struct ApplyColoredWallpaper;
 
@@ -374,8 +362,6 @@ impl Setting for ApplyColoredWallpaper {
         Ok(())
     }
 }
-
-inventory::submit! { &ApplyColoredWallpaper as &'static dyn Setting }
 
 // ============================================================================
 // GTK Icon Theme
@@ -458,8 +444,6 @@ impl Setting for GtkIconTheme {
         Ok(())
     }
 }
-
-inventory::submit! { &GtkIconTheme as &'static dyn Setting }
 
 // ============================================================================
 // GTK Theme
@@ -554,8 +538,6 @@ impl Setting for GtkTheme {
     }
 }
 
-inventory::submit! { &GtkTheme as &'static dyn Setting }
-
 // ============================================================================
 // Reset GTK Customizations
 // ============================================================================
@@ -616,8 +598,6 @@ impl Setting for ResetGtk {
         Ok(())
     }
 }
-
-inventory::submit! { &ResetGtk as &'static dyn Setting }
 
 // Helpers for GTK Theme
 

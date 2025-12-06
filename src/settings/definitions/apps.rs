@@ -35,8 +35,6 @@ macro_rules! default_app_setting {
                 $handler(ctx)
             }
         }
-
-        inventory::submit! { &$struct_name as &'static dyn Setting }
     };
 }
 

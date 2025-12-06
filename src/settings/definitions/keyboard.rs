@@ -207,5 +207,3 @@ impl Setting for KeyboardLayout {
         Some(Ok(()))
     }
 }
-
-inventory::submit! { &KeyboardLayout as &'static dyn Setting }

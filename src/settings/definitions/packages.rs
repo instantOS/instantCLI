@@ -33,5 +33,3 @@ impl Setting for InstallPackages {
         packages::run_package_installer_action(ctx)
     }
 }
-
-inventory::submit! { &InstallPackages as &'static dyn Setting }

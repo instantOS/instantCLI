@@ -124,8 +124,3 @@ impl Setting for SwapEscape {
         Some(apply_swap_escape_setting(ctx, enabled))
     }
 }
-
-// Register at compile time
-inventory::submit! {
-    &SwapEscape as &'static dyn Setting
-}

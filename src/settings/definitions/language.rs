@@ -34,8 +34,6 @@ impl Setting for SystemLanguage {
     }
 }
 
-inventory::submit! { &SystemLanguage as &'static dyn Setting }
-
 // ============================================================================
 // Timezone
 // ============================================================================
@@ -60,5 +58,3 @@ impl Setting for Timezone {
         crate::settings::actions::configure_timezone(ctx)
     }
 }
-
-inventory::submit! { &Timezone as &'static dyn Setting }

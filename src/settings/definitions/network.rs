@@ -36,8 +36,6 @@ impl Setting for IpInfo {
     }
 }
 
-inventory::submit! { &IpInfo as &'static dyn Setting }
-
 // ============================================================================
 // Internet Speed Test (needs args, can't use simple macro)
 // ============================================================================
@@ -75,8 +73,6 @@ impl Setting for SpeedTest {
     }
 }
 
-inventory::submit! { &SpeedTest as &'static dyn Setting }
-
 // ============================================================================
 // Edit Connections (GUI app)
 // ============================================================================
@@ -112,5 +108,3 @@ impl Setting for EditConnections {
         Ok(())
     }
 }
-
-inventory::submit! { &EditConnections as &'static dyn Setting }
