@@ -54,10 +54,18 @@ pub struct SettingItem {
 }
 
 /// Items in a category page
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum CategoryPageItem {
+    SubCategory(SubCategoryItem),
     Setting(SettingItem),
     Back,
+}
+
+/// Display item for a subcategory (folder)
+#[derive(Clone)]
+pub struct SubCategoryItem {
+    pub name: String,
+    pub count: usize,
 }
 
 /// Search result item
@@ -70,6 +78,25 @@ pub struct SearchItem {
 // ============================================================================
 // FzfSelectable Implementations
 // ============================================================================
+
+impl FzfSelectable for SubCategoryItem {
+    fn fzf_display_text(&self) -> String {
+        use super::super::context::colors;
+        format!(
+            "{} {} ({})",
+            format_icon_colored(NerdFont::Folder, colors::BLUE), // Use default folder color/icon
+            self.name,
+            self.count
+        )
+    }
+
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        crate::menu_utils::FzfPreview::Text(format!(
+            "Folder: {}\nContains {} items.",
+            self.name, self.count
+        ))
+    }
+}
 
 impl FzfSelectable for CategoryItem {
     fn fzf_display_text(&self) -> String {
@@ -246,6 +273,7 @@ impl FzfSelectable for SettingItem {
 impl FzfSelectable for CategoryPageItem {
     fn fzf_display_text(&self) -> String {
         match self {
+            CategoryPageItem::SubCategory(item) => item.fzf_display_text(),
             CategoryPageItem::Setting(item) => item.fzf_display_text(),
             CategoryPageItem::Back => format!("{} Back", format_back_icon()),
         }
@@ -253,9 +281,10 @@ impl FzfSelectable for CategoryPageItem {
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match self {
+            CategoryPageItem::SubCategory(item) => item.fzf_preview(),
             CategoryPageItem::Setting(item) => item.fzf_preview(),
             CategoryPageItem::Back => {
-                crate::menu_utils::FzfPreview::Text("Return to categories".to_string())
+                crate::menu_utils::FzfPreview::Text("Return to parent".to_string())
             }
         }
     }

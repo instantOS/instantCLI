@@ -61,7 +61,9 @@ pub fn run_settings_ui(
                     main_menu_cursor,
                     category_cursor,
                 } => {
-                    if handle_category(&mut ctx, category, category_cursor)? {
+                    let settings = setting::settings_in_category(category);
+                    let tree = build_tree(settings);
+                    if navigate_node(&mut ctx, category.title(), &tree, category_cursor)? {
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                     } else {
                         break;
@@ -77,7 +79,9 @@ pub fn run_settings_ui(
                 MenuAction::Exit => break,
             },
             InitialView::Category(category, cursor) => {
-                if handle_category(&mut ctx, category, cursor)? {
+                let settings = setting::settings_in_category(category);
+                let tree = build_tree(settings);
+                if navigate_node(&mut ctx, category.title(), &tree, cursor)? {
                     initial_view = InitialView::MainMenu(None);
                 } else {
                     break;
@@ -111,6 +115,92 @@ enum MenuAction {
     },
     EnterSearch(Option<usize>),
     Exit,
+}
+
+#[derive(Clone)]
+enum TreeNode {
+    Folder {
+        name: String,
+        children: Vec<TreeNode>,
+    },
+    Leaf(&'static dyn Setting),
+}
+
+impl TreeNode {
+    fn name(&self) -> &str {
+        match self {
+            TreeNode::Folder { name, .. } => name,
+            TreeNode::Leaf(s) => s.metadata().title,
+        }
+    }
+}
+
+fn build_tree(settings: Vec<&'static dyn Setting>) -> Vec<TreeNode> {
+    let mut nodes = Vec::new();
+    for setting in settings {
+        insert_into_tree(&mut nodes, &setting.metadata().breadcrumbs, setting);
+    }
+
+    // Sort nodes: Folders first, then Leaves. Alphabetical within groups.
+    sort_tree(&mut nodes);
+
+    nodes
+}
+
+fn insert_into_tree(nodes: &mut Vec<TreeNode>, path: &[&str], setting: &'static dyn Setting) {
+    if path.is_empty() {
+        nodes.push(TreeNode::Leaf(setting));
+        return;
+    }
+
+    let current_part = path[0];
+    let remaining_path = &path[1..];
+
+    // Find existing folder
+    let mut found_idx = None;
+    for (idx, node) in nodes.iter().enumerate() {
+        if let TreeNode::Folder { name, .. } = node {
+            if name == current_part {
+                found_idx = Some(idx);
+                break;
+            }
+        }
+    }
+
+    match found_idx {
+        Some(idx) => {
+            if let TreeNode::Folder { children, .. } = &mut nodes[idx] {
+                insert_into_tree(children, remaining_path, setting);
+            }
+        }
+        None => {
+            let mut children = Vec::new();
+            insert_into_tree(&mut children, remaining_path, setting);
+            nodes.push(TreeNode::Folder {
+                name: current_part.to_string(),
+                children,
+            });
+        }
+    }
+}
+
+fn sort_tree(nodes: &mut Vec<TreeNode>) {
+    nodes.sort_by(|a, b| match (a, b) {
+        (TreeNode::Folder { name: a_name, .. }, TreeNode::Folder { name: b_name, .. }) => {
+            a_name.cmp(b_name)
+        }
+        (TreeNode::Folder { .. }, TreeNode::Leaf(_)) => std::cmp::Ordering::Less,
+        (TreeNode::Leaf(_), TreeNode::Folder { .. }) => std::cmp::Ordering::Greater,
+        (TreeNode::Leaf(a_s), TreeNode::Leaf(b_s)) => {
+            a_s.metadata().title.cmp(b_s.metadata().title)
+        }
+    });
+
+    for node in nodes {
+        if let TreeNode::Folder { children, .. } = node {
+            sort_tree(children);
+        }
+    }
 }
 
 fn settings_by_category() -> Vec<(Category, Vec<&'static dyn Setting>)> {
@@ -175,49 +265,66 @@ fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> R
     Ok(action)
 }
 
-pub fn handle_category(
+fn navigate_node(
     ctx: &mut SettingsContext,
-    category: Category,
+    title: &str,
+    nodes: &[TreeNode],
     initial_cursor: Option<usize>,
 ) -> Result<bool> {
-    let settings = setting::settings_in_category(category);
-
-    if settings.is_empty() {
+    if nodes.is_empty() {
         ctx.emit_info(
             "settings.category.empty",
-            &format!("No settings available for {} yet.", category.title()),
+            &format!("No settings available in {} yet.", title),
         );
-        return Ok(true);
-    }
-
-    if settings.len() == 1 {
-        let setting = settings[0];
-        super::handlers::handle_trait_setting(ctx, setting)?;
         return Ok(true);
     }
 
     let mut cursor = initial_cursor;
 
     loop {
-        let settings = setting::settings_in_category(category);
-        let mut entries: Vec<CategoryPageItem> = settings
+        use super::items::SubCategoryItem;
+
+        // Re-compute display items on every loop iteration to reflect state changes
+        let mut entries: Vec<CategoryPageItem> = nodes
             .iter()
-            .map(|&s| {
-                let state = super::state::compute_setting_state(ctx, s);
-                CategoryPageItem::Setting(SettingItem { setting: s, state })
+            .map(|node| match node {
+                TreeNode::Folder { name, children } => {
+                    CategoryPageItem::SubCategory(SubCategoryItem {
+                        name: name.clone(),
+                        count: children.len(),
+                    })
+                }
+                TreeNode::Leaf(s) => {
+                    let state = super::state::compute_setting_state(ctx, *s);
+                    CategoryPageItem::Setting(SettingItem { setting: *s, state })
+                }
             })
             .collect();
 
         entries.push(CategoryPageItem::Back);
 
+        // Display selection menu
         match select_one_with_style_at(entries.clone(), cursor)? {
-            Some(CategoryPageItem::Setting(item)) => {
-                cursor = entries.iter().position(|e| match e {
-                    CategoryPageItem::Setting(i) => {
-                        i.setting.metadata().id == item.setting.metadata().id
+            Some(CategoryPageItem::SubCategory(sub)) => {
+                // Find the node corresponding to the selection
+                if let Some(idx) = nodes.iter().position(|n| n.name() == sub.name) {
+                    cursor = Some(idx); // Keep cursor on the folder when returning
+                    if let TreeNode::Folder { name, children } = &nodes[idx] {
+                        // Recurse into subfolder
+                        if !navigate_node(ctx, name, children, None)? {
+                            return Ok(false); // Propagate exit
+                        }
                     }
-                    _ => false,
-                });
+                }
+            }
+            Some(CategoryPageItem::Setting(item)) => {
+                // Find index to preserve cursor position
+                if let Some(idx) = nodes
+                    .iter()
+                    .position(|n| n.name() == item.setting.metadata().title)
+                {
+                    cursor = Some(idx);
+                }
                 super::handlers::handle_trait_setting(ctx, item.setting)?;
             }
             Some(CategoryPageItem::Back) | None => return Ok(true),
