@@ -365,9 +365,10 @@ pub fn format_setting_path(setting: &dyn Setting) -> String {
     let meta = setting.metadata();
     let breadcrumbs =
         crate::settings::category_tree::get_breadcrumbs_for_setting(meta.category, meta.id);
-    let mut segments = Vec::with_capacity(1 + breadcrumbs.len());
+    let mut segments = Vec::with_capacity(2 + breadcrumbs.len());
     segments.push(meta.category.title().to_string());
     segments.extend(breadcrumbs);
+    segments.push(meta.title.to_string());
     segments.join(" -> ")
 }
 
@@ -447,5 +448,25 @@ mod tests {
 
         let display = item.fzf_display_text();
         assert!(display.contains("48;2;0;255;0m"));
+    }
+
+    #[test]
+    fn test_format_setting_path_includes_setting_title() {
+        // Test that format_setting_path includes the setting title in the path
+        let setting = Box::leak(Box::new(TestSetting { color: None }));
+        let path = format_setting_path(setting);
+
+        // Path should include category, any breadcrumbs, AND the setting title
+        // For our test setting: "Default Apps -> Test Setting"
+        assert!(
+            path.contains("Test Setting"),
+            "Path '{}' should contain setting title 'Test Setting'",
+            path
+        );
+        assert!(
+            path.contains("Default Apps"),
+            "Path '{}' should contain category 'Default Apps'",
+            path
+        );
     }
 }
