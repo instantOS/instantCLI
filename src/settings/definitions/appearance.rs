@@ -252,7 +252,9 @@ impl Setting for WallpaperBgColor {
             .category(Category::Appearance)
             .icon(NerdFont::Palette)
             .breadcrumbs(&["Wallpaper", "Colored", "Background"])
-            .summary("Choose a background color for colored wallpapers.\n\nUses zenity color picker.")
+            .summary(
+                "Choose a background color for colored wallpapers.\n\nUses zenity color picker.",
+            )
             .requirements(&[Requirement::Package(ZENITY_PACKAGE)])
             .build()
     }
@@ -314,7 +316,7 @@ pub struct ApplyColoredWallpaper;
 
 impl Setting for ApplyColoredWallpaper {
     fn metadata(&self) -> SettingMetadata {
-            SettingMetadata::builder()
+        SettingMetadata::builder()
                 .id("appearance.wallpaper_colored")
                 .title("Apply Colored Wallpaper")
                 .category(Category::Appearance)

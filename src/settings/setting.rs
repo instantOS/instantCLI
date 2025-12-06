@@ -244,12 +244,7 @@ impl Default for SettingMetadataBuilder {
 }
 
 impl SettingMetadataBuilder {
-    pub fn new(
-        id: &'static str,
-        title: &'static str,
-        category: Category,
-        icon: NerdFont,
-    ) -> Self {
+    pub fn new(id: &'static str, title: &'static str, category: Category, icon: NerdFont) -> Self {
         Self {
             id: Some(id),
             title: Some(title),
@@ -279,8 +274,8 @@ impl SettingMetadataBuilder {
         self
     }
 
-    pub fn icon_color(mut self, icon_color: &'static str) -> Self {
-        self.icon_color = Some(icon_color);
+    pub fn icon_color(mut self, icon_color: Option<&'static str>) -> Self {
+        self.icon_color = icon_color;
         self
     }
 
@@ -308,7 +303,9 @@ impl SettingMetadataBuilder {
         SettingMetadata {
             id: self.id.expect("SettingMetadata: id is required"),
             title: self.title.expect("SettingMetadata: title is required"),
-            category: self.category.expect("SettingMetadata: category is required"),
+            category: self
+                .category
+                .expect("SettingMetadata: category is required"),
             icon: self.icon.expect("SettingMetadata: icon is required"),
             icon_color: self.icon_color,
             breadcrumbs: self.breadcrumbs,
@@ -411,5 +408,24 @@ mod tests {
     fn test_category_id() {
         assert_eq!(Category::Desktop.id(), "desktop");
         assert_eq!(Category::Appearance.id(), "appearance");
+    }
+
+    #[test]
+    fn test_builder() {
+        let metadata = SettingMetadata::builder()
+            .id("test.id")
+            .title("Test Title")
+            .category(Category::System)
+            .icon(NerdFont::Desktop)
+            .icon_color(Some("red"))
+            .summary("Test Summary")
+            .requires_reapply(true)
+            .build();
+
+        assert_eq!(metadata.id, "test.id");
+        assert_eq!(metadata.title, "Test Title");
+        assert_eq!(metadata.category, Category::System);
+        assert_eq!(metadata.icon_color, Some("red"));
+        assert!(metadata.requires_reapply);
     }
 }
