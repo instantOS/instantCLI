@@ -7,7 +7,7 @@ use super::store::SettingsStore;
 
 pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()> {
     let store = SettingsStore::load().context("loading settings file")?;
-    let mut ctx = SettingsContext::new(store, debug, privileged_flag);
+    let mut ctx = SettingsContext::new_with_notifications_disabled(store, debug, privileged_flag);
 
     // Restore all settings that require reapplication
     let applied = super::restore::restore_settings(&mut ctx)?;
@@ -45,7 +45,8 @@ pub fn run_internal_apply(
     }
     .context("loading settings file for privileged apply")?;
 
-    let mut ctx = SettingsContext::new(store, debug, privileged_flag);
+    // For internal apply, we should also disable notifications to be consistent
+    let mut ctx = SettingsContext::new_with_notifications_disabled(store, debug, privileged_flag);
 
     // Find the setting by ID in the trait-based registry
     let setting = setting::setting_by_id(setting_id)

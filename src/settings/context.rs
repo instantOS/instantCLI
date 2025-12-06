@@ -19,6 +19,7 @@ pub struct SettingsContext {
     dirty: bool,
     debug: bool,
     privileged: bool,
+    no_notifications: bool,
 }
 
 impl SettingsContext {
@@ -28,6 +29,24 @@ impl SettingsContext {
             dirty: false,
             debug,
             privileged: privileged_flag || matches!(sudo::check(), RunningAs::Root),
+            no_notifications: false,
+        };
+
+        ctx.sync_external_states();
+        ctx
+    }
+
+    pub fn new_with_notifications_disabled(
+        store: SettingsStore,
+        debug: bool,
+        privileged_flag: bool,
+    ) -> Self {
+        let mut ctx = Self {
+            store,
+            dirty: false,
+            debug,
+            privileged: privileged_flag || matches!(sudo::check(), RunningAs::Root),
+            no_notifications: true,
         };
 
         ctx.sync_external_states();
@@ -178,6 +197,11 @@ impl SettingsContext {
     }
 
     pub fn notify(&self, summary: &str, body: &str) {
+        if self.no_notifications {
+            // Skip notifications entirely when no_notifications is true
+            return;
+        }
+
         if self.debug {
             let message = format!("{} {summary}: {body}", char::from(NerdFont::Info));
             emit(Level::Debug, "settings.notify", &message, None);
