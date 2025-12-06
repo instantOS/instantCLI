@@ -61,9 +61,10 @@ pub fn qr_encode_clipboard() -> Result<()> {
     }
 
     let terminal = crate::common::terminal::detect_terminal();
+    let exec_flag = crate::common::terminal::get_execute_flag(&terminal);
 
     Command::new(terminal)
-        .arg("-e")
+        .arg(exec_flag)
         .arg(temp_script.as_os_str())
         .spawn()
         .context("Failed to launch terminal with QR code")?;
