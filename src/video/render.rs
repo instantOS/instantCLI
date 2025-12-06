@@ -562,19 +562,12 @@ impl RenderPipeline {
 
         self.build_overlay_filters_wrapper(&mut filters, &overlay_segments, source_map)?;
 
-        self.build_audio_mix_filters(
-            &mut filters,
-            &music_segments,
-            source_map,
-            has_base_track,
-        )?;
+        self.build_audio_mix_filters(&mut filters, &music_segments, source_map, has_base_track)?;
 
         Ok(filters.join("; "))
     }
 
-    fn categorize_segments<'a>(
-        &'a self,
-    ) -> (Vec<&'a Segment>, Vec<&'a Segment>, Vec<&'a Segment>) {
+    fn categorize_segments(&self) -> (Vec<&Segment>, Vec<&Segment>, Vec<&Segment>) {
         let mut video = Vec::new();
         let mut overlay = Vec::new();
         let mut music = Vec::new();
@@ -685,8 +678,7 @@ impl RenderPipeline {
         }
 
         if !music_segments.is_empty() {
-            let music_label =
-                self.build_music_filters(filters, music_segments, source_map)?;
+            let music_label = self.build_music_filters(filters, music_segments, source_map)?;
             audio_label = Some(match audio_label {
                 Some(base) => {
                     let mixed = "a_mix".to_string();
