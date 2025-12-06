@@ -4,6 +4,8 @@
 //! Settings are registered at compile time via the `inventory` crate.
 
 mod brightness;
+mod keyboard;
+mod mouse;
 mod swap_escape;
 mod wiremix;
 

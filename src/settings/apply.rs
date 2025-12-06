@@ -11,10 +11,29 @@ pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()>
 
     let mut applied = 0usize;
 
+    // First, restore new-style trait-based settings
+    applied += super::restore::restore_new_style_settings(&mut ctx)?;
+
+    // Then, restore old-style settings that haven't been migrated yet
     for definition in SETTINGS
         .iter()
         .filter(|definition| definition.requires_reapply)
     {
+        // Skip settings that have been migrated to the new trait system
+        // These are now handled by restore_new_style_settings above
+        let migrated_ids = [
+            "desktop.swap_escape",
+            "appearance.brightness",
+            "audio.wiremix",
+            "mouse.natural_scroll",
+            "mouse.swap_buttons",
+            "mouse.sensitivity",
+            "language.keyboard_layout",
+        ];
+        if migrated_ids.contains(&definition.id) {
+            continue;
+        }
+
         match definition.kind {
             crate::settings::registry::SettingKind::Toggle { .. }
             | crate::settings::registry::SettingKind::Choice { .. } => {
@@ -23,46 +42,6 @@ pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()>
                     &format!("Reapplying {}", definition.title),
                 );
                 apply_definition(&mut ctx, definition, None)?;
-                applied += 1;
-            }
-            crate::settings::registry::SettingKind::Action { .. }
-                if definition.id == "language.keyboard_layout" =>
-            {
-                ctx.emit_info(
-                    "settings.apply.reapply",
-                    &format!("Reapplying {}", definition.title),
-                );
-                crate::settings::actions::restore_keyboard_layout(&mut ctx)?;
-                applied += 1;
-            }
-            crate::settings::registry::SettingKind::Action { .. }
-                if definition.id == "mouse.sensitivity" =>
-            {
-                ctx.emit_info(
-                    "settings.apply.reapply",
-                    &format!("Reapplying {}", definition.title),
-                );
-                crate::settings::actions::restore_mouse_sensitivity(&mut ctx)?;
-                applied += 1;
-            }
-            crate::settings::registry::SettingKind::Action { .. }
-                if definition.id == "appearance.brightness" =>
-            {
-                ctx.emit_info(
-                    "settings.apply.reapply",
-                    &format!("Reapplying {}", definition.title),
-                );
-                crate::settings::actions::restore_brightness(&mut ctx)?;
-                applied += 1;
-            }
-            crate::settings::registry::SettingKind::Toggle { .. }
-                if definition.id == "desktop.swap_escape" =>
-            {
-                ctx.emit_info(
-                    "settings.apply.reapply",
-                    &format!("Reapplying {}", definition.title),
-                );
-                crate::settings::actions::restore_swap_escape(&mut ctx)?;
                 applied += 1;
             }
             _ => {}
