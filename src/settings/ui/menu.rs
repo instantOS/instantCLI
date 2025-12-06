@@ -62,11 +62,16 @@ pub fn run_settings_ui(
                     category_cursor,
                 } => {
                     let settings = setting::settings_in_category(category);
-                    let tree = build_tree(settings);
-                    if navigate_node(&mut ctx, category.title(), &tree, category_cursor)? {
+                    if settings.len() == 1 {
+                        super::handlers::handle_trait_setting(&mut ctx, settings[0])?;
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                     } else {
-                        break;
+                        let tree = build_tree(settings);
+                        if navigate_node(&mut ctx, category.title(), &tree, category_cursor)? {
+                            initial_view = InitialView::MainMenu(main_menu_cursor);
+                        } else {
+                            break;
+                        }
                     }
                 }
                 MenuAction::EnterSearch(main_menu_cursor) => {
@@ -141,10 +146,38 @@ fn build_tree(settings: Vec<&'static dyn Setting>) -> Vec<TreeNode> {
         insert_into_tree(&mut nodes, &setting.metadata().breadcrumbs, setting);
     }
 
+    // Optimize: Flatten single-child folders
+    let nodes = optimize_tree(nodes);
+
     // Sort nodes: Folders first, then Leaves. Alphabetical within groups.
+    // Note: We need to sort *after* optimization because flattening might change types
+    let mut nodes = nodes;
     sort_tree(&mut nodes);
 
     nodes
+}
+
+fn optimize_tree(nodes: Vec<TreeNode>) -> Vec<TreeNode> {
+    nodes
+        .into_iter()
+        .map(|node| {
+            match node {
+                TreeNode::Folder { name, children } => {
+                    let optimized_children = optimize_tree(children);
+                    if optimized_children.len() == 1 {
+                        // Hoist the single child
+                        optimized_children.into_iter().next().unwrap()
+                    } else {
+                        TreeNode::Folder {
+                            name,
+                            children: optimized_children,
+                        }
+                    }
+                }
+                leaf @ TreeNode::Leaf(_) => leaf,
+            }
+        })
+        .collect()
 }
 
 fn insert_into_tree(nodes: &mut Vec<TreeNode>, path: &[&str], setting: &'static dyn Setting) {

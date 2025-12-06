@@ -288,10 +288,6 @@ impl SettingMetadataBuilder {
     pub fn build(mut self) -> SettingMetadata {
         let title = self.title.expect("SettingMetadata: title is required");
 
-        if self.breadcrumbs.is_empty() {
-            self.breadcrumbs = vec![title];
-        }
-
         SettingMetadata {
             id: self.id.expect("SettingMetadata: id is required"),
             title,

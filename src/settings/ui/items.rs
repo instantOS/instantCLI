@@ -82,9 +82,15 @@ pub struct SearchItem {
 impl FzfSelectable for SubCategoryItem {
     fn fzf_display_text(&self) -> String {
         use super::super::context::colors;
+        let (icon, color) = match self.name.as_str() {
+            "GTK" => (NerdFont::Palette, colors::TEAL),
+            "Wallpaper" => (NerdFont::Image, colors::LAVENDER),
+            _ => (NerdFont::Folder, colors::BLUE),
+        };
+
         format!(
             "{} {} ({})",
-            format_icon_colored(NerdFont::Folder, colors::BLUE), // Use default folder color/icon
+            format_icon_colored(icon, color),
             self.name,
             self.count
         )

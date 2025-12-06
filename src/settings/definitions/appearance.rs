@@ -399,9 +399,10 @@ impl Setting for GtkIconTheme {
     fn metadata(&self) -> SettingMetadata {
         SettingMetadata::builder()
             .id("appearance.gtk_icon_theme")
-            .title("GTK Icon Theme")
+            .title("Icon Theme")
             .category(Category::Appearance)
             .icon(NerdFont::Image) // Use a generic image icon or find a better one
+            .breadcrumbs(&["GTK"])
             .summary("Select and apply a GTK icon theme.\n\nUpdates GTK 3/4 settings and GSettings for Sway.")
             .build()
     }
@@ -484,9 +485,10 @@ impl Setting for GtkTheme {
     fn metadata(&self) -> SettingMetadata {
         SettingMetadata::builder()
             .id("appearance.gtk_theme")
-            .title("GTK Theme")
+            .title("Theme")
             .category(Category::Appearance)
             .icon(NerdFont::Image) // Use a generic image icon or find a better one
+            .breadcrumbs(&["GTK"])
             .summary("Select and apply a GTK theme.\n\nUpdates GTK 3/4 settings, GSettings, and applies Libadwaita overrides (via ~/.config/gtk-4.0/).")
             .build()
     }
@@ -580,13 +582,13 @@ impl Setting for ResetGtk {
     fn metadata(&self) -> SettingMetadata {
         SettingMetadata::builder()
             .id("appearance.reset_gtk")
-            .title("Reset GTK Customizations")
+            .title("Reset Customizations")
             .category(Category::Appearance)
             .icon(NerdFont::Trash)
+            .breadcrumbs(&["GTK"])
             .summary("Reset all GTK theme and icon settings to default.\n\nRemoves custom settings.ini files and GTK4 CSS overrides.")
             .build()
     }
-
     fn setting_type(&self) -> SettingType {
         SettingType::Action
     }
