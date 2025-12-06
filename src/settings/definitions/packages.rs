@@ -17,17 +17,13 @@ pub struct InstallPackages;
 
 impl Setting for InstallPackages {
     fn metadata(&self) -> SettingMetadata {
-        SettingMetadata {
-            id: "system.install_packages",
-            title: "Install packages",
-            category: Category::Install,
-            icon: NerdFont::Download,
-            icon_color: None,
-            breadcrumbs: &["Install packages"],
-            summary: "Browse and install system packages using an interactive fuzzy finder.",
-            requires_reapply: false,
-            requirements: &[],
-        }
+        SettingMetadata::builder()
+            .id("system.install_packages")
+            .title("Install packages")
+            .category(Category::Install)
+            .icon(NerdFont::Download)
+            .summary("Browse and install system packages using an interactive fuzzy finder.")
+            .build()
     }
 
     fn setting_type(&self) -> SettingType {

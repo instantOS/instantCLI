@@ -24,7 +24,6 @@ impl Setting for IpInfo {
             .title("IP Address Info")
             .category(Category::Network)
             .icon(NerdFont::Info)
-            .breadcrumbs(&["IP Address Info"])
             .summary("View your local and public IP addresses.\n\nUseful for troubleshooting network issues or setting up remote access.")
             .build()
     }
@@ -53,7 +52,6 @@ impl Setting for SpeedTest {
             .title("Internet Speed Test")
             .category(Category::Network)
             .icon(NerdFont::Rocket)
-            .breadcrumbs(&["Internet Speed Test"])
             .summary("Test your internet connection speed using fast.com.\n\nMeasures download speed from Netflix servers.")
             .requirements(&[Requirement::Package(CHROMIUM_PACKAGE)])
             .build()

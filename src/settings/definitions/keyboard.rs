@@ -25,7 +25,6 @@ impl Setting for KeyboardLayout {
             .title("Keyboard Layout")
             .category(Category::Language)
             .icon(NerdFont::Keyboard)
-            .breadcrumbs(&["Language", "Keyboard Layout"])
             .summary("Select and set the keyboard layout (e.g., us, de, fr).\n\nSupports Sway and X11 window managers.")
             .requires_reapply(true)
             .build()

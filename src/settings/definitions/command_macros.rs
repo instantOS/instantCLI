@@ -51,7 +51,6 @@ macro_rules! gui_command_setting {
                     .title($title)
                     .category($category)
                     .icon($icon)
-                    .breadcrumbs(&[$title])
                     .summary($summary)
                     .requirements(&[$crate::settings::setting::Requirement::Package(
                         $requirement,
@@ -140,7 +139,6 @@ macro_rules! tui_command_setting {
                     .title($title)
                     .category($category)
                     .icon($icon)
-                    .breadcrumbs(&[$title])
                     .summary($summary)
                     .requirements(&[$crate::settings::setting::Requirement::Package(
                         $requirement,

@@ -23,7 +23,6 @@ macro_rules! default_app_setting {
                     .category(Category::Apps)
                     .icon($icon)
                     .icon_color($color)
-                    .breadcrumbs(&[$title])
                     .summary($summary)
                     .requirements(&[Requirement::Package(XDG_UTILS_PACKAGE)])
                     .build()

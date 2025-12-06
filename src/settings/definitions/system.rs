@@ -27,7 +27,6 @@ impl Setting for AboutSystem {
             .title("About")
             .category(Category::System)
             .icon(NerdFont::About)
-            .breadcrumbs(&["About"])
             .summary("Display system information using fastfetch.")
             .requirements(&[Requirement::Package(FASTFETCH_PACKAGE)])
             .build()

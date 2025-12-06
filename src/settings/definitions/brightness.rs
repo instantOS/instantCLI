@@ -24,7 +24,6 @@ impl Setting for Brightness {
             .title("Screen Brightness")
             .category(Category::Appearance)
             .icon(NerdFont::Lightbulb)
-            .breadcrumbs(&["Screen Brightness"])
             .summary("Adjust screen brightness using an interactive slider.\n\nThe setting will be automatically restored on login.\n\nTip: You can also access this via instantASSIST (Super+A b).")
             .requires_reapply(true)
             .build()

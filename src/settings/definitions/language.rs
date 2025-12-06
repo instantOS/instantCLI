@@ -21,7 +21,6 @@ impl Setting for SystemLanguage {
             .title("Language")
             .category(Category::Language)
             .icon(NerdFont::Globe)
-            .breadcrumbs(&["Language"])
             .summary("Manage system locales and choose the default language.\n\nEnable or disable locales in /etc/locale.gen and set LANG via localectl.")
             .requires_reapply(true)
             .build()

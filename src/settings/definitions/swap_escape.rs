@@ -22,7 +22,6 @@ impl Setting for SwapEscape {
             .title("Swap Escape and Caps Lock")
             .category(Category::Desktop)
             .icon(NerdFont::Keyboard)
-            .breadcrumbs(&["Swap Escape and Caps Lock"])
             .summary("Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports Sway and X11 window managers.")
             .requires_reapply(true)
             .build()

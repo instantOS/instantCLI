@@ -203,7 +203,7 @@ pub struct SettingMetadata {
     pub icon: NerdFont,
     /// Override icon color (if None, uses category color)
     pub icon_color: Option<&'static str>,
-    pub breadcrumbs: &'static [&'static str],
+    pub breadcrumbs: Vec<&'static str>,
     pub summary: &'static str,
     pub requires_reapply: bool,
     pub requirements: &'static [Requirement],
@@ -222,7 +222,7 @@ pub struct SettingMetadataBuilder {
     category: Option<Category>,
     icon: Option<NerdFont>,
     icon_color: Option<&'static str>,
-    breadcrumbs: &'static [&'static str],
+    breadcrumbs: Vec<&'static str>,
     summary: &'static str,
     requires_reapply: bool,
     requirements: &'static [Requirement],
@@ -264,8 +264,8 @@ impl SettingMetadataBuilder {
         self
     }
 
-    pub fn breadcrumbs(mut self, breadcrumbs: &'static [&'static str]) -> Self {
-        self.breadcrumbs = breadcrumbs;
+    pub fn breadcrumbs(mut self, breadcrumbs: &[&'static str]) -> Self {
+        self.breadcrumbs = breadcrumbs.to_vec();
         self
     }
 
@@ -284,10 +284,16 @@ impl SettingMetadataBuilder {
         self
     }
 
-    pub fn build(self) -> SettingMetadata {
+    pub fn build(mut self) -> SettingMetadata {
+        let title = self.title.expect("SettingMetadata: title is required");
+
+        if self.breadcrumbs.is_empty() {
+            self.breadcrumbs = vec![title];
+        }
+
         SettingMetadata {
             id: self.id.expect("SettingMetadata: id is required"),
-            title: self.title.expect("SettingMetadata: title is required"),
+            title,
             category: self
                 .category
                 .expect("SettingMetadata: category is required"),

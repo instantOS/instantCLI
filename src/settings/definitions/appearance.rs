@@ -29,7 +29,6 @@ impl Setting for AutoTheming {
             .title("Automatic Theming")
             .category(Category::Appearance)
             .icon(NerdFont::Palette)
-            .breadcrumbs(&["Automatic Theming"])
             .summary("Automatically apply instantOS color themes to applications.\n\nDisable this if you want to use your own custom themes.\n\nNote: Placeholder only; changing this setting currently has no effect.")
             .build()
     }
@@ -74,7 +73,6 @@ impl Setting for Animations {
             .title("Animations")
             .category(Category::Appearance)
             .icon(NerdFont::Magic)
-            .breadcrumbs(&["Animations"])
             .summary("Enable smooth animations and visual effects on the desktop.\n\nDisable for better performance on older hardware.\n\nNote: Placeholder only; changing this setting currently has no effect.")
             .build()
     }
@@ -114,7 +112,6 @@ impl Setting for SetWallpaper {
             .title("Wallpaper")
             .category(Category::Appearance)
             .icon(NerdFont::Image)
-            .breadcrumbs(&["Wallpaper"])
             .summary("Select and set a new wallpaper image.")
             .requirements(&[Requirement::Package(YAZI_PACKAGE)])
             .build()
