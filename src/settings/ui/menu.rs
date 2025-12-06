@@ -158,7 +158,11 @@ fn convert_category_node(node: crate::settings::category_tree::CategoryNode) -> 
     if let Some(setting) = node.setting {
         TreeNode::Leaf(setting)
     } else {
-        let converted_children = node.children.into_iter().map(convert_category_node).collect();
+        let converted_children = node
+            .children
+            .into_iter()
+            .map(convert_category_node)
+            .collect();
         TreeNode::Folder {
             name: node.name.unwrap_or("Unknown").to_string(),
             children: converted_children,

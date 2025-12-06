@@ -174,7 +174,7 @@ impl Setting for SetWallpaper {
             if status.success() {
                 FzfWrapper::builder()
                     .message("Wallpaper updated successfully!")
-                    .title("Wallpaper")
+            .title("Wallpaper Image")
                     .show_message()?;
             } else {
                 FzfWrapper::builder()
