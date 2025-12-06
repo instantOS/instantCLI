@@ -5,8 +5,10 @@
 use anyhow::Result;
 
 use crate::common::requirements::{BLUEMAN_PACKAGE, PIPER_PACKAGE};
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
-use crate::settings::context::SettingsContext;
+use crate::menu_utils::FzfSelectable;
+use crate::settings::context::{
+    SettingsContext, colors, format_back_icon, format_icon_colored, select_one_with_style_at,
+};
 use crate::settings::setting::{Category, Setting, SettingMetadata, SettingType};
 use crate::settings::store::StringSettingKey;
 use crate::ui::prelude::*;
@@ -28,13 +30,32 @@ struct LayoutChoice {
     description: &'static str,
 }
 
-impl FzfSelectable for LayoutChoice {
+#[derive(Clone)]
+struct LayoutChoiceDisplay {
+    choice: Option<&'static LayoutChoice>,
+    is_current: bool,
+}
+
+impl FzfSelectable for LayoutChoiceDisplay {
     fn fzf_display_text(&self) -> String {
-        format!("{}: {}", self.label, self.description)
+        match self.choice {
+            Some(choice) => {
+                let icon = if self.is_current {
+                    format_icon_colored(NerdFont::CheckSquare, colors::GREEN)
+                } else {
+                    format_icon_colored(NerdFont::Square, colors::OVERLAY1)
+                };
+                format!("{} {}: {}", icon, choice.label, choice.description)
+            }
+            None => format!("{} Back", format_back_icon()),
+        }
     }
 
     fn fzf_key(&self) -> String {
-        self.value.to_string()
+        match self.choice {
+            Some(choice) => choice.value.to_string(),
+            None => "__back__".to_string(),
+        }
     }
 }
 
@@ -108,15 +129,45 @@ impl Setting for WindowLayout {
             .position(|l| l.value == current)
             .unwrap_or(0);
 
-        let result = FzfWrapper::builder()
-            .header("Select Window Layout")
-            .prompt("Layout > ")
-            .initial_index(initial_index)
-            .select(LAYOUT_OPTIONS.to_vec())?;
+        let mut cursor = Some(initial_index);
 
-        if let FzfResult::Selected(layout) = result {
-            ctx.set_string(Self::KEY, layout.value);
-            ctx.notify("Window Layout", &format!("Set to: {}", layout.label));
+        loop {
+            // Rebuild items so current selection shows as checked icon
+            let mut items: Vec<LayoutChoiceDisplay> = LAYOUT_OPTIONS
+                .iter()
+                .map(|choice| LayoutChoiceDisplay {
+                    choice: Some(choice),
+                    is_current: choice.value == ctx.string(Self::KEY),
+                })
+                .collect();
+
+            // Add Back entry at bottom
+            items.push(LayoutChoiceDisplay {
+                choice: None,
+                is_current: false,
+            });
+
+            let selection = select_one_with_style_at(items.clone(), cursor)?;
+
+            match selection {
+                Some(display) => {
+                    cursor = items.iter().position(|c| match (c.choice, display.choice) {
+                        (None, None) => true,
+                        (Some(lhs), Some(rhs)) => lhs.value == rhs.value,
+                        _ => false,
+                    });
+
+                    match display.choice {
+                        Some(choice) => {
+                            ctx.set_string(Self::KEY, choice.value);
+                            ctx.notify("Window Layout", &format!("Set to: {}", choice.label));
+                            // Continue loop to reflect new current selection in display
+                        }
+                        None => break, // Back selected
+                    }
+                }
+                None => break,
+            }
         }
 
         Ok(())

@@ -15,15 +15,11 @@ pub fn compute_setting_state(ctx: &SettingsContext, setting: &'static dyn Settin
         },
         SettingType::Choice { key } => {
             let current = ctx.string(key);
-            // For choices, we just show the current value label
-            // The full options list is shown when the setting is applied
             SettingState::Choice {
                 current_label: if current.is_empty() {
                     "Not set"
                 } else {
-                    // Note: We'd need to store options in the trait to get the label
-                    // For now, just showing "Configured"
-                    "Configured"
+                    Box::leak(current.into_boxed_str())
                 },
             }
         }

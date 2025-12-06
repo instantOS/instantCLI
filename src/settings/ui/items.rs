@@ -176,9 +176,9 @@ impl FzfSelectable for CategoryMenuItem {
                 crate::menu_utils::FzfPreview::Text(lines.join("\n"))
             }
             CategoryMenuItem::Category(item) => item.fzf_preview(),
-            CategoryMenuItem::Close => crate::menu_utils::FzfPreview::Text(
-                "Exit settings".to_string(),
-            ),
+            CategoryMenuItem::Close => {
+                crate::menu_utils::FzfPreview::Text("Exit settings".to_string())
+            }
         }
     }
 }
