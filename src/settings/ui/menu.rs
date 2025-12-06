@@ -143,7 +143,7 @@ impl TreeNode {
 fn build_tree(settings: Vec<&'static dyn Setting>) -> Vec<TreeNode> {
     let mut nodes = Vec::new();
     for setting in settings {
-        insert_into_tree(&mut nodes, &setting.metadata().breadcrumbs, setting);
+        insert_into_tree(&mut nodes, &setting.breadcrumbs(), setting);
     }
 
     // Optimize: Flatten single-child folders
@@ -156,7 +156,6 @@ fn build_tree(settings: Vec<&'static dyn Setting>) -> Vec<TreeNode> {
 
     nodes
 }
-
 fn optimize_tree(nodes: Vec<TreeNode>) -> Vec<TreeNode> {
     nodes
         .into_iter()

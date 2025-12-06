@@ -363,9 +363,10 @@ fn first_line(text: &str) -> &str {
 
 pub fn format_setting_path(setting: &dyn Setting) -> String {
     let meta = setting.metadata();
-    let mut segments = Vec::with_capacity(1 + meta.breadcrumbs.len());
+    let breadcrumbs = setting.breadcrumbs();
+    let mut segments = Vec::with_capacity(1 + breadcrumbs.len());
     segments.push(meta.category.title());
-    segments.extend(meta.breadcrumbs.iter().copied());
+    segments.extend(breadcrumbs.iter().copied());
     segments.join(" -> ")
 }
 

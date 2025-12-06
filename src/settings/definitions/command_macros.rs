@@ -55,7 +55,6 @@ macro_rules! gui_command_setting {
                     .requirements(&[$crate::settings::setting::Requirement::Package(
                         $requirement,
                     )])
-                    .module_path(module_path!())
                     .build()
             }
 
@@ -144,7 +143,6 @@ macro_rules! tui_command_setting {
                     .requirements(&[$crate::settings::setting::Requirement::Package(
                         $requirement,
                     )])
-                    .module_path(module_path!())
                     .build()
             }
 
@@ -234,7 +232,6 @@ macro_rules! simple_toggle_setting {
                     .category($category)
                     .icon($icon)
                     .summary($summary)
-                    .module_path(module_path!())
                     .build()
             }
 

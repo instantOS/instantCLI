@@ -195,37 +195,6 @@ impl Category {
     }
 }
 
-/// Extract breadcrumbs from a module path string
-///
-/// Usage: `breadcrumbs_from_path(module_path!())`
-///
-/// Transforms "crate::settings::definitions::category::sub::Setting"
-/// into vec!["category", "sub"]
-pub fn breadcrumbs_from_path(path: &'static str) -> Vec<&'static str> {
-    let parts: Vec<&str> = path.split("::").collect();
-
-    // Find where "definitions" is and take everything after it
-    if let Some(pos) = parts.iter().position(|&p| p == "definitions") {
-        if pos + 1 < parts.len() {
-            // We take from definitions+1 up to the last part (which is usually the struct name or mod name)
-            // Actually module_path!() returns the module path, not including the struct if called outside impl.
-            // If called inside impl, it might be different? module_path! is the *module* path.
-            // e.g. "ins::settings::definitions::appearance"
-            // We want ["appearance"]
-
-            // Let's capitalize the first letter of each segment for display
-            // Wait, we can't easily allocate new strings and return &'static str without leaking.
-            // The SettingMetadata requires &'static str.
-            // So we must return the raw substrings from the path.
-            // The UI layer can handle capitalization if needed.
-
-            return parts[pos + 1..].to_vec();
-        }
-    }
-
-    Vec::new()
-}
-
 /// UI metadata for displaying a setting
 #[derive(Debug)]
 pub struct SettingMetadata {
@@ -235,7 +204,6 @@ pub struct SettingMetadata {
     pub icon: NerdFont,
     /// Override icon color (if None, uses category color)
     pub icon_color: Option<&'static str>,
-    pub breadcrumbs: Vec<&'static str>,
     pub summary: &'static str,
     pub requires_reapply: bool,
     pub requirements: &'static [Requirement],
@@ -254,7 +222,6 @@ pub struct SettingMetadataBuilder {
     category: Option<Category>,
     icon: Option<NerdFont>,
     icon_color: Option<&'static str>,
-    breadcrumbs: Vec<&'static str>,
     summary: &'static str,
     requires_reapply: bool,
     requirements: &'static [Requirement],
@@ -296,14 +263,6 @@ impl SettingMetadataBuilder {
         self
     }
 
-    /// Set the module path to auto-generate breadcrumbs
-    ///
-    /// Usage: `.module_path(module_path!())`
-    pub fn module_path(mut self, path: &'static str) -> Self {
-        self.breadcrumbs = breadcrumbs_from_path(path);
-        self
-    }
-
     pub fn summary(mut self, summary: &'static str) -> Self {
         self.summary = summary;
         self
@@ -319,7 +278,7 @@ impl SettingMetadataBuilder {
         self
     }
 
-    pub fn build(mut self) -> SettingMetadata {
+    pub fn build(self) -> SettingMetadata {
         let title = self.title.expect("SettingMetadata: title is required");
 
         SettingMetadata {
@@ -330,7 +289,6 @@ impl SettingMetadataBuilder {
                 .expect("SettingMetadata: category is required"),
             icon: self.icon.expect("SettingMetadata: icon is required"),
             icon_color: self.icon_color,
-            breadcrumbs: self.breadcrumbs,
             summary: self.summary,
             requires_reapply: self.requires_reapply,
             requirements: self.requirements,
@@ -394,6 +352,23 @@ pub trait Setting: Send + Sync + 'static {
     /// Returns None if the setting doesn't need restoration
     fn restore(&self, _ctx: &mut SettingsContext) -> Option<Result<()>> {
         None
+    }
+
+    /// Get the hierarchy breadcrumbs for this setting
+    ///
+    /// Defaults to parsing the struct's module path relative to `settings::definitions`.
+    fn breadcrumbs(&self) -> Vec<&'static str> {
+        let type_name = std::any::type_name::<Self>();
+        let parts: Vec<&str> = type_name.split("::").collect();
+        // Look for "definitions" segment
+        if let Some(pos) = parts.iter().position(|&p| p == "definitions") {
+            // We need at least: definitions :: <module> :: Struct
+            if pos + 1 < parts.len() {
+                // Return path segments excluding the Struct name (last item)
+                return parts[pos + 1..parts.len() - 1].to_vec();
+            }
+        }
+        Vec::new()
     }
 }
 

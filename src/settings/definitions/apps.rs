@@ -25,7 +25,6 @@ macro_rules! default_app_setting {
                     .icon_color($color)
                     .summary($summary)
                     .requirements(&[Requirement::Package(XDG_UTILS_PACKAGE)])
-                    .breadcrumbs(&$crate::settings::setting::breadcrumbs_from_path(module_path!()))
                     .build()
             }
 
