@@ -18,30 +18,20 @@ pub(super) enum ManageMenuItem {
 
 impl FzfSelectable for ManageMenuItem {
     fn fzf_display_text(&self) -> String {
+        use super::super::context::{colors, format_icon_colored};
+
         match self {
-            ManageMenuItem::User {
-                username,
-                shell,
-                groups,
-                in_toml,
-            } => {
-                let label = if groups.is_empty() {
-                    "no groups".to_string()
-                } else {
-                    groups.join(", ")
-                };
-                let status = if *in_toml { "managed" } else { "system" };
-                format!(
-                    "{} {} ({}) [{}] ({})",
-                    format_icon(NerdFont::User),
-                    username,
-                    shell,
-                    label,
-                    status
-                )
+            ManageMenuItem::User { username, .. } => {
+                format!("{} {}", format_icon(NerdFont::User), username)
             }
-            ManageMenuItem::Add => format!("{} Add user", format_icon(NerdFont::Plus)),
-            ManageMenuItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
+            ManageMenuItem::Add => format!(
+                "{} Add user",
+                format_icon_colored(NerdFont::Plus, colors::GREEN)
+            ),
+            ManageMenuItem::Back => format!(
+                "{} Back",
+                format_icon_colored(NerdFont::ArrowLeft, colors::OVERLAY0)
+            ),
         }
     }
 
@@ -53,28 +43,91 @@ impl FzfSelectable for ManageMenuItem {
                 groups,
                 in_toml,
             } => {
+                use super::super::context::{colors, hex_to_ansi_fg};
+
+                let reset = "\x1b[0m";
+                let mauve = hex_to_ansi_fg(colors::MAUVE);
+                let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
+                let text = hex_to_ansi_fg(colors::TEXT);
+                let teal = hex_to_ansi_fg(colors::TEAL);
+                let surface = hex_to_ansi_fg(colors::SURFACE1);
+                let green = hex_to_ansi_fg(colors::GREEN);
+
+                let mut lines = Vec::new();
+
+                lines.push(String::new());
+                lines.push(format!(
+                    "{mauve}{}  {}{reset}",
+                    char::from(NerdFont::User),
+                    username
+                ));
+                lines.push(format!(
+                    "{surface}───────────────────────────────────{reset}"
+                ));
+                lines.push(String::new());
+
                 let status = if *in_toml {
-                    "Managed in TOML configuration"
+                    format!("{green}Managed{reset}")
                 } else {
-                    "System user with home directory"
+                    format!("{text}System{reset}")
                 };
-                let mut lines = vec![
-                    format!("{} User: {}", char::from(NerdFont::Info), username),
-                    format!("{} Status: {}", char::from(NerdFont::Tag), status),
-                    format!("{} Shell: {}", char::from(NerdFont::Terminal), shell),
-                ];
+                lines.push(format!(
+                    "{teal}{} Status: {}{reset}",
+                    char::from(NerdFont::Tag),
+                    status
+                ));
+                lines.push(format!(
+                    "{teal}{} Shell: {}{reset}",
+                    char::from(NerdFont::Terminal),
+                    shell
+                ));
+                lines.push(String::new());
+
+                lines.push(format!(
+                    "{surface}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{reset}"
+                ));
+                lines.push(String::new());
+
                 if groups.is_empty() {
-                    lines.push(format!("{} Groups: (none)", char::from(NerdFont::List)));
+                    lines.push(format!(
+                        "{subtext}{} No groups assigned{reset}",
+                        char::from(NerdFont::List)
+                    ));
                 } else {
                     lines.push(format!(
-                        "{} Groups: {}",
-                        char::from(NerdFont::List),
-                        groups.join(", ")
+                        "{teal}{} Groups:{reset}",
+                        char::from(NerdFont::List)
                     ));
+                    lines.push(String::new());
+                    for group in groups {
+                        lines.push(format!("{text}  • {}{reset}", group));
+                    }
                 }
+
                 FzfPreview::Text(lines.join("\n"))
             }
-            ManageMenuItem::Add => FzfPreview::Text("Create a new managed user entry".to_string()),
+            ManageMenuItem::Add => {
+                use super::super::context::{colors, hex_to_ansi_fg};
+
+                let reset = "\x1b[0m";
+                let mauve = hex_to_ansi_fg(colors::MAUVE);
+                let text = hex_to_ansi_fg(colors::TEXT);
+                let surface = hex_to_ansi_fg(colors::SURFACE1);
+
+                let lines = vec![
+                    String::new(),
+                    format!("{mauve}{}  Add User{reset}", char::from(NerdFont::Plus)),
+                    format!("{surface}───────────────────────────────────{reset}"),
+                    String::new(),
+                    format!("{text}Create a new managed user entry{reset}"),
+                    String::new(),
+                    format!("{text}The user will be added to the{reset}"),
+                    format!("{text}TOML configuration for tracking{reset}"),
+                    format!("{text}and management.{reset}"),
+                ];
+
+                FzfPreview::Text(lines.join("\n"))
+            }
             ManageMenuItem::Back => FzfPreview::Text("Return to settings".to_string()),
         }
     }

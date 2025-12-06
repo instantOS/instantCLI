@@ -405,6 +405,7 @@ where
         .args([
             // Visual styling
             "--no-separator",
+            "--no-bold",
             "--padding=1,2",
             "--list-border=none",
             "--input-border=none",

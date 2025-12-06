@@ -47,9 +47,16 @@ impl FzfSelectable for LayoutChoiceDisplay {
                 } else {
                     format_icon_colored(NerdFont::Square, colors::OVERLAY1)
                 };
-                format!("{} {}: {}", icon, choice.label, choice.description)
+                format!("{} {}", icon, choice.label)
             }
             None => format!("{} Back", format_back_icon()),
+        }
+    }
+
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        match self.choice {
+            Some(choice) => crate::menu_utils::FzfPreview::Text(choice.description.to_string()),
+            None => crate::menu_utils::FzfPreview::Text("Go back to the previous menu".to_string()),
         }
     }
 
