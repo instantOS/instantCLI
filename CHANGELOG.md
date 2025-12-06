@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2](https://github.com/instantOS/instantCLI/compare/v0.9.1...v0.9.2) - 2025-12-06
+
+### Fixed
+
+- fix install category not showing
+- fix setting entry colors
+- fix instantassist error
+
+### Other
+
+- remove autotheming setting
+- remove unused constants
+- make default layout settings actually work
+- better multiple choice behavior
+- update agents md
+- add close button to settings
+- make further use of terminal utils
+- deduplicate terminal logic and boolean toggles
+- init welcome app
+- init welcome plan
+- auto generate breadcrumbs
+- remove unneeded default
+- test builder pattern
+- use builder pattern
+- add icon color override
+- add back removed settings
+- clean up more old files
+- fmt
+- clean up settings which launch external commands
+- clippy
+- fmt
+- remove old registry
+- more cleanup
+- remove old stuff
+- deduplicate settings vectors
+- more migration
+- migrate settings UI
+- migrate more settings
+- migrate more settings
+- migrate more settings
+- init setting refactor
+- add sway support for swapescape setting
+- more plans
+- add swapescape setting
+- merge desktop and layout settings
+
 ## [0.9.1](https://github.com/instantOS/instantCLI/compare/v0.9.0...v0.9.1) - 2025-12-05
 
 ### Other
