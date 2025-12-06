@@ -215,6 +215,7 @@ impl SettingMetadata {
     }
 }
 
+#[derive(Default)]
 pub struct SettingMetadataBuilder {
     id: Option<&'static str>,
     title: Option<&'static str>,
@@ -225,22 +226,6 @@ pub struct SettingMetadataBuilder {
     summary: &'static str,
     requires_reapply: bool,
     requirements: &'static [Requirement],
-}
-
-impl Default for SettingMetadataBuilder {
-    fn default() -> Self {
-        Self {
-            id: None,
-            title: None,
-            category: None,
-            icon: None,
-            icon_color: None,
-            breadcrumbs: &[],
-            summary: "",
-            requires_reapply: false,
-            requirements: &[],
-        }
-    }
 }
 
 impl SettingMetadataBuilder {
