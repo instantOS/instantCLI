@@ -59,7 +59,41 @@ impl Setting for Brightness {
         if !ctx.contains(Self::KEY.key) {
             return None;
         }
-        Some(restore_brightness_impl(ctx))
+
+        /// Set screen brightness using brightnessctl
+        fn set_brightness(value: i64) -> Result<()> {
+            let output = Command::new("brightnessctl")
+                .args(["--quiet", "set", &format!("{}%", value)])
+                .output()
+                .context("Failed to run brightnessctl")?;
+
+            if !output.status.success() {
+                anyhow::bail!(
+                    "brightnessctl failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+
+            Ok(())
+        }
+
+        let value = ctx.int(Self::KEY);
+        if let Err(e) = set_brightness(value) {
+            emit(
+                Level::Warn,
+                "settings.brightness.restore_failed",
+                &format!("Failed to restore brightness: {e}"),
+                None,
+            );
+        } else {
+            emit(
+                Level::Debug,
+                "settings.brightness.restored",
+                &format!("Restored brightness: {}%", value),
+                None,
+            );
+        }
+        Some(Ok(()))
     }
 }
 
@@ -131,24 +165,4 @@ fn run_brightness_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
     };
 
     client.slide(request)
-}
-
-fn restore_brightness_impl(ctx: &mut SettingsContext) -> Result<()> {
-    let value = ctx.int(Brightness::KEY);
-    if let Err(e) = set_brightness(value) {
-        emit(
-            Level::Warn,
-            "settings.brightness.restore_failed",
-            &format!("Failed to restore brightness: {e}"),
-            None,
-        );
-    } else {
-        emit(
-            Level::Debug,
-            "settings.brightness.restored",
-            &format!("Restored brightness: {}%", value),
-            None,
-        );
-    }
-    Ok(())
 }
