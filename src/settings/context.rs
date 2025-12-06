@@ -7,7 +7,7 @@ use sudo::RunningAs;
 use crate::common::requirements::RequiredPackage;
 use crate::ui::prelude::*;
 
-use super::registry::{SettingDefinition, SettingKind, SettingOption};
+
 use super::sources;
 use super::store::{
     BoolSettingKey, IntSettingKey, OptionalStringSettingKey, SettingsStore, StringSettingKey,
@@ -19,7 +19,6 @@ pub struct SettingsContext {
     dirty: bool,
     debug: bool,
     privileged: bool,
-    current_definition: Option<&'static SettingDefinition>,
 }
 
 impl SettingsContext {
@@ -29,7 +28,6 @@ impl SettingsContext {
             dirty: false,
             debug,
             privileged: privileged_flag || matches!(sudo::check(), RunningAs::Root),
-            current_definition: None,
         };
 
         ctx.sync_external_states();

@@ -7,7 +7,7 @@ use crate::common::systemd::{SystemdManager, UserServiceConfig};
 use crate::ui::prelude::*;
 
 use super::super::context::SettingsContext;
-use super::super::registry::UDISKIE_AUTOMOUNT_KEY;
+use super::super::store::UDISKIE_AUTOMOUNT_KEY;
 
 const UDISKIE_SERVICE_NAME: &str = "udiskie";
 
