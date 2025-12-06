@@ -2,7 +2,7 @@
 //!
 //! Handles screen brightness configuration with persistence and restore on login.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::process::Command;
 
 use crate::menu::client::MenuClient;
@@ -10,22 +10,11 @@ use crate::menu::protocol::SliderRequest;
 use crate::ui::prelude::*;
 
 use super::super::context::SettingsContext;
+use super::super::definitions::brightness::set_brightness;
 
-/// Set screen brightness using brightnessctl
-pub fn set_brightness(value: i64) -> Result<()> {
-    let output = Command::new("brightnessctl")
-        .args(["--quiet", "set", &format!("{}%", value)])
-        .output()
-        .context("Failed to run brightnessctl")?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "brightnessctl failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    Ok(())
+/// Set screen brightness using brightnessctl (public wrapper for external use)
+pub fn set_brightness_value(value: i64) -> Result<()> {
+    set_brightness(value)
 }
 
 /// Get current brightness percentage from brightnessctl

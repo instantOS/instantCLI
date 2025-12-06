@@ -43,108 +43,16 @@ impl Setting for NaturalScroll {
         let current = ctx.bool(Self::KEY);
         let enabled = !current;
         ctx.set_bool(Self::KEY, enabled);
-
-        let compositor = CompositorType::detect();
-        let is_sway = matches!(compositor, CompositorType::Sway);
-        let is_x11 = compositor.is_x11();
-
-        if !is_sway && !is_x11 {
-            ctx.emit_info(
-                "settings.mouse.natural_scroll.unsupported",
-                &format!(
-                    "Natural scrolling configuration is not yet supported on {}. Setting saved but not applied.",
-                    compositor.name()
-                ),
-            );
-            return Ok(());
-        }
-
-        if is_sway {
-            let value = if enabled { "enabled" } else { "disabled" };
-            let pointer_cmd = format!("input type:pointer natural_scroll {}", value);
-            let touchpad_cmd = format!("input type:touchpad natural_scroll {}", value);
-
-            let pointer_result = sway::swaymsg(&pointer_cmd);
-            let touchpad_result = sway::swaymsg(&touchpad_cmd);
-
-            if let (Err(e1), Err(e2)) = (&pointer_result, &touchpad_result) {
-                ctx.emit_info(
-                    "settings.mouse.natural_scroll.sway_failed",
-                    &format!(
-                        "Failed to apply natural scrolling in Sway: pointer: {e1}, touchpad: {e2}"
-                    ),
-                );
-                return Ok(());
-            }
-
-            ctx.notify(
-                "Natural Scrolling",
-                if enabled {
-                    "Natural scrolling enabled"
-                } else {
-                    "Natural scrolling disabled"
-                },
-            );
-        } else {
-            let value = if enabled { "1" } else { "0" };
-            let applied = apply_libinput_property(
-                "libinput Natural Scrolling Enabled",
-                value,
-                "settings.mouse.natural_scroll.device_failed",
-            )?;
-
-            if applied > 0 {
-                ctx.notify(
-                    "Natural Scrolling",
-                    if enabled {
-                        "Natural scrolling enabled"
-                    } else {
-                        "Natural scrolling disabled"
-                    },
-                );
-            } else {
-                ctx.emit_info(
-                    "settings.mouse.natural_scroll.no_devices",
-                    "No devices found that support natural scrolling.",
-                );
-            }
-        }
-
-        Ok(())
+        apply_natural_scrolling(ctx, enabled)
     }
 
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
         let enabled = ctx.bool(Self::KEY);
-        // Only restore if explicitly enabled
         if !enabled {
             return None;
         }
 
-        let compositor = CompositorType::detect();
-        let is_sway = matches!(compositor, CompositorType::Sway);
-        let is_x11 = compositor.is_x11();
-
-        if !is_sway && !is_x11 {
-            return None;
-        }
-
-        if is_sway {
-            let value = if enabled { "enabled" } else { "disabled" };
-            let pointer_cmd = format!("input type:pointer natural_scroll {}", value);
-            let touchpad_cmd = format!("input type:touchpad natural_scroll {}", value);
-
-            let _ = sway::swaymsg(&pointer_cmd);
-            let _ = sway::swaymsg(&touchpad_cmd);
-        } else {
-            let value = if enabled { "1" } else { "0" };
-            let _ = apply_libinput_property(
-                "libinput Natural Scrolling Enabled",
-                value,
-                "settings.mouse.natural_scroll.device_failed",
-            );
-        }
-
-        Some(Ok(()))
+        Some(apply_natural_scrolling(ctx, enabled))
     }
 }
 
@@ -178,44 +86,7 @@ impl Setting for SwapButtons {
         let current = ctx.bool(Self::KEY);
         let enabled = !current;
         ctx.set_bool(Self::KEY, enabled);
-
-        let compositor = CompositorType::detect();
-
-        if !compositor.is_x11() {
-            ctx.emit_info(
-                "settings.mouse.swap_buttons.unsupported",
-                &format!(
-                    "Swap mouse buttons configuration is not yet supported on {}. Setting saved but not applied.",
-                    compositor.name()
-                ),
-            );
-            return Ok(());
-        }
-
-        let value = if enabled { "1" } else { "0" };
-        let applied = apply_libinput_property(
-            "libinput Left Handed Enabled",
-            value,
-            "settings.mouse.swap_buttons.device_failed",
-        )?;
-
-        if applied > 0 {
-            ctx.notify(
-                "Swap Mouse Buttons",
-                if enabled {
-                    "Mouse buttons swapped (left-handed mode)"
-                } else {
-                    "Mouse buttons normal (right-handed mode)"
-                },
-            );
-        } else {
-            ctx.emit_info(
-                "settings.mouse.swap_buttons.no_devices",
-                "No devices found that support button swapping.",
-            );
-        }
-
-        Ok(())
+        apply_swap_buttons(ctx, enabled)
     }
 
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
@@ -224,20 +95,7 @@ impl Setting for SwapButtons {
             return None;
         }
 
-        let compositor = CompositorType::detect();
-
-        if !compositor.is_x11() {
-            return None;
-        }
-
-        let value = if enabled { "1" } else { "0" };
-        let _ = apply_libinput_property(
-            "libinput Left Handed Enabled",
-            value,
-            "settings.mouse.swap_buttons.device_failed",
-        );
-
-        Some(Ok(()))
+        Some(apply_swap_buttons(ctx, enabled))
     }
 }
 
@@ -338,8 +196,120 @@ fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>> {
 // Shared Helpers
 // ============================================================================
 
+/// Apply natural scrolling setting (shared by both apply and restore)
+pub(crate) fn apply_natural_scrolling(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+    let compositor = CompositorType::detect();
+    let is_sway = matches!(compositor, CompositorType::Sway);
+    let is_x11 = compositor.is_x11();
+
+    if !is_sway && !is_x11 {
+        ctx.emit_info(
+            "settings.mouse.natural_scroll.unsupported",
+            &format!(
+                "Natural scrolling configuration is not yet supported on {}. Setting saved but not applied.",
+                compositor.name()
+            ),
+        );
+        return Ok(());
+    }
+
+    if is_sway {
+        let value = if enabled { "enabled" } else { "disabled" };
+        let pointer_cmd = format!("input type:pointer natural_scroll {}", value);
+        let touchpad_cmd = format!("input type:touchpad natural_scroll {}", value);
+
+        let pointer_result = sway::swaymsg(&pointer_cmd);
+        let touchpad_result = sway::swaymsg(&touchpad_cmd);
+
+        if let (Err(e1), Err(e2)) = (&pointer_result, &touchpad_result) {
+            ctx.emit_info(
+                "settings.mouse.natural_scroll.sway_failed",
+                &format!(
+                    "Failed to apply natural scrolling in Sway: pointer: {e1}, touchpad: {e2}"
+                ),
+            );
+            return Ok(());
+        }
+
+        ctx.notify(
+            "Natural Scrolling",
+            if enabled {
+                "Natural scrolling enabled"
+            } else {
+                "Natural scrolling disabled"
+            },
+        );
+    } else {
+        let value = if enabled { "1" } else { "0" };
+        let applied = apply_libinput_property_helper(
+            "libinput Natural Scrolling Enabled",
+            value,
+            "settings.mouse.natural_scroll.device_failed",
+        )?;
+
+        if applied > 0 {
+            ctx.notify(
+                "Natural Scrolling",
+                if enabled {
+                    "Natural scrolling enabled"
+                } else {
+                    "Natural scrolling disabled"
+                },
+            );
+        } else {
+            ctx.emit_info(
+                "settings.mouse.natural_scroll.no_devices",
+                "No devices found that support natural scrolling.",
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Apply swap buttons setting (shared by both apply and restore)
+pub(crate) fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+    let compositor = CompositorType::detect();
+
+    if !compositor.is_x11() {
+        ctx.emit_info(
+            "settings.mouse.swap_buttons.unsupported",
+            &format!(
+                "Swap mouse buttons configuration is not yet supported on {}. Setting saved but not applied.",
+                compositor.name()
+            ),
+        );
+        return Ok(());
+    }
+
+    let value = if enabled { "1" } else { "0" };
+    let applied = apply_libinput_property_helper(
+        "libinput Left Handed Enabled",
+        value,
+        "settings.mouse.swap_buttons.device_failed",
+    )?;
+
+    if applied > 0 {
+        ctx.notify(
+            "Swap Mouse Buttons",
+            if enabled {
+                "Mouse buttons swapped (left-handed mode)"
+            } else {
+                "Mouse buttons normal (right-handed mode)"
+            },
+        );
+    } else {
+        ctx.emit_info(
+            "settings.mouse.swap_buttons.no_devices",
+            "No devices found that support button swapping.",
+        );
+    }
+
+    Ok(())
+}
+
 /// Get all pointer device IDs from xinput
-fn get_pointer_device_ids() -> Result<Vec<String>> {
+pub(crate) fn get_pointer_device_ids() -> Result<Vec<String>> {
     let output = Command::new("xinput")
         .arg("list")
         .arg("--id-only")
@@ -372,7 +342,7 @@ fn get_pointer_device_ids() -> Result<Vec<String>> {
 }
 
 /// Apply a libinput property to all pointer devices that support it
-fn apply_libinput_property(property_name: &str, value: &str, error_key: &str) -> Result<usize> {
+pub(crate) fn apply_libinput_property_helper(property_name: &str, value: &str, error_key: &str) -> Result<usize> {
     let device_ids = get_pointer_device_ids()?;
     let mut applied = 0;
 

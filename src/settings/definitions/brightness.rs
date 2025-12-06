@@ -60,23 +60,6 @@ impl Setting for Brightness {
             return None;
         }
 
-        /// Set screen brightness using brightnessctl
-        fn set_brightness(value: i64) -> Result<()> {
-            let output = Command::new("brightnessctl")
-                .args(["--quiet", "set", &format!("{}%", value)])
-                .output()
-                .context("Failed to run brightnessctl")?;
-
-            if !output.status.success() {
-                anyhow::bail!(
-                    "brightnessctl failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-
-            Ok(())
-        }
-
         let value = ctx.int(Self::KEY);
         if let Err(e) = set_brightness(value) {
             emit(
@@ -103,7 +86,7 @@ inventory::submit! {
 }
 
 /// Set screen brightness using brightnessctl
-fn set_brightness(value: i64) -> Result<()> {
+pub(crate) fn set_brightness(value: i64) -> Result<()> {
     let output = Command::new("brightnessctl")
         .args(["--quiet", "set", &format!("{}%", value)])
         .output()

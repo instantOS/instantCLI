@@ -2,13 +2,13 @@
 //!
 //! Handles mouse sensitivity, natural scrolling, and button swap settings.
 
-use anyhow::{Context, Result, bail};
-use std::process::Command;
+use anyhow::Result;
 
 use crate::common::compositor::{CompositorType, sway};
 use crate::ui::prelude::*;
 
 use super::super::context::SettingsContext;
+use super::super::definitions::mouse::{apply_libinput_property_helper, apply_natural_scrolling, apply_swap_buttons};
 
 pub fn configure_mouse_sensitivity(ctx: &mut SettingsContext) -> Result<()> {
     let key = super::super::store::IntSettingKey::new("desktop.mouse.sensitivity", 50);
@@ -61,187 +61,12 @@ pub fn restore_mouse_sensitivity(ctx: &mut SettingsContext) -> Result<()> {
     Ok(())
 }
 
-/// Get all pointer device IDs from xinput
-fn get_pointer_device_ids() -> Result<Vec<String>> {
-    let output = Command::new("xinput")
-        .arg("list")
-        .arg("--id-only")
-        .output()
-        .context("Failed to run xinput list")?;
-
-    if !output.status.success() {
-        bail!("xinput list failed");
-    }
-
-    // Get all device IDs
-    let all_ids: Vec<String> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(|line| line.trim().to_string())
-        .collect();
-
-    // Filter to only pointer devices by checking their properties
-    let mut pointer_ids = Vec::new();
-    for id in all_ids {
-        // Check if this device has pointer-related properties
-        if let Ok(props_output) = Command::new("xinput").arg("list-props").arg(&id).output() {
-            let props = String::from_utf8_lossy(&props_output.stdout);
-            // Device is a pointer if it has button map or natural scrolling property
-            if props.contains("libinput Natural Scrolling Enabled")
-                || props.contains("Button Labels")
-            {
-                pointer_ids.push(id);
-            }
-        }
-    }
-
-    Ok(pointer_ids)
-}
-
-/// Apply a libinput property to all pointer devices that support it
-fn apply_libinput_property(property_name: &str, value: &str, error_key: &str) -> Result<usize> {
-    let device_ids = get_pointer_device_ids()?;
-    let mut applied = 0;
-
-    for id in device_ids {
-        if let Ok(props_output) = Command::new("xinput").arg("list-props").arg(&id).output() {
-            let props = String::from_utf8_lossy(&props_output.stdout);
-            if props.contains(property_name) {
-                if let Err(e) = Command::new("xinput")
-                    .args(["--set-prop", &id, property_name, value])
-                    .status()
-                {
-                    emit(
-                        Level::Warn,
-                        error_key,
-                        &format!("Failed to set {property_name} for device {id}: {e}"),
-                        None,
-                    );
-                } else {
-                    applied += 1;
-                }
-            }
-        }
-    }
-
-    Ok(applied)
-}
-
 /// Apply natural scrolling setting (Sway and X11)
 pub fn apply_natural_scroll(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    let compositor = CompositorType::detect();
-    let is_sway = matches!(compositor, CompositorType::Sway);
-    let is_x11 = compositor.is_x11();
-
-    if !is_sway && !is_x11 {
-        ctx.emit_info(
-            "settings.mouse.natural_scroll.unsupported",
-            &format!(
-                "Natural scrolling configuration is not yet supported on {}. Setting saved but not applied.",
-                compositor.name()
-            ),
-        );
-        return Ok(());
-    }
-
-    if is_sway {
-        // Apply natural scrolling to both pointer (mouse) and touchpad devices in sway
-        // Sway treats these as separate device types
-        let value = if enabled { "enabled" } else { "disabled" };
-
-        // Apply to pointer devices (mice)
-        let pointer_cmd = format!("input type:pointer natural_scroll {}", value);
-        let pointer_result = sway::swaymsg(&pointer_cmd);
-
-        // Apply to touchpad devices (trackpads)
-        let touchpad_cmd = format!("input type:touchpad natural_scroll {}", value);
-        let touchpad_result = sway::swaymsg(&touchpad_cmd);
-
-        // Report error only if both fail
-        if let (Err(e1), Err(e2)) = (&pointer_result, &touchpad_result) {
-            ctx.emit_info(
-                "settings.mouse.natural_scroll.sway_failed",
-                &format!(
-                    "Failed to apply natural scrolling in Sway: pointer: {e1}, touchpad: {e2}"
-                ),
-            );
-            return Ok(());
-        }
-
-        ctx.notify(
-            "Natural Scrolling",
-            if enabled {
-                "Natural scrolling enabled"
-            } else {
-                "Natural scrolling disabled"
-            },
-        );
-    } else {
-        // X11 path
-        let value = if enabled { "1" } else { "0" };
-        let applied = apply_libinput_property(
-            "libinput Natural Scrolling Enabled",
-            value,
-            "settings.mouse.natural_scroll.device_failed",
-        )?;
-
-        if applied > 0 {
-            ctx.notify(
-                "Natural Scrolling",
-                if enabled {
-                    "Natural scrolling enabled"
-                } else {
-                    "Natural scrolling disabled"
-                },
-            );
-        } else {
-            ctx.emit_info(
-                "settings.mouse.natural_scroll.no_devices",
-                "No devices found that support natural scrolling.",
-            );
-        }
-    }
-
-    Ok(())
+    apply_natural_scrolling(ctx, enabled)
 }
 
 /// Apply swap mouse buttons setting (X11 only for now)
 pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
-    let compositor = CompositorType::detect();
-
-    if !compositor.is_x11() {
-        ctx.emit_info(
-            "settings.mouse.swap_buttons.unsupported",
-            &format!(
-                "Swap mouse buttons configuration is not yet supported on {}. Setting saved but not applied.",
-                compositor.name()
-            ),
-        );
-        return Ok(());
-    }
-
-    let value = if enabled { "1" } else { "0" };
-    let applied = apply_libinput_property(
-        "libinput Left Handed Enabled",
-        value,
-        "settings.mouse.swap_buttons.device_failed",
-    )?;
-
-    if applied > 0 {
-        ctx.notify(
-            "Swap Mouse Buttons",
-            if enabled {
-                "Mouse buttons swapped (left-handed mode)"
-            } else {
-                "Mouse buttons normal (right-handed mode)"
-            },
-        );
-    } else {
-        ctx.emit_info(
-            "settings.mouse.swap_buttons.no_devices",
-            "No devices found that support button swapping.",
-        );
-    }
-
-    Ok(())
+    super::super::definitions::mouse::apply_swap_buttons(ctx, enabled)
 }
