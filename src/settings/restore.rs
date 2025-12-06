@@ -6,8 +6,8 @@ use super::context::SettingsContext;
 use super::setting::settings_requiring_reapply;
 use crate::ui::prelude::*;
 
-/// Run restoration for all new-style settings that need reapplication
-pub fn restore_new_style_settings(ctx: &mut SettingsContext) -> Result<usize> {
+/// Restore all settings that need reapplication on login
+pub fn restore_settings(ctx: &mut SettingsContext) -> Result<usize> {
     let mut applied = 0usize;
 
     for setting in settings_requiring_reapply() {

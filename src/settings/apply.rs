@@ -1,52 +1,16 @@
 use anyhow::{Context, Result};
 
-use crate::settings::registry::SETTINGS;
+use crate::settings::setting;
 
-use super::context::{SettingsContext, apply_definition, make_apply_override};
+use super::context::SettingsContext;
 use super::store::SettingsStore;
 
 pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()> {
     let store = SettingsStore::load().context("loading settings file")?;
     let mut ctx = SettingsContext::new(store, debug, privileged_flag);
 
-    let mut applied = 0usize;
-
-    // First, restore new-style trait-based settings
-    applied += super::restore::restore_new_style_settings(&mut ctx)?;
-
-    // Then, restore old-style settings that haven't been migrated yet
-    for definition in SETTINGS
-        .iter()
-        .filter(|definition| definition.requires_reapply)
-    {
-        // Skip settings that have been migrated to the new trait system
-        // These are now handled by restore_new_style_settings above
-        let migrated_ids = [
-            "desktop.swap_escape",
-            "appearance.brightness",
-            "audio.wiremix",
-            "mouse.natural_scroll",
-            "mouse.swap_buttons",
-            "mouse.sensitivity",
-            "language.keyboard_layout",
-        ];
-        if migrated_ids.contains(&definition.id) {
-            continue;
-        }
-
-        match definition.kind {
-            crate::settings::registry::SettingKind::Toggle { .. }
-            | crate::settings::registry::SettingKind::Choice { .. } => {
-                ctx.emit_info(
-                    "settings.apply.reapply",
-                    &format!("Reapplying {}", definition.title),
-                );
-                apply_definition(&mut ctx, definition, None)?;
-                applied += 1;
-            }
-            _ => {}
-        }
-    }
+    // Restore all settings that require reapplication
+    let applied = super::restore::restore_settings(&mut ctx)?;
 
     if applied == 0 {
         ctx.emit_info(
@@ -70,8 +34,8 @@ pub fn run_internal_apply(
     debug: bool,
     privileged_flag: bool,
     setting_id: &str,
-    bool_value: Option<bool>,
-    string_value: Option<String>,
+    _bool_value: Option<bool>,
+    _string_value: Option<String>,
     settings_file: Option<std::path::PathBuf>,
 ) -> Result<()> {
     let store = if let Some(path) = settings_file {
@@ -83,14 +47,14 @@ pub fn run_internal_apply(
 
     let mut ctx = SettingsContext::new(store, debug, privileged_flag);
 
-    let definition = SETTINGS
-        .iter()
-        .find(|definition| definition.id == setting_id)
+    // Find the setting by ID in the trait-based registry
+    let setting = setting::setting_by_id(setting_id)
         .with_context(|| format!("unknown setting id {setting_id}"))?;
 
-    let override_value = make_apply_override(definition, bool_value, string_value);
-
-    apply_definition(&mut ctx, definition, override_value)?;
+    // Apply the setting directly
+    setting.apply(&mut ctx)?;
+    ctx.persist()?;
 
     Ok(())
 }
+
