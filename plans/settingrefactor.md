@@ -18,3 +18,4 @@ restore on all the settings.
 Read through all of the code and be creative. 
 
 
+Keep in mind some settings just execute a program, they do not store any state and do not get restored. 
