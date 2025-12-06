@@ -212,17 +212,6 @@ impl SettingsContext {
         );
     }
 
-    pub fn with_definition<F>(&mut self, definition: &'static SettingDefinition, f: F) -> Result<()>
-    where
-        F: FnOnce(&mut SettingsContext) -> Result<()>,
-    {
-        let previous = self.current_definition;
-        self.current_definition = Some(definition);
-        let result = f(self);
-        self.current_definition = previous;
-        result
-    }
-
     pub fn run_command_as_root<I, S>(&self, program: S, args: I) -> Result<()>
     where
         I: IntoIterator,
@@ -388,87 +377,6 @@ fn hex_to_ansi_bg(hex: &str) -> String {
     let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(255);
     let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(255);
     format!("\x1b[48;2;{r};{g};{b}m")
-}
-
-pub fn make_apply_override(
-    definition: &'static SettingDefinition,
-    bool_value: Option<bool>,
-    string_value: Option<String>,
-) -> Option<ApplyOverride> {
-    match (&definition.kind, bool_value, string_value.as_deref()) {
-        (crate::settings::registry::SettingKind::Toggle { .. }, Some(value), _) => {
-            Some(ApplyOverride::Bool(value))
-        }
-        (crate::settings::registry::SettingKind::Choice { options, .. }, _, Some(value)) => options
-            .iter()
-            .find(|option| option.value == value)
-            .map(ApplyOverride::Choice),
-        _ => None,
-    }
-}
-
-#[derive(Clone, Copy)]
-pub enum ApplyOverride {
-    Bool(bool),
-    Choice(&'static SettingOption),
-}
-
-//TODO: document what this does
-pub fn apply_definition(
-    ctx: &mut SettingsContext,
-    definition: &'static SettingDefinition,
-    override_value: Option<ApplyOverride>,
-) -> Result<()> {
-    match (&definition.kind, override_value) {
-        (
-            SettingKind::Toggle {
-                key: _,
-                apply: Some(apply_fn),
-                ..
-            },
-            Some(ApplyOverride::Bool(value)),
-        ) => ctx.with_definition(definition, |ctx| apply_fn(ctx, value)),
-        (
-            SettingKind::Toggle {
-                key,
-                apply: Some(apply_fn),
-                ..
-            },
-            None,
-        ) => {
-            let value = ctx.bool(*key);
-            ctx.with_definition(definition, |ctx| apply_fn(ctx, value))
-        }
-        (
-            SettingKind::Choice {
-                key: _,
-                options: _,
-                apply: Some(apply_fn),
-                ..
-            },
-            Some(ApplyOverride::Choice(option)),
-        ) => ctx.with_definition(definition, |ctx| apply_fn(ctx, option)),
-        (
-            SettingKind::Choice {
-                key,
-                options,
-                apply: Some(apply_fn),
-                ..
-            },
-            None,
-        ) => {
-            let current_value = ctx.string(*key);
-            if let Some(option) = options
-                .iter()
-                .find(|candidate| candidate.value == current_value)
-            {
-                ctx.with_definition(definition, |ctx| apply_fn(ctx, option))
-            } else {
-                Ok(())
-            }
-        }
-        _ => Ok(()),
-    }
 }
 
 pub fn select_one_with_style_at<T>(items: Vec<T>, initial_index: Option<usize>) -> Result<Option<T>>
