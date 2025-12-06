@@ -195,6 +195,37 @@ impl Category {
     }
 }
 
+/// Extract breadcrumbs from a module path string
+///
+/// Usage: `breadcrumbs_from_path(module_path!())`
+///
+/// Transforms "crate::settings::definitions::category::sub::Setting"
+/// into vec!["category", "sub"]
+pub fn breadcrumbs_from_path(path: &'static str) -> Vec<&'static str> {
+    let parts: Vec<&str> = path.split("::").collect();
+
+    // Find where "definitions" is and take everything after it
+    if let Some(pos) = parts.iter().position(|&p| p == "definitions") {
+        if pos + 1 < parts.len() {
+            // We take from definitions+1 up to the last part (which is usually the struct name or mod name)
+            // Actually module_path!() returns the module path, not including the struct if called outside impl.
+            // If called inside impl, it might be different? module_path! is the *module* path.
+            // e.g. "ins::settings::definitions::appearance"
+            // We want ["appearance"]
+
+            // Let's capitalize the first letter of each segment for display
+            // Wait, we can't easily allocate new strings and return &'static str without leaking.
+            // The SettingMetadata requires &'static str.
+            // So we must return the raw substrings from the path.
+            // The UI layer can handle capitalization if needed.
+
+            return parts[pos + 1..].to_vec();
+        }
+    }
+
+    Vec::new()
+}
+
 /// UI metadata for displaying a setting
 #[derive(Debug)]
 pub struct SettingMetadata {
