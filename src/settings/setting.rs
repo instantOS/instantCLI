@@ -353,23 +353,6 @@ pub trait Setting: Send + Sync + 'static {
     fn restore(&self, _ctx: &mut SettingsContext) -> Option<Result<()>> {
         None
     }
-
-    /// Get the hierarchy breadcrumbs for this setting
-    ///
-    /// Defaults to parsing the struct's module path relative to `settings::definitions`.
-    fn breadcrumbs(&self) -> Vec<&'static str> {
-        let type_name = std::any::type_name::<Self>();
-        let parts: Vec<&str> = type_name.split("::").collect();
-        // Look for "definitions" segment
-        if let Some(pos) = parts.iter().position(|&p| p == "definitions") {
-            // We need at least: definitions :: <module> :: Struct
-            if pos + 1 < parts.len() {
-                // Return path segments excluding the Struct name (last item)
-                return parts[pos + 1..parts.len() - 1].to_vec();
-            }
-        }
-        Vec::new()
-    }
 }
 
 // Register settings at compile time
