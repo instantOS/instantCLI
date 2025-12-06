@@ -520,7 +520,7 @@ pub const SETTINGS: &[SettingDefinition] = &[
         breadcrumbs: &["Swap Escape and Caps Lock"],
         kind: SettingKind::Toggle {
             key: BoolSettingKey::new("desktop.swap_escape", false),
-            summary: "Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nCurrently only supported on X11.",
+            summary: "Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports Sway and X11 window managers.",
             apply: Some(super::actions::apply_swap_escape),
         },
         requires_reapply: true,
