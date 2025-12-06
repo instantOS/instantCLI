@@ -99,10 +99,27 @@ pub fn dispatch_assist_command(_debug: bool, command: Option<AssistCommands>) ->
             format,
         }) => export_wm_config(output_path, &format),
         Some(AssistCommands::Setup { wm }) => {
-            let wm_name = wm.unwrap_or_else(|| match CompositorType::detect() {
-                CompositorType::I3 => "i3".to_string(),
-                _ => "sway".to_string(),
-            });
+            let compositor = CompositorType::detect();
+            let wm_name = match wm {
+                Some(name) => name,
+                None => match compositor {
+                    CompositorType::I3 => "i3".to_string(),
+                    CompositorType::Sway => "sway".to_string(),
+                    _ => {
+                        emit(
+                            Level::Info,
+                            "assist.setup.unsupported",
+                            &format!(
+                                "{} {} is not supported by assist setup (only i3 and sway are supported)",
+                                char::from(NerdFont::Info),
+                                compositor.name()
+                            ),
+                            None,
+                        );
+                        return Ok(());
+                    }
+                },
+            };
             setup_wm_integration(&wm_name)
         }
     }
