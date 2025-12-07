@@ -94,6 +94,27 @@ impl OperatingSystem {
     }
 
     // ========================================================================
+    // Parent/Base OS
+    // ========================================================================
+
+    /// Returns the parent OS that this distribution is based on.
+    /// Returns `None` for root distributions (Arch, Debian, Fedora, etc.)
+    /// and for Unknown.
+    pub fn based_on(&self) -> Option<Self> {
+        match self {
+            // Arch-based
+            Self::InstantOS | Self::Manjaro | Self::EndeavourOS => Some(Self::Arch),
+            // Ubuntu-based (Ubuntu itself is Debian-based)
+            Self::PopOS | Self::LinuxMint => Some(Self::Ubuntu),
+            Self::Ubuntu => Some(Self::Debian),
+            // CentOS is Fedora/RHEL-based
+            Self::CentOS => Some(Self::Fedora),
+            // Root distributions and Unknown have no parent
+            Self::Arch | Self::Debian | Self::Fedora | Self::OpenSUSE | Self::Unknown(_) => None,
+        }
+    }
+
+    // ========================================================================
     // Family Check Methods
     // ========================================================================
 
@@ -104,18 +125,16 @@ impl OperatingSystem {
 
     /// Check if this OS is Arch-based (uses pacman)
     pub fn is_arch_based(&self) -> bool {
-        matches!(
-            self,
-            Self::Arch | Self::InstantOS | Self::Manjaro | Self::EndeavourOS
-        )
+        *self == Self::Arch || self.based_on().map(|p| p.is_arch_based()).unwrap_or(false)
     }
 
     /// Check if this OS is Debian-based (uses apt)
     pub fn is_debian_based(&self) -> bool {
-        matches!(
-            self,
-            Self::Debian | Self::Ubuntu | Self::PopOS | Self::LinuxMint
-        )
+        *self == Self::Debian
+            || self
+                .based_on()
+                .map(|p| p.is_debian_based())
+                .unwrap_or(false)
     }
 
     /// Check if this OS is RPM-based (uses dnf/yum)
@@ -158,13 +177,13 @@ impl OperatingSystem {
 
     /// Get the package manager for this operating system
     pub fn package_manager(&self) -> Option<PackageManager> {
-        if self.is_arch_based() {
-            Some(PackageManager::Pacman)
-        } else if self.is_debian_based() {
-            Some(PackageManager::Apt)
-        } else {
-            // For RPM-based and unknown, return None (not yet supported)
-            None
+        match self {
+            Self::Arch => Some(PackageManager::Pacman),
+            Self::Debian => Some(PackageManager::Apt),
+            // RPM-based and Unknown not yet supported
+            Self::Fedora | Self::CentOS | Self::OpenSUSE | Self::Unknown(_) => None,
+            // Derivatives fall back to parent
+            _ => self.based_on().and_then(|p| p.package_manager()),
         }
     }
 
@@ -190,7 +209,6 @@ impl OperatingSystem {
 impl std::fmt::Display for OperatingSystem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InstantOS => write!(f, "instantOS (Arch-based)"),
             Self::Unknown(name) => write!(f, "Unknown ({})", name),
             _ => write!(f, "{}", self.name()),
         }
@@ -388,5 +406,41 @@ ID_LIKE="arch""#;
             Some(PackageManager::Apt)
         );
         assert_eq!(OperatingSystem::Fedora.package_manager(), None); // Not yet supported
+    }
+
+    #[test]
+    fn test_based_on() {
+        // Arch derivatives
+        assert_eq!(
+            OperatingSystem::InstantOS.based_on(),
+            Some(OperatingSystem::Arch)
+        );
+        assert_eq!(
+            OperatingSystem::Manjaro.based_on(),
+            Some(OperatingSystem::Arch)
+        );
+        assert_eq!(
+            OperatingSystem::EndeavourOS.based_on(),
+            Some(OperatingSystem::Arch)
+        );
+
+        // Ubuntu/Debian chain
+        assert_eq!(
+            OperatingSystem::PopOS.based_on(),
+            Some(OperatingSystem::Ubuntu)
+        );
+        assert_eq!(
+            OperatingSystem::LinuxMint.based_on(),
+            Some(OperatingSystem::Ubuntu)
+        );
+        assert_eq!(
+            OperatingSystem::Ubuntu.based_on(),
+            Some(OperatingSystem::Debian)
+        );
+
+        // Root distributions have no parent
+        assert_eq!(OperatingSystem::Arch.based_on(), None);
+        assert_eq!(OperatingSystem::Debian.based_on(), None);
+        assert_eq!(OperatingSystem::Fedora.based_on(), None);
     }
 }
