@@ -826,3 +826,66 @@ fn rgb_to_hex(rgb: &str) -> Option<String> {
     let b: u8 = caps.get(3)?.as_str().parse().ok()?;
     Some(format!("#{:02x}{:02x}{:02x}", r, g, b))
 }
+
+// ============================================================================
+// Dark Mode
+// ============================================================================
+
+pub struct DarkMode;
+
+impl Setting for DarkMode {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("appearance.dark_mode")
+            .title("Dark Mode")
+            .icon(NerdFont::Moon)
+            .summary("Request applications to use dark theme.\n\nSets the system color-scheme preference via gsettings.\nThis affects GTK 4+, Libadwaita, and xdg-desktop-portal aware apps.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        // Query current color-scheme from gsettings
+        let output = Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+            .output()
+            .context("Failed to query gsettings color-scheme")?;
+
+        let current = String::from_utf8_lossy(&output.stdout);
+        let is_dark = current.contains("prefer-dark");
+
+        // Toggle between prefer-dark and default (light)
+        let new_scheme = if is_dark { "default" } else { "prefer-dark" };
+
+        let status = Command::new("gsettings")
+            .args([
+                "set",
+                "org.gnome.desktop.interface",
+                "color-scheme",
+                new_scheme,
+            ])
+            .status()
+            .context("Failed to set gsettings color-scheme")?;
+
+        if status.success() {
+            ctx.notify(
+                "Dark Mode",
+                if new_scheme == "prefer-dark" {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                },
+            );
+        } else {
+            ctx.emit_failure(
+                "settings.appearance.dark_mode.failed",
+                "Failed to set color-scheme preference",
+            );
+        }
+
+        Ok(())
+    }
+}
