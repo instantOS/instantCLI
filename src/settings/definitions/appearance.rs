@@ -582,13 +582,20 @@ impl Setting for ResetGtk {
                 ];
 
                 for path in &paths_to_remove {
-                    if path.exists() {
+                    // Check symlink first - exists() returns false for broken symlinks
+                    if path.is_symlink() || path.exists() {
                         if path.is_dir() && !path.is_symlink() {
                             let _ = std::fs::remove_dir_all(path);
                         } else {
                             let _ = std::fs::remove_file(path);
                         }
                     }
+                }
+
+                // Also remove the gtk-4.0 directory itself if it's a symlink (e.g., from dotfiles)
+                let gtk4_dir = config_dir.join("gtk-4.0");
+                if gtk4_dir.is_symlink() {
+                    let _ = std::fs::remove_file(&gtk4_dir);
                 }
             }
 
@@ -666,6 +673,12 @@ fn apply_gtk4_overrides(theme_name: &str) -> Result<()> {
 
     // Target directory: ~/.config/gtk-4.0/
     let config_dir = dirs::config_dir().context("No config dir")?.join("gtk-4.0");
+
+    // Handle broken symlinks: is_symlink() returns true even for broken symlinks,
+    // but exists() returns false. Remove broken symlinks before creating directory.
+    if config_dir.is_symlink() && !config_dir.exists() {
+        std::fs::remove_file(&config_dir)?;
+    }
 
     if !config_dir.exists() {
         std::fs::create_dir_all(&config_dir)?;
