@@ -333,7 +333,9 @@ impl DoctorCheck for PacmanStaleDownloadsCheck {
     async fn execute(&self) -> CheckStatus {
         // Check if pacman is currently running - if so, download dirs are in use
         if is_pacman_running().await {
-            return CheckStatus::Pass("Pacman is running, download directories are in use".to_string());
+            return CheckStatus::Pass(
+                "Pacman is running, download directories are in use".to_string(),
+            );
         }
 
         // Look for download-* directories in the pacman cache
@@ -383,7 +385,9 @@ impl DoctorCheck for PacmanStaleDownloadsCheck {
     async fn fix(&self) -> Result<()> {
         // Don't remove directories if pacman is running
         if is_pacman_running().await {
-            return Err(anyhow::anyhow!("Pacman is currently running, cannot remove download directories"));
+            return Err(anyhow::anyhow!(
+                "Pacman is currently running, cannot remove download directories"
+            ));
         }
 
         let entries = std::fs::read_dir(Self::CACHE_DIR)?;
@@ -391,16 +395,21 @@ impl DoctorCheck for PacmanStaleDownloadsCheck {
         let mut removed = 0;
         for entry in entries.flatten() {
             let path = entry.path();
-            if let Some(file_name) = path.file_name() {
-                if path.is_dir() && file_name.to_string_lossy().starts_with("download-") {
-                    std::fs::remove_dir_all(&path)?;
-                    removed += 1;
-                    println!("Removed: {}", path.display());
-                }
+            if let Some(file_name) = path.file_name()
+                && path.is_dir()
+                && file_name.to_string_lossy().starts_with("download-")
+            {
+                std::fs::remove_dir_all(&path)?;
+                removed += 1;
+                println!("Removed: {}", path.display());
             }
         }
 
-        println!("Removed {} stale download director{}.", removed, if removed == 1 { "y" } else { "ies" });
+        println!(
+            "Removed {} stale download director{}.",
+            removed,
+            if removed == 1 { "y" } else { "ies" }
+        );
         Ok(())
     }
 }
