@@ -536,14 +536,8 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 .or_else(|| std::env::var("SUDO_USER").ok())
                 .or_else(detect_single_user);
 
-            // Create a context for setup
-            let mut context = crate::arch::engine::InstallContext::new();
-            context.system_info = crate::arch::engine::SystemInfo::detect();
-
-            // If we found a user, set it in context too, though we pass it as override
-            if let Some(u) = &target_user {
-                context.set_answer(crate::arch::engine::QuestionId::Username, u.clone());
-            }
+            // Create a context for setup by detecting existing system settings
+            let context = crate::arch::engine::InstallContext::for_setup(target_user.clone());
 
             let executor = crate::arch::execution::CommandExecutor::new(dry_run, None);
             crate::arch::execution::setup::setup_instantos(&context, &executor, target_user).await

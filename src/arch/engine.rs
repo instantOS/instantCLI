@@ -311,6 +311,77 @@ impl InstallContext {
             .and_then(|boxed| boxed.downcast_ref::<K::Value>())
             .cloned()
     }
+
+    /// Create an InstallContext for setup mode by detecting current system settings.
+    /// This allows `ins arch setup` to reuse the same code as `ins arch exec` without
+    /// requiring a questions file.
+    pub fn for_setup(username: Option<String>) -> Self {
+        let mut ctx = Self::new();
+        ctx.system_info = SystemInfo::detect();
+
+        // Set username if provided
+        if let Some(user) = username {
+            ctx.set_answer(QuestionId::Username, user);
+        }
+
+        // Auto-detect locale from /etc/locale.conf
+        if let Some(locale) = detect_system_locale() {
+            ctx.set_answer(QuestionId::Locale, locale);
+        }
+
+        // Auto-detect timezone from /etc/localtime symlink
+        if let Some(tz) = detect_system_timezone() {
+            ctx.set_answer(QuestionId::Timezone, tz);
+        }
+
+        // Auto-detect keymap from /etc/vconsole.conf
+        if let Some(keymap) = detect_system_keymap() {
+            ctx.set_answer(QuestionId::Keymap, keymap);
+        }
+
+        // Read hostname from /etc/hostname
+        if let Ok(hostname) = std::fs::read_to_string("/etc/hostname") {
+            let hostname = hostname.trim().to_string();
+            if !hostname.is_empty() {
+                ctx.set_answer(QuestionId::Hostname, hostname);
+            }
+        }
+
+        ctx
+    }
+}
+
+/// Detect system locale from /etc/locale.conf
+fn detect_system_locale() -> Option<String> {
+    std::fs::read_to_string("/etc/locale.conf")
+        .ok()
+        .and_then(|content| {
+            content
+                .lines()
+                .find(|l| l.starts_with("LANG="))
+                .map(|l| l.trim_start_matches("LANG=").trim().to_string())
+        })
+}
+
+/// Detect system timezone from /etc/localtime symlink
+fn detect_system_timezone() -> Option<String> {
+    std::fs::read_link("/etc/localtime").ok().and_then(|path| {
+        path.to_string_lossy()
+            .strip_prefix("/usr/share/zoneinfo/")
+            .map(|s| s.to_string())
+    })
+}
+
+/// Detect system keymap from /etc/vconsole.conf
+fn detect_system_keymap() -> Option<String> {
+    std::fs::read_to_string("/etc/vconsole.conf")
+        .ok()
+        .and_then(|content| {
+            content
+                .lines()
+                .find(|l| l.starts_with("KEYMAP="))
+                .map(|l| l.trim_start_matches("KEYMAP=").trim().to_string())
+        })
 }
 
 /// Result of asking a question

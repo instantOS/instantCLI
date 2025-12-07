@@ -281,18 +281,47 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
         executor.run(&mut cmd)?;
     }
 
-    let shell = "/bin/bash"; // Default to bash for now, maybe zsh later if requested
+    // Check if user already exists (idempotent)
+    let user_exists = if executor.dry_run {
+        false // In dry-run, always show what would happen
+    } else {
+        Command::new("id")
+            .arg(username)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    };
 
-    let mut cmd_user = Command::new("useradd");
-    cmd_user
-        .arg("-m")
-        .arg("-G")
-        .arg(groups.join(","))
-        .arg("-s")
-        .arg(shell)
-        .arg(username);
+    if user_exists {
+        println!(
+            "User {} already exists, ensuring group membership and shell...",
+            username
+        );
+        // Add user to groups if not already a member
+        let mut cmd_mod = Command::new("usermod");
+        cmd_mod.arg("-aG").arg(groups.join(",")).arg(username);
+        executor.run(&mut cmd_mod)?;
 
-    executor.run(&mut cmd_user)?;
+        // Ensure shell is zsh
+        let mut cmd_chsh = Command::new("chsh");
+        cmd_chsh.arg("-s").arg("/bin/zsh").arg(username);
+        executor.run(&mut cmd_chsh)?;
+    } else {
+        let shell = "/bin/zsh";
+
+        let mut cmd_user = Command::new("useradd");
+        cmd_user
+            .arg("-m")
+            .arg("-G")
+            .arg(groups.join(","))
+            .arg("-s")
+            .arg(shell)
+            .arg(username);
+
+        executor.run(&mut cmd_user)?;
+    }
 
     // Set user password
     let user_input = format!("{}:{}", username, password);
@@ -315,7 +344,7 @@ pub fn configure_sudo(_context: &InstallContext, executor: &CommandExecutor) -> 
             std::fs::read_to_string(sudoers_path).context("Failed to read /etc/sudoers")?;
 
         let mut new_lines = Vec::new();
-        let mut has_pwfeedback = false;  // Track if pwfeedback already exists
+        let mut has_pwfeedback = false; // Track if pwfeedback already exists
 
         for line in content.lines() {
             // Check if pwfeedback line already exists
