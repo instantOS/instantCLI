@@ -162,13 +162,13 @@ impl LocalRepo {
                 Repository::open(&target).context("Failed to open git repository for fetch")?;
             git::fetch_branch(&mut repo, branch).context("Failed to fetch branch")?;
 
-            pb.finish_with_message(format!("Fetched branch {branch}"));
+            common::progress::finish_spinner_with_success(pb, format!("Fetched branch {branch}"));
 
             let pb = common::progress::create_spinner(format!("Checking out {branch}..."));
 
             git::checkout_branch(&mut repo, branch).context("Failed to checkout branch")?;
 
-            pb.finish_with_message(format!("Checked out {branch}"));
+            common::progress::finish_spinner_with_success(pb, format!("Checked out {branch}"));
         }
         Ok(())
     }
@@ -188,7 +188,7 @@ impl LocalRepo {
             Repository::open(&target).context("Failed to open git repository for pull")?;
         git::clean_and_pull(&mut repo).context("Failed to pull latest changes")?;
 
-        pb.finish_with_message(format!("Updated {}", self.name));
+        common::progress::finish_spinner_with_success(pb, format!("Updated {}", self.name));
 
         Ok(())
     }

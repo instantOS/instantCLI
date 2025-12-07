@@ -69,7 +69,7 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
     )
     .context("Failed to clone repository")?;
 
-    pb.finish_with_message(format!("Cloned {}", repo.url));
+    common::progress::finish_spinner_with_success(pb, format!("Cloned {}", repo.url));
 
     // Note: config addition is now handled by the caller (clone_repository function)
 

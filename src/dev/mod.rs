@@ -45,7 +45,10 @@ async fn handle_clone(debug: bool) -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to fetch repositories: {}", e))?;
 
-    pb.finish_with_message(format!("Found {} repositories", repos.len()));
+    crate::common::progress::finish_spinner_with_success(
+        pb,
+        format!("Found {} repositories", repos.len()),
+    );
 
     if debug {
         eprintln!("{} Available repositories:", char::from(NerdFont::List));

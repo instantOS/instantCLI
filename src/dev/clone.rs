@@ -34,7 +34,10 @@ pub fn clone_repository(repo: &GitHubRepo, target_dir: &Path, _debug: bool) -> R
         Some(1),
     );
 
-    pb.finish_with_message(format!("Successfully cloned {}", repo.name));
+    crate::common::progress::finish_spinner_with_success(
+        pb,
+        format!("Successfully cloned {}", repo.name),
+    );
 
     result.map_err(|e| CloneError::GitError(e.to_string()))?;
 

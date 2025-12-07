@@ -1,5 +1,5 @@
 use crate::common::git;
-use crate::common::progress::create_spinner;
+use crate::common::progress::{create_spinner, finish_spinner_with_success};
 use crate::dev::fuzzy::select_package;
 use crate::dev::package::Package;
 use crate::ui::prelude::*;
@@ -151,7 +151,7 @@ pub async fn handle_install(debug: bool) -> Result<()> {
     let repo = PackageRepo::new()?;
     repo.ensure_updated()?;
 
-    pb.finish_with_message("Package repository ready".to_string());
+    finish_spinner_with_success(pb, "Package repository ready");
 
     if debug {
         let discover_message = format!("{} Discovering packages...", char::from(NerdFont::Bug));
