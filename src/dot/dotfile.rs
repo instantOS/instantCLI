@@ -218,6 +218,8 @@ impl Dotfile {
         if should_copy {
             fs::copy(&self.target_path, &self.source_path)?;
             invalidate_cache(&self.source_path);
+            // Update the source file's hash in the database after copying
+            let _ = self.get_file_hash(&self.source_path, true, db);
             let _ = self.get_file_hash(&self.target_path, false, db);
         }
         Ok(())
