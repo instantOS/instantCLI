@@ -170,7 +170,51 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         .create_check(check_id)
         .ok_or_else(|| anyhow!("Unknown check: {}", check_id))?;
 
-    // STEP 1: Always run the check first to determine current state
+    // STEP 1: Determine if we need to escalate privileges
+    // Check both the check and fix privilege requirements upfront
+    let need_root_for_check = matches!(
+        check_privilege_requirements(check.as_ref(), false),
+        Err(PrivilegeError::NeedRoot)
+    );
+    let need_root_for_fix = matches!(
+        check_privilege_requirements(check.as_ref(), true),
+        Err(PrivilegeError::NeedRoot)
+    );
+
+    if need_root_for_check || need_root_for_fix {
+        let reason = if need_root_for_check {
+            "requires root privileges to run accurately"
+        } else {
+            "fix requires administrator privileges"
+        };
+
+        emit(
+            Level::Warn,
+            "doctor.fix.privileges",
+            &format!(
+                "{} Check '{}' {}.",
+                char::from(NerdFont::Warning),
+                check.name(),
+                reason
+            ),
+            None,
+        );
+
+        if should_escalate(check.as_ref())? {
+            escalate_for_fix(check_id)?;
+            unreachable!("Process should restart with sudo")
+        } else {
+            emit(
+                Level::Info,
+                "doctor.fix.cancelled",
+                &format!("{} Fix cancelled by user.", char::from(NerdFont::Info)),
+                None,
+            );
+            return Ok(());
+        }
+    }
+
+    // STEP 2: Run the check to determine current state
     emit(
         Level::Info,
         "doctor.fix.check",
@@ -183,7 +227,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
     );
     let check_result = check.execute().await;
 
-    // STEP 2: Determine if fix is needed based on check result
+    // STEP 3: Handle check result
     if check_result.is_success() {
         emit(
             Level::Success,
@@ -208,19 +252,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Handle skipped checks - can't fix something that was skipped
     if check_result.is_skipped() {
-        emit(
-            Level::Warn,
-            "doctor.fix.skipped",
-            &format!(
-                "{} {}: {}",
-                char::from(NerdFont::Info),
-                check.name(),
-                check_result.message()
-            ),
-            None,
-        );
         return Err(anyhow!(
             "Check '{}' was skipped: {}",
             check.name(),
@@ -246,7 +278,7 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         ));
     }
 
-    // STEP 3: Check is failing and fixable, proceed with fix
+    // STEP 4: Apply the fix
     emit(
         Level::Warn,
         "doctor.fix.available",
@@ -258,56 +290,9 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         ),
         None,
     );
-    emit(
-        Level::Info,
-        "doctor.fix.available",
-        &format!(
-            "{} Fix is available and will be applied.",
-            char::from(NerdFont::Info)
-        ),
-        None,
-    );
 
-    // Check if we have the right privileges for the fix
-    // Capture before status to pass to apply_fix (avoids running check again)
     let before_status = check_result.status_text().to_string();
-
-    match check_privilege_requirements(check.as_ref(), true) {
-        Ok(()) => {
-            // We have correct privileges, run the fix
-            apply_fix(check, &before_status).await
-        }
-        Err(PrivilegeError::NeedRoot) => {
-            // Need to escalate privileges
-            emit(
-                Level::Warn,
-                "doctor.fix.privileges",
-                &format!(
-                    "{} Fix for '{}' requires administrator privileges.",
-                    char::from(NerdFont::Warning),
-                    check.name()
-                ),
-                None,
-            );
-
-            if should_escalate(check.as_ref())? {
-                escalate_for_fix(check_id)?;
-                // This won't return - process will be restarted with sudo
-                unreachable!()
-            } else {
-                emit(
-                    Level::Info,
-                    "doctor.fix.cancelled",
-                    &format!("{} Fix cancelled by user.", char::from(NerdFont::Info)),
-                    None,
-                );
-                Ok(())
-            }
-        }
-        Err(PrivilegeError::MustNotBeRoot) => {
-            Err(anyhow!("Fix for '{}' cannot run as root", check.name()))
-        }
-    }
+    apply_fix(check, &before_status).await
 }
 
 async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>, before_status: &str) -> Result<()> {
