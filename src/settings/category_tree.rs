@@ -116,6 +116,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         ],
         Category::System => vec![
             CategoryNode::setting(&system::AboutSystem),
+            CategoryNode::setting(&system::SystemDoctor),
             CategoryNode::setting(&system::CockpitManager),
             CategoryNode::setting(&system::FirmwareManager),
             CategoryNode::setting(&system::SystemUpgrade),

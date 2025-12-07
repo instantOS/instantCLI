@@ -48,6 +48,42 @@ impl Setting for AboutSystem {
 }
 
 // ============================================================================
+// System Doctor (runs ins doctor, can't use macro due to shell command with read)
+// ============================================================================
+
+pub struct SystemDoctor;
+
+impl Setting for SystemDoctor {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("system.doctor")
+            .title("System Diagnostics")
+            .icon(NerdFont::ShieldCheck)
+            .summary("Run system diagnostics to check for common issues and available fixes.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Command
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        ctx.emit_info(
+            "settings.command.launching",
+            "Running system diagnostics...",
+        );
+        cmd!(
+            "sh",
+            "-c",
+            &format!("{} doctor && read -n 1", env!("CARGO_BIN_NAME"))
+        )
+        .run()
+        .context("running system doctor")?;
+        Ok(())
+    }
+}
+
+// ============================================================================
 // Cockpit (uses custom launch logic, can't use macro)
 // ============================================================================
 
