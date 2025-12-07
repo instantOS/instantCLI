@@ -719,11 +719,21 @@ impl FzfBuilder {
         std::fs::create_dir_all(&preview_dir)?;
 
         for (idx, item) in items.iter().enumerate() {
-            if let FzfPreview::Text(preview) = item.fzf_preview() {
-                let preview_path = preview_dir.join(format!("{}.txt", idx));
-                if let Ok(mut file) = std::fs::File::create(&preview_path) {
-                    let _ = file.write_all(preview.as_bytes());
+            match item.fzf_preview() {
+                FzfPreview::Text(preview) => {
+                    let preview_path = preview_dir.join(format!("{}.txt", idx));
+                    if let Ok(mut file) = std::fs::File::create(&preview_path) {
+                        let _ = file.write_all(preview.as_bytes());
+                    }
                 }
+                FzfPreview::Command(cmd) => {
+                    // Write a shell script that FZF can execute
+                    let preview_path = preview_dir.join(format!("{}.sh", idx));
+                    if let Ok(mut file) = std::fs::File::create(&preview_path) {
+                        let _ = file.write_all(cmd.as_bytes());
+                    }
+                }
+                FzfPreview::None => {}
             }
         }
         Ok(preview_dir)
@@ -746,9 +756,10 @@ impl FzfBuilder {
         cmd.arg("--bind").arg("enter:become(echo {n})");
 
         // Preview command using {n} for the 0-based item index
+        // Check for .sh script first (Command preview), then .txt (Text preview)
         let preview_cmd = format!(
-            "cat {}/{{n}}.txt 2>/dev/null || echo ''",
-            preview_dir.display()
+            "if [ -f {dir}/{{n}}.sh ]; then bash {dir}/{{n}}.sh; elif [ -f {dir}/{{n}}.txt ]; then cat {dir}/{{n}}.txt; fi",
+            dir = preview_dir.display()
         );
         cmd.arg("--preview").arg(&preview_cmd);
 
