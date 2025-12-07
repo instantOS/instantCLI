@@ -2,7 +2,9 @@ use anyhow::Result;
 use clap::Subcommand;
 use colored::*;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Row, Table, presets::UTF8_FULL};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::fmt::Display;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DoctorCommands {
@@ -181,13 +183,31 @@ pub mod registry;
 
 pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> Vec<CheckResult> {
     use privileges::skip_reason_for_privilege_level;
+    use std::sync::Arc;
     use sudo::RunningAs;
 
     // Check privileges once before spawning any tasks
     let is_root = matches!(sudo::check(), RunningAs::Root);
 
+    let total = checks.len();
+    let completed = Arc::new(AtomicUsize::new(0));
+
+    // Create progress bar
+    let pb = ProgressBar::new(total as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} {msg} [{bar:30.cyan/blue}] {pos}/{len}")
+            .unwrap()
+            .progress_chars("█▓░"),
+    );
+    pb.set_message("Running health checks...");
+    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+
     let mut handles = vec![];
     for check in checks {
+        let completed = Arc::clone(&completed);
+        let pb = pb.clone();
+
         let handle = tokio::spawn(async move {
             let name = check.name().to_string();
             let check_id = check.id().to_string();
@@ -201,6 +221,10 @@ pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> 
             } else {
                 check.execute().await
             };
+
+            // Update progress
+            let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
+            pb.set_position(done as u64);
 
             CheckResult {
                 name,
@@ -218,6 +242,8 @@ pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> 
             results.push(result);
         }
     }
+
+    pb.finish_and_clear();
     results
 }
 
