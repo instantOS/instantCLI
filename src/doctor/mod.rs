@@ -380,21 +380,9 @@ pub fn print_single_check_result_table(result: &CheckResult) {
                     Cell::new("Message").add_attribute(Attribute::Bold),
                 ]));
 
-            let status_text = match &result.status {
-                CheckStatus::Pass(_) => "PASS",
-                CheckStatus::Fail { .. } => "FAIL",
-            };
-            let status_color = match &result.status {
-                CheckStatus::Pass(_) => Color::Green,
-                CheckStatus::Fail { .. } => Color::Red,
-            };
-            let status_cell = Cell::new(status_text).fg(status_color);
-
-            let check_color = match &result.status {
-                CheckStatus::Pass(_) => Color::Green,
-                CheckStatus::Fail { .. } => Color::Red,
-            };
-            let check_cell = Cell::new(&result.name).fg(check_color);
+            let status_cell =
+                Cell::new(result.status.status_text()).fg(result.status.status_color());
+            let check_cell = Cell::new(&result.name).fg(result.status.status_color());
 
             let msg = format!(
                 "{}{}",
