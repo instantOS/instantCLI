@@ -30,14 +30,18 @@ pub enum PrivilegeLevel {
 #[derive(Debug, Clone)]
 pub enum CheckStatus {
     Pass(String),
+    Warning { message: String, fixable: bool },
     Fail { message: String, fixable: bool },
+    Skipped(String),
 }
 
 impl CheckStatus {
     pub fn message(&self) -> &String {
         match self {
             CheckStatus::Pass(msg) => msg,
+            CheckStatus::Warning { message, .. } => message,
             CheckStatus::Fail { message, .. } => message,
+            CheckStatus::Skipped(msg) => msg,
         }
     }
 
@@ -45,43 +49,62 @@ impl CheckStatus {
         matches!(self, CheckStatus::Pass(_))
     }
 
+    pub fn is_warning(&self) -> bool {
+        matches!(self, CheckStatus::Warning { .. })
+    }
+
+    pub fn is_skipped(&self) -> bool {
+        matches!(self, CheckStatus::Skipped(_))
+    }
+
     pub fn is_fixable(&self) -> bool {
         match self {
             CheckStatus::Pass(_) => false,
+            CheckStatus::Warning { fixable, .. } => *fixable,
             CheckStatus::Fail { fixable, .. } => *fixable,
+            CheckStatus::Skipped(_) => false,
         }
     }
 
     pub fn needs_fix(&self) -> bool {
-        !self.is_success()
+        matches!(self, CheckStatus::Fail { .. })
     }
 
     pub fn status_text(&self) -> &'static str {
         match self {
             CheckStatus::Pass(_) => "PASS",
+            CheckStatus::Warning { .. } => "WARN",
             CheckStatus::Fail { .. } => "FAIL",
+            CheckStatus::Skipped(_) => "SKIP",
         }
     }
 
     pub fn status_color(&self) -> Color {
         match self {
             CheckStatus::Pass(_) => Color::Green,
+            CheckStatus::Warning { .. } => Color::Yellow,
             CheckStatus::Fail { .. } => Color::Red,
+            CheckStatus::Skipped(_) => Color::DarkGrey,
         }
     }
 
     pub fn color_status(&self) -> impl std::fmt::Display {
         match self {
             CheckStatus::Pass(_) => "PASS".green(),
+            CheckStatus::Warning { .. } => "WARN".yellow(),
             CheckStatus::Fail { .. } => "FAIL".red(),
+            CheckStatus::Skipped(_) => "SKIP".dimmed(),
         }
     }
 
     pub fn fixable_indicator(&self) -> &'static str {
         match self {
             CheckStatus::Pass(_) => "",
+            CheckStatus::Warning { fixable: true, .. } => " (fixable)",
+            CheckStatus::Warning { fixable: false, .. } => "",
             CheckStatus::Fail { fixable: true, .. } => " (fixable)",
             CheckStatus::Fail { fixable: false, .. } => " (not fixable)",
+            CheckStatus::Skipped(_) => "",
         }
     }
 }
