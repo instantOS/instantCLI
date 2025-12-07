@@ -107,6 +107,17 @@ impl CheckStatus {
             CheckStatus::Skipped(_) => "",
         }
     }
+
+    /// Returns a priority value for sorting (lower = more important, shown first)
+    /// Order: Fail (0) -> Warning (1) -> Pass (2) -> Skipped (3)
+    pub fn sort_priority(&self) -> u8 {
+        match self {
+            CheckStatus::Fail { .. } => 0,
+            CheckStatus::Warning { .. } => 1,
+            CheckStatus::Pass(_) => 2,
+            CheckStatus::Skipped(_) => 3,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -317,6 +328,10 @@ pub fn print_results_table(results: &[CheckResult]) {
             );
         }
         crate::ui::OutputFormat::Text => {
+            // Sort results: Fail -> Warning -> Pass -> Skipped
+            let mut sorted_results: Vec<_> = results.iter().collect();
+            sorted_results.sort_by_key(|r| r.status.sort_priority());
+
             let mut table = Table::new();
             table
                 .load_preset(UTF8_FULL)
@@ -327,7 +342,7 @@ pub fn print_results_table(results: &[CheckResult]) {
                     Cell::new("Message").add_attribute(Attribute::Bold),
                 ]));
 
-            for result in results {
+            for result in sorted_results {
                 let status_cell =
                     Cell::new(result.status.status_text()).fg(result.status.status_color());
                 let check_cell = Cell::new(&result.name).fg(result.status.status_color());
