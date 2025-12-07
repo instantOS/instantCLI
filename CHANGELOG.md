@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3](https://github.com/instantOS/instantCLI/compare/v0.10.2...v0.10.3) - 2025-12-07
+
+### Fixed
+
+- fix race condition?
+- fix pacman check with temp files
+- fix GTK 4 symlink handling
+
+### Other
+
+- make pacman checks skip non-arch
+- fmt
+- add stale pacman dirs check
+- better base distro detection
+- better OS detection
+- show skip hints
+- add system doctor setting
+
 ## [0.10.2](https://github.com/instantOS/instantCLI/compare/v0.10.1...v0.10.2) - 2025-12-07
 
 ### Fixed
