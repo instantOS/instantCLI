@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2](https://github.com/instantOS/instantCLI/compare/v0.10.1...v0.10.2) - 2025-12-07
+
+### Fixed
+
+- fix spinner
+- fix fixing logic
+- fix colors
+
+### Other
+
+- clippy
+- add progress bar to `ins doctor`
+- consolidate checking
+- clean up privilege checks
+- introduce checks for root-only tests
+- add a fix function for SMART
+- add pacman sync warning
+- init drive health check
+- add update check warning
+- add swap check
+- add fix hints for warnings
+- add doctor check sorting
+- better color handling
+- add more statuses to doctor
+- conditional check for instantOS repo
+- add more doctor checks
+- improve `ins arch setup`
+- make sudo setup idempotent
+- disable notifications on settings apply
+- make user previews prettier
+- sync PKGBUILD version
+- release v0.9.3
+- remove dead code
+
 ## [0.10.1](https://github.com/instantOS/instantCLI/compare/v0.10.0...v0.10.1) - 2025-12-06
 
 ### Other
