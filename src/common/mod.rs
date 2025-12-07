@@ -3,6 +3,7 @@ pub mod dependencies;
 pub mod display_server;
 pub mod distro;
 pub mod git;
+pub mod instantwm;
 pub mod network;
 pub mod pacman;
 pub mod paths;

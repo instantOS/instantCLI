@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::common::compositor::CompositorType;
+use crate::common::instantwm::InstantWmController;
 use crate::common::requirements::{YAZI_PACKAGE, ZENITY_PACKAGE};
 use crate::menu_utils::{FzfWrapper, MenuWrapper};
 use crate::settings::context::SettingsContext;
@@ -55,30 +56,15 @@ impl Setting for Animations {
             return Ok(());
         }
 
-        // Note: instantwmctl animated uses inverted logic:
-        // 0 = animations enabled, 1 = animations disabled
-        let animated_value = if enabled { "0" } else { "1" };
-        let status = Command::new("instantwmctl")
-            .args(["animated", animated_value])
-            .status();
-
-        match status {
-            Ok(exit) if exit.success() => {
+        let controller = InstantWmController::new();
+        match controller.set_animations(enabled) {
+            Ok(()) => {
                 ctx.notify("Animations", if enabled { "Enabled" } else { "Disabled" });
-            }
-            Ok(exit) => {
-                ctx.emit_failure(
-                    "settings.appearance.animations.apply_failed",
-                    &format!(
-                        "Failed to apply animation setting (exit code {}).",
-                        exit.code().unwrap_or(-1)
-                    ),
-                );
             }
             Err(err) => {
                 ctx.emit_failure(
                     "settings.appearance.animations.apply_error",
-                    &format!("Failed to run instantwmctl: {err}"),
+                    &format!("Failed to apply animation setting: {err}"),
                 );
             }
         }
@@ -93,15 +79,10 @@ impl Setting for Animations {
         }
 
         let enabled = ctx.bool(Self::KEY);
-        // Note: instantwmctl animated uses inverted logic:
-        // 0 = animations enabled, 1 = animations disabled
-        let animated_value = if enabled { "0" } else { "1" };
-        let status = Command::new("instantwmctl")
-            .args(["animated", animated_value])
-            .status();
+        let controller = InstantWmController::new();
 
-        let result = match status {
-            Ok(exit) if exit.success() => {
+        let result = match controller.set_animations(enabled) {
+            Ok(()) => {
                 ctx.emit_info(
                     "settings.appearance.animations.restored",
                     &format!(
@@ -111,20 +92,10 @@ impl Setting for Animations {
                 );
                 Ok(())
             }
-            Ok(exit) => {
-                ctx.emit_failure(
-                    "settings.appearance.animations.restore_failed",
-                    &format!(
-                        "Failed to restore instantwm animations (exit code {}).",
-                        exit.code().unwrap_or(-1)
-                    ),
-                );
-                Ok(())
-            }
             Err(err) => {
                 ctx.emit_failure(
                     "settings.appearance.animations.restore_error",
-                    &format!("Failed to run instantwmctl: {err}"),
+                    &format!("Failed to restore animations: {err}"),
                 );
                 Ok(())
             }

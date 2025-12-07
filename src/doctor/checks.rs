@@ -533,7 +533,8 @@ impl DoctorCheck for PendingUpdatesCheck {
                     // Unknown failure - could be temp db issue, network, stale lock, etc.
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     let message = if stderr.trim().is_empty() {
-                        "checkupdates failed (unknown cause - may be temp db or network issue)".to_string()
+                        "checkupdates failed (unknown cause - may be temp db or network issue)"
+                            .to_string()
                     } else {
                         format!("checkupdates failed: {}", stderr.trim())
                     };
@@ -545,7 +546,10 @@ impl DoctorCheck for PendingUpdatesCheck {
 
                 if !output.status.success() {
                     return CheckStatus::Fail {
-                        message: format!("checkupdates failed with exit code {:?}", output.status.code()),
+                        message: format!(
+                            "checkupdates failed with exit code {:?}",
+                            output.status.code()
+                        ),
                         fixable: false,
                     };
                 }
