@@ -58,6 +58,18 @@ pub fn detect_distro() -> Result<Distro> {
     parse_os_release(&content)
 }
 
+/// Check if the system is running instantOS
+pub fn is_instantos() -> bool {
+    if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
+        for line in content.lines() {
+            if let Some(val) = line.strip_prefix("ID=") {
+                return val.trim_matches('"') == "instantos";
+            }
+        }
+    }
+    false
+}
+
 pub fn is_live_iso() -> bool {
     Path::new("/run/archiso/cowspace").exists()
 }

@@ -81,6 +81,11 @@ impl DoctorCheck for InstantRepoCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
+        // Only check on instantOS
+        if !crate::common::distro::is_instantos() {
+            return CheckStatus::Pass("Not running on instantOS (check skipped)".to_string());
+        }
+
         // Check if /etc/pacman.conf contains [instant] section
         match tokio::fs::read_to_string("/etc/pacman.conf").await {
             Ok(content) => {
