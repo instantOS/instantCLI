@@ -299,6 +299,112 @@ async fn calculate_dir_size(path: &str) -> Result<u64> {
     Ok(total_size)
 }
 
+/// Check if pacman is currently running by looking for its lock file
+async fn is_pacman_running() -> bool {
+    // Pacman uses /var/lib/pacman/db.lck as a lock file when running
+    std::path::Path::new("/var/lib/pacman/db.lck").exists()
+}
+
+#[derive(Default)]
+pub struct PacmanStaleDownloadsCheck;
+
+impl PacmanStaleDownloadsCheck {
+    const CACHE_DIR: &'static str = "/var/cache/pacman/pkg";
+}
+
+#[async_trait]
+impl DoctorCheck for PacmanStaleDownloadsCheck {
+    fn name(&self) -> &'static str {
+        "Pacman Stale Downloads"
+    }
+
+    fn id(&self) -> &'static str {
+        "pacman-stale-downloads"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Any // Can list directory as any user
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Root // Removing directories requires root
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        // Check if pacman is currently running - if so, download dirs are in use
+        if is_pacman_running().await {
+            return CheckStatus::Pass("Pacman is running, download directories are in use".to_string());
+        }
+
+        // Look for download-* directories in the pacman cache
+        // These are leftover from interrupted package downloads
+        let entries = match std::fs::read_dir(Self::CACHE_DIR) {
+            Ok(entries) => entries,
+            Err(e) => {
+                return CheckStatus::Fail {
+                    message: format!("Could not read cache directory: {}", e),
+                    fixable: false,
+                };
+            }
+        };
+
+        let stale_dirs: Vec<String> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let path = entry.path();
+                let file_name = path.file_name()?.to_string_lossy().to_string();
+                if path.is_dir() && file_name.starts_with("download-") {
+                    Some(file_name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if stale_dirs.is_empty() {
+            CheckStatus::Pass("No stale download directories found".to_string())
+        } else {
+            CheckStatus::Warning {
+                message: format!(
+                    "Found {} stale download director{}: {}",
+                    stale_dirs.len(),
+                    if stale_dirs.len() == 1 { "y" } else { "ies" },
+                    stale_dirs.join(", ")
+                ),
+                fixable: true,
+            }
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Remove stale download directories from pacman cache".to_string())
+    }
+
+    async fn fix(&self) -> Result<()> {
+        // Don't remove directories if pacman is running
+        if is_pacman_running().await {
+            return Err(anyhow::anyhow!("Pacman is currently running, cannot remove download directories"));
+        }
+
+        let entries = std::fs::read_dir(Self::CACHE_DIR)?;
+
+        let mut removed = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(file_name) = path.file_name() {
+                if path.is_dir() && file_name.to_string_lossy().starts_with("download-") {
+                    std::fs::remove_dir_all(&path)?;
+                    removed += 1;
+                    println!("Removed: {}", path.display());
+                }
+            }
+        }
+
+        println!("Removed {} stale download director{}.", removed, if removed == 1 { "y" } else { "ies" });
+        Ok(())
+    }
+}
+
 #[derive(Default)]
 pub struct SwapCheck;
 
