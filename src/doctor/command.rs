@@ -315,7 +315,7 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>, before_status: &st
             let after_result = check.execute().await;
             let after_status = after_result.status_text().to_string();
 
-            super::print_fix_summary_table(check_name, &before_status, &after_status);
+            super::print_fix_summary_table(check_name, before_status, &after_status);
             Ok(())
         }
         Err(e) => {

@@ -321,20 +321,20 @@ impl DoctorCheck for SwapCheck {
                     if line.starts_with("SwapTotal:") {
                         // Format: SwapTotal:       16777212 kB
                         let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 2 {
-                            if let Ok(swap_kb) = parts[1].parse::<u64>() {
-                                if swap_kb == 0 {
-                                    return CheckStatus::Warning {
-                                        message: "No swap space available".to_string(),
-                                        fixable: false,
-                                    };
-                                } else {
-                                    let swap_gb = swap_kb as f64 / (1024.0 * 1024.0);
-                                    return CheckStatus::Pass(format!(
-                                        "Swap space available: {:.2} GB",
-                                        swap_gb
-                                    ));
-                                }
+                        if parts.len() >= 2
+                            && let Ok(swap_kb) = parts[1].parse::<u64>()
+                        {
+                            if swap_kb == 0 {
+                                return CheckStatus::Warning {
+                                    message: "No swap space available".to_string(),
+                                    fixable: false,
+                                };
+                            } else {
+                                let swap_gb = swap_kb as f64 / (1024.0 * 1024.0);
+                                return CheckStatus::Pass(format!(
+                                    "Swap space available: {:.2} GB",
+                                    swap_gb
+                                ));
                             }
                         }
                     }
@@ -574,10 +574,8 @@ impl DoctorCheck for SmartHealthCheck {
         use crate::common::systemd::{ServiceScope, SystemdManager};
 
         // Install smartmontools using the standard ensure() flow if not installed
-        if !SMARTMONTOOLS_PACKAGE.is_installed() {
-            if !SMARTMONTOOLS_PACKAGE.ensure()? {
-                return Err(anyhow::anyhow!("smartmontools installation cancelled"));
-            }
+        if !SMARTMONTOOLS_PACKAGE.is_installed() && !SMARTMONTOOLS_PACKAGE.ensure()? {
+            return Err(anyhow::anyhow!("smartmontools installation cancelled"));
         }
 
         // Enable and start smartd service
@@ -643,15 +641,14 @@ impl DoctorCheck for PacmanDbSyncCheck {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("db") {
-                if let Ok(metadata) = path.metadata() {
-                    if let Ok(modified) = metadata.modified() {
-                        most_recent = Some(match most_recent {
-                            Some(current) => current.max(modified),
-                            None => modified,
-                        });
-                    }
-                }
+            if path.extension().and_then(|e| e.to_str()) == Some("db")
+                && let Ok(metadata) = path.metadata()
+                && let Ok(modified) = metadata.modified()
+            {
+                most_recent = Some(match most_recent {
+                    Some(current) => current.max(modified),
+                    None => modified,
+                });
             }
         }
 
