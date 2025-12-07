@@ -16,7 +16,8 @@ impl CheckRegistry {
         // Register all checks
         registry.register::<InternetCheck>("internet");
         registry.register::<InstantRepoCheck>("instant-repo");
-        // Easy to add more checks here
+        registry.register::<LocaleCheck>("locale");
+        registry.register::<PacmanCacheCheck>("pacman-cache");
 
         registry
     }
