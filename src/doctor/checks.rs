@@ -351,3 +351,91 @@ impl DoctorCheck for SwapCheck {
         }
     }
 }
+
+#[derive(Default)]
+pub struct PendingUpdatesCheck;
+
+impl PendingUpdatesCheck {
+    const WARN_THRESHOLD: usize = 50;
+}
+
+#[async_trait]
+impl DoctorCheck for PendingUpdatesCheck {
+    fn name(&self) -> &'static str {
+        "Pending System Updates"
+    }
+
+    fn id(&self) -> &'static str {
+        "pending-updates"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Any // checkupdates runs as user
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Root // pacman -Syu requires root
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        // Run checkupdates to get list of pending updates
+        let output = TokioCommand::new("checkupdates").output().await;
+
+        match output {
+            Ok(output) => {
+                // checkupdates exits with 0 if updates available, 1 if none, 2 on error
+                if output.status.code() == Some(1) {
+                    // No updates available
+                    return CheckStatus::Pass("System is up to date".to_string());
+                }
+
+                if !output.status.success() && output.status.code() != Some(0) {
+                    return CheckStatus::Fail {
+                        message: "checkupdates failed to run".to_string(),
+                        fixable: false,
+                    };
+                }
+
+                // Count the number of pending updates (one per line)
+                let update_count = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .filter(|line| !line.is_empty())
+                    .count();
+
+                if update_count == 0 {
+                    CheckStatus::Pass("System is up to date".to_string())
+                } else if update_count > Self::WARN_THRESHOLD {
+                    CheckStatus::Warning {
+                        message: format!(
+                            "{} pending updates (exceeds {} threshold)",
+                            update_count,
+                            Self::WARN_THRESHOLD
+                        ),
+                        fixable: true,
+                    }
+                } else {
+                    CheckStatus::Pass(format!("{} pending updates", update_count))
+                }
+            }
+            Err(e) => CheckStatus::Fail {
+                message: format!("Could not run checkupdates: {}", e),
+                fixable: false,
+            },
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Update system packages with pacman -Syu".to_string())
+    }
+
+    async fn fix(&self) -> Result<()> {
+        // Run pacman -Syu
+        let status = TokioCommand::new("pacman").arg("-Syu").status().await?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("pacman -Syu failed"))
+        }
+    }
+}

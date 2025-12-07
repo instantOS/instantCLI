@@ -19,6 +19,7 @@ impl CheckRegistry {
         registry.register::<LocaleCheck>("locale");
         registry.register::<PacmanCacheCheck>("pacman-cache");
         registry.register::<SwapCheck>("swap");
+        registry.register::<PendingUpdatesCheck>("pending-updates");
 
         registry
     }
