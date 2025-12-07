@@ -16,6 +16,13 @@ pub async fn setup_instantos(
     if !minimal_mode {
         setup_instant_repo(executor).await?;
         crate::common::pacman::configure_pacman_settings(None, executor.dry_run).await?;
+
+        // Add instantOS-specific system configuration
+        println!("Configuring instantOS system settings...");
+
+        // Configure sudo with pwfeedback (CRITICAL - main missing piece from instantOS setup)
+        // Reuse the same configure_sudo function used by ins arch exec
+        crate::arch::execution::config::configure_sudo(context, executor)?;
     }
 
     // Install extended packages (GUI, tools, drivers)

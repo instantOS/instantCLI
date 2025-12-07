@@ -302,7 +302,7 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
     Ok(())
 }
 
-fn configure_sudo(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub fn configure_sudo(_context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Configuring sudoers...");
     // Uncomment %wheel ALL=(ALL:ALL) ALL
 
@@ -315,7 +315,14 @@ fn configure_sudo(_context: &InstallContext, executor: &CommandExecutor) -> Resu
             std::fs::read_to_string(sudoers_path).context("Failed to read /etc/sudoers")?;
 
         let mut new_lines = Vec::new();
+        let mut has_pwfeedback = false;  // Track if pwfeedback already exists
+
         for line in content.lines() {
+            // Check if pwfeedback line already exists
+            if line.contains("Defaults") && line.contains("pwfeedback") {
+                has_pwfeedback = true;
+            }
+
             if line.contains("%wheel ALL=(ALL:ALL) ALL") && line.trim().starts_with('#') {
                 new_lines.push(line.replacen('#', "", 1).trim().to_string());
             } else {
@@ -323,8 +330,10 @@ fn configure_sudo(_context: &InstallContext, executor: &CommandExecutor) -> Resu
             }
         }
 
-        // Add defaults if not present
-        new_lines.push("Defaults env_reset,pwfeedback".to_string());
+        // Add defaults only if not present (FIXED: Check has_pwfeedback first)
+        if !has_pwfeedback {
+            new_lines.push("Defaults env_reset,pwfeedback".to_string());
+        }
 
         std::fs::write(sudoers_path, new_lines.join("\n"))?;
     }
