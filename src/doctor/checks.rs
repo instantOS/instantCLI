@@ -520,15 +520,32 @@ impl DoctorCheck for PendingUpdatesCheck {
 
         match output {
             Ok(output) => {
-                // checkupdates exits with 0 if updates available, 1 if none, 2 on error
-                if output.status.code() == Some(1) {
+                // checkupdates exit codes (per man page):
+                // 0 = updates available (outputs list)
+                // 1 = unknown cause of failure
+                // 2 = no updates available
+                if output.status.code() == Some(2) {
                     // No updates available
                     return CheckStatus::Pass("System is up to date".to_string());
                 }
 
-                if !output.status.success() && output.status.code() != Some(0) {
+                if output.status.code() == Some(1) {
+                    // Unknown failure - could be temp db issue, network, stale lock, etc.
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let message = if stderr.trim().is_empty() {
+                        "checkupdates failed (unknown cause - may be temp db or network issue)".to_string()
+                    } else {
+                        format!("checkupdates failed: {}", stderr.trim())
+                    };
+                    return CheckStatus::Warning {
+                        message,
+                        fixable: false,
+                    };
+                }
+
+                if !output.status.success() {
                     return CheckStatus::Fail {
-                        message: "checkupdates failed to run".to_string(),
+                        message: format!("checkupdates failed with exit code {:?}", output.status.code()),
                         fixable: false,
                     };
                 }

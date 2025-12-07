@@ -273,10 +273,12 @@ impl Dotfile {
 mod tests {
     use super::Dotfile;
     use crate::dot::db::{Database, DotFileType};
+    use serial_test::serial;
     use std::fs;
     use tempfile::tempdir;
 
     #[test]
+    #[serial]
     fn test_apply_and_fetch() {
         let dir = tempdir().unwrap();
         let repo_path = dir.path().join("repo");
@@ -308,6 +310,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_fetch_updates_hash_cache() {
         let dir = tempdir().unwrap();
         let repo_path = dir.path().join("repo");
