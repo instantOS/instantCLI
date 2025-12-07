@@ -229,6 +229,11 @@ impl DoctorCheck for PacmanCacheCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
+        // Only run on Arch-based systems
+        if !crate::common::distro::OperatingSystem::detect().is_arch_based() {
+            return CheckStatus::Skipped("Not an Arch-based system".to_string());
+        }
+
         // Calculate total size of pacman cache directory
         match calculate_dir_size(Self::CACHE_DIR).await {
             Ok(size) => {
@@ -331,6 +336,11 @@ impl DoctorCheck for PacmanStaleDownloadsCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
+        // Only run on Arch-based systems
+        if !crate::common::distro::OperatingSystem::detect().is_arch_based() {
+            return CheckStatus::Skipped("Not an Arch-based system".to_string());
+        }
+
         // Check if pacman is currently running - if so, download dirs are in use
         if is_pacman_running().await {
             return CheckStatus::Pass(
@@ -500,6 +510,11 @@ impl DoctorCheck for PendingUpdatesCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
+        // Only run on Arch-based systems
+        if !crate::common::distro::OperatingSystem::detect().is_arch_based() {
+            return CheckStatus::Skipped("Not an Arch-based system".to_string());
+        }
+
         // Run checkupdates to get list of pending updates
         let output = TokioCommand::new("checkupdates").output().await;
 
@@ -736,6 +751,11 @@ impl DoctorCheck for PacmanDbSyncCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
+        // Only run on Arch-based systems
+        if !crate::common::distro::OperatingSystem::detect().is_arch_based() {
+            return CheckStatus::Skipped("Not an Arch-based system".to_string());
+        }
+
         use std::time::{Duration, SystemTime};
 
         // Find the most recent sync database file
