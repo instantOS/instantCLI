@@ -118,6 +118,17 @@ impl CheckStatus {
             CheckStatus::Skipped(_) => 3,
         }
     }
+
+    /// Get color for a status text string (for display purposes)
+    pub fn color_for_status_text(status_text: &str) -> Color {
+        match status_text {
+            "PASS" => Color::Green,
+            "WARN" => Color::Yellow,
+            "FAIL" => Color::Red,
+            "SKIP" => Color::DarkGrey,
+            _ => Color::White,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -461,8 +472,8 @@ pub fn print_fix_summary_table(check_name: &str, before_status: &str, after_stat
 
             table.add_row(Row::from(vec![
                 Cell::new(check_name),
-                Cell::new(before_status).fg(Color::Red),
-                Cell::new(after_status).fg(Color::Green),
+                Cell::new(before_status).fg(CheckStatus::color_for_status_text(before_status)),
+                Cell::new(after_status).fg(CheckStatus::color_for_status_text(after_status)),
             ]));
 
             println!("{}", "Fix Summary:".bold());
