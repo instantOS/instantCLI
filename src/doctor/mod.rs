@@ -180,14 +180,35 @@ pub mod privileges;
 pub mod registry;
 
 pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> Vec<CheckResult> {
+    use sudo::RunningAs;
+
+    let current_privileges = sudo::check();
+
     let mut handles = vec![];
     for check in checks {
-        let check_clone = check; // since moved into spawn
+        let check_clone = check;
+        let current_privs = current_privileges;
+
         let handle = tokio::spawn(async move {
             let name = check_clone.name().to_string();
             let check_id = check_clone.id().to_string();
-            let status = check_clone.execute().await;
             let fix_message = check_clone.fix_message();
+
+            // Check privilege requirements
+            let required_level = check_clone.check_privilege_level();
+            let status = match (required_level, current_privs) {
+                // Root required but running as user - skip
+                (PrivilegeLevel::Root, RunningAs::User) => {
+                    CheckStatus::Skipped("Requires root privileges".to_string())
+                }
+                // User-only check but running as root - skip
+                (PrivilegeLevel::User, RunningAs::Root) => {
+                    CheckStatus::Skipped("Cannot run as root".to_string())
+                }
+                // All other cases - run the check
+                _ => check_clone.execute().await,
+            };
+
             CheckResult {
                 name,
                 check_id,
