@@ -21,6 +21,16 @@ pub fn check_privilege_requirements(
     }
 }
 
+/// Check if a check should be skipped based on current privileges.
+/// Returns Some(reason) if the check should be skipped, None if it can run.
+pub fn should_skip_for_privileges(required: PrivilegeLevel) -> Option<&'static str> {
+    match (required, sudo::check()) {
+        (PrivilegeLevel::Root, RunningAs::User) => Some("Requires root privileges"),
+        (PrivilegeLevel::User, RunningAs::Root) => Some("Cannot run as root"),
+        _ => None,
+    }
+}
+
 pub fn escalate_for_fix(_check_id: &str) -> Result<(), anyhow::Error> {
     // Use sudo crate to restart with privileges
     match sudo::with_env(&["RUST_BACKTRACE", "RUST_LOG"]) {
