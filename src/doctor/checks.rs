@@ -278,9 +278,16 @@ async fn calculate_dir_size(path: &str) -> Result<u64> {
     let mut dirs_to_visit = vec![std::path::PathBuf::from(path)];
 
     while let Some(dir) = dirs_to_visit.pop() {
-        let mut entries = tokio::fs::read_dir(&dir).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            let metadata = entry.metadata().await?;
+        // Skip directories we can't read (e.g., pacman temp download dirs with 700 permissions)
+        let mut entries = match tokio::fs::read_dir(&dir).await {
+            Ok(entries) => entries,
+            Err(_) => continue, // Skip inaccessible directories
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            // Skip entries we can't stat
+            let Ok(metadata) = entry.metadata().await else {
+                continue;
+            };
             if metadata.is_file() {
                 total_size += metadata.len();
             } else if metadata.is_dir() {
