@@ -697,3 +697,10 @@ pub const ZENITY_PACKAGE: RequiredPackage = RequiredPackage {
     ubuntu_package_name: Some("zenity"),
     tests: &[InstallTest::WhichSucceeds("zenity")],
 };
+
+pub const SMARTMONTOOLS_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "S.M.A.R.T. monitoring tools",
+    arch_package_name: Some("smartmontools"),
+    ubuntu_package_name: Some("smartmontools"),
+    tests: &[InstallTest::WhichSucceeds("smartctl")],
+};

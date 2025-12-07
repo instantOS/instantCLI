@@ -439,3 +439,140 @@ impl DoctorCheck for PendingUpdatesCheck {
         }
     }
 }
+
+#[derive(Default)]
+pub struct SmartHealthCheck;
+
+#[async_trait]
+impl DoctorCheck for SmartHealthCheck {
+    fn name(&self) -> &'static str {
+        "S.M.A.R.T. Disk Health"
+    }
+
+    fn id(&self) -> &'static str {
+        "smart-health"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Root // smartctl requires root
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Root
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        use crate::common::requirements::SMARTMONTOOLS_PACKAGE;
+
+        // First, check if smartctl is available
+        if !SMARTMONTOOLS_PACKAGE.is_installed() {
+            return CheckStatus::Warning {
+                message: format!(
+                    "smartctl not installed ({})",
+                    SMARTMONTOOLS_PACKAGE.install_hint()
+                ),
+                fixable: false,
+            };
+        }
+
+        // Scan for drives using smartctl --scan
+        let scan_output = TokioCommand::new("smartctl")
+            .arg("--scan")
+            .output()
+            .await;
+
+        let drives: Vec<String> = match scan_output {
+            Ok(output) if output.status.success() => {
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .filter_map(|line| {
+                        // Format: /dev/sda -d sat # ...
+                        line.split_whitespace().next().map(|s| s.to_string())
+                    })
+                    .collect()
+            }
+            _ => {
+                return CheckStatus::Warning {
+                    message: "Could not scan for drives".to_string(),
+                    fixable: false,
+                };
+            }
+        };
+
+        if drives.is_empty() {
+            return CheckStatus::Pass("No S.M.A.R.T. capable drives detected".to_string());
+        }
+
+        let mut healthy_drives = Vec::new();
+        let mut unhealthy_drives = Vec::new();
+        let mut unsupported_drives = Vec::new();
+
+        for drive in &drives {
+            // Check health status with smartctl -H
+            let health_output = TokioCommand::new("smartctl")
+                .arg("-H")
+                .arg(drive)
+                .output()
+                .await;
+
+            match health_output {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if stdout.contains("PASSED") || stdout.contains("OK") {
+                        healthy_drives.push(drive.clone());
+                    } else if stdout.contains("FAILED") {
+                        unhealthy_drives.push(drive.clone());
+                    } else if stdout.contains("Not supported")
+                        || stdout.contains("Unknown USB bridge")
+                    {
+                        unsupported_drives.push(drive.clone());
+                    } else {
+                        // Treat unknown status as healthy if exit code is 0
+                        if output.status.success() {
+                            healthy_drives.push(drive.clone());
+                        } else {
+                            unsupported_drives.push(drive.clone());
+                        }
+                    }
+                }
+                Err(_) => {
+                    unsupported_drives.push(drive.clone());
+                }
+            }
+        }
+
+        if !unhealthy_drives.is_empty() {
+            return CheckStatus::Fail {
+                message: format!(
+                    "S.M.A.R.T. health FAILED on: {}",
+                    unhealthy_drives.join(", ")
+                ),
+                fixable: false, // Can't fix failing hardware
+            };
+        }
+
+        if healthy_drives.is_empty() && !unsupported_drives.is_empty() {
+            return CheckStatus::Pass(format!(
+                "{} drive(s) do not support S.M.A.R.T.",
+                unsupported_drives.len()
+            ));
+        }
+
+        CheckStatus::Pass(format!("All {} drive(s) healthy", healthy_drives.len()))
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Enable smartd service for continuous monitoring".to_string())
+    }
+
+    async fn fix(&self) -> Result<()> {
+        use crate::common::systemd::{ServiceScope, SystemdManager};
+
+        // Enable and start smartd service using SystemdManager
+        let manager = SystemdManager::new(ServiceScope::System);
+        manager.enable_and_start("smartd")?;
+
+        println!("smartd service enabled and started for continuous disk monitoring.");
+        Ok(())
+    }
+}
