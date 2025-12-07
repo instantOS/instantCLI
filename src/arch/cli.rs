@@ -60,14 +60,13 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         PartitionSelectorQuestion, PartitioningMethodQuestion, PasswordQuestion, RunCfdiskQuestion,
         TimezoneQuestion, UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
     };
-    use crate::common::distro::{Distro, detect_distro, is_live_iso};
+    use crate::common::distro::{OperatingSystem, is_live_iso};
 
-    if let Ok(distro) = detect_distro()
-        && distro != Distro::Arch
-    {
+    let os = OperatingSystem::detect();
+    if !os.is_arch_based() {
         eprintln!(
             "Warning: You appear to be running on {}, but this command is intended for Arch Linux.",
-            distro
+            os
         );
     }
 

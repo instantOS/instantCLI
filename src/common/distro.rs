@@ -2,78 +2,227 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 
+use crate::common::requirements::PackageManager;
+
+/// Represents a detected operating system with methods for family checks
+/// and package manager detection.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Distro {
+pub enum OperatingSystem {
+    /// instantOS (Arch-based)
+    InstantOS,
+    /// Vanilla Arch Linux
     Arch,
-    Debian,
-    Ubuntu,
-    Fedora,
-    CentOS,
-    OpenSUSE,
+    /// Manjaro Linux
     Manjaro,
+    /// EndeavourOS
     EndeavourOS,
+    /// Debian
+    Debian,
+    /// Ubuntu
+    Ubuntu,
+    /// Pop!_OS (Ubuntu-based)
     PopOS,
+    /// Linux Mint (Ubuntu/Debian-based)
     LinuxMint,
+    /// Fedora
+    Fedora,
+    /// CentOS
+    CentOS,
+    /// OpenSUSE (including Leap and Tumbleweed)
+    OpenSUSE,
+    /// Unknown distribution with ID
     Unknown(String),
 }
 
-impl std::fmt::Display for Distro {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Distro::Arch => {
-                // Check if we're running on instantOS specifically
-                if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
-                    for line in content.lines() {
-                        if let Some(val) = line.strip_prefix("ID=")
-                            && val.trim_matches('"') == "instantos"
-                        {
-                            return write!(f, "instantOS (Arch-based)");
-                        }
-                    }
-                }
-                write!(f, "Arch Linux")
+/// Type alias for backward compatibility
+pub type Distro = OperatingSystem;
+
+impl OperatingSystem {
+    /// Detect the current operating system from /etc/os-release
+    pub fn detect() -> Self {
+        let os_release_path = Path::new("/etc/os-release");
+        if !os_release_path.exists() {
+            return Self::Unknown("No /etc/os-release found".to_string());
+        }
+
+        match fs::read_to_string(os_release_path) {
+            Ok(content) => Self::parse_os_release(&content),
+            Err(_) => Self::Unknown("Failed to read /etc/os-release".to_string()),
+        }
+    }
+
+    /// Parse os-release content and return the detected OS
+    fn parse_os_release(content: &str) -> Self {
+        let mut id = String::new();
+        let mut id_like = String::new();
+
+        for line in content.lines() {
+            if let Some(val) = line.strip_prefix("ID=") {
+                id = val.trim_matches('"').to_string();
+            } else if let Some(val) = line.strip_prefix("ID_LIKE=") {
+                id_like = val.trim_matches('"').to_string();
             }
-            Distro::Debian => write!(f, "Debian"),
-            Distro::Ubuntu => write!(f, "Ubuntu"),
-            Distro::Fedora => write!(f, "Fedora"),
-            Distro::CentOS => write!(f, "CentOS"),
-            Distro::OpenSUSE => write!(f, "OpenSUSE"),
-            Distro::Manjaro => write!(f, "Manjaro"),
-            Distro::EndeavourOS => write!(f, "EndeavourOS"),
-            Distro::PopOS => write!(f, "Pop!_OS"),
-            Distro::LinuxMint => write!(f, "Linux Mint"),
-            Distro::Unknown(name) => write!(f, "Unknown ({})", name),
+        }
+
+        match id.as_str() {
+            "instantos" => Self::InstantOS,
+            "arch" => Self::Arch,
+            "manjaro" => Self::Manjaro,
+            "endeavouros" => Self::EndeavourOS,
+            "debian" => Self::Debian,
+            "ubuntu" => Self::Ubuntu,
+            "pop" => Self::PopOS,
+            "linuxmint" => Self::LinuxMint,
+            "fedora" => Self::Fedora,
+            "centos" => Self::CentOS,
+            "opensuse" | "opensuse-leap" | "opensuse-tumbleweed" => Self::OpenSUSE,
+            _ => {
+                // For unknown IDs, check ID_LIKE for family detection
+                if id_like.contains("arch") {
+                    Self::Arch
+                } else if id_like.contains("ubuntu") {
+                    Self::Ubuntu
+                } else if id_like.contains("debian") {
+                    Self::Debian
+                } else if id_like.contains("fedora") || id_like.contains("rhel") {
+                    Self::Fedora
+                } else {
+                    Self::Unknown(id)
+                }
+            }
+        }
+    }
+
+    // ========================================================================
+    // Family Check Methods
+    // ========================================================================
+
+    /// Check if this is a Linux operating system (always true currently)
+    pub fn is_linux(&self) -> bool {
+        true
+    }
+
+    /// Check if this OS is Arch-based (uses pacman)
+    pub fn is_arch_based(&self) -> bool {
+        matches!(
+            self,
+            Self::Arch | Self::InstantOS | Self::Manjaro | Self::EndeavourOS
+        )
+    }
+
+    /// Check if this OS is Debian-based (uses apt)
+    pub fn is_debian_based(&self) -> bool {
+        matches!(
+            self,
+            Self::Debian | Self::Ubuntu | Self::PopOS | Self::LinuxMint
+        )
+    }
+
+    /// Check if this OS is RPM-based (uses dnf/yum)
+    pub fn is_rpm_based(&self) -> bool {
+        matches!(self, Self::Fedora | Self::CentOS | Self::OpenSUSE)
+    }
+
+    // ========================================================================
+    // Specific OS Check Methods
+    // ========================================================================
+
+    /// Check if this is instantOS specifically
+    pub fn is_instantos(&self) -> bool {
+        matches!(self, Self::InstantOS)
+    }
+
+    /// Check if this is vanilla Arch Linux
+    pub fn is_arch(&self) -> bool {
+        matches!(self, Self::Arch)
+    }
+
+    /// Check if this is Ubuntu
+    pub fn is_ubuntu(&self) -> bool {
+        matches!(self, Self::Ubuntu)
+    }
+
+    /// Check if this is Manjaro
+    pub fn is_manjaro(&self) -> bool {
+        matches!(self, Self::Manjaro)
+    }
+
+    /// Check if this is EndeavourOS
+    pub fn is_endeavouros(&self) -> bool {
+        matches!(self, Self::EndeavourOS)
+    }
+
+    // ========================================================================
+    // Package Manager Integration
+    // ========================================================================
+
+    /// Get the package manager for this operating system
+    pub fn package_manager(&self) -> Option<PackageManager> {
+        if self.is_arch_based() {
+            Some(PackageManager::Pacman)
+        } else if self.is_debian_based() {
+            Some(PackageManager::Apt)
+        } else {
+            // For RPM-based and unknown, return None (not yet supported)
+            None
+        }
+    }
+
+    /// Get the display name of the operating system
+    pub fn name(&self) -> &str {
+        match self {
+            Self::InstantOS => "instantOS",
+            Self::Arch => "Arch Linux",
+            Self::Manjaro => "Manjaro",
+            Self::EndeavourOS => "EndeavourOS",
+            Self::Debian => "Debian",
+            Self::Ubuntu => "Ubuntu",
+            Self::PopOS => "Pop!_OS",
+            Self::LinuxMint => "Linux Mint",
+            Self::Fedora => "Fedora",
+            Self::CentOS => "CentOS",
+            Self::OpenSUSE => "openSUSE",
+            Self::Unknown(_) => "Unknown",
         }
     }
 }
 
-pub fn detect_distro() -> Result<Distro> {
-    let os_release_path = Path::new("/etc/os-release");
-    if !os_release_path.exists() {
-        return Ok(Distro::Unknown("No /etc/os-release found".to_string()));
+impl std::fmt::Display for OperatingSystem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InstantOS => write!(f, "instantOS (Arch-based)"),
+            Self::Unknown(name) => write!(f, "Unknown ({})", name),
+            _ => write!(f, "{}", self.name()),
+        }
     }
+}
 
-    let content = fs::read_to_string(os_release_path).context("Failed to read /etc/os-release")?;
+// ============================================================================
+// Legacy Functions (for backward compatibility during migration)
+// ============================================================================
 
-    parse_os_release(&content)
+/// Detect the current Linux distribution
+///
+/// # Deprecated
+/// Use `OperatingSystem::detect()` instead
+pub fn detect_distro() -> Result<OperatingSystem> {
+    Ok(OperatingSystem::detect())
 }
 
 /// Check if the system is running instantOS
+///
+/// # Deprecated
+/// Use `OperatingSystem::detect().is_instantos()` instead
 pub fn is_instantos() -> bool {
-    if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
-        for line in content.lines() {
-            if let Some(val) = line.strip_prefix("ID=") {
-                return val.trim_matches('"') == "instantos";
-            }
-        }
-    }
-    false
+    OperatingSystem::detect().is_instantos()
 }
 
+/// Check if running from a live ISO
 pub fn is_live_iso() -> bool {
     Path::new("/run/archiso/cowspace").exists()
 }
 
+/// Increase the cowspace size on live ISO
 pub fn increase_cowspace() -> Result<()> {
     if !is_live_iso() {
         return Ok(());
@@ -125,48 +274,6 @@ fn get_total_ram_mb() -> Option<u64> {
     None
 }
 
-fn parse_os_release(content: &str) -> Result<Distro> {
-    let mut id = String::new();
-    let mut id_like = String::new();
-
-    for line in content.lines() {
-        if let Some(val) = line.strip_prefix("ID=") {
-            id = val.trim_matches('"').to_string();
-        } else if let Some(val) = line.strip_prefix("ID_LIKE=") {
-            id_like = val.trim_matches('"').to_string();
-        }
-    }
-
-    match id.as_str() {
-        "arch" => Ok(Distro::Arch),
-        "debian" => Ok(Distro::Debian),
-        "ubuntu" => Ok(Distro::Ubuntu),
-        "fedora" => Ok(Distro::Fedora),
-        "centos" => Ok(Distro::CentOS),
-        "opensuse" | "opensuse-leap" | "opensuse-tumbleweed" => Ok(Distro::OpenSUSE),
-        "manjaro" => Ok(Distro::Manjaro),
-        "endeavouros" => Ok(Distro::EndeavourOS),
-        "pop" => Ok(Distro::PopOS),
-        "linuxmint" => Ok(Distro::LinuxMint),
-        "instantos" => {
-            // instantOS is Arch-based, check ID_LIKE to confirm
-            if id_like.contains("arch") {
-                Ok(Distro::Arch)
-            } else {
-                Ok(Distro::Unknown(id))
-            }
-        }
-        _ => {
-            // For unknown IDs, check if they are Arch-based
-            if id_like.contains("arch") {
-                Ok(Distro::Arch)
-            } else {
-                Ok(Distro::Unknown(id))
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,7 +290,10 @@ DOCUMENTATION_URL="https://wiki.archlinux.org/"
 SUPPORT_URL="https://bbs.archlinux.org/"
 BUG_REPORT_URL="https://bugs.archlinux.org/"
 LOGO=archlinux-logo"#;
-        assert_eq!(parse_os_release(content).unwrap(), Distro::Arch);
+        assert_eq!(
+            OperatingSystem::parse_os_release(content),
+            OperatingSystem::Arch
+        );
     }
 
     #[test]
@@ -200,7 +310,10 @@ SUPPORT_URL="https://help.ubuntu.com/"
 BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
 PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
 UBUNTU_CODENAME=jammy"#;
-        assert_eq!(parse_os_release(content).unwrap(), Distro::Ubuntu);
+        assert_eq!(
+            OperatingSystem::parse_os_release(content),
+            OperatingSystem::Ubuntu
+        );
     }
 
     #[test]
@@ -217,7 +330,10 @@ BUG_REPORT_URL="https://gitlab.archlinux.org/groups/archlinux/-/issues"
 PRIVACY_POLICY_URL="https://terms.archlinux.org/docs/privacy-policy/"
 LOGO=archlinux-logo
 ID_LIKE="arch""#;
-        assert_eq!(parse_os_release(content).unwrap(), Distro::Arch);
+        let os = OperatingSystem::parse_os_release(content);
+        assert_eq!(os, OperatingSystem::InstantOS);
+        assert!(os.is_instantos());
+        assert!(os.is_arch_based());
     }
 
     #[test]
@@ -226,6 +342,51 @@ ID_LIKE="arch""#;
 PRETTY_NAME="Custom Arch Distro"
 ID="customarch"
 ID_LIKE="arch""#;
-        assert_eq!(parse_os_release(content).unwrap(), Distro::Arch);
+        let os = OperatingSystem::parse_os_release(content);
+        // Falls back to Arch for unknown arch-based distros
+        assert_eq!(os, OperatingSystem::Arch);
+        assert!(os.is_arch_based());
+    }
+
+    #[test]
+    fn test_family_checks() {
+        assert!(OperatingSystem::Arch.is_arch_based());
+        assert!(OperatingSystem::InstantOS.is_arch_based());
+        assert!(OperatingSystem::Manjaro.is_arch_based());
+        assert!(OperatingSystem::EndeavourOS.is_arch_based());
+
+        assert!(OperatingSystem::Debian.is_debian_based());
+        assert!(OperatingSystem::Ubuntu.is_debian_based());
+        assert!(OperatingSystem::PopOS.is_debian_based());
+        assert!(OperatingSystem::LinuxMint.is_debian_based());
+
+        assert!(OperatingSystem::Fedora.is_rpm_based());
+        assert!(OperatingSystem::CentOS.is_rpm_based());
+        assert!(OperatingSystem::OpenSUSE.is_rpm_based());
+
+        // Cross-checks
+        assert!(!OperatingSystem::Arch.is_debian_based());
+        assert!(!OperatingSystem::Ubuntu.is_arch_based());
+    }
+
+    #[test]
+    fn test_package_manager() {
+        assert_eq!(
+            OperatingSystem::Arch.package_manager(),
+            Some(PackageManager::Pacman)
+        );
+        assert_eq!(
+            OperatingSystem::InstantOS.package_manager(),
+            Some(PackageManager::Pacman)
+        );
+        assert_eq!(
+            OperatingSystem::Ubuntu.package_manager(),
+            Some(PackageManager::Apt)
+        );
+        assert_eq!(
+            OperatingSystem::Debian.package_manager(),
+            Some(PackageManager::Apt)
+        );
+        assert_eq!(OperatingSystem::Fedora.package_manager(), None); // Not yet supported
     }
 }

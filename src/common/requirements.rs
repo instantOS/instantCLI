@@ -45,7 +45,7 @@ pub struct FlatpakPackage {
     pub tests: &'static [InstallTest],
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackageManager {
     Pacman,
     Apt,
@@ -54,13 +54,7 @@ pub enum PackageManager {
 impl PackageManager {
     /// Detect the available package manager on the system
     pub fn detect() -> Option<Self> {
-        if which::which("pacman").is_ok() {
-            Some(PackageManager::Pacman)
-        } else if which::which("apt").is_ok() {
-            Some(PackageManager::Apt)
-        } else {
-            None
-        }
+        crate::common::distro::OperatingSystem::detect().package_manager()
     }
 
     /// Get the package name for this package manager

@@ -200,9 +200,7 @@ impl SystemInfo {
         info.architecture = std::env::consts::ARCH.to_string();
 
         // Distro check
-        info.distro = crate::common::distro::detect_distro()
-            .map(|d| d.to_string())
-            .unwrap_or_else(|_| "Unknown".to_string());
+        info.distro = crate::common::distro::OperatingSystem::detect().to_string();
 
         info
     }
