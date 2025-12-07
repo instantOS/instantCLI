@@ -36,9 +36,12 @@ fn print_results(results: &[CheckResult]) {
 }
 
 fn show_available_fixes(results: &[CheckResult]) {
-    let fixable_failures: Vec<_> = results
+    // Include both fixable failures AND fixable warnings
+    let fixable_issues: Vec<_> = results
         .iter()
-        .filter(|result| result.status.needs_fix() && result.status.is_fixable())
+        .filter(|result| {
+            (result.status.needs_fix() || result.status.is_warning()) && result.status.is_fixable()
+        })
         .collect();
 
     let non_fixable_failures: Vec<_> = results
@@ -48,8 +51,8 @@ fn show_available_fixes(results: &[CheckResult]) {
 
     match get_output_format() {
         crate::ui::OutputFormat::Json => {
-            if !fixable_failures.is_empty() {
-                let fixes_data: Vec<_> = fixable_failures
+            if !fixable_issues.is_empty() {
+                let fixes_data: Vec<_> = fixable_issues
                     .iter()
                     .map(|result| {
                         serde_json::json!({
@@ -103,10 +106,10 @@ fn show_available_fixes(results: &[CheckResult]) {
             }
         }
         crate::ui::OutputFormat::Text => {
-            if !fixable_failures.is_empty() {
+            if !fixable_issues.is_empty() {
                 let fixes_msg = "\nAvailable fixes:".bold().yellow();
                 println!("{fixes_msg}");
-                for result in &fixable_failures {
+                for result in &fixable_issues {
                     if let Some(ref msg) = result.fix_message {
                         println!("  - {}: {}", result.name, msg);
                         println!(
