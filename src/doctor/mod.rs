@@ -180,7 +180,11 @@ pub mod privileges;
 pub mod registry;
 
 pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> Vec<CheckResult> {
-    use privileges::should_skip_for_privileges;
+    use privileges::skip_reason_for_privilege_level;
+    use sudo::RunningAs;
+
+    // Check privileges once before spawning any tasks
+    let is_root = matches!(sudo::check(), RunningAs::Root);
 
     let mut handles = vec![];
     for check in checks {
@@ -191,7 +195,7 @@ pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> 
 
             // Check privilege requirements before running
             let status = if let Some(skip_reason) =
-                should_skip_for_privileges(check.check_privilege_level())
+                skip_reason_for_privilege_level(check.check_privilege_level(), is_root)
             {
                 CheckStatus::Skipped(skip_reason.to_string())
             } else {

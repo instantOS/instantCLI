@@ -21,14 +21,24 @@ pub fn check_privilege_requirements(
     }
 }
 
+/// Check if a check should be skipped based on privilege requirements and current state.
+/// Returns Some(reason) if the check should be skipped, None if it can run.
+pub fn skip_reason_for_privilege_level(
+    required: PrivilegeLevel,
+    is_root: bool,
+) -> Option<&'static str> {
+    match (required, is_root) {
+        (PrivilegeLevel::Root, false) => Some("Requires root privileges"),
+        (PrivilegeLevel::User, true) => Some("Cannot run as root"),
+        _ => None,
+    }
+}
+
 /// Check if a check should be skipped based on current privileges.
 /// Returns Some(reason) if the check should be skipped, None if it can run.
 pub fn should_skip_for_privileges(required: PrivilegeLevel) -> Option<&'static str> {
-    match (required, sudo::check()) {
-        (PrivilegeLevel::Root, RunningAs::User) => Some("Requires root privileges"),
-        (PrivilegeLevel::User, RunningAs::Root) => Some("Cannot run as root"),
-        _ => None,
-    }
+    let is_root = matches!(sudo::check(), RunningAs::Root);
+    skip_reason_for_privilege_level(required, is_root)
 }
 
 pub fn escalate_for_fix(_check_id: &str) -> Result<(), anyhow::Error> {

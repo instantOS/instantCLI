@@ -208,6 +208,26 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         return Ok(());
     }
 
+    // Handle skipped checks - can't fix something that was skipped
+    if check_result.is_skipped() {
+        emit(
+            Level::Warn,
+            "doctor.fix.skipped",
+            &format!(
+                "{} {}: {}",
+                char::from(NerdFont::Info),
+                check.name(),
+                check_result.message()
+            ),
+            None,
+        );
+        return Err(anyhow!(
+            "Check '{}' was skipped: {}",
+            check.name(),
+            check_result.message()
+        ));
+    }
+
     if !check_result.is_fixable() {
         emit(
             Level::Error,
@@ -249,10 +269,13 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
     );
 
     // Check if we have the right privileges for the fix
+    // Capture before status to pass to apply_fix (avoids running check again)
+    let before_status = check_result.status_text().to_string();
+
     match check_privilege_requirements(check.as_ref(), true) {
         Ok(()) => {
             // We have correct privileges, run the fix
-            apply_fix(check).await
+            apply_fix(check, &before_status).await
         }
         Err(PrivilegeError::NeedRoot) => {
             // Need to escalate privileges
@@ -287,12 +310,8 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
     }
 }
 
-async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>) -> Result<()> {
+async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>, before_status: &str) -> Result<()> {
     let check_name = check.name();
-
-    // Get the before status
-    let before_result = check.execute().await;
-    let before_status = before_result.status_text().to_string();
 
     emit(
         Level::Info,
