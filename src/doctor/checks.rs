@@ -576,3 +576,123 @@ impl DoctorCheck for SmartHealthCheck {
         Ok(())
     }
 }
+
+#[derive(Default)]
+pub struct PacmanDbSyncCheck;
+
+impl PacmanDbSyncCheck {
+    const SYNC_DIR: &'static str = "/var/lib/pacman/sync";
+    const WARN_THRESHOLD_DAYS: u64 = 14;
+}
+
+#[async_trait]
+impl DoctorCheck for PacmanDbSyncCheck {
+    fn name(&self) -> &'static str {
+        "Pacman Database Sync"
+    }
+
+    fn id(&self) -> &'static str {
+        "pacman-db-sync"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Any // Can read sync dir as any user
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Root // pacman -Sy requires root
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        use std::time::{Duration, SystemTime};
+
+        // Find the most recent sync database file
+        let sync_dir = std::path::Path::new(Self::SYNC_DIR);
+
+        if !sync_dir.exists() {
+            return CheckStatus::Fail {
+                message: "Pacman sync directory not found".to_string(),
+                fixable: true,
+            };
+        }
+
+        let mut most_recent: Option<SystemTime> = None;
+
+        // Read directory entries
+        let entries = match std::fs::read_dir(sync_dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                return CheckStatus::Fail {
+                    message: format!("Could not read sync directory: {}", e),
+                    fixable: false,
+                };
+            }
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("db") {
+                if let Ok(metadata) = path.metadata() {
+                    if let Ok(modified) = metadata.modified() {
+                        most_recent = Some(match most_recent {
+                            Some(current) => current.max(modified),
+                            None => modified,
+                        });
+                    }
+                }
+            }
+        }
+
+        let last_sync = match most_recent {
+            Some(time) => time,
+            None => {
+                return CheckStatus::Fail {
+                    message: "No pacman database files found".to_string(),
+                    fixable: true,
+                };
+            }
+        };
+
+        // Calculate age
+        let age = SystemTime::now()
+            .duration_since(last_sync)
+            .unwrap_or(Duration::ZERO);
+
+        let age_days = age.as_secs() / (60 * 60 * 24);
+        let age_hours = (age.as_secs() % (60 * 60 * 24)) / (60 * 60);
+
+        let age_str = if age_days > 0 {
+            format!("{} day(s), {} hour(s) ago", age_days, age_hours)
+        } else {
+            format!("{} hour(s) ago", age_hours)
+        };
+
+        if age_days >= Self::WARN_THRESHOLD_DAYS {
+            CheckStatus::Warning {
+                message: format!(
+                    "Database last synced {} (over {} days)",
+                    age_str,
+                    Self::WARN_THRESHOLD_DAYS
+                ),
+                fixable: true,
+            }
+        } else {
+            CheckStatus::Pass(format!("Database last synced {}", age_str))
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Refresh pacman database with pacman -Sy".to_string())
+    }
+
+    async fn fix(&self) -> Result<()> {
+        let status = TokioCommand::new("pacman").arg("-Sy").status().await?;
+
+        if status.success() {
+            println!("Pacman database refreshed successfully.");
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("pacman -Sy failed"))
+        }
+    }
+}

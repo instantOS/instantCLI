@@ -21,6 +21,7 @@ impl CheckRegistry {
         registry.register::<SwapCheck>("swap");
         registry.register::<PendingUpdatesCheck>("pending-updates");
         registry.register::<SmartHealthCheck>("smart-health");
+        registry.register::<PacmanDbSyncCheck>("pacman-db-sync");
 
         registry
     }
