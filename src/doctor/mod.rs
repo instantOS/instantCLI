@@ -409,6 +409,39 @@ pub fn print_results_table(results: &[CheckResult]) {
 
             println!("{}", "System Health Check Results:".bold());
             println!("{table}");
+
+            // Show hint for skipped checks
+            let skipped_results: Vec<_> =
+                results.iter().filter(|r| r.status.is_skipped()).collect();
+            if !skipped_results.is_empty() {
+                let is_root = matches!(sudo::check(), sudo::RunningAs::Root);
+                let bin = env!("CARGO_BIN_NAME");
+
+                println!();
+                if is_root {
+                    // Running as root, some user-only checks were skipped
+                    println!(
+                        "{} {} checks were skipped because they cannot run as root.",
+                        "Hint:".dimmed(),
+                        skipped_results.len()
+                    );
+                    println!(
+                        "      Run `{}` as a regular user to run those checks.",
+                        bin.dimmed()
+                    );
+                } else {
+                    // Running as user, some root-only checks were skipped
+                    println!(
+                        "{} {} checks were skipped because they require root privileges.",
+                        "Hint:".dimmed(),
+                        skipped_results.len()
+                    );
+                    println!(
+                        "      Run `sudo {} doctor` to run those checks.",
+                        bin.dimmed()
+                    );
+                }
+            }
         }
     }
 }
