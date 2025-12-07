@@ -463,23 +463,27 @@ impl DoctorCheck for SmartHealthCheck {
 
     async fn execute(&self) -> CheckStatus {
         use crate::common::requirements::SMARTMONTOOLS_PACKAGE;
+        use crate::common::systemd::{ServiceScope, SystemdManager};
 
         // First, check if smartctl is available
         if !SMARTMONTOOLS_PACKAGE.is_installed() {
             return CheckStatus::Warning {
-                message: format!(
-                    "smartctl not installed ({})",
-                    SMARTMONTOOLS_PACKAGE.install_hint()
-                ),
-                fixable: false,
+                message: "smartmontools not installed".to_string(),
+                fixable: true,
+            };
+        }
+
+        // Check if smartd service is enabled
+        let manager = SystemdManager::new(ServiceScope::System);
+        if !manager.is_enabled("smartd") {
+            return CheckStatus::Warning {
+                message: "smartd service not enabled for continuous monitoring".to_string(),
+                fixable: true,
             };
         }
 
         // Scan for drives using smartctl --scan
-        let scan_output = TokioCommand::new("smartctl")
-            .arg("--scan")
-            .output()
-            .await;
+        let scan_output = TokioCommand::new("smartctl").arg("--scan").output().await;
 
         let drives: Vec<String> = match scan_output {
             Ok(output) if output.status.success() => {
@@ -562,13 +566,21 @@ impl DoctorCheck for SmartHealthCheck {
     }
 
     fn fix_message(&self) -> Option<String> {
-        Some("Enable smartd service for continuous monitoring".to_string())
+        Some("Install smartmontools and enable smartd service".to_string())
     }
 
     async fn fix(&self) -> Result<()> {
+        use crate::common::requirements::SMARTMONTOOLS_PACKAGE;
         use crate::common::systemd::{ServiceScope, SystemdManager};
 
-        // Enable and start smartd service using SystemdManager
+        // Install smartmontools using the standard ensure() flow if not installed
+        if !SMARTMONTOOLS_PACKAGE.is_installed() {
+            if !SMARTMONTOOLS_PACKAGE.ensure()? {
+                return Err(anyhow::anyhow!("smartmontools installation cancelled"));
+            }
+        }
+
+        // Enable and start smartd service
         let manager = SystemdManager::new(ServiceScope::System);
         manager.enable_and_start("smartd")?;
 
