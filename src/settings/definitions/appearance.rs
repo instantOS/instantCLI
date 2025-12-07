@@ -629,7 +629,10 @@ impl Setting for ResetQt {
                         ),
                     );
                 } else {
-                    ctx.notify("Qt Reset", "No Qt configuration directories found to remove.");
+                    ctx.notify(
+                        "Qt Reset",
+                        "No Qt configuration directories found to remove.",
+                    );
                 }
             }
         }
