@@ -291,3 +291,63 @@ async fn calculate_dir_size(path: &str) -> Result<u64> {
 
     Ok(total_size)
 }
+
+#[derive(Default)]
+pub struct SwapCheck;
+
+#[async_trait]
+impl DoctorCheck for SwapCheck {
+    fn name(&self) -> &'static str {
+        "Swap Space Availability"
+    }
+
+    fn id(&self) -> &'static str {
+        "swap"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Any
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Any
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        // Read /proc/meminfo to check swap
+        match tokio::fs::read_to_string("/proc/meminfo").await {
+            Ok(content) => {
+                for line in content.lines() {
+                    if line.starts_with("SwapTotal:") {
+                        // Format: SwapTotal:       16777212 kB
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            if let Ok(swap_kb) = parts[1].parse::<u64>() {
+                                if swap_kb == 0 {
+                                    return CheckStatus::Warning {
+                                        message: "No swap space available".to_string(),
+                                        fixable: false,
+                                    };
+                                } else {
+                                    let swap_gb = swap_kb as f64 / (1024.0 * 1024.0);
+                                    return CheckStatus::Pass(format!(
+                                        "Swap space available: {:.2} GB",
+                                        swap_gb
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                CheckStatus::Warning {
+                    message: "Could not determine swap status".to_string(),
+                    fixable: false,
+                }
+            }
+            Err(e) => CheckStatus::Fail {
+                message: format!("Could not read /proc/meminfo: {}", e),
+                fixable: false,
+            },
+        }
+    }
+}
