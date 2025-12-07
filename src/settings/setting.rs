@@ -340,6 +340,13 @@ pub trait Setting: Send + Sync + 'static {
     fn restore(&self, _ctx: &mut SettingsContext) -> Option<Result<()>> {
         None
     }
+
+    /// Optional shell command to run for preview content
+    /// Used for action-type settings that want to show current state lazily
+    /// The command should output the full preview text (including summary)
+    fn preview_command(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Iterate over all registered settings from the category tree

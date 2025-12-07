@@ -259,6 +259,11 @@ impl FzfSelectable for SettingItem {
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        // If setting provides a preview command, use it for lazy execution
+        if let Some(cmd) = self.setting.preview_command() {
+            return crate::menu_utils::FzfPreview::Command(cmd);
+        }
+
         let meta = self.setting.metadata();
         let mut lines = vec![meta.summary.to_string()];
 
@@ -338,6 +343,11 @@ impl FzfSelectable for SearchItem {
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        // If setting provides a preview command, use it for lazy execution
+        if let Some(cmd) = self.setting.preview_command() {
+            return crate::menu_utils::FzfPreview::Command(cmd);
+        }
+
         let meta = self.setting.metadata();
         let mut lines = vec![meta.summary.to_string()];
 

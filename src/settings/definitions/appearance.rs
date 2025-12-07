@@ -888,4 +888,23 @@ impl Setting for DarkMode {
 
         Ok(())
     }
+
+    fn preview_command(&self) -> Option<String> {
+        // Shell command that FZF runs lazily when this item is focused
+        Some(r#"bash -c '
+scheme=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)
+if echo "$scheme" | grep -q "prefer-dark"; then
+    status="Dark"
+else
+    status="Light"
+fi
+
+echo "Request applications to use dark theme."
+echo ""
+echo "Sets the system color-scheme preference via gsettings."
+echo "This affects GTK 4+, Libadwaita, and xdg-desktop-portal aware apps."
+echo ""
+echo "Current: $status"
+'"#.to_string())
+    }
 }
