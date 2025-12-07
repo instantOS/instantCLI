@@ -101,13 +101,19 @@ impl Dotfile {
             return Err(anyhow::anyhow!("File does not exist: {}", path.display()));
         }
 
-        // Check if cached hash is newer than file modification time
+        // Check if cached hash is newer than file modification time.
+        // We add a buffer to account for filesystem timestamp granularity: some filesystems
+        // (especially in CI containers) have coarse timestamp resolution (1-2 seconds).
+        // Without this buffer, a file modified immediately after hashing might have a
+        // modification time <= the recorded hash time, causing stale hash reuse.
+        const TIMESTAMP_BUFFER: chrono::TimeDelta = chrono::TimeDelta::seconds(2);
+
         let file_metadata = fs::metadata(path)?;
         let file_modified = file_metadata.modified()?;
         let file_time = chrono::DateTime::<chrono::Utc>::from(file_modified);
 
         if let Ok(Some(newest_hash)) = db.get_newest_hash(path)
-            && newest_hash.created >= file_time
+            && newest_hash.created >= file_time + TIMESTAMP_BUFFER
         {
             return Ok(newest_hash.hash);
         }
