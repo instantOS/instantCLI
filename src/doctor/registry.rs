@@ -23,6 +23,7 @@ impl CheckRegistry {
         registry.register::<PendingUpdatesCheck>("pending-updates");
         registry.register::<SmartHealthCheck>("smart-health");
         registry.register::<PacmanDbSyncCheck>("pacman-db-sync");
+        registry.register::<SwayDisplayCheck>("sway-display");
 
         registry
     }
