@@ -92,10 +92,36 @@ impl RequiredPackage {
         self.tests.iter().any(|test| test.run())
     }
 
+    /// Check if this package can be automatically installed on the current system.
+    /// Returns `true` if the package is already installed, or if both a package manager
+    /// is detected AND the package has a name defined for that package manager.
+    pub fn can_auto_install(&self) -> bool {
+        if self.is_installed() {
+            return true;
+        }
+        PackageManager::detect()
+            .and_then(|pm| pm.package_name(self))
+            .is_some()
+    }
+
     /// Ensure the package is installed, prompting for installation if needed
     pub fn ensure(&self) -> Result<bool> {
         if self.is_installed() {
             return Ok(true);
+        }
+
+        // Check if we can auto-install this package
+        if !self.can_auto_install() {
+            let msg = format!(
+                "The required package '{}' must be installed manually.\n\n{}",
+                self.name,
+                self.install_hint()
+            );
+            FzfWrapper::builder()
+                .message(&msg)
+                .title("Manual Installation Required")
+                .show_message()?;
+            return Ok(false);
         }
 
         // Package is not installed, prompt for installation
