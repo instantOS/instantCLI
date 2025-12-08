@@ -69,10 +69,11 @@ pub enum ArchCommands {
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
-        BooleanQuestion, DiskQuestion, EncryptionPasswordQuestion, EspPartitionValidator,
-        HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion,
-        PartitionSelectorQuestion, PartitioningMethodQuestion, PasswordQuestion, RunCfdiskQuestion,
-        TimezoneQuestion, UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
+        BooleanQuestion, DiskQuestion, DualBootPartitionQuestion, DualBootSizeQuestion,
+        EncryptionPasswordQuestion, EspPartitionValidator, HostnameQuestion, KernelQuestion,
+        KeymapQuestion, LocaleQuestion, MirrorRegionQuestion, PartitionSelectorQuestion,
+        PartitioningMethodQuestion, PasswordQuestion, RunCfdiskQuestion, TimezoneQuestion,
+        UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
     };
     use crate::common::distro::{OperatingSystem, is_live_iso};
 
@@ -90,6 +91,8 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         Box::new(DiskQuestion),
         Box::new(PartitioningMethodQuestion),
         Box::new(RunCfdiskQuestion),
+        Box::new(DualBootPartitionQuestion),
+        Box::new(DualBootSizeQuestion),
         Box::new(PartitionSelectorQuestion::new(
             crate::arch::engine::QuestionId::RootPartition,
             "Select Root Partition",
@@ -493,10 +496,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                     Ok(size) => {
                         println!("\nSelection result:");
                         println!("  Linux Size: {}", format_size(size).green().bold());
-                        println!(
-                            "  Remaining:  {}",
-                            format_size(disk_size - size).yellow()
-                        );
+                        println!("  Remaining:  {}", format_size(disk_size - size).yellow());
                     }
                     Err(e) => eprintln!("Error: {}", e),
                 }

@@ -105,11 +105,37 @@ impl Question for PartitioningMethodQuestion {
         QuestionId::PartitioningMethod
     }
 
-    async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        let options = vec![
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+        let mut options = vec![
             "Automatic (Erase Disk)".to_string(),
             "Manual (cfdisk)".to_string(),
         ];
+
+        // Check for dual boot possibility
+        if let Some(disk_str) = context.get_answer(&QuestionId::Disk) {
+            let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
+
+            let disk_path_owned = disk_path.to_string();
+            let disks_result = tokio::task::spawn_blocking(move || crate::arch::dualboot::detect_disks()).await?;
+
+            if let Ok(disks) = disks_result {
+                if let Some(disk_info) = disks.iter().find(|d| d.device == disk_path_owned) {
+                    // Check if any partition is shrinkable
+                    // We primarily care about partitions that are not the ESP and can be shrunk
+                    let shrinkable = disk_info.partitions.iter().any(|p| {
+                        !p.is_efi
+                            && p.resize_info
+                                .as_ref()
+                                .map(|r| r.can_shrink)
+                                .unwrap_or(false)
+                    });
+
+                    if shrinkable {
+                        options.insert(1, "Dual Boot (Install alongside)".to_string());
+                    }
+                }
+            }
+        }
 
         let result = FzfWrapper::builder()
             .header(format!(
