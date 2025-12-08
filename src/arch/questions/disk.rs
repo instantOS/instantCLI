@@ -124,11 +124,24 @@ impl Question for PartitioningMethodQuestion {
                     // Check if any partition is shrinkable
                     // We primarily care about partitions that are not the ESP and can be shrunk
                     let shrinkable = disk_info.partitions.iter().any(|p| {
-                        !p.is_efi
+                        let can_shrink = !p.is_efi
                             && p.resize_info
                                 .as_ref()
                                 .map(|r| r.can_shrink)
-                                .unwrap_or(false)
+                                .unwrap_or(false);
+
+                        if !can_shrink {
+                            return false;
+                        }
+
+                        let size = p.size_bytes;
+                        let min_existing = p
+                            .resize_info
+                            .as_ref()
+                            .and_then(|r| r.min_size_bytes)
+                            .unwrap_or(0);
+                        // Minimum 10GB for Linux
+                        size.saturating_sub(min_existing) >= crate::arch::dualboot::MIN_LINUX_SIZE
                     });
 
                     if shrinkable {
