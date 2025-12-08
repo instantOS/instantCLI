@@ -149,9 +149,12 @@ impl Question for DualBootSizeQuestion {
         let max_linux = partition_size.saturating_sub(min_existing);
 
         if max_linux < min_linux {
-            return Err(anyhow::anyhow!(
-                "Not enough free space on partition for Linux (Need 20GB)"
-            ));
+            FzfWrapper::message(&format!(
+                "{} Not enough free space on partition for Linux.\nNeed 20GB, but only {} available (after preserving existing OS).",
+                NerdFont::Warning,
+                crate::arch::dualboot::format_size(max_linux)
+            ))?;
+            return Ok(QuestionResult::Cancelled);
         }
 
         // Convert to GB for slider (easier to read/manage)

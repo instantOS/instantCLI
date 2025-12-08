@@ -35,6 +35,7 @@ pub enum QuestionId {
     HomePartition,
     DualBootPartition,
     DualBootSize,
+    DualBootInstructions,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

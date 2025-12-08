@@ -132,7 +132,7 @@ impl Question for PartitioningMethodQuestion {
                     });
 
                     if shrinkable {
-                        options.insert(1, "Dual Boot (Install alongside)".to_string());
+                        options.insert(1, "Dual Boot (Experimental)".to_string());
                     }
                 }
             }

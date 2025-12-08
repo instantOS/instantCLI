@@ -69,8 +69,9 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         BooleanQuestion, DiskQuestion, DualBootPartitionQuestion, DualBootSizeQuestion,
         EncryptionPasswordQuestion, EspPartitionValidator, HostnameQuestion, KernelQuestion,
         KeymapQuestion, LocaleQuestion, MirrorRegionQuestion, PartitionSelectorQuestion,
-        PartitioningMethodQuestion, PasswordQuestion, RunCfdiskQuestion, TimezoneQuestion,
-        UsernameQuestion, VirtualBoxWarning, WeakPasswordWarning,
+        PartitioningMethodQuestion, PasswordQuestion, ResizeInstructionsQuestion,
+        RunCfdiskQuestion, TimezoneQuestion, UsernameQuestion, VirtualBoxWarning,
+        WeakPasswordWarning,
     };
     use crate::common::distro::{OperatingSystem, is_live_iso};
 
@@ -90,6 +91,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         Box::new(RunCfdiskQuestion),
         Box::new(DualBootPartitionQuestion),
         Box::new(DualBootSizeQuestion),
+        Box::new(ResizeInstructionsQuestion),
         Box::new(PartitionSelectorQuestion::new(
             crate::arch::engine::QuestionId::RootPartition,
             "Select Root Partition",
