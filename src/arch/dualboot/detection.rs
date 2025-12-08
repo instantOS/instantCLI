@@ -436,8 +436,8 @@ fn parse_partition(value: &Value) -> Option<PartitionInfo> {
 /// Check if partition type indicates EFI System Partition
 fn is_efi_partition(parttype: &str) -> bool {
     let pt = parttype.to_lowercase();
-    // MBR type 0xef
-    if pt == "0xef" {
+    // MBR type 0xef or ef
+    if pt == "0xef" || pt == "ef" {
         return true;
     }
     // GPT GUID for EFI System Partition (case insensitive comparison)
