@@ -61,6 +61,12 @@ fn display_partition_row(partition: &PartitionInfo) {
         .map(|f| f.fs_type.as_str())
         .unwrap_or("-");
 
+    // Format type/fs string like "ext4 [83]" or just "ext4"
+    let type_str = match &partition.partition_type {
+        Some(pt) => format!("{} [{}]", fs_type, pt),
+        None => fs_type.to_string(),
+    };
+
     // OS detection with icon - EFI partitions get special treatment
     let (os_icon, os_text) = if partition.is_efi {
         (
@@ -118,11 +124,11 @@ fn display_partition_row(partition: &PartitionInfo) {
     };
 
     println!(
-        "    {} {:<14} {:>10}  {:<6}  {} {}",
+        "    {} {:<14} {:>10}  {:<12}  {} {}",
         "•".dimmed(),
         name,
         partition.size_human().bright_white(),
-        fs_type.cyan(),
+        type_str.cyan(),
         os_icon,
         os_text
     );

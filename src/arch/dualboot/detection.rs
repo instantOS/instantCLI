@@ -39,6 +39,8 @@ pub struct DiskInfo {
     pub partition_table: PartitionTableType,
     /// List of partitions on this disk
     pub partitions: Vec<PartitionInfo>,
+    /// Unpartitioned space in bytes (calculated)
+    pub unpartitioned_space_bytes: u64,
 }
 
 impl DiskInfo {
@@ -83,6 +85,8 @@ pub struct PartitionInfo {
     pub mount_point: Option<String>,
     /// Whether this is an EFI System Partition
     pub is_efi: bool,
+    /// Partition type code (e.g. 0x83, 0xef)
+    pub partition_type: Option<String>,
 }
 
 impl PartitionInfo {
@@ -213,11 +217,15 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
             }
         }
 
+        let total_partition_size: u64 = partitions.iter().map(|p| p.size_bytes).sum();
+        let unpartitioned_space_bytes = size_bytes.saturating_sub(total_partition_size);
+
         disks.push(DiskInfo {
             device: format!("/dev/{}", name),
             size_bytes,
             partition_table,
             partitions,
+            unpartitioned_space_bytes,
         });
     }
 
@@ -272,13 +280,31 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
         .map(|p| p.device.clone())
         .collect();
 
+    // Check if we have enough unpartitioned space
+    let has_unpartitioned_space = disk.unpartitioned_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
+
     if feasible_partitions.is_empty() {
+        if has_unpartitioned_space {
+            return DualBootFeasibility {
+                feasible: true,
+                feasible_partitions: vec![], // No specific partition to resize, but disk is feasible
+                reason: Some(format!(
+                    "Unpartitioned space available: {}",
+                    format_size(disk.unpartitioned_space_bytes)
+                )),
+            };
+        }
+
         // Check if there are any partitions at all
         if disk.partitions.is_empty() {
+            // If empty partitions AND not enough space (checked above), then disk is too small
             DualBootFeasibility {
                 feasible: false,
                 feasible_partitions: vec![],
-                reason: Some("No partitions found on disk".to_string()),
+                reason: Some(format!(
+                    "Disk too small or full (Free: {})",
+                    format_size(disk.unpartitioned_space_bytes)
+                )),
             }
         } else {
             // Check if there are shrinkable partitions but not enough space
@@ -399,6 +425,11 @@ fn parse_partition(value: &Value) -> Option<PartitionInfo> {
         resize_info,
         mount_point,
         is_efi,
+        partition_type: if parttype.is_empty() {
+            None
+        } else {
+            Some(parttype.to_string())
+        },
     })
 }
 
