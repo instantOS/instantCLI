@@ -318,16 +318,17 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
 }
 
 /// Check dual boot feasibility for all detected disks
-pub fn check_all_disks_feasibility() -> Result<Vec<(String, DualBootFeasibility)>> {
+pub fn check_all_disks_feasibility() -> Result<(Vec<DiskInfo>, Vec<(String, DualBootFeasibility)>)>
+{
     let disks = detect_disks()?;
     let mut results = Vec::new();
 
-    for disk in disks {
-        let feasibility = check_disk_dualboot_feasibility(&disk);
-        results.push((disk.device, feasibility));
+    for disk in &disks {
+        let feasibility = check_disk_dualboot_feasibility(disk);
+        results.push((disk.device.clone(), feasibility));
     }
 
-    Ok(results)
+    Ok((disks, results))
 }
 
 /// Parse a partition from lsblk JSON

@@ -24,38 +24,48 @@ impl Question for DualBootPartitionQuestion {
             .get_answer(&QuestionId::Disk)
             .context("No disk selected")?;
         let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
-        let disk_path_owned = disk_path.to_string();
 
-        let result = tokio::task::spawn_blocking(move || -> anyhow::Result<(Vec<crate::arch::dualboot::PartitionInfo>, Vec<crate::arch::dualboot::PartitionInfo>)> {
-            let disks = crate::arch::dualboot::detect_disks()?;
-            let disk_info = disks
-                .iter()
-                .find(|d| d.device == disk_path_owned)
-                .context("Selected disk not found")?;
+        // Get disks from cache or detect
+        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
+            cached
+        } else {
+            let detected =
+                tokio::task::spawn_blocking(|| crate::arch::dualboot::detect_disks()).await??;
+            context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
+            detected
+        };
 
-            let feasibility = crate::arch::dualboot::check_disk_dualboot_feasibility(disk_info);
+        let disk_info = disks
+            .iter()
+            .find(|d| d.device == disk_path)
+            .context("Selected disk not found")?;
 
-            if !feasibility.feasible {
-                return Err(anyhow::anyhow!(
-                    "Dual boot not feasible: {}",
-                    feasibility
-                        .reason
-                        .unwrap_or_else(|| "Unknown reason".to_string())
-                ));
-            }
+        let feasibility = crate::arch::dualboot::check_disk_dualboot_feasibility(disk_info);
 
-            let shrinkable_partitions: Vec<crate::arch::dualboot::PartitionInfo> = disk_info
-                .partitions
-                .iter()
-                .filter(|p| crate::arch::dualboot::is_dualboot_feasible(p))
-                .cloned()
-                .collect();
+        if !feasibility.feasible {
+            return Err(anyhow::anyhow!(
+                "Dual boot not feasible: {}",
+                feasibility
+                    .reason
+                    .unwrap_or_else(|| "Unknown reason".to_string())
+            ));
+        }
 
-            Ok((shrinkable_partitions.clone(), shrinkable_partitions))
-        })
-        .await?;
+        let shrinkable_partitions: Vec<crate::arch::dualboot::PartitionInfo> = disk_info
+            .partitions
+            .iter()
+            .filter(|p| crate::arch::dualboot::is_dualboot_feasible(p))
+            .cloned()
+            .collect();
 
-        let (_disk_info_clone, shrinkable_partitions) = result?;
+        if shrinkable_partitions.is_empty() {
+            FzfWrapper::message(&format!(
+                "{} No shrinkable partitions found on {}.",
+                NerdFont::Warning,
+                disk_path
+            ))?;
+            return Ok(QuestionResult::Cancelled);
+        }
 
         let options: Vec<String> = shrinkable_partitions
             .iter()
@@ -114,24 +124,27 @@ impl Question for DualBootSizeQuestion {
             .get_answer(&QuestionId::Disk)
             .context("No disk selected")?;
         let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
-        let disk_path_owned = disk_path.to_string();
 
-        let part_path_owned = part_path.to_string();
-        let partition = tokio::task::spawn_blocking(move || {
-            let disks = crate::arch::dualboot::detect_disks()?;
-            let disk_info = disks
-                .iter()
-                .find(|d| d.device == disk_path_owned)
-                .context("Selected disk not found")?;
+        // Get disks from cache or detect (should be cached by previous question)
+        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
+            cached
+        } else {
+            let detected =
+                tokio::task::spawn_blocking(|| crate::arch::dualboot::detect_disks()).await??;
+            context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
+            detected
+        };
 
-            disk_info
-                .partitions
-                .iter()
-                .find(|p| p.device == part_path_owned)
-                .cloned()
-                .context("Selected partition not found on disk")
-        })
-        .await??;
+        let disk_info = disks
+            .iter()
+            .find(|d| d.device == disk_path)
+            .context("Selected disk not found")?;
+
+        let partition = disk_info
+            .partitions
+            .iter()
+            .find(|p| p.device == *part_path)
+            .context("Selected partition not found on disk")?;
 
         let resize_info = partition
             .resize_info

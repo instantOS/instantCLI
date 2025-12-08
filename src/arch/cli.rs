@@ -449,9 +449,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         }
         ArchCommands::Dualboot { command } => match command {
             DualbootCommands::Info => {
-                use crate::arch::dualboot::{
-                    check_all_disks_feasibility, detect_disks, display_disks,
-                };
+                use crate::arch::dualboot::{check_all_disks_feasibility, display_disks};
 
                 println!();
                 println!(
@@ -463,7 +461,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 println!();
 
                 match check_all_disks_feasibility() {
-                    Ok(feasibility_results) => {
+                    Ok((disks, feasibility_results)) => {
                         let mut any_feasible = false;
 
                         // Show feasibility summary first
@@ -528,21 +526,13 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                         println!();
 
                         // Show detailed disk information
-                        match detect_disks() {
-                            Ok(disks) => {
-                                if disks.is_empty() {
-                                    println!(
-                                        "  {} No disks detected. Are you running as root?",
-                                        "⚠".yellow()
-                                    );
-                                } else {
-                                    display_disks(&disks);
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("  {} Failed to detect disks: {}", "✗".red(), e);
-                                eprintln!("  {} Try running with sudo", "→".dimmed());
-                            }
+                        if disks.is_empty() {
+                            println!(
+                                "  {} No disks detected. Are you running as root?",
+                                "⚠".yellow()
+                            );
+                        } else {
+                            display_disks(&disks);
                         }
                     }
                     Err(e) => {
