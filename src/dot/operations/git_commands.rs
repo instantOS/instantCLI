@@ -7,7 +7,7 @@ use anyhow::Result;
 use colored::*;
 
 /// Run git commit across all writable repositories
-pub fn git_commit_all(config: &Config, debug: bool) -> Result<()> {
+pub fn git_commit_all(config: &Config, args: &[String], debug: bool) -> Result<()> {
     let repos = config.get_writable_repos();
 
     if repos.is_empty() {
@@ -37,6 +37,11 @@ pub fn git_commit_all(config: &Config, debug: bool) -> Result<()> {
         return Ok(());
     }
 
+    // Build the git commit command with any extra args
+    let mut git_args = vec!["commit"];
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    git_args.extend(args_str);
+
     for (repo, repo_path) in repos_with_changes {
         println!(
             "\n{} Committing changes in '{}'...",
@@ -45,7 +50,7 @@ pub fn git_commit_all(config: &Config, debug: bool) -> Result<()> {
         );
 
         // We run interactively to let the user write the commit message
-        if let Err(e) = run_interactive_git_command(&repo_path, &["commit"], debug) {
+        if let Err(e) = run_interactive_git_command(&repo_path, &git_args, debug) {
             eprintln!("Failed to commit in {}: {}", repo.name, e);
         }
     }
@@ -54,13 +59,18 @@ pub fn git_commit_all(config: &Config, debug: bool) -> Result<()> {
 }
 
 /// Run git push across all writable repositories
-pub fn git_push_all(config: &Config, debug: bool) -> Result<()> {
+pub fn git_push_all(config: &Config, args: &[String], debug: bool) -> Result<()> {
     let repos = config.get_writable_repos();
 
     if repos.is_empty() {
         println!("No writable repositories found.");
         return Ok(());
     }
+
+    // Build the git push command with any extra args
+    let mut git_args = vec!["push"];
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    git_args.extend(args_str);
 
     for repo in repos {
         println!(
@@ -72,7 +82,7 @@ pub fn git_push_all(config: &Config, debug: bool) -> Result<()> {
         let local_repo = LocalRepo::new(config, repo.name.clone())?;
         let repo_path = local_repo.local_path(config)?;
 
-        if let Err(e) = run_git_command(&repo_path, &["push"], debug) {
+        if let Err(e) = run_git_command(&repo_path, &git_args, debug) {
             eprintln!("Failed to push in {}: {}", repo.name, e);
         }
     }

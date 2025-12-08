@@ -71,9 +71,17 @@ pub enum DotCommands {
         command: IgnoreCommands,
     },
     /// Commit changes in all writable repositories
-    Commit,
+    Commit {
+        /// Arguments to pass to git commit (e.g. "-m 'message'")
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Push changes in all writable repositories
-    Push,
+    Push {
+        /// Arguments to pass to git push (e.g. "origin main")
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Run an arbitrary git command in a repository
     Git {
         /// Git command and arguments (e.g. "log --oneline")
@@ -256,11 +264,11 @@ pub fn handle_dot_command(
         DotCommands::Ignore { command } => {
             handle_ignore_command(&mut config, command, config_path)?;
         }
-        DotCommands::Commit => {
-            super::git_commit_all(&config, debug)?;
+        DotCommands::Commit { args } => {
+            super::git_commit_all(&config, args, debug)?;
         }
-        DotCommands::Push => {
-            super::git_push_all(&config, debug)?;
+        DotCommands::Push { args } => {
+            super::git_push_all(&config, args, debug)?;
         }
         DotCommands::Git { args } => {
             super::git_run_any(&config, args, debug)?;
