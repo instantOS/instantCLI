@@ -6,8 +6,27 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::Path;
 use std::process::Command;
+
+/// Format bytes as human-readable size
+pub fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    const TB: u64 = GB * 1024;
+
+    if bytes >= TB {
+        format!("{:.1} TB", bytes as f64 / TB as f64)
+    } else if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
 
 /// Information about a physical disk
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,12 +35,17 @@ pub struct DiskInfo {
     pub device: String,
     /// Size in bytes
     pub size_bytes: u64,
-    /// Human-readable size (e.g., "512 GB")
-    pub size_human: String,
     /// Partition table type
     pub partition_table: PartitionTableType,
     /// List of partitions on this disk
     pub partitions: Vec<PartitionInfo>,
+}
+
+impl DiskInfo {
+    /// Get human-readable size
+    pub fn size_human(&self) -> String {
+        format_size(self.size_bytes)
+    }
 }
 
 /// Partition table type
@@ -49,8 +73,6 @@ pub struct PartitionInfo {
     pub device: String,
     /// Size in bytes
     pub size_bytes: u64,
-    /// Human-readable size
-    pub size_human: String,
     /// Filesystem information
     pub filesystem: Option<FilesystemInfo>,
     /// Detected operating system
@@ -61,6 +83,13 @@ pub struct PartitionInfo {
     pub mount_point: Option<String>,
     /// Whether this is an EFI System Partition
     pub is_efi: bool,
+}
+
+impl PartitionInfo {
+    /// Get human-readable size
+    pub fn size_human(&self) -> String {
+        format_size(self.size_bytes)
+    }
 }
 
 /// Filesystem information
@@ -110,12 +139,17 @@ pub struct ResizeInfo {
     pub can_shrink: bool,
     /// Minimum size in bytes (if shrinkable)
     pub min_size_bytes: Option<u64>,
-    /// Human-readable minimum size
-    pub min_size_human: Option<String>,
     /// Reason why it can or can't be resized
     pub reason: Option<String>,
     /// Prerequisites that must be met before resizing
     pub prerequisites: Vec<String>,
+}
+
+impl ResizeInfo {
+    /// Get human-readable minimum size
+    pub fn min_size_human(&self) -> Option<String> {
+        self.min_size_bytes.map(format_size)
+    }
 }
 
 /// Detect all disks and their partitions
@@ -182,7 +216,6 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
         disks.push(DiskInfo {
             device: format!("/dev/{}", name),
             size_bytes,
-            size_human: format_size(size_bytes),
             partition_table,
             partitions,
         });
@@ -247,7 +280,6 @@ fn parse_partition(value: &Value) -> Option<PartitionInfo> {
     Some(PartitionInfo {
         device: device_path,
         size_bytes,
-        size_human: format_size(size_bytes),
         filesystem,
         detected_os,
         resize_info,
@@ -273,15 +305,13 @@ fn is_efi_partition(parttype: &str) -> bool {
 /// Get resize info for EFI System Partition
 fn get_efi_resize_info(size_bytes: u64) -> ResizeInfo {
     const MIN_ESP_SIZE: u64 = 260 * 1024 * 1024; // 260 MB recommended
-    const ADEQUATE_SIZE: u64 = 512 * 1024 * 1024; // 512 MB is comfortable
 
     if size_bytes < MIN_ESP_SIZE {
         ResizeInfo {
             can_shrink: false,
             min_size_bytes: None,
-            min_size_human: None,
             reason: Some(format!(
-                "ESP is small ({}) - consider 260MB+ for dual boot",
+                "ESP is small ({}) - recommend 260MB+ for dual boot",
                 format_size(size_bytes)
             )),
             prerequisites: vec![],
@@ -290,7 +320,6 @@ fn get_efi_resize_info(size_bytes: u64) -> ResizeInfo {
         ResizeInfo {
             can_shrink: false, // Don't shrink ESP
             min_size_bytes: None,
-            min_size_human: None,
             reason: Some("Reuse for dual boot (do not reformat)".to_string()),
             prerequisites: vec![],
         }
@@ -372,35 +401,73 @@ fn get_resize_info(device: &str, fs_type: &str) -> ResizeInfo {
         "btrfs" => ResizeInfo {
             can_shrink: true,
             min_size_bytes: None,
-            min_size_human: None,
             reason: Some("Btrfs can be resized online".to_string()),
             prerequisites: vec![],
         },
         "xfs" => ResizeInfo {
             can_shrink: false,
             min_size_bytes: None,
-            min_size_human: None,
             reason: Some("XFS can only grow, not shrink".to_string()),
             prerequisites: vec![],
         },
         "vfat" | "fat32" | "fat16" | "exfat" => ResizeInfo {
             can_shrink: false,
             min_size_bytes: None,
-            min_size_human: None,
             reason: Some("FAT filesystems cannot be shrunk in place".to_string()),
             prerequisites: vec!["Backup data and recreate partition".to_string()],
         },
         "swap" => ResizeInfo {
             can_shrink: true,
             min_size_bytes: Some(0),
-            min_size_human: Some("0 B".to_string()),
             reason: Some("Swap can be recreated at any size".to_string()),
             prerequisites: vec!["Swapoff before modifying".to_string()],
+        },
+        // Complex/unshrinkable filesystems - keep it simple
+        "zfs_member" | "zfs" => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            reason: Some("ZFS pools cannot be shrunk".to_string()),
+            prerequisites: vec![],
+        },
+        "LVM2_member" | "lvm" => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            reason: Some("LVM requires manual handling".to_string()),
+            prerequisites: vec!["Use lvreduce/pvresize for LVM operations".to_string()],
+        },
+        "crypto_LUKS" | "luks" => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            reason: Some("LUKS encryption requires special handling".to_string()),
+            prerequisites: vec!["Decrypt and resize filesystem first".to_string()],
+        },
+        "bcachefs" => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            reason: Some("Bcachefs shrinking not supported".to_string()),
+            prerequisites: vec![],
+        },
+        "f2fs" => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            reason: Some("F2FS can only grow, not shrink".to_string()),
+            prerequisites: vec![],
+        },
+        "reiserfs" | "reiser4" => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            reason: Some("ReiserFS shrinking not recommended".to_string()),
+            prerequisites: vec![],
+        },
+        "jfs" => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            reason: Some("JFS can only grow, not shrink".to_string()),
+            prerequisites: vec![],
         },
         _ => ResizeInfo {
             can_shrink: false,
             min_size_bytes: None,
-            min_size_human: None,
             reason: Some(format!("Unknown filesystem: {}", fs_type)),
             prerequisites: vec![],
         },
@@ -425,7 +492,6 @@ fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
                     return ResizeInfo {
                         can_shrink: false,
                         min_size_bytes: None,
-                        min_size_human: None,
                         reason: Some("Windows is hibernated".to_string()),
                         prerequisites: vec![
                             "Boot into Windows".to_string(),
@@ -438,7 +504,6 @@ fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
                     return ResizeInfo {
                         can_shrink: false,
                         min_size_bytes: None,
-                        min_size_human: None,
                         reason: Some("NTFS filesystem has errors".to_string()),
                         prerequisites: vec![
                             "Boot into Windows".to_string(),
@@ -449,7 +514,6 @@ fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
                 return ResizeInfo {
                     can_shrink: false,
                     min_size_bytes: None,
-                    min_size_human: None,
                     reason: Some(format!("ntfsresize failed: {}", stderr.trim())),
                     prerequisites: vec![],
                 };
@@ -463,7 +527,6 @@ fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
                 return ResizeInfo {
                     can_shrink: true,
                     min_size_bytes: Some(safe_min),
-                    min_size_human: Some(format_size(safe_min)),
                     reason: None,
                     prerequisites: vec![],
                 };
@@ -472,7 +535,6 @@ fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
             ResizeInfo {
                 can_shrink: true,
                 min_size_bytes: None,
-                min_size_human: None,
                 reason: Some("Could not determine minimum size".to_string()),
                 prerequisites: vec![],
             }
@@ -482,7 +544,6 @@ fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
             ResizeInfo {
                 can_shrink: false,
                 min_size_bytes: None,
-                min_size_human: None,
                 reason: Some(format!("ntfsresize not available: {}", e)),
                 prerequisites: vec!["Install ntfs-3g package".to_string()],
             }
@@ -528,7 +589,6 @@ fn get_ext_resize_info(device: &str) -> ResizeInfo {
             ResizeInfo {
                 can_shrink: true,
                 min_size_bytes: Some(min_size),
-                min_size_human: Some(format_size(min_size)),
                 reason: None,
                 prerequisites: vec!["Filesystem must be unmounted".to_string()],
             }
@@ -538,7 +598,6 @@ fn get_ext_resize_info(device: &str) -> ResizeInfo {
             ResizeInfo {
                 can_shrink: false,
                 min_size_bytes: None,
-                min_size_human: None,
                 reason: Some(format!("dumpe2fs failed: {}", stderr.trim())),
                 prerequisites: vec![],
             }
@@ -546,7 +605,6 @@ fn get_ext_resize_info(device: &str) -> ResizeInfo {
         Err(e) => ResizeInfo {
             can_shrink: false,
             min_size_bytes: None,
-            min_size_human: None,
             reason: Some(format!("dumpe2fs not available: {}", e)),
             prerequisites: vec!["Install e2fsprogs package".to_string()],
         },
@@ -562,26 +620,6 @@ fn parse_dumpe2fs_field(output: &str, field: &str) -> Option<u64> {
         }
     }
     None
-}
-
-/// Format bytes as human-readable size
-pub fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-    const TB: u64 = GB * 1024;
-
-    if bytes >= TB {
-        format!("{:.1} TB", bytes as f64 / TB as f64)
-    } else if bytes >= GB {
-        format!("{:.1} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.1} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
 }
 
 #[cfg(test)]
@@ -652,5 +690,24 @@ Please make a test run using both the -n and -s options before real resizing!"#;
         assert_eq!(format!("{}", OSType::Linux), "Linux");
         assert_eq!(format!("{}", OSType::MacOS), "macOS");
         assert_eq!(format!("{}", OSType::Unknown), "Unknown");
+    }
+
+    #[test]
+    fn test_resize_info_min_size_human() {
+        let info = ResizeInfo {
+            can_shrink: true,
+            min_size_bytes: Some(1073741824),
+            reason: None,
+            prerequisites: vec![],
+        };
+        assert_eq!(info.min_size_human(), Some("1.0 GB".to_string()));
+
+        let info_none = ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            reason: None,
+            prerequisites: vec![],
+        };
+        assert_eq!(info_none.min_size_human(), None);
     }
 }

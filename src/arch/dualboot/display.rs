@@ -33,7 +33,7 @@ pub fn display_disk(disk: &DiskInfo) {
         NerdFont::HardDrive.to_string().bright_cyan(),
         disk.device.bold(),
         format!("[{}]", disk.partition_table).dimmed(),
-        disk.size_human.bright_white()
+        disk.size_human().bright_white()
     );
     println!("  {}", "─".repeat(60).bright_black());
 
@@ -100,7 +100,7 @@ fn display_partition_row(partition: &PartitionInfo) {
             format!("{} {}", "✓".green(), reason.green())
         }
         Some(info) if info.can_shrink => {
-            if let Some(min) = &info.min_size_human {
+            if let Some(min) = info.min_size_human() {
                 format!("{} min: {}", "✓".green(), min)
             } else {
                 format!("{}", "✓ shrinkable".green())
@@ -121,7 +121,7 @@ fn display_partition_row(partition: &PartitionInfo) {
         "    {} {:<14} {:>10}  {:<6}  {} {}",
         "•".dimmed(),
         name,
-        partition.size_human.bright_white(),
+        partition.size_human().bright_white(),
         fs_type.cyan(),
         os_icon,
         os_text
@@ -153,7 +153,7 @@ pub fn display_resize_details(partition: &PartitionInfo) {
     if let Some(info) = &partition.resize_info {
         if info.can_shrink {
             println!("  {} This partition can be shrunk", "✓".green().bold());
-            if let Some(min) = &info.min_size_human {
+            if let Some(min) = info.min_size_human() {
                 println!("  {} Minimum size: {}", "→".dimmed(), min.yellow());
             }
         } else {
