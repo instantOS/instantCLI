@@ -1,7 +1,9 @@
 //! Display formatting for dual boot detection results
 //!
 //! Provides pretty-printed output for disk and partition information.
+//! Uses simple row-based output similar to `ins arch info`.
 
+use crate::ui::nerd_font::NerdFont;
 use colored::Colorize;
 
 use super::{DiskInfo, OSType, PartitionInfo};
@@ -9,7 +11,11 @@ use super::{DiskInfo, OSType, PartitionInfo};
 /// Display all detected disks with their partitions
 pub fn display_disks(disks: &[DiskInfo]) {
     if disks.is_empty() {
-        println!("{}", "No disks detected.".yellow());
+        println!(
+            "  {} {}",
+            NerdFont::Warning.to_string().yellow(),
+            "No disks detected.".yellow()
+        );
         return;
     }
 
@@ -21,44 +27,26 @@ pub fn display_disks(disks: &[DiskInfo]) {
 
 /// Display a single disk with its partitions
 pub fn display_disk(disk: &DiskInfo) {
-    // Header
-    let header = format!(
-        " Disk: {} ({}) - {} ",
-        disk.device.bold(),
-        disk.size_human,
-        disk.partition_table
-    );
-
-    let width = 78;
-    let header_padded = format!("{:^width$}", header, width = width);
-
-    println!("╭{}╮", "─".repeat(width));
-    println!("│{}│", header_padded.bold());
-    println!("├{}┤", "─".repeat(width));
-
-    // Column headers
+    // Disk header
     println!(
-        "│ {:<16} {:<8} {:<10} {:<20} {:<18} │",
-        "Partition".bold(),
-        "Type".bold(),
-        "Size".bold(),
-        "OS".bold(),
-        "Shrinkable".bold()
+        "  {} {} {} ({})",
+        NerdFont::HardDrive.to_string().bright_cyan(),
+        disk.device.bold(),
+        format!("[{}]", disk.partition_table).dimmed(),
+        disk.size_human.bright_white()
     );
-    println!("│{}│", "─".repeat(width));
+    println!("  {}", "─".repeat(60).bright_black());
 
     if disk.partitions.is_empty() {
-        println!("│{:^width$}│", "No partitions", width = width);
+        println!("    {} {}", "•".dimmed(), "No partitions".dimmed());
     } else {
         for partition in &disk.partitions {
             display_partition_row(partition);
         }
     }
-
-    println!("╰{}╯", "─".repeat(width));
 }
 
-/// Display a single partition as a table row
+/// Display a single partition as a row
 fn display_partition_row(partition: &PartitionInfo) {
     // Extract partition name from full path (/dev/nvme0n1p2 -> nvme0n1p2)
     let name = partition
@@ -73,59 +61,69 @@ fn display_partition_row(partition: &PartitionInfo) {
         .map(|f| f.fs_type.as_str())
         .unwrap_or("-");
 
-    // Size
-    let size = &partition.size_human;
-
-    // OS detection
-    let os_info = match &partition.detected_os {
+    // OS detection with icon
+    let (os_icon, os_text) = match &partition.detected_os {
         Some(os) => {
-            let name = if os.name.len() > 18 {
-                format!("{}…", &os.name[..17])
-            } else {
-                os.name.clone()
+            let icon = match os.os_type {
+                OSType::Windows => NerdFont::Desktop, // 󰍹
+                OSType::Linux => NerdFont::Terminal,  //
+                OSType::MacOS => NerdFont::Desktop,   // 󰍹
+                OSType::Unknown => NerdFont::Question,
             };
-            match os.os_type {
-                OSType::Windows => name.blue().to_string(),
-                OSType::Linux => name.green().to_string(),
-                OSType::MacOS => name.magenta().to_string(),
-                OSType::Unknown => name.white().to_string(),
-            }
+            let text = match os.os_type {
+                OSType::Windows => os.name.blue(),
+                OSType::Linux => os.name.green(),
+                OSType::MacOS => os.name.magenta(),
+                OSType::Unknown => os.name.white(),
+            };
+            (icon.to_string(), text.to_string())
         }
-        None => "-".dimmed().to_string(),
+        None => ("".to_string(), "-".dimmed().to_string()),
     };
 
     // Resize info
-    let resize_info = match &partition.resize_info {
+    let resize_text = match &partition.resize_info {
         Some(info) if info.can_shrink => {
             if let Some(min) = &info.min_size_human {
-                format!("✓ Min: {}", min).green().to_string()
+                format!("{} min: {}", "✓".green(), min)
             } else {
-                "✓ Yes".green().to_string()
+                format!("{}", "✓ shrinkable".green())
             }
         }
         Some(info) => {
             let reason = info
                 .reason
                 .as_ref()
-                .map(|r| {
-                    if r.len() > 12 {
-                        format!("{}…", &r[..11])
-                    } else {
-                        r.clone()
-                    }
-                })
-                .unwrap_or_else(|| "No".to_string());
-            format!("✗ {}", reason).red().to_string()
+                .cloned()
+                .unwrap_or_else(|| "Not shrinkable".to_string());
+            format!("{} {}", "✗".red(), reason.dimmed())
         }
         None => "-".dimmed().to_string(),
     };
 
-    // Calculate visible widths (accounting for ANSI codes)
-    // We need to use fixed widths and truncate appropriately
     println!(
-        "│ {:<16} {:<8} {:<10} {:<20} {:<18} │",
-        name, fs_type, size, os_info, resize_info
+        "    {} {:<14} {:>10}  {:<6}  {} {}",
+        "•".dimmed(),
+        name,
+        partition.size_human.bright_white(),
+        fs_type.cyan(),
+        os_icon,
+        os_text
     );
+
+    // Show resize info on separate line if present and interesting
+    if let Some(info) = &partition.resize_info {
+        if info.can_shrink || info.reason.is_some() {
+            println!("      {} {}", "↳".dimmed(), resize_text);
+        }
+
+        // Show prerequisites if any
+        if !info.prerequisites.is_empty() {
+            for prereq in &info.prerequisites {
+                println!("        {} {}", "→".dimmed(), prereq.yellow());
+            }
+        }
+    }
 }
 
 /// Display detailed information about a partition's resize constraints
