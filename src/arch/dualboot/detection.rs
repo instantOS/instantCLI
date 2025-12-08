@@ -1,0 +1,616 @@
+//! Partition and OS detection for dual boot setup
+//!
+//! This module provides functionality to detect existing operating systems,
+//! partition layouts, and resize feasibility for dual boot configurations.
+
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::path::Path;
+use std::process::Command;
+
+/// Information about a physical disk
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskInfo {
+    /// Device path (e.g., /dev/nvme0n1)
+    pub device: String,
+    /// Size in bytes
+    pub size_bytes: u64,
+    /// Human-readable size (e.g., "512 GB")
+    pub size_human: String,
+    /// Partition table type
+    pub partition_table: PartitionTableType,
+    /// List of partitions on this disk
+    pub partitions: Vec<PartitionInfo>,
+}
+
+/// Partition table type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PartitionTableType {
+    GPT,
+    MBR,
+    Unknown,
+}
+
+impl std::fmt::Display for PartitionTableType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PartitionTableType::GPT => write!(f, "GPT"),
+            PartitionTableType::MBR => write!(f, "MBR"),
+            PartitionTableType::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
+/// Information about a partition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartitionInfo {
+    /// Device path (e.g., /dev/nvme0n1p2)
+    pub device: String,
+    /// Size in bytes
+    pub size_bytes: u64,
+    /// Human-readable size
+    pub size_human: String,
+    /// Filesystem information
+    pub filesystem: Option<FilesystemInfo>,
+    /// Detected operating system
+    pub detected_os: Option<DetectedOS>,
+    /// Resize feasibility information
+    pub resize_info: Option<ResizeInfo>,
+    /// Current mount point, if any
+    pub mount_point: Option<String>,
+}
+
+/// Filesystem information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilesystemInfo {
+    /// Filesystem type (e.g., ntfs, ext4, vfat)
+    pub fs_type: String,
+    /// UUID
+    pub uuid: Option<String>,
+    /// Label
+    pub label: Option<String>,
+}
+
+/// Detected operating system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectedOS {
+    /// Type of OS
+    pub os_type: OSType,
+    /// Human-readable name
+    pub name: String,
+}
+
+/// Operating system type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum OSType {
+    Windows,
+    Linux,
+    MacOS,
+    Unknown,
+}
+
+impl std::fmt::Display for OSType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OSType::Windows => write!(f, "Windows"),
+            OSType::Linux => write!(f, "Linux"),
+            OSType::MacOS => write!(f, "macOS"),
+            OSType::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
+/// Resize feasibility information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResizeInfo {
+    /// Whether the partition can be shrunk
+    pub can_shrink: bool,
+    /// Minimum size in bytes (if shrinkable)
+    pub min_size_bytes: Option<u64>,
+    /// Human-readable minimum size
+    pub min_size_human: Option<String>,
+    /// Reason why it can or can't be resized
+    pub reason: Option<String>,
+    /// Prerequisites that must be met before resizing
+    pub prerequisites: Vec<String>,
+}
+
+/// Detect all disks and their partitions
+pub fn detect_disks() -> Result<Vec<DiskInfo>> {
+    let output = Command::new("lsblk")
+        .args([
+            "-J",
+            "-b",
+            "-o",
+            "NAME,SIZE,TYPE,FSTYPE,UUID,LABEL,MOUNTPOINT,PTTYPE",
+        ])
+        .output()
+        .context("Failed to run lsblk")?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "lsblk failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let json: Value =
+        serde_json::from_slice(&output.stdout).context("Failed to parse lsblk JSON output")?;
+
+    let blockdevices = json
+        .get("blockdevices")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow::anyhow!("No blockdevices in lsblk output"))?;
+
+    let mut disks = Vec::new();
+
+    for device in blockdevices {
+        let device_type = device
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // Only process disk devices, skip loop, rom, etc.
+        if device_type != "disk" {
+            continue;
+        }
+
+        let name = device
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // Skip loop devices
+        if name.starts_with("loop") {
+            continue;
+        }
+
+        let size_bytes = device
+            .get("size")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        let pttype = device
+            .get("pttype")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let partition_table = match pttype.to_lowercase().as_str() {
+            "gpt" => PartitionTableType::GPT,
+            "dos" | "mbr" => PartitionTableType::MBR,
+            _ => PartitionTableType::Unknown,
+        };
+
+        let mut partitions = Vec::new();
+
+        if let Some(children) = device.get("children").and_then(|v| v.as_array()) {
+            for child in children {
+                if let Some(partition) = parse_partition(child) {
+                    partitions.push(partition);
+                }
+            }
+        }
+
+        disks.push(DiskInfo {
+            device: format!("/dev/{}", name),
+            size_bytes,
+            size_human: format_size(size_bytes),
+            partition_table,
+            partitions,
+        });
+    }
+
+    Ok(disks)
+}
+
+/// Parse a partition from lsblk JSON
+fn parse_partition(value: &Value) -> Option<PartitionInfo> {
+    let name = value.get("name")?.as_str()?;
+    let size_bytes = value.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
+
+    let fs_type = value
+        .get("fstype")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty());
+
+    let filesystem = fs_type.map(|fs| FilesystemInfo {
+        fs_type: fs.to_string(),
+        uuid: value
+            .get("uuid")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        label: value
+            .get("label")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+    });
+
+    let mount_point = value
+        .get("mountpoint")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    // Detect OS based on filesystem type and mount point
+    let detected_os = detect_os_from_info(&filesystem, &mount_point);
+
+    // Get resize info based on filesystem type
+    let device_path = format!("/dev/{}", name);
+    let resize_info = filesystem
+        .as_ref()
+        .map(|fs| get_resize_info(&device_path, &fs.fs_type));
+
+    Some(PartitionInfo {
+        device: device_path,
+        size_bytes,
+        size_human: format_size(size_bytes),
+        filesystem,
+        detected_os,
+        resize_info,
+        mount_point,
+    })
+}
+
+/// Detect OS based on filesystem info (heuristic, no mounting required)
+fn detect_os_from_info(
+    filesystem: &Option<FilesystemInfo>,
+    mount_point: &Option<String>,
+) -> Option<DetectedOS> {
+    let fs = filesystem.as_ref()?;
+
+    match fs.fs_type.as_str() {
+        "ntfs" => {
+            // NTFS is almost always Windows
+            // Check label for hints
+            let name = if let Some(label) = &fs.label {
+                if label.to_lowercase().contains("windows") {
+                    "Windows".to_string()
+                } else {
+                    "Windows (NTFS)".to_string()
+                }
+            } else {
+                "Windows (NTFS)".to_string()
+            };
+
+            Some(DetectedOS {
+                os_type: OSType::Windows,
+                name,
+            })
+        }
+        "ext4" | "ext3" | "ext2" | "btrfs" | "xfs" => {
+            // Linux filesystems
+            // Check if it's a root partition
+            if mount_point.as_ref().is_some_and(|mp| mp == "/") {
+                // Try to read /etc/os-release for the current system
+                if let Ok(os_release) = std::fs::read_to_string("/etc/os-release") {
+                    if let Some(name) = parse_os_release_field(&os_release, "PRETTY_NAME") {
+                        return Some(DetectedOS {
+                            os_type: OSType::Linux,
+                            name,
+                        });
+                    }
+                }
+            }
+
+            Some(DetectedOS {
+                os_type: OSType::Linux,
+                name: format!("Linux ({})", fs.fs_type),
+            })
+        }
+        "apfs" | "hfsplus" | "hfs" => Some(DetectedOS {
+            os_type: OSType::MacOS,
+            name: "macOS".to_string(),
+        }),
+        _ => None,
+    }
+}
+
+/// Parse a field from /etc/os-release format
+fn parse_os_release_field(content: &str, field: &str) -> Option<String> {
+    for line in content.lines() {
+        if line.starts_with(field) {
+            if let Some(value) = line.strip_prefix(&format!("{}=", field)) {
+                // Remove quotes if present
+                return Some(value.trim_matches('"').to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Get resize information for a partition based on filesystem type
+fn get_resize_info(device: &str, fs_type: &str) -> ResizeInfo {
+    match fs_type {
+        "ntfs" => get_ntfs_resize_info(device),
+        "ext4" | "ext3" | "ext2" => get_ext_resize_info(device),
+        "btrfs" => ResizeInfo {
+            can_shrink: true,
+            min_size_bytes: None,
+            min_size_human: None,
+            reason: Some("Btrfs can be resized online".to_string()),
+            prerequisites: vec![],
+        },
+        "xfs" => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            min_size_human: None,
+            reason: Some("XFS can only grow, not shrink".to_string()),
+            prerequisites: vec![],
+        },
+        "vfat" | "fat32" | "fat16" | "exfat" => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            min_size_human: None,
+            reason: Some("FAT filesystems cannot be shrunk in place".to_string()),
+            prerequisites: vec!["Backup data and recreate partition".to_string()],
+        },
+        "swap" => ResizeInfo {
+            can_shrink: true,
+            min_size_bytes: Some(0),
+            min_size_human: Some("0 B".to_string()),
+            reason: Some("Swap can be recreated at any size".to_string()),
+            prerequisites: vec!["Swapoff before modifying".to_string()],
+        },
+        _ => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            min_size_human: None,
+            reason: Some(format!("Unknown filesystem: {}", fs_type)),
+            prerequisites: vec![],
+        },
+    }
+}
+
+/// Get NTFS resize information using ntfsresize
+fn get_ntfs_resize_info(device: &str) -> ResizeInfo {
+    // Try to get info from ntfsresize
+    let output = Command::new("ntfsresize")
+        .args(["--info", "--force", device])
+        .output();
+
+    match output {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            if !output.status.success() {
+                // Check for common issues
+                if stderr.contains("hibernat") || stdout.contains("hibernat") {
+                    return ResizeInfo {
+                        can_shrink: false,
+                        min_size_bytes: None,
+                        min_size_human: None,
+                        reason: Some("Windows is hibernated".to_string()),
+                        prerequisites: vec![
+                            "Boot into Windows".to_string(),
+                            "Disable Fast Startup in Power Options".to_string(),
+                            "Run: shutdown /s /f /t 0".to_string(),
+                        ],
+                    };
+                }
+                if stderr.contains("inconsistent") || stdout.contains("inconsistent") {
+                    return ResizeInfo {
+                        can_shrink: false,
+                        min_size_bytes: None,
+                        min_size_human: None,
+                        reason: Some("NTFS filesystem has errors".to_string()),
+                        prerequisites: vec![
+                            "Boot into Windows".to_string(),
+                            "Run: chkdsk /f C:".to_string(),
+                        ],
+                    };
+                }
+                return ResizeInfo {
+                    can_shrink: false,
+                    min_size_bytes: None,
+                    min_size_human: None,
+                    reason: Some(format!("ntfsresize failed: {}", stderr.trim())),
+                    prerequisites: vec![],
+                };
+            }
+
+            // Parse minimum size from output
+            // Look for "You might resize at XXXXX bytes"
+            if let Some(min_bytes) = parse_ntfs_min_size(&stdout) {
+                // Add 10% safety margin
+                let safe_min = (min_bytes as f64 * 1.1) as u64;
+                return ResizeInfo {
+                    can_shrink: true,
+                    min_size_bytes: Some(safe_min),
+                    min_size_human: Some(format_size(safe_min)),
+                    reason: None,
+                    prerequisites: vec![],
+                };
+            }
+
+            ResizeInfo {
+                can_shrink: true,
+                min_size_bytes: None,
+                min_size_human: None,
+                reason: Some("Could not determine minimum size".to_string()),
+                prerequisites: vec![],
+            }
+        }
+        Err(e) => {
+            // ntfsresize not installed or other error
+            ResizeInfo {
+                can_shrink: false,
+                min_size_bytes: None,
+                min_size_human: None,
+                reason: Some(format!("ntfsresize not available: {}", e)),
+                prerequisites: vec!["Install ntfs-3g package".to_string()],
+            }
+        }
+    }
+}
+
+/// Parse minimum size from ntfsresize output
+fn parse_ntfs_min_size(output: &str) -> Option<u64> {
+    for line in output.lines() {
+        // Look for "You might resize at XXXXX bytes"
+        if line.contains("You might resize at") && line.contains("bytes") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            for (i, part) in parts.iter().enumerate() {
+                if *part == "at" && i + 1 < parts.len() {
+                    if let Ok(bytes) = parts[i + 1].parse::<u64>() {
+                        return Some(bytes);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Get ext2/3/4 resize information using dumpe2fs
+fn get_ext_resize_info(device: &str) -> ResizeInfo {
+    let output = Command::new("dumpe2fs")
+        .args(["-h", device])
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+
+            let block_size = parse_dumpe2fs_field(&stdout, "Block size:")
+                .unwrap_or(4096);
+            let block_count = parse_dumpe2fs_field(&stdout, "Block count:")
+                .unwrap_or(0);
+            let free_blocks = parse_dumpe2fs_field(&stdout, "Free blocks:")
+                .unwrap_or(0);
+
+            let used_blocks = block_count.saturating_sub(free_blocks);
+            let used_bytes = used_blocks * block_size;
+            // Add 20% safety margin
+            let min_size = (used_bytes as f64 * 1.2) as u64;
+
+            ResizeInfo {
+                can_shrink: true,
+                min_size_bytes: Some(min_size),
+                min_size_human: Some(format_size(min_size)),
+                reason: None,
+                prerequisites: vec!["Filesystem must be unmounted".to_string()],
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            ResizeInfo {
+                can_shrink: false,
+                min_size_bytes: None,
+                min_size_human: None,
+                reason: Some(format!("dumpe2fs failed: {}", stderr.trim())),
+                prerequisites: vec![],
+            }
+        }
+        Err(e) => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            min_size_human: None,
+            reason: Some(format!("dumpe2fs not available: {}", e)),
+            prerequisites: vec!["Install e2fsprogs package".to_string()],
+        },
+    }
+}
+
+/// Parse a numeric field from dumpe2fs output
+fn parse_dumpe2fs_field(output: &str, field: &str) -> Option<u64> {
+    for line in output.lines() {
+        if line.starts_with(field) {
+            let value_str = line.strip_prefix(field)?.trim();
+            return value_str.parse().ok();
+        }
+    }
+    None
+}
+
+/// Format bytes as human-readable size
+pub fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    const TB: u64 = GB * 1024;
+
+    if bytes >= TB {
+        format!("{:.1} TB", bytes as f64 / TB as f64)
+    } else if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_size() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(512), "512 B");
+        assert_eq!(format_size(1024), "1.0 KB");
+        assert_eq!(format_size(1536), "1.5 KB");
+        assert_eq!(format_size(1048576), "1.0 MB");
+        assert_eq!(format_size(1073741824), "1.0 GB");
+        assert_eq!(format_size(1099511627776), "1.0 TB");
+    }
+
+    #[test]
+    fn test_parse_os_release_field() {
+        let content = r#"NAME="Arch Linux"
+PRETTY_NAME="Arch Linux"
+ID=arch
+BUILD_ID=rolling
+VERSION_ID="TEMPLATE_VERSION_ID"
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://archlinux.org/"
+"#;
+        assert_eq!(
+            parse_os_release_field(content, "PRETTY_NAME"),
+            Some("Arch Linux".to_string())
+        );
+        assert_eq!(
+            parse_os_release_field(content, "ID"),
+            Some("arch".to_string())
+        );
+        assert_eq!(parse_os_release_field(content, "NONEXISTENT"), None);
+    }
+
+    #[test]
+    fn test_parse_ntfs_min_size() {
+        let output = r#"ntfsresize v2021.8.22 (libntfs-3g)
+Device name        : /dev/nvme0n1p3
+NTFS volume version: 3.1
+Cluster size       : 4096 bytes
+Current volume size: 107370311680 bytes (107371 MB)
+Current device size: 107374182400 bytes (107375 MB)
+Checking filesystem consistency ...
+100.00 percent completed
+Accounting clusters ...
+Space in use       : 46123 MB (43.0%)
+Collecting resizing constraints ...
+You might resize at 46123456789 bytes or 46124 MB (freeing 61247 MB).
+Please make a test run using both the -n and -s options before real resizing!"#;
+
+        assert_eq!(parse_ntfs_min_size(output), Some(46123456789));
+    }
+
+    #[test]
+    fn test_partition_table_display() {
+        assert_eq!(format!("{}", PartitionTableType::GPT), "GPT");
+        assert_eq!(format!("{}", PartitionTableType::MBR), "MBR");
+        assert_eq!(format!("{}", PartitionTableType::Unknown), "Unknown");
+    }
+
+    #[test]
+    fn test_os_type_display() {
+        assert_eq!(format!("{}", OSType::Windows), "Windows");
+        assert_eq!(format!("{}", OSType::Linux), "Linux");
+        assert_eq!(format!("{}", OSType::MacOS), "macOS");
+        assert_eq!(format!("{}", OSType::Unknown), "Unknown");
+    }
+}

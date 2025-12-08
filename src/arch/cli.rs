@@ -5,6 +5,12 @@ use colored::Colorize;
 const DEFAULT_QUESTIONS_FILE: &str = "/etc/instant/questions.toml";
 
 #[derive(Subcommand, Debug, Clone)]
+pub enum DualbootCommands {
+    /// Show information about existing operating systems and partitions
+    Info,
+}
+
+#[derive(Subcommand, Debug, Clone)]
 pub enum ArchCommands {
     /// Start the Arch Linux installation wizard
     Install,
@@ -50,6 +56,11 @@ pub enum ArchCommands {
     },
     /// Show system information in a pretty format
     Info,
+    /// Dual boot detection and setup
+    Dualboot {
+        #[command(subcommand)]
+        command: DualbootCommands,
+    },
 }
 
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
@@ -430,6 +441,36 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             let info = crate::arch::engine::SystemInfo::detect();
             print_system_info(&info);
             Ok(())
+        }
+        ArchCommands::Dualboot { command } => match command {
+            DualbootCommands::Info => {
+                use crate::arch::dualboot::{detect_disks, display_disks};
+
+                println!();
+                println!(
+                    "  {} {}",
+                    "󰋊".bright_cyan(),
+                    "Dual Boot Detection".bright_white().bold()
+                );
+                println!("  {}", "─".repeat(50).bright_black());
+                println!();
+
+                match detect_disks() {
+                    Ok(disks) => {
+                        if disks.is_empty() {
+                            println!("  {} No disks detected. Are you running as root?", "⚠".yellow());
+                        } else {
+                            display_disks(&disks);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("  {} Failed to detect disks: {}", "✗".red(), e);
+                        eprintln!("  {} Try running with sudo", "→".dimmed());
+                    }
+                }
+
+                Ok(())
+            }
         }
         ArchCommands::Finished => {
             use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};

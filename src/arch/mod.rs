@@ -2,6 +2,7 @@ pub mod annotations;
 pub mod cli;
 pub mod config;
 pub mod disks;
+pub mod dualboot;
 pub mod engine;
 pub mod execution;
 pub mod keymaps;
