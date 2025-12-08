@@ -129,10 +129,7 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
         .context("Failed to run lsblk")?;
 
     if !output.status.success() {
-        anyhow::bail!(
-            "lsblk failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        anyhow::bail!("lsblk failed: {}", String::from_utf8_lossy(&output.stderr));
     }
 
     let json: Value =
@@ -146,35 +143,23 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
     let mut disks = Vec::new();
 
     for device in blockdevices {
-        let device_type = device
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let device_type = device.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
         // Only process disk devices, skip loop, rom, etc.
         if device_type != "disk" {
             continue;
         }
 
-        let name = device
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let name = device.get("name").and_then(|v| v.as_str()).unwrap_or("");
 
         // Skip loop devices
         if name.starts_with("loop") {
             continue;
         }
 
-        let size_bytes = device
-            .get("size")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        let size_bytes = device.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
 
-        let pttype = device
-            .get("pttype")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let pttype = device.get("pttype").and_then(|v| v.as_str()).unwrap_or("");
 
         let partition_table = match pttype.to_lowercase().as_str() {
             "gpt" => PartitionTableType::GPT,
@@ -465,20 +450,15 @@ fn parse_ntfs_min_size(output: &str) -> Option<u64> {
 
 /// Get ext2/3/4 resize information using dumpe2fs
 fn get_ext_resize_info(device: &str) -> ResizeInfo {
-    let output = Command::new("dumpe2fs")
-        .args(["-h", device])
-        .output();
+    let output = Command::new("dumpe2fs").args(["-h", device]).output();
 
     match output {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout);
 
-            let block_size = parse_dumpe2fs_field(&stdout, "Block size:")
-                .unwrap_or(4096);
-            let block_count = parse_dumpe2fs_field(&stdout, "Block count:")
-                .unwrap_or(0);
-            let free_blocks = parse_dumpe2fs_field(&stdout, "Free blocks:")
-                .unwrap_or(0);
+            let block_size = parse_dumpe2fs_field(&stdout, "Block size:").unwrap_or(4096);
+            let block_count = parse_dumpe2fs_field(&stdout, "Block count:").unwrap_or(0);
+            let free_blocks = parse_dumpe2fs_field(&stdout, "Free blocks:").unwrap_or(0);
 
             let used_blocks = block_count.saturating_sub(free_blocks);
             let used_bytes = used_blocks * block_size;

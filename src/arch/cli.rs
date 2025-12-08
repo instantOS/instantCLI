@@ -458,7 +458,10 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 match detect_disks() {
                     Ok(disks) => {
                         if disks.is_empty() {
-                            println!("  {} No disks detected. Are you running as root?", "⚠".yellow());
+                            println!(
+                                "  {} No disks detected. Are you running as root?",
+                                "⚠".yellow()
+                            );
                         } else {
                             display_disks(&disks);
                         }
@@ -471,7 +474,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
 
                 Ok(())
             }
-        }
+        },
         ArchCommands::Finished => {
             use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
             use crate::ui::nerd_font::NerdFont;
