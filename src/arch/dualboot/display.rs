@@ -61,28 +61,44 @@ fn display_partition_row(partition: &PartitionInfo) {
         .map(|f| f.fs_type.as_str())
         .unwrap_or("-");
 
-    // OS detection with icon
-    let (os_icon, os_text) = match &partition.detected_os {
-        Some(os) => {
-            let icon = match os.os_type {
-                OSType::Windows => NerdFont::Desktop, // 󰍹
-                OSType::Linux => NerdFont::Terminal,  //
-                OSType::MacOS => NerdFont::Desktop,   // 󰍹
-                OSType::Unknown => NerdFont::Question,
-            };
-            let text = match os.os_type {
-                OSType::Windows => os.name.blue(),
-                OSType::Linux => os.name.green(),
-                OSType::MacOS => os.name.magenta(),
-                OSType::Unknown => os.name.white(),
-            };
-            (icon.to_string(), text.to_string())
+    // OS detection with icon - EFI partitions get special treatment
+    let (os_icon, os_text) = if partition.is_efi {
+        (
+            NerdFont::Shield.to_string(),
+            "EFI System Partition".cyan().to_string(),
+        )
+    } else {
+        match &partition.detected_os {
+            Some(os) => {
+                let icon = match os.os_type {
+                    OSType::Windows => NerdFont::Desktop,
+                    OSType::Linux => NerdFont::Terminal,
+                    OSType::MacOS => NerdFont::Desktop,
+                    OSType::Unknown => NerdFont::Question,
+                };
+                let text = match os.os_type {
+                    OSType::Windows => os.name.blue(),
+                    OSType::Linux => os.name.green(),
+                    OSType::MacOS => os.name.magenta(),
+                    OSType::Unknown => os.name.white(),
+                };
+                (icon.to_string(), text.to_string())
+            }
+            None => ("".to_string(), "-".dimmed().to_string()),
         }
-        None => ("".to_string(), "-".dimmed().to_string()),
     };
 
-    // Resize info
+    // Resize info - EFI partitions show reuse message in green
     let resize_text = match &partition.resize_info {
+        Some(info) if partition.is_efi => {
+            // EFI partitions: show reuse message
+            let reason = info
+                .reason
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| "Reuse for dual boot".to_string());
+            format!("{} {}", "✓".green(), reason.green())
+        }
         Some(info) if info.can_shrink => {
             if let Some(min) = &info.min_size_human {
                 format!("{} min: {}", "✓".green(), min)

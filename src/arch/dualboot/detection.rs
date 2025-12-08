@@ -59,6 +59,8 @@ pub struct PartitionInfo {
     pub resize_info: Option<ResizeInfo>,
     /// Current mount point, if any
     pub mount_point: Option<String>,
+    /// Whether this is an EFI System Partition
+    pub is_efi: bool,
 }
 
 /// Filesystem information
@@ -123,7 +125,7 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
             "-J",
             "-b",
             "-o",
-            "NAME,SIZE,TYPE,FSTYPE,UUID,LABEL,MOUNTPOINT,PTTYPE",
+            "NAME,SIZE,TYPE,FSTYPE,UUID,LABEL,MOUNTPOINT,PTTYPE,PARTTYPE",
         ])
         .output()
         .context("Failed to run lsblk")?;
@@ -217,14 +219,30 @@ fn parse_partition(value: &Value) -> Option<PartitionInfo> {
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    // Detect OS based on filesystem type and mount point
-    let detected_os = detect_os_from_info(&filesystem, &mount_point);
+    // Check if this is an EFI System Partition
+    // MBR: 0xef, GPT: C12A7328-F81F-11D2-BA4B-00A0C93EC93B (case insensitive)
+    let parttype = value.get("parttype").and_then(|v| v.as_str()).unwrap_or("");
+    let is_efi = is_efi_partition(parttype);
 
-    // Get resize info based on filesystem type
+    // Detect OS based on filesystem type and mount point
+    let detected_os = if is_efi {
+        Some(DetectedOS {
+            os_type: OSType::Unknown,
+            name: "EFI System Partition".to_string(),
+        })
+    } else {
+        detect_os_from_info(&filesystem, &mount_point)
+    };
+
+    // Get resize info based on filesystem type and EFI status
     let device_path = format!("/dev/{}", name);
-    let resize_info = filesystem
-        .as_ref()
-        .map(|fs| get_resize_info(&device_path, &fs.fs_type));
+    let resize_info = if is_efi {
+        Some(get_efi_resize_info(size_bytes))
+    } else {
+        filesystem
+            .as_ref()
+            .map(|fs| get_resize_info(&device_path, &fs.fs_type))
+    };
 
     Some(PartitionInfo {
         device: device_path,
@@ -234,7 +252,49 @@ fn parse_partition(value: &Value) -> Option<PartitionInfo> {
         detected_os,
         resize_info,
         mount_point,
+        is_efi,
     })
+}
+
+/// Check if partition type indicates EFI System Partition
+fn is_efi_partition(parttype: &str) -> bool {
+    let pt = parttype.to_lowercase();
+    // MBR type 0xef
+    if pt == "0xef" {
+        return true;
+    }
+    // GPT GUID for EFI System Partition (case insensitive comparison)
+    if pt == "c12a7328-f81f-11d2-ba4b-00a0c93ec93b" {
+        return true;
+    }
+    false
+}
+
+/// Get resize info for EFI System Partition
+fn get_efi_resize_info(size_bytes: u64) -> ResizeInfo {
+    const MIN_ESP_SIZE: u64 = 260 * 1024 * 1024; // 260 MB recommended
+    const ADEQUATE_SIZE: u64 = 512 * 1024 * 1024; // 512 MB is comfortable
+
+    if size_bytes < MIN_ESP_SIZE {
+        ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            min_size_human: None,
+            reason: Some(format!(
+                "ESP is small ({}) - consider 260MB+ for dual boot",
+                format_size(size_bytes)
+            )),
+            prerequisites: vec![],
+        }
+    } else {
+        ResizeInfo {
+            can_shrink: false, // Don't shrink ESP
+            min_size_bytes: None,
+            min_size_human: None,
+            reason: Some("Reuse for dual boot (do not reformat)".to_string()),
+            prerequisites: vec![],
+        }
+    }
 }
 
 /// Detect OS based on filesystem info (heuristic, no mounting required)
