@@ -449,7 +449,9 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         }
         ArchCommands::Dualboot { command } => match command {
             DualbootCommands::Info => {
-                use crate::arch::dualboot::{detect_disks, display_disks};
+                use crate::arch::dualboot::{
+                    check_all_disks_feasibility, detect_disks, display_disks,
+                };
 
                 println!();
                 println!(
@@ -460,19 +462,91 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 println!("  {}", "─".repeat(50).bright_black());
                 println!();
 
-                match detect_disks() {
-                    Ok(disks) => {
-                        if disks.is_empty() {
+                match check_all_disks_feasibility() {
+                    Ok(feasibility_results) => {
+                        let mut any_feasible = false;
+
+                        // Show feasibility summary first
+                        println!("  {}", "Feasibility Summary:".bold());
+                        for (disk, feasibility) in &feasibility_results {
+                            if feasibility.feasible {
+                                any_feasible = true;
+                                println!(
+                                    "    {} {} - {} {}",
+                                    "✓".green().bold(),
+                                    disk.bright_white(),
+                                    "FEASIBLE".green().bold(),
+                                    format!(
+                                        "({} partition(s) can be resized)",
+                                        feasibility.feasible_partitions.len()
+                                    )
+                                    .dimmed()
+                                );
+                                for part in &feasibility.feasible_partitions {
+                                    println!("      {} {}", "→".dimmed(), part.cyan());
+                                }
+                            } else {
+                                println!(
+                                    "    {} {} - {}",
+                                    "✗".red().bold(),
+                                    disk.bright_white(),
+                                    "NOT FEASIBLE".red().bold()
+                                );
+                                if let Some(reason) = &feasibility.reason {
+                                    println!("      {} {}", "→".dimmed(), reason.dimmed());
+                                }
+                            }
+                        }
+
+                        println!();
+
+                        if any_feasible {
                             println!(
-                                "  {} No disks detected. Are you running as root?",
-                                "⚠".yellow()
+                                "  {} {}",
+                                "✓".green().bold(),
+                                "Dual boot is POSSIBLE on this system".green().bold()
+                            );
+                            println!(
+                                "  {} The installer will offer dual boot options",
+                                "→".dimmed()
                             );
                         } else {
-                            display_disks(&disks);
+                            println!(
+                                "  {} {}",
+                                "✗".red().bold(),
+                                "Dual boot is NOT POSSIBLE on this system".red().bold()
+                            );
+                            println!(
+                                "  {} The installer will NOT offer dual boot options",
+                                "→".dimmed()
+                            );
+                        }
+
+                        println!();
+                        println!("  {}", "Detailed Disk Information:".bold());
+                        println!("  {}", "─".repeat(50).bright_black());
+                        println!();
+
+                        // Show detailed disk information
+                        match detect_disks() {
+                            Ok(disks) => {
+                                if disks.is_empty() {
+                                    println!(
+                                        "  {} No disks detected. Are you running as root?",
+                                        "⚠".yellow()
+                                    );
+                                } else {
+                                    display_disks(&disks);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("  {} Failed to detect disks: {}", "✗".red(), e);
+                                eprintln!("  {} Try running with sudo", "→".dimmed());
+                            }
                         }
                     }
                     Err(e) => {
-                        eprintln!("  {} Failed to detect disks: {}", "✗".red(), e);
+                        eprintln!("  {} Failed to check feasibility: {}", "✗".red(), e);
                         eprintln!("  {} Try running with sudo", "→".dimmed());
                     }
                 }

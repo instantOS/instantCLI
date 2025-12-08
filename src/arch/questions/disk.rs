@@ -111,25 +111,32 @@ impl Question for PartitioningMethodQuestion {
             "Manual (cfdisk)".to_string(),
         ];
 
-        // Check for dual boot possibility
+        // Check for dual boot possibility using shared feasibility logic
         if let Some(disk_str) = context.get_answer(&QuestionId::Disk) {
             let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
 
             let disk_path_owned = disk_path.to_string();
-            let disks_result =
-                tokio::task::spawn_blocking(move || crate::arch::dualboot::detect_disks()).await?;
-
-            if let Ok(disks) = disks_result {
-                if let Some(disk_info) = disks.iter().find(|d| d.device == disk_path_owned) {
-                    // Check if any partition is shrinkable
-                    // We primarily care about partitions that are not the ESP and can be shrunk
-                    let shrinkable = disk_info.partitions.iter().any(|p| {
-                        crate::arch::dualboot::is_dualboot_feasible(p)
-                    });
-
-                    if shrinkable {
-                        options.insert(1, "Dual Boot (Experimental)".to_string());
+            let feasibility_result = tokio::task::spawn_blocking(
+                move || -> anyhow::Result<crate::arch::dualboot::DualBootFeasibility> {
+                    let disks = crate::arch::dualboot::detect_disks()?;
+                    if let Some(disk_info) = disks.iter().find(|d| d.device == disk_path_owned) {
+                        Ok(crate::arch::dualboot::check_disk_dualboot_feasibility(
+                            disk_info,
+                        ))
+                    } else {
+                        Ok(crate::arch::dualboot::DualBootFeasibility {
+                            feasible: false,
+                            feasible_partitions: vec![],
+                            reason: Some("Selected disk not found".to_string()),
+                        })
                     }
+                },
+            )
+            .await;
+
+            if let Ok(Ok(feasibility)) = feasibility_result {
+                if feasibility.feasible {
+                    options.insert(1, "Dual Boot (Experimental)".to_string());
                 }
             }
         }

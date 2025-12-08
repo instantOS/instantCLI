@@ -252,6 +252,84 @@ pub fn is_dualboot_feasible(partition: &PartitionInfo) -> bool {
     partition.size_bytes.saturating_sub(min_existing) >= crate::arch::dualboot::MIN_LINUX_SIZE
 }
 
+/// Overall dual boot feasibility result for a disk
+#[derive(Debug, Clone)]
+pub struct DualBootFeasibility {
+    /// Whether dual boot is feasible on this disk
+    pub feasible: bool,
+    /// List of partitions that could be used for dual boot
+    pub feasible_partitions: Vec<String>,
+    /// Reason why dual boot is not feasible (if applicable)
+    pub reason: Option<String>,
+}
+
+/// Check if dual boot is feasible on a specific disk
+pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
+    let feasible_partitions: Vec<String> = disk
+        .partitions
+        .iter()
+        .filter(|p| is_dualboot_feasible(p))
+        .map(|p| p.device.clone())
+        .collect();
+
+    if feasible_partitions.is_empty() {
+        // Check if there are any partitions at all
+        if disk.partitions.is_empty() {
+            DualBootFeasibility {
+                feasible: false,
+                feasible_partitions: vec![],
+                reason: Some("No partitions found on disk".to_string()),
+            }
+        } else {
+            // Check if there are shrinkable partitions but not enough space
+            let shrinkable: Vec<_> = disk
+                .partitions
+                .iter()
+                .filter(|p| {
+                    !p.is_efi
+                        && p.resize_info
+                            .as_ref()
+                            .map(|r| r.can_shrink)
+                            .unwrap_or(false)
+                })
+                .collect();
+
+            if shrinkable.is_empty() {
+                DualBootFeasibility {
+                    feasible: false,
+                    feasible_partitions: vec![],
+                    reason: Some("No shrinkable partitions found".to_string()),
+                }
+            } else {
+                DualBootFeasibility {
+                    feasible: false,
+                    feasible_partitions: vec![],
+                    reason: Some("Shrinkable partitions found, but none have enough free space for Linux (need 10GB)".to_string()),
+                }
+            }
+        }
+    } else {
+        DualBootFeasibility {
+            feasible: true,
+            feasible_partitions,
+            reason: None,
+        }
+    }
+}
+
+/// Check dual boot feasibility for all detected disks
+pub fn check_all_disks_feasibility() -> Result<Vec<(String, DualBootFeasibility)>> {
+    let disks = detect_disks()?;
+    let mut results = Vec::new();
+
+    for disk in disks {
+        let feasibility = check_disk_dualboot_feasibility(&disk);
+        results.push((disk.device, feasibility));
+    }
+
+    Ok(results)
+}
+
 /// Parse a partition from lsblk JSON
 fn parse_partition(value: &Value) -> Option<PartitionInfo> {
     let name = value.get("name")?.as_str()?;
