@@ -294,11 +294,18 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
                 })
                 .collect();
 
-            if shrinkable.is_empty() {
+            // Filter out partitions that are way too small (e.g. < 2GB) to be relevant candidates
+            // This prevents misleading messages like "shrinkable partitions found" when only a tiny /boot exists
+            let valid_candidates: Vec<_> = shrinkable
+                .iter()
+                .filter(|p| p.size_bytes >= 2 * 1024 * 1024 * 1024)
+                .collect();
+
+            if valid_candidates.is_empty() {
                 DualBootFeasibility {
                     feasible: false,
                     feasible_partitions: vec![],
-                    reason: Some("No shrinkable partitions found".to_string()),
+                    reason: Some("No suitable partitions found (too small or not shrinkable)".to_string()),
                 }
             } else {
                 DualBootFeasibility {
@@ -381,7 +388,7 @@ fn parse_partition(value: &Value) -> Option<PartitionInfo> {
     } else {
         filesystem
             .as_ref()
-            .map(|fs| get_resize_info(&device_path, &fs.fs_type))
+            .map(|fs| get_resize_info(&device_path, &fs.fs_type, mount_point.as_deref()))
     };
 
     Some(PartitionInfo {
@@ -501,10 +508,10 @@ fn parse_os_release_field(content: &str, field: &str) -> Option<String> {
 }
 
 /// Get resize information for a partition based on filesystem type
-fn get_resize_info(device: &str, fs_type: &str) -> ResizeInfo {
+fn get_resize_info(device: &str, fs_type: &str, mount_point: Option<&str>) -> ResizeInfo {
     match fs_type {
         "ntfs" => get_ntfs_resize_info(device),
-        "ext4" | "ext3" | "ext2" => get_ext_resize_info(device),
+        "ext4" | "ext3" | "ext2" => get_ext_resize_info(device, mount_point),
         "btrfs" => ResizeInfo {
             can_shrink: true,
             min_size_bytes: None,
@@ -677,7 +684,7 @@ fn parse_ntfs_min_size(output: &str) -> Option<u64> {
 }
 
 /// Get ext2/3/4 resize information using dumpe2fs
-fn get_ext_resize_info(device: &str) -> ResizeInfo {
+fn get_ext_resize_info(device: &str, mount_point: Option<&str>) -> ResizeInfo {
     let output = Command::new("dumpe2fs").args(["-h", device]).output();
 
     match output {
@@ -693,11 +700,16 @@ fn get_ext_resize_info(device: &str) -> ResizeInfo {
             // Add 20% safety margin
             let min_size = (used_bytes as f64 * 1.2) as u64;
 
+            let mut prerequisites = vec![];
+            if mount_point.is_some() {
+                prerequisites.push("Unmount filesystem before resizing".to_string());
+            }
+
             ResizeInfo {
                 can_shrink: true,
                 min_size_bytes: Some(min_size),
                 reason: None,
-                prerequisites: vec!["Filesystem must be unmounted".to_string()],
+                prerequisites,
             }
         }
         Ok(output) => {
