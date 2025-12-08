@@ -38,26 +38,7 @@ impl Question for DualBootPartitionQuestion {
         let shrinkable_partitions: Vec<_> = disk_info
             .partitions
             .iter()
-            .filter(|p| {
-                let can_shrink = !p.is_efi
-                    && p.resize_info
-                        .as_ref()
-                        .map(|r| r.can_shrink)
-                        .unwrap_or(false);
-
-                if !can_shrink {
-                    return false;
-                }
-
-                let size = p.size_bytes;
-                let min_existing = p
-                    .resize_info
-                    .as_ref()
-                    .and_then(|r| r.min_size_bytes)
-                    .unwrap_or(0);
-                // Minimum 10GB for Linux
-                size.saturating_sub(min_existing) >= crate::arch::dualboot::MIN_LINUX_SIZE
-            })
+            .filter(|p| crate::arch::dualboot::is_dualboot_feasible(p))
             .collect();
 
         if shrinkable_partitions.is_empty() {
@@ -155,15 +136,15 @@ impl Question for DualBootSizeQuestion {
         let partition_size = partition.size_bytes;
         let min_existing = resize_info.min_size_bytes.unwrap_or(0);
 
-        // Minimum for Linux: 20GB
-        let min_linux = 20 * 1024 * 1024 * 1024; // 20 GB
+        // Minimum for Linux: 10GB
+        let min_linux = crate::arch::dualboot::MIN_LINUX_SIZE; // 10 GB
 
         // Calculate available space for Linux (Partition size - Existing OS min)
         let max_linux = partition_size.saturating_sub(min_existing);
 
         if max_linux < min_linux {
             FzfWrapper::message(&format!(
-                "{} Not enough free space on partition for Linux.\nNeed 20GB, but only {} available (after preserving existing OS).",
+                "{} Not enough free space on partition for Linux.\nNeed 10GB, but only {} available (after preserving existing OS).",
                 NerdFont::Warning,
                 crate::arch::dualboot::format_size(max_linux)
             ))?;

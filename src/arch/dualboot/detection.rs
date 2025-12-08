@@ -224,6 +224,34 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
     Ok(disks)
 }
 
+/// Check if a partition is feasible for dual boot installation
+pub fn is_dualboot_feasible(partition: &PartitionInfo) -> bool {
+    // Cannot resize EFI partitions
+    if partition.is_efi {
+        return false;
+    }
+
+    // Must be shrinkable
+    let can_shrink = partition
+        .resize_info
+        .as_ref()
+        .map(|r| r.can_shrink)
+        .unwrap_or(false);
+
+    if !can_shrink {
+        return false;
+    }
+
+    // Must have enough space
+    let min_existing = partition
+        .resize_info
+        .as_ref()
+        .and_then(|r| r.min_size_bytes)
+        .unwrap_or(0);
+
+    partition.size_bytes.saturating_sub(min_existing) >= crate::arch::dualboot::MIN_LINUX_SIZE
+}
+
 /// Parse a partition from lsblk JSON
 fn parse_partition(value: &Value) -> Option<PartitionInfo> {
     let name = value.get("name")?.as_str()?;
