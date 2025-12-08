@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.4](https://github.com/instantOS/instantCLI/compare/v0.10.3...v0.10.4) - 2025-12-07
+
+### Fixed
+
+- fix tests?
+
+### Other
+
+- fmt
+- add a bit of timestamp tolerance
+- Merge branch 'dev'
+- init beads
+- *(beads)* commit untracked JSONL files
+
 ## [0.10.3](https://github.com/instantOS/instantCLI/compare/v0.10.2...v0.10.3) - 2025-12-07
 
 ### Fixed
