@@ -8,9 +8,6 @@ const DEFAULT_QUESTIONS_FILE: &str = "/etc/instant/questions.toml";
 pub enum DualbootCommands {
     /// Show information about existing operating systems and partitions
     Info,
-    /// Test the allocation slider UI (Development)
-    #[command(hide = true)]
-    TestSlider,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -480,29 +477,8 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
 
                 Ok(())
             }
-            DualbootCommands::TestSlider => {
-                use crate::arch::dualboot::{format_size, show_allocation_slider};
-
-                println!("Testing allocation slider with simulated 500GB disk...");
-                println!("- Existing OS minimum: 100GB");
-                println!("- Linux minimum: 50GB");
-
-                // Dummy values: 500GB disk, Windows needs 100GB, Linux needs 50GB
-                let disk_size = 500 * 1024 * 1024 * 1024;
-                let existing_os_min = 100 * 1024 * 1024 * 1024;
-                let linux_min = 50 * 1024 * 1024 * 1024;
-
-                match show_allocation_slider(disk_size, existing_os_min, linux_min) {
-                    Ok(size) => {
-                        println!("\nSelection result:");
-                        println!("  Linux Size: {}", format_size(size).green().bold());
-                        println!("  Remaining:  {}", format_size(disk_size - size).yellow());
-                    }
-                    Err(e) => eprintln!("Error: {}", e),
-                }
-                Ok(())
-            }
         },
+
         ArchCommands::Finished => {
             use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
             use crate::ui::nerd_font::NerdFont;

@@ -1,5 +1,6 @@
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::FzfWrapper;
+use crate::menu::slide::run_slider;
+use crate::menu_utils::{FzfWrapper, SliderConfig};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
@@ -144,29 +145,41 @@ impl Question for DualBootSizeQuestion {
         // Minimum for Linux: 20GB
         let min_linux = 20 * 1024 * 1024 * 1024; // 20 GB
 
-        let partition_size_val = partition_size;
-        let min_existing_val = min_existing;
-        let min_linux_val = min_linux;
+        // Calculate available space for Linux (Partition size - Existing OS min)
+        let max_linux = partition_size.saturating_sub(min_existing);
 
-        let size_bytes_result = tokio::task::spawn_blocking(move || {
-            crate::arch::dualboot::show_allocation_slider(
-                partition_size_val,
-                min_existing_val,
-                min_linux_val,
-            )
-        })
-        .await?;
+        if max_linux < min_linux {
+            return Err(anyhow::anyhow!(
+                "Not enough free space on partition for Linux (Need 20GB)"
+            ));
+        }
 
-        match size_bytes_result {
-            Ok(size_bytes) => Ok(QuestionResult::Answer(size_bytes.to_string())),
-            Err(e) => {
-                // If the user cancelled, we return Cancelled
-                if e.to_string().contains("cancelled") {
-                    Ok(QuestionResult::Cancelled)
-                } else {
-                    Err(e)
-                }
+        // Convert to GB for slider (easier to read/manage)
+        const GB: u64 = 1024 * 1024 * 1024;
+        let min_gb = min_linux / GB;
+        let max_gb = max_linux / GB;
+        let default_gb = (min_gb + max_gb) / 2;
+
+        let config = SliderConfig::new(
+            min_gb as i64,
+            max_gb as i64,
+            Some(default_gb as i64),
+            Some(1),  // Step 1 GB
+            Some(10), // Big step 10 GB
+            Some("Linux Size (GB)".to_string()),
+            None, // No command to execute on change
+        )?;
+
+        // Run slider in sync task since it uses TUI
+        let result = tokio::task::spawn_blocking(move || run_slider(config)).await?;
+
+        match result {
+            Ok(Some(gb)) => {
+                let bytes = gb as u64 * GB;
+                Ok(QuestionResult::Answer(bytes.to_string()))
             }
+            Ok(None) => Ok(QuestionResult::Cancelled),
+            Err(e) => Err(anyhow::anyhow!("Slider failed: {}", e)),
         }
     }
 }

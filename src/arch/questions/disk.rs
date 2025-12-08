@@ -116,7 +116,8 @@ impl Question for PartitioningMethodQuestion {
             let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
 
             let disk_path_owned = disk_path.to_string();
-            let disks_result = tokio::task::spawn_blocking(move || crate::arch::dualboot::detect_disks()).await?;
+            let disks_result =
+                tokio::task::spawn_blocking(move || crate::arch::dualboot::detect_disks()).await?;
 
             if let Ok(disks) = disks_result {
                 if let Some(disk_info) = disks.iter().find(|d| d.device == disk_path_owned) {
