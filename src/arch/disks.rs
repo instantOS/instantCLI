@@ -123,30 +123,47 @@ pub fn get_boot_disk() -> Result<Option<String>> {
     }
 }
 
-/// Check if any partition on the given disk is currently mounted
-pub fn is_disk_mounted(disk: &str) -> Result<bool> {
+/// Get list of mounted partitions on the given disk
+pub fn get_mounted_partitions(disk: &str) -> Result<Vec<String>> {
     let output = Command::new("findmnt")
         .args(["-n", "-o", "SOURCE"])
         .output()?;
 
     if !output.status.success() {
-        // If findmnt fails, we assume nothing is mounted or we can't tell.
-        // But for safety, maybe we should error?
-        // findmnt returns 1 if nothing is mounted? No, it returns 1 if error.
-        // Actually findmnt returns 1 if no mountpoints found matching criteria.
-        // If we run without args it lists all.
-        return Ok(false);
+        return Ok(Vec::new());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut mounted = Vec::new();
+
     for line in stdout.lines() {
         let source = line.trim();
         if source.starts_with(disk) {
-            return Ok(true);
+            mounted.push(source.to_string());
         }
     }
 
-    Ok(false)
+    Ok(mounted)
+}
+
+/// Unmount all partitions on the given disk
+pub fn unmount_disk(disk: &str) -> Result<Vec<String>> {
+    let mounted = get_mounted_partitions(disk)?;
+    let mut unmounted = Vec::new();
+
+    for partition in &mounted {
+        let status = Command::new("umount")
+            .arg(partition)
+            .status()?;
+
+        if status.success() {
+            unmounted.push(partition.clone());
+        } else {
+            anyhow::bail!("Failed to unmount {}", partition);
+        }
+    }
+
+    Ok(unmounted)
 }
 
 /// Check if any partition on the given disk is currently used as swap

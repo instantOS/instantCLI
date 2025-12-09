@@ -24,14 +24,62 @@ impl Question for DiskQuestion {
             return Ok(QuestionResult::Cancelled);
         }
 
-        let result = FzfWrapper::builder()
-            .header(format!("{} Select Installation Disk", NerdFont::HardDrive))
-            .select(disks)?;
+        loop {
+            let result = FzfWrapper::builder()
+                .header(format!("{} Select Installation Disk", NerdFont::HardDrive))
+                .select(disks.clone())?;
 
-        match result {
-            crate::menu_utils::FzfResult::Selected(disk) => Ok(QuestionResult::Answer(disk)),
-            crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
-            _ => Ok(QuestionResult::Cancelled),
+            match result {
+                crate::menu_utils::FzfResult::Selected(disk) => {
+                    // Extract device path
+                    let device_name = disk.split('(').next().unwrap_or(&disk).trim();
+
+                    // Check for mounted partitions and offer to unmount
+                    if let Ok(mounted) = crate::arch::disks::get_mounted_partitions(device_name) {
+                        if !mounted.is_empty() {
+                            println!(
+                                "\n{} The disk {} has mounted partitions:",
+                                NerdFont::Warning,
+                                device_name
+                            );
+                            for part in &mounted {
+                                println!("  • {}", part);
+                            }
+
+                            match FzfWrapper::confirm("Unmount these partitions automatically?") {
+                                Ok(crate::menu_utils::ConfirmResult::Yes) => {
+                                    match crate::arch::disks::unmount_disk(device_name) {
+                                        Ok(unmounted) => {
+                                            println!(
+                                                "{} Successfully unmounted {} partition(s)",
+                                                NerdFont::Check,
+                                                unmounted.len()
+                                            );
+                                        }
+                                        Err(e) => {
+                                            println!(
+                                                "{} Failed to unmount: {}",
+                                                NerdFont::Cross,
+                                                e
+                                            );
+                                            println!("Please unmount manually and try again.");
+                                            continue; // Let user select again
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    println!("Please unmount the partitions manually and try again.");
+                                    continue; // Let user select again
+                                }
+                            }
+                        }
+                    }
+
+                    return Ok(QuestionResult::Answer(disk));
+                }
+                crate::menu_utils::FzfResult::Cancelled => return Ok(QuestionResult::Cancelled),
+                _ => return Ok(QuestionResult::Cancelled),
+            }
         }
     }
 
@@ -71,14 +119,8 @@ impl Question for DiskQuestion {
             ));
         }
 
-        // Check if disk is mounted
-        if let Ok(true) = crate::arch::disks::is_disk_mounted(device_name) {
-            return Err(format!(
-                "The selected disk ({}) contains mounted partitions.\n\
-                Please unmount all partitions on this disk before proceeding.",
-                device_name
-            ));
-        }
+        // Note: mounted partition check is now handled interactively in ask()
+        // with an offer to automatically unmount
 
         // Check if disk is used as swap
         if let Ok(true) = crate::arch::disks::is_disk_swap(device_name) {
