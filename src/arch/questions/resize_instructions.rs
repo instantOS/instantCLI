@@ -41,8 +41,7 @@ impl Question for ResizeInstructionsQuestion {
         let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
         let disk_path_owned = disk_path.to_string();
 
-        let disks_result =
-            tokio::task::spawn_blocking(move || crate::arch::dualboot::detect_disks()).await?;
+        let disks_result = tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await?;
         let disks = disks_result?;
         let disk_info = disks
             .iter()

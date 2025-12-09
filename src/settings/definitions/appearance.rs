@@ -602,38 +602,42 @@ impl Setting for ResetQt {
             "Are you sure you want to reset all Qt theme customizations? This will remove qt5ct, qt6ct, and Kvantum configurations.",
         )?;
 
-        if matches!(confirmation, crate::menu_utils::ConfirmResult::Yes) {
-            if let Ok(config_dir) = dirs::config_dir().context("Could not find config directory") {
-                let dirs_to_remove = [
-                    config_dir.join("qt5ct"),
-                    config_dir.join("qt6ct"),
-                    config_dir.join("Kvantum"),
-                ];
+        if matches!(confirmation, crate::menu_utils::ConfirmResult::Yes)
+            && let Ok(config_dir) = dirs::config_dir().context("Could not find config directory")
+        {
+            let dirs_to_remove = [
+                config_dir.join("qt5ct"),
+                config_dir.join("qt6ct"),
+                config_dir.join("Kvantum"),
+            ];
 
-                let mut removed_count = 0;
-                for dir in &dirs_to_remove {
-                    if dir.exists() {
-                        if let Ok(()) = std::fs::remove_dir_all(dir) {
-                            removed_count += 1;
+            let mut removed_count = 0;
+            for dir in &dirs_to_remove {
+                if dir.exists()
+                    && let Ok(()) = std::fs::remove_dir_all(dir)
+                {
+                    removed_count += 1;
+                }
+            }
+
+            if removed_count > 0 {
+                ctx.notify(
+                    "Qt Reset",
+                    &format!(
+                        "Removed {} Qt configuration {}. Restart Qt applications to see changes.",
+                        removed_count,
+                        if removed_count == 1 {
+                            "directory"
+                        } else {
+                            "directories"
                         }
-                    }
-                }
-
-                if removed_count > 0 {
-                    ctx.notify(
-                        "Qt Reset",
-                        &format!(
-                            "Removed {} Qt configuration {}. Restart Qt applications to see changes.",
-                            removed_count,
-                            if removed_count == 1 { "directory" } else { "directories" }
-                        ),
-                    );
-                } else {
-                    ctx.notify(
-                        "Qt Reset",
-                        "No Qt configuration directories found to remove.",
-                    );
-                }
+                    ),
+                );
+            } else {
+                ctx.notify(
+                    "Qt Reset",
+                    "No Qt configuration directories found to remove.",
+                );
             }
         }
 

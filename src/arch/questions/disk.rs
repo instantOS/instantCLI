@@ -117,19 +117,20 @@ impl Question for PartitioningMethodQuestion {
 
             let disk_path_owned = disk_path.to_string();
             let disks_result =
-                tokio::task::spawn_blocking(move || crate::arch::dualboot::detect_disks()).await?;
+                tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await?;
 
-            if let Ok(disks) = disks_result {
-                if let Some(disk_info) = disks.iter().find(|d| d.device == disk_path_owned) {
-                    // Check if any partition is shrinkable
-                    // We primarily care about partitions that are not the ESP and can be shrunk
-                    let shrinkable = disk_info.partitions.iter().any(|p| {
-                        crate::arch::dualboot::is_dualboot_feasible(p)
-                    });
+            if let Ok(disks) = disks_result
+                && let Some(disk_info) = disks.iter().find(|d| d.device == disk_path_owned)
+            {
+                // Check if any partition is shrinkable
+                // We primarily care about partitions that are not the ESP and can be shrunk
+                let shrinkable = disk_info
+                    .partitions
+                    .iter()
+                    .any(crate::arch::dualboot::is_dualboot_feasible);
 
-                    if shrinkable {
-                        options.insert(1, "Dual Boot (Experimental)".to_string());
-                    }
+                if shrinkable {
+                    options.insert(1, "Dual Boot (Experimental)".to_string());
                 }
             }
         }
