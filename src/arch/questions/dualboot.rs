@@ -30,7 +30,7 @@ impl Question for DualBootPartitionQuestion {
             cached
         } else {
             let detected =
-                tokio::task::spawn_blocking(|| crate::arch::dualboot::detect_disks()).await??;
+                tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
             context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
             detected
         };
@@ -130,7 +130,7 @@ impl Question for DualBootSizeQuestion {
             cached
         } else {
             let detected =
-                tokio::task::spawn_blocking(|| crate::arch::dualboot::detect_disks()).await??;
+                tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
             context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
             detected
         };

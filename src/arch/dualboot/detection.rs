@@ -281,7 +281,8 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
         .collect();
 
     // Check if we have enough unpartitioned space
-    let has_unpartitioned_space = disk.unpartitioned_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
+    let has_unpartitioned_space =
+        disk.unpartitioned_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
 
     if feasible_partitions.is_empty() {
         if has_unpartitioned_space {
@@ -331,7 +332,9 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
                 DualBootFeasibility {
                     feasible: false,
                     feasible_partitions: vec![],
-                    reason: Some("No suitable partitions found (too small or not shrinkable)".to_string()),
+                    reason: Some(
+                        "No suitable partitions found (too small or not shrinkable)".to_string(),
+                    ),
                 }
             } else {
                 DualBootFeasibility {
@@ -502,13 +505,13 @@ fn detect_os_from_info(
             // Check if it's a root partition
             if mount_point.as_ref().is_some_and(|mp| mp == "/") {
                 // Try to read /etc/os-release for the current system
-                if let Ok(os_release) = std::fs::read_to_string("/etc/os-release") {
-                    if let Some(name) = parse_os_release_field(&os_release, "PRETTY_NAME") {
-                        return Some(DetectedOS {
-                            os_type: OSType::Linux,
-                            name,
-                        });
-                    }
+                if let Ok(os_release) = std::fs::read_to_string("/etc/os-release")
+                    && let Some(name) = parse_os_release_field(&os_release, "PRETTY_NAME")
+                {
+                    return Some(DetectedOS {
+                        os_type: OSType::Linux,
+                        name,
+                    });
                 }
             }
 
@@ -528,11 +531,11 @@ fn detect_os_from_info(
 /// Parse a field from /etc/os-release format
 fn parse_os_release_field(content: &str, field: &str) -> Option<String> {
     for line in content.lines() {
-        if line.starts_with(field) {
-            if let Some(value) = line.strip_prefix(&format!("{}=", field)) {
-                // Remove quotes if present
-                return Some(value.trim_matches('"').to_string());
-            }
+        if line.starts_with(field)
+            && let Some(value) = line.strip_prefix(&format!("{}=", field))
+        {
+            // Remove quotes if present
+            return Some(value.trim_matches('"').to_string());
         }
     }
     None
@@ -703,10 +706,11 @@ fn parse_ntfs_min_size(output: &str) -> Option<u64> {
         if line.contains("You might resize at") && line.contains("bytes") {
             let parts: Vec<&str> = line.split_whitespace().collect();
             for (i, part) in parts.iter().enumerate() {
-                if *part == "at" && i + 1 < parts.len() {
-                    if let Ok(bytes) = parts[i + 1].parse::<u64>() {
-                        return Some(bytes);
-                    }
+                if *part == "at"
+                    && i + 1 < parts.len()
+                    && let Ok(bytes) = parts[i + 1].parse::<u64>()
+                {
+                    return Some(bytes);
                 }
             }
         }

@@ -134,10 +134,10 @@ impl Question for PartitioningMethodQuestion {
             )
             .await;
 
-            if let Ok(Ok(feasibility)) = feasibility_result {
-                if feasibility.feasible {
-                    options.insert(1, "Dual Boot (Experimental)".to_string());
-                }
+            if let Ok(Ok(feasibility)) = feasibility_result
+                && feasibility.feasible
+            {
+                options.insert(1, "Dual Boot (Experimental)".to_string());
             }
         }
 
