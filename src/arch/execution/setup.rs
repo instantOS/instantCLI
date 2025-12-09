@@ -89,12 +89,22 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
     }
 
     // GPU packages
+    // We install drivers here (after multilib is enabled) to allow lib32-* packages
+    let kernel = context
+        .get_answer(&QuestionId::Kernel)
+        .map(|s| s.as_str())
+        .unwrap_or("linux");
+
+    let mut added_gpus = std::collections::HashSet::new();
     for gpu in &context.system_info.gpus {
-        let driver_packages = gpu.get_driver_packages();
+        // Avoid duplicates if same GPU type detected multiple times
+        if !added_gpus.insert(std::mem::discriminant(gpu)) {
+            continue;
+        }
 
         match gpu {
             crate::arch::engine::GpuKind::Nvidia => {
-                println!("Detected NVIDIA GPU, adding nvidia");
+                println!("Detected NVIDIA GPU, adding drivers");
             }
             crate::arch::engine::GpuKind::Amd => {
                 println!("Detected AMD GPU, adding vulkan support");
@@ -107,7 +117,7 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
             }
         }
 
-        packages.extend(driver_packages);
+        packages.extend(gpu.get_driver_packages(Some(kernel)));
     }
 
     // VM Guest Tools

@@ -97,9 +97,25 @@ impl GpuKind {
         }
     }
 
-    pub fn get_driver_packages(&self) -> Vec<&'static str> {
+    /// Returns driver packages for this GPU.
+    /// For NVIDIA, pass the kernel name to get kernel-specific drivers (nvidia, nvidia-lts, nvidia-dkms).
+    pub fn get_driver_packages(&self, kernel: Option<&str>) -> Vec<&'static str> {
         match self {
-            GpuKind::Nvidia => vec!["nvidia", "nvidia-utils", "nvidia-settings"],
+            GpuKind::Nvidia => {
+                let mut packages = Vec::new();
+                match kernel.unwrap_or("linux") {
+                    "linux" => packages.push("nvidia"),
+                    "linux-lts" => packages.push("nvidia-lts"),
+                    _ => {
+                        // Custom kernels (zen, hardened, etc) need DKMS
+                        packages.push("nvidia-dkms");
+                        packages.push("dkms");
+                    }
+                }
+                packages.push("nvidia-utils");
+                packages.push("nvidia-settings");
+                packages
+            }
             GpuKind::Amd => vec![
                 "vulkan-radeon",
                 "lib32-vulkan-radeon",

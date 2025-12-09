@@ -85,41 +85,8 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         packages.push("intel-ucode".to_string());
     }
 
-    // GPU Drivers
-    let mut added_nvidia = false;
-    for gpu in &context.system_info.gpus {
-        match gpu {
-            crate::arch::engine::GpuKind::Nvidia => {
-                if !added_nvidia {
-                    println!("Detected NVIDIA GPU, adding drivers");
-                    match kernel {
-                        "linux" => {
-                            packages.push("nvidia".to_string());
-                        }
-                        "linux-lts" => {
-                            println!("LTS kernel selected, using nvidia-lts");
-                            packages.push("nvidia-lts".to_string());
-                        }
-                        _ => {
-                            // For other custom kernels (zen, etc), we need dkms
-                            println!("Custom kernel selected ({}), using nvidia-dkms", kernel);
-                            packages.push("nvidia-dkms".to_string());
-                            packages.push("dkms".to_string());
-                        }
-                    }
-                    packages.push("nvidia-utils".to_string());
-                    packages.push("nvidia-settings".to_string());
-                    added_nvidia = true;
-                }
-            }
-            _ => {
-                for pkg in gpu.get_driver_packages() {
-                    println!("Adding driver package: {}", pkg);
-                    packages.push(pkg.to_string());
-                }
-            }
-        }
-    }
+    // GPU drivers are installed later in setup.rs after multilib is enabled,
+    // allowing lib32-* packages to be installed properly.
 
     // Encryption support
     if context.get_answer_bool(QuestionId::UseEncryption) {
