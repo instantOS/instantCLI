@@ -38,7 +38,11 @@ pub fn display_disk(disk: &DiskInfo) {
     println!("  {}", "─".repeat(60).bright_black());
 
     if disk.partitions.is_empty() {
-        println!("    {} {}", "•".dimmed(), "No partitions".dimmed());
+        println!(
+            "    {} {}",
+            NerdFont::Bullet.to_string().dimmed(),
+            "No partitions".dimmed()
+        );
     } else {
         for partition in &disk.partitions {
             display_partition_row(partition);
@@ -70,7 +74,7 @@ fn display_partition_row(partition: &PartitionInfo) {
     // OS detection with icon - EFI partitions get special treatment
     let (os_icon, os_text) = if partition.is_efi {
         (
-            NerdFont::Shield.to_string(),
+            NerdFont::Efi.to_string(),
             "EFI System Partition".cyan().to_string(),
         )
     } else {
@@ -103,13 +107,13 @@ fn display_partition_row(partition: &PartitionInfo) {
                 .as_ref()
                 .cloned()
                 .unwrap_or_else(|| "Reuse for dual boot".to_string());
-            format!("{} {}", "✓".green(), reason.green())
+            format!("{} {}", NerdFont::Check.to_string().green(), reason.green())
         }
         Some(info) if info.can_shrink => {
             if let Some(min) = info.min_size_human() {
-                format!("{} min: {}", "✓".green(), min)
+                format!("{} min: {}", NerdFont::Check.to_string().green(), min)
             } else {
-                format!("{}", "✓ shrinkable".green())
+                format!("{} shrinkable", NerdFont::Check.to_string().green())
             }
         }
         Some(info) => {
@@ -118,14 +122,14 @@ fn display_partition_row(partition: &PartitionInfo) {
                 .as_ref()
                 .cloned()
                 .unwrap_or_else(|| "Not shrinkable".to_string());
-            format!("{} {}", "✗".red(), reason.dimmed())
+            format!("{} {}", NerdFont::Cross.to_string().red(), reason.dimmed())
         }
         None => "-".dimmed().to_string(),
     };
 
     println!(
-        "    {} {:<14} {:>10}  {:<12}  {} {}",
-        "•".dimmed(),
+        "    {} {:>14} {:>10}  {:<12}  {} {}",
+        NerdFont::Bullet.to_string().dimmed(),
         name,
         partition.size_human().bright_white(),
         type_str.cyan(),
@@ -136,13 +140,21 @@ fn display_partition_row(partition: &PartitionInfo) {
     // Show resize info on separate line if present and interesting
     if let Some(info) = &partition.resize_info {
         if info.can_shrink || info.reason.is_some() {
-            println!("      {} {}", "↳".dimmed(), resize_text);
+            println!(
+                "      {} {}",
+                NerdFont::ArrowSubItem.to_string().dimmed(),
+                resize_text
+            );
         }
 
         // Show prerequisites if any
         if !info.prerequisites.is_empty() {
             for prereq in &info.prerequisites {
-                println!("        {} {}", "→".dimmed(), prereq.yellow());
+                println!(
+                    "        {} {}",
+                    NerdFont::ArrowPointer.to_string().dimmed(),
+                    prereq.yellow()
+                );
             }
         }
     }
@@ -158,25 +170,42 @@ pub fn display_resize_details(partition: &PartitionInfo) {
 
     if let Some(info) = &partition.resize_info {
         if info.can_shrink {
-            println!("  {} This partition can be shrunk", "✓".green().bold());
+            println!(
+                "  {} This partition can be shrunk",
+                NerdFont::Check.to_string().green().bold()
+            );
             if let Some(min) = info.min_size_human() {
-                println!("  {} Minimum size: {}", "→".dimmed(), min.yellow());
+                println!(
+                    "  {} Minimum size: {}",
+                    NerdFont::ArrowPointer.to_string().dimmed(),
+                    min.yellow()
+                );
             }
         } else {
-            println!("  {} This partition cannot be shrunk", "✗".red().bold());
+            println!(
+                "  {} This partition cannot be shrunk",
+                NerdFont::Cross.to_string().red().bold()
+            );
         }
 
         if let Some(reason) = &info.reason {
-            println!("  {} Reason: {}", "→".dimmed(), reason);
+            println!(
+                "  {} Reason: {}",
+                NerdFont::ArrowPointer.to_string().dimmed(),
+                reason
+            );
         }
 
         if !info.prerequisites.is_empty() {
             println!("\n  {}:", "Prerequisites".bold());
             for prereq in &info.prerequisites {
-                println!("    {} {}", "•".dimmed(), prereq);
+                println!("    {} {}", NerdFont::Bullet.to_string().dimmed(), prereq);
             }
         }
     } else {
-        println!("  {} No resize information available", "?".yellow());
+        println!(
+            "  {} No resize information available",
+            NerdFont::Question.to_string().yellow()
+        );
     }
 }

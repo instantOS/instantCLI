@@ -450,11 +450,12 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         ArchCommands::Dualboot { command } => match command {
             DualbootCommands::Info => {
                 use crate::arch::dualboot::{check_all_disks_feasibility, display_disks};
+                use crate::ui::nerd_font::NerdFont;
 
                 println!();
                 println!(
                     "  {} {}",
-                    "󰋊".bright_cyan(),
+                    NerdFont::HardDrive.to_string().bright_cyan(),
                     "Dual Boot Detection".bright_white().bold()
                 );
                 println!("  {}", "─".repeat(50).bright_black());
@@ -469,29 +470,57 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                         for (disk, feasibility) in &feasibility_results {
                             if feasibility.feasible {
                                 any_feasible = true;
-                                println!(
-                                    "    {} {} - {} {}",
-                                    "✓".green().bold(),
-                                    disk.bright_white(),
-                                    "FEASIBLE".green().bold(),
-                                    format!(
-                                        "({} partition(s) can be resized)",
-                                        feasibility.feasible_partitions.len()
-                                    )
-                                    .dimmed()
-                                );
-                                for part in &feasibility.feasible_partitions {
-                                    println!("      {} {}", "→".dimmed(), part.cyan());
+                                // Show different message depending on whether feasibility
+                                // comes from resizable partitions or unpartitioned space
+                                if feasibility.feasible_partitions.is_empty() {
+                                    // Feasible due to unpartitioned space
+                                    println!(
+                                        "    {} {} - {}",
+                                        NerdFont::Check.to_string().green().bold(),
+                                        disk.bright_white(),
+                                        "FEASIBLE".green().bold(),
+                                    );
+                                    if let Some(reason) = &feasibility.reason {
+                                        println!(
+                                            "      {} {}",
+                                            NerdFont::ArrowPointer.to_string().dimmed(),
+                                            reason.green()
+                                        );
+                                    }
+                                } else {
+                                    // Feasible due to resizable partitions
+                                    println!(
+                                        "    {} {} - {} {}",
+                                        NerdFont::Check.to_string().green().bold(),
+                                        disk.bright_white(),
+                                        "FEASIBLE".green().bold(),
+                                        format!(
+                                            "({} partition(s) can be resized)",
+                                            feasibility.feasible_partitions.len()
+                                        )
+                                        .dimmed()
+                                    );
+                                    for part in &feasibility.feasible_partitions {
+                                        println!(
+                                            "      {} {}",
+                                            NerdFont::ArrowPointer.to_string().dimmed(),
+                                            part.cyan()
+                                        );
+                                    }
                                 }
                             } else {
                                 println!(
                                     "    {} {} - {}",
-                                    "✗".red().bold(),
+                                    NerdFont::Cross.to_string().red().bold(),
                                     disk.bright_white(),
                                     "NOT FEASIBLE".red().bold()
                                 );
                                 if let Some(reason) = &feasibility.reason {
-                                    println!("      {} {}", "→".dimmed(), reason.dimmed());
+                                    println!(
+                                        "      {} {}",
+                                        NerdFont::ArrowPointer.to_string().dimmed(),
+                                        reason.dimmed()
+                                    );
                                 }
                             }
                         }
@@ -501,22 +530,22 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                         if any_feasible {
                             println!(
                                 "  {} {}",
-                                "✓".green().bold(),
+                                NerdFont::Check.to_string().green().bold(),
                                 "Dual boot is POSSIBLE on this system".green().bold()
                             );
                             println!(
                                 "  {} The installer will offer dual boot options",
-                                "→".dimmed()
+                                NerdFont::ArrowPointer.to_string().dimmed()
                             );
                         } else {
                             println!(
                                 "  {} {}",
-                                "✗".red().bold(),
+                                NerdFont::Cross.to_string().red().bold(),
                                 "Dual boot is NOT POSSIBLE on this system".red().bold()
                             );
                             println!(
                                 "  {} The installer will NOT offer dual boot options",
-                                "→".dimmed()
+                                NerdFont::ArrowPointer.to_string().dimmed()
                             );
                         }
 
@@ -529,15 +558,22 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                         if disks.is_empty() {
                             println!(
                                 "  {} No disks detected. Are you running as root?",
-                                "⚠".yellow()
+                                NerdFont::Warning.to_string().yellow()
                             );
                         } else {
                             display_disks(&disks);
                         }
                     }
                     Err(e) => {
-                        eprintln!("  {} Failed to check feasibility: {}", "✗".red(), e);
-                        eprintln!("  {} Try running with sudo", "→".dimmed());
+                        eprintln!(
+                            "  {} Failed to check feasibility: {}",
+                            NerdFont::Cross.to_string().red(),
+                            e
+                        );
+                        eprintln!(
+                            "  {} Try running with sudo",
+                            NerdFont::ArrowPointer.to_string().dimmed()
+                        );
                     }
                 }
 

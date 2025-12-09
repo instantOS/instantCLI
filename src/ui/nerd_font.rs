@@ -259,6 +259,14 @@ pub enum NerdFont {
     Frown,
     FishBowl,
     Waves,
+
+    // Text formatting and lists
+    Bullet,
+    ArrowSubItem,
+    ArrowPointer,
+
+    // Boot and Firmware
+    Efi,
 }
 
 impl NerdFont {
@@ -518,6 +526,14 @@ impl NerdFont {
             Self::Frown => '',    // md-emoticon-frown
             Self::FishBowl => '󰻳', // md-fishbowl
             Self::Waves => '󰞍',    // md-waves
+
+            // Text formatting and lists
+            Self::Bullet => '•',       // bullet point
+            Self::ArrowSubItem => '↳', // arrow hook (sub-item indicator)
+            Self::ArrowPointer => '→', // arrow pointer
+
+            // Boot and Firmware
+            Self::Efi => '\u{eb99}', // cod-circuit-board (UEFI/firmware icon)
         }
     }
 }
