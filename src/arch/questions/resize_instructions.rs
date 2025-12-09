@@ -3,6 +3,7 @@ use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
+use colored::Colorize;
 
 pub struct ResizeInstructionsQuestion;
 
@@ -83,7 +84,7 @@ impl Question for ResizeInstructionsQuestion {
             };
 
             let mut full_message = build_instructions_message(
-                &partition_path,
+                partition_path,
                 &fs_type,
                 &current_size_human,
                 target_size_gb,
@@ -93,11 +94,7 @@ impl Question for ResizeInstructionsQuestion {
 
             // Add status banner if we have checked
             if let Some(ref status) = last_status {
-                full_message = format!(
-                    "{}\n\n{}",
-                    build_status_banner(status),
-                    full_message
-                );
+                full_message = format!("{}\n\n{}", build_status_banner(status), full_message);
             }
 
             let result = FzfWrapper::builder()
@@ -140,23 +137,26 @@ impl Question for ResizeInstructionsQuestion {
 
 /// Build a colored status banner based on resize detection
 fn build_status_banner(status: &crate::arch::dualboot::ResizeStatus) -> String {
+    let separator = "━".repeat(60);
+
     if status.resize_detected {
-        format!(
-            "\x1b[32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\
-             \x1b[32m{} READY TO PROCEED - Resize detected!\x1b[0m\n\
-             \x1b[32m   Free space increased by {}\x1b[0m\n\
-             \x1b[32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m",
-            NerdFont::Check,
-            status.space_freed_human()
-        )
+        let line1 = separator.green().bold();
+        let line2 = format!("{} READY TO PROCEED - Resize detected!", NerdFont::Check)
+            .green()
+            .bold();
+        let line3 = format!("   Free space increased by {}", status.space_freed_human()).green();
+        let line4 = separator.green().bold();
+
+        format!("{}\n{}\n{}\n{}", line1, line2, line3, line4)
     } else {
-        format!(
-            "\x1b[33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\
-             \x1b[33m{} NOT READY - No resize detected\x1b[0m\n\
-             \x1b[33m   Save your changes in cfdisk before exiting\x1b[0m\n\
-             \x1b[33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m",
-            NerdFont::Warning
-        )
+        let line1 = separator.yellow().bold();
+        let line2 = format!("{} NOT READY - No resize detected", NerdFont::Warning)
+            .yellow()
+            .bold();
+        let line3 = "   Save your changes in cfdisk before exiting".yellow();
+        let line4 = separator.yellow().bold();
+
+        format!("{}\n{}\n{}\n{}", line1, line2, line3, line4)
     }
 }
 
@@ -217,7 +217,6 @@ fn build_instructions_message(
 
     format!("{}\n{}", instructions, detailed_steps)
 }
-
 
 /// Ask user to confirm proceeding without detected resize
 fn confirm_proceed_without_resize(status: &crate::arch::dualboot::ResizeStatus) -> Result<bool> {
