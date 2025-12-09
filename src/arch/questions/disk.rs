@@ -13,9 +13,9 @@ fn try_prepare_disk(device_name: &str) -> Result<bool> {
         return Ok(true); // Disk is ready
     }
 
-    // Show what needs preparation
+    // Show what needs to be unmounted/disabled
     println!(
-        "\n{} The disk {} requires preparation:",
+        "\n{} The disk {} is currently in use:",
         NerdFont::Warning,
         device_name
     );
