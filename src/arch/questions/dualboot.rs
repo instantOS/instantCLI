@@ -62,6 +62,15 @@ impl Question for DualBootPartitionQuestion {
         if shrinkable_partitions.is_empty() {
             if disk_info.has_sufficient_free_space() {
                 // No resize needed - disk already has enough free space
+                FzfWrapper::message(&format!(
+                    "{} No partition resize needed!\n\n\
+                     Your disk already has {} of unpartitioned space.\n\
+                     This is enough for a Linux installation (minimum 10 GB).\n\n\
+                     {} Proceeding to installation...",
+                    NerdFont::Check,
+                    crate::arch::dualboot::format_size(disk_info.unpartitioned_space_bytes),
+                    NerdFont::ArrowRight
+                ))?;
                 return Ok(QuestionResult::Answer("__free_space__".to_string()));
             } else {
                 FzfWrapper::message(&format!(
