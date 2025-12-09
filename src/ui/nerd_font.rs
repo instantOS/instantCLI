@@ -533,7 +533,7 @@ impl NerdFont {
             Self::ArrowPointer => '→', // arrow pointer
 
             // Boot and Firmware
-            Self::Efi => '\u{eb99}', // cod-circuit-board (UEFI/firmware icon)
+            Self::Efi => '󰒘', // cod-circuit-board (UEFI/firmware icon)
         }
     }
 }

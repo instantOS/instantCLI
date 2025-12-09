@@ -128,7 +128,7 @@ fn display_partition_row(partition: &PartitionInfo) {
     };
 
     println!(
-        "    {} {:>14} {:>10}  {:<12}  {} {}",
+        "    {} {:<14} {:>10}  {:<12}  {} {}",
         NerdFont::Bullet.to_string().dimmed(),
         name,
         partition.size_human().bright_white(),
