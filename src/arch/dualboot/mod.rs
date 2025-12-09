@@ -1,8 +1,10 @@
 pub mod detection;
 pub mod display;
+pub mod verification;
 
 pub use detection::*;
 pub use display::*;
+pub use verification::*;
 
 /// Minimum required space for Linux installation in bytes (10 GB)
 pub const MIN_LINUX_SIZE: u64 = 10 * 1024 * 1024 * 1024;
