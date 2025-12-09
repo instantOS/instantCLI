@@ -118,6 +118,10 @@ impl Question for ResizeInstructionsQuestion {
             instructions, detailed_steps
         );
 
+        // Track original sizes for verification
+        let original_partition_size = current_size;
+        let original_unpartitioned = disk_info.unpartitioned_space_bytes;
+
         let options = vec![
             format!("{} I have resized the partition", NerdFont::Check),
             format!("{} Open cfdisk to verify/edit", NerdFont::HardDrive),
@@ -126,27 +130,155 @@ impl Question for ResizeInstructionsQuestion {
 
         // Loop until user confirms or goes back
         loop {
-            // We use select here to show the instructions as a "header" for the menu
-            // FzfWrapper might truncate long headers, so we might need to be careful.
-            // Or we can print it and then show options.
-
-            // Let's try printing to stdout first for the long text, then showing the menu.
-            // But QuestionEngine clears screen.
-            // So we put it in the header.
-
             let result = FzfWrapper::builder()
                 .header(&full_message)
                 .select(options.clone())?;
 
             match result {
                 crate::menu_utils::FzfResult::Selected(opt) => {
-                    if opt.contains("I have resized") {
-                        return Ok(QuestionResult::Answer("confirmed".to_string()));
-                    } else if opt.contains("Open cfdisk") {
-                        // Launch cfdisk using proper TUI handling
-                        let _ =
-                            crate::common::terminal::run_tui_program("cfdisk", &[disk_path]).await;
-                        // Loop continues, allowing them to confirm after cfdisk
+                    if opt.contains("I have resized") || opt.contains("Open cfdisk") {
+                        // Check current partition state
+                        let disk_path_check = disk_path_owned.clone();
+                        let partition_path_check = partition_path.clone();
+
+                        let verification = tokio::task::spawn_blocking(move || {
+                            let disks = crate::arch::dualboot::detect_disks()?;
+                            let disk = disks.iter().find(|d| d.device == disk_path_check);
+
+                            if let Some(disk) = disk {
+                                let partition = disk
+                                    .partitions
+                                    .iter()
+                                    .find(|p| p.device == partition_path_check);
+                                Ok::<_, anyhow::Error>((
+                                    partition.map(|p| p.size_bytes),
+                                    disk.unpartitioned_space_bytes,
+                                ))
+                            } else {
+                                Ok((None, 0))
+                            }
+                        })
+                        .await??;
+
+                        let (current_partition_size, current_unpartitioned) = verification;
+
+                        // Check if resize appears to have been done
+                        let partition_shrunk = current_partition_size
+                            .map(|s| s < original_partition_size)
+                            .unwrap_or(false);
+                        let space_freed = current_unpartitioned > original_unpartitioned;
+                        let resize_detected = partition_shrunk || space_freed;
+
+                        if opt.contains("Open cfdisk") {
+                            // Launch cfdisk using proper TUI handling
+                            let _ =
+                                crate::common::terminal::run_tui_program("cfdisk", &[disk_path])
+                                    .await;
+
+                            // Re-check after cfdisk
+                            let disk_path_check = disk_path_owned.clone();
+                            let partition_path_check = partition_path.clone();
+
+                            let post_cfdisk = tokio::task::spawn_blocking(move || {
+                                let disks = crate::arch::dualboot::detect_disks()?;
+                                let disk = disks.iter().find(|d| d.device == disk_path_check);
+
+                                if let Some(disk) = disk {
+                                    let partition = disk
+                                        .partitions
+                                        .iter()
+                                        .find(|p| p.device == partition_path_check);
+                                    Ok::<_, anyhow::Error>((
+                                        partition.map(|p| {
+                                            (
+                                                p.size_bytes,
+                                                crate::arch::dualboot::format_size(p.size_bytes),
+                                            )
+                                        }),
+                                        disk.unpartitioned_space_bytes,
+                                    ))
+                                } else {
+                                    Ok((None, 0))
+                                }
+                            })
+                            .await??;
+
+                            let (partition_info, new_unpartitioned) = post_cfdisk;
+                            let new_partition_shrunk = partition_info
+                                .as_ref()
+                                .map(|(s, _)| *s < original_partition_size)
+                                .unwrap_or(false);
+                            let new_space_freed = new_unpartitioned > original_unpartitioned;
+
+                            // Display status message
+                            println!();
+                            if new_partition_shrunk || new_space_freed {
+                                let freed_bytes =
+                                    new_unpartitioned.saturating_sub(original_unpartitioned);
+                                println!(
+                                    "{} Resize detected! Free space increased by {}",
+                                    NerdFont::Check,
+                                    crate::arch::dualboot::format_size(freed_bytes)
+                                );
+                                if let Some((_size, human)) = partition_info {
+                                    println!(
+                                        "   Partition {} is now {} (was {})",
+                                        partition_path,
+                                        human,
+                                        crate::arch::dualboot::format_size(original_partition_size)
+                                    );
+                                }
+                            } else if let Some((_, human)) = partition_info {
+                                println!(
+                                    "{} No resize detected. Partition {} is still {} (target: {:.1} GB)",
+                                    NerdFont::Warning,
+                                    partition_path,
+                                    human,
+                                    target_size_gb
+                                );
+                                println!("   Make sure to save changes in cfdisk before exiting.");
+                            }
+                            println!();
+                            // Loop continues
+                        } else {
+                            // User clicked "I have resized"
+                            if resize_detected {
+                                return Ok(QuestionResult::Answer("confirmed".to_string()));
+                            } else {
+                                // Warn but allow them to proceed
+                                println!();
+                                println!(
+                                    "{} Warning: No partition resize detected!",
+                                    NerdFont::Warning
+                                );
+                                println!("   The partition still appears to be the original size.");
+                                println!("   You may want to go back and resize it first.");
+                                println!();
+
+                                // Ask for confirmation
+                                let confirm_options = vec![
+                                    format!("{} Proceed anyway", NerdFont::ArrowRight),
+                                    format!("{} Go back and resize", NerdFont::ArrowLeft),
+                                ];
+
+                                let confirm = FzfWrapper::builder()
+                                    .header(
+                                        "Partition does not appear to have been resized. Proceed?",
+                                    )
+                                    .select(confirm_options)?;
+
+                                match confirm {
+                                    crate::menu_utils::FzfResult::Selected(c)
+                                        if c.contains("Proceed") =>
+                                    {
+                                        return Ok(QuestionResult::Answer("confirmed".to_string()));
+                                    }
+                                    _ => {
+                                        // Continue loop
+                                    }
+                                }
+                            }
+                        }
                     } else if opt.contains("Go Back") {
                         return Ok(QuestionResult::Cancelled);
                     }
