@@ -87,10 +87,14 @@ impl Question for ResizeInstructionsQuestion {
             let (current_size_human, shrink_remaining_gb) = if let Some(ref status) = last_status {
                 let current_size = status.current_partition_size.unwrap_or(original_size);
                 let human = crate::arch::dualboot::format_size(current_size);
-                let shrink_remaining = current_size.saturating_sub(target_size) as f64 / 1024.0 / 1024.0 / 1024.0;
+                let shrink_remaining =
+                    current_size.saturating_sub(target_size) as f64 / 1024.0 / 1024.0 / 1024.0;
                 (human, shrink_remaining)
             } else {
-                (crate::arch::dualboot::format_size(original_size), linux_size_gb)
+                (
+                    crate::arch::dualboot::format_size(original_size),
+                    linux_size_gb,
+                )
             };
 
             let mut full_message = build_instructions_message(

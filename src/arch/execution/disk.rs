@@ -1,5 +1,8 @@
 use super::CommandExecutor;
-use crate::arch::engine::{BootMode, EspNeedsFormat, InstallContext, QuestionId};
+use crate::arch::engine::{
+    BootMode, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext,
+    QuestionId,
+};
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -120,11 +123,13 @@ fn prepare_dualboot_disk(
     let (root_path, swap_path) =
         create_dualboot_partitions(disk_path, swap_size_gb, executor)?;
 
-    // Store partition paths in context - CONVERGENCE POINT
-    // Now we use the same QuestionIds as manual mode
-    context.set_answer_internal(QuestionId::RootPartition, root_path);
-    context.set_answer_internal(QuestionId::BootPartition, esp.device.clone());
-    context.set_answer_internal(QuestionId::SwapPartition, swap_path);
+    // Store partition paths in context data store - CONVERGENCE POINT
+    // This uses the data map which has interior mutability via Arc<Mutex>
+    context.set::<DualBootPartitions>(DualBootPartitionPaths {
+        root: root_path,
+        boot: esp.device.clone(),
+        swap: swap_path,
+    });
 
     // Mark that ESP should NOT be reformatted (it's existing)
     context.set::<EspNeedsFormat>(false);
@@ -199,37 +204,48 @@ fn get_last_two_partitions(disk_path: &str) -> Result<(String, String)> {
     let swap_name = partitions[partitions.len() - 2];
     let root_name = partitions[partitions.len() - 1];
 
-    Ok((
-        format!("/dev/{}", swap_name),
-        format!("/dev/{}", root_name),
-    ))
+    Ok((format!("/dev/{}", swap_name), format!("/dev/{}", root_name)))
 }
 
 /// Format and mount partitions based on paths stored in context
 ///
 /// This is the CONVERGENCE POINT - used by both manual and dual boot modes
+/// For dual boot: partition paths come from DualBootPartitions data key
+/// For manual: partition paths come from QuestionId answers
 fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Formatting and mounting partitions...");
 
     let boot_mode = &context.system_info.boot_mode;
 
-    // Get partition paths from context
-    let root_part = context
-        .get_answer(&QuestionId::RootPartition)
-        .context("Root partition not set")?;
-    let root_path = root_part.split('(').next().unwrap_or(root_part).trim();
+    // Get partition paths - check dualboot data first, then answers
+    let dualboot_paths = context.get::<DualBootPartitions>();
+
+    let root_path = if let Some(ref paths) = dualboot_paths {
+        paths.root.clone()
+    } else {
+        let root_part = context
+            .get_answer(&QuestionId::RootPartition)
+            .context("Root partition not set")?;
+        root_part.split('(').next().unwrap_or(root_part).trim().to_string()
+    };
 
     // Format and mount root
     println!("Formatting Root partition: {}", root_path);
-    executor.run(Command::new("mkfs.ext4").args(["-F", root_path]))?;
+    executor.run(Command::new("mkfs.ext4").args(["-F", &root_path]))?;
 
     println!("Mounting Root partition...");
-    executor.run(Command::new("mount").args([root_path, "/mnt"]))?;
+    executor.run(Command::new("mount").args([&root_path, "/mnt"]))?;
 
     // Handle Boot/EFI
-    if let Some(boot_part) = context.get_answer(&QuestionId::BootPartition) {
-        let boot_path = boot_part.split('(').next().unwrap_or(boot_part).trim();
+    let boot_path = if let Some(ref paths) = dualboot_paths {
+        Some(paths.boot.clone())
+    } else {
+        context
+            .get_answer(&QuestionId::BootPartition)
+            .map(|s| s.split('(').next().unwrap_or(s).trim().to_string())
+    };
 
+    if let Some(boot_path) = boot_path {
         // Check if we should format the ESP (false for dual boot reuse)
         let should_format = context.get::<EspNeedsFormat>().unwrap_or(true);
 
@@ -237,10 +253,10 @@ fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecu
             println!("Formatting Boot partition: {}", boot_path);
             match boot_mode {
                 BootMode::UEFI64 | BootMode::UEFI32 => {
-                    executor.run(Command::new("mkfs.fat").args(["-F32", boot_path]))?;
+                    executor.run(Command::new("mkfs.fat").args(["-F32", &boot_path]))?;
                 }
                 BootMode::BIOS => {
-                    executor.run(Command::new("mkfs.ext4").args(["-F", boot_path]))?;
+                    executor.run(Command::new("mkfs.ext4").args(["-F", &boot_path]))?;
                 }
             }
         } else {
@@ -251,19 +267,26 @@ fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecu
         }
 
         println!("Mounting Boot partition...");
-        executor.run(Command::new("mount").args(["--mkdir", boot_path, "/mnt/boot"]))?;
+        executor.run(Command::new("mount").args(["--mkdir", &boot_path, "/mnt/boot"]))?;
     }
 
     // Handle Swap
-    if let Some(swap_part) = context.get_answer(&QuestionId::SwapPartition) {
-        let swap_path = swap_part.split('(').next().unwrap_or(swap_part).trim();
+    let swap_path = if let Some(ref paths) = dualboot_paths {
+        Some(paths.swap.clone())
+    } else {
+        context
+            .get_answer(&QuestionId::SwapPartition)
+            .map(|s| s.split('(').next().unwrap_or(s).trim().to_string())
+    };
+
+    if let Some(swap_path) = swap_path {
         println!("Formatting Swap: {}", swap_path);
-        executor.run(Command::new("mkswap").arg(swap_path))?;
+        executor.run(Command::new("mkswap").arg(&swap_path))?;
         println!("Activating Swap...");
-        executor.run(Command::new("swapon").arg(swap_path))?;
+        executor.run(Command::new("swapon").arg(&swap_path))?;
     }
 
-    // Handle Home
+    // Handle Home (only from answers, dual boot doesn't set this)
     if let Some(home_part) = context.get_answer(&QuestionId::HomePartition) {
         let home_path = home_part.split('(').next().unwrap_or(home_part).trim();
         println!("Formatting Home partition: {}", home_path);
