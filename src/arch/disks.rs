@@ -152,9 +152,7 @@ pub fn unmount_disk(disk: &str) -> Result<Vec<String>> {
     let mut unmounted = Vec::new();
 
     for partition in &mounted {
-        let status = Command::new("umount")
-            .arg(partition)
-            .status()?;
+        let status = Command::new("umount").arg(partition).status()?;
 
         if status.success() {
             unmounted.push(partition.clone());

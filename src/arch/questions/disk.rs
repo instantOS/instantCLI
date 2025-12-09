@@ -35,42 +35,38 @@ impl Question for DiskQuestion {
                     let device_name = disk.split('(').next().unwrap_or(&disk).trim();
 
                     // Check for mounted partitions and offer to unmount
-                    if let Ok(mounted) = crate::arch::disks::get_mounted_partitions(device_name) {
-                        if !mounted.is_empty() {
-                            println!(
-                                "\n{} The disk {} has mounted partitions:",
-                                NerdFont::Warning,
-                                device_name
-                            );
-                            for part in &mounted {
-                                println!("  • {}", part);
-                            }
+                    if let Ok(mounted) = crate::arch::disks::get_mounted_partitions(device_name)
+                        && !mounted.is_empty()
+                    {
+                        println!(
+                            "\n{} The disk {} has mounted partitions:",
+                            NerdFont::Warning,
+                            device_name
+                        );
+                        for part in &mounted {
+                            println!("  • {}", part);
+                        }
 
-                            match FzfWrapper::confirm("Unmount these partitions automatically?") {
-                                Ok(crate::menu_utils::ConfirmResult::Yes) => {
-                                    match crate::arch::disks::unmount_disk(device_name) {
-                                        Ok(unmounted) => {
-                                            println!(
-                                                "{} Successfully unmounted {} partition(s)",
-                                                NerdFont::Check,
-                                                unmounted.len()
-                                            );
-                                        }
-                                        Err(e) => {
-                                            println!(
-                                                "{} Failed to unmount: {}",
-                                                NerdFont::Cross,
-                                                e
-                                            );
-                                            println!("Please unmount manually and try again.");
-                                            continue; // Let user select again
-                                        }
+                        match FzfWrapper::confirm("Unmount these partitions automatically?") {
+                            Ok(crate::menu_utils::ConfirmResult::Yes) => {
+                                match crate::arch::disks::unmount_disk(device_name) {
+                                    Ok(unmounted) => {
+                                        println!(
+                                            "{} Successfully unmounted {} partition(s)",
+                                            NerdFont::Check,
+                                            unmounted.len()
+                                        );
+                                    }
+                                    Err(e) => {
+                                        println!("{} Failed to unmount: {}", NerdFont::Cross, e);
+                                        println!("Please unmount manually and try again.");
+                                        continue; // Let user select again
                                     }
                                 }
-                                _ => {
-                                    println!("Please unmount the partitions manually and try again.");
-                                    continue; // Let user select again
-                                }
+                            }
+                            _ => {
+                                println!("Please unmount the partitions manually and try again.");
+                                continue; // Let user select again
                             }
                         }
                     }
