@@ -259,10 +259,31 @@ mod tests {
     }
 }
 
+/// Represents a disk entry with path and size information
+#[derive(Clone, Debug)]
+pub struct DiskEntry {
+    /// Device path (e.g., /dev/sda)
+    pub path: String,
+    /// Human-readable size (e.g., "500 GiB")
+    pub size: String,
+}
+
+impl DiskEntry {
+    pub fn new(path: String, size: String) -> Self {
+        Self { path, size }
+    }
+}
+
+impl crate::menu_utils::FzfSelectable for DiskEntry {
+    fn fzf_display_text(&self) -> String {
+        format!("{} ({})", self.path, self.size)
+    }
+}
+
 pub struct DisksKey;
 
 impl DataKey for DisksKey {
-    type Value = Vec<String>;
+    type Value = Vec<DiskEntry>;
     const KEY: &'static str = "disks";
 }
 
@@ -309,7 +330,7 @@ impl crate::arch::engine::AsyncDataProvider for DiskProvider {
                     // We just want the first part "476.94 GiB"
                     let size = details.split(',').next().unwrap_or(details).trim();
 
-                    disks.push(format!("{} ({})", dev_path, size));
+                    disks.push(DiskEntry::new(dev_path.to_string(), size.to_string()));
                 }
             }
         }

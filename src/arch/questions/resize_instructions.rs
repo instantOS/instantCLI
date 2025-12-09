@@ -41,8 +41,8 @@ impl Question for ResizeInstructionsQuestion {
         let new_linux_size_bytes: u64 = size_str.parse()?;
 
         // Get disk and partition info
-        let disk_str = context.get_answer(&QuestionId::Disk).context("No disk")?;
-        let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
+        // disk_path is now just the device path (e.g., "/dev/sda")
+        let disk_path = context.get_answer(&QuestionId::Disk).context("No disk")?;
         let disk_path_owned = disk_path.to_string();
 
         let disks_result = tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await?;

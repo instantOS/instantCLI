@@ -95,10 +95,10 @@ impl Question for DiskQuestion {
                 _ => return Ok(QuestionResult::Cancelled),
             };
 
-            let device_name = disk.split('(').next().unwrap_or(&disk).trim();
-
-            if try_prepare_disk(device_name)? {
-                return Ok(QuestionResult::Answer(disk));
+            // disk is now a DiskEntry, get just the path
+            if try_prepare_disk(&disk.path)? {
+                // Store just the path, not the formatted display string
+                return Ok(QuestionResult::Answer(disk.path));
             }
             // User declined or preparation failed - loop back to disk selection
         }
@@ -112,7 +112,8 @@ impl Question for DiskQuestion {
             return Err("Invalid disk selection: must start with /dev/".to_string());
         }
 
-        let device_name = answer.split('(').next().unwrap_or(answer).trim();
+        // answer is now just the device path (e.g., "/dev/sda")
+        let device_name = answer;
 
         // Prevent selecting the current root/boot disk
         if let Ok(Some(root_device)) = crate::arch::disks::get_root_device()
@@ -163,9 +164,8 @@ impl Question for PartitioningMethodQuestion {
         ];
 
         // Check for dual boot possibility using shared feasibility logic
-        if let Some(disk_str) = context.get_answer(&QuestionId::Disk) {
-            let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
-
+        if let Some(disk_path) = context.get_answer(&QuestionId::Disk) {
+            // disk_path is now just the device path (e.g., "/dev/sda")
             let disk_path_owned = disk_path.to_string();
             let feasibility_result = tokio::task::spawn_blocking(
                 move || -> anyhow::Result<crate::arch::dualboot::DualBootFeasibility> {
@@ -223,11 +223,10 @@ impl Question for RunCfdiskQuestion {
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
-        let disk = context
+        // disk is now just the device path (e.g., "/dev/sda")
+        let disk_path = context
             .get_answer(&QuestionId::Disk)
             .context("No disk selected")?;
-
-        let disk_path = disk.split('(').next().unwrap_or(disk).trim();
 
         // Check for cfdisk
         if !crate::common::requirements::CFDISK_PACKAGE.is_installed() {

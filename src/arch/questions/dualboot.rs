@@ -20,10 +20,10 @@ impl Question for DualBootPartitionQuestion {
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
-        let disk_str = context
+        // disk_path is now just the device path (e.g., "/dev/sda")
+        let disk_path = context
             .get_answer(&QuestionId::Disk)
             .context("No disk selected")?;
-        let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
 
         // Get disks from cache or detect
         let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
@@ -37,7 +37,7 @@ impl Question for DualBootPartitionQuestion {
 
         let disk_info = disks
             .iter()
-            .find(|d| d.device == disk_path)
+            .find(|d| d.device == *disk_path)
             .context("Selected disk not found")?;
 
         let feasibility = crate::arch::dualboot::check_disk_dualboot_feasibility(disk_info);
@@ -139,10 +139,10 @@ impl Question for DualBootSizeQuestion {
 
         // Handle free space case - no resize needed
         if part_path == "__free_space__" {
-            let disk_str = context
+            // disk_path is now just the device path (e.g., "/dev/sda")
+            let disk_path = context
                 .get_answer(&QuestionId::Disk)
                 .context("No disk selected")?;
-            let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
 
             let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
                 cached
@@ -155,7 +155,7 @@ impl Question for DualBootSizeQuestion {
 
             let disk_info = disks
                 .iter()
-                .find(|d| d.device == disk_path)
+                .find(|d| d.device == *disk_path)
                 .context("Selected disk not found")?;
 
             // Return the available unpartitioned space as the Linux size
@@ -164,10 +164,10 @@ impl Question for DualBootSizeQuestion {
             ));
         }
 
-        let disk_str = context
+        // disk_path is now just the device path (e.g., "/dev/sda")
+        let disk_path = context
             .get_answer(&QuestionId::Disk)
             .context("No disk selected")?;
-        let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
 
         // Get disks from cache or detect (should be cached by previous question)
         let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
@@ -181,7 +181,7 @@ impl Question for DualBootSizeQuestion {
 
         let disk_info = disks
             .iter()
-            .find(|d| d.device == disk_path)
+            .find(|d| d.device == *disk_path)
             .context("Selected disk not found")?;
 
         let partition = disk_info

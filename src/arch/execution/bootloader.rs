@@ -48,15 +48,10 @@ fn install_grub_uefi(context: &InstallContext, executor: &CommandExecutor) -> Re
 fn install_grub_bios(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Detected BIOS mode. Installing GRUB for BIOS...");
 
-    let disk_answer = context
+    // disk is now just the device path (e.g., "/dev/sda")
+    let disk = context
         .get_answer(&QuestionId::Disk)
         .context("Disk not selected")?;
-
-    // Parse disk from answer string, e.g., "/dev/sda (500 GiB)" -> "/dev/sda"
-    let disk = disk_answer
-        .split_whitespace()
-        .next()
-        .context("Invalid disk format")?;
 
     println!("Installing GRUB to MBR of {}", disk);
 
@@ -102,10 +97,10 @@ fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecuto
         return Ok(());
     }
 
-    let disk_answer = context
+    // disk is now just the device path (e.g., "/dev/sda")
+    let disk = context
         .get_answer(&QuestionId::Disk)
         .context("Disk not selected")?;
-    let disk = disk_answer.split('(').next().unwrap_or(disk_answer).trim();
 
     // LUKS is always on partition 2 in our layout
     let luks_part = crate::arch::execution::disk::get_part_path(disk, 2);

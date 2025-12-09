@@ -10,7 +10,6 @@ pub use verification::*;
 pub const MIN_LINUX_SIZE: u64 = 10 * 1024 * 1024 * 1024;
 
 // Re-export MIN_ESP_SIZE from detection for convenience
-pub use detection::MIN_ESP_SIZE;
 
 pub struct DisksKey;
 

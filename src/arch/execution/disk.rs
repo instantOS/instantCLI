@@ -7,15 +7,10 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 pub fn prepare_disk(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
-    let disk = context
+    // disk is now just the device path (e.g., "/dev/sda")
+    let disk_path = context
         .get_answer(&QuestionId::Disk)
         .context("No disk selected")?;
-
-    // Extract device path from "path (size)" format if needed
-    // The validation in DiskQuestion ensures it starts with /dev/
-    // and we store the full string "path (size)" in the answer.
-    // We need to extract just the path.
-    let disk_path = disk.split('(').next().unwrap_or(disk).trim();
 
     println!("Preparing disk: {}", disk_path);
 
@@ -120,8 +115,7 @@ fn prepare_dualboot_disk(
 
     // Create partitions in free space only
     // sfdisk can append partitions to existing partition table
-    let (root_path, swap_path) =
-        create_dualboot_partitions(disk_path, swap_size_gb, executor)?;
+    let (root_path, swap_path) = create_dualboot_partitions(disk_path, swap_size_gb, executor)?;
 
     // Store partition paths in context data store - CONVERGENCE POINT
     // This uses the data map which has interior mutability via Arc<Mutex>
@@ -223,10 +217,11 @@ fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecu
     let root_path = if let Some(ref paths) = dualboot_paths {
         paths.root.clone()
     } else {
-        let root_part = context
+        // Answer is now just the device path (e.g., "/dev/sda1")
+        context
             .get_answer(&QuestionId::RootPartition)
-            .context("Root partition not set")?;
-        root_part.split('(').next().unwrap_or(root_part).trim().to_string()
+            .context("Root partition not set")?
+            .to_string()
     };
 
     // Format and mount root
@@ -240,9 +235,10 @@ fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecu
     let boot_path = if let Some(ref paths) = dualboot_paths {
         Some(paths.boot.clone())
     } else {
+        // Answer is now just the device path (e.g., "/dev/sda1")
         context
             .get_answer(&QuestionId::BootPartition)
-            .map(|s| s.split('(').next().unwrap_or(s).trim().to_string())
+            .map(|s| s.to_string())
     };
 
     if let Some(boot_path) = boot_path {
@@ -274,9 +270,10 @@ fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecu
     let swap_path = if let Some(ref paths) = dualboot_paths {
         Some(paths.swap.clone())
     } else {
+        // Answer is now just the device path (e.g., "/dev/sda1")
         context
             .get_answer(&QuestionId::SwapPartition)
-            .map(|s| s.split('(').next().unwrap_or(s).trim().to_string())
+            .map(|s| s.to_string())
     };
 
     if let Some(swap_path) = swap_path {
@@ -287,8 +284,8 @@ fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecu
     }
 
     // Handle Home (only from answers, dual boot doesn't set this)
-    if let Some(home_part) = context.get_answer(&QuestionId::HomePartition) {
-        let home_path = home_part.split('(').next().unwrap_or(home_part).trim();
+    // Answer is now just the device path (e.g., "/dev/sda3")
+    if let Some(home_path) = context.get_answer(&QuestionId::HomePartition) {
         println!("Formatting Home partition: {}", home_path);
         executor.run(Command::new("mkfs.ext4").args(["-F", home_path]))?;
         println!("Mounting Home partition...");

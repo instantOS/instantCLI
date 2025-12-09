@@ -1,7 +1,28 @@
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::FzfWrapper;
+use crate::menu_utils::{FzfSelectable, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
+
+/// Represents a partition entry with path and size information
+#[derive(Clone, Debug)]
+pub struct PartitionEntry {
+    /// Device path (e.g., /dev/sda1)
+    pub path: String,
+    /// Human-readable size (e.g., "512M")
+    pub size: String,
+}
+
+impl PartitionEntry {
+    pub fn new(path: String, size: String) -> Self {
+        Self { path, size }
+    }
+}
+
+impl FzfSelectable for PartitionEntry {
+    fn fzf_display_text(&self) -> String {
+        format!("{} ({})", self.path, self.size)
+    }
+}
 
 /// Represents size in megabytes with parsing capabilities
 #[derive(Debug, Clone, PartialEq)]
@@ -60,6 +81,11 @@ impl PartitionSize {
         }
 
         None
+    }
+
+    /// Create from bytes (converting to MB)
+    pub fn from_bytes(bytes: u64) -> Self {
+        Self(bytes / (1024 * 1024))
     }
 
     /// Get the size in megabytes
@@ -163,10 +189,10 @@ impl Question for PartitionSelectorQuestion {
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
-        let disk = context
+        // disk is now just the device path (e.g., "/dev/sda")
+        let disk_path = context
             .get_answer(&QuestionId::Disk)
             .context("No disk selected")?;
-        let disk_path = disk.split('(').next().unwrap_or(disk).trim();
 
         // Run lsblk to get partitions on this disk
         // We do this here to get fresh data after cfdisk
@@ -175,7 +201,7 @@ impl Question for PartitionSelectorQuestion {
             .output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut partitions = Vec::new();
+        let mut partitions: Vec<PartitionEntry> = Vec::new();
 
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
@@ -186,12 +212,12 @@ impl Question for PartitionSelectorQuestion {
 
                 if type_ == "part" {
                     // Full path
-                    let path = if name.starts_with("/") {
+                    let path = if name.starts_with('/') {
                         name.to_string()
                     } else {
                         format!("/dev/{}", name)
                     };
-                    partitions.push(format!("{} ({})", path, size));
+                    partitions.push(PartitionEntry::new(path, size.to_string()));
                 }
             }
         }
@@ -210,16 +236,17 @@ impl Question for PartitionSelectorQuestion {
             .select(partitions)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(s) => Ok(QuestionResult::Answer(s)),
+            // Store just the path, not the formatted display string
+            crate::menu_utils::FzfResult::Selected(entry) => Ok(QuestionResult::Answer(entry.path)),
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),
         }
     }
 
     fn validate(&self, context: &InstallContext, answer: &str) -> Result<(), String> {
-        // Check if this partition is already used by another answer
+        // answer is now just the device path (e.g., "/dev/sda1")
+        let part_path = answer;
         let current_id = self.id();
-        let part_path = answer.split('(').next().unwrap_or(answer).trim();
 
         for (id, val) in &context.answers {
             if id == &current_id {
@@ -227,34 +254,41 @@ impl Question for PartitionSelectorQuestion {
             }
 
             // Check against other partition questions
+            // val is now just the device path, no parsing needed
             if matches!(
                 id,
                 QuestionId::RootPartition
                     | QuestionId::BootPartition
                     | QuestionId::HomePartition
                     | QuestionId::SwapPartition
-            ) {
-                let other_path = val.split('(').next().unwrap_or(val).trim();
-                if part_path == other_path {
-                    return Err(format!(
-                        "Partition {} is already selected for {:?}",
-                        part_path, id
-                    ));
-                }
+            ) && part_path == val
+            {
+                return Err(format!(
+                    "Partition {} is already selected for {:?}",
+                    part_path, id
+                ));
             }
         }
 
-        // Extract size from the partition description (e.g., "/dev/sda1 (512M)")
-        let size_str = answer
-            .split('(')
-            .nth(1)
-            .and_then(|s| s.split(')').next())
-            .unwrap_or("");
-        let size = PartitionSize::parse(size_str.trim());
+        // Get partition size from lsblk for validation
+        let size = get_partition_size(part_path);
 
         // Use the injected validator
         self.validator.validate_partition(part_path, size)?;
 
         Ok(())
     }
+}
+
+/// Get partition size from lsblk
+fn get_partition_size(partition_path: &str) -> Option<PartitionSize> {
+    let output = std::process::Command::new("lsblk")
+        .args(["-n", "-o", "SIZE", "-b", partition_path])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let size_bytes: u64 = stdout.trim().parse().ok()?;
+    // Convert bytes to MB
+    Some(PartitionSize::from_bytes(size_bytes))
 }
