@@ -14,10 +14,19 @@ impl Question for ResizeInstructionsQuestion {
     }
 
     fn should_ask(&self, context: &InstallContext) -> bool {
-        context
+        // Only ask if dual boot is selected
+        let is_dualboot = context
             .get_answer(&QuestionId::PartitioningMethod)
             .map(|s| s.contains("Dual Boot"))
-            .unwrap_or(false)
+            .unwrap_or(false);
+
+        // Skip if we have free space already (no resize needed)
+        let needs_resize = context
+            .get_answer(&QuestionId::DualBootPartition)
+            .map(|s| s != "__free_space__")
+            .unwrap_or(true);
+
+        is_dualboot && needs_resize
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {

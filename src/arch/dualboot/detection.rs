@@ -48,6 +48,11 @@ impl DiskInfo {
     pub fn size_human(&self) -> String {
         format_size(self.size_bytes)
     }
+
+    /// Check if disk already has enough unpartitioned space for Linux installation
+    pub fn has_sufficient_free_space(&self) -> bool {
+        self.unpartitioned_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE
+    }
 }
 
 /// Partition table type

@@ -58,13 +58,21 @@ impl Question for DualBootPartitionQuestion {
             .cloned()
             .collect();
 
+        // Check if we already have enough free space
         if shrinkable_partitions.is_empty() {
-            FzfWrapper::message(&format!(
-                "{} No shrinkable partitions found on {}.",
-                NerdFont::Warning,
-                disk_path
-            ))?;
-            return Ok(QuestionResult::Cancelled);
+            if disk_info.has_sufficient_free_space() {
+                // No resize needed - disk already has enough free space
+                return Ok(QuestionResult::Answer("__free_space__".to_string()));
+            } else {
+                FzfWrapper::message(&format!(
+                    "{} No shrinkable partitions found on {} and not enough free space.\n\
+                     Free space: {} (need at least 10 GB)",
+                    NerdFont::Warning,
+                    disk_path,
+                    crate::arch::dualboot::format_size(disk_info.unpartitioned_space_bytes)
+                ))?;
+                return Ok(QuestionResult::Cancelled);
+            }
         }
 
         let options: Vec<String> = shrinkable_partitions
@@ -119,6 +127,33 @@ impl Question for DualBootSizeQuestion {
         let part_path = context
             .get_answer(&QuestionId::DualBootPartition)
             .context("No partition selected")?;
+
+        // Handle free space case - no resize needed
+        if part_path == "__free_space__" {
+            let disk_str = context
+                .get_answer(&QuestionId::Disk)
+                .context("No disk selected")?;
+            let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
+
+            let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
+                cached
+            } else {
+                let detected =
+                    tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
+                context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
+                detected
+            };
+
+            let disk_info = disks
+                .iter()
+                .find(|d| d.device == disk_path)
+                .context("Selected disk not found")?;
+
+            // Return the available unpartitioned space as the Linux size
+            return Ok(QuestionResult::Answer(
+                disk_info.unpartitioned_space_bytes.to_string(),
+            ));
+        }
 
         let disk_str = context
             .get_answer(&QuestionId::Disk)
