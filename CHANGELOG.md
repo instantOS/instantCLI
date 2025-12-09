@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.5](https://github.com/instantOS/instantCLI/compare/v0.10.4...v0.10.5) - 2025-12-09
+
+### Fixed
+
+- fix GPU driver installation
+- fix cfdisk for resizing
+- fix indent
+- fix efi partition detection
+- fix settings previews
+
+### Other
+
+- clippy
+- auto disk unmounting
+- notify the user no resize is necessary
+- handle free space appropriately
+- use colored
+- better messaging
+- fmt
+- refactor dual boot verifier
+- check if partition can actually be used now
+- init btrfs size detection
+- more nerd fonts icons
+- clippy
+- account for unused space
+- better detection of odd stuff
+- improve dualboot detection
+- more typesafe dualboot detection
+- deduplicate checks
+- threshold 10GB
+- init resize_instructions
+- remove custom dualboot slider
+- init dualboot questions
+- init UI
+- remove redundant field
+- add efi detection
+- better output
+- fmt
+- init dual boot detection
+- make git shorthands accept git commands
+- better package messaging
+- init sway display check
+- fmt
+- add qt reset setting
+- add preview command to dark mode
+- add moon icon
+- init dark mode setting
+- add instantwm interaction module
+
 ## [0.10.4](https://github.com/instantOS/instantCLI/compare/v0.10.3...v0.10.4) - 2025-12-07
 
 ### Fixed
