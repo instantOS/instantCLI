@@ -47,8 +47,8 @@ impl Question for ResizeInstructionsQuestion {
             .find(|p| p.device == *partition_path)
             .context("Partition not found")?;
 
-        let current_size = partition.size_bytes;
-        let target_size = current_size.saturating_sub(new_linux_size_bytes);
+        let original_size = partition.size_bytes;
+        let target_size = original_size.saturating_sub(new_linux_size_bytes);
 
         // Create resize verifier for tracking changes
         let verifier = ResizeVerifier::with_target(disk_info, partition, target_size);
@@ -62,15 +62,8 @@ impl Question for ResizeInstructionsQuestion {
         let target_size_gb = target_size as f64 / 1024.0 / 1024.0 / 1024.0;
         let linux_size_gb = new_linux_size_bytes as f64 / 1024.0 / 1024.0 / 1024.0;
 
-        // Build instructions message
-        let full_message = build_instructions_message(
-            partition_path,
-            &fs_type,
-            partition.size_human(),
-            target_size_gb,
-            linux_size_gb,
-            new_linux_size_bytes,
-        );
+        // Track current status for dynamic header
+        let mut last_status: Option<crate::arch::dualboot::ResizeStatus> = None;
 
         let options = vec![
             format!("{} I have resized the partition", NerdFont::Check),
@@ -80,6 +73,33 @@ impl Question for ResizeInstructionsQuestion {
 
         // Loop until user confirms or goes back
         loop {
+            // Build dynamic instructions message with current size
+            let current_size_human = if let Some(ref status) = last_status {
+                status
+                    .current_partition_human()
+                    .unwrap_or_else(|| crate::arch::dualboot::format_size(original_size))
+            } else {
+                crate::arch::dualboot::format_size(original_size)
+            };
+
+            let mut full_message = build_instructions_message(
+                &partition_path,
+                &fs_type,
+                &current_size_human,
+                target_size_gb,
+                linux_size_gb,
+                new_linux_size_bytes,
+            );
+
+            // Add status banner if we have checked
+            if let Some(ref status) = last_status {
+                full_message = format!(
+                    "{}\n\n{}",
+                    build_status_banner(status),
+                    full_message
+                );
+            }
+
             let result = FzfWrapper::builder()
                 .header(&full_message)
                 .select(options.clone())?;
@@ -91,10 +111,9 @@ impl Question for ResizeInstructionsQuestion {
                         let _ =
                             crate::common::terminal::run_tui_program("cfdisk", &[disk_path]).await;
 
-                        // Check and display status
-                        let status = verifier.check_async().await?;
-                        display_resize_status(&status);
-                        // Loop continues
+                        // Check status and store for next iteration
+                        last_status = Some(verifier.check_async().await?);
+                        // Loop continues with updated header
                     } else if opt.contains("I have resized") {
                         // Check if resize was performed
                         let status = verifier.check_async().await?;
@@ -119,11 +138,33 @@ impl Question for ResizeInstructionsQuestion {
     }
 }
 
+/// Build a colored status banner based on resize detection
+fn build_status_banner(status: &crate::arch::dualboot::ResizeStatus) -> String {
+    if status.resize_detected {
+        format!(
+            "\x1b[32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\
+             \x1b[32m{} READY TO PROCEED - Resize detected!\x1b[0m\n\
+             \x1b[32m   Free space increased by {}\x1b[0m\n\
+             \x1b[32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m",
+            NerdFont::Check,
+            status.space_freed_human()
+        )
+    } else {
+        format!(
+            "\x1b[33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n\
+             \x1b[33m{} NOT READY - No resize detected\x1b[0m\n\
+             \x1b[33m   Save your changes in cfdisk before exiting\x1b[0m\n\
+             \x1b[33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m",
+            NerdFont::Warning
+        )
+    }
+}
+
 /// Build the instructions message based on filesystem type
 fn build_instructions_message(
     partition_path: &str,
     fs_type: &str,
-    current_size_human: String,
+    current_size_human: &str,
     target_size_gb: f64,
     linux_size_gb: f64,
     linux_size_bytes: u64,
@@ -177,17 +218,6 @@ fn build_instructions_message(
     format!("{}\n{}", instructions, detailed_steps)
 }
 
-/// Display the resize status to the user
-fn display_resize_status(status: &crate::arch::dualboot::ResizeStatus) {
-    println!();
-    if status.resize_detected {
-        println!("{} {}", NerdFont::Check, status.message);
-    } else {
-        println!("{} {}", NerdFont::Warning, status.message);
-        println!("   Make sure to save changes in cfdisk before exiting.");
-    }
-    println!();
-}
 
 /// Ask user to confirm proceeding without detected resize
 fn confirm_proceed_without_resize(status: &crate::arch::dualboot::ResizeStatus) -> Result<bool> {
