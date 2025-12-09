@@ -192,61 +192,14 @@ impl Question for RunCfdiskQuestion {
         println!("Starting cfdisk on {}...", disk_path);
         println!("Please create your partitions and save changes before exiting.");
 
-        // Register signal handler BEFORE spawning child to catch the signal
-        let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-
-        // Use spawn_blocking to run cfdisk in a sync context
-        // This avoids async runtime interference with terminal control
-        let disk_path = disk_path.to_string();
-        let child_task = tokio::task::spawn_blocking(move || {
-            use std::fs::OpenOptions;
-            use std::process::{Command, Stdio};
-
-            // Open /dev/tty explicitly to ensure we have a valid terminal
-            // This fixes issues where sudo/tokio might interfere with stdin/stdout inheritance
-            let tty = OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open("/dev/tty")
-                .expect("Failed to open /dev/tty");
-
-            // We need separate handles for each stream
-            let tty_in = tty.try_clone().expect("Failed to clone tty handle");
-            let tty_out = tty.try_clone().expect("Failed to clone tty handle");
-            let tty_err = tty.try_clone().expect("Failed to clone tty handle");
-
-            let mut child = Command::new("cfdisk")
-                .arg(disk_path)
-                .stdin(Stdio::from(tty_in))
-                .stdout(Stdio::from(tty_out))
-                .stderr(Stdio::from(tty_err))
-                .spawn()
-                .expect("Failed to spawn cfdisk");
-
-            // Just wait for cfdisk to complete
-            child.wait()
-        });
-
-        tokio::select! {
-            res = child_task => {
-                // Task completed (cfdisk exited normally)
-                match res {
-                    Ok(Ok(status)) => {
-                        if status.success() {
-                            Ok(QuestionResult::Answer("done".to_string()))
-                        } else {
-                            Ok(QuestionResult::Cancelled)
-                        }
-                    }
-                    Ok(Err(e)) => Err(anyhow::anyhow!("Failed to wait for cfdisk: {}", e)),
-                    Err(e) => Err(anyhow::anyhow!("Task join error: {}", e)),
-                }
-            }
-            _ = sigint.recv() => {
-                // User pressed Ctrl+C
+        // Use the shared TUI program runner that handles tokio/terminal issues
+        match crate::common::terminal::run_tui_program("cfdisk", &[disk_path]).await {
+            Ok(true) => Ok(QuestionResult::Answer("done".to_string())),
+            Ok(false) => {
                 println!("\ncfdisk cancelled by user.");
                 Ok(QuestionResult::Cancelled)
             }
+            Err(e) => Err(e),
         }
     }
 }

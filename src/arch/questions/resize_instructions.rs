@@ -143,10 +143,9 @@ impl Question for ResizeInstructionsQuestion {
                     if opt.contains("I have resized") {
                         return Ok(QuestionResult::Answer("confirmed".to_string()));
                     } else if opt.contains("Open cfdisk") {
-                        // Launch cfdisk
-                        let mut cmd = std::process::Command::new("cfdisk");
-                        cmd.arg(disk_path);
-                        let _ = cmd.status();
+                        // Launch cfdisk using proper TUI handling
+                        let _ =
+                            crate::common::terminal::run_tui_program("cfdisk", &[disk_path]).await;
                         // Loop continues, allowing them to confirm after cfdisk
                     } else if opt.contains("Go Back") {
                         return Ok(QuestionResult::Cancelled);

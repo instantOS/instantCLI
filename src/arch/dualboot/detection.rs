@@ -891,7 +891,6 @@ fn parse_btrfs_used(output: &str) -> Option<u64> {
     None
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
