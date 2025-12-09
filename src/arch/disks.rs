@@ -146,42 +146,65 @@ pub fn get_mounted_partitions(disk: &str) -> Result<Vec<String>> {
     Ok(mounted)
 }
 
-/// Unmount all partitions on the given disk
-pub fn unmount_disk(disk: &str) -> Result<Vec<String>> {
-    let mounted = get_mounted_partitions(disk)?;
-    let mut unmounted = Vec::new();
+/// Get list of swap partitions on the given disk
+pub fn get_swap_partitions(disk: &str) -> Result<Vec<String>> {
+    let swaps = std::fs::read_to_string("/proc/swaps").unwrap_or_default();
+    let mut swap_parts = Vec::new();
 
-    for partition in &mounted {
-        let status = Command::new("umount").arg(partition).status()?;
+    for line in swaps.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if let Some(filename) = parts.first()
+            && filename.starts_with(disk)
+        {
+            swap_parts.push(filename.to_string());
+        }
+    }
 
+    Ok(swap_parts)
+}
+
+/// Result of preparing a disk for installation
+#[derive(Debug, Default)]
+pub struct DiskPrepareResult {
+    pub unmounted: Vec<String>,
+    pub swapoff: Vec<String>,
+}
+
+impl DiskPrepareResult {
+    pub fn is_empty(&self) -> bool {
+        self.unmounted.is_empty() && self.swapoff.is_empty()
+    }
+
+    pub fn total_count(&self) -> usize {
+        self.unmounted.len() + self.swapoff.len()
+    }
+}
+
+/// Prepare a disk for installation by unmounting all partitions and disabling swap
+pub fn prepare_disk(disk: &str) -> Result<DiskPrepareResult> {
+    let mut result = DiskPrepareResult::default();
+
+    // Unmount all mounted partitions
+    for partition in get_mounted_partitions(disk)? {
+        let status = Command::new("umount").arg(&partition).status()?;
         if status.success() {
-            unmounted.push(partition.clone());
+            result.unmounted.push(partition);
         } else {
             anyhow::bail!("Failed to unmount {}", partition);
         }
     }
 
-    Ok(unmounted)
-}
-
-/// Check if any partition on the given disk is currently used as swap
-pub fn is_disk_swap(disk: &str) -> Result<bool> {
-    let swaps = std::fs::read_to_string("/proc/swaps")?;
-    // /proc/swaps format:
-    // Filename				Type		Size	Used	Priority
-    // /dev/dm-1                               partition	33554428	0	-2
-
-    for line in swaps.lines().skip(1) {
-        // Skip header
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if let Some(filename) = parts.first()
-            && filename.starts_with(disk)
-        {
-            return Ok(true);
+    // Disable swap on all swap partitions
+    for partition in get_swap_partitions(disk)? {
+        let status = Command::new("swapoff").arg(&partition).status()?;
+        if status.success() {
+            result.swapoff.push(partition);
+        } else {
+            anyhow::bail!("Failed to swapoff {}", partition);
         }
     }
 
-    Ok(false)
+    Ok(result)
 }
 
 #[cfg(test)]

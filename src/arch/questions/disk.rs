@@ -3,6 +3,67 @@ use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
+/// Attempts to prepare a disk for installation.
+/// Returns Ok(true) if disk is ready, Ok(false) if user declined preparation.
+fn try_prepare_disk(device_name: &str) -> Result<bool> {
+    let mounted = crate::arch::disks::get_mounted_partitions(device_name).unwrap_or_default();
+    let swap = crate::arch::disks::get_swap_partitions(device_name).unwrap_or_default();
+
+    if mounted.is_empty() && swap.is_empty() {
+        return Ok(true); // Disk is ready
+    }
+
+    // Show what needs preparation
+    println!(
+        "\n{} The disk {} requires preparation:",
+        NerdFont::Warning,
+        device_name
+    );
+    for part in &mounted {
+        println!("  • {} (mounted)", part);
+    }
+    for part in &swap {
+        println!("  • {} (swap)", part);
+    }
+
+    // Ask for confirmation
+    let confirmed = matches!(
+        FzfWrapper::confirm("Unmount partitions and disable swap automatically?"),
+        Ok(crate::menu_utils::ConfirmResult::Yes)
+    );
+
+    if !confirmed {
+        println!("Please prepare the disk manually and try again.");
+        return Ok(false);
+    }
+
+    // Prepare the disk
+    match crate::arch::disks::prepare_disk(device_name) {
+        Ok(result) => {
+            if !result.unmounted.is_empty() {
+                println!(
+                    "{} Unmounted {} partition(s)",
+                    NerdFont::Check,
+                    result.unmounted.len()
+                );
+            }
+            if !result.swapoff.is_empty() {
+                println!(
+                    "{} Disabled swap on {} partition(s)",
+                    NerdFont::Check,
+                    result.swapoff.len()
+                );
+            }
+            Ok(true)
+        }
+        Err(e) => {
+            println!("{} Failed to prepare disk: {}", NerdFont::Cross, e);
+            println!("Please prepare the disk manually and try again.");
+            Ok(false)
+        }
+    }
+}
+
 pub struct DiskQuestion;
 
 #[async_trait::async_trait]
@@ -29,53 +90,17 @@ impl Question for DiskQuestion {
                 .header(format!("{} Select Installation Disk", NerdFont::HardDrive))
                 .select(disks.clone())?;
 
-            match result {
-                crate::menu_utils::FzfResult::Selected(disk) => {
-                    // Extract device path
-                    let device_name = disk.split('(').next().unwrap_or(&disk).trim();
-
-                    // Check for mounted partitions and offer to unmount
-                    if let Ok(mounted) = crate::arch::disks::get_mounted_partitions(device_name)
-                        && !mounted.is_empty()
-                    {
-                        println!(
-                            "\n{} The disk {} has mounted partitions:",
-                            NerdFont::Warning,
-                            device_name
-                        );
-                        for part in &mounted {
-                            println!("  • {}", part);
-                        }
-
-                        match FzfWrapper::confirm("Unmount these partitions automatically?") {
-                            Ok(crate::menu_utils::ConfirmResult::Yes) => {
-                                match crate::arch::disks::unmount_disk(device_name) {
-                                    Ok(unmounted) => {
-                                        println!(
-                                            "{} Successfully unmounted {} partition(s)",
-                                            NerdFont::Check,
-                                            unmounted.len()
-                                        );
-                                    }
-                                    Err(e) => {
-                                        println!("{} Failed to unmount: {}", NerdFont::Cross, e);
-                                        println!("Please unmount manually and try again.");
-                                        continue; // Let user select again
-                                    }
-                                }
-                            }
-                            _ => {
-                                println!("Please unmount the partitions manually and try again.");
-                                continue; // Let user select again
-                            }
-                        }
-                    }
-
-                    return Ok(QuestionResult::Answer(disk));
-                }
-                crate::menu_utils::FzfResult::Cancelled => return Ok(QuestionResult::Cancelled),
+            let disk = match result {
+                crate::menu_utils::FzfResult::Selected(d) => d,
                 _ => return Ok(QuestionResult::Cancelled),
+            };
+
+            let device_name = disk.split('(').next().unwrap_or(&disk).trim();
+
+            if try_prepare_disk(device_name)? {
+                return Ok(QuestionResult::Answer(disk));
             }
+            // User declined or preparation failed - loop back to disk selection
         }
     }
 
@@ -87,23 +112,20 @@ impl Question for DiskQuestion {
             return Err("Invalid disk selection: must start with /dev/".to_string());
         }
 
-        // Extract device name from the selection (e.g., "/dev/sda (500 GiB)" -> "/dev/sda")
         let device_name = answer.split('(').next().unwrap_or(answer).trim();
 
-        // Get the root filesystem device to check against
-        if let Ok(Some(root_device)) = crate::arch::disks::get_root_device() {
-            // Check if the selected device is exactly the root filesystem device
-            if device_name == root_device {
-                return Err(format!(
-                    "Cannot select the current root filesystem device ({}) for installation.\n\
+        // Prevent selecting the current root/boot disk
+        if let Ok(Some(root_device)) = crate::arch::disks::get_root_device()
+            && device_name == root_device
+        {
+            return Err(format!(
+                "Cannot select the current root filesystem device ({}) for installation.\n\
                     This device contains the currently running system and would cause data loss.\n\
                     Please select a different disk.",
-                    root_device
-                ));
-            }
+                root_device
+            ));
         }
 
-        // Check if this disk is the current boot disk (physical disk containing root)
         if let Ok(Some(boot_disk)) = crate::arch::disks::get_boot_disk()
             && device_name == boot_disk
         {
@@ -115,17 +137,8 @@ impl Question for DiskQuestion {
             ));
         }
 
-        // Note: mounted partition check is now handled interactively in ask()
-        // with an offer to automatically unmount
-
-        // Check if disk is used as swap
-        if let Ok(true) = crate::arch::disks::is_disk_swap(device_name) {
-            return Err(format!(
-                "The selected disk ({}) is currently being used as swap.\n\
-                Please swapoff this disk before proceeding.",
-                device_name
-            ));
-        }
+        // Note: mounted partitions and swap are now handled interactively in ask()
+        // with an offer to automatically prepare the disk
 
         Ok(())
     }
