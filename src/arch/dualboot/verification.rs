@@ -5,8 +5,8 @@
 
 use anyhow::Result;
 
-use super::detection::{detect_disks, format_size, DiskInfo, PartitionInfo};
 use super::MIN_LINUX_SIZE;
+use super::detection::{DiskInfo, PartitionInfo, detect_disks, format_size};
 
 /// Result of checking if a resize has been performed
 #[derive(Debug, Clone)]
@@ -112,7 +112,8 @@ impl ResizeVerifier {
         let space_freed = current_unpartitioned > self.original_unpartitioned_bytes;
         let resize_detected = partition_shrunk || space_freed;
 
-        let space_freed_bytes = current_unpartitioned.saturating_sub(self.original_unpartitioned_bytes);
+        let space_freed_bytes =
+            current_unpartitioned.saturating_sub(self.original_unpartitioned_bytes);
         let has_sufficient_space = current_unpartitioned >= MIN_LINUX_SIZE;
 
         // Build message
@@ -183,13 +184,16 @@ mod tests {
         let status = ResizeStatus {
             resize_detected: true,
             current_partition_size: Some(50 * 1024 * 1024 * 1024), // 50 GB
-            current_unpartitioned_bytes: 20 * 1024 * 1024 * 1024, // 20 GB
-            space_freed_bytes: 20 * 1024 * 1024 * 1024,           // 20 GB
+            current_unpartitioned_bytes: 20 * 1024 * 1024 * 1024,  // 20 GB
+            space_freed_bytes: 20 * 1024 * 1024 * 1024,            // 20 GB
             has_sufficient_space: true,
             message: "Test".to_string(),
         };
 
-        assert_eq!(status.current_partition_human(), Some("50.0 GB".to_string()));
+        assert_eq!(
+            status.current_partition_human(),
+            Some("50.0 GB".to_string())
+        );
         assert_eq!(status.space_freed_human(), "20.0 GB".to_string());
     }
 }

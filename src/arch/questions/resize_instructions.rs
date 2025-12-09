@@ -64,7 +64,7 @@ impl Question for ResizeInstructionsQuestion {
 
         // Build instructions message
         let full_message = build_instructions_message(
-            &partition_path,
+            partition_path,
             &fs_type,
             partition.size_human(),
             target_size_gb,
@@ -88,7 +88,8 @@ impl Question for ResizeInstructionsQuestion {
                 crate::menu_utils::FzfResult::Selected(opt) => {
                     if opt.contains("Open cfdisk") {
                         // Launch cfdisk
-                        let _ = crate::common::terminal::run_tui_program("cfdisk", &[disk_path]).await;
+                        let _ =
+                            crate::common::terminal::run_tui_program("cfdisk", &[disk_path]).await;
 
                         // Check and display status
                         let status = verifier.check_async().await?;
@@ -191,7 +192,10 @@ fn display_resize_status(status: &crate::arch::dualboot::ResizeStatus) {
 /// Ask user to confirm proceeding without detected resize
 fn confirm_proceed_without_resize(status: &crate::arch::dualboot::ResizeStatus) -> Result<bool> {
     println!();
-    println!("{} Warning: No partition resize detected!", NerdFont::Warning);
+    println!(
+        "{} Warning: No partition resize detected!",
+        NerdFont::Warning
+    );
     println!("   {}", status.message);
     println!("   You may want to go back and resize it first.");
     println!();
