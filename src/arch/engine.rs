@@ -233,6 +233,32 @@ pub trait DataKey: Send + Sync + 'static {
     const KEY: &'static str;
 }
 
+/// Key to store whether ESP needs to be formatted
+/// False when reusing existing ESP in dual boot mode
+pub struct EspNeedsFormat;
+
+impl DataKey for EspNeedsFormat {
+    type Value = bool;
+    const KEY: &'static str = "esp_needs_format";
+}
+
+/// Key to store dual boot partition paths (root, boot, swap)
+/// Used to pass partition paths from prepare_dualboot_disk to format_and_mount_partitions
+pub struct DualBootPartitions;
+
+/// Partition paths for dual boot installation
+#[derive(Clone, Debug)]
+pub struct DualBootPartitionPaths {
+    pub root: String,
+    pub boot: String,
+    pub swap: String,
+}
+
+impl DataKey for DualBootPartitions {
+    type Value = DualBootPartitionPaths;
+    const KEY: &'static str = "dualboot_partitions";
+}
+
 /// Holds the state of the installation wizard
 #[derive(Default, Clone)]
 pub struct InstallContext {

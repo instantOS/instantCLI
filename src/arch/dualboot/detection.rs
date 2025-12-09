@@ -43,6 +43,9 @@ pub struct DiskInfo {
     pub unpartitioned_space_bytes: u64,
 }
 
+/// Minimum ESP size for dual boot (260 MB recommended for multi-OS)
+pub const MIN_ESP_SIZE: u64 = 260 * 1024 * 1024;
+
 impl DiskInfo {
     /// Get human-readable size
     pub fn size_human(&self) -> String {
@@ -52,6 +55,19 @@ impl DiskInfo {
     /// Check if disk already has enough unpartitioned space for Linux installation
     pub fn has_sufficient_free_space(&self) -> bool {
         self.unpartitioned_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE
+    }
+
+    /// Find a suitable EFI partition for reuse in dual boot
+    /// Returns the first ESP that is at least MIN_ESP_SIZE
+    pub fn find_reusable_esp(&self) -> Option<&PartitionInfo> {
+        self.partitions
+            .iter()
+            .find(|p| p.is_efi && p.size_bytes >= MIN_ESP_SIZE)
+    }
+
+    /// Check if this disk has an EFI partition (any size)
+    pub fn has_esp(&self) -> bool {
+        self.partitions.iter().any(|p| p.is_efi)
     }
 }
 

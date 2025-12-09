@@ -1,5 +1,5 @@
 use super::CommandExecutor;
-use crate::arch::engine::{BootMode, InstallContext, QuestionId};
+use crate::arch::engine::{BootMode, EspNeedsFormat, InstallContext, QuestionId};
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -33,9 +33,14 @@ pub fn prepare_disk(context: &InstallContext, executor: &CommandExecutor) -> Res
         .map(|s| s.as_str())
         .unwrap_or("Automatic");
 
-    if partitioning_method.contains("Manual") {
-        prepare_manual_disk(context, executor)?;
+    if partitioning_method.contains("Dual Boot") {
+        // Dual boot: create partitions in free space, reuse existing ESP
+        prepare_dualboot_disk(context, executor, disk_path, swap_size_gb)?;
+    } else if partitioning_method.contains("Manual") {
+        // Manual: user already selected partitions via questions
+        format_and_mount_partitions(context, executor)?;
     } else {
+        // Automatic: full disk partitioning
         let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
 
         match (boot_mode, use_encryption) {
@@ -65,40 +70,184 @@ pub fn prepare_disk(context: &InstallContext, executor: &CommandExecutor) -> Res
     Ok(())
 }
 
-fn prepare_manual_disk(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
-    println!("Preparing manual partitions...");
+/// Prepare disk for dual boot installation
+///
+/// This function:
+/// 1. Finds existing ESP on the disk (reuses it without reformatting)
+/// 2. Creates new partitions ONLY in unpartitioned space (swap + root)
+/// 3. Stores partition paths in context for use by format_and_mount_partitions
+fn prepare_dualboot_disk(
+    context: &InstallContext,
+    executor: &CommandExecutor,
+    disk_path: &str,
+    swap_size_gb: u64,
+) -> Result<()> {
+    println!("Preparing dual boot installation...");
 
-    let root_part = context
-        .get_answer(&QuestionId::RootPartition)
-        .context("Root partition not selected")?;
-    let root_path = root_part.split('(').next().unwrap_or(root_part).trim();
+    // Get disk info from cached detection data
+    let disks = context
+        .get::<crate::arch::dualboot::DisksKey>()
+        .context("Disk detection data not available - run dual boot detection first")?;
+
+    let disk_info = disks
+        .iter()
+        .find(|d| d.device == disk_path)
+        .context("Selected disk not found in detection data")?;
+
+    // Find existing ESP (already detected with is_efi flag)
+    let esp = disk_info
+        .find_reusable_esp()
+        .context("No suitable EFI partition found for dual boot (need >= 260MB ESP)")?;
+
+    println!(
+        "Reusing existing ESP: {} ({})",
+        esp.device,
+        crate::arch::dualboot::format_size(esp.size_bytes)
+    );
+
+    // Validate we have enough free space
+    let available_space = disk_info.unpartitioned_space_bytes;
+    if available_space < crate::arch::dualboot::MIN_LINUX_SIZE {
+        anyhow::bail!(
+            "Not enough free space: {} available, {} required",
+            crate::arch::dualboot::format_size(available_space),
+            crate::arch::dualboot::format_size(crate::arch::dualboot::MIN_LINUX_SIZE)
+        );
+    }
+
+    // Create partitions in free space only
+    // sfdisk can append partitions to existing partition table
+    let (root_path, swap_path) =
+        create_dualboot_partitions(disk_path, swap_size_gb, executor)?;
+
+    // Store partition paths in context - CONVERGENCE POINT
+    // Now we use the same QuestionIds as manual mode
+    context.set_answer_internal(QuestionId::RootPartition, root_path);
+    context.set_answer_internal(QuestionId::BootPartition, esp.device.clone());
+    context.set_answer_internal(QuestionId::SwapPartition, swap_path);
+
+    // Mark that ESP should NOT be reformatted (it's existing)
+    context.set::<EspNeedsFormat>(false);
+
+    // Now use the SAME formatting/mounting code as manual mode
+    format_and_mount_partitions(context, executor)?;
+
+    Ok(())
+}
+
+/// Create swap and root partitions in the unpartitioned space of a disk
+///
+/// Returns (root_path, swap_path) for the newly created partitions
+fn create_dualboot_partitions(
+    disk_path: &str,
+    swap_size_gb: u64,
+    executor: &CommandExecutor,
+) -> Result<(String, String)> {
+    println!("Creating partitions in free space...");
+
+    // Use sfdisk to append partitions to existing table
+    // The "+" prefix means "append after last partition"
+    // We create: swap partition, then root partition (rest of space)
+    let script = format!(
+        "size={}G, type=S\n\
+         type=L\n",
+        swap_size_gb
+    );
+
+    // sfdisk --append appends to existing partition table
+    executor.run_with_input(
+        Command::new("sfdisk").arg("--append").arg(disk_path),
+        &script,
+    )?;
+
+    // Wait for kernel to update partition table
+    if !executor.dry_run {
+        executor.run(Command::new("udevadm").arg("settle"))?;
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+
+    // Determine partition paths
+    // After appending, we need to find the new partition numbers
+    // We can use lsblk to get the latest partitions
+    let (swap_path, root_path) = get_last_two_partitions(disk_path)?;
+
+    println!("Created swap partition: {}", swap_path);
+    println!("Created root partition: {}", root_path);
+
+    Ok((root_path, swap_path))
+}
+
+/// Get the last two partition paths on a disk (swap, root order)
+fn get_last_two_partitions(disk_path: &str) -> Result<(String, String)> {
+    let output = std::process::Command::new("lsblk")
+        .args(["-n", "-o", "NAME", "-r", disk_path])
+        .output()
+        .context("Failed to run lsblk")?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let partitions: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.starts_with(disk_path.strip_prefix("/dev/").unwrap_or(disk_path)))
+        .filter(|l| *l != disk_path.strip_prefix("/dev/").unwrap_or(disk_path))
+        .collect();
+
+    if partitions.len() < 2 {
+        anyhow::bail!("Expected at least 2 partitions after creating dual boot partitions");
+    }
+
+    // Last two partitions are the newly created ones (swap, root)
+    let swap_name = partitions[partitions.len() - 2];
+    let root_name = partitions[partitions.len() - 1];
+
+    Ok((
+        format!("/dev/{}", swap_name),
+        format!("/dev/{}", root_name),
+    ))
+}
+
+/// Format and mount partitions based on paths stored in context
+///
+/// This is the CONVERGENCE POINT - used by both manual and dual boot modes
+fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    println!("Formatting and mounting partitions...");
 
     let boot_mode = &context.system_info.boot_mode;
 
-    // Format Root
+    // Get partition paths from context
+    let root_part = context
+        .get_answer(&QuestionId::RootPartition)
+        .context("Root partition not set")?;
+    let root_path = root_part.split('(').next().unwrap_or(root_part).trim();
+
+    // Format and mount root
     println!("Formatting Root partition: {}", root_path);
     executor.run(Command::new("mkfs.ext4").args(["-F", root_path]))?;
 
-    // Mount Root
     println!("Mounting Root partition...");
     executor.run(Command::new("mount").args([root_path, "/mnt"]))?;
 
     // Handle Boot/EFI
     if let Some(boot_part) = context.get_answer(&QuestionId::BootPartition) {
         let boot_path = boot_part.split('(').next().unwrap_or(boot_part).trim();
-        println!("Formatting Boot partition: {}", boot_path);
 
-        // If UEFI, it must be FAT32. If BIOS, usually ext4 or just a directory on root.
-        // But if they selected a separate boot partition, we should format it.
-        // For UEFI it is mandatory.
-        match boot_mode {
-            BootMode::UEFI64 | BootMode::UEFI32 => {
-                executor.run(Command::new("mkfs.fat").args(["-F32", boot_path]))?;
+        // Check if we should format the ESP (false for dual boot reuse)
+        let should_format = context.get::<EspNeedsFormat>().unwrap_or(true);
+
+        if should_format {
+            println!("Formatting Boot partition: {}", boot_path);
+            match boot_mode {
+                BootMode::UEFI64 | BootMode::UEFI32 => {
+                    executor.run(Command::new("mkfs.fat").args(["-F32", boot_path]))?;
+                }
+                BootMode::BIOS => {
+                    executor.run(Command::new("mkfs.ext4").args(["-F", boot_path]))?;
+                }
             }
-            BootMode::BIOS => {
-                // For BIOS, a separate boot partition is usually ext4
-                executor.run(Command::new("mkfs.ext4").args(["-F", boot_path]))?;
-            }
+        } else {
+            println!(
+                "Reusing existing Boot partition: {} (not reformatting)",
+                boot_path
+            );
         }
 
         println!("Mounting Boot partition...");
@@ -108,7 +257,7 @@ fn prepare_manual_disk(context: &InstallContext, executor: &CommandExecutor) -> 
     // Handle Swap
     if let Some(swap_part) = context.get_answer(&QuestionId::SwapPartition) {
         let swap_path = swap_part.split('(').next().unwrap_or(swap_part).trim();
-        println!("Formatting Swap partition: {}", swap_path);
+        println!("Formatting Swap: {}", swap_path);
         executor.run(Command::new("mkswap").arg(swap_path))?;
         println!("Activating Swap...");
         executor.run(Command::new("swapon").arg(swap_path))?;
