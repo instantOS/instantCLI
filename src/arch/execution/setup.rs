@@ -68,7 +68,7 @@ async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
     Ok(())
 }
 
-fn install_all_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+pub fn install_all_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Installing packages (batched)...");
 
     let packages = crate::arch::execution::packages::build_package_plan(context)?;

@@ -8,6 +8,7 @@ pub async fn install_config(context: &InstallContext, executor: &CommandExecutor
     println!("Configuring system (inside chroot)...");
 
     configure_pacman_target(executor).await?;
+    super::setup::install_all_packages(context, executor)?;
     configure_timezone(context, executor)?;
     configure_locale(context, executor)?;
     configure_network(context, executor)?;
