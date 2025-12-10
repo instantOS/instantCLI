@@ -1,4 +1,5 @@
 use super::CommandExecutor;
+use crate::arch::dualboot::DisksKey;
 use crate::arch::engine::{
     BootMode, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext,
     QuestionId,
@@ -82,10 +83,15 @@ fn prepare_dualboot_disk(
 ) -> Result<()> {
     println!("Preparing dual boot installation...");
 
-    // Get disk info from cached detection data
-    let disks = context
-        .get::<crate::arch::dualboot::DisksKey>()
-        .context("Disk detection data not available - run dual boot detection first")?;
+    // Get disk info from cached detection data; fallback to fresh detection if missing
+    let disks = if let Some(cached) = context.get::<DisksKey>() {
+        cached.clone()
+    } else {
+        let detected = crate::arch::dualboot::detect_disks()
+            .context("Disk detection data not available and re-detection failed")?;
+        context.set::<DisksKey>(detected.clone());
+        detected
+    };
 
     let disk_info = disks
         .iter()
