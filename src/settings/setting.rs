@@ -347,7 +347,41 @@ pub trait Setting: Send + Sync + 'static {
     fn preview_command(&self) -> Option<String> {
         None
     }
+
+    /// Get the current display state of the setting
+    ///
+    /// By default, this computes the state based on the setting type and context usage.
+    /// Override this to provide dynamic state (e.g. checking systemd service status).
+    fn get_display_state(&self, ctx: &SettingsContext) -> SettingState {
+        match self.setting_type() {
+            SettingType::Toggle { key } => SettingState::Toggle {
+                enabled: ctx.bool(key),
+            },
+            SettingType::Choice { key } => {
+                let current = ctx.string(key);
+                SettingState::Choice {
+                    current_label: if current.is_empty() {
+                        "Not set"
+                    } else {
+                        Box::leak(current.into_boxed_str())
+                    },
+                }
+            }
+            SettingType::Action => SettingState::Action,
+            SettingType::Command => SettingState::Command,
+        }
+    }
 }
+
+/// State of a setting for display
+#[derive(Debug, Clone, Copy)]
+pub enum SettingState {
+    Toggle { enabled: bool },
+    Choice { current_label: &'static str },
+    Action,
+    Command,
+}
+
 
 /// Iterate over all registered settings from the category tree
 pub fn all_settings() -> impl Iterator<Item = &'static dyn Setting> {

@@ -17,11 +17,11 @@ use crate::ui::prelude::*;
 // Clipboard Manager
 // ============================================================================
 
-pub struct ClipboardManager;
+// ============================================================================
+// Clipboard Manager
+// ============================================================================
 
-impl ClipboardManager {
-    const KEY: BoolSettingKey = BoolSettingKey::new("desktop.clipboard", true);
-}
+pub struct ClipboardManager;
 
 impl Setting for ClipboardManager {
     fn metadata(&self) -> SettingMetadata {
@@ -37,59 +37,68 @@ impl Setting for ClipboardManager {
     }
 
     fn setting_type(&self) -> SettingType {
-        SettingType::Toggle { key: Self::KEY }
+        // We don't store state in TOML anymore, we derive it from systemd
+        SettingType::Action
+    }
+
+    fn get_display_state(&self, _ctx: &SettingsContext) -> crate::settings::setting::SettingState {
+        use crate::settings::setting::SettingState;
+
+        // Check if package is installed first
+        if !crate::common::requirements::CLIPMENU_PACKAGE.is_installed() {
+            return SettingState::Toggle { enabled: false };
+        }
+
+        // Check systemd service status
+        let systemd = SystemdManager::user();
+        let enabled = systemd.is_enabled("clipmenud") || systemd.is_active("clipmenud");
+
+        SettingState::Toggle { enabled }
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let current = ctx.bool(Self::KEY);
-        let enabled = !current;
-        ctx.set_bool(Self::KEY, enabled);
+        use crate::settings::setting::SettingState;
 
-        let is_running = std::process::Command::new("pgrep")
-            .arg("-f")
-            .arg("clipmenud")
-            .output()
-            .map(|output| !output.stdout.is_empty())
-            .unwrap_or(false);
+        let current_state = self.get_display_state(ctx);
+        let currently_enabled = match current_state {
+            SettingState::Toggle { enabled } => enabled,
+            _ => false,
+        };
 
-        if enabled && !is_running {
-            if let Err(err) = std::process::Command::new("clipmenud")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-            {
-                emit(
-                    Level::Warn,
-                    "settings.clipboard.spawn_failed",
-                    &format!(
-                        "{} Failed to launch clipmenud: {err}",
-                        char::from(NerdFont::Warning)
-                    ),
-                    None,
+        // Toggle logic
+        let should_enable = !currently_enabled;
+
+        const CLIPMENU_SERVICE: &str = "clipmenud";
+
+        if should_enable {
+            // Ensure package is installed before trying to enable service
+            if !crate::common::requirements::CLIPMENU_PACKAGE.ensure()? {
+                ctx.emit_info(
+                    "settings.clipboard.aborted",
+                    "Clipboard history setup was cancelled.",
                 );
-            } else {
-                ctx.notify("Clipboard manager", "clipmenud started");
+                return Ok(());
             }
-        } else if !enabled && is_running {
-            if let Err(err) = cmd!("pkill", "-f", "clipmenud").run() {
-                emit(
-                    Level::Warn,
-                    "settings.clipboard.stop_failed",
-                    &format!(
-                        "{} Failed to stop clipmenud: {err}",
-                        char::from(NerdFont::Warning)
-                    ),
-                    None,
-                );
-            } else {
-                ctx.notify("Clipboard manager", "clipmenud stopped");
+
+            let systemd = SystemdManager::user();
+            if !systemd.is_enabled(CLIPMENU_SERVICE) {
+                systemd.enable_and_start(CLIPMENU_SERVICE)?;
+            } else if !systemd.is_active(CLIPMENU_SERVICE) {
+                systemd.start(CLIPMENU_SERVICE)?;
+            }
+
+            ctx.notify("Clipboard manager", "Clipboard history enabled");
+        } else {
+            // Disable
+            let systemd = SystemdManager::user();
+            if systemd.is_enabled(CLIPMENU_SERVICE) || systemd.is_active(CLIPMENU_SERVICE) {
+                systemd.disable_and_stop(CLIPMENU_SERVICE)?;
+                ctx.notify("Clipboard manager", "Clipboard history disabled");
             }
         }
 
         Ok(())
     }
-
-    // No restore needed - clipmenud isn't critical for system startup
 }
 
 // ============================================================================

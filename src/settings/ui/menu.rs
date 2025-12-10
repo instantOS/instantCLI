@@ -297,7 +297,7 @@ fn navigate_node(
                     })
                 }
                 TreeNode::Leaf(s) => {
-                    let state = super::state::compute_setting_state(ctx, *s);
+                    let state = s.get_display_state(ctx);
                     CategoryPageItem::Setting(SettingItem { setting: *s, state })
                 }
             })
@@ -342,7 +342,7 @@ pub fn handle_search_all(ctx: &mut SettingsContext, initial_cursor: Option<usize
 
         for (_, settings) in settings_by_category() {
             for setting in settings {
-                let state = super::state::compute_setting_state(ctx, setting);
+                let state = setting.get_display_state(ctx);
                 items.push(SearchItem { setting, state });
             }
         }

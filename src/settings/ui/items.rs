@@ -37,14 +37,9 @@ pub enum CategoryMenuItem {
 // Setting Display
 // ============================================================================
 
-/// State of a setting for display
-#[derive(Clone, Copy)]
-pub enum SettingState {
-    Toggle { enabled: bool },
-    Choice { current_label: &'static str },
-    Action,
-    Command,
-}
+use crate::settings::setting::SettingState;
+
+// SettingState moved to crate::settings::setting
 
 /// Display item for a setting
 #[derive(Clone, Copy)]
