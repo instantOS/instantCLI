@@ -43,6 +43,8 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
         "mesa",
         "polkit",
         "networkmanager",
+        "sudo",
+        "zsh",
         "vim",
         "nano",
         "git",

@@ -50,7 +50,7 @@ pub async fn setup_instantos(
     Ok(())
 }
 
-async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
+pub async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
     println!("Setting up instantOS repository...");
     crate::common::pacman::setup_instant_repo(executor.dry_run).await?;
 

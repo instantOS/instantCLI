@@ -7,6 +7,11 @@ use std::process::Command;
 pub async fn install_config(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Configuring system (inside chroot)...");
 
+    // Ensure repositories (instantos + multilib) are configured before installing packages
+    if !context.get_answer_bool(QuestionId::MinimalMode) {
+        super::setup::setup_instant_repo(executor).await?;
+    }
+
     configure_pacman_target(executor).await?;
     super::setup::install_all_packages(context, executor)?;
     configure_timezone(context, executor)?;
