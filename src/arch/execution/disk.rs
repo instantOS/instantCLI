@@ -210,10 +210,52 @@ fn create_dualboot_partitions(
     // Second created (higher number) is Root
     let root_path = sorted[1].clone();
 
-    println!("Created swap partition: {}", swap_path);
-    println!("Created root partition: {}", root_path);
+    // Verify sizes to be safe
+    // We want to ensure that:
+    // 1. Swap is approximately requested size (allow small margin)
+    // 2. Root is at least MIN_LINUX_SIZE
+    let swap_size_bytes = get_partition_size_bytes(&swap_path)?;
+    let root_size_bytes = get_partition_size_bytes(&root_path)?;
+
+    // Swap verification (within 10% margin)
+    let expected_swap_bytes = swap_size_gb * 1024 * 1024 * 1024;
+    let swap_diff = (swap_size_bytes as i64 - expected_swap_bytes as i64).abs();
+    let swap_margin = expected_swap_bytes / 10; // 10%
+
+    if swap_diff > swap_margin as i64 {
+        println!(
+            "Warning: Created swap partition size ({}) differs significantly from requested ({}).",
+            crate::arch::dualboot::format_size(swap_size_bytes),
+            crate::arch::dualboot::format_size(expected_swap_bytes)
+        );
+        // We warn but don't error, usually it's fine (alignment etc)
+    }
+
+    // Root verification (Strict minimum)
+    if root_size_bytes < crate::arch::dualboot::MIN_LINUX_SIZE {
+        anyhow::bail!(
+            "Created root partition is too small! Got {}, required {}. \
+            There might not have been enough contiguous free space.",
+            crate::arch::dualboot::format_size(root_size_bytes),
+            crate::arch::dualboot::format_size(crate::arch::dualboot::MIN_LINUX_SIZE)
+        );
+    }
+
+    println!("Created swap partition: {} ({})", swap_path, crate::arch::dualboot::format_size(swap_size_bytes));
+    println!("Created root partition: {} ({})", root_path, crate::arch::dualboot::format_size(root_size_bytes));
 
     Ok((root_path, swap_path))
+}
+
+/// Helper to get partition size in bytes
+fn get_partition_size_bytes(device_path: &str) -> Result<u64> {
+    let output = std::process::Command::new("lsblk")
+        .args(["-n", "-o", "SIZE", "-b", device_path])
+        .output()
+        .context("Failed to get partition size")?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.trim().parse().context("Failed to parse partition size")
 }
 
 /// Get list of current full partition paths on disk (e.g. ["/dev/sda1", "/dev/sda2"])
