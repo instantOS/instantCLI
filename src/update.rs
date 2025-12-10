@@ -9,7 +9,7 @@ use crate::ui::prelude::*;
 
 pub async fn handle_update_command(debug: bool) -> Result<()> {
     // 1. Ensure topgrade is installed
-    if !TOPGRADE_PACKAGE.ensure()? {
+    if !TOPGRADE_PACKAGE.ensure()?.is_installed() {
         emit(
             Level::Warn,
             "update.topgrade.missing",

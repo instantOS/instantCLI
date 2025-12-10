@@ -26,7 +26,9 @@ use super::cli::DebugCommands;
 
 /// Ensure restic is available, prompting for installation if needed
 fn ensure_restic_available() -> Result<()> {
-    RESTIC_PACKAGE.ensure()?;
+    if !RESTIC_PACKAGE.ensure()?.is_installed() {
+        return Err(anyhow::anyhow!("restic installation cancelled"));
+    }
     Ok(())
 }
 

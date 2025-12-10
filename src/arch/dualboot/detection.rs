@@ -1381,7 +1381,7 @@ Unallocated:
             .arg("--no-reread")
             .arg("--quiet")
             .arg(path.to_str().expect("path"))
-            .stdin(Stdio::piped())
+            .stdin(std::process::Stdio::piped())
             .spawn()
             .expect("spawn sfdisk");
 
