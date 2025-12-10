@@ -292,56 +292,31 @@ pub struct DiskProvider;
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for DiskProvider {
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
-        // Run fdisk -l
-        // We assume the process is already running as root (enforced in CLI)
-        let output = Command::new("fdisk").arg("-l").output()?;
+        use crate::arch::dualboot::detect_disks;
 
-        if !output.status.success() {
-            eprintln!(
-                "Failed to list disks: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            return Ok(());
-        }
+        match detect_disks() {
+            Ok(disk_infos) => {
+                let disks: Vec<DiskEntry> = disk_infos
+                    .into_iter()
+                    .map(|info| {
+                        let size = info.size_human();
+                        DiskEntry::new(info.device, size)
+                    })
+                    .collect();
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut disks = Vec::new();
-
-        // Parse output: look for lines starting with "Disk /dev/..."
-        // Example: Disk /dev/nvme0n1: 476.94 GiB, 512110190592 bytes, 1000215216 sectors
-        for line in stdout.lines() {
-            if line.starts_with("Disk /dev/") && line.contains(':') {
-                // Filter out loopback devices (/dev/loop*)
-                if line.contains("/dev/loop") {
-                    continue;
+                if disks.is_empty() {
+                    eprintln!("No disks found. Are you running with sudo?");
                 }
-                // Extract the part before the comma usually, or just the whole line up to size
-                // "Disk /dev/sda: 500 GiB, ..."
-                // We want to present something like "/dev/sda (500 GiB)"
 
-                let parts: Vec<&str> = line.split(':').collect();
-                if parts.len() >= 2 {
-                    let dev_path = parts[0]
-                        .trim()
-                        .strip_prefix("Disk ")
-                        .unwrap_or(parts[0].trim());
-                    let details = parts[1].trim();
-                    // details might be "476.94 GiB, 512110190592 bytes, 1000215216 sectors"
-                    // We just want the first part "476.94 GiB"
-                    let size = details.split(',').next().unwrap_or(details).trim();
-
-                    disks.push(DiskEntry::new(dev_path.to_string(), size.to_string()));
-                }
+                context.set::<DisksKey>(disks);
+            }
+            Err(e) => {
+                eprintln!("Failed to detect disks: {}", e);
+                // We don't fail the whole process here, just list no disks
+                // This might allow the user to retry or debug
+                context.set::<DisksKey>(Vec::new());
             }
         }
-
-        if disks.is_empty() {
-            // Fallback or warning?
-            // Maybe we are not root?
-            eprintln!("No disks found. Are you running with sudo?");
-        }
-
-        context.set::<DisksKey>(disks);
 
         Ok(())
     }

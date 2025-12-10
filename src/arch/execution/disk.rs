@@ -241,8 +241,16 @@ fn create_dualboot_partitions(
         );
     }
 
-    println!("Created swap partition: {} ({})", swap_path, crate::arch::dualboot::format_size(swap_size_bytes));
-    println!("Created root partition: {} ({})", root_path, crate::arch::dualboot::format_size(root_size_bytes));
+    println!(
+        "Created swap partition: {} ({})",
+        swap_path,
+        crate::arch::dualboot::format_size(swap_size_bytes)
+    );
+    println!(
+        "Created root partition: {} ({})",
+        root_path,
+        crate::arch::dualboot::format_size(root_size_bytes)
+    );
 
     Ok((root_path, swap_path))
 }
@@ -255,7 +263,10 @@ fn get_partition_size_bytes(device_path: &str) -> Result<u64> {
         .context("Failed to get partition size")?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout.trim().parse().context("Failed to parse partition size")
+    stdout
+        .trim()
+        .parse()
+        .context("Failed to parse partition size")
 }
 
 /// Get list of current full partition paths on disk (e.g. ["/dev/sda1", "/dev/sda2"])

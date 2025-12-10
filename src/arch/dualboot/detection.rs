@@ -473,7 +473,7 @@ fn is_efi_partition(parttype: &str) -> bool {
 
 /// Get resize info for EFI System Partition
 fn get_efi_resize_info(size_bytes: u64) -> ResizeInfo {
-    const MIN_ESP_SIZE: u64 = 260 * 1024 * 1024; // 260 MB recommended
+    // Use module-level MIN_ESP_SIZE constant
 
     if size_bytes < MIN_ESP_SIZE {
         ResizeInfo {
