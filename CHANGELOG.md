@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.7](https://github.com/instantOS/instantCLI/compare/v0.10.6...v0.10.7) - 2025-12-10
+
+### Fixed
+
+- fix handling
+- fix non-UTF8 appearing
+
+### Other
+
+- add batch support to flatpak installations
+- make instantASSIST handle package installation decline
+- remove redundant messages
+- handle package installation decline
+- clippy
+- clean up setting state computation
+- batch package ensure requests
+- clean up package installation flow
+
 ## [0.10.6](https://github.com/instantOS/instantCLI/compare/v0.10.5...v0.10.6) - 2025-12-10
 
 ### Fixed
