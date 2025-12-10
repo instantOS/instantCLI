@@ -525,6 +525,13 @@ fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecu
         // Check if we should format the ESP (false for dual boot reuse)
         let should_format = context.get::<EspNeedsFormat>().unwrap_or(true);
 
+        // Dual boot: mount ESP at /boot/efi to avoid clobbering existing contents like amd-ucode
+        let boot_mount_point = if dualboot_paths.is_some() {
+            "/mnt/boot/efi"
+        } else {
+            "/mnt/boot"
+        };
+
         if should_format {
             println!("Formatting Boot partition: {}", boot_path);
             match boot_mode {
@@ -543,7 +550,7 @@ fn format_and_mount_partitions(context: &InstallContext, executor: &CommandExecu
         }
 
         println!("Mounting Boot partition...");
-        executor.run(Command::new("mount").args(["--mkdir", &boot_path, "/mnt/boot"]))?;
+        executor.run(Command::new("mount").args(["--mkdir", &boot_path, boot_mount_point]))?;
     }
 
     // Handle Swap

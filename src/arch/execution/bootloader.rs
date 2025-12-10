@@ -46,11 +46,16 @@ fn install_grub_uefi(context: &InstallContext, executor: &CommandExecutor) -> Re
     println!("Installing GRUB with target: {}", target);
 
     // Install GRUB for UEFI
-    // Note: ESP (EFI System Partition) is mounted at /boot according to the installation plan
-    // This ensures GRUB is properly installed for UEFI boot
+    // Use /boot/efi when present (dual-boot reuse) otherwise /boot (fresh installs)
+    let efi_dir = if std::path::Path::new("/boot/efi").exists() {
+        "/boot/efi"
+    } else {
+        "/boot"
+    };
+
     let mut cmd = Command::new("grub-install");
     cmd.arg(format!("--target={}", target))
-        .arg("--efi-directory=/boot")
+        .arg(format!("--efi-directory={}", efi_dir))
         .arg("--bootloader-id=GRUB")
         .arg("--recheck"); // Ensure GRUB is properly installed
 
