@@ -311,6 +311,7 @@ struct SfdiskPartitionTable {
     // label: String, // e.g. "gpt", "dos" - unused for now
     firstlba: Option<u64>,
     lastlba: Option<u64>,
+    size: Option<u64>, // total sectors (may be present for MBR)
     sectorsize: u64,
     partitions: Option<Vec<SfdiskPartition>>,
 }
@@ -339,13 +340,15 @@ fn calculate_free_regions_from_json(json: &str) -> Result<Vec<FreeRegion>> {
 
     let last_lba = pt
         .lastlba
+        .or_else(|| pt.size.map(|s| s.saturating_sub(1)))
         .or_else(|| {
             partitions
                 .iter()
                 .map(|p| p.start.saturating_add(p.size).saturating_sub(1))
                 .max()
         })
-        .unwrap_or(0);
+        .map(|l| l.max(first_lba))
+        .unwrap_or(first_lba);
 
     // Sort partitions by start sector to reliably find gaps
     partitions.sort_by_key(|p| p.start);
@@ -523,6 +526,33 @@ mod parsing_tests {
         let regions = calculate_free_regions_from_json(json).unwrap();
         // With no reported disk end we cannot infer trailing free space; we just ensure parsing works.
         assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn test_calculate_free_regions_missing_lba_with_size() {
+        // DOS/MBR with size field should infer disk end from size.
+        let json = r#"{
+    "partitiontable": {
+        "label": "dos",
+        "device": "test",
+        "unit": "sectors",
+        "size": 100000,
+        "sectorsize": 512,
+        "partitions": [
+            {
+                "start": 2048,
+                "size": 4096
+            }
+        ]
+    }
+}"#;
+
+        let regions = calculate_free_regions_from_json(json).unwrap();
+        // Gap after the single partition to the end of disk.
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].start, 2048 + 4096); // partition end + 1
+        assert_eq!(regions[0].end, 99999);
+        assert_eq!(regions[0].sectors, 99999 - (2048 + 4096) + 1);
     }
 }
 
