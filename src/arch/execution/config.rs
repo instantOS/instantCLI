@@ -8,7 +8,6 @@ pub async fn install_config(context: &InstallContext, executor: &CommandExecutor
     println!("Configuring system (inside chroot)...");
 
     configure_pacman_target(executor).await?;
-    ensure_config_packages(context, executor)?;
     configure_timezone(context, executor)?;
     configure_locale(context, executor)?;
     configure_network(context, executor)?;
@@ -30,25 +29,22 @@ async fn configure_pacman_target(executor: &CommandExecutor) -> Result<()> {
     Ok(())
 }
 
-fn ensure_config_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+/// Packages required for configuration steps (installed in a single batch elsewhere)
+pub fn config_package_list(context: &InstallContext) -> Vec<String> {
     let mut packages = Vec::new();
 
     if context.get_answer_bool(QuestionId::UseEncryption) {
-        packages.push("lvm2");
-        packages.push("cryptsetup");
+        packages.push("lvm2".to_string());
+        packages.push("cryptsetup".to_string());
     }
 
     if context.get_answer_bool(QuestionId::UsePlymouth)
         && !context.get_answer_bool(QuestionId::MinimalMode)
     {
-        packages.push("plymouth");
+        packages.push("plymouth".to_string());
     }
 
-    if packages.is_empty() {
-        return Ok(());
-    }
-
-    super::pacman::install(&packages, executor)
+    packages
 }
 
 fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {

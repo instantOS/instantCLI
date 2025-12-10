@@ -25,8 +25,8 @@ pub async fn setup_instantos(
         crate::arch::execution::config::configure_sudo(context, executor)?;
     }
 
-    // Install extended packages (GUI, tools, drivers)
-    install_packages(context, executor)?;
+    // Install all chroot packages early in a single pacman call
+    install_all_packages(context, executor)?;
 
     if !minimal_mode {
         update_os_release(executor)?;
@@ -68,109 +68,10 @@ async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
     Ok(())
 }
 
-fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
-    println!("Installing extended packages...");
+fn install_all_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    println!("Installing packages (batched)...");
 
-    let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
-
-    let kernel = context
-        .get_answer(&QuestionId::Kernel)
-        .map(|s| s.as_str())
-        .unwrap_or("linux");
-
-    let mut packages: Vec<String> = vec![
-        "openssh",
-        "mesa",
-        "polkit",
-        "networkmanager",
-        "vim",
-        "nano",
-        "git",
-        "libgit2",
-        "fzf",
-        "gum",
-        "base-devel",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
-
-    packages.push(format!("{}-headers", kernel));
-
-    if !minimal_mode {
-        packages.extend(
-            vec![
-                "sway",
-                "xorg-xwayland",
-                // instantOS packages
-                "instantdepend",
-                "instantos",
-                "instantextra",
-                "lightdm",
-                "lightdm-gtk-greeter",
-            ]
-            .into_iter()
-            .map(String::from),
-        );
-    }
-
-    // GPU packages
-    // We install drivers here (after multilib is enabled) to allow lib32-* packages
-
-    let mut added_gpus = std::collections::HashSet::new();
-    for gpu in &context.system_info.gpus {
-        // Avoid duplicates if same GPU type detected multiple times
-        if !added_gpus.insert(std::mem::discriminant(gpu)) {
-            continue;
-        }
-
-        match gpu {
-            crate::arch::engine::GpuKind::Nvidia => {
-                println!("Detected NVIDIA GPU, adding drivers");
-            }
-            crate::arch::engine::GpuKind::Amd => {
-                println!("Detected AMD GPU, adding vulkan support");
-            }
-            crate::arch::engine::GpuKind::Intel => {
-                println!("Detected Intel GPU, adding vulkan support");
-            }
-            crate::arch::engine::GpuKind::Other(name) => {
-                println!("Detected unknown GPU: {}, adding basic mesa support", name);
-            }
-        }
-
-        packages.extend(
-            gpu.get_driver_packages(Some(kernel))
-                .into_iter()
-                .map(String::from),
-        );
-    }
-
-    // VM Guest Tools
-    if let Some(vm_type) = &context.system_info.vm_type {
-        println!("Detected VM: {}, adding guest tools", vm_type);
-        match vm_type.as_str() {
-            "kvm" | "qemu" | "bochs" => {
-                packages.push("qemu-guest-agent".to_string());
-            }
-            "vmware" => {
-                packages.push("open-vm-tools".to_string());
-            }
-            "oracle" => {
-                packages.push("virtualbox-guest-utils".to_string());
-            }
-            _ => {
-                println!("No specific guest tools for VM type: {}", vm_type);
-            }
-        }
-    }
-
-    // Plymouth support
-    if context.get_answer_bool(QuestionId::UsePlymouth) && !minimal_mode {
-        println!("Plymouth enabled, adding plymouth package");
-        packages.push("plymouth".to_string());
-    }
-
+    let packages = crate::arch::execution::packages::build_package_plan(context)?;
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
 
     super::pacman::install(&package_refs, executor)?;
