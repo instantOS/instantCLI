@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.6](https://github.com/instantOS/instantCLI/compare/v0.10.5...v0.10.6) - 2025-12-10
+
+### Fixed
+
+- fix pacman-contrib missing
+- fix instant repo order
+- fix iso pacman
+- fix package installation order
+- fix dual boot efi dir
+- fix ESP detection
+- fix disk cache
+- fix wrong partition being used?
+- fix dual boot handling
+- fix dual boot partition creation
+
+### Other
+
+- plans
+- installmore idea
+- add jank plans
+- better checks
+- set up default user with wallpaper
+- better error management
+- better error handling
+- install packages earlier
+- partition deletion detection
+- cap swap so it's not absurd
+- fmt
+- use largest free region instead of total space
+- I hate disk stuff
+- another fix?
+- better json
+- reduce amount of needed cowspace
+- more sfdisk fixes
+- switch to json
+- create dualboot root in appropriate space
+- account for fragmented storage
+- deduplicate some stuff
+- check sizes after creating partitions
+- proper types for partitions
+- dynamically update shrinking message
+- refactor disk preparation
+
 ## [0.10.5](https://github.com/instantOS/instantCLI/compare/v0.10.4...v0.10.5) - 2025-12-09
 
 ### Fixed
