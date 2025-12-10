@@ -499,8 +499,12 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
             anyhow::bail!("Installer binary not found at {:?}", current_exe);
         }
 
-        std::fs::copy(&current_exe, &target_bin)
-            .with_context(|| format!("Failed to copy binary to chroot (from {:?} to {:?})", current_exe, target_bin))?;
+        std::fs::copy(&current_exe, &target_bin).with_context(|| {
+            format!(
+                "Failed to copy binary to chroot (from {:?} to {:?})",
+                current_exe, target_bin
+            )
+        })?;
     }
 
     // Copy config

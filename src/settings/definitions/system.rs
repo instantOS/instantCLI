@@ -60,6 +60,7 @@ impl Setting for SystemDoctor {
             .title("System Diagnostics")
             .icon(NerdFont::ShieldCheck)
             .summary("Run system diagnostics to check for common issues and available fixes.")
+            .requirements(&[Requirement::Package(PACMAN_CONTRIB_PACKAGE)])
             .build()
     }
 
