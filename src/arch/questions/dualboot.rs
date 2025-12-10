@@ -20,10 +20,10 @@ impl Question for DualBootPartitionQuestion {
     }
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
-        let disk_str = context
+        // disk_path is now just the device path (e.g., "/dev/sda")
+        let disk_path = context
             .get_answer(&QuestionId::Disk)
             .context("No disk selected")?;
-        let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
 
         // Get disks from cache or detect
         let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
@@ -37,7 +37,7 @@ impl Question for DualBootPartitionQuestion {
 
         let disk_info = disks
             .iter()
-            .find(|d| d.device == disk_path)
+            .find(|d| d.device == *disk_path)
             .context("Selected disk not found")?;
 
         let feasibility = crate::arch::dualboot::check_disk_dualboot_feasibility(disk_info);
@@ -60,25 +60,27 @@ impl Question for DualBootPartitionQuestion {
 
         // Check if we already have enough free space
         if shrinkable_partitions.is_empty() {
+            let free_space_bytes = disk_info.max_contiguous_free_space_bytes;
+
             if disk_info.has_sufficient_free_space() {
                 // No resize needed - disk already has enough free space
                 FzfWrapper::message(&format!(
                     "{} No partition resize needed!\n\n\
-                     Your disk already has {} of unpartitioned space.\n\
+                     Largest contiguous free region: {}.\n\
                      This is enough for a Linux installation (minimum 10 GB).\n\n\
                      {} Proceeding to installation...",
                     NerdFont::Check,
-                    crate::arch::dualboot::format_size(disk_info.unpartitioned_space_bytes),
+                    crate::arch::dualboot::format_size(free_space_bytes),
                     NerdFont::ArrowRight
                 ))?;
                 return Ok(QuestionResult::Answer("__free_space__".to_string()));
             } else {
                 FzfWrapper::message(&format!(
-                    "{} No shrinkable partitions found on {} and not enough free space.\n\
-                     Free space: {} (need at least 10 GB)",
+                    "{} No shrinkable partitions found on {} and not enough contiguous free space.\n\
+                     Largest contiguous free region: {} (need at least 10 GB)",
                     NerdFont::Warning,
                     disk_path,
-                    crate::arch::dualboot::format_size(disk_info.unpartitioned_space_bytes)
+                    crate::arch::dualboot::format_size(free_space_bytes)
                 ))?;
                 return Ok(QuestionResult::Cancelled);
             }
@@ -139,10 +141,10 @@ impl Question for DualBootSizeQuestion {
 
         // Handle free space case - no resize needed
         if part_path == "__free_space__" {
-            let disk_str = context
+            // disk_path is now just the device path (e.g., "/dev/sda")
+            let disk_path = context
                 .get_answer(&QuestionId::Disk)
                 .context("No disk selected")?;
-            let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
 
             let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
                 cached
@@ -155,19 +157,19 @@ impl Question for DualBootSizeQuestion {
 
             let disk_info = disks
                 .iter()
-                .find(|d| d.device == disk_path)
+                .find(|d| d.device == *disk_path)
                 .context("Selected disk not found")?;
 
-            // Return the available unpartitioned space as the Linux size
+            // Return the largest contiguous free space as the Linux size
             return Ok(QuestionResult::Answer(
-                disk_info.unpartitioned_space_bytes.to_string(),
+                disk_info.max_contiguous_free_space_bytes.to_string(),
             ));
         }
 
-        let disk_str = context
+        // disk_path is now just the device path (e.g., "/dev/sda")
+        let disk_path = context
             .get_answer(&QuestionId::Disk)
             .context("No disk selected")?;
-        let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
 
         // Get disks from cache or detect (should be cached by previous question)
         let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
@@ -181,7 +183,7 @@ impl Question for DualBootSizeQuestion {
 
         let disk_info = disks
             .iter()
-            .find(|d| d.device == disk_path)
+            .find(|d| d.device == *disk_path)
             .context("Selected disk not found")?;
 
         let partition = disk_info

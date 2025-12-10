@@ -6,7 +6,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 /// Format bytes as human-readable size
 pub fn format_size(bytes: u64) -> String {
@@ -41,7 +42,12 @@ pub struct DiskInfo {
     pub partitions: Vec<PartitionInfo>,
     /// Unpartitioned space in bytes (calculated)
     pub unpartitioned_space_bytes: u64,
+    /// Largest contiguous unpartitioned space in bytes (detected via sfdisk)
+    pub max_contiguous_free_space_bytes: u64,
 }
+
+/// Minimum ESP size for dual boot (260 MB recommended for multi-OS)
+pub const MIN_ESP_SIZE: u64 = 260 * 1024 * 1024;
 
 impl DiskInfo {
     /// Get human-readable size
@@ -51,7 +57,20 @@ impl DiskInfo {
 
     /// Check if disk already has enough unpartitioned space for Linux installation
     pub fn has_sufficient_free_space(&self) -> bool {
-        self.unpartitioned_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE
+        self.max_contiguous_free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE
+    }
+
+    /// Find a suitable EFI partition for reuse in dual boot
+    /// Returns the first ESP that is at least MIN_ESP_SIZE
+    pub fn find_reusable_esp(&self) -> Option<&PartitionInfo> {
+        self.partitions
+            .iter()
+            .find(|p| p.is_efi && p.size_bytes >= MIN_ESP_SIZE)
+    }
+
+    /// Check if this disk has an EFI partition (any size)
+    pub fn has_esp(&self) -> bool {
+        self.partitions.iter().any(|p| p.is_efi)
     }
 }
 
@@ -225,16 +244,328 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
         let total_partition_size: u64 = partitions.iter().map(|p| p.size_bytes).sum();
         let unpartitioned_space_bytes = size_bytes.saturating_sub(total_partition_size);
 
+        // Calculate largest contiguous free space using sfdisk
+        let device_path = format!("/dev/{}", name);
+        let max_contiguous_free_space_bytes =
+            get_largest_free_region(&device_path, Some(size_bytes)).unwrap_or(0);
+
         disks.push(DiskInfo {
-            device: format!("/dev/{}", name),
+            device: device_path,
             size_bytes,
             partition_table,
             partitions,
             unpartitioned_space_bytes,
+            max_contiguous_free_space_bytes,
         });
     }
 
     Ok(disks)
+}
+
+/// Get the largest contiguous free region in bytes for a device (Helper wrapper)
+fn get_largest_free_region(device: &str, disk_size_bytes: Option<u64>) -> Option<u64> {
+    get_free_regions(device, disk_size_bytes)
+        .ok()?
+        .into_iter()
+        .map(|r| r.size_bytes)
+        .max()
+}
+
+/// Represents a contiguous free space region on the disk
+#[derive(Debug, Clone, Copy)]
+pub struct FreeRegion {
+    /// Start sector
+    pub start: u64,
+    /// End sector
+    pub end: u64,
+    /// Number of sectors
+    pub sectors: u64,
+    /// Size in bytes
+    pub size_bytes: u64,
+}
+
+/// Get all contiguous free regions for a device
+pub fn get_free_regions(device: &str, disk_size_bytes: Option<u64>) -> Result<Vec<FreeRegion>> {
+    // Run sfdisk -J <device> to get partition table in JSON
+    let output = Command::new("sfdisk")
+        .args(["-J", device])
+        .output()
+        .context("Failed to run sfdisk -J")?;
+
+    if !output.status.success() {
+        // If it returns error (e.g. no partition table, empty disk), we assume no dual boot targets.
+        // Dual boot requires an existing OS/partition structure to coexist with.
+        return Ok(Vec::new());
+    }
+
+    let json_output = String::from_utf8_lossy(&output.stdout);
+    calculate_free_regions_from_json(&json_output, disk_size_bytes)
+}
+
+#[derive(Debug, Deserialize)]
+struct SfdiskOutput {
+    partitiontable: SfdiskPartitionTable,
+}
+
+#[derive(Debug, Deserialize)]
+struct SfdiskPartitionTable {
+    // label: String, // e.g. "gpt", "dos" - unused for now
+    firstlba: Option<u64>,
+    lastlba: Option<u64>,
+    size: Option<u64>, // total sectors (may be present for MBR)
+    sectorsize: u64,
+    partitions: Option<Vec<SfdiskPartition>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SfdiskPartition {
+    // node: String, // e.g. "test.img1" - unused
+    start: u64,
+    size: u64,
+    // type: String, // unused
+}
+
+/// Calculate free regions by finding gaps in the partition table
+fn calculate_free_regions_from_json(
+    json: &str,
+    disk_size_bytes: Option<u64>,
+) -> Result<Vec<FreeRegion>> {
+    let output: SfdiskOutput =
+        serde_json::from_str(json).context("Failed to parse sfdisk JSON output")?;
+
+    let pt = output.partitiontable;
+    let sector_size = pt.sectorsize;
+    let disk_size_sectors = disk_size_bytes.and_then(|b| {
+        if sector_size > 0 {
+            Some(b / sector_size)
+        } else {
+            None
+        }
+    });
+    let mut partitions = pt.partitions.unwrap_or_default();
+
+    let first_lba = pt
+        .firstlba
+        .or_else(|| partitions.iter().map(|p| p.start).min())
+        .unwrap_or(0);
+
+    let last_lba = pt
+        .lastlba
+        .or_else(|| pt.size.map(|s| s.saturating_sub(1)))
+        .or_else(|| disk_size_sectors.map(|s| s.saturating_sub(1)))
+        .or_else(|| {
+            partitions
+                .iter()
+                .map(|p| p.start.saturating_add(p.size).saturating_sub(1))
+                .max()
+        })
+        .map(|l| l.max(first_lba))
+        .unwrap_or(first_lba);
+
+    // Sort partitions by start sector to reliably find gaps
+    partitions.sort_by_key(|p| p.start);
+
+    let mut regions = Vec::new();
+    let mut current_sector = first_lba;
+
+    // Check gaps between partitions
+    for partition in partitions {
+        if partition.start > current_sector {
+            let gap_sectors = partition.start - current_sector;
+            // Only consider gaps large enough to be usable (e.g., > 1MB)
+            // 1MB = 2048 sectors (at 512 bytes/sector)
+            if gap_sectors > 2048 {
+                regions.push(FreeRegion {
+                    start: current_sector,
+                    end: partition.start - 1,
+                    sectors: gap_sectors,
+                    size_bytes: gap_sectors * sector_size,
+                });
+            }
+        }
+        current_sector = std::cmp::max(current_sector, partition.start + partition.size);
+    }
+
+    // Check gap at the end (between last partition and lastlba)
+    if current_sector <= last_lba {
+        let gap_sectors = (last_lba - current_sector) + 1; // lastlba is inclusive
+
+        // Only consider gaps large enough (> 1MB)
+        if gap_sectors > 2048 {
+            regions.push(FreeRegion {
+                start: current_sector,
+                end: last_lba,
+                sectors: gap_sectors,
+                size_bytes: gap_sectors * sector_size,
+            });
+        }
+    }
+
+    Ok(regions)
+}
+
+#[cfg(test)]
+mod parsing_tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_free_regions_simple_gap() {
+        // 100 sectors total. Partition at 20-30.
+        // Free: 0-19 (if firstlba=0), 31-100.
+        // firstlba typically 34 or 2048 for GPT. Let's say 34.
+
+        let json = r#"{
+   "partitiontable": {
+      "label": "gpt",
+      "id": "A",
+      "device": "test",
+      "unit": "sectors",
+      "firstlba": 34,
+      "lastlba": 10000,
+      "sectorsize": 512,
+      "partitions": [
+         {
+            "node": "p1",
+            "start": 5000,
+            "size": 1000
+         }
+      ]
+   }
+}"#;
+        // Gaps:
+        // 1. 34 to 4999 (size 4966)
+        // 2. 6000 to 10000 (size 4001)
+
+        // Note: Our logic filters < 2048 sectors (1MB).
+        // 4966 > 2048 -> Keep
+        // 4001 > 2048 -> Keep
+
+        let regions = calculate_free_regions_from_json(json, None).unwrap();
+        assert_eq!(regions.len(), 2);
+
+        assert_eq!(regions[0].start, 34);
+        assert_eq!(regions[0].sectors, 4966);
+
+        assert_eq!(regions[1].start, 6000);
+        assert_eq!(regions[1].end, 10000);
+    }
+
+    #[test]
+    fn test_calculate_free_regions_contiguous_user_scenario() {
+        // User scenario:
+        // 4GB free at start? (Assume existing partitions start late)
+        // 5GB Linux
+        // 2GB EFI
+        // 26GB free at end
+
+        // Let's model roughly in sectors (512b)
+        // 1GB = 2,097,152 sectors
+        // 4GB ~= 8,388,608 sectors
+
+        // Case:
+        // P1 Start: 8,388,608 + 2048 (offset). Size: 10,000,000
+        // P2 Start: P1_End + 1. Size: 4,000,000
+        // Disk End: Very large
+
+        let json = r#"{
+   "partitiontable": {
+      "label": "gpt",
+      "firstlba": 2048,
+      "lastlba": 100000000,
+      "sectorsize": 512,
+      "partitions": [
+         {
+            "start": 10000000,
+            "size": 10000000
+         },
+         {
+            "start": 20000000,
+            "size": 4000000
+         }
+      ]
+   }
+}"#;
+        // Gaps:
+        // 1. 2048 to 9,999,999. Size ~ 10M sectors (~5GB)
+        // 2. 24,000,000 to 100,000,000. Size ~ 76M sectors (~38GB)
+
+        let regions = calculate_free_regions_from_json(json, None).unwrap();
+
+        assert_eq!(regions.len(), 2);
+        assert_eq!(regions[0].start, 2048);
+        assert!(regions[0].size_bytes > 4 * 1024 * 1024 * 1024); // > 4GB
+
+        assert_eq!(regions[1].start, 24000000);
+        assert!(regions[1].size_bytes > 20 * 1024 * 1024 * 1024); // > 20GB
+    }
+
+    #[test]
+    fn test_calculate_free_regions_no_partitions() {
+        // Empty partition table (e.g. freshly initialized GPT but no partitions)
+        let json = r#"{
+   "partitiontable": {
+      "label": "gpt",
+      "firstlba": 2048,
+      "lastlba": 100000,
+      "sectorsize": 512,
+      "partitions": []
+   }
+}"#;
+        let regions = calculate_free_regions_from_json(json, None).unwrap();
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].start, 2048);
+        assert_eq!(regions[0].end, 100000);
+    }
+
+    #[test]
+    fn test_calculate_free_regions_missing_lba_fields_dos() {
+        // DOS/MBR outputs do not include firstlba/lastlba; ensure we still parse without crashing.
+        let json = r#"{
+    "partitiontable": {
+        "label": "dos",
+        "device": "test",
+        "unit": "sectors",
+        "sectorsize": 512,
+        "partitions": [
+            {
+                "start": 2048,
+                "size": 4096
+            }
+        ]
+    }
+}"#;
+
+        let regions = calculate_free_regions_from_json(json, None).unwrap();
+        // With no reported disk end we cannot infer trailing free space; we just ensure parsing works.
+        assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn test_calculate_free_regions_missing_lba_with_size() {
+        // DOS/MBR with size field should infer disk end from size.
+        let json = r#"{
+    "partitiontable": {
+        "label": "dos",
+        "device": "test",
+        "unit": "sectors",
+        "size": 100000,
+        "sectorsize": 512,
+        "partitions": [
+            {
+                "start": 2048,
+                "size": 4096
+            }
+        ]
+    }
+}"#;
+
+        let regions = calculate_free_regions_from_json(json, None).unwrap();
+        // Gap after the single partition to the end of disk.
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].start, 2048 + 4096); // partition end + 1
+        assert_eq!(regions[0].end, 99999);
+        assert_eq!(regions[0].sectors, 99999 - (2048 + 4096) + 1);
+    }
 }
 
 /// Check if a partition is feasible for dual boot installation
@@ -286,8 +617,9 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
         .collect();
 
     // Check if we have enough unpartitioned space
-    let has_unpartitioned_space =
-        disk.unpartitioned_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
+    // We check CONTIGUOUS space to ensure we can actually create the partition
+    let free_space_bytes = disk.max_contiguous_free_space_bytes;
+    let has_unpartitioned_space = free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
 
     if feasible_partitions.is_empty() {
         if has_unpartitioned_space {
@@ -296,7 +628,7 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
                 feasible_partitions: vec![], // No specific partition to resize, but disk is feasible
                 reason: Some(format!(
                     "Unpartitioned space available: {}",
-                    format_size(disk.unpartitioned_space_bytes)
+                    format_size(free_space_bytes)
                 )),
             };
         }
@@ -308,8 +640,8 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
                 feasible: false,
                 feasible_partitions: vec![],
                 reason: Some(format!(
-                    "Disk too small or full (Free: {})",
-                    format_size(disk.unpartitioned_space_bytes)
+                    "Disk too small or full (Largest free region: {})",
+                    format_size(disk.max_contiguous_free_space_bytes)
                 )),
             }
         } else {
@@ -457,7 +789,7 @@ fn is_efi_partition(parttype: &str) -> bool {
 
 /// Get resize info for EFI System Partition
 fn get_efi_resize_info(size_bytes: u64) -> ResizeInfo {
-    const MIN_ESP_SIZE: u64 = 260 * 1024 * 1024; // 260 MB recommended
+    // Use module-level MIN_ESP_SIZE constant
 
     if size_bytes < MIN_ESP_SIZE {
         ResizeInfo {
@@ -1034,5 +1366,94 @@ Unallocated:
     Free (estimated):             33898004480      (min: 18966994432)
 "#;
         assert_eq!(parse_btrfs_used(btrfs_output), Some(18556850176));
+    }
+
+    const MB: u64 = 1024 * 1024;
+
+    fn create_image_with_sfdisk(size_mb: u64, script: &str) -> tempfile::TempPath {
+        let file = tempfile::NamedTempFile::new().expect("temp image");
+        file.as_file()
+            .set_len(size_mb * MB)
+            .expect("set image size");
+
+        let path = file.into_temp_path();
+        let mut child = Command::new("sfdisk")
+            .arg("--no-reread")
+            .arg("--quiet")
+            .arg(path.to_str().expect("path"))
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn sfdisk");
+
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin")
+            .write_all(script.as_bytes())
+            .expect("write script");
+
+        let status = child.wait().expect("wait sfdisk");
+        assert!(status.success(), "sfdisk failed: {status}");
+        path
+    }
+
+    #[test]
+    fn sfdisk_detects_end_gap_on_gpt_image() {
+        // 100MB image with two 20MB partitions leaves a large gap at the end.
+        let script = "label: gpt\n,20M\n,20M\n";
+        let img = create_image_with_sfdisk(100, script);
+
+        let regions = get_free_regions(img.to_str().expect("path"), None).expect("regions");
+        assert!(!regions.is_empty());
+
+        let max_gap = regions.iter().map(|r| r.size_bytes).max().unwrap();
+        // Expect roughly 60MB free (allow wide tolerance for alignment/padding).
+        assert!(
+            max_gap > 50 * MB && max_gap < 75 * MB,
+            "gap was {} bytes",
+            max_gap
+        );
+    }
+
+    #[test]
+    fn sfdisk_detects_middle_gap_between_partitions() {
+        // 200MB image: 32MB partition, ~60MB gap, 32MB partition, remaining free at end.
+        let script = "label: gpt\n,32M\nstart=120M,size=32M\n";
+        let img = create_image_with_sfdisk(200, script);
+
+        let regions = get_free_regions(img.to_str().expect("path"), None).expect("regions");
+        assert!(regions.len() >= 2);
+
+        let mut sizes: Vec<u64> = regions.iter().map(|r| r.size_bytes).collect();
+        sizes.sort_unstable();
+
+        let largest = *sizes.last().unwrap();
+        let second = sizes[sizes.len() - 2];
+
+        // Middle gap should be comfortably above the 1MB cutoff; allow wide tolerance for alignment.
+        assert!(
+            second > 30 * MB && second < 120 * MB,
+            "middle gap {} bytes",
+            second
+        );
+        assert!(
+            largest > 40 * MB && largest < 140 * MB,
+            "end gap {} bytes",
+            largest
+        );
+    }
+
+    #[test]
+    fn sfdisk_detects_small_gaps_filtered_out() {
+        // 50MB image with tiny 512KB gap between partitions should be ignored (<1MB threshold).
+        let script = "label: gpt\n,10M\nstart=12M,size=10M\n";
+        let img = create_image_with_sfdisk(50, script);
+
+        let regions = get_free_regions(img.to_str().expect("path"), None).expect("regions");
+
+        // Only the main trailing gap should remain; tiny gap is below threshold.
+        assert_eq!(regions.len(), 1);
+        let gap = regions[0].size_bytes;
+        assert!(gap > 25 * MB && gap < 40 * MB, "trailing gap {} bytes", gap);
     }
 }

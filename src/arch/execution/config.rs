@@ -7,7 +7,13 @@ use std::process::Command;
 pub async fn install_config(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Configuring system (inside chroot)...");
 
+    // Ensure repositories (instantos + multilib) are configured before installing packages
+    if !context.get_answer_bool(QuestionId::MinimalMode) {
+        super::setup::setup_instant_repo(executor).await?;
+    }
+
     configure_pacman_target(executor).await?;
+    super::setup::install_all_packages(context, executor)?;
     configure_timezone(context, executor)?;
     configure_locale(context, executor)?;
     configure_network(context, executor)?;
@@ -27,6 +33,24 @@ async fn configure_pacman_target(executor: &CommandExecutor) -> Result<()> {
     crate::common::pacman::configure_pacman_settings(Some("/etc/pacman.conf"), executor.dry_run)
         .await?;
     Ok(())
+}
+
+/// Packages required for configuration steps (installed in a single batch elsewhere)
+pub fn config_package_list(context: &InstallContext) -> Vec<String> {
+    let mut packages = Vec::new();
+
+    if context.get_answer_bool(QuestionId::UseEncryption) {
+        packages.push("lvm2".to_string());
+        packages.push("cryptsetup".to_string());
+    }
+
+    if context.get_answer_bool(QuestionId::UsePlymouth)
+        && !context.get_answer_bool(QuestionId::MinimalMode)
+    {
+        packages.push("plymouth".to_string());
+    }
+
+    packages
 }
 
 fn configure_mkinitcpio(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {

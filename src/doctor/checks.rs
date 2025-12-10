@@ -575,18 +575,39 @@ impl DoctorCheck for PendingUpdatesCheck {
                     CheckStatus::Pass(format!("{} pending updates", update_count))
                 }
             }
-            Err(e) => CheckStatus::Fail {
-                message: format!("Could not run checkupdates: {}", e),
-                fixable: false,
-            },
+            Err(e) => {
+                // Check if the error is because checkupdates is not found
+                let error_msg = e.to_string();
+                if error_msg.contains("No such file") || error_msg.contains("not found") {
+                    CheckStatus::Fail {
+                        message: "checkupdates not found (install pacman-contrib)".to_string(),
+                        fixable: true,
+                    }
+                } else {
+                    CheckStatus::Fail {
+                        message: format!("Could not run checkupdates: {}", e),
+                        fixable: false,
+                    }
+                }
+            }
         }
     }
 
     fn fix_message(&self) -> Option<String> {
-        Some("Update system packages with pacman -Syu".to_string())
+        Some(
+            "Install pacman-contrib if needed and update system packages with pacman -Syu"
+                .to_string(),
+        )
     }
 
     async fn fix(&self) -> Result<()> {
+        use crate::common::requirements::PACMAN_CONTRIB_PACKAGE;
+
+        // Ensure pacman-contrib is installed (provides checkupdates)
+        if !PACMAN_CONTRIB_PACKAGE.is_installed() && !PACMAN_CONTRIB_PACKAGE.ensure()? {
+            return Err(anyhow::anyhow!("pacman-contrib installation cancelled"));
+        }
+
         // Run pacman -Syu
         let status = TokioCommand::new("pacman").arg("-Syu").status().await?;
 

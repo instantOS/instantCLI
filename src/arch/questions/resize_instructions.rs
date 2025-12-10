@@ -41,8 +41,8 @@ impl Question for ResizeInstructionsQuestion {
         let new_linux_size_bytes: u64 = size_str.parse()?;
 
         // Get disk and partition info
-        let disk_str = context.get_answer(&QuestionId::Disk).context("No disk")?;
-        let disk_path = disk_str.split('(').next().unwrap_or(disk_str).trim();
+        // disk_path is now just the device path (e.g., "/dev/sda")
+        let disk_path = context.get_answer(&QuestionId::Disk).context("No disk")?;
         let disk_path_owned = disk_path.to_string();
 
         let disks_result = tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await?;
@@ -84,12 +84,17 @@ impl Question for ResizeInstructionsQuestion {
         // Loop until user confirms or goes back
         loop {
             // Build dynamic instructions message with current size
-            let current_size_human = if let Some(ref status) = last_status {
-                status
-                    .current_partition_human()
-                    .unwrap_or_else(|| crate::arch::dualboot::format_size(original_size))
+            let (current_size_human, shrink_remaining_gb) = if let Some(ref status) = last_status {
+                let current_size = status.current_partition_size.unwrap_or(original_size);
+                let human = crate::arch::dualboot::format_size(current_size);
+                let shrink_remaining =
+                    current_size.saturating_sub(target_size) as f64 / 1024.0 / 1024.0 / 1024.0;
+                (human, shrink_remaining)
             } else {
-                crate::arch::dualboot::format_size(original_size)
+                (
+                    crate::arch::dualboot::format_size(original_size),
+                    linux_size_gb,
+                )
             };
 
             let mut full_message = build_instructions_message(
@@ -97,7 +102,7 @@ impl Question for ResizeInstructionsQuestion {
                 &fs_type,
                 &current_size_human,
                 target_size_gb,
-                linux_size_gb,
+                shrink_remaining_gb,
                 new_linux_size_bytes,
             );
 
@@ -175,7 +180,7 @@ fn build_instructions_message(
     fs_type: &str,
     current_size_human: &str,
     target_size_gb: f64,
-    linux_size_gb: f64,
+    shrink_remaining_gb: f64,
     linux_size_bytes: u64,
 ) -> String {
     let instructions = format!(
@@ -193,7 +198,7 @@ fn build_instructions_message(
         current_size_human,
         NerdFont::ArrowRight,
         target_size_gb,
-        linux_size_gb
+        shrink_remaining_gb
     );
 
     let detailed_steps = if fs_type == "ntfs" {

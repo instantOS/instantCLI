@@ -583,7 +583,10 @@ pub const PACMAN_CONTRIB_PACKAGE: RequiredPackage = RequiredPackage {
     name: "pacman-contrib",
     arch_package_name: Some("pacman-contrib"),
     ubuntu_package_name: None,
-    tests: &[InstallTest::WhichSucceeds("paccache")],
+    tests: &[
+        InstallTest::WhichSucceeds("paccache"),
+        InstallTest::WhichSucceeds("checkupdates"),
+    ],
 };
 
 pub const TOPGRADE_PACKAGE: RequiredPackage = RequiredPackage {

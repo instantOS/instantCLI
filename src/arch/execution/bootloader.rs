@@ -19,6 +19,20 @@ pub async fn install_bootloader(
     Ok(())
 }
 
+/// Packages needed for bootloader setup (installed in a single batch elsewhere)
+pub fn bootloader_package_list(context: &InstallContext) -> Vec<String> {
+    let mut packages = vec!["grub".to_string(), "os-prober".to_string()];
+
+    if matches!(
+        context.system_info.boot_mode,
+        BootMode::UEFI64 | BootMode::UEFI32
+    ) {
+        packages.push("efibootmgr".to_string());
+    }
+
+    packages
+}
+
 fn install_grub_uefi(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Detected UEFI mode. Installing GRUB for UEFI...");
 
@@ -32,11 +46,16 @@ fn install_grub_uefi(context: &InstallContext, executor: &CommandExecutor) -> Re
     println!("Installing GRUB with target: {}", target);
 
     // Install GRUB for UEFI
-    // Note: ESP (EFI System Partition) is mounted at /boot according to the installation plan
-    // This ensures GRUB is properly installed for UEFI boot
+    // Use /boot/efi when present (dual-boot reuse) otherwise /boot (fresh installs)
+    let efi_dir = if std::path::Path::new("/boot/efi").exists() {
+        "/boot/efi"
+    } else {
+        "/boot"
+    };
+
     let mut cmd = Command::new("grub-install");
     cmd.arg(format!("--target={}", target))
-        .arg("--efi-directory=/boot")
+        .arg(format!("--efi-directory={}", efi_dir))
         .arg("--bootloader-id=GRUB")
         .arg("--recheck"); // Ensure GRUB is properly installed
 
@@ -48,15 +67,10 @@ fn install_grub_uefi(context: &InstallContext, executor: &CommandExecutor) -> Re
 fn install_grub_bios(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Detected BIOS mode. Installing GRUB for BIOS...");
 
-    let disk_answer = context
+    // disk is now just the device path (e.g., "/dev/sda")
+    let disk = context
         .get_answer(&QuestionId::Disk)
         .context("Disk not selected")?;
-
-    // Parse disk from answer string, e.g., "/dev/sda (500 GiB)" -> "/dev/sda"
-    let disk = disk_answer
-        .split_whitespace()
-        .next()
-        .context("Invalid disk format")?;
 
     println!("Installing GRUB to MBR of {}", disk);
 
@@ -102,10 +116,10 @@ fn configure_grub_encryption(context: &InstallContext, executor: &CommandExecuto
         return Ok(());
     }
 
-    let disk_answer = context
+    // disk is now just the device path (e.g., "/dev/sda")
+    let disk = context
         .get_answer(&QuestionId::Disk)
         .context("Disk not selected")?;
-    let disk = disk_answer.split('(').next().unwrap_or(disk_answer).trim();
 
     // LUKS is always on partition 2 in our layout
     let luks_part = crate::arch::execution::disk::get_part_path(disk, 2);

@@ -146,42 +146,65 @@ pub fn get_mounted_partitions(disk: &str) -> Result<Vec<String>> {
     Ok(mounted)
 }
 
-/// Unmount all partitions on the given disk
-pub fn unmount_disk(disk: &str) -> Result<Vec<String>> {
-    let mounted = get_mounted_partitions(disk)?;
-    let mut unmounted = Vec::new();
+/// Get list of swap partitions on the given disk
+pub fn get_swap_partitions(disk: &str) -> Result<Vec<String>> {
+    let swaps = std::fs::read_to_string("/proc/swaps").unwrap_or_default();
+    let mut swap_parts = Vec::new();
 
-    for partition in &mounted {
-        let status = Command::new("umount").arg(partition).status()?;
+    for line in swaps.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if let Some(filename) = parts.first()
+            && filename.starts_with(disk)
+        {
+            swap_parts.push(filename.to_string());
+        }
+    }
 
+    Ok(swap_parts)
+}
+
+/// Result of preparing a disk for installation
+#[derive(Debug, Default)]
+pub struct DiskPrepareResult {
+    pub unmounted: Vec<String>,
+    pub swapoff: Vec<String>,
+}
+
+impl DiskPrepareResult {
+    pub fn is_empty(&self) -> bool {
+        self.unmounted.is_empty() && self.swapoff.is_empty()
+    }
+
+    pub fn total_count(&self) -> usize {
+        self.unmounted.len() + self.swapoff.len()
+    }
+}
+
+/// Prepare a disk for installation by unmounting all partitions and disabling swap
+pub fn prepare_disk(disk: &str) -> Result<DiskPrepareResult> {
+    let mut result = DiskPrepareResult::default();
+
+    // Unmount all mounted partitions
+    for partition in get_mounted_partitions(disk)? {
+        let status = Command::new("umount").arg(&partition).status()?;
         if status.success() {
-            unmounted.push(partition.clone());
+            result.unmounted.push(partition);
         } else {
             anyhow::bail!("Failed to unmount {}", partition);
         }
     }
 
-    Ok(unmounted)
-}
-
-/// Check if any partition on the given disk is currently used as swap
-pub fn is_disk_swap(disk: &str) -> Result<bool> {
-    let swaps = std::fs::read_to_string("/proc/swaps")?;
-    // /proc/swaps format:
-    // Filename				Type		Size	Used	Priority
-    // /dev/dm-1                               partition	33554428	0	-2
-
-    for line in swaps.lines().skip(1) {
-        // Skip header
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if let Some(filename) = parts.first()
-            && filename.starts_with(disk)
-        {
-            return Ok(true);
+    // Disable swap on all swap partitions
+    for partition in get_swap_partitions(disk)? {
+        let status = Command::new("swapoff").arg(&partition).status()?;
+        if status.success() {
+            result.swapoff.push(partition);
+        } else {
+            anyhow::bail!("Failed to swapoff {}", partition);
         }
     }
 
-    Ok(false)
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -236,10 +259,31 @@ mod tests {
     }
 }
 
+/// Represents a disk entry with path and size information
+#[derive(Clone, Debug)]
+pub struct DiskEntry {
+    /// Device path (e.g., /dev/sda)
+    pub path: String,
+    /// Human-readable size (e.g., "500 GiB")
+    pub size: String,
+}
+
+impl DiskEntry {
+    pub fn new(path: String, size: String) -> Self {
+        Self { path, size }
+    }
+}
+
+impl crate::menu_utils::FzfSelectable for DiskEntry {
+    fn fzf_display_text(&self) -> String {
+        format!("{} ({})", self.path, self.size)
+    }
+}
+
 pub struct DisksKey;
 
 impl DataKey for DisksKey {
-    type Value = Vec<String>;
+    type Value = Vec<DiskEntry>;
     const KEY: &'static str = "disks";
 }
 
@@ -248,56 +292,31 @@ pub struct DiskProvider;
 #[async_trait::async_trait]
 impl crate::arch::engine::AsyncDataProvider for DiskProvider {
     async fn provide(&self, context: &crate::arch::engine::InstallContext) -> Result<()> {
-        // Run fdisk -l
-        // We assume the process is already running as root (enforced in CLI)
-        let output = Command::new("fdisk").arg("-l").output()?;
+        use crate::arch::dualboot::detect_disks;
 
-        if !output.status.success() {
-            eprintln!(
-                "Failed to list disks: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            return Ok(());
-        }
+        match detect_disks() {
+            Ok(disk_infos) => {
+                let disks: Vec<DiskEntry> = disk_infos
+                    .into_iter()
+                    .map(|info| {
+                        let size = info.size_human();
+                        DiskEntry::new(info.device, size)
+                    })
+                    .collect();
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut disks = Vec::new();
-
-        // Parse output: look for lines starting with "Disk /dev/..."
-        // Example: Disk /dev/nvme0n1: 476.94 GiB, 512110190592 bytes, 1000215216 sectors
-        for line in stdout.lines() {
-            if line.starts_with("Disk /dev/") && line.contains(':') {
-                // Filter out loopback devices (/dev/loop*)
-                if line.contains("/dev/loop") {
-                    continue;
+                if disks.is_empty() {
+                    eprintln!("No disks found. Are you running with sudo?");
                 }
-                // Extract the part before the comma usually, or just the whole line up to size
-                // "Disk /dev/sda: 500 GiB, ..."
-                // We want to present something like "/dev/sda (500 GiB)"
 
-                let parts: Vec<&str> = line.split(':').collect();
-                if parts.len() >= 2 {
-                    let dev_path = parts[0]
-                        .trim()
-                        .strip_prefix("Disk ")
-                        .unwrap_or(parts[0].trim());
-                    let details = parts[1].trim();
-                    // details might be "476.94 GiB, 512110190592 bytes, 1000215216 sectors"
-                    // We just want the first part "476.94 GiB"
-                    let size = details.split(',').next().unwrap_or(details).trim();
-
-                    disks.push(format!("{} ({})", dev_path, size));
-                }
+                context.set::<DisksKey>(disks);
+            }
+            Err(e) => {
+                eprintln!("Failed to detect disks: {}", e);
+                // We don't fail the whole process here, just list no disks
+                // This might allow the user to retry or debug
+                context.set::<DisksKey>(Vec::new());
             }
         }
-
-        if disks.is_empty() {
-            // Fallback or warning?
-            // Maybe we are not root?
-            eprintln!("No disks found. Are you running with sudo?");
-        }
-
-        context.set::<DisksKey>(disks);
 
         Ok(())
     }
