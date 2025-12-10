@@ -57,8 +57,12 @@ fn try_prepare_disk(device_name: &str) -> Result<bool> {
             Ok(true)
         }
         Err(e) => {
-            println!("{} Failed to prepare disk: {}", NerdFont::Cross, e);
-            println!("Please prepare the disk manually and try again.");
+            let message = format!(
+                "Failed to prepare disk {}:\n{}\n\nPlease prepare the disk manually and try again.",
+                device_name, e
+            );
+            // Show the error via the menu UI so the user cannot miss it
+            let _ = FzfWrapper::message_dialog(&message);
             Ok(false)
         }
     }
