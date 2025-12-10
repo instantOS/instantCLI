@@ -33,6 +33,11 @@ pub(super) fn all_locale_gen_entries() -> Result<Vec<String>> {
 
     for line in contents.lines() {
         if let Some(parsed) = LocaleGenLine::parse(line) {
+            // Only show UTF-8 locales in the menu
+            if !parsed.rest.trim().eq_ignore_ascii_case("UTF-8") {
+                continue;
+            }
+
             let locale = parsed.locale.to_string();
             if seen.insert(locale.clone()) {
                 locales.push(locale);
@@ -162,6 +167,11 @@ impl<'a> LocaleGenLine<'a> {
         let locale = &content[..locale_end];
         let rest = &content[locale_end..];
 
+        // Only process UTF-8 locales
+        if !rest.trim().eq_ignore_ascii_case("UTF-8") {
+            return None;
+        }
+
         Some(Self {
             leading_ws,
             comment_ws,
@@ -188,5 +198,37 @@ fn split_leading_whitespace(s: &str) -> (&str, &str) {
     match s.find(|c: char| !c.is_whitespace()) {
         Some(idx) => s.split_at(idx),
         None => (s, ""),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_locale_lines() {
+        let lines = vec![
+            "#  en_US.UTF-8 UTF-8",
+            "#  en_US ISO-8859-1",
+            "de_DE.UTF-8 UTF-8",
+            "de_DE ISO-8859-1",
+            "",
+            "   ",
+            "#",
+        ];
+
+        let parsed: Vec<_> = lines
+            .iter()
+            .filter_map(|line| LocaleGenLine::parse(line))
+            .collect();
+
+        assert_eq!(parsed.len(), 2);
+
+        // Check that we can distinguish UTF-8 from others
+        assert_eq!(parsed[0].locale, "en_US.UTF-8");
+        assert!(parsed[0].rest.trim().eq_ignore_ascii_case("UTF-8"));
+
+        assert_eq!(parsed[1].locale, "de_DE.UTF-8");
+        assert!(parsed[1].rest.trim().eq_ignore_ascii_case("UTF-8"));
     }
 }
