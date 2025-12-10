@@ -266,60 +266,77 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
     Ok(disks)
 }
 
-/// Get the largest contiguous free region in bytes for a device
+/// Get the largest contiguous free region in bytes for a device (Helper wrapper)
 fn get_largest_free_region(device: &str) -> Option<u64> {
+    get_free_regions(device)
+        .ok()?
+        .into_iter()
+        .map(|r| r.size_bytes)
+        .max()
+}
+
+/// Represents a contiguous free space region on the disk
+#[derive(Debug, Clone, Copy)]
+pub struct FreeRegion {
+    /// Start sector
+    pub start: u64,
+    /// End sector
+    pub end: u64,
+    /// Number of sectors
+    pub sectors: u64,
+    /// Size in bytes
+    pub size_bytes: u64,
+}
+
+/// Get all contiguous free regions for a device
+pub fn get_free_regions(device: &str) -> Result<Vec<FreeRegion>> {
     // Run sfdisk -F -b <device>
     // -F: list free areas
     // -b: output in bytes (no units)
+    // Assumption: `sfdisk -F -b` output is: Start(sectors) End(sectors) Sectors(count) Size(bytes).
+
     let output = Command::new("sfdisk")
         .args(["-F", "-b", device])
         .output()
-        .ok()?;
+        .context("Failed to run sfdisk -F -b")?;
 
-    // We ignore exit code because sfdisk returns 1 if there is no free space or some other non-critical conditions?
-    // Actually sfdisk returns 0 on success. If it fails, we assume 0 free space.
     if !output.status.success() {
-        return Some(0);
+        // If it fails, maybe no free space? Or real error.
+        // We return empty if no free space found / error for now to be safe?
+        // Actually, if it fails, we should probably propagate error or return empty.
+        // Let's return empty if status is not success (e.g. partition table issues)
+        return Ok(Vec::new());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut max_size: u64 = 0;
-
-    // Output format (approximate, columns may header):
-    // Unpartitioned space /dev/nvme0n1:
-    // <start> <end> <sectors> <size>
-    // 2048 4096 2048 1048576
-
-    // We iterate lines, try to find the 4th column which is size.
-    // NOTE: sfdisk output format can vary.
-    // With -b:
-    // 0 2047 2048 1048576
-    // ...
+    let mut regions = Vec::new();
 
     for line in stdout.lines() {
-        // Skip headers or empty lines
         if line.trim().is_empty() || line.starts_with("Unpartitioned") || line.contains("Start") {
             continue;
         }
 
         let parts: Vec<&str> = line.split_whitespace().collect();
-        // We expect at least 4 columns: Start, End, Sectors, Size
-        if parts.len() >= 4 {
-            // The size is usually the last or 4th column.
-            // Let's try parsing the last column first, as size is typically last in standard output?
-            // Actually `sfdisk` manual says columns: Start End Sectors Size
-            // But depending on version validation is key.
+        // Expected format: Start End Sectors Size(bytes)
 
-            // Try 4th column (index 3)
-            if let Ok(size) = parts[3].parse::<u64>() {
-                if size > max_size {
-                    max_size = size;
-                }
+        if parts.len() >= 4 {
+            if let (Ok(start), Ok(end), Ok(sectors), Ok(size_bytes)) = (
+                parts[0].parse::<u64>(),
+                parts[1].parse::<u64>(),
+                parts[2].parse::<u64>(),
+                parts[3].parse::<u64>(),
+            ) {
+                regions.push(FreeRegion {
+                    start,
+                    end,
+                    sectors,
+                    size_bytes,
+                });
             }
         }
     }
 
-    Some(max_size)
+    Ok(regions)
 }
 
 /// Check if a partition is feasible for dual boot installation

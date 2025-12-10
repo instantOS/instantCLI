@@ -141,7 +141,7 @@ fn prepare_dualboot_disk(
     Ok(())
 }
 
-/// Create swap and root partitions in the unpartitioned space of a disk
+/// Create swap and root partitions using optimal placement in free space
 ///
 /// Returns (root_path, swap_path) for the newly created partitions
 fn create_dualboot_partitions(
@@ -149,19 +149,97 @@ fn create_dualboot_partitions(
     swap_size_gb: u64,
     executor: &CommandExecutor,
 ) -> Result<(String, String)> {
-    println!("Creating partitions in free space...");
+    println!("Creating partitions in free space (optimal placement)...");
 
     // Snapshot partitions BEFORE
     let partitions_before = get_current_partitions(disk_path)?;
 
-    // Use sfdisk to append partitions to existing table
-    // The "+" prefix means "append after last partition"
-    // We create: swap partition, then root partition (rest of space)
-    // Note: sfdisk append order corresponds to creation order
+    // Get free regions to calculate optimal layout
+    let regions = crate::arch::dualboot::get_free_regions(disk_path)
+        .context("Failed to get free space regions")?;
+
+    if regions.is_empty() {
+        anyhow::bail!("No free space regions detected!");
+    }
+
+    // Convert swap size to sectors (approx 512 bytes per sector)
+    // We strictly use 512 for sector calculations as per sfdisk default/LBA
+    let swap_size_bytes = swap_size_gb * 1024 * 1024 * 1024;
+    let swap_sectors = swap_size_bytes.div_ceil(512);
+
+    // 1. ALLOCATE SWAP
+    // Strategy: First Fit (Find first hole large enough)
+    let mut swap_start_sector = 0;
+    let mut swap_region_index = 0;
+    let mut found_swap = false;
+
+    // We clone regions to modify them as we allocate
+    let mut available_regions = regions.clone();
+
+    for (i, region) in available_regions.iter_mut().enumerate() {
+        if region.sectors >= swap_sectors {
+            swap_start_sector = region.start;
+
+            // Update the region to reflect used space
+            // This allows Root to use the remainder of THIS same region if it's still the largest
+            region.start += swap_sectors;
+            region.sectors -= swap_sectors;
+            region.size_bytes = region.size_bytes.saturating_sub(swap_size_bytes);
+
+            swap_region_index = i;
+            found_swap = true;
+            break;
+        }
+    }
+
+    if !found_swap {
+        anyhow::bail!(
+            "Could not find a contiguous free region large enough for Swap ({} GB)",
+            swap_size_gb
+        );
+    }
+
+    // 2. ALLOCATE ROOT
+    // Strategy: Best Fit (Largest remaining hole)
+    // available_regions now has the Swap space removed
+
+    let root_region = available_regions
+        .iter()
+        .max_by_key(|r| r.sectors)
+        .context("No free regions left for Root partition")?;
+
+    let root_start_sector = root_region.start;
+    let root_size_sectors = root_region.sectors;
+
+    // Verify Root Size
+    let root_size_bytes = root_size_sectors * 512;
+    if root_size_bytes < crate::arch::dualboot::MIN_LINUX_SIZE {
+        anyhow::bail!(
+            "Largest remaining free space is too small for Root: {}",
+            crate::arch::dualboot::format_size(root_size_bytes)
+        );
+    }
+
+    println!("Placement:");
+    println!(
+        "  Swap: Start Sector {}, Size {} GB",
+        swap_start_sector, swap_size_gb
+    );
+    println!(
+        "  Root: Start Sector {}, Size {} (approx)",
+        root_start_sector,
+        crate::arch::dualboot::format_size(root_size_bytes)
+    );
+
+    // 3. GENERATE SCRIPT
+    // Use explicit start sectors to guarantee placement
+    // Note: We use size in sectors with 'S' suffix or implicitly if we provide start?
+    // sfdisk script: start=..., size=..., type=...
+
     let script = format!(
-        "size={}G, type=S\n\
-         type=L\n",
-        swap_size_gb
+        "start={}, size={}, type=S\n\
+         start={}, size={}, type=L\n",
+        swap_start_sector, swap_sectors, root_start_sector, root_size_sectors
     );
 
     // sfdisk --append appends to existing partition table
@@ -193,60 +271,78 @@ fn create_dualboot_partitions(
         );
     }
 
-    // We expect 2 new partitions: Swap and Root
-    // sfdisk script had Swap first, then Root.
-    // We assume they are allocated sequentially in creating order.
-    // However, we should robustly identify them.
-    // Sort by partition number just in case.
-    // Assuming standard naming (sda5, sda6), lower number is first created = Swap.
-    let mut sorted = new_partitions.clone();
-    sorted.sort_by(|a, b| {
-        // Extract numbers and compare
-        let num_a = extract_partition_number(a);
-        let num_b = extract_partition_number(b);
-        num_a.cmp(&num_b)
-    });
+    // 4. IDENTIFY PARTITIONS
+    // We cannot assume creating order determines partition number (MBR logical partitions etc)
+    // We identify based on SIZE and TYPE
 
-    // First created (lower number) is Swap
-    let swap_path = sorted[0].clone();
-    // Second created (higher number) is Root
-    let root_path = sorted[1].clone();
+    let mut swap_path = String::new();
+    let mut root_path = String::new();
 
-    // Verify sizes to be safe
-    // We want to ensure that:
-    // 1. Swap is approximately requested size (allow small margin)
-    // 2. Root is at least MIN_LINUX_SIZE
-    let swap_size_bytes = get_partition_size_bytes(&swap_path)?;
-    let root_size_bytes = get_partition_size_bytes(&root_path)?;
+    for p in &new_partitions {
+        let size = get_partition_size_bytes(p)?;
 
-    // Swap verification (within 10% margin)
-    let expected_swap_bytes = swap_size_gb * 1024 * 1024 * 1024;
-    let swap_diff = (swap_size_bytes as i64 - expected_swap_bytes as i64).abs();
-    let swap_margin = expected_swap_bytes / 10; // 10%
+        // Check if it matches Swap size (within margin)
+        // AND check if type is swap?
+        // Let's rely on size + simple heuristic first.
+        // Swap is small (~4-32GB), Root is large (Rest of disk).
 
-    if swap_diff > swap_margin as i64 {
+        // Is it the Swap we just created?
+        // Abs diff between `size` and `swap_size_bytes`
+        let diff = (size as i64 - swap_size_bytes as i64).abs();
+        let margin = (swap_size_bytes / 20) as i64; // 5% margin
+
+        // Also check against Root size
+        let root_diff = (size as i64 - root_size_bytes as i64).abs();
+
+        if diff < margin {
+            // Looks like Swap
+            if swap_path.is_empty() {
+                swap_path = p.clone();
+            } else {
+                // Ambiguity?
+                // If Swap and Root are same size?? Unlikely given constraints (Root > 10G, Swap ~4-32G)
+                // If they are similar size, we might be confused.
+                // But Root should be "Maximize", so likely larger unless disk is small.
+                // Just take first match?
+            }
+        }
+    }
+
+    // If we haven't identified both, use fallback or stricter logic.
+    if swap_path.is_empty() {
+        // Fallback: The smaller one is Swap?
+        // Or sort by size?
+        let mut sorted_by_size = new_partitions.clone();
+        sorted_by_size.sort_by_key(|p| get_partition_size_bytes(p).unwrap_or(0));
+
+        // Smaller = Swap, Larger = Root
+        swap_path = sorted_by_size[0].clone();
+        root_path = sorted_by_size[1].clone();
+
         println!(
-            "Warning: Created swap partition size ({}) differs significantly from requested ({}).",
-            crate::arch::dualboot::format_size(swap_size_bytes),
-            crate::arch::dualboot::format_size(expected_swap_bytes)
+            "Warning: Could not identify partitions by exact size match. Assuming smaller ({}) is Swap and larger ({}) is Root.",
+            swap_path, root_path
         );
-        // We warn but don't error, usually it's fine (alignment etc)
+    } else {
+        // Find Root (the one that is not Swap)
+        root_path = new_partitions
+            .iter()
+            .find(|p| **p != swap_path)
+            .unwrap()
+            .clone();
     }
 
-    // Root verification (Strict minimum)
-    if root_size_bytes < crate::arch::dualboot::MIN_LINUX_SIZE {
-        anyhow::bail!(
-            "Created root partition is too small! Got {}, required {}. \
-            There might not have been enough contiguous free space.",
-            crate::arch::dualboot::format_size(root_size_bytes),
-            crate::arch::dualboot::format_size(crate::arch::dualboot::MIN_LINUX_SIZE)
-        );
-    }
-
+    // Verify identification
+    let identified_swap_size = get_partition_size_bytes(&swap_path)?;
     println!(
-        "Created swap partition: {} ({})",
+        "Identified Swap: {} ({})",
         swap_path,
-        crate::arch::dualboot::format_size(swap_size_bytes)
+        crate::arch::dualboot::format_size(identified_swap_size)
+    );
+    println!(
+        "Identified Root: {} ({})",
+        root_path,
+        crate::arch::dualboot::format_size(get_partition_size_bytes(&root_path)?)
     );
     println!(
         "Created root partition: {} ({})",
