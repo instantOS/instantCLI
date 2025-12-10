@@ -42,9 +42,9 @@ pub fn execute_assist(assist: &AssistAction, key_sequence: &str) -> Result<()> {
 }
 
 /// Install dependencies for the given assist in the current terminal context
-pub fn install_dependencies_for_assist(assist: &AssistAction) -> Result<bool> {
+pub fn install_dependencies_for_assist(assist: &AssistAction) -> Result<crate::common::requirements::PackageStatus> {
     if assist.dependencies.is_empty() {
-        return Ok(true);
+        return Ok(crate::common::requirements::PackageStatus::Installed);
     }
 
     for dependency in assist.dependencies {
@@ -57,23 +57,24 @@ pub fn install_dependencies_for_assist(assist: &AssistAction) -> Result<bool> {
                 let status =
                     ensure_packages_batch(&[**pkg]).context("Failed to ensure OS packages")?;
                 if !status.is_installed() {
-                    return Ok(false);
+                    return Ok(status);
                 }
             }
             Package::Flatpak(fp) => {
                 let status = fp.ensure().context("Failed to ensure Flatpak dependency")?;
                 if !status.is_installed() {
-                    return Ok(false);
+                    return Ok(status);
                 }
             }
         }
 
         if !dependency.is_satisfied() {
-            return Ok(false);
+            // Should not happen if ensure succeeded, but theoretically possible
+            return Ok(crate::common::requirements::PackageStatus::Failed);
         }
     }
 
-    Ok(true)
+    Ok(crate::common::requirements::PackageStatus::Installed)
 }
 
 fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Result<bool> {
@@ -97,23 +98,32 @@ fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Resul
         None,
     );
 
-    let installed = if std::io::stdout().is_terminal() {
+    let status = if std::io::stdout().is_terminal() {
         install_dependencies_for_assist(assist)?
     } else {
-        install_dependencies_via_terminal(assist, key_sequence)?
+        if install_dependencies_via_terminal(assist, key_sequence)? {
+            crate::common::requirements::PackageStatus::Installed
+        } else {
+            crate::common::requirements::PackageStatus::Failed
+        }
     };
 
-    if !installed {
-        emit_dependency_warning(assist);
-        return Ok(false);
-    }
-
-    if assist
-        .dependencies
-        .iter()
-        .all(|dependency| dependency.is_satisfied())
-    {
-        Ok(true)
+    if status.is_installed() {
+        // Double check they are actually satisfied
+        if assist.dependencies.iter().all(|d| d.is_satisfied()) {
+             Ok(true)
+        } else {
+             emit_dependency_warning(assist);
+             Ok(false)
+        }
+    } else if matches!(status, crate::common::requirements::PackageStatus::Declined) {
+        emit(
+            Level::Info,
+            "assist.cancelled",
+            "Assist execution cancelled.",
+            None,
+        );
+        Ok(false)
     } else {
         emit_dependency_warning(assist);
         Ok(false)

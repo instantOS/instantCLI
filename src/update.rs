@@ -9,13 +9,24 @@ use crate::ui::prelude::*;
 
 pub async fn handle_update_command(debug: bool) -> Result<()> {
     // 1. Ensure topgrade is installed
-    if !TOPGRADE_PACKAGE.ensure()?.is_installed() {
-        emit(
-            Level::Warn,
-            "update.topgrade.missing",
-            "Topgrade is required for system updates but was not installed.",
-            None,
-        );
+    // 1. Ensure topgrade is installed
+    let status = TOPGRADE_PACKAGE.ensure()?;
+    if !status.is_installed() {
+        if matches!(status, crate::common::requirements::PackageStatus::Declined) {
+            emit(
+                Level::Info,
+                "update.cancelled",
+                "System update cancelled.",
+                None,
+            );
+        } else {
+            emit(
+                Level::Warn,
+                "update.topgrade.missing",
+                "Topgrade is required for system updates but was not installed.",
+                None,
+            );
+        }
         return Ok(());
     }
 

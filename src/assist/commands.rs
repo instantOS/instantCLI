@@ -84,7 +84,7 @@ pub fn dispatch_assist_command(_debug: bool, command: Option<AssistCommands>) ->
                 anyhow::anyhow!("No assist found for key sequence: {}", key_sequence)
             })?;
 
-            if install_dependencies_for_assist(action)? {
+            if install_dependencies_for_assist(action)?.is_installed() {
                 println!("All dependencies satisfied for {}", action.description);
                 Ok(())
             } else {
