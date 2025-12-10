@@ -479,8 +479,28 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
     if executor.dry_run {
         println!("[DRY RUN] cp {:?} {:?}", current_exe, target_bin);
     } else {
-        // We assume /mnt/usr/bin exists (created by base install)
-        std::fs::copy(&current_exe, target_bin).context("Failed to copy binary to chroot")?;
+        // Ensure chroot root and /usr/bin exist to avoid 'No such file or directory'
+        let chroot_root = std::path::Path::new(paths::CHROOT_MOUNT);
+        if !chroot_root.exists() {
+            anyhow::bail!(
+                "Chroot mount point {} is missing. Ensure the target filesystem is mounted (Disk/Base/Fstab steps).",
+                paths::CHROOT_MOUNT
+            );
+        }
+
+        if let Some(parent) = target_bin.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent)
+                    .context("Failed to create /usr/bin in chroot before copying binary")?;
+            }
+        }
+
+        if !current_exe.exists() {
+            anyhow::bail!("Installer binary not found at {:?}", current_exe);
+        }
+
+        std::fs::copy(&current_exe, &target_bin)
+            .with_context(|| format!("Failed to copy binary to chroot (from {:?} to {:?})", current_exe, target_bin))?;
     }
 
     // Copy config
