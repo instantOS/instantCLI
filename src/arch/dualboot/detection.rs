@@ -290,53 +290,207 @@ pub struct FreeRegion {
 
 /// Get all contiguous free regions for a device
 pub fn get_free_regions(device: &str) -> Result<Vec<FreeRegion>> {
-    // Run sfdisk -F -b <device>
-    // -F: list free areas
-    // -b: output in bytes (no units)
-    // Assumption: `sfdisk -F -b` output is: Start(sectors) End(sectors) Sectors(count) Size(bytes).
-
+    // Run sfdisk -J <device> to get partition table in JSON
     let output = Command::new("sfdisk")
-        .args(["-F", "-b", device])
+        .args(["-J", device])
         .output()
-        .context("Failed to run sfdisk -F -b")?;
+        .context("Failed to run sfdisk -J")?;
 
     if !output.status.success() {
-        // If it fails, maybe no free space? Or real error.
-        // We return empty if no free space found / error for now to be safe?
-        // Actually, if it fails, we should probably propagate error or return empty.
-        // Let's return empty if status is not success (e.g. partition table issues)
+        // If it returns error (e.g. no partition table, empty disk), we assume no dual boot targets.
+        // Dual boot requires an existing OS/partition structure to coexist with.
         return Ok(Vec::new());
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json_output = String::from_utf8_lossy(&output.stdout);
+    calculate_free_regions_from_json(&json_output)
+}
+
+#[derive(Debug, Deserialize)]
+struct SfdiskOutput {
+    partitiontable: SfdiskPartitionTable,
+}
+
+#[derive(Debug, Deserialize)]
+struct SfdiskPartitionTable {
+    // label: String, // e.g. "gpt", "dos" - unused for now
+    firstlba: u64,
+    lastlba: u64,
+    sectorsize: u64,
+    partitions: Option<Vec<SfdiskPartition>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SfdiskPartition {
+    // node: String, // e.g. "test.img1" - unused
+    start: u64,
+    size: u64,
+    // type: String, // unused
+}
+
+/// Calculate free regions by finding gaps in the partition table
+fn calculate_free_regions_from_json(json: &str) -> Result<Vec<FreeRegion>> {
+    let output: SfdiskOutput =
+        serde_json::from_str(json).context("Failed to parse sfdisk JSON output")?;
+
+    let pt = output.partitiontable;
+    let sector_size = pt.sectorsize;
+    let mut partitions = pt.partitions.unwrap_or_default();
+
+    // Sort partitions by start sector to reliably find gaps
+    partitions.sort_by_key(|p| p.start);
+
     let mut regions = Vec::new();
+    let mut current_sector = pt.firstlba;
 
-    for line in stdout.lines() {
-        if line.trim().is_empty() || line.starts_with("Unpartitioned") || line.contains("Start") {
-            continue;
-        }
-
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        // Expected format: Start End Sectors Size(bytes)
-
-        if parts.len() >= 4 {
-            if let (Ok(start), Ok(end), Ok(sectors), Ok(size_bytes)) = (
-                parts[0].parse::<u64>(),
-                parts[1].parse::<u64>(),
-                parts[2].parse::<u64>(),
-                parts[3].parse::<u64>(),
-            ) {
+    // Check gaps between partitions
+    for partition in partitions {
+        if partition.start > current_sector {
+            let gap_sectors = partition.start - current_sector;
+            // Only consider gaps large enough to be usable (e.g., > 1MB)
+            // 1MB = 2048 sectors (at 512 bytes/sector)
+            if gap_sectors > 2048 {
                 regions.push(FreeRegion {
-                    start,
-                    end,
-                    sectors,
-                    size_bytes,
+                    start: current_sector,
+                    end: partition.start - 1,
+                    sectors: gap_sectors,
+                    size_bytes: gap_sectors * sector_size,
                 });
             }
+        }
+        current_sector = std::cmp::max(current_sector, partition.start + partition.size);
+    }
+
+    // Check gap at the end (between last partition and lastlba)
+    if current_sector <= pt.lastlba {
+        let gap_sectors = (pt.lastlba - current_sector) + 1; // lastlba is inclusive
+
+        // Only consider gaps large enough (> 1MB)
+        if gap_sectors > 2048 {
+            regions.push(FreeRegion {
+                start: current_sector,
+                end: pt.lastlba,
+                sectors: gap_sectors,
+                size_bytes: gap_sectors * sector_size,
+            });
         }
     }
 
     Ok(regions)
+}
+
+#[cfg(test)]
+mod parsing_tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_free_regions_simple_gap() {
+        // 100 sectors total. Partition at 20-30.
+        // Free: 0-19 (if firstlba=0), 31-100.
+        // firstlba typically 34 or 2048 for GPT. Let's say 34.
+
+        let json = r#"{
+   "partitiontable": {
+      "label": "gpt",
+      "id": "A",
+      "device": "test",
+      "unit": "sectors",
+      "firstlba": 34,
+      "lastlba": 10000,
+      "sectorsize": 512,
+      "partitions": [
+         {
+            "node": "p1",
+            "start": 5000,
+            "size": 1000
+         }
+      ]
+   }
+}"#;
+        // Gaps:
+        // 1. 34 to 4999 (size 4966)
+        // 2. 6000 to 10000 (size 4001)
+
+        // Note: Our logic filters < 2048 sectors (1MB).
+        // 4966 > 2048 -> Keep
+        // 4001 > 2048 -> Keep
+
+        let regions = calculate_free_regions_from_json(json).unwrap();
+        assert_eq!(regions.len(), 2);
+
+        assert_eq!(regions[0].start, 34);
+        assert_eq!(regions[0].sectors, 4966);
+
+        assert_eq!(regions[1].start, 6000);
+        assert_eq!(regions[1].end, 10000);
+    }
+
+    #[test]
+    fn test_calculate_free_regions_contiguous_user_scenario() {
+        // User scenario:
+        // 4GB free at start? (Assume existing partitions start late)
+        // 5GB Linux
+        // 2GB EFI
+        // 26GB free at end
+
+        // Let's model roughly in sectors (512b)
+        // 1GB = 2,097,152 sectors
+        // 4GB ~= 8,388,608 sectors
+
+        // Case:
+        // P1 Start: 8,388,608 + 2048 (offset). Size: 10,000,000
+        // P2 Start: P1_End + 1. Size: 4,000,000
+        // Disk End: Very large
+
+        let json = r#"{
+   "partitiontable": {
+      "label": "gpt",
+      "firstlba": 2048,
+      "lastlba": 100000000,
+      "sectorsize": 512,
+      "partitions": [
+         {
+            "start": 10000000,
+            "size": 10000000
+         },
+         {
+            "start": 20000000,
+            "size": 4000000
+         }
+      ]
+   }
+}"#;
+        // Gaps:
+        // 1. 2048 to 9,999,999. Size ~ 10M sectors (~5GB)
+        // 2. 24,000,000 to 100,000,000. Size ~ 76M sectors (~38GB)
+
+        let regions = calculate_free_regions_from_json(json).unwrap();
+
+        assert_eq!(regions.len(), 2);
+        assert_eq!(regions[0].start, 2048);
+        assert!(regions[0].size_bytes > 4 * 1024 * 1024 * 1024); // > 4GB
+
+        assert_eq!(regions[1].start, 24000000);
+        assert!(regions[1].size_bytes > 20 * 1024 * 1024 * 1024); // > 20GB
+    }
+
+    #[test]
+    fn test_calculate_free_regions_no_partitions() {
+        // Empty partition table (e.g. freshly initialized GPT but no partitions)
+        let json = r#"{
+   "partitiontable": {
+      "label": "gpt",
+      "firstlba": 2048,
+      "lastlba": 100000,
+      "sectorsize": 512,
+      "partitions": []
+   }
+}"#;
+        let regions = calculate_free_regions_from_json(json).unwrap();
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].start, 2048);
+        assert_eq!(regions[0].end, 100000);
+    }
 }
 
 /// Check if a partition is feasible for dual boot installation
