@@ -309,8 +309,8 @@ struct SfdiskOutput {
 #[derive(Debug, Deserialize)]
 struct SfdiskPartitionTable {
     // label: String, // e.g. "gpt", "dos" - unused for now
-    firstlba: u64,
-    lastlba: u64,
+    firstlba: Option<u64>,
+    lastlba: Option<u64>,
     sectorsize: u64,
     partitions: Option<Vec<SfdiskPartition>>,
 }
@@ -332,11 +332,26 @@ fn calculate_free_regions_from_json(json: &str) -> Result<Vec<FreeRegion>> {
     let sector_size = pt.sectorsize;
     let mut partitions = pt.partitions.unwrap_or_default();
 
+    let first_lba = pt
+        .firstlba
+        .or_else(|| partitions.iter().map(|p| p.start).min())
+        .unwrap_or(0);
+
+    let last_lba = pt
+        .lastlba
+        .or_else(|| {
+            partitions
+                .iter()
+                .map(|p| p.start.saturating_add(p.size).saturating_sub(1))
+                .max()
+        })
+        .unwrap_or(0);
+
     // Sort partitions by start sector to reliably find gaps
     partitions.sort_by_key(|p| p.start);
 
     let mut regions = Vec::new();
-    let mut current_sector = pt.firstlba;
+    let mut current_sector = first_lba;
 
     // Check gaps between partitions
     for partition in partitions {
@@ -357,14 +372,14 @@ fn calculate_free_regions_from_json(json: &str) -> Result<Vec<FreeRegion>> {
     }
 
     // Check gap at the end (between last partition and lastlba)
-    if current_sector <= pt.lastlba {
-        let gap_sectors = (pt.lastlba - current_sector) + 1; // lastlba is inclusive
+    if current_sector <= last_lba {
+        let gap_sectors = (last_lba - current_sector) + 1; // lastlba is inclusive
 
         // Only consider gaps large enough (> 1MB)
         if gap_sectors > 2048 {
             regions.push(FreeRegion {
                 start: current_sector,
-                end: pt.lastlba,
+                end: last_lba,
                 sectors: gap_sectors,
                 size_bytes: gap_sectors * sector_size,
             });
@@ -485,6 +500,29 @@ mod parsing_tests {
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].start, 2048);
         assert_eq!(regions[0].end, 100000);
+    }
+
+    #[test]
+    fn test_calculate_free_regions_missing_lba_fields_dos() {
+        // DOS/MBR outputs do not include firstlba/lastlba; ensure we still parse without crashing.
+        let json = r#"{
+    "partitiontable": {
+        "label": "dos",
+        "device": "test",
+        "unit": "sectors",
+        "sectorsize": 512,
+        "partitions": [
+            {
+                "start": 2048,
+                "size": 4096
+            }
+        ]
+    }
+}"#;
+
+        let regions = calculate_free_regions_from_json(json).unwrap();
+        // With no reported disk end we cannot infer trailing free space; we just ensure parsing works.
+        assert!(regions.is_empty());
     }
 }
 
