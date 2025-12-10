@@ -36,8 +36,9 @@ pub async fn setup_instantos(
     let username = override_user.or_else(|| context.get_answer(&QuestionId::Username).cloned());
 
     if !minimal_mode {
-        if let Some(user) = username {
+        if let Some(user) = username.clone() {
             setup_user_dotfiles(&user, executor)?;
+            setup_wallpaper(&user, executor)?;
         } else {
             println!("Skipping dotfiles setup: No user specified and SUDO_USER not found.");
         }
@@ -121,6 +122,19 @@ fn setup_user_dotfiles(username: &str, executor: &CommandExecutor) -> Result<()>
     cmd_chsh.arg("-s").arg("/bin/zsh").arg(username);
 
     executor.run(&mut cmd_chsh)?;
+
+    Ok(())
+}
+
+fn setup_wallpaper(username: &str, executor: &CommandExecutor) -> Result<()> {
+    println!("Setting up wallpaper for user: {}", username);
+
+    // Run `ins wallpaper random` as the user
+    let wallpaper_cmd_str = "ins wallpaper random";
+    let mut cmd = Command::new("su");
+    cmd.arg("-c").arg(wallpaper_cmd_str).arg(username);
+
+    executor.run(&mut cmd)?;
 
     Ok(())
 }
