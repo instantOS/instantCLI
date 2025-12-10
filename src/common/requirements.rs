@@ -4,6 +4,24 @@ use crate::menu_utils::FzfWrapper;
 use anyhow::{Context, Result};
 use duct::cmd;
 
+/// Status of a package installation request
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackageStatus {
+    /// Package is installed and ready to use
+    Installed,
+    /// User explicitly declined installation
+    Declined,
+    /// Installation failed or verification failed
+    Failed,
+}
+
+impl PackageStatus {
+    /// Check if the package is effectively installed
+    pub fn is_installed(&self) -> bool {
+        matches!(self, Self::Installed)
+    }
+}
+
 /// Tests for determining whether a dependency is available on the system.
 #[derive(Debug, Clone, Copy)]
 pub enum InstallTest {
@@ -105,9 +123,9 @@ impl RequiredPackage {
     }
 
     /// Ensure the package is installed, prompting for installation if needed
-    pub fn ensure(&self) -> Result<bool> {
+    pub fn ensure(&self) -> Result<PackageStatus> {
         if self.is_installed() {
-            return Ok(true);
+            return Ok(PackageStatus::Installed);
         }
 
         // Check if we can auto-install this package
@@ -121,7 +139,7 @@ impl RequiredPackage {
                 .message(&msg)
                 .title("Manual Installation Required")
                 .show_message()?;
-            return Ok(false);
+            return Ok(PackageStatus::Failed);
         }
 
         // Package is not installed, prompt for installation
@@ -151,9 +169,9 @@ impl RequiredPackage {
                     .message(&error_msg)
                     .title("Installation Failed")
                     .show_message()?;
-                return Ok(false);
+                return Ok(PackageStatus::Failed);
             }
-            Ok(true)
+            Ok(PackageStatus::Installed)
         } else {
             // User declined installation
             let cancel_msg = format!(
@@ -165,7 +183,7 @@ impl RequiredPackage {
                 .message(&cancel_msg)
                 .title("Package Required")
                 .show_message()?;
-            Ok(false)
+            Ok(PackageStatus::Declined)
         }
     }
 
@@ -291,9 +309,9 @@ impl FlatpakPackage {
         Ok(())
     }
 
-    pub fn ensure(&self) -> Result<bool> {
+    pub fn ensure(&self) -> Result<PackageStatus> {
         if self.is_installed() {
-            return Ok(true);
+            return Ok(PackageStatus::Installed);
         }
 
         let install_msg = format!(
@@ -319,9 +337,9 @@ impl FlatpakPackage {
                     .message(&error_msg)
                     .title("Installation Failed")
                     .show_message()?;
-                return Ok(false);
+                return Ok(PackageStatus::Failed);
             }
-            Ok(true)
+            Ok(PackageStatus::Installed)
         } else {
             let cancel_msg = format!(
                 "The Flatpak application '{}' is required.\n\nManual installation:\nflatpak install flathub {}",
@@ -331,7 +349,7 @@ impl FlatpakPackage {
                 .message(&cancel_msg)
                 .title("Flatpak Required")
                 .show_message()?;
-            Ok(false)
+            Ok(PackageStatus::Declined)
         }
     }
 }
@@ -488,14 +506,15 @@ fn verify_installations(
 }
 
 /// Ensure multiple packages are installed with a single prompt for all missing packages.
-/// Returns Ok(true) if all packages are installed or were successfully installed.
-/// Returns Ok(false) if user cancelled or any installation failed.
-pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<bool> {
+/// Returns Ok(PackageStatus::Installed) if all packages are installed or were successfully installed.
+/// Returns Ok(PackageStatus::Declined) if user cancelled.
+/// Returns Ok(PackageStatus::Failed) if any installation failed.
+pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<PackageStatus> {
     // First, check which packages are missing
     let missing = find_missing_packages(packages);
 
     if missing.is_empty() {
-        return Ok(true);
+        return Ok(PackageStatus::Installed);
     }
 
     // Detect package manager
@@ -508,7 +527,7 @@ pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<bool> {
     // Prompt user for installation
     if !prompt_batch_installation(&missing, &package_manager)? {
         show_cancelled_message(&missing)?;
-        return Ok(false);
+        return Ok(PackageStatus::Declined);
     }
 
     // Show installation progress message
@@ -535,11 +554,11 @@ pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<bool> {
             .message(&error_msg)
             .title("Installation Warning")
             .show_message()?;
-        return Ok(false);
+        return Ok(PackageStatus::Failed);
     }
 
     show_success_message(package_names.len())?;
-    Ok(true)
+    Ok(PackageStatus::Installed)
 }
 
 // Common Package Definitions

@@ -71,7 +71,10 @@ impl Setting for ClipboardManager {
 
         if should_enable {
             // Ensure package is installed before trying to enable service
-            if !crate::common::requirements::CLIPMENU_PACKAGE.ensure()? {
+            if !crate::common::requirements::CLIPMENU_PACKAGE
+                .ensure()?
+                .is_installed()
+            {
                 ctx.emit_info(
                     "settings.clipboard.aborted",
                     "Clipboard history setup was cancelled.",
@@ -132,7 +135,7 @@ impl Setting for AutomountDisks {
         const UDISKIE_SERVICE_NAME: &str = "udiskie";
 
         // Ensure udiskie is installed
-        if !UDISKIE_PACKAGE.ensure()? {
+        if !UDISKIE_PACKAGE.ensure()?.is_installed() {
             ctx.set_bool(Self::KEY, false);
             ctx.emit_info(
                 "settings.storage.udiskie.aborted",
@@ -267,7 +270,10 @@ impl Setting for BluetoothService {
                 }
             }
 
-            if !ctx.ensure_packages(&[BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE])? {
+            if !ctx
+                .ensure_packages(&[BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE])?
+                .is_installed()
+            {
                 return Ok(false);
             }
 

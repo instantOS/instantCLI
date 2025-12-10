@@ -75,7 +75,9 @@ const ALTERNATIVE_RECOMMENDED_LINE: &str = "hosts: mymachines resolve [!UNAVAIL=
 
 const LEGACY_HOSTS_PATTERNS: &[&str] = &["hosts:", " mdns"];
 
-pub fn ensure_printer_packages(ctx: &mut SettingsContext) -> Result<bool> {
+pub fn ensure_printer_packages(
+    ctx: &mut SettingsContext,
+) -> Result<crate::common::requirements::PackageStatus> {
     let required = [
         CUPS_PACKAGE,
         CUPS_FILTERS_PACKAGE,
@@ -88,7 +90,7 @@ pub fn ensure_printer_packages(ctx: &mut SettingsContext) -> Result<bool> {
 }
 
 pub fn launch_printer_manager(ctx: &mut SettingsContext) -> Result<()> {
-    if !ensure_printer_packages(ctx)? {
+    if !ensure_printer_packages(ctx)?.is_installed() {
         ctx.emit_info(
             "settings.printer.installation_cancelled",
             "Printer support setup was cancelled.",
@@ -116,7 +118,7 @@ pub fn configure_printer_support(ctx: &mut SettingsContext, enabled: bool) -> Re
     let systemd = SystemdManager::system_with_sudo();
 
     if enabled {
-        if !ensure_printer_packages(ctx)? {
+        if !ensure_printer_packages(ctx)?.is_installed() {
             ctx.emit_info(
                 "settings.printer.enable.cancelled",
                 "Printer service enablement cancelled.",

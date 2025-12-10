@@ -54,15 +54,15 @@ pub fn install_dependencies_for_assist(assist: &AssistAction) -> Result<bool> {
 
         match &dependency.package {
             Package::Os(pkg) => {
-                let all_satisfied =
+                let status =
                     ensure_packages_batch(&[**pkg]).context("Failed to ensure OS packages")?;
-                if !all_satisfied {
+                if !status.is_installed() {
                     return Ok(false);
                 }
             }
             Package::Flatpak(fp) => {
-                let satisfied = fp.ensure().context("Failed to ensure Flatpak dependency")?;
-                if !satisfied {
+                let status = fp.ensure().context("Failed to ensure Flatpak dependency")?;
+                if !status.is_installed() {
                     return Ok(false);
                 }
             }

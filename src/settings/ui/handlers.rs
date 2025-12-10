@@ -34,7 +34,10 @@ fn ensure_requirements(setting: &'static dyn Setting) -> Result<bool> {
     // 1. Batch install any missing packages
     if !required_packages.is_empty() {
         // This handles prompting, installing, and reporting errors for packages
-        if !crate::common::requirements::ensure_packages_batch(&required_packages)? {
+        let status = crate::common::requirements::ensure_packages_batch(&required_packages)?;
+        if !status.is_installed() {
+            // If declined or failed, we return false.
+            // Note: ensure_packages_batch already showed success/fail/decline messages.
             return Ok(false);
         }
     }

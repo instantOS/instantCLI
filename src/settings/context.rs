@@ -184,7 +184,10 @@ impl SettingsContext {
         }
     }
 
-    pub fn ensure_packages(&mut self, packages: &[RequiredPackage]) -> Result<bool> {
+    pub fn ensure_packages(
+        &mut self,
+        packages: &[RequiredPackage],
+    ) -> Result<crate::common::requirements::PackageStatus> {
         crate::common::requirements::ensure_packages_batch(packages)
     }
 

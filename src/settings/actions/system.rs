@@ -212,7 +212,10 @@ pub fn apply_pacman_autoclean(ctx: &mut SettingsContext, enabled: bool) -> Resul
 /// Launch Cockpit web-based system management interface
 pub fn launch_cockpit(ctx: &mut SettingsContext) -> Result<()> {
     // Ensure required packages are installed
-    if !ctx.ensure_packages(COCKPIT_PACKAGES.as_slice())? {
+    if !ctx
+        .ensure_packages(COCKPIT_PACKAGES.as_slice())?
+        .is_installed()
+    {
         return Ok(());
     }
 
