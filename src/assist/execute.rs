@@ -42,35 +42,45 @@ pub fn execute_assist(assist: &AssistAction, key_sequence: &str) -> Result<()> {
 }
 
 /// Install dependencies for the given assist in the current terminal context
-pub fn install_dependencies_for_assist(assist: &AssistAction) -> Result<crate::common::requirements::PackageStatus> {
+/// Install dependencies for the given assist in the current terminal context
+pub fn install_dependencies_for_assist(
+    assist: &AssistAction,
+) -> Result<crate::common::requirements::PackageStatus> {
     if assist.dependencies.is_empty() {
         return Ok(crate::common::requirements::PackageStatus::Installed);
     }
 
-    for dependency in assist.dependencies {
-        if dependency.is_satisfied() {
-            continue;
-        }
+    let mut os_packages = Vec::new();
+    let mut flatpak_packages = Vec::new();
 
+    for dependency in assist.dependencies {
         match &dependency.package {
             Package::Os(pkg) => {
-                let status =
-                    ensure_packages_batch(&[**pkg]).context("Failed to ensure OS packages")?;
-                if !status.is_installed() {
-                    return Ok(status);
-                }
+                // pkg is &&RequiredPackage (reference to field valid for static lifetime)
+                os_packages.push(**pkg);
             }
             Package::Flatpak(fp) => {
-                let status = fp.ensure().context("Failed to ensure Flatpak dependency")?;
-                if !status.is_installed() {
-                    return Ok(status);
-                }
+                flatpak_packages.push(**fp);
             }
         }
+    }
 
-        if !dependency.is_satisfied() {
-            // Should not happen if ensure succeeded, but theoretically possible
-            return Ok(crate::common::requirements::PackageStatus::Failed);
+    // Batch install OS packages
+    if !os_packages.is_empty() {
+        let status = ensure_packages_batch(&os_packages).context("Failed to ensure OS packages")?;
+
+        if !status.is_installed() {
+            return Ok(status);
+        }
+    }
+
+    // Batch install Flatpak packages
+    if !flatpak_packages.is_empty() {
+        let status = crate::common::requirements::ensure_flatpaks_batch(&flatpak_packages)
+            .context("Failed to ensure Flatpak packages")?;
+
+        if !status.is_installed() {
+            return Ok(status);
         }
     }
 
@@ -111,10 +121,10 @@ fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Resul
     if status.is_installed() {
         // Double check they are actually satisfied
         if assist.dependencies.iter().all(|d| d.is_satisfied()) {
-             Ok(true)
+            Ok(true)
         } else {
-             emit_dependency_warning(assist);
-             Ok(false)
+            emit_dependency_warning(assist);
+            Ok(false)
         }
     } else if matches!(status, crate::common::requirements::PackageStatus::Declined) {
         emit(

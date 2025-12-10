@@ -529,6 +529,80 @@ pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<PackageStat
     Ok(PackageStatus::Installed)
 }
 
+/// Ensure multiple Flatpak packages are installed with a single prompt.
+pub fn ensure_flatpaks_batch(packages: &[FlatpakPackage]) -> Result<PackageStatus> {
+    // Check which packages are missing
+    let missing: Vec<&FlatpakPackage> = packages.iter().filter(|pkg| !pkg.is_installed()).collect();
+
+    if missing.is_empty() {
+        return Ok(PackageStatus::Installed);
+    }
+
+    // Build prompt message
+    let mut msg = String::from("The following Flatpak applications are required:\n\n");
+    for pkg in &missing {
+        msg.push_str(&format!("  • {} (id: {})\n", pkg.name, pkg.app_id));
+    }
+    msg.push_str("\nDo you want to install them from Flathub?");
+
+    let should_install = FzfWrapper::builder()
+        .confirm(&msg)
+        .yes_text("Install All")
+        .no_text("Cancel")
+        .show_confirmation()?;
+
+    if !matches!(should_install, crate::menu_utils::ConfirmResult::Yes) {
+        return Ok(PackageStatus::Declined);
+    }
+
+    // Ensure Flathub is configured
+    if !FlatpakPackage::is_flathub_configured() {
+        FlatpakPackage::setup_flathub()?;
+    }
+
+    // Show installation progress
+    let installing_msg = format!(
+        "Installing {} application{}...",
+        missing.len(),
+        if missing.len() == 1 { "" } else { "s" }
+    );
+
+    FzfWrapper::builder()
+        .message(&installing_msg)
+        .title("Installing Flatpaks")
+        .show_message()?;
+
+    // Construct flatpak install command
+    let mut args = vec!["install", "-y", "flathub"];
+    for pkg in &missing {
+        args.push(pkg.app_id);
+    }
+
+    cmd("flatpak", &args) // Use dynamic args slice
+        .run()
+        .context("Failed to install Flatpak packages")?;
+
+    // Verify installations
+    let mut failed = Vec::new();
+    for pkg in &missing {
+        if !pkg.is_installed() {
+            failed.push(format!("{} ({})", pkg.name, pkg.app_id));
+        }
+    }
+
+    if !failed.is_empty() {
+        let error_msg = build_failure_message(&failed);
+        FzfWrapper::builder()
+            .message(&error_msg)
+            .title("Installation Warning")
+            .show_message()?;
+        return Ok(PackageStatus::Failed);
+    }
+
+    show_success_message(missing.len())?;
+    Ok(PackageStatus::Installed)
+}
+
 // Common Package Definitions
 
 pub const WIREMIX_PACKAGE: RequiredPackage = RequiredPackage {

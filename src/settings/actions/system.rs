@@ -216,10 +216,7 @@ pub fn launch_cockpit(ctx: &mut SettingsContext) -> Result<()> {
         .ensure_packages(COCKPIT_PACKAGES.as_slice())?
         .is_installed()
     {
-        ctx.emit_info(
-            "settings.cockpit.cancelled",
-            "Cockpit launch cancelled.",
-        );
+        ctx.emit_info("settings.cockpit.cancelled", "Cockpit launch cancelled.");
         return Ok(());
     }
 
