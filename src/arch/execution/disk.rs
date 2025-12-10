@@ -79,7 +79,7 @@ fn prepare_dualboot_disk(
     context: &InstallContext,
     executor: &CommandExecutor,
     disk_path: &str,
-    swap_size_gb: u64,
+    mut swap_size_gb: u64,
 ) -> Result<()> {
     println!("Preparing dual boot installation...");
 
@@ -114,11 +114,38 @@ fn prepare_dualboot_disk(
     };
 
     // Validate we have enough free space (contiguous region reported by sfdisk)
+    // Also cap swap so it is never larger than half of root: swap <= root / 2 => swap <= free / 3
     let available_space = disk_info.max_contiguous_free_space_bytes;
-    let swap_size_bytes = swap_size_gb * 1024 * 1024 * 1024;
-    let min_required = crate::arch::dualboot::MIN_LINUX_SIZE + swap_size_bytes;
+    const GB: u64 = 1024 * 1024 * 1024;
+    let mut swap_size_bytes = swap_size_gb * GB;
 
-    if available_space < min_required {
+    if available_space <= crate::arch::dualboot::MIN_LINUX_SIZE {
+        anyhow::bail!("Not enough contiguous free space for minimum root");
+    }
+
+    let swap_cap_by_ratio = available_space / 3; // ensures swap <= root/2
+    let swap_cap_by_root_min =
+        available_space.saturating_sub(crate::arch::dualboot::MIN_LINUX_SIZE);
+    let swap_cap = swap_cap_by_ratio.min(swap_cap_by_root_min);
+
+    if swap_size_bytes > swap_cap {
+        swap_size_bytes = swap_cap;
+        // Recompute swap_size_gb to align with the capped bytes (floor to GB, min 1GB)
+        let adjusted_swap_gb = (swap_size_bytes / GB).max(1);
+        println!(
+            "Capping swap to {} (was {} GiB) to keep swap <= half of root",
+            crate::arch::dualboot::format_size(adjusted_swap_gb * GB),
+            swap_size_gb
+        );
+        swap_size_bytes = adjusted_swap_gb * GB;
+        swap_size_gb = adjusted_swap_gb;
+    }
+
+    let min_required = crate::arch::dualboot::MIN_LINUX_SIZE + swap_size_bytes;
+    // Allow a small 2 MiB alignment slack to account for rounding/alignment losses
+    let alignment_slack = 2 * 1024 * 1024;
+
+    if available_space + alignment_slack < min_required {
         anyhow::bail!(
             "Not enough contiguous free space: {} available, {} required ({} Root + {} Swap)",
             crate::arch::dualboot::format_size(available_space),
