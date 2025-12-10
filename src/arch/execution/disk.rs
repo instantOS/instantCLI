@@ -107,9 +107,7 @@ fn prepare_dualboot_disk(
         );
         (esp.device.clone(), false)
     } else {
-        println!(
-            "No suitable ESP found (need >= 260MB). Creating a new EFI System Partition..."
-        );
+        println!("No suitable ESP found (need >= 260MB). Creating a new EFI System Partition...");
         let new_esp = create_esp_partition(disk_path, disk_info, executor)?;
         println!("Created new ESP: {}", new_esp);
         (new_esp, true)
@@ -180,7 +178,10 @@ fn create_esp_partition(
         PartitionTableType::MBR | PartitionTableType::Unknown => "0xef",
     };
 
-    let script = format!("start={}, size={}, type={}\n", start_sector, esp_sectors, type_code);
+    let script = format!(
+        "start={}, size={}, type={}\n",
+        start_sector, esp_sectors, type_code
+    );
 
     executor.run_with_input(
         Command::new("sfdisk").arg("--append").arg(disk_path),
@@ -240,13 +241,12 @@ fn create_dualboot_partitions(
     // 1. ALLOCATE SWAP
     // Strategy: First Fit (Find first hole large enough)
     let mut swap_start_sector = 0;
-    let mut swap_region_index = 0;
     let mut found_swap = false;
 
     // We clone regions to modify them as we allocate
     let mut available_regions = regions.clone();
 
-    for (i, region) in available_regions.iter_mut().enumerate() {
+    for region in available_regions.iter_mut() {
         if region.sectors >= swap_sectors {
             swap_start_sector = region.start;
 
@@ -256,7 +256,6 @@ fn create_dualboot_partitions(
             region.sectors -= swap_sectors;
             region.size_bytes = region.size_bytes.saturating_sub(swap_size_bytes);
 
-            swap_region_index = i;
             found_swap = true;
             break;
         }
@@ -346,7 +345,7 @@ fn create_dualboot_partitions(
     // We identify based on SIZE and TYPE
 
     let mut swap_path = String::new();
-    let mut root_path = String::new();
+    let root_path: String;
 
     for p in &new_partitions {
         let size = get_partition_size_bytes(p)?;
@@ -360,9 +359,6 @@ fn create_dualboot_partitions(
         // Abs diff between `size` and `swap_size_bytes`
         let diff = (size as i64 - swap_size_bytes as i64).abs();
         let margin = (swap_size_bytes / 20) as i64; // 5% margin
-
-        // Also check against Root size
-        let root_diff = (size as i64 - root_size_bytes as i64).abs();
 
         if diff < margin {
             // Looks like Swap
@@ -387,11 +383,12 @@ fn create_dualboot_partitions(
 
         // Smaller = Swap, Larger = Root
         swap_path = sorted_by_size[0].clone();
-        root_path = sorted_by_size[1].clone();
+        let assumed_root = sorted_by_size[1].clone();
+        root_path = assumed_root.clone();
 
         println!(
             "Warning: Could not identify partitions by exact size match. Assuming smaller ({}) is Swap and larger ({}) is Root.",
-            swap_path, root_path
+            swap_path, assumed_root
         );
     } else {
         // Find Root (the one that is not Swap)
@@ -455,19 +452,6 @@ fn get_current_partitions(disk_path: &str) -> Result<std::collections::HashSet<S
         .collect();
 
     Ok(partitions)
-}
-
-/// Helper to extract partition number from string (e.g. "/dev/sda1" -> 1, "/dev/nvme0n1p2" -> 2)
-fn extract_partition_number(path: &str) -> u64 {
-    path.chars()
-        .rev()
-        .take_while(|c| c.is_ascii_digit())
-        .collect::<String>()
-        .chars()
-        .rev() // Reverse back to normal order
-        .collect::<String>()
-        .parse()
-        .unwrap_or(u64::MAX) // Push to end if parse fails
 }
 
 /// Format and mount partitions based on paths stored in context
