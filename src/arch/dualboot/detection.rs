@@ -6,7 +6,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 /// Format bytes as human-readable size
 pub fn format_size(bytes: u64) -> String {
@@ -246,12 +247,6 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
         // Calculate largest contiguous free space using sfdisk
         let device_path = format!("/dev/{}", name);
         let max_contiguous_free_space_bytes = get_largest_free_region(&device_path).unwrap_or(0);
-
-        // If detection failed (e.g. permission error or tool missing), fallback to simple calculation
-        // but only if unpartitioned_space_bytes is significant, otherwise 0 is safer.
-        // For now, if 0, we trust it (disk might be full).
-        // If sfdisk fails, it returns 0, which means "no dual boot possible unless you resize".
-        // This is safe.
 
         disks.push(DiskInfo {
             device: device_path,
@@ -543,8 +538,8 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
 
     // Check if we have enough unpartitioned space
     // We check CONTIGUOUS space to ensure we can actually create the partition
-    let has_unpartitioned_space =
-        disk.max_contiguous_free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
+    let free_space_bytes = disk.max_contiguous_free_space_bytes;
+    let has_unpartitioned_space = free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
 
     if feasible_partitions.is_empty() {
         if has_unpartitioned_space {
@@ -553,7 +548,7 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
                 feasible_partitions: vec![], // No specific partition to resize, but disk is feasible
                 reason: Some(format!(
                     "Unpartitioned space available: {}",
-                    format_size(disk.max_contiguous_free_space_bytes)
+                    format_size(free_space_bytes)
                 )),
             };
         }
@@ -1291,5 +1286,94 @@ Unallocated:
     Free (estimated):             33898004480      (min: 18966994432)
 "#;
         assert_eq!(parse_btrfs_used(btrfs_output), Some(18556850176));
+    }
+
+    const MB: u64 = 1024 * 1024;
+
+    fn create_image_with_sfdisk(size_mb: u64, script: &str) -> tempfile::TempPath {
+        let file = tempfile::NamedTempFile::new().expect("temp image");
+        file.as_file()
+            .set_len(size_mb * MB)
+            .expect("set image size");
+
+        let path = file.into_temp_path();
+        let mut child = Command::new("sfdisk")
+            .arg("--no-reread")
+            .arg("--quiet")
+            .arg(path.to_str().expect("path"))
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn sfdisk");
+
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin")
+            .write_all(script.as_bytes())
+            .expect("write script");
+
+        let status = child.wait().expect("wait sfdisk");
+        assert!(status.success(), "sfdisk failed: {status}");
+        path
+    }
+
+    #[test]
+    fn sfdisk_detects_end_gap_on_gpt_image() {
+        // 100MB image with two 20MB partitions leaves a large gap at the end.
+        let script = "label: gpt\n,20M\n,20M\n";
+        let img = create_image_with_sfdisk(100, script);
+
+        let regions = get_free_regions(img.to_str().expect("path")).expect("regions");
+        assert!(!regions.is_empty());
+
+        let max_gap = regions.iter().map(|r| r.size_bytes).max().unwrap();
+        // Expect roughly 60MB free (allow wide tolerance for alignment/padding).
+        assert!(
+            max_gap > 50 * MB && max_gap < 75 * MB,
+            "gap was {} bytes",
+            max_gap
+        );
+    }
+
+    #[test]
+    fn sfdisk_detects_middle_gap_between_partitions() {
+        // 200MB image: 32MB partition, ~60MB gap, 32MB partition, remaining free at end.
+        let script = "label: gpt\n,32M\nstart=120M,size=32M\n";
+        let img = create_image_with_sfdisk(200, script);
+
+        let regions = get_free_regions(img.to_str().expect("path")).expect("regions");
+        assert!(regions.len() >= 2);
+
+        let mut sizes: Vec<u64> = regions.iter().map(|r| r.size_bytes).collect();
+        sizes.sort_unstable();
+
+        let largest = *sizes.last().unwrap();
+        let second = sizes[sizes.len() - 2];
+
+        // Middle gap should be comfortably above the 1MB cutoff; allow wide tolerance for alignment.
+        assert!(
+            second > 30 * MB && second < 120 * MB,
+            "middle gap {} bytes",
+            second
+        );
+        assert!(
+            largest > 40 * MB && largest < 140 * MB,
+            "end gap {} bytes",
+            largest
+        );
+    }
+
+    #[test]
+    fn sfdisk_detects_small_gaps_filtered_out() {
+        // 50MB image with tiny 512KB gap between partitions should be ignored (<1MB threshold).
+        let script = "label: gpt\n,10M\nstart=12M,size=10M\n";
+        let img = create_image_with_sfdisk(50, script);
+
+        let regions = get_free_regions(img.to_str().expect("path")).expect("regions");
+
+        // Only the main trailing gap should remain; tiny gap is below threshold.
+        assert_eq!(regions.len(), 1);
+        let gap = regions[0].size_bytes;
+        assert!(gap > 25 * MB && gap < 40 * MB, "trailing gap {} bytes", gap);
     }
 }

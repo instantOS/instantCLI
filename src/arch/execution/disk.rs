@@ -103,9 +103,7 @@ fn prepare_dualboot_disk(
         crate::arch::dualboot::format_size(esp.size_bytes)
     );
 
-    // Validate we have enough free space
-    // Validate we have enough free space
-    // We check CONTIGUOUS space because we need a large enough block for the root partition
+    // Validate we have enough free space (contiguous region reported by sfdisk)
     let available_space = disk_info.max_contiguous_free_space_bytes;
     let swap_size_bytes = swap_size_gb * 1024 * 1024 * 1024;
     let min_required = crate::arch::dualboot::MIN_LINUX_SIZE + swap_size_bytes;
