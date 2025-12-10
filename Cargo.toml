@@ -1,6 +1,6 @@
 [package]
 name = "ins"
-version = "0.10.5"
+version = "0.10.6"
 edition = "2024"
 description = "Instant CLI - command-line utilities"
 license = "GPL-2.0-only"
