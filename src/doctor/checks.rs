@@ -595,7 +595,7 @@ impl DoctorCheck for PendingUpdatesCheck {
 
     fn fix_message(&self) -> Option<String> {
         Some(
-            "Install checkupdates if needed and update system packages with pacman -Syu"
+            "Install pacman-contrib if needed and update system packages with pacman -Syu"
                 .to_string(),
         )
     }
@@ -603,22 +603,9 @@ impl DoctorCheck for PendingUpdatesCheck {
     async fn fix(&self) -> Result<()> {
         use crate::common::requirements::PACMAN_CONTRIB_PACKAGE;
 
-        // Check if checkupdates is available (from pacman-contrib)
-        let checkupdates_exists = TokioCommand::new("which")
-            .arg("checkupdates")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await?
-            .success();
-
-        if !checkupdates_exists {
-            println!("checkupdates not found, installing pacman-contrib...");
-
-            // Install pacman-contrib using the standard ensure() flow
-            if !PACMAN_CONTRIB_PACKAGE.is_installed() && !PACMAN_CONTRIB_PACKAGE.ensure()? {
-                return Err(anyhow::anyhow!("pacman-contrib installation cancelled"));
-            }
+        // Ensure pacman-contrib is installed (provides checkupdates)
+        if !PACMAN_CONTRIB_PACKAGE.is_installed() && !PACMAN_CONTRIB_PACKAGE.ensure()? {
+            return Err(anyhow::anyhow!("pacman-contrib installation cancelled"));
         }
 
         // Run pacman -Syu
