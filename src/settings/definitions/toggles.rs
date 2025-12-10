@@ -3,7 +3,6 @@
 //! Clipboard manager, auto-mount, and Bluetooth settings.
 
 use anyhow::Result;
-use duct::cmd;
 
 use crate::common::requirements::UDISKIE_PACKAGE;
 use crate::common::systemd::{SystemdManager, UserServiceConfig};

@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 /// Format bytes as human-readable size
 pub fn format_size(bytes: u64) -> String {

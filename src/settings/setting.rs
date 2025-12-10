@@ -382,7 +382,6 @@ pub enum SettingState {
     Command,
 }
 
-
 /// Iterate over all registered settings from the category tree
 pub fn all_settings() -> impl Iterator<Item = &'static dyn Setting> {
     use crate::settings::category_tree::all_settings_from_tree;

@@ -488,11 +488,11 @@ fn setup_chroot(executor: &CommandExecutor, config_path: &std::path::Path) -> Re
             );
         }
 
-        if let Some(parent) = target_bin.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)
-                    .context("Failed to create /usr/bin in chroot before copying binary")?;
-            }
+        if let Some(parent) = target_bin.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent)
+                .context("Failed to create /usr/bin in chroot before copying binary")?;
         }
 
         if !current_exe.exists() {
