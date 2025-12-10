@@ -4,6 +4,13 @@ use std::process::Command;
 
 use crate::arch::engine::{InstallContext, QuestionId};
 
+/// Set up instantOS on a system.
+///
+/// This function is used by both:
+/// - `ins arch install` (Post step, inside chroot after Config installed standard packages)
+/// - `ins arch setup` (on existing vanilla Arch installations)
+///
+/// It only installs instantOS-specific packages and configuration, not standard Arch packages.
 pub async fn setup_instantos(
     context: &InstallContext,
     executor: &CommandExecutor,
@@ -14,22 +21,20 @@ pub async fn setup_instantos(
     let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
 
     if !minimal_mode {
+        // Enable multilib for 32-bit support (Steam, Wine, etc.)
+        // This is idempotent - only enables if not already enabled
+        println!("Enabling multilib repository...");
+        crate::common::pacman::enable_multilib(executor.dry_run).await?;
+
+        // Set up instantOS repository and install instantOS packages
         setup_instant_repo(executor).await?;
-        crate::common::pacman::configure_pacman_settings(None, executor.dry_run).await?;
+        install_instant_packages(context, executor)?;
 
-        // Add instantOS-specific system configuration
-        println!("Configuring instantOS system settings...");
-
-        // Configure sudo with pwfeedback (CRITICAL - main missing piece from instantOS setup)
-        // Reuse the same configure_sudo function used by ins arch exec
-        crate::arch::execution::config::configure_sudo(context, executor)?;
-    }
-
-    // Install all chroot packages early in a single pacman call
-    install_all_packages(context, executor)?;
-
-    if !minimal_mode {
+        // Update /etc/os-release to identify as instantOS
         update_os_release(executor)?;
+
+        // Configure GRUB theme
+        crate::arch::execution::bootloader::configure_grub_theme(context, executor)?;
     }
 
     // Determine username: override > context > SUDO_USER
@@ -42,8 +47,6 @@ pub async fn setup_instantos(
         } else {
             println!("Skipping dotfiles setup: No user specified and SUDO_USER not found.");
         }
-
-        crate::arch::execution::bootloader::configure_grub_theme(context, executor)?;
     }
 
     enable_services(executor, context)?;
@@ -51,16 +54,16 @@ pub async fn setup_instantos(
     Ok(())
 }
 
+/// Set up the instantOS repository in pacman.conf.
+///
+/// Note: This does NOT enable multilib. For fresh installations, multilib is enabled
+/// during the Config step. For `ins arch setup` on existing systems, users already
+/// have their own multilib configuration.
 pub async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
     println!("Setting up instantOS repository...");
     crate::common::pacman::setup_instant_repo(executor.dry_run).await?;
 
-    // Enable multilib for 32-bit support (Steam, Wine, etc.)
-    // This is required for lib32-vulkan-intel which caused the issue
-    println!("Enabling multilib repository...");
-    crate::common::pacman::enable_multilib(executor.dry_run).await?;
-
-    // Update repositories
+    // Update repositories to include [instant]
     println!("Updating repositories...");
     let mut cmd = Command::new("pacman");
     cmd.arg("-Sy");
@@ -69,14 +72,19 @@ pub async fn setup_instant_repo(executor: &CommandExecutor) -> Result<()> {
     Ok(())
 }
 
-pub fn install_all_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
-    println!("Installing packages (batched)...");
-
-    let packages = crate::arch::execution::packages::build_package_plan(context)?;
+/// Install instantOS packages from the [instant] repository.
+///
+/// These are the only packages installed by `ins arch setup` on existing systems.
+/// For fresh installations, standard packages are installed separately in the Config step.
+fn install_instant_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    let packages = crate::arch::execution::packages::build_instant_package_plan(context);
+    if packages.is_empty() {
+        println!("Minimal mode enabled, skipping instantOS packages.");
+        return Ok(());
+    }
+    println!("Installing instantOS packages: {}", packages.join(", "));
     let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-
     super::pacman::install(&package_refs, executor)?;
-
     Ok(())
 }
 

@@ -7,13 +7,16 @@ use std::process::Command;
 pub async fn install_config(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Configuring system (inside chroot)...");
 
-    // Ensure repositories (instantos + multilib) are configured before installing packages
-    if !context.get_answer_bool(QuestionId::MinimalMode) {
-        super::setup::setup_instant_repo(executor).await?;
-    }
+    // Enable multilib for 32-bit support (needed for lib32-vulkan-* GPU drivers)
+    // This runs before package installation so lib32 packages can be installed.
+    println!("Enabling multilib repository...");
+    crate::common::pacman::enable_multilib(executor.dry_run).await?;
+
+    // Update repos after enabling multilib
+    sync_repos(executor)?;
 
     configure_pacman_target(executor).await?;
-    super::setup::install_all_packages(context, executor)?;
+    install_standard_packages(context, executor)?;
     configure_timezone(context, executor)?;
     configure_locale(context, executor)?;
     configure_network(context, executor)?;
@@ -25,6 +28,22 @@ pub async fn install_config(context: &InstallContext, executor: &CommandExecutor
         configure_plymouth(context, executor)?;
     }
 
+    Ok(())
+}
+
+fn sync_repos(executor: &CommandExecutor) -> Result<()> {
+    println!("Updating package databases...");
+    let mut cmd = Command::new("pacman");
+    cmd.arg("-Sy");
+    executor.run(&mut cmd)?;
+    Ok(())
+}
+
+fn install_standard_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    println!("Installing standard packages...");
+    let packages = crate::arch::execution::packages::build_standard_package_plan(context)?;
+    let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+    super::pacman::install(&package_refs, executor)?;
     Ok(())
 }
 

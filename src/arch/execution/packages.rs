@@ -13,13 +13,17 @@ pub fn dedup_preserve(vec: &mut Vec<String>) {
     vec.retain(|s| seen.insert(s.clone()));
 }
 
-/// Build the full package plan to install inside the chroot in a single pacman call.
+/// Build the standard Arch package plan for fresh installations.
 ///
 /// This collects:
 /// - Extended/system packages (drivers, tools, DE) derived from answers and detected hardware
 /// - Config-required packages (encryption, plymouth)
 /// - Bootloader packages (grub, efibootmgr/os-prober)
-pub fn build_package_plan(context: &InstallContext) -> Result<Vec<String>> {
+///
+/// Note: instantOS packages (instantdepend, instantos, instantextra) are NOT included here.
+/// They are installed separately via `build_instant_package_plan()` to allow `ins arch setup`
+/// to work on existing Arch installations without reinstalling standard packages.
+pub fn build_standard_package_plan(context: &InstallContext) -> Result<Vec<String>> {
     let mut packages = collect_extended_packages(context)?;
     packages.extend(crate::arch::execution::config::config_package_list(context));
     packages.extend(crate::arch::execution::bootloader::bootloader_package_list(
@@ -28,6 +32,18 @@ pub fn build_package_plan(context: &InstallContext) -> Result<Vec<String>> {
 
     dedup_preserve(&mut packages);
     Ok(packages)
+}
+
+/// Build the instantOS package plan from the [instant] repository.
+///
+/// These packages are installed by both:
+/// - `ins arch install` (in Post step, after [instant] repo is configured)
+/// - `ins arch setup` (on existing Arch installations converting to instantOS)
+pub fn build_instant_package_plan(context: &InstallContext) -> Vec<String> {
+    if context.get_answer_bool(QuestionId::MinimalMode) {
+        return Vec::new();
+    }
+    strings(&["instantdepend", "instantos", "instantextra"])
 }
 
 fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
@@ -56,13 +72,12 @@ fn collect_extended_packages(context: &InstallContext) -> Result<Vec<String>> {
 
     packages.push(format!("{}-headers", kernel));
 
+    // Standard Arch desktop packages
+    // Note: instantOS packages are installed separately via build_instant_package_plan()
     if !minimal_mode {
         packages.extend(strings(&[
             "sway",
             "xorg-xwayland",
-            "instantdepend",
-            "instantos",
-            "instantextra",
             "lightdm",
             "lightdm-gtk-greeter",
         ]));
