@@ -1,5 +1,5 @@
 use super::CommandExecutor;
-use crate::arch::dualboot::DisksKey;
+use crate::arch::dualboot::{DisksKey, PartitionTableType};
 use crate::arch::engine::{
     BootMode, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext,
     QuestionId,
@@ -98,16 +98,22 @@ fn prepare_dualboot_disk(
         .find(|d| d.device == disk_path)
         .context("Selected disk not found in detection data")?;
 
-    // Find existing ESP (already detected with is_efi flag)
-    let esp = disk_info
-        .find_reusable_esp()
-        .context("No suitable EFI partition found for dual boot (need >= 260MB ESP)")?;
-
-    println!(
-        "Reusing existing ESP: {} ({})",
-        esp.device,
-        crate::arch::dualboot::format_size(esp.size_bytes)
-    );
+    // Find existing ESP (already detected with is_efi flag), or create one if missing
+    let (esp_path, esp_needs_format) = if let Some(esp) = disk_info.find_reusable_esp() {
+        println!(
+            "Reusing existing ESP: {} ({})",
+            esp.device,
+            crate::arch::dualboot::format_size(esp.size_bytes)
+        );
+        (esp.device.clone(), false)
+    } else {
+        println!(
+            "No suitable ESP found (need >= 260MB). Creating a new EFI System Partition..."
+        );
+        let new_esp = create_esp_partition(disk_path, disk_info, executor)?;
+        println!("Created new ESP: {}", new_esp);
+        (new_esp, true)
+    };
 
     // Validate we have enough free space (contiguous region reported by sfdisk)
     let available_space = disk_info.max_contiguous_free_space_bytes;
@@ -133,17 +139,75 @@ fn prepare_dualboot_disk(
     // This uses the data map which has interior mutability via Arc<Mutex>
     context.set::<DualBootPartitions>(DualBootPartitionPaths {
         root: root_path,
-        boot: esp.device.clone(),
+        boot: esp_path.clone(),
         swap: swap_path,
     });
 
-    // Mark that ESP should NOT be reformatted (it's existing)
-    context.set::<EspNeedsFormat>(false);
+    // Mark whether the ESP is new (needs format) or reused
+    context.set::<EspNeedsFormat>(esp_needs_format);
 
     // Now use the SAME formatting/mounting code as manual mode
     format_and_mount_partitions(context, executor)?;
 
     Ok(())
+}
+
+/// Create an EFI System Partition if none is present
+fn create_esp_partition(
+    disk_path: &str,
+    disk_info: &crate::arch::dualboot::DiskInfo,
+    executor: &CommandExecutor,
+) -> Result<String> {
+    // Snapshot partitions BEFORE
+    let partitions_before = get_current_partitions(disk_path)?;
+
+    // We need at least MIN_ESP_SIZE contiguous space
+    let esp_size_bytes = crate::arch::dualboot::MIN_ESP_SIZE;
+    let esp_sectors = esp_size_bytes.div_ceil(512);
+
+    let regions = crate::arch::dualboot::get_free_regions(disk_path, Some(disk_info.size_bytes))
+        .context("Failed to get free regions for ESP creation")?;
+
+    let region = regions
+        .iter()
+        .find(|r| r.sectors >= esp_sectors)
+        .context("No free region large enough to create an EFI System Partition (need >= 260MB)")?;
+
+    let start_sector = region.start;
+
+    let type_code = match disk_info.partition_table {
+        PartitionTableType::GPT => "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+        PartitionTableType::MBR | PartitionTableType::Unknown => "0xef",
+    };
+
+    let script = format!("start={}, size={}, type={}\n", start_sector, esp_sectors, type_code);
+
+    executor.run_with_input(
+        Command::new("sfdisk").arg("--append").arg(disk_path),
+        &script,
+    )?;
+
+    if !executor.dry_run {
+        executor.run(Command::new("udevadm").arg("settle"))?;
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+
+    // Snapshot partitions AFTER
+    let partitions_after = get_current_partitions(disk_path)?;
+
+    // Find new partition (difference set)
+    let mut new_parts: Vec<String> = partitions_after
+        .into_iter()
+        .filter(|p| !partitions_before.contains(p))
+        .collect();
+
+    if new_parts.is_empty() {
+        anyhow::bail!("Failed to identify newly created ESP partition");
+    }
+
+    // If multiple, pick the smallest (ESP should be the smallest addition)
+    new_parts.sort_by_key(|p| get_partition_size_bytes(p).unwrap_or(u64::MAX));
+    Ok(new_parts[0].clone())
 }
 
 /// Create swap and root partitions using optimal placement in free space
