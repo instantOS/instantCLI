@@ -11,45 +11,59 @@ use crate::settings::setting::{Requirement, Setting};
 /// Check requirements for a setting, prompting installation if needed
 fn ensure_requirements(setting: &'static dyn Setting) -> Result<bool> {
     let metadata = setting.metadata();
-    let mut unmet = Vec::new();
+
+    // Split requirements into packages and other conditions
+    let mut required_packages = Vec::new();
+    let mut unsatisfied_conditions = Vec::new();
 
     for requirement in metadata.requirements {
-        if !requirement.is_satisfied() {
-            unmet.push(requirement);
+        match requirement {
+            Requirement::Package(pkg) => {
+                if !pkg.is_installed() {
+                    required_packages.push(*pkg);
+                }
+            }
+            Requirement::Condition { check, .. } => {
+                if !check() {
+                    unsatisfied_conditions.push(requirement);
+                }
+            }
         }
     }
 
-    if unmet.is_empty() {
-        return Ok(true);
-    }
-
-    // Try to install missing packages
-    for req in &unmet {
-        if let Requirement::Package(pkg) = req
-            && !pkg.ensure()?
-        {
-            let mut messages = Vec::new();
-            messages.push(format!(
-                "Cannot use '{}' - requirements not met:",
-                metadata.title
-            ));
-            messages.push(String::new());
-            for r in &unmet {
-                messages.push(format!("  • {}", r.description()));
-                messages.push(format!("    {}", r.resolve_hint()));
-                messages.push(String::new());
-            }
-
-            FzfWrapper::builder()
-                .message(messages.join("\n"))
-                .title("Requirements Not Met")
-                .show_message()?;
-
+    // 1. Batch install any missing packages
+    if !required_packages.is_empty() {
+        // This handles prompting, installing, and reporting errors for packages
+        if !crate::common::requirements::ensure_packages_batch(&required_packages)? {
             return Ok(false);
         }
     }
 
-    Ok(true)
+    // 2. Check remaining custom conditions
+    if unsatisfied_conditions.is_empty() {
+        return Ok(true);
+    }
+
+    // If we have unsatisfied custom conditions, show them
+    let mut messages = Vec::new();
+    messages.push(format!(
+        "Cannot use '{}' - requirements not met:",
+        metadata.title
+    ));
+    messages.push(String::new());
+
+    for req in &unsatisfied_conditions {
+        messages.push(format!("  • {}", req.description()));
+        messages.push(format!("    {}", req.resolve_hint()));
+        messages.push(String::new());
+    }
+
+    FzfWrapper::builder()
+        .message(messages.join("\n"))
+        .title("Requirements Not Met")
+        .show_message()?;
+
+    Ok(false)
 }
 
 /// Handle a setting action
