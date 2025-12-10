@@ -246,7 +246,8 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
 
         // Calculate largest contiguous free space using sfdisk
         let device_path = format!("/dev/{}", name);
-        let max_contiguous_free_space_bytes = get_largest_free_region(&device_path).unwrap_or(0);
+        let max_contiguous_free_space_bytes =
+            get_largest_free_region(&device_path, Some(size_bytes)).unwrap_or(0);
 
         disks.push(DiskInfo {
             device: device_path,
@@ -262,8 +263,8 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
 }
 
 /// Get the largest contiguous free region in bytes for a device (Helper wrapper)
-fn get_largest_free_region(device: &str) -> Option<u64> {
-    get_free_regions(device)
+fn get_largest_free_region(device: &str, disk_size_bytes: Option<u64>) -> Option<u64> {
+    get_free_regions(device, disk_size_bytes)
         .ok()?
         .into_iter()
         .map(|r| r.size_bytes)
@@ -284,7 +285,7 @@ pub struct FreeRegion {
 }
 
 /// Get all contiguous free regions for a device
-pub fn get_free_regions(device: &str) -> Result<Vec<FreeRegion>> {
+pub fn get_free_regions(device: &str, disk_size_bytes: Option<u64>) -> Result<Vec<FreeRegion>> {
     // Run sfdisk -J <device> to get partition table in JSON
     let output = Command::new("sfdisk")
         .args(["-J", device])
@@ -298,7 +299,7 @@ pub fn get_free_regions(device: &str) -> Result<Vec<FreeRegion>> {
     }
 
     let json_output = String::from_utf8_lossy(&output.stdout);
-    calculate_free_regions_from_json(&json_output)
+    calculate_free_regions_from_json(&json_output, disk_size_bytes)
 }
 
 #[derive(Debug, Deserialize)]
@@ -325,12 +326,22 @@ struct SfdiskPartition {
 }
 
 /// Calculate free regions by finding gaps in the partition table
-fn calculate_free_regions_from_json(json: &str) -> Result<Vec<FreeRegion>> {
+fn calculate_free_regions_from_json(
+    json: &str,
+    disk_size_bytes: Option<u64>,
+) -> Result<Vec<FreeRegion>> {
     let output: SfdiskOutput =
         serde_json::from_str(json).context("Failed to parse sfdisk JSON output")?;
 
     let pt = output.partitiontable;
     let sector_size = pt.sectorsize;
+    let disk_size_sectors = disk_size_bytes.and_then(|b| {
+        if sector_size > 0 {
+            Some(b / sector_size)
+        } else {
+            None
+        }
+    });
     let mut partitions = pt.partitions.unwrap_or_default();
 
     let first_lba = pt
@@ -341,6 +352,7 @@ fn calculate_free_regions_from_json(json: &str) -> Result<Vec<FreeRegion>> {
     let last_lba = pt
         .lastlba
         .or_else(|| pt.size.map(|s| s.saturating_sub(1)))
+        .or_else(|| disk_size_sectors.map(|s| s.saturating_sub(1)))
         .or_else(|| {
             partitions
                 .iter()
@@ -428,7 +440,7 @@ mod parsing_tests {
         // 4966 > 2048 -> Keep
         // 4001 > 2048 -> Keep
 
-        let regions = calculate_free_regions_from_json(json).unwrap();
+        let regions = calculate_free_regions_from_json(json, None).unwrap();
         assert_eq!(regions.len(), 2);
 
         assert_eq!(regions[0].start, 34);
@@ -477,7 +489,7 @@ mod parsing_tests {
         // 1. 2048 to 9,999,999. Size ~ 10M sectors (~5GB)
         // 2. 24,000,000 to 100,000,000. Size ~ 76M sectors (~38GB)
 
-        let regions = calculate_free_regions_from_json(json).unwrap();
+        let regions = calculate_free_regions_from_json(json, None).unwrap();
 
         assert_eq!(regions.len(), 2);
         assert_eq!(regions[0].start, 2048);
@@ -499,7 +511,7 @@ mod parsing_tests {
       "partitions": []
    }
 }"#;
-        let regions = calculate_free_regions_from_json(json).unwrap();
+        let regions = calculate_free_regions_from_json(json, None).unwrap();
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].start, 2048);
         assert_eq!(regions[0].end, 100000);
@@ -523,7 +535,7 @@ mod parsing_tests {
     }
 }"#;
 
-        let regions = calculate_free_regions_from_json(json).unwrap();
+        let regions = calculate_free_regions_from_json(json, None).unwrap();
         // With no reported disk end we cannot infer trailing free space; we just ensure parsing works.
         assert!(regions.is_empty());
     }
@@ -547,7 +559,7 @@ mod parsing_tests {
     }
 }"#;
 
-        let regions = calculate_free_regions_from_json(json).unwrap();
+        let regions = calculate_free_regions_from_json(json, None).unwrap();
         // Gap after the single partition to the end of disk.
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].start, 2048 + 4096); // partition end + 1
@@ -1391,7 +1403,7 @@ Unallocated:
         let script = "label: gpt\n,20M\n,20M\n";
         let img = create_image_with_sfdisk(100, script);
 
-        let regions = get_free_regions(img.to_str().expect("path")).expect("regions");
+        let regions = get_free_regions(img.to_str().expect("path"), None).expect("regions");
         assert!(!regions.is_empty());
 
         let max_gap = regions.iter().map(|r| r.size_bytes).max().unwrap();
@@ -1409,7 +1421,7 @@ Unallocated:
         let script = "label: gpt\n,32M\nstart=120M,size=32M\n";
         let img = create_image_with_sfdisk(200, script);
 
-        let regions = get_free_regions(img.to_str().expect("path")).expect("regions");
+        let regions = get_free_regions(img.to_str().expect("path"), None).expect("regions");
         assert!(regions.len() >= 2);
 
         let mut sizes: Vec<u64> = regions.iter().map(|r| r.size_bytes).collect();
@@ -1437,7 +1449,7 @@ Unallocated:
         let script = "label: gpt\n,10M\nstart=12M,size=10M\n";
         let img = create_image_with_sfdisk(50, script);
 
-        let regions = get_free_regions(img.to_str().expect("path")).expect("regions");
+        let regions = get_free_regions(img.to_str().expect("path"), None).expect("regions");
 
         // Only the main trailing gap should remain; tiny gap is below threshold.
         assert_eq!(regions.len(), 1);

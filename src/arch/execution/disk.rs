@@ -153,7 +153,7 @@ fn create_dualboot_partitions(
     let partitions_before = get_current_partitions(disk_path)?;
 
     // Get free regions to calculate optimal layout
-    let regions = crate::arch::dualboot::get_free_regions(disk_path)
+    let regions = crate::arch::dualboot::get_free_regions(disk_path, None)
         .context("Failed to get free space regions")?;
 
     if regions.is_empty() {
