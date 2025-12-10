@@ -73,27 +73,49 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
 
     let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
 
-    let mut packages = vec!["openssh", "mesa", "polkit"];
-
-    if !minimal_mode {
-        packages.extend(vec![
-            "sway",
-            "xorg-xwayland",
-            // instantOS packages
-            "instantdepend",
-            "instantos",
-            "instantextra",
-            "lightdm",
-            "lightdm-gtk-greeter",
-        ]);
-    }
-
-    // GPU packages
-    // We install drivers here (after multilib is enabled) to allow lib32-* packages
     let kernel = context
         .get_answer(&QuestionId::Kernel)
         .map(|s| s.as_str())
         .unwrap_or("linux");
+
+    let mut packages: Vec<String> = vec![
+        "openssh",
+        "mesa",
+        "polkit",
+        "networkmanager",
+        "vim",
+        "nano",
+        "git",
+        "libgit2",
+        "fzf",
+        "gum",
+        "base-devel",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    packages.push(format!("{}-headers", kernel));
+
+    if !minimal_mode {
+        packages.extend(
+            vec![
+                "sway",
+                "xorg-xwayland",
+                // instantOS packages
+                "instantdepend",
+                "instantos",
+                "instantextra",
+                "lightdm",
+                "lightdm-gtk-greeter",
+            ]
+            .into_iter()
+            .map(String::from),
+        );
+    }
+
+    // GPU packages
+    // We install drivers here (after multilib is enabled) to allow lib32-* packages
 
     let mut added_gpus = std::collections::HashSet::new();
     for gpu in &context.system_info.gpus {
@@ -117,7 +139,11 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
             }
         }
 
-        packages.extend(gpu.get_driver_packages(Some(kernel)));
+        packages.extend(
+            gpu.get_driver_packages(Some(kernel))
+                .into_iter()
+                .map(String::from),
+        );
     }
 
     // VM Guest Tools
@@ -125,13 +151,13 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
         println!("Detected VM: {}, adding guest tools", vm_type);
         match vm_type.as_str() {
             "kvm" | "qemu" | "bochs" => {
-                packages.push("qemu-guest-agent");
+                packages.push("qemu-guest-agent".to_string());
             }
             "vmware" => {
-                packages.push("open-vm-tools");
+                packages.push("open-vm-tools".to_string());
             }
             "oracle" => {
-                packages.push("virtualbox-guest-utils");
+                packages.push("virtualbox-guest-utils".to_string());
             }
             _ => {
                 println!("No specific guest tools for VM type: {}", vm_type);
@@ -142,10 +168,12 @@ fn install_packages(context: &InstallContext, executor: &CommandExecutor) -> Res
     // Plymouth support
     if context.get_answer_bool(QuestionId::UsePlymouth) && !minimal_mode {
         println!("Plymouth enabled, adding plymouth package");
-        packages.push("plymouth");
+        packages.push("plymouth".to_string());
     }
 
-    super::pacman::install(&packages, executor)?;
+    let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+
+    super::pacman::install(&package_refs, executor)?;
 
     Ok(())
 }

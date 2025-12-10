@@ -50,30 +50,17 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
         .get_answer(&QuestionId::Kernel)
         .map(|s| s.as_str())
         .unwrap_or("linux");
+    let use_encryption = context.get_answer_bool(QuestionId::UseEncryption);
+    let use_plymouth = context.get_answer_bool(QuestionId::UsePlymouth);
+    let minimal_mode = context.get_answer_bool(QuestionId::MinimalMode);
 
-    let mut packages: Vec<String> = vec![
-        "base",
-        "linux-firmware",
-        "vim",
-        "nano",
-        "networkmanager", // Essential for networking
-        "grub",           // Bootloader
-        "efibootmgr",     // Required for GRUB on UEFI
-        "os-prober",      // Detect other OSes
-        // Dependencies for instantCLI and menus (required for chroot steps)
-        "git",
-        "libgit2",
-        "fzf",
-        "gum",
-        "base-devel",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect();
+    let mut packages: Vec<String> = vec!["base", "linux-firmware"]
+        .into_iter()
+        .map(String::from)
+        .collect();
 
-    // Add kernel and headers
+    // Add kernel (headers are installed later alongside extra packages)
     packages.push(kernel.to_string());
-    packages.push(format!("{}-headers", kernel));
 
     // CPU Microcode
     if context.system_info.has_amd_cpu {
@@ -89,18 +76,13 @@ fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<
     // allowing lib32-* packages to be installed properly.
 
     // Encryption support
-    if context.get_answer_bool(QuestionId::UseEncryption) {
-        println!("Encryption enabled, adding lvm2 and cryptsetup");
-        packages.push("lvm2".to_string());
-        packages.push("cryptsetup".to_string());
+    if use_encryption {
+        println!("Encryption enabled; required packages will be installed inside chroot.");
     }
 
     // Plymouth support
-    if context.get_answer_bool(QuestionId::UsePlymouth)
-        && !context.get_answer_bool(QuestionId::MinimalMode)
-    {
-        println!("Plymouth enabled, adding plymouth package");
-        packages.push("plymouth".to_string());
+    if use_plymouth && !minimal_mode {
+        println!("Plymouth enabled; package will be installed after chroot.");
     }
 
     println!("Packages to install: {}", packages.join(" "));

@@ -9,6 +9,8 @@ pub async fn install_bootloader(
 ) -> Result<()> {
     println!("Installing bootloader (inside chroot)...");
 
+    ensure_bootloader_packages(context, executor)?;
+
     match context.system_info.boot_mode {
         BootMode::UEFI64 | BootMode::UEFI32 => install_grub_uefi(context, executor)?,
         BootMode::BIOS => install_grub_bios(context, executor)?,
@@ -17,6 +19,19 @@ pub async fn install_bootloader(
     configure_grub(context, executor)?;
 
     Ok(())
+}
+
+fn ensure_bootloader_packages(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
+    let mut packages = vec!["grub", "os-prober"];
+
+    if matches!(
+        context.system_info.boot_mode,
+        BootMode::UEFI64 | BootMode::UEFI32
+    ) {
+        packages.push("efibootmgr");
+    }
+
+    super::pacman::install(&packages, executor)
 }
 
 fn install_grub_uefi(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
