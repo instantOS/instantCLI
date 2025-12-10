@@ -107,11 +107,13 @@ impl ResizeVerifier {
         let current_contiguous = disk.max_contiguous_free_space_bytes;
 
         // Check if resize occurred
+        let partition_missing = current_partition_size.is_none();
         let partition_shrunk = current_partition_size
             .map(|s| s < self.original_partition_size)
             .unwrap_or(false);
         let space_freed = current_unpartitioned > self.original_unpartitioned_bytes;
-        let resize_detected = partition_shrunk || space_freed;
+        // Treat a missing partition as a resize event (user removed/repurposed it)
+        let resize_detected = partition_missing || partition_shrunk || space_freed;
 
         let space_freed_bytes =
             current_unpartitioned.saturating_sub(self.original_unpartitioned_bytes);
@@ -120,7 +122,14 @@ impl ResizeVerifier {
 
         // Build message
         let message = if resize_detected {
-            if let Some(current) = current_partition_size {
+            if partition_missing {
+                format!(
+                    "Resize detected! Partition {} is gone. Free space increased by {}. Largest contiguous free space: {}",
+                    self.partition_path,
+                    format_size(space_freed_bytes),
+                    format_size(current_contiguous)
+                )
+            } else if let Some(current) = current_partition_size {
                 format!(
                     "Resize detected! Partition {} is now {} (was {}). Free space increased by {}",
                     self.partition_path,
@@ -129,6 +138,7 @@ impl ResizeVerifier {
                     format_size(space_freed_bytes)
                 )
             } else {
+                // Fallback, should be covered by partition_missing
                 format!(
                     "Resize detected! Free space increased by {}",
                     format_size(space_freed_bytes)
