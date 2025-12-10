@@ -60,25 +60,27 @@ impl Question for DualBootPartitionQuestion {
 
         // Check if we already have enough free space
         if shrinkable_partitions.is_empty() {
+            let free_space_bytes = disk_info.max_contiguous_free_space_bytes;
+
             if disk_info.has_sufficient_free_space() {
                 // No resize needed - disk already has enough free space
                 FzfWrapper::message(&format!(
                     "{} No partition resize needed!\n\n\
-                     Your disk already has {} of unpartitioned space.\n\
+                     Largest contiguous free region: {}.\n\
                      This is enough for a Linux installation (minimum 10 GB).\n\n\
                      {} Proceeding to installation...",
                     NerdFont::Check,
-                    crate::arch::dualboot::format_size(disk_info.unpartitioned_space_bytes),
+                    crate::arch::dualboot::format_size(free_space_bytes),
                     NerdFont::ArrowRight
                 ))?;
                 return Ok(QuestionResult::Answer("__free_space__".to_string()));
             } else {
                 FzfWrapper::message(&format!(
-                    "{} No shrinkable partitions found on {} and not enough free space.\n\
-                     Free space: {} (need at least 10 GB)",
+                    "{} No shrinkable partitions found on {} and not enough contiguous free space.\n\
+                     Largest contiguous free region: {} (need at least 10 GB)",
                     NerdFont::Warning,
                     disk_path,
-                    crate::arch::dualboot::format_size(disk_info.unpartitioned_space_bytes)
+                    crate::arch::dualboot::format_size(free_space_bytes)
                 ))?;
                 return Ok(QuestionResult::Cancelled);
             }
@@ -158,9 +160,9 @@ impl Question for DualBootSizeQuestion {
                 .find(|d| d.device == *disk_path)
                 .context("Selected disk not found")?;
 
-            // Return the available unpartitioned space as the Linux size
+            // Return the largest contiguous free space as the Linux size
             return Ok(QuestionResult::Answer(
-                disk_info.unpartitioned_space_bytes.to_string(),
+                disk_info.max_contiguous_free_space_bytes.to_string(),
             ));
         }
 

@@ -120,7 +120,8 @@ fn prepare_dualboot_disk(
 
     // Create partitions in free space only
     // sfdisk can append partitions to existing partition table
-    let (root_path, swap_path) = create_dualboot_partitions(disk_path, swap_size_gb, executor)?;
+    let (root_path, swap_path) =
+        create_dualboot_partitions(disk_path, swap_size_gb, disk_info.size_bytes, executor)?;
 
     // Store partition paths in context data store - CONVERGENCE POINT
     // This uses the data map which has interior mutability via Arc<Mutex>
@@ -145,6 +146,7 @@ fn prepare_dualboot_disk(
 fn create_dualboot_partitions(
     disk_path: &str,
     swap_size_gb: u64,
+    disk_size_bytes: u64,
     executor: &CommandExecutor,
 ) -> Result<(String, String)> {
     println!("Creating partitions in free space (optimal placement)...");
@@ -153,7 +155,7 @@ fn create_dualboot_partitions(
     let partitions_before = get_current_partitions(disk_path)?;
 
     // Get free regions to calculate optimal layout
-    let regions = crate::arch::dualboot::get_free_regions(disk_path, None)
+    let regions = crate::arch::dualboot::get_free_regions(disk_path, Some(disk_size_bytes))
         .context("Failed to get free space regions")?;
 
     if regions.is_empty() {

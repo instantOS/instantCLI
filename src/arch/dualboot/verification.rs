@@ -104,6 +104,7 @@ impl ResizeVerifier {
 
         let current_partition_size = partition.map(|p| p.size_bytes);
         let current_unpartitioned = disk.unpartitioned_space_bytes;
+        let current_contiguous = disk.max_contiguous_free_space_bytes;
 
         // Check if resize occurred
         let partition_shrunk = current_partition_size
@@ -114,7 +115,8 @@ impl ResizeVerifier {
 
         let space_freed_bytes =
             current_unpartitioned.saturating_sub(self.original_unpartitioned_bytes);
-        let has_sufficient_space = current_unpartitioned >= MIN_LINUX_SIZE;
+        // Use contiguous free space for feasibility, keep total unpartitioned for delta reporting
+        let has_sufficient_space = current_contiguous >= MIN_LINUX_SIZE;
 
         // Build message
         let message = if resize_detected {

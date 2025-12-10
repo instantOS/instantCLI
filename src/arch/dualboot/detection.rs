@@ -640,8 +640,8 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
                 feasible: false,
                 feasible_partitions: vec![],
                 reason: Some(format!(
-                    "Disk too small or full (Free: {})",
-                    format_size(disk.unpartitioned_space_bytes)
+                    "Disk too small or full (Largest free region: {})",
+                    format_size(disk.max_contiguous_free_space_bytes)
                 )),
             }
         } else {
