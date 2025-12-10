@@ -604,7 +604,9 @@ impl DoctorCheck for PendingUpdatesCheck {
         use crate::common::requirements::PACMAN_CONTRIB_PACKAGE;
 
         // Ensure pacman-contrib is installed (provides checkupdates)
-        if !PACMAN_CONTRIB_PACKAGE.is_installed() && !PACMAN_CONTRIB_PACKAGE.ensure()?.is_installed() {
+        if !PACMAN_CONTRIB_PACKAGE.is_installed()
+            && !PACMAN_CONTRIB_PACKAGE.ensure()?.is_installed()
+        {
             return Err(anyhow::anyhow!("pacman-contrib installation cancelled"));
         }
 
@@ -753,7 +755,8 @@ impl DoctorCheck for SmartHealthCheck {
         use crate::common::systemd::{ServiceScope, SystemdManager};
 
         // Install smartmontools using the standard ensure() flow if not installed
-        if !SMARTMONTOOLS_PACKAGE.is_installed() && !SMARTMONTOOLS_PACKAGE.ensure()?.is_installed() {
+        if !SMARTMONTOOLS_PACKAGE.is_installed() && !SMARTMONTOOLS_PACKAGE.ensure()?.is_installed()
+        {
             return Err(anyhow::anyhow!("smartmontools installation cancelled"));
         }
 

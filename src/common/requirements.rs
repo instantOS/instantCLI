@@ -174,15 +174,6 @@ impl RequiredPackage {
             Ok(PackageStatus::Installed)
         } else {
             // User declined installation
-            let cancel_msg = format!(
-                "The package '{}' is required for this setting.\n\n{}",
-                self.name,
-                self.install_hint()
-            );
-            FzfWrapper::builder()
-                .message(&cancel_msg)
-                .title("Package Required")
-                .show_message()?;
             Ok(PackageStatus::Declined)
         }
     }
@@ -341,14 +332,6 @@ impl FlatpakPackage {
             }
             Ok(PackageStatus::Installed)
         } else {
-            let cancel_msg = format!(
-                "The Flatpak application '{}' is required.\n\nManual installation:\nflatpak install flathub {}",
-                self.name, self.app_id
-            );
-            FzfWrapper::builder()
-                .message(&cancel_msg)
-                .title("Flatpak Required")
-                .show_message()?;
             Ok(PackageStatus::Declined)
         }
     }
@@ -422,20 +405,6 @@ fn show_success_message(count: usize) -> Result<()> {
     FzfWrapper::builder()
         .message(&success_msg)
         .title("Installation Complete")
-        .show_message()
-}
-
-/// Show installation cancelled message with hints
-fn show_cancelled_message(packages: &[&RequiredPackage]) -> Result<()> {
-    let mut cancel_msg = String::from("The following packages are required:\n\n");
-    for pkg in packages {
-        cancel_msg.push_str(&format!("  • {}\n", pkg.name));
-    }
-    cancel_msg.push_str(&format!("\n{}", packages[0].install_hint()));
-
-    FzfWrapper::builder()
-        .message(&cancel_msg)
-        .title("Packages Required")
         .show_message()
 }
 
@@ -526,7 +495,6 @@ pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<PackageStat
 
     // Prompt user for installation
     if !prompt_batch_installation(&missing, &package_manager)? {
-        show_cancelled_message(&missing)?;
         return Ok(PackageStatus::Declined);
     }
 
