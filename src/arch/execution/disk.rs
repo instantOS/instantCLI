@@ -104,13 +104,15 @@ fn prepare_dualboot_disk(
     );
 
     // Validate we have enough free space
-    let available_space = disk_info.unpartitioned_space_bytes;
+    // Validate we have enough free space
+    // We check CONTIGUOUS space because we need a large enough block for the root partition
+    let available_space = disk_info.max_contiguous_free_space_bytes;
     let swap_size_bytes = swap_size_gb * 1024 * 1024 * 1024;
     let min_required = crate::arch::dualboot::MIN_LINUX_SIZE + swap_size_bytes;
 
     if available_space < min_required {
         anyhow::bail!(
-            "Not enough free space: {} available, {} required ({} Root + {} Swap)",
+            "Not enough contiguous free space: {} available, {} required ({} Root + {} Swap)",
             crate::arch::dualboot::format_size(available_space),
             crate::arch::dualboot::format_size(min_required),
             crate::arch::dualboot::format_size(crate::arch::dualboot::MIN_LINUX_SIZE),

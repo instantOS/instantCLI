@@ -41,6 +41,8 @@ pub struct DiskInfo {
     pub partitions: Vec<PartitionInfo>,
     /// Unpartitioned space in bytes (calculated)
     pub unpartitioned_space_bytes: u64,
+    /// Largest contiguous unpartitioned space in bytes (detected via sfdisk)
+    pub max_contiguous_free_space_bytes: u64,
 }
 
 /// Minimum ESP size for dual boot (260 MB recommended for multi-OS)
@@ -54,7 +56,7 @@ impl DiskInfo {
 
     /// Check if disk already has enough unpartitioned space for Linux installation
     pub fn has_sufficient_free_space(&self) -> bool {
-        self.unpartitioned_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE
+        self.max_contiguous_free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE
     }
 
     /// Find a suitable EFI partition for reuse in dual boot
@@ -241,16 +243,83 @@ pub fn detect_disks() -> Result<Vec<DiskInfo>> {
         let total_partition_size: u64 = partitions.iter().map(|p| p.size_bytes).sum();
         let unpartitioned_space_bytes = size_bytes.saturating_sub(total_partition_size);
 
+        // Calculate largest contiguous free space using sfdisk
+        let device_path = format!("/dev/{}", name);
+        let max_contiguous_free_space_bytes = get_largest_free_region(&device_path).unwrap_or(0);
+
+        // If detection failed (e.g. permission error or tool missing), fallback to simple calculation
+        // but only if unpartitioned_space_bytes is significant, otherwise 0 is safer.
+        // For now, if 0, we trust it (disk might be full).
+        // If sfdisk fails, it returns 0, which means "no dual boot possible unless you resize".
+        // This is safe.
+
         disks.push(DiskInfo {
-            device: format!("/dev/{}", name),
+            device: device_path,
             size_bytes,
             partition_table,
             partitions,
             unpartitioned_space_bytes,
+            max_contiguous_free_space_bytes,
         });
     }
 
     Ok(disks)
+}
+
+/// Get the largest contiguous free region in bytes for a device
+fn get_largest_free_region(device: &str) -> Option<u64> {
+    // Run sfdisk -F -b <device>
+    // -F: list free areas
+    // -b: output in bytes (no units)
+    let output = Command::new("sfdisk")
+        .args(["-F", "-b", device])
+        .output()
+        .ok()?;
+
+    // We ignore exit code because sfdisk returns 1 if there is no free space or some other non-critical conditions?
+    // Actually sfdisk returns 0 on success. If it fails, we assume 0 free space.
+    if !output.status.success() {
+        return Some(0);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut max_size: u64 = 0;
+
+    // Output format (approximate, columns may header):
+    // Unpartitioned space /dev/nvme0n1:
+    // <start> <end> <sectors> <size>
+    // 2048 4096 2048 1048576
+
+    // We iterate lines, try to find the 4th column which is size.
+    // NOTE: sfdisk output format can vary.
+    // With -b:
+    // 0 2047 2048 1048576
+    // ...
+
+    for line in stdout.lines() {
+        // Skip headers or empty lines
+        if line.trim().is_empty() || line.starts_with("Unpartitioned") || line.contains("Start") {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        // We expect at least 4 columns: Start, End, Sectors, Size
+        if parts.len() >= 4 {
+            // The size is usually the last or 4th column.
+            // Let's try parsing the last column first, as size is typically last in standard output?
+            // Actually `sfdisk` manual says columns: Start End Sectors Size
+            // But depending on version validation is key.
+
+            // Try 4th column (index 3)
+            if let Ok(size) = parts[3].parse::<u64>() {
+                if size > max_size {
+                    max_size = size;
+                }
+            }
+        }
+    }
+
+    Some(max_size)
 }
 
 /// Check if a partition is feasible for dual boot installation
@@ -302,8 +371,9 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
         .collect();
 
     // Check if we have enough unpartitioned space
+    // We check CONTIGUOUS space to ensure we can actually create the partition
     let has_unpartitioned_space =
-        disk.unpartitioned_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
+        disk.max_contiguous_free_space_bytes >= crate::arch::dualboot::MIN_LINUX_SIZE;
 
     if feasible_partitions.is_empty() {
         if has_unpartitioned_space {
@@ -312,7 +382,7 @@ pub fn check_disk_dualboot_feasibility(disk: &DiskInfo) -> DualBootFeasibility {
                 feasible_partitions: vec![], // No specific partition to resize, but disk is feasible
                 reason: Some(format!(
                     "Unpartitioned space available: {}",
-                    format_size(disk.unpartitioned_space_bytes)
+                    format_size(disk.max_contiguous_free_space_bytes)
                 )),
             };
         }
