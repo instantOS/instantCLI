@@ -105,11 +105,16 @@ fn prepare_dualboot_disk(
 
     // Validate we have enough free space
     let available_space = disk_info.unpartitioned_space_bytes;
-    if available_space < crate::arch::dualboot::MIN_LINUX_SIZE {
+    let swap_size_bytes = swap_size_gb * 1024 * 1024 * 1024;
+    let min_required = crate::arch::dualboot::MIN_LINUX_SIZE + swap_size_bytes;
+
+    if available_space < min_required {
         anyhow::bail!(
-            "Not enough free space: {} available, {} required",
+            "Not enough free space: {} available, {} required ({} Root + {} Swap)",
             crate::arch::dualboot::format_size(available_space),
-            crate::arch::dualboot::format_size(crate::arch::dualboot::MIN_LINUX_SIZE)
+            crate::arch::dualboot::format_size(min_required),
+            crate::arch::dualboot::format_size(crate::arch::dualboot::MIN_LINUX_SIZE),
+            crate::arch::dualboot::format_size(swap_size_bytes)
         );
     }
 
@@ -144,9 +149,13 @@ fn create_dualboot_partitions(
 ) -> Result<(String, String)> {
     println!("Creating partitions in free space...");
 
+    // Snapshot partitions BEFORE
+    let partitions_before = get_current_partitions(disk_path)?;
+
     // Use sfdisk to append partitions to existing table
     // The "+" prefix means "append after last partition"
     // We create: swap partition, then root partition (rest of space)
+    // Note: sfdisk append order corresponds to creation order
     let script = format!(
         "size={}G, type=S\n\
          type=L\n",
@@ -165,10 +174,41 @@ fn create_dualboot_partitions(
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 
-    // Determine partition paths
-    // After appending, we need to find the new partition numbers
-    // We can use lsblk to get the latest partitions
-    let (swap_path, root_path) = get_last_two_partitions(disk_path)?;
+    // Snapshot partitions AFTER
+    let partitions_after = get_current_partitions(disk_path)?;
+
+    // Find new partitions
+    let new_partitions: Vec<String> = partitions_after
+        .into_iter()
+        .filter(|p| !partitions_before.contains(p))
+        .collect();
+
+    if new_partitions.len() < 2 {
+        anyhow::bail!(
+            "Expected 2 new partitions, found {}: {:?}",
+            new_partitions.len(),
+            new_partitions
+        );
+    }
+
+    // We expect 2 new partitions: Swap and Root
+    // sfdisk script had Swap first, then Root.
+    // We assume they are allocated sequentially in creating order.
+    // However, we should robustly identify them.
+    // Sort by partition number just in case.
+    // Assuming standard naming (sda5, sda6), lower number is first created = Swap.
+    let mut sorted = new_partitions.clone();
+    sorted.sort_by(|a, b| {
+        // Extract numbers and compare
+        let num_a = extract_partition_number(a);
+        let num_b = extract_partition_number(b);
+        num_a.cmp(&num_b)
+    });
+
+    // First created (lower number) is Swap
+    let swap_path = sorted[0].clone();
+    // Second created (higher number) is Root
+    let root_path = sorted[1].clone();
 
     println!("Created swap partition: {}", swap_path);
     println!("Created root partition: {}", root_path);
@@ -176,29 +216,37 @@ fn create_dualboot_partitions(
     Ok((root_path, swap_path))
 }
 
-/// Get the last two partition paths on a disk (swap, root order)
-fn get_last_two_partitions(disk_path: &str) -> Result<(String, String)> {
+/// Get list of current full partition paths on disk (e.g. ["/dev/sda1", "/dev/sda2"])
+fn get_current_partitions(disk_path: &str) -> Result<std::collections::HashSet<String>> {
     let output = std::process::Command::new("lsblk")
         .args(["-n", "-o", "NAME", "-r", disk_path])
         .output()
         .context("Failed to run lsblk")?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let partitions: Vec<&str> = stdout
+    let disk_name = disk_path.strip_prefix("/dev/").unwrap_or(disk_path);
+
+    let partitions: std::collections::HashSet<String> = stdout
         .lines()
-        .filter(|l| l.starts_with(disk_path.strip_prefix("/dev/").unwrap_or(disk_path)))
-        .filter(|l| *l != disk_path.strip_prefix("/dev/").unwrap_or(disk_path))
+        .filter(|l| l.starts_with(disk_name))
+        .filter(|l| *l != disk_name) // Exclude the disk itself
+        .map(|name| format!("/dev/{}", name))
         .collect();
 
-    if partitions.len() < 2 {
-        anyhow::bail!("Expected at least 2 partitions after creating dual boot partitions");
-    }
+    Ok(partitions)
+}
 
-    // Last two partitions are the newly created ones (swap, root)
-    let swap_name = partitions[partitions.len() - 2];
-    let root_name = partitions[partitions.len() - 1];
-
-    Ok((format!("/dev/{}", swap_name), format!("/dev/{}", root_name)))
+/// Helper to extract partition number from string (e.g. "/dev/sda1" -> 1, "/dev/nvme0n1p2" -> 2)
+fn extract_partition_number(path: &str) -> u64 {
+    path.chars()
+        .rev()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<String>()
+        .chars()
+        .rev() // Reverse back to normal order
+        .collect::<String>()
+        .parse()
+        .unwrap_or(u64::MAX) // Push to end if parse fails
 }
 
 /// Format and mount partitions based on paths stored in context
