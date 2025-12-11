@@ -10,6 +10,7 @@ use anyhow::Result;
 /// Welcome menu items
 #[derive(Clone, Debug)]
 pub enum WelcomeItem {
+    ConfigureNetwork,
     OpenWebsite,
     OpenSettings,
     DisableAutostart,
@@ -35,6 +36,10 @@ fn get_autostart_state() -> bool {
 impl FzfSelectable for WelcomeItem {
     fn fzf_display_text(&self) -> String {
         match self {
+            WelcomeItem::ConfigureNetwork => format!(
+                "{} Configure Network",
+                format_icon_colored(NerdFont::Wifi, colors::RED)
+            ),
             WelcomeItem::OpenWebsite => format!(
                 "{} Visit instantOS website",
                 format_icon_colored(NerdFont::Globe, colors::BLUE)
@@ -73,8 +78,20 @@ impl FzfSelectable for WelcomeItem {
         let blue = hex_to_ansi_fg(colors::BLUE);
         let mauve = hex_to_ansi_fg(colors::MAUVE);
         let peach = hex_to_ansi_fg(colors::PEACH);
+        let red = hex_to_ansi_fg(colors::RED);
 
         let lines = match self {
+            WelcomeItem::ConfigureNetwork => vec![
+                String::new(),
+                format!("{red}{}  Network Setup{reset}", char::from(NerdFont::Wifi)),
+                format!("{surface}───────────────────────────────────{reset}"),
+                String::new(),
+                format!("{text}No internet connection detected.{reset}"),
+                format!("{text}Launch network configuration tool{reset}"),
+                format!("{text}to set up your connection.{reset}"),
+                String::new(),
+                format!("{subtext}Opens nmtui in a new terminal.{reset}"),
+            ],
             WelcomeItem::OpenWebsite => vec![
                 String::new(),
                 format!(
@@ -147,14 +164,34 @@ pub fn run_welcome_ui(debug: bool) -> Result<()> {
     }
 
     loop {
-        let items = vec![
-            WelcomeItem::OpenWebsite,
-            WelcomeItem::OpenSettings,
-            WelcomeItem::DisableAutostart,
-            WelcomeItem::Close,
-        ];
+        let has_internet = crate::common::network::check_internet();
+        
+        let mut items = Vec::new();
+        
+        if !has_internet {
+            items.push(WelcomeItem::ConfigureNetwork);
+        }
+        
+        items.push(WelcomeItem::OpenWebsite);
+        items.push(WelcomeItem::OpenSettings);
+        items.push(WelcomeItem::DisableAutostart);
+        items.push(WelcomeItem::Close);
 
         match select_one_with_style(items)? {
+            Some(WelcomeItem::ConfigureNetwork) => {
+                if let Err(e) = configure_network(debug) {
+                    emit(
+                        Level::Error,
+                        "welcome.network.error",
+                        &format!(
+                            "{} Failed to launch network config: {}",
+                            char::from(NerdFont::Warning),
+                            e
+                        ),
+                        None,
+                    );
+                }
+            }
             Some(WelcomeItem::OpenWebsite) => {
                 if let Err(e) = open_website(debug) {
                     emit(
@@ -295,7 +332,26 @@ fn open_settings(debug: bool) -> Result<()> {
     Ok(())
 }
 
+fn configure_network(debug: bool) -> Result<()> {
+    if debug {
+        emit(
+            Level::Debug,
+            "welcome.network.config",
+            "Launching nmtui in terminal",
+            None,
+        );
+    }
+
+    crate::common::terminal::launch_tui_in_terminal(
+        "nmtui",
+        "ins-network",
+        "Network Setup",
+        &[],
+    )
+}
+
 fn toggle_autostart() -> Result<()> {
+
     use crate::settings::store::{BoolSettingKey, SettingsStore};
 
     let mut store = SettingsStore::load()?;

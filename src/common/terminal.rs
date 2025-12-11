@@ -149,6 +149,55 @@ pub fn launch_gui_terminal(class: &str, title: &str, args: &[String]) -> Result<
     Ok(())
 }
 
+/// Launch a generic TUI program in a new terminal window
+///
+/// This function spawns a new terminal window with the specified window class and title,
+/// executing the provided command (e.g. "nmtui") with the provided arguments.
+///
+/// # Arguments
+/// * `command` - The command to run (e.g. "nmtui")
+/// * `class` - Window class name for the terminal
+/// * `title` - Window title to display
+/// * `args` - Arguments to pass to the command
+pub fn launch_tui_in_terminal(
+    command: &str,
+    class: &str,
+    title: &str,
+    args: &[String],
+) -> Result<()> {
+    let terminal_str = detect_terminal();
+    let terminal: Terminal = terminal_str.as_str().into();
+
+    let mut cmd = Command::new(terminal.command());
+
+    // Add class flag
+    let class_flag = terminal.class_flag(class);
+    for part in class_flag.split_whitespace() {
+        cmd.arg(part);
+    }
+
+    // Add title flag
+    match terminal {
+        Terminal::Kitty | Terminal::Alacritty | Terminal::Wezterm => {
+            cmd.arg("--title");
+            cmd.arg(title);
+        }
+        _ => {}
+    }
+
+    // Add separator before command
+    cmd.arg("--");
+
+    // Add the command and its arguments
+    cmd.arg(command);
+    cmd.args(args);
+
+    cmd.spawn()
+        .context(format!("Failed to launch terminal for {}", command))?;
+
+    Ok(())
+}
+
 /// Run a TUI program (like cfdisk) from within an async context
 ///
 /// Older TUI programs have issues when launched from within tokio's async runtime
