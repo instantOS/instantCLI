@@ -410,6 +410,73 @@ pub static GTK_THEMES: &[InstallableApp] = &[
 ];
 
 // =============================================================================
+// Archive Managers
+// =============================================================================
+
+pub const FILE_ROLLER_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "File Roller",
+    arch_package_name: Some("file-roller"),
+    ubuntu_package_name: Some("file-roller"),
+    tests: &[InstallTest::WhichSucceeds("file-roller")],
+};
+
+pub const ARK_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Ark",
+    arch_package_name: Some("ark"),
+    ubuntu_package_name: Some("ark"),
+    tests: &[InstallTest::WhichSucceeds("ark")],
+};
+
+pub const ENGRAMPA_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Engrampa",
+    arch_package_name: Some("engrampa"),
+    ubuntu_package_name: Some("engrampa"),
+    tests: &[InstallTest::WhichSucceeds("engrampa")],
+};
+
+pub const XARCHIVER_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Xarchiver",
+    arch_package_name: Some("xarchiver"),
+    ubuntu_package_name: Some("xarchiver"),
+    tests: &[InstallTest::WhichSucceeds("xarchiver")],
+};
+
+pub const LXQT_ARCHIVER_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "LXQt Archiver",
+    arch_package_name: Some("lxqt-archiver"),
+    ubuntu_package_name: Some("lxqt-archiver"),
+    tests: &[InstallTest::WhichSucceeds("lxqt-archiver")],
+};
+
+pub static ARCHIVE_MANAGERS: &[InstallableApp] = &[
+    InstallableApp {
+        name: "File Roller",
+        description: "GNOME archive manager",
+        packages: &[FILE_ROLLER_PACKAGE],
+    },
+    InstallableApp {
+        name: "Ark",
+        description: "KDE archive manager",
+        packages: &[ARK_PACKAGE],
+    },
+    InstallableApp {
+        name: "Engrampa",
+        description: "MATE archive manager",
+        packages: &[ENGRAMPA_PACKAGE],
+    },
+    InstallableApp {
+        name: "Xarchiver",
+        description: "Lightweight GTK archive manager",
+        packages: &[XARCHIVER_PACKAGE],
+    },
+    InstallableApp {
+        name: "LXQt Archiver",
+        description: "Qt-based lightweight archive manager",
+        packages: &[LXQT_ARCHIVER_PACKAGE],
+    },
+];
+
+// =============================================================================
 // Install More Menu Helper
 // =============================================================================
 
