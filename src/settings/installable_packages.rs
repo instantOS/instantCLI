@@ -354,7 +354,9 @@ pub const ELEMENTARY_THEME_PACKAGE: RequiredPackage = RequiredPackage {
     name: "elementary OS Theme",
     arch_package_name: Some("gtk-theme-elementary"),
     ubuntu_package_name: Some("gtk-theme-elementary"),
-    tests: &[InstallTest::FileExists("/usr/share/themes/io.elementary.stylesheet")],
+    tests: &[InstallTest::FileExists(
+        "/usr/share/themes/io.elementary.stylesheet",
+    )],
 };
 
 pub const ORCHIS_THEME_PACKAGE: RequiredPackage = RequiredPackage {
@@ -418,6 +420,73 @@ pub static GTK_THEMES: &[InstallableApp] = &[
         name: "Pop!_OS Theme",
         description: "Elegant dark theme from Pop!_OS",
         packages: &[POP_THEME_PACKAGE],
+    },
+];
+
+// =============================================================================
+// GTK Icon Themes
+// =============================================================================
+
+pub const ADWAITA_ICON_THEME_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Adwaita Icons",
+    arch_package_name: Some("adwaita-icon-theme"),
+    ubuntu_package_name: Some("adwaita-icon-theme"),
+    tests: &[InstallTest::FileExists("/usr/share/icons/Adwaita")],
+};
+
+pub const PAPIRUS_ICON_THEME_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Papirus Icons",
+    arch_package_name: Some("papirus-icon-theme"),
+    ubuntu_package_name: Some("papirus-icon-theme"),
+    tests: &[InstallTest::FileExists("/usr/share/icons/Papirus")],
+};
+
+pub const TELA_CIRCLE_ICON_THEME_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Tela Circle Icons",
+    arch_package_name: Some("tela-circle-icon-theme"),
+    ubuntu_package_name: Some("tela-circle-icon-theme"),
+    tests: &[InstallTest::FileExists("/usr/share/icons/Tela-circle")],
+};
+
+pub const OBSIDIAN_ICON_THEME_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Obsidian Icons",
+    arch_package_name: Some("obsidian-icon-theme"),
+    ubuntu_package_name: Some("obsidian-icon-theme"),
+    tests: &[InstallTest::FileExists("/usr/share/icons/Obsidian")],
+};
+
+pub const COSMIC_ICON_THEME_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "COSMIC Icons",
+    arch_package_name: Some("cosmic-icon-theme"),
+    ubuntu_package_name: Some("cosmic-icon-theme"),
+    tests: &[InstallTest::FileExists("/usr/share/icons/COSMIC")],
+};
+
+pub static GTK_ICON_THEMES: &[InstallableApp] = &[
+    InstallableApp {
+        name: "Adwaita Icons",
+        description: "Default GNOME icon theme with modern design",
+        packages: &[ADWAITA_ICON_THEME_PACKAGE],
+    },
+    InstallableApp {
+        name: "Papirus Icons",
+        description: "Modern paper-like icon theme with shadows",
+        packages: &[PAPIRUS_ICON_THEME_PACKAGE],
+    },
+    InstallableApp {
+        name: "Tela Circle Icons",
+        description: "Flat colorful circle-shaped icon theme",
+        packages: &[TELA_CIRCLE_ICON_THEME_PACKAGE],
+    },
+    InstallableApp {
+        name: "Obsidian Icons",
+        description: "Dark icon theme with colorful accents",
+        packages: &[OBSIDIAN_ICON_THEME_PACKAGE],
+    },
+    InstallableApp {
+        name: "COSMIC Icons",
+        description: "Modern icon theme from COSMIC desktop",
+        packages: &[COSMIC_ICON_THEME_PACKAGE],
     },
 ];
 

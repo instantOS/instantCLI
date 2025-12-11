@@ -355,64 +355,115 @@ impl Setting for GtkIconTheme {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let themes = list_icon_themes()?;
-        if themes.is_empty() {
-            ctx.emit_failure(
-                "settings.appearance.gtk_icon_theme.no_themes",
-                "No icon themes found in standard directories.",
-            );
-            return Ok(());
-        }
+        use crate::settings::installable_packages::{self, GTK_ICON_THEMES};
 
-        let selected = FzfWrapper::builder()
-            .prompt("Select Icon Theme")
-            .header("Choose an icon theme to apply globally")
-            .select(themes)?;
+        loop {
+            let themes = list_icon_themes()?;
 
-        if let crate::menu_utils::FzfResult::Selected(theme) = selected {
-            // 1. Apply to GSettings (Wayland/Sway primary)
-            let status = Command::new("gsettings")
-                .args(["set", "org.gnome.desktop.interface", "icon-theme", &theme])
-                .status();
+            // Build options list with "Install more..." at top
+            let mut options: Vec<String> = Vec::new();
+            let install_more_key = format!("{} Install more icon themes...", NerdFont::Package);
 
-            match status {
-                Ok(exit) if exit.success() => {
-                    ctx.notify("Icon Theme", &format!("Applied '{}' to GSettings", theme));
-                }
-                Ok(exit) => {
-                    ctx.emit_failure(
-                        "settings.appearance.gtk_icon_theme.gsettings_failed",
-                        &format!(
-                            "GSettings failed with exit code {}",
-                            exit.code().unwrap_or(-1)
-                        ),
-                    );
-                }
-                Err(e) => {
-                    ctx.emit_failure(
-                        "settings.appearance.gtk_icon_theme.gsettings_error",
-                        &format!("Failed to execute gsettings: {e}"),
-                    );
-                }
+            options.push(install_more_key.to_string());
+
+            // Add separator if we have themes
+            if !themes.is_empty() {
+                options.push("─────────────────────".to_string());
             }
 
-            // 2. Update settings.ini files for GTK 3 and 4
-            if let Err(e) = update_gtk_config("3.0", "gtk-icon-theme-name", &theme) {
-                ctx.emit_failure(
-                    "settings.appearance.gtk_icon_theme.gtk3_error",
-                    &format!("Failed to update GTK 3.0 config: {e}"),
+            // Add all theme names
+            for theme in &themes {
+                options.push(theme.clone());
+            }
+
+            if themes.is_empty() {
+                ctx.emit_info(
+                    "settings.appearance.gtk_icon_theme.no_themes",
+                    "No icon themes found. Select 'Install more icon themes...' to install one.",
                 );
             }
 
-            if let Err(e) = update_gtk_config("4.0", "gtk-icon-theme-name", &theme) {
-                ctx.emit_failure(
-                    "settings.appearance.gtk_icon_theme.gtk4_error",
-                    &format!("Failed to update GTK 4.0 config: {e}"),
-                );
+            let selected = FzfWrapper::builder()
+                .prompt("Select Icon Theme")
+                .header("Choose an icon theme to apply globally")
+                .select(options)?;
+
+            match selected {
+                crate::menu_utils::FzfResult::Selected(selection) => {
+                    if selection == install_more_key {
+                        // Show install more menu
+                        let installed = installable_packages::show_install_more_menu(
+                            "GTK Icon Theme",
+                            GTK_ICON_THEMES,
+                        )?;
+                        if installed {
+                            // Loop back to show updated theme list
+                            continue;
+                        }
+                        // User cancelled or nothing installed, loop back
+                        continue;
+                    } else if selection.starts_with('─') {
+                        // Separator selected, ignore and loop back
+                        continue;
+                    } else {
+                        // User selected a theme
+                        let theme = selection;
+
+                        // 1. Apply to GSettings (Wayland/Sway primary)
+                        let status = Command::new("gsettings")
+                            .args(["set", "org.gnome.desktop.interface", "icon-theme", &theme])
+                            .status();
+
+                        match status {
+                            Ok(exit) if exit.success() => {
+                                ctx.notify(
+                                    "Icon Theme",
+                                    &format!("Applied '{}' to GSettings", theme),
+                                );
+                            }
+                            Ok(exit) => {
+                                ctx.emit_failure(
+                                    "settings.appearance.gtk_icon_theme.gsettings_failed",
+                                    &format!(
+                                        "GSettings failed with exit code {}",
+                                        exit.code().unwrap_or(-1)
+                                    ),
+                                );
+                            }
+                            Err(e) => {
+                                ctx.emit_failure(
+                                    "settings.appearance.gtk_icon_theme.gsettings_error",
+                                    &format!("Failed to execute gsettings: {e}"),
+                                );
+                            }
+                        }
+
+                        // 2. Update settings.ini files for GTK 3 and 4
+                        if let Err(e) = update_gtk_config("3.0", "gtk-icon-theme-name", &theme) {
+                            ctx.emit_failure(
+                                "settings.appearance.gtk_icon_theme.gtk3_error",
+                                &format!("Failed to update GTK 3.0 config: {e}"),
+                            );
+                        }
+
+                        if let Err(e) = update_gtk_config("4.0", "gtk-icon-theme-name", &theme) {
+                            ctx.emit_failure(
+                                "settings.appearance.gtk_icon_theme.gtk4_error",
+                                &format!("Failed to update GTK 4.0 config: {e}"),
+                            );
+                        }
+                    }
+                }
+                crate::menu_utils::FzfResult::MultiSelected(_)
+                | crate::menu_utils::FzfResult::Error(_) => {
+                    // Multi-selection or error, just loop back
+                    continue;
+                }
+                crate::menu_utils::FzfResult::Cancelled => {
+                    return Ok(());
+                }
             }
         }
-
-        Ok(())
     }
 }
 
@@ -752,7 +803,22 @@ fn apply_gtk4_overrides(theme_name: &str) -> Result<()> {
     let source_gtk4 = theme_path.join("gtk-4.0");
 
     if !source_gtk4.exists() {
-        // Theme doesn't have explicit GTK 4 support, nothing to link
+        // Theme doesn't have explicit GTK 4 support - clear any existing overrides
+        // so that GTK 4 apps fall back to their default appearance
+        let config_dir = dirs::config_dir().context("No config dir")?.join("gtk-4.0");
+        if config_dir.exists() {
+            let items = ["gtk.css", "gtk-dark.css", "assets"];
+            for item in items {
+                let target = config_dir.join(item);
+                if target.is_symlink() || target.exists() {
+                    if target.is_dir() && !target.is_symlink() {
+                        let _ = std::fs::remove_dir_all(&target);
+                    } else {
+                        let _ = std::fs::remove_file(&target);
+                    }
+                }
+            }
+        }
         return Err(anyhow::anyhow!("Theme has no gtk-4.0 directory"));
     }
 
