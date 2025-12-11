@@ -731,7 +731,7 @@ fn manage_default_app_for_mime(
 ) -> Result<()> {
     use crate::menu_utils::FzfResult;
     use crate::settings::installable_packages::{
-        self, InstallableApp, IMAGE_VIEWERS, PDF_VIEWERS, TEXT_EDITORS, VIDEO_PLAYERS,
+        self, IMAGE_VIEWERS, InstallableApp, PDF_VIEWERS, TEXT_EDITORS, VIDEO_PLAYERS,
     };
 
     // Map app_name to corresponding installable packages
@@ -817,7 +817,8 @@ fn manage_default_app_for_mime(
                 if selection == install_more_key {
                     if let Some(apps) = installable_apps {
                         // Show install more menu
-                        let installed = installable_packages::show_install_more_menu(app_name, apps)?;
+                        let installed =
+                            installable_packages::show_install_more_menu(app_name, apps)?;
                         if installed {
                             // Loop back to show updated app list
                             continue;
@@ -859,7 +860,6 @@ fn manage_default_app_for_mime(
         }
     }
 }
-
 
 /// Set default web browser
 pub fn set_default_browser(ctx: &mut SettingsContext) -> Result<()> {

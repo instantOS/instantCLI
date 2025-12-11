@@ -496,7 +496,10 @@ impl Setting for GtkTheme {
 
                         match status {
                             Ok(exit) if exit.success() => {
-                                ctx.notify("GTK Theme", &format!("Applied '{}' to GSettings", theme));
+                                ctx.notify(
+                                    "GTK Theme",
+                                    &format!("Applied '{}' to GSettings", theme),
+                                );
                             }
                             Ok(exit) => {
                                 ctx.emit_failure(
@@ -551,7 +554,6 @@ impl Setting for GtkTheme {
         }
     }
 }
-
 
 // ============================================================================
 // Reset GTK Customizations

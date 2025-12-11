@@ -455,7 +455,10 @@ impl FzfSelectable for InstallableAppItem<'_> {
         if self.app.is_installed() {
             preview.push_str(&format!("\n{} Already installed", NerdFont::Check));
         } else {
-            preview.push_str(&format!("\n{} Not installed - select to install", NerdFont::Circle));
+            preview.push_str(&format!(
+                "\n{} Not installed - select to install",
+                NerdFont::Circle
+            ));
         }
 
         FzfPreview::Text(preview)
@@ -465,7 +468,8 @@ impl FzfSelectable for InstallableAppItem<'_> {
 /// Show install more menu for a given category
 /// Returns true if something was installed
 pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> Result<bool> {
-    let items: Vec<InstallableAppItem> = apps.iter().map(|app| InstallableAppItem { app }).collect();
+    let items: Vec<InstallableAppItem> =
+        apps.iter().map(|app| InstallableAppItem { app }).collect();
 
     let header = format!(
         "Select an application to install\n[{}] = installed, [ ] = not installed",
@@ -498,5 +502,3 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
         FzfResult::Cancelled | FzfResult::Error(_) => Ok(false),
     }
 }
-
-
