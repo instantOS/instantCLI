@@ -730,67 +730,136 @@ fn manage_default_app_for_mime(
     app_name: &str,
 ) -> Result<()> {
     use crate::menu_utils::FzfResult;
-
-    // Build the MIME map
-    let mime_map = build_mime_to_apps_map().context("Failed to build MIME type map")?;
-
-    // Get applications for this MIME type
-    let app_desktop_ids = mime_map.get(mime_type).cloned().unwrap_or_default();
-
-    if app_desktop_ids.is_empty() {
-        ctx.emit_info(
-            "settings.defaultapps.no_apps",
-            &format!(
-                "No applications found for {}. Install an application first.",
-                app_name
-            ),
-        );
-        return Ok(());
-    }
-
-    // Get current default
-    let current_default = query_default_app(mime_type).ok().flatten();
-
-    // Convert to ApplicationInfo with preview data
-    let app_infos: Vec<ApplicationInfo> = app_desktop_ids
-        .iter()
-        .map(|desktop_id| get_application_info(desktop_id))
-        .collect();
-
-    let header_text = format!(
-        "Select default {} application\nCurrent: {}",
-        app_name,
-        current_default.as_deref().unwrap_or("(none)")
-    );
-
-    // Let user select an application
-    let selected_app_info = match FzfWrapper::builder()
-        .prompt(format!("Select {}: ", app_name))
-        .header(&header_text)
-        .select(app_infos)?
-    {
-        FzfResult::Selected(app_info) => app_info,
-        _ => {
-            ctx.emit_info("settings.defaultapps.cancelled", "No changes made.");
-            return Ok(());
-        }
+    use crate::settings::installable_packages::{
+        self, InstallableApp, IMAGE_VIEWERS, PDF_VIEWERS, TEXT_EDITORS, VIDEO_PLAYERS,
     };
 
-    let desktop_file = &selected_app_info.desktop_id;
+    // Map app_name to corresponding installable packages
+    let installable_apps: Option<&[InstallableApp]> = match app_name {
+        "PDF Viewer" => Some(PDF_VIEWERS),
+        "Image Viewer" => Some(IMAGE_VIEWERS),
+        "Video Player" => Some(VIDEO_PLAYERS),
+        "Text Editor" => Some(TEXT_EDITORS),
+        _ => None,
+    };
 
-    // Set the default application
-    set_default_app(mime_type, desktop_file).context("Failed to set default application")?;
+    loop {
+        // Build the MIME map
+        let mime_map = build_mime_to_apps_map().context("Failed to build MIME type map")?;
 
-    ctx.notify(
-        &format!("Default {}", app_name),
-        &format!(
-            "Set {} as default",
-            selected_app_info.name.as_deref().unwrap_or(desktop_file)
-        ),
-    );
+        // Get applications for this MIME type
+        let app_desktop_ids = mime_map.get(mime_type).cloned().unwrap_or_default();
 
-    Ok(())
+        // Get current default
+        let current_default = query_default_app(mime_type).ok().flatten();
+
+        // Create header text
+        let header_text = format!(
+            "Select default {} application\nCurrent: {}",
+            app_name,
+            current_default.as_deref().unwrap_or("(none)")
+        );
+
+        // Build options list - start with "Install more..." if available
+        let mut options: Vec<String> = Vec::new();
+        let install_more_key = "📦 Install more...";
+
+        if installable_apps.is_some() {
+            options.push(install_more_key.to_string());
+        }
+
+        // Add separator after install more option
+        if !options.is_empty() && !app_desktop_ids.is_empty() {
+            options.push("─────────────────────".to_string());
+        }
+
+        // Convert to ApplicationInfo with preview data
+        let app_infos: Vec<ApplicationInfo> = app_desktop_ids
+            .iter()
+            .map(|desktop_id| get_application_info(desktop_id))
+            .collect();
+
+        // Add all app display texts
+        for app_info in &app_infos {
+            options.push(app_info.fzf_display_text());
+        }
+
+        if options.is_empty() || (options.len() == 1 && installable_apps.is_some()) {
+            // Only have install more option (or nothing at all)
+            if installable_apps.is_some() {
+                ctx.emit_info(
+                    "settings.defaultapps.no_apps_install",
+                    &format!(
+                        "No {} applications installed. Select 'Install more...' to install one.",
+                        app_name
+                    ),
+                );
+            } else {
+                ctx.emit_info(
+                    "settings.defaultapps.no_apps",
+                    &format!(
+                        "No applications found for {}. Install an application first.",
+                        app_name
+                    ),
+                );
+                return Ok(());
+            }
+        }
+
+        // Let user select an option
+        let selected = FzfWrapper::builder()
+            .prompt(format!("Select {}: ", app_name))
+            .header(&header_text)
+            .select(options)?;
+
+        match selected {
+            FzfResult::Selected(selection) => {
+                if selection == install_more_key {
+                    if let Some(apps) = installable_apps {
+                        // Show install more menu
+                        let installed = installable_packages::show_install_more_menu(app_name, apps)?;
+                        if installed {
+                            // Loop back to show updated app list
+                            continue;
+                        }
+                    }
+                    // User cancelled or nothing installed, loop back
+                    continue;
+                } else if selection.starts_with('─') {
+                    // Separator selected, ignore and loop back
+                    continue;
+                } else {
+                    // Find the matching app info
+                    let selected_app_info = app_infos
+                        .iter()
+                        .find(|info| info.fzf_display_text() == selection);
+
+                    if let Some(app_info) = selected_app_info {
+                        let desktop_file = &app_info.desktop_id;
+
+                        // Set the default application
+                        set_default_app(mime_type, desktop_file)
+                            .context("Failed to set default application")?;
+
+                        ctx.notify(
+                            &format!("Default {}", app_name),
+                            &format!(
+                                "Set {} as default",
+                                app_info.name.as_deref().unwrap_or(desktop_file)
+                            ),
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+            _ => {
+                ctx.emit_info("settings.defaultapps.cancelled", "No changes made.");
+                return Ok(());
+            }
+        }
+    }
 }
+
 
 /// Set default web browser
 pub fn set_default_browser(ctx: &mut SettingsContext) -> Result<()> {

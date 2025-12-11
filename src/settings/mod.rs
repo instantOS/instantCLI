@@ -7,6 +7,7 @@ pub mod context;
 pub mod defaultapps;
 pub mod definitions;
 pub mod firmware;
+pub mod installable_packages;
 pub mod language;
 pub mod network;
 pub mod packages;

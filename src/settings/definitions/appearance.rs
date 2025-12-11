@@ -437,77 +437,121 @@ impl Setting for GtkTheme {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let themes = list_gtk_themes()?;
-        if themes.is_empty() {
-            ctx.emit_failure(
-                "settings.appearance.gtk_theme.no_themes",
-                "No GTK themes found in standard directories.",
-            );
-            return Ok(());
-        }
+        use crate::settings::installable_packages::{self, GTK_THEMES};
 
-        let selected = FzfWrapper::builder()
-            .prompt("Select GTK Theme")
-            .header("Choose a GTK theme to apply globally")
-            .select(themes)?;
+        loop {
+            let themes = list_gtk_themes()?;
 
-        if let crate::menu_utils::FzfResult::Selected(theme) = selected {
-            // 1. Apply to GSettings (Wayland/Sway primary)
-            let status = Command::new("gsettings")
-                .args(["set", "org.gnome.desktop.interface", "gtk-theme", &theme])
-                .status();
+            // Build options list with "Install more..." at top
+            let mut options: Vec<String> = Vec::new();
+            let install_more_key = "📦 Install more themes...";
 
-            match status {
-                Ok(exit) if exit.success() => {
-                    ctx.notify("GTK Theme", &format!("Applied '{}' to GSettings", theme));
-                }
-                Ok(exit) => {
-                    ctx.emit_failure(
-                        "settings.appearance.gtk_theme.gsettings_failed",
-                        &format!(
-                            "GSettings failed with exit code {}",
-                            exit.code().unwrap_or(-1)
-                        ),
-                    );
-                }
-                Err(e) => {
-                    ctx.emit_failure(
-                        "settings.appearance.gtk_theme.gsettings_error",
-                        &format!("Failed to execute gsettings: {e}"),
-                    );
-                }
+            options.push(install_more_key.to_string());
+
+            // Add separator if we have themes
+            if !themes.is_empty() {
+                options.push("─────────────────────".to_string());
             }
 
-            // 2. Update settings.ini files for GTK 3 and 4
-            if let Err(e) = update_gtk_config("3.0", "gtk-theme-name", &theme) {
-                ctx.emit_failure(
-                    "settings.appearance.gtk_theme.gtk3_error",
-                    &format!("Failed to update GTK 3.0 config: {e}"),
-                );
+            // Add all theme names
+            for theme in &themes {
+                options.push(theme.clone());
             }
 
-            if let Err(e) = update_gtk_config("4.0", "gtk-theme-name", &theme) {
-                ctx.emit_failure(
-                    "settings.appearance.gtk_theme.gtk4_error",
-                    &format!("Failed to update GTK 4.0 config: {e}"),
-                );
-            }
-
-            // 3. Libadwaita/GTK4 overrides (Symlink ~/.config/gtk-4.0/gtk.css)
-            if let Err(e) = apply_gtk4_overrides(&theme) {
-                // Not a critical failure, but worth noting
+            if themes.is_empty() {
                 ctx.emit_info(
-                    "settings.appearance.gtk_theme.gtk4_override_info",
-                    &format!("Could not apply Libadwaita overrides (maybe theme lacks gtk-4.0 support?): {e}"),
+                    "settings.appearance.gtk_theme.no_themes",
+                    "No GTK themes found. Select 'Install more themes...' to install one.",
                 );
-            } else {
-                ctx.notify("GTK Theme", "Applied Libadwaita overrides");
+            }
+
+            let selected = FzfWrapper::builder()
+                .prompt("Select GTK Theme")
+                .header("Choose a GTK theme to apply globally")
+                .select(options)?;
+
+            match selected {
+                crate::menu_utils::FzfResult::Selected(selection) => {
+                    if selection == install_more_key {
+                        // Show install more menu
+                        let installed =
+                            installable_packages::show_install_more_menu("GTK Theme", GTK_THEMES)?;
+                        if installed {
+                            // Loop back to show updated theme list
+                            continue;
+                        }
+                        // User cancelled or nothing installed, loop back
+                        continue;
+                    } else if selection.starts_with('─') {
+                        // Separator selected, ignore and loop back
+                        continue;
+                    } else {
+                        // User selected a theme
+                        let theme = selection;
+
+                        // 1. Apply to GSettings (Wayland/Sway primary)
+                        let status = Command::new("gsettings")
+                            .args(["set", "org.gnome.desktop.interface", "gtk-theme", &theme])
+                            .status();
+
+                        match status {
+                            Ok(exit) if exit.success() => {
+                                ctx.notify("GTK Theme", &format!("Applied '{}' to GSettings", theme));
+                            }
+                            Ok(exit) => {
+                                ctx.emit_failure(
+                                    "settings.appearance.gtk_theme.gsettings_failed",
+                                    &format!(
+                                        "GSettings failed with exit code {}",
+                                        exit.code().unwrap_or(-1)
+                                    ),
+                                );
+                            }
+                            Err(e) => {
+                                ctx.emit_failure(
+                                    "settings.appearance.gtk_theme.gsettings_error",
+                                    &format!("Failed to execute gsettings: {e}"),
+                                );
+                            }
+                        }
+
+                        // 2. Update settings.ini files for GTK 3 and 4
+                        if let Err(e) = update_gtk_config("3.0", "gtk-theme-name", &theme) {
+                            ctx.emit_failure(
+                                "settings.appearance.gtk_theme.gtk3_error",
+                                &format!("Failed to update GTK 3.0 config: {e}"),
+                            );
+                        }
+
+                        if let Err(e) = update_gtk_config("4.0", "gtk-theme-name", &theme) {
+                            ctx.emit_failure(
+                                "settings.appearance.gtk_theme.gtk4_error",
+                                &format!("Failed to update GTK 4.0 config: {e}"),
+                            );
+                        }
+
+                        // 3. Libadwaita/GTK4 overrides (Symlink ~/.config/gtk-4.0/gtk.css)
+                        if let Err(e) = apply_gtk4_overrides(&theme) {
+                            // Not a critical failure, but worth noting
+                            ctx.emit_info(
+                                "settings.appearance.gtk_theme.gtk4_override_info",
+                                &format!("Could not apply Libadwaita overrides (maybe theme lacks gtk-4.0 support?): {e}"),
+                            );
+                        } else {
+                            ctx.notify("GTK Theme", "Applied Libadwaita overrides");
+                        }
+
+                        return Ok(());
+                    }
+                }
+                _ => {
+                    return Ok(());
+                }
             }
         }
-
-        Ok(())
     }
 }
+
 
 // ============================================================================
 // Reset GTK Customizations
