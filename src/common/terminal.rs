@@ -93,32 +93,16 @@ pub fn wrap_with_terminal(cmd: &mut Command) -> Result<()> {
     Ok(())
 }
 
-/// Launch a command in a new terminal window
+/// Prepare a terminal command for launching
 ///
-/// This function spawns a new terminal window with the specified window class and title,
-/// executing the provided command with the given arguments.
-///
-/// # Arguments
-/// * `command` - The command to run (can be path or command name)
-/// * `class` - Window class name for the terminal (e.g., "ins-settings", "ins-welcome")
-/// * `title` - Window title to display
-/// * `args` - Arguments to pass to the command
-///
-/// # Example
-/// ```ignore
-/// launch_in_new_terminal(
-///     "nmtui",
-///     "ins-network",
-///     "Network Setup",
-///     &[]
-/// )?;
-/// ```
-pub fn launch_in_new_terminal(
+/// Returns a `std::process::Command` configured to launch the specified command
+/// in a new terminal window.
+pub fn prepare_terminal_command(
     command: &str,
     class: &str,
     title: &str,
     args: &[String],
-) -> Result<()> {
+) -> Command {
     let terminal_str = detect_terminal();
     let terminal: Terminal = terminal_str.as_str().into();
 
@@ -148,10 +132,45 @@ pub fn launch_in_new_terminal(
     cmd.arg(command);
     cmd.args(args);
 
+    cmd
+}
+
+/// Launch a command in a new terminal window
+///
+/// This function spawns a new terminal window with the specified window class and title,
+/// executing the provided command with the given arguments. It does not wait for the
+/// command to complete.
+///
+/// # Arguments
+/// * `command` - The command to run (can be path or command name)
+/// * `class` - Window class name for the terminal (e.g., "ins-settings", "ins-welcome")
+/// * `title` - Window title to display
+/// * `args` - Arguments to pass to the command
+pub fn launch_in_new_terminal(
+    command: &str,
+    class: &str,
+    title: &str,
+    args: &[String],
+) -> Result<()> {
+    let mut cmd = prepare_terminal_command(command, class, title, args);
     cmd.spawn()
         .context(format!("Failed to launch terminal for {}", command))?;
-
     Ok(())
+}
+
+/// Launch a command in a new terminal window and wait for it to complete
+///
+/// Similar to `launch_in_new_terminal`, but waits for the process to exit and returns
+/// the exit status.
+pub fn launch_in_new_terminal_and_wait(
+    command: &str,
+    class: &str,
+    title: &str,
+    args: &[String],
+) -> Result<std::process::ExitStatus> {
+    let mut cmd = prepare_terminal_command(command, class, title, args);
+    cmd.status()
+        .context(format!("Failed to launch terminal for {}", command))
 }
 
 /// Run a TUI program (like cfdisk) from within an async context

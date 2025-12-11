@@ -9,17 +9,12 @@ use crate::common::display_server::DisplayServer;
 ///
 /// Auto-detects the user's preferred terminal emulator.
 pub fn launch_in_terminal(command: &str) -> Result<()> {
-    let terminal = crate::common::terminal::detect_terminal();
-    let exec_flag = crate::common::terminal::get_execute_flag(&terminal);
-
-    Command::new(terminal)
-        .arg(exec_flag)
-        .arg("bash")
-        .arg("-c")
-        .arg(command)
-        .spawn()
-        .context("Failed to launch terminal")?;
-    Ok(())
+    crate::common::terminal::launch_in_new_terminal(
+        "bash",
+        "ins-assist",
+        "InstantCLI Assist",
+        &["-c".to_string(), command.to_string()],
+    )
 }
 
 /// Launch a script in a detached terminal window with title
@@ -46,26 +41,12 @@ pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
         std::fs::set_permissions(&script_path, perms)?;
     }
 
-    let terminal = crate::common::terminal::detect_terminal();
-    let exec_flag = crate::common::terminal::get_execute_flag(&terminal);
-
-    let mut cmd = Command::new(&terminal);
-
-    // Add title flag for terminals that support it
-    match terminal.as_str() {
-        "kitty" | "alacritty" | "wezterm" => {
-            cmd.arg("--title").arg(title);
-        }
-        _ => {
-            // Other terminals may not support --title in the same way
-        }
-    }
-
-    cmd.arg(exec_flag)
-        .arg("bash")
-        .arg(&script_path)
-        .spawn()
-        .context("Failed to launch terminal")?;
+    crate::common::terminal::launch_in_new_terminal(
+        "bash",
+        "ins-assist",
+        title,
+        &[script_path.to_string_lossy().to_string()],
+    )?;
 
     // Keep temp file alive by forgetting it (will be cleaned up by OS)
     std::mem::forget(temp_file);

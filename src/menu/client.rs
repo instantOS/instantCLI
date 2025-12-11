@@ -184,9 +184,6 @@ impl MenuClient {
     }
 
     fn invoke_kitty_worker(&self, request: MenuRequest) -> Result<MenuResponse> {
-        use crate::common::terminal::detect_terminal;
-        use crate::scratchpad::terminal::Terminal;
-
         let current_exe = std::env::current_exe()
             .context("Failed to determine current executable for menu fallback")?;
 
@@ -199,36 +196,21 @@ impl MenuClient {
         fs::write(&request_path, request_json)
             .context("Failed to write fallback menu request file")?;
 
-        let terminal_str = detect_terminal();
-        let terminal: Terminal = terminal_str.as_str().into();
+        let args = vec![
+            "menu".to_string(),
+            "fallback-worker".to_string(),
+            "--request-file".to_string(),
+            request_path.to_string_lossy().to_string(),
+            "--response-file".to_string(),
+            response_path.to_string_lossy().to_string(),
+        ];
 
-        let mut cmd = Command::new(terminal.command());
-
-        // Add class flag
-        let class_flag = terminal.class_flag("insmenu-fallback");
-        for part in class_flag.split_whitespace() {
-            cmd.arg(part);
-        }
-
-        // Add title flag for terminals that support it
-        match terminal {
-            Terminal::Kitty | Terminal::Alacritty | Terminal::Wezterm => {
-                cmd.arg("--title");
-                cmd.arg("InstantCLI Menu");
-            }
-            _ => {}
-        }
-
-        cmd.arg("--");
-        cmd.arg(&current_exe);
-        cmd.arg("menu");
-        cmd.arg("fallback-worker");
-        cmd.arg("--request-file");
-        cmd.arg(&request_path);
-        cmd.arg("--response-file");
-        cmd.arg(&response_path);
-
-        let status = cmd.status().context("Failed to launch fallback terminal")?;
+        let status = crate::common::terminal::launch_in_new_terminal_and_wait(
+            &current_exe.to_string_lossy(),
+            "insmenu-fallback",
+            "InstantCLI Menu",
+            &args,
+        )?;
 
         if !status.success() {
             anyhow::bail!("Fallback menu terminal exited with status {status}");
