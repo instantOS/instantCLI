@@ -16,6 +16,22 @@ pub enum WelcomeItem {
     Close,
 }
 
+/// Helper function to get the current autostart state
+/// Returns true if autostart is enabled, false if disabled
+/// If settings cannot be loaded, defaults to true (autostart enabled)
+fn get_autostart_state() -> bool {
+    match crate::settings::store::SettingsStore::load() {
+        Ok(store) => {
+            let key = crate::settings::store::BoolSettingKey::new("system.welcome_autostart", true);
+            store.bool(key)
+        }
+        Err(_) => {
+            // If we can't load settings, default to true (autostart enabled)
+            true
+        }
+    }
+}
+
 impl FzfSelectable for WelcomeItem {
     fn fzf_display_text(&self) -> String {
         match self {
@@ -27,10 +43,21 @@ impl FzfSelectable for WelcomeItem {
                 "{} Open Settings",
                 format_icon_colored(NerdFont::Gear, colors::MAUVE)
             ),
-            WelcomeItem::DisableAutostart => format!(
-                "{} Disable welcome app on startup",
-                format_icon_colored(NerdFont::PowerOff, colors::PEACH)
-            ),
+            WelcomeItem::DisableAutostart => {
+                // Check current state to show appropriate icon
+                let currently_enabled = get_autostart_state();
+
+                let (icon, color) = if currently_enabled {
+                    (NerdFont::ToggleOn, colors::GREEN)
+                } else {
+                    (NerdFont::ToggleOff, colors::PEACH)
+                };
+
+                format!(
+                    "{} Show on startup",
+                    format_icon_colored(icon, color)
+                )
+            }
             WelcomeItem::Close => format!(
                 "{} Close",
                 format_icon_colored(NerdFont::Cross, colors::OVERLAY1)
@@ -73,20 +100,37 @@ impl FzfSelectable for WelcomeItem {
                 format!("{subtext}Configure appearance, applications,{reset}"),
                 format!("{subtext}keyboard, mouse, and more.{reset}"),
             ],
-            WelcomeItem::DisableAutostart => vec![
-                String::new(),
-                format!(
-                    "{peach}{}  Disable Autostart{reset}",
-                    char::from(NerdFont::PowerOff)
-                ),
-                format!("{surface}───────────────────────────────────{reset}"),
-                String::new(),
-                format!("{text}Prevent the welcome app from{reset}"),
-                format!("{text}appearing automatically on startup.{reset}"),
-                String::new(),
-                format!("{subtext}You can re-enable this later in{reset}"),
-                format!("{subtext}Settings > System & Updates.{reset}"),
-            ],
+            WelcomeItem::DisableAutostart => {
+                // Check current state to show appropriate message
+                let currently_enabled = get_autostart_state();
+
+                let (icon, color, status) = if currently_enabled {
+                    (NerdFont::ToggleOn, colors::GREEN, "● Enabled")
+                } else {
+                    (NerdFont::ToggleOff, colors::PEACH, "○ Disabled")
+                };
+
+                vec![
+                    String::new(),
+                    format!(
+                        "{color}{}  Show on startup {status}{reset}",
+                        char::from(icon),
+                        color = hex_to_ansi_fg(color),
+                        status = status
+                    ),
+                    format!("{surface}───────────────────────────────────{reset}"),
+                    String::new(),
+                    if currently_enabled {
+                        format!("{text}The welcome app will appear{reset}")
+                    } else {
+                        format!("{text}The welcome app will not appear{reset}")
+                    },
+                    format!("{text}automatically when you log in.{reset}"),
+                    String::new(),
+                    format!("{subtext}You can change this setting later in{reset}"),
+                    format!("{subtext}Settings > System & Updates.{reset}"),
+                ]
+            }
             WelcomeItem::Close => vec![
                 String::new(),
                 format!("{text}Exit the welcome application.{reset}"),
@@ -140,29 +184,48 @@ pub fn run_welcome_ui(debug: bool) -> Result<()> {
                 }
             }
             Some(WelcomeItem::DisableAutostart) => {
-                if let Err(e) = disable_autostart(debug) {
-                    emit(
-                        Level::Error,
-                        "welcome.disable.error",
-                        &format!(
-                            "{} Failed to disable autostart: {}",
-                            char::from(NerdFont::Warning),
-                            e
-                        ),
-                        None,
-                    );
+                // Check current state using the same helper function for consistency
+                let currently_enabled = get_autostart_state();
+
+                // Ask for confirmation
+                let action_text = if currently_enabled {
+                    "disable"
                 } else {
-                    emit(
-                        Level::Success,
-                        "welcome.disabled",
-                        &format!(
-                            "{} Welcome app autostart has been disabled",
-                            char::from(NerdFont::Check)
-                        ),
-                        None,
-                    );
-                    // Exit after disabling
-                    break;
+                    "enable"
+                };
+                let confirm_message = format!(
+                    "Are you sure you want to {} the welcome app autostart?\n\nThis can be changed later in Settings > System & Updates.",
+                    action_text
+                );
+
+                let result = match crate::menu_utils::FzfWrapper::confirm(&confirm_message) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        eprintln!("Failed to show confirmation: {}", e);
+                        continue;
+                    }
+                };
+
+                match result {
+                    crate::menu_utils::ConfirmResult::Yes => {
+                        if let Err(e) = toggle_autostart() {
+                            eprintln!("Failed to toggle autostart: {}", e);
+                        } else {
+                            let new_state = if currently_enabled {
+                                "disabled"
+                            } else {
+                                "enabled"
+                            };
+                            println!("Welcome app autostart has been {}", new_state);
+                            // Refresh the UI state by continuing the loop
+                            // The next iteration will show the updated state
+                            continue;
+                        }
+                    }
+                    crate::menu_utils::ConfirmResult::No
+                    | crate::menu_utils::ConfirmResult::Cancelled => {
+                        // Continue the loop without making changes
+                    }
                 }
             }
             Some(WelcomeItem::Close) | None => {
@@ -232,21 +295,13 @@ fn open_settings(debug: bool) -> Result<()> {
     Ok(())
 }
 
-fn disable_autostart(debug: bool) -> Result<()> {
+fn toggle_autostart() -> Result<()> {
     use crate::settings::store::{BoolSettingKey, SettingsStore};
-
-    if debug {
-        emit(
-            Level::Debug,
-            "welcome.autostart.disable",
-            "Disabling welcome autostart setting",
-            None,
-        );
-    }
 
     let mut store = SettingsStore::load()?;
     let key = BoolSettingKey::new("system.welcome_autostart", true);
-    store.set_bool(key, false);
+    let current_value = store.bool(key);
+    store.set_bool(key, !current_value);
     store.save()?;
 
     Ok(())
