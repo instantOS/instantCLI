@@ -415,6 +415,7 @@ pub static GTK_THEMES: &[InstallableApp] = &[
 
 use crate::common::requirements::ensure_packages_batch;
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
+use crate::ui::NerdFont;
 use anyhow::Result;
 
 /// Wrapper for FZF display
@@ -426,9 +427,9 @@ struct InstallableAppItem<'a> {
 impl FzfSelectable for InstallableAppItem<'_> {
     fn fzf_display_text(&self) -> String {
         let status = if self.app.is_installed() {
-            "✓"
+            NerdFont::Check.to_string()
         } else {
-            " "
+            " ".to_string()
         };
         format!("[{}] {}", status, self.app.name)
     }
@@ -442,15 +443,19 @@ impl FzfSelectable for InstallableAppItem<'_> {
 
         preview.push_str("Packages:\n");
         for pkg in self.app.packages {
-            let status = if pkg.is_installed() { "✓" } else { "○" };
+            let status = if pkg.is_installed() {
+                NerdFont::Check
+            } else {
+                NerdFont::Circle
+            };
             let pkg_name = pkg.arch_package_name.unwrap_or(pkg.name);
             preview.push_str(&format!("  {} {}\n", status, pkg_name));
         }
 
         if self.app.is_installed() {
-            preview.push_str("\n✓ Already installed");
+            preview.push_str(&format!("\n{} Already installed", NerdFont::Check));
         } else {
-            preview.push_str("\n○ Not installed - select to install");
+            preview.push_str(&format!("\n{} Not installed - select to install", NerdFont::Circle));
         }
 
         FzfPreview::Text(preview)
@@ -463,7 +468,8 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
     let items: Vec<InstallableAppItem> = apps.iter().map(|app| InstallableAppItem { app }).collect();
 
     let header = format!(
-        "Select an application to install\n[✓] = installed, [ ] = not installed"
+        "Select an application to install\n[{}] = installed, [ ] = not installed",
+        NerdFont::Check
     );
 
     let selected = FzfWrapper::builder()

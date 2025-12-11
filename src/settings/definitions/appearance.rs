@@ -444,7 +444,7 @@ impl Setting for GtkTheme {
 
             // Build options list with "Install more..." at top
             let mut options: Vec<String> = Vec::new();
-            let install_more_key = "📦 Install more themes...";
+            let install_more_key = format!("{} Install more themes...", NerdFont::Package);
 
             options.push(install_more_key.to_string());
 

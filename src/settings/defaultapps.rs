@@ -762,7 +762,7 @@ fn manage_default_app_for_mime(
 
         // Build options list - start with "Install more..." if available
         let mut options: Vec<String> = Vec::new();
-        let install_more_key = "📦 Install more...";
+        let install_more_key = format!("{} Install more...", NerdFont::Package);
 
         if installable_apps.is_some() {
             options.push(install_more_key.to_string());
