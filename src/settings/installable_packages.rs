@@ -552,7 +552,7 @@ pub fn show_install_more_menu(category_name: &str, apps: &[InstallableApp]) -> R
         FzfResult::Selected(item) => {
             if item.app.is_installed() {
                 FzfWrapper::builder()
-                    .message(&format!("{} is already installed.", item.app.name))
+                    .message(format!("{} is already installed.", item.app.name))
                     .title("Already Installed")
                     .show_message()?;
                 return Ok(false);

@@ -339,7 +339,10 @@ fn configure_network(debug: bool) -> Result<()> {
         );
     }
 
-    crate::common::terminal::launch_in_new_terminal("nmtui", "ins-network", "Network Setup", &[])
+    crate::common::terminal::TerminalLauncher::new("nmtui")
+        .class("ins-network")
+        .title("Network Setup")
+        .launch()
 }
 
 fn toggle_autostart() -> Result<()> {

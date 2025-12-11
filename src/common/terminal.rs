@@ -93,84 +93,105 @@ pub fn wrap_with_terminal(cmd: &mut Command) -> Result<()> {
     Ok(())
 }
 
-/// Prepare a terminal command for launching
-///
-/// Returns a `std::process::Command` configured to launch the specified command
-/// in a new terminal window.
-pub fn prepare_terminal_command(
-    command: &str,
-    class: &str,
-    title: &str,
-    args: &[String],
-) -> Command {
-    let terminal_str = detect_terminal();
-    let terminal: Terminal = terminal_str.as_str().into();
+/// Builder for launching commands in a new terminal window
+pub struct TerminalLauncher {
+    command: String,
+    args: Vec<String>,
+    class: Option<String>,
+    title: Option<String>,
+}
 
-    let mut cmd = Command::new(terminal.command());
-
-    // Add class flag (all common terminals support this)
-    let class_flag = terminal.class_flag(class);
-    for part in class_flag.split_whitespace() {
-        cmd.arg(part);
-    }
-
-    // Add title flag (kitty, alacritty, wezterm support this)
-    match terminal {
-        Terminal::Kitty | Terminal::Alacritty | Terminal::Wezterm => {
-            cmd.arg("--title");
-            cmd.arg(title);
-        }
-        _ => {
-            // Other terminals may not support --title in the same way
+impl TerminalLauncher {
+    /// Create a new terminal launcher for the specified command
+    pub fn new(command: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+            args: Vec::new(),
+            class: None,
+            title: None,
         }
     }
 
-    // Add separator before command (standard for modern terminals)
-    cmd.arg("--");
+    /// Add an argument to the command
+    pub fn arg(mut self, arg: impl Into<String>) -> Self {
+        self.args.push(arg.into());
+        self
+    }
 
-    // Add the command and its arguments
-    cmd.arg(command);
-    cmd.args(args);
+    /// Add multiple arguments to the command
+    pub fn args<I, S>(mut self, args: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.args.extend(args.into_iter().map(|s| s.into()));
+        self
+    }
 
-    cmd
-}
+    /// Set the window class (e.g., "ins-settings")
+    pub fn class(mut self, class: impl Into<String>) -> Self {
+        self.class = Some(class.into());
+        self
+    }
 
-/// Launch a command in a new terminal window
-///
-/// This function spawns a new terminal window with the specified window class and title,
-/// executing the provided command with the given arguments. It does not wait for the
-/// command to complete.
-///
-/// # Arguments
-/// * `command` - The command to run (can be path or command name)
-/// * `class` - Window class name for the terminal (e.g., "ins-settings", "ins-welcome")
-/// * `title` - Window title to display
-/// * `args` - Arguments to pass to the command
-pub fn launch_in_new_terminal(
-    command: &str,
-    class: &str,
-    title: &str,
-    args: &[String],
-) -> Result<()> {
-    let mut cmd = prepare_terminal_command(command, class, title, args);
-    cmd.spawn()
-        .context(format!("Failed to launch terminal for {}", command))?;
-    Ok(())
-}
+    /// Set the window title
+    pub fn title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
 
-/// Launch a command in a new terminal window and wait for it to complete
-///
-/// Similar to `launch_in_new_terminal`, but waits for the process to exit and returns
-/// the exit status.
-pub fn launch_in_new_terminal_and_wait(
-    command: &str,
-    class: &str,
-    title: &str,
-    args: &[String],
-) -> Result<std::process::ExitStatus> {
-    let mut cmd = prepare_terminal_command(command, class, title, args);
-    cmd.status()
-        .context(format!("Failed to launch terminal for {}", command))
+    /// Prepare the underlying `std::process::Command`
+    fn prepare_command(&self) -> Command {
+        let terminal_str = detect_terminal();
+        let terminal: Terminal = terminal_str.as_str().into();
+
+        let mut cmd = Command::new(terminal.command());
+
+        // Add class flag if specified
+        if let Some(class) = &self.class {
+            let class_flag = terminal.class_flag(class);
+            for part in class_flag.split_whitespace() {
+                cmd.arg(part);
+            }
+        }
+
+        // Add title flag if specified and supported
+        if let Some(title) = &self.title {
+            match terminal {
+                Terminal::Kitty | Terminal::Alacritty | Terminal::Wezterm => {
+                    cmd.arg("--title");
+                    cmd.arg(title);
+                }
+                _ => {
+                    // Other terminals may not support --title in the same way
+                }
+            }
+        }
+
+        // Add separator before command (standard for modern terminals)
+        cmd.arg("--");
+
+        // Add the command and its arguments
+        cmd.arg(&self.command);
+        cmd.args(&self.args);
+
+        cmd
+    }
+
+    /// Launch the terminal window (fire and forget)
+    pub fn launch(self) -> Result<()> {
+        let mut cmd = self.prepare_command();
+        cmd.spawn()
+            .context(format!("Failed to launch terminal for {}", self.command))?;
+        Ok(())
+    }
+
+    /// Launch the terminal window and wait for it to exit
+    pub fn launch_and_wait(self) -> Result<std::process::ExitStatus> {
+        let mut cmd = self.prepare_command();
+        cmd.status()
+            .context(format!("Failed to launch terminal for {}", self.command))
+    }
 }
 
 /// Run a TUI program (like cfdisk) from within an async context

@@ -205,12 +205,12 @@ impl MenuClient {
             response_path.to_string_lossy().to_string(),
         ];
 
-        let status = crate::common::terminal::launch_in_new_terminal_and_wait(
-            &current_exe.to_string_lossy(),
-            "insmenu-fallback",
-            "InstantCLI Menu",
-            &args,
-        )?;
+        let status =
+            crate::common::terminal::TerminalLauncher::new(current_exe.to_string_lossy().as_ref())
+                .class("insmenu-fallback")
+                .title("InstantCLI Menu")
+                .args(&args)
+                .launch_and_wait()?;
 
         if !status.success() {
             anyhow::bail!("Fallback menu terminal exited with status {status}");

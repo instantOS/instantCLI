@@ -9,12 +9,10 @@ use crate::common::display_server::DisplayServer;
 ///
 /// Auto-detects the user's preferred terminal emulator.
 pub fn launch_in_terminal(command: &str) -> Result<()> {
-    crate::common::terminal::launch_in_new_terminal(
-        "bash",
-        "ins-assist",
-        "InstantCLI Assist",
-        &["-c".to_string(), command.to_string()],
-    )
+    crate::common::terminal::TerminalLauncher::new("bash")
+        .title("InstantCLI Assist")
+        .args(&["-c".to_string(), command.to_string()])
+        .launch()
 }
 
 /// Launch a script in a detached terminal window with title
@@ -41,12 +39,10 @@ pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
         std::fs::set_permissions(&script_path, perms)?;
     }
 
-    crate::common::terminal::launch_in_new_terminal(
-        "bash",
-        "ins-assist",
-        title,
-        &[script_path.to_string_lossy().to_string()],
-    )?;
+    crate::common::terminal::TerminalLauncher::new("bash")
+        .title(title)
+        .arg(script_path.to_string_lossy())
+        .launch()?;
 
     // Keep temp file alive by forgetting it (will be cleaned up by OS)
     std::mem::forget(temp_file);

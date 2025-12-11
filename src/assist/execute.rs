@@ -110,12 +110,10 @@ fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Resul
 
     let status = if std::io::stdout().is_terminal() {
         install_dependencies_for_assist(assist)?
+    } else if install_dependencies_via_terminal(assist, key_sequence)? {
+        crate::common::requirements::PackageStatus::Installed
     } else {
-        if install_dependencies_via_terminal(assist, key_sequence)? {
-            crate::common::requirements::PackageStatus::Installed
-        } else {
-            crate::common::requirements::PackageStatus::Failed
-        }
+        crate::common::requirements::PackageStatus::Failed
     };
 
     if status.is_installed() {
