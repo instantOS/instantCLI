@@ -364,6 +364,13 @@ pub const ORCHIS_THEME_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::FileExists("/usr/share/themes/Orchis-dark")],
 };
 
+pub const ADAPTA_THEME_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Adapta Theme",
+    arch_package_name: Some("adapta-gtk-theme"),
+    ubuntu_package_name: Some("adapta-gtk-theme"),
+    tests: &[InstallTest::FileExists("/usr/share/themes/Adapta")],
+};
+
 pub const POP_THEME_PACKAGE: RequiredPackage = RequiredPackage {
     name: "Pop!_OS Theme",
     arch_package_name: Some("pop-gtk-theme"),
@@ -401,6 +408,11 @@ pub static GTK_THEMES: &[InstallableApp] = &[
         name: "Orchis Theme",
         description: "Modern Material Design theme with rounded corners",
         packages: &[ORCHIS_THEME_PACKAGE],
+    },
+    InstallableApp {
+        name: "Adapta Theme",
+        description: "Adaptive GTK theme based on Material Design",
+        packages: &[ADAPTA_THEME_PACKAGE],
     },
     InstallableApp {
         name: "Pop!_OS Theme",
