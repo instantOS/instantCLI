@@ -58,10 +58,7 @@ impl FzfSelectable for WelcomeItem {
                     (NerdFont::ToggleOff, colors::PEACH)
                 };
 
-                format!(
-                    "{} Show on startup",
-                    format_icon_colored(icon, color)
-                )
+                format!("{} Show on startup", format_icon_colored(icon, color))
             }
             WelcomeItem::Close => format!(
                 "{} Close",
@@ -165,13 +162,13 @@ pub fn run_welcome_ui(debug: bool) -> Result<()> {
 
     loop {
         let has_internet = crate::common::network::check_internet();
-        
+
         let mut items = Vec::new();
-        
+
         if !has_internet {
             items.push(WelcomeItem::ConfigureNetwork);
         }
-        
+
         items.push(WelcomeItem::OpenWebsite);
         items.push(WelcomeItem::OpenSettings);
         items.push(WelcomeItem::DisableAutostart);
@@ -342,16 +339,10 @@ fn configure_network(debug: bool) -> Result<()> {
         );
     }
 
-    crate::common::terminal::launch_tui_in_terminal(
-        "nmtui",
-        "ins-network",
-        "Network Setup",
-        &[],
-    )
+    crate::common::terminal::launch_in_new_terminal("nmtui", "ins-network", "Network Setup", &[])
 }
 
 fn toggle_autostart() -> Result<()> {
-
     use crate::settings::store::{BoolSettingKey, SettingsStore};
 
     let mut store = SettingsStore::load()?;

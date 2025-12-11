@@ -210,5 +210,8 @@ fn launch_settings_in_terminal(
         args.push("--search".to_string());
     }
 
-    crate::common::terminal::launch_gui_terminal("ins-settings", "Settings", &args)
+    let current_exe = std::env::current_exe()?;
+    let exe_str = current_exe.to_string_lossy();
+
+    crate::common::terminal::launch_in_new_terminal(&exe_str, "ins-settings", "Settings", &args)
 }

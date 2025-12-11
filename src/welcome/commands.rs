@@ -33,5 +33,13 @@ fn launch_welcome_in_terminal(debug: bool) -> Result<()> {
 
     args.push("welcome".to_string());
 
-    crate::common::terminal::launch_gui_terminal("ins-welcome", "Welcome to instantOS", &args)
+    let current_exe = std::env::current_exe()?;
+    let exe_str = current_exe.to_string_lossy();
+
+    crate::common::terminal::launch_in_new_terminal(
+        &exe_str,
+        "ins-welcome",
+        "Welcome to instantOS",
+        &args,
+    )
 }
