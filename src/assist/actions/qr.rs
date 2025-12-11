@@ -60,14 +60,13 @@ pub fn qr_encode_clipboard() -> Result<()> {
         std::fs::set_permissions(&temp_script, perms)?;
     }
 
-    let terminal = crate::common::terminal::detect_terminal();
-    let exec_flag = crate::common::terminal::get_execute_flag(&terminal);
-
-    Command::new(terminal)
-        .arg(exec_flag)
-        .arg(temp_script.as_os_str())
-        .spawn()
-        .context("Failed to launch terminal with QR code")?;
+    crate::common::terminal::launch_in_new_terminal(
+        &temp_script.to_string_lossy(),
+        "ins-qrcode",
+        "QR Code",
+        &[],
+    )
+    .context("Failed to launch terminal with QR code")?;
 
     Ok(())
 }
