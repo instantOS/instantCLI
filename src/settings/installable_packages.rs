@@ -329,11 +329,11 @@ pub const ADWAITA_DARK_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::FileExists("/usr/share/themes/Adwaita-dark")],
 };
 
-pub const ARC_THEME_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Arc Theme",
-    arch_package_name: Some("arc-gtk-theme"),
-    ubuntu_package_name: Some("arc-theme"),
-    tests: &[InstallTest::FileExists("/usr/share/themes/Arc")],
+pub const ADW_GTK_THEME_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Adwaita-like GTK Theme",
+    arch_package_name: Some("adw-gtk-theme"),
+    ubuntu_package_name: Some("adw-gtk-theme"),
+    tests: &[InstallTest::FileExists("/usr/share/themes/adw-gtk3-dark")],
 };
 
 pub const MATERIA_THEME_PACKAGE: RequiredPackage = RequiredPackage {
@@ -350,25 +350,25 @@ pub const BREEZE_GTK_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::FileExists("/usr/share/themes/Breeze")],
 };
 
-pub const GRUVBOX_GTK_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Gruvbox GTK",
-    arch_package_name: Some("gruvbox-dark-gtk"),
-    ubuntu_package_name: None,
-    tests: &[InstallTest::FileExists("/usr/share/themes/Gruvbox-Dark")],
+pub const ELEMENTARY_THEME_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "elementary OS Theme",
+    arch_package_name: Some("gtk-theme-elementary"),
+    ubuntu_package_name: Some("gtk-theme-elementary"),
+    tests: &[InstallTest::FileExists("/usr/share/themes/io.elementary.stylesheet")],
 };
 
-pub const DRACULA_GTK_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Dracula GTK",
-    arch_package_name: Some("dracula-gtk-theme"),
-    ubuntu_package_name: None,
-    tests: &[InstallTest::FileExists("/usr/share/themes/Dracula")],
+pub const ORCHIS_THEME_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Orchis Theme",
+    arch_package_name: Some("orchis-theme"),
+    ubuntu_package_name: Some("orchis-theme"),
+    tests: &[InstallTest::FileExists("/usr/share/themes/Orchis-dark")],
 };
 
-pub const NORDIC_THEME_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Nordic Theme",
-    arch_package_name: Some("nordic-theme"),
-    ubuntu_package_name: None,
-    tests: &[InstallTest::FileExists("/usr/share/themes/Nordic")],
+pub const POP_THEME_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Pop!_OS Theme",
+    arch_package_name: Some("pop-gtk-theme"),
+    ubuntu_package_name: Some("pop-gtk-theme"),
+    tests: &[InstallTest::FileExists("/usr/share/themes/Pop")],
 };
 
 pub static GTK_THEMES: &[InstallableApp] = &[
@@ -378,9 +378,9 @@ pub static GTK_THEMES: &[InstallableApp] = &[
         packages: &[ADWAITA_DARK_PACKAGE],
     },
     InstallableApp {
-        name: "Arc Theme",
-        description: "Flat theme with transparent elements",
-        packages: &[ARC_THEME_PACKAGE],
+        name: "Adwaita-like GTK Theme",
+        description: "Modern Adwaita-like theme for GTK applications",
+        packages: &[ADW_GTK_THEME_PACKAGE],
     },
     InstallableApp {
         name: "Materia Theme",
@@ -393,19 +393,19 @@ pub static GTK_THEMES: &[InstallableApp] = &[
         packages: &[BREEZE_GTK_PACKAGE],
     },
     InstallableApp {
-        name: "Gruvbox GTK",
-        description: "Retro groove color scheme theme",
-        packages: &[GRUVBOX_GTK_PACKAGE],
+        name: "elementary OS Theme",
+        description: "Clean and modern theme from elementary OS",
+        packages: &[ELEMENTARY_THEME_PACKAGE],
     },
     InstallableApp {
-        name: "Dracula GTK",
-        description: "Dark theme based on Dracula color palette",
-        packages: &[DRACULA_GTK_PACKAGE],
+        name: "Orchis Theme",
+        description: "Modern Material Design theme with rounded corners",
+        packages: &[ORCHIS_THEME_PACKAGE],
     },
     InstallableApp {
-        name: "Nordic Theme",
-        description: "Nord color palette based theme",
-        packages: &[NORDIC_THEME_PACKAGE],
+        name: "Pop!_OS Theme",
+        description: "Elegant dark theme from Pop!_OS",
+        packages: &[POP_THEME_PACKAGE],
     },
 ];
 
