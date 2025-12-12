@@ -792,7 +792,7 @@ fn theme_exists(theme_name: &str) -> bool {
 
     for dir in dirs.into_iter().flatten() {
         let theme_path = dir.join(theme_name);
-        if theme_path.exists() 
+        if theme_path.exists()
             && (theme_path.join("index.theme").exists()
                 || theme_path.join("gtk-3.0/gtk.css").exists()
                 || theme_path.join("gtk-4.0/gtk.css").exists())
@@ -812,7 +812,11 @@ fn get_current_gtk_theme() -> Result<String> {
 
     let theme = String::from_utf8_lossy(&output.stdout);
     // Remove quotes and whitespace
-    Ok(theme.trim().trim_matches('\'').trim_matches('"').to_string())
+    Ok(theme
+        .trim()
+        .trim_matches('\'')
+        .trim_matches('"')
+        .to_string())
 }
 
 /// Set the GTK theme
@@ -1081,9 +1085,8 @@ impl Setting for DarkMode {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         // Get current GTK theme and color-scheme
-        let current_theme = get_current_gtk_theme()
-            .context("Failed to get current GTK theme")?;
-        
+        let current_theme = get_current_gtk_theme().context("Failed to get current GTK theme")?;
+
         let color_scheme_output = Command::new("gsettings")
             .args(["get", "org.gnome.desktop.interface", "color-scheme"])
             .output()
@@ -1102,7 +1105,8 @@ impl Setting for DarkMode {
                     (light_theme.to_string(), "Disabled")
                 } else {
                     // Fallback: check for -light variant
-                    let light_theme_alt = format!("{}-light", current_theme.trim_end_matches("-dark"));
+                    let light_theme_alt =
+                        format!("{}-light", current_theme.trim_end_matches("-dark"));
                     if theme_exists(&light_theme_alt) {
                         (light_theme_alt, "Disabled")
                     } else {
@@ -1143,8 +1147,7 @@ impl Setting for DarkMode {
 
         // Set the new GTK theme (if different)
         if new_theme != current_theme {
-            set_gtk_theme(&new_theme)
-                .context("Failed to set GTK theme")?;
+            set_gtk_theme(&new_theme).context("Failed to set GTK theme")?;
         }
 
         // Always set the color-scheme for GTK 4+ compatibility
@@ -1160,10 +1163,7 @@ impl Setting for DarkMode {
             .context("Failed to set gsettings color-scheme")?;
 
         if status.success() {
-            ctx.notify(
-                "Dark Mode",
-                new_status,
-            );
+            ctx.notify("Dark Mode", new_status);
         } else {
             ctx.emit_failure(
                 "settings.appearance.dark_mode.failed",

@@ -18,6 +18,7 @@ impl CheckRegistry {
         registry.register::<InstantRepoCheck>("instant-repo");
         registry.register::<LocaleCheck>("locale");
         registry.register::<PacmanCacheCheck>("pacman-cache");
+        registry.register::<YayCacheCheck>("yay-cache");
         registry.register::<PacmanStaleDownloadsCheck>("pacman-stale-downloads");
         registry.register::<SwapCheck>("swap");
         registry.register::<PendingUpdatesCheck>("pending-updates");

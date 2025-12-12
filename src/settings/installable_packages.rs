@@ -3,7 +3,10 @@
 //! Defines curated collections of packages that can be installed
 //! from within settings menus via "Install more..." options.
 
-use crate::common::requirements::{InstallTest, RequiredPackage, CHROMIUM_PACKAGE, FIREFOX_PACKAGE, FALKON_PACKAGE, EPIPHANY_PACKAGE};
+use crate::common::requirements::{
+    CHROMIUM_PACKAGE, EPIPHANY_PACKAGE, FALKON_PACKAGE, FIREFOX_PACKAGE, InstallTest,
+    RequiredPackage,
+};
 
 /// Represents an installable application/package collection
 #[derive(Debug, Clone)]

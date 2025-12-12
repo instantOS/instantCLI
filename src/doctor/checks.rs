@@ -1172,3 +1172,111 @@ impl DoctorCheck for SwayDisplayCheck {
         Ok(())
     }
 }
+
+#[derive(Default)]
+pub struct YayCacheCheck;
+
+impl YayCacheCheck {
+    const THRESHOLD_GB: u64 = 10;
+    const THRESHOLD_BYTES: u64 = 10 * 1024 * 1024 * 1024; // 10 GB
+
+    fn get_cache_dir() -> String {
+        format!(
+            "{}/.cache/yay",
+            std::env::var("HOME").unwrap_or_else(|_| "/home/benjamin".to_string())
+        )
+    }
+}
+
+#[async_trait]
+impl DoctorCheck for YayCacheCheck {
+    fn name(&self) -> &'static str {
+        "Yay Cache Size"
+    }
+
+    fn id(&self) -> &'static str {
+        "yay-cache"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User // Must run as user since this is in user's home directory
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User // Can be cleaned up as user
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        // Only run on Arch-based systems
+        if !crate::common::distro::OperatingSystem::detect().is_arch_based() {
+            return CheckStatus::Skipped("Not an Arch-based system".to_string());
+        }
+
+        // Check if yay is installed
+        let yay_installed = TokioCommand::new("which")
+            .arg("yay")
+            .output()
+            .await
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+
+        if !yay_installed {
+            return CheckStatus::Skipped("Yay is not installed".to_string());
+        }
+
+        // Check if cache directory exists
+        let cache_dir = Self::get_cache_dir();
+        let cache_path = std::path::Path::new(&cache_dir);
+        if !cache_path.exists() {
+            return CheckStatus::Skipped("Yay cache directory does not exist".to_string());
+        }
+
+        // Calculate cache size
+        let cache_size = match calculate_dir_size(&cache_dir).await {
+            Ok(size) => size,
+            Err(e) => {
+                return CheckStatus::Fail {
+                    message: format!("Could not calculate yay cache size: {}", e),
+                    fixable: false,
+                };
+            }
+        };
+
+        if cache_size < Self::THRESHOLD_BYTES {
+            CheckStatus::Pass(format!(
+                "Yay cache is {:.2} GB (below {} GB threshold)",
+                cache_size as f64 / 1024.0 / 1024.0 / 1024.0,
+                Self::THRESHOLD_GB
+            ))
+        } else {
+            CheckStatus::Warning {
+                message: format!(
+                    "Yay cache is {:.2} GB (exceeds {} GB threshold)",
+                    cache_size as f64 / 1024.0 / 1024.0 / 1024.0,
+                    Self::THRESHOLD_GB
+                ),
+                fixable: true,
+            }
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Clear yay cache to free up disk space".to_string())
+    }
+
+    async fn fix(&self) -> Result<()> {
+        let cache_dir = Self::get_cache_dir();
+        let cache_path = std::path::Path::new(&cache_dir);
+
+        if cache_path.exists() {
+            tokio::fs::remove_dir_all(cache_path)
+                .await
+                .context("Failed to remove yay cache directory")?;
+            println!("Yay cache cleared successfully.");
+        } else {
+            println!("Yay cache directory does not exist, nothing to clear.");
+        }
+
+        Ok(())
+    }
+}
