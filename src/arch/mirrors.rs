@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -74,7 +74,12 @@ pub async fn fetch_mirror_regions() -> Result<HashMap<String, String>> {
         }
     }
 
-    Err(last_error.unwrap_or_else(|| anyhow!("Failed to fetch mirror regions after {} attempts", MAX_RETRIES)))
+    Err(last_error.unwrap_or_else(|| {
+        anyhow!(
+            "Failed to fetch mirror regions after {} attempts",
+            MAX_RETRIES
+        )
+    }))
 }
 
 /// Single attempt to fetch mirror regions
@@ -138,7 +143,10 @@ pub async fn fetch_mirrorlist(region_code: &str) -> Result<String> {
     }
 
     // Try 3: Local /etc/pacman.d/mirrorlist
-    eprintln!("Trying fallback: local mirrorlist at {}...", LOCAL_MIRRORLIST_PATH);
+    eprintln!(
+        "Trying fallback: local mirrorlist at {}...",
+        LOCAL_MIRRORLIST_PATH
+    );
     match std::fs::read_to_string(LOCAL_MIRRORLIST_PATH) {
         Ok(content) if !content.trim().is_empty() => {
             eprintln!("Using local mirrorlist as fallback");
@@ -258,7 +266,9 @@ impl crate::arch::engine::AsyncDataProvider for MirrorlistProvider {
             }
             Err(e) => {
                 eprintln!("Failed to fetch mirror regions: {}", e);
-                eprintln!("Mirror region selection will be skipped; fallback mirrorlist will be used.");
+                eprintln!(
+                    "Mirror region selection will be skipped; fallback mirrorlist will be used."
+                );
                 // Set empty list - the question will be skipped via should_ask()
                 context.set::<MirrorRegionsKey>(Vec::new());
                 context.set::<MirrorRegionsFetchFailed>(true);
