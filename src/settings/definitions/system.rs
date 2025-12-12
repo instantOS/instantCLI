@@ -4,7 +4,6 @@
 
 use anyhow::{Context, Result};
 use duct::cmd;
-use std::process::Command;
 
 use crate::common::requirements::{
     COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_FIRMWARE_PACKAGE, PACMAN_CONTRIB_PACKAGE,

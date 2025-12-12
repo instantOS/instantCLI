@@ -31,6 +31,7 @@ async fn list_available_checks() -> Result<()> {
     Ok(())
 }
 
+//TODO: this is a single line wrapper, can it be removed?
 fn print_results(results: &[CheckResult]) {
     super::print_results_table(results);
 }
@@ -132,6 +133,8 @@ fn show_available_fixes(results: &[CheckResult]) {
     }
 }
 
+//TODO: why is there both run_single_check and execute_single_check, can this be named or
+//structured better?
 async fn run_single_check(check_id: &str) -> Result<()> {
     let check = REGISTRY
         .create_check(check_id)
@@ -161,6 +164,8 @@ async fn execute_single_check(check: Box<dyn DoctorCheck + Send + Sync>) -> Chec
     }
 }
 
+//TODO: this is a one-line wrapper, can this be removed and its callsites call the original
+//function directly?
 fn print_single_result(result: &CheckResult) {
     super::print_single_check_result_table(result);
 }

@@ -3,6 +3,9 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tokio::process::Command as TokioCommand;
 
+//TODO: refactor this file into multiple files. There will be plenty more checks and keeping them
+//all in one file will get out of hand
+
 #[derive(Default)]
 pub struct InternetCheck;
 
