@@ -317,8 +317,16 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
     // Create user
     let groups = vec!["wheel", "video", "docker", "sys", "rfkill"];
 
-    // Ensure groups exist
+    // Ensure user groups exist
     for group in &groups {
+        let mut cmd = Command::new("groupadd");
+        cmd.arg("-f").arg(group);
+        executor.run(&mut cmd)?;
+    }
+
+    // Ensure system groups exist (these are not for user membership)
+    let system_groups = vec!["nobody"];
+    for group in &system_groups {
         let mut cmd = Command::new("groupadd");
         cmd.arg("-f").arg(group);
         executor.run(&mut cmd)?;
