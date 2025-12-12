@@ -25,6 +25,7 @@ impl CheckRegistry {
         registry.register::<SmartHealthCheck>("smart-health");
         registry.register::<PacmanDbSyncCheck>("pacman-db-sync");
         registry.register::<SwayDisplayCheck>("sway-display");
+        registry.register::<PolkitAgentCheck>("polkit-agent");
 
         registry
     }
