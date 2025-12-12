@@ -4,6 +4,12 @@ use std::process::Command;
 
 use crate::arch::engine::{InstallContext, QuestionId};
 
+/// Groups that users should be added to for normal desktop usage
+pub const USER_GROUPS: &[&str] = &["wheel", "video", "docker", "sys", "rfkill"];
+
+/// System groups that need to exist but users shouldn't be members of
+pub const SYSTEM_GROUPS: &[&str] = &["nobody"];
+
 /// Set up instantOS on a system.
 ///
 /// This function is used by both:
@@ -40,6 +46,9 @@ pub async fn setup_instantos(
     // Determine username: override > context > SUDO_USER
     let username = override_user.or_else(|| context.get_answer(&QuestionId::Username).cloned());
 
+    // Configure user groups (create groups and add user to them)
+    configure_user_groups(username.as_deref(), executor)?;
+
     if !minimal_mode {
         if let Some(user) = username.clone() {
             setup_user_dotfiles(&user, executor)?;
@@ -50,6 +59,44 @@ pub async fn setup_instantos(
     }
 
     enable_services(executor, context)?;
+
+    Ok(())
+}
+
+/// Configure user groups on the system.
+///
+/// This function:
+/// 1. Creates user groups if they don't exist (wheel, video, docker, sys, rfkill)
+/// 2. Creates system groups if they don't exist (nobody)
+/// 3. Adds the specified user to user groups (not system groups)
+///
+/// This is used by both fresh installations and `ins arch setup` on existing systems.
+pub fn configure_user_groups(username: Option<&str>, executor: &CommandExecutor) -> Result<()> {
+    println!("Configuring user groups...");
+
+    // Ensure user groups exist
+    for group in USER_GROUPS {
+        let mut cmd = Command::new("groupadd");
+        cmd.arg("-f").arg(group);
+        executor.run(&mut cmd)?;
+    }
+
+    // Ensure system groups exist (these are not for user membership)
+    for group in SYSTEM_GROUPS {
+        let mut cmd = Command::new("groupadd");
+        cmd.arg("-f").arg(group);
+        executor.run(&mut cmd)?;
+    }
+
+    // Add user to groups if username is provided
+    if let Some(user) = username {
+        println!("Adding user {} to groups: {}", user, USER_GROUPS.join(", "));
+        let mut cmd = Command::new("usermod");
+        cmd.arg("-aG").arg(USER_GROUPS.join(",")).arg(user);
+        executor.run(&mut cmd)?;
+    } else {
+        println!("No username provided, skipping user group membership.");
+    }
 
     Ok(())
 }

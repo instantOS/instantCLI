@@ -314,19 +314,18 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
     let mut cmd_root = Command::new("chpasswd");
     executor.run_with_input(&mut cmd_root, &root_input)?;
 
-    // Create user
-    let groups = vec!["wheel", "video", "docker", "sys", "rfkill"];
+    // Create user - use shared group constants from setup module
+    use super::setup::{SYSTEM_GROUPS, USER_GROUPS};
 
     // Ensure user groups exist
-    for group in &groups {
+    for group in USER_GROUPS {
         let mut cmd = Command::new("groupadd");
         cmd.arg("-f").arg(group);
         executor.run(&mut cmd)?;
     }
 
     // Ensure system groups exist (these are not for user membership)
-    let system_groups = vec!["nobody"];
-    for group in &system_groups {
+    for group in SYSTEM_GROUPS {
         let mut cmd = Command::new("groupadd");
         cmd.arg("-f").arg(group);
         executor.run(&mut cmd)?;
@@ -352,7 +351,7 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
         );
         // Add user to groups if not already a member
         let mut cmd_mod = Command::new("usermod");
-        cmd_mod.arg("-aG").arg(groups.join(",")).arg(username);
+        cmd_mod.arg("-aG").arg(USER_GROUPS.join(",")).arg(username);
         executor.run(&mut cmd_mod)?;
 
         // Ensure shell is zsh
@@ -366,7 +365,7 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
         cmd_user
             .arg("-m")
             .arg("-G")
-            .arg(groups.join(","))
+            .arg(USER_GROUPS.join(","))
             .arg("-s")
             .arg(shell)
             .arg(username);
