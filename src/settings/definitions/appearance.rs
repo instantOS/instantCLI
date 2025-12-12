@@ -838,6 +838,58 @@ fn set_gtk_theme(theme_name: &str) -> Result<()> {
     }
 }
 
+/// Check if an icon theme with the given name exists
+fn icon_theme_exists(theme_name: &str) -> bool {
+    let dirs = [
+        dirs::home_dir().map(|p| p.join(".icons")),
+        dirs::home_dir().map(|p| p.join(".local/share/icons")),
+        Some(std::path::PathBuf::from("/usr/share/icons")),
+    ];
+
+    for dir in dirs.into_iter().flatten() {
+        let theme_path = dir.join(theme_name);
+        if theme_path.exists() && theme_path.join("index.theme").exists() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Get the current icon theme name
+fn get_current_icon_theme() -> Result<String> {
+    let output = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "icon-theme"])
+        .output()
+        .context("Failed to query current icon theme")?;
+
+    let theme = String::from_utf8_lossy(&output.stdout);
+    // Remove quotes and whitespace
+    Ok(theme
+        .trim()
+        .trim_matches('\'')
+        .trim_matches('"')
+        .to_string())
+}
+
+/// Set the icon theme
+fn set_icon_theme(theme_name: &str) -> Result<()> {
+    let status = Command::new("gsettings")
+        .args([
+            "set",
+            "org.gnome.desktop.interface",
+            "icon-theme",
+            theme_name,
+        ])
+        .status()
+        .context("Failed to set icon theme")?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        anyhow::bail!("Failed to set icon theme to {}", theme_name);
+    }
+}
+
 fn apply_gtk4_overrides(theme_name: &str) -> Result<()> {
     // Find the theme directory
     let dirs = [

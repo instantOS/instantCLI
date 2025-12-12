@@ -1180,11 +1180,14 @@ impl YayCacheCheck {
     const THRESHOLD_GB: u64 = 10;
     const THRESHOLD_BYTES: u64 = 10 * 1024 * 1024 * 1024; // 10 GB
 
-    fn get_cache_dir() -> String {
-        format!(
-            "{}/.cache/yay",
-            std::env::var("HOME").unwrap_or_else(|_| "/home/benjamin".to_string())
-        )
+    fn get_cache_dir() -> Result<String> {
+        let home_dir = dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
+        Ok(home_dir
+            .join(".cache")
+            .join("yay")
+            .to_string_lossy()
+            .to_string())
     }
 }
 
@@ -1224,11 +1227,22 @@ impl DoctorCheck for YayCacheCheck {
             return CheckStatus::Skipped("Yay is not installed".to_string());
         }
 
-        // Check if cache directory exists
-        let cache_dir = Self::get_cache_dir();
+        // Get cache directory path
+        let cache_dir = match Self::get_cache_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                return CheckStatus::Fail {
+                    message: format!("Could not determine cache directory: {}", e),
+                    fixable: false,
+                };
+            }
+        };
+
         let cache_path = std::path::Path::new(&cache_dir);
+
+        // If cache directory doesn't exist, the check passes (no cache to worry about)
         if !cache_path.exists() {
-            return CheckStatus::Skipped("Yay cache directory does not exist".to_string());
+            return CheckStatus::Pass("Yay cache directory does not exist".to_string());
         }
 
         // Calculate cache size
@@ -1265,7 +1279,7 @@ impl DoctorCheck for YayCacheCheck {
     }
 
     async fn fix(&self) -> Result<()> {
-        let cache_dir = Self::get_cache_dir();
+        let cache_dir = Self::get_cache_dir()?;
         let cache_path = std::path::Path::new(&cache_dir);
 
         if cache_path.exists() {
