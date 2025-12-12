@@ -47,86 +47,80 @@ pub struct SwayDisplayCheck;
 
 impl SwayDisplayCheck {
     /// Parse swaymsg -t get_outputs JSON and extract output info
-    // TODO: this function has too many responsibilities
     fn parse_outputs(json_str: &str) -> Result<Vec<OutputInfo>> {
         let outputs: Vec<serde_json::Value> =
             serde_json::from_str(json_str).context("Failed to parse swaymsg output JSON")?;
 
-        let mut result = Vec::new();
+        outputs
+            .into_iter()
+            .map(Self::parse_output_info)
+            .collect::<Result<Vec<_>>>()
+    }
 
-        for output in outputs {
-            // Get output name
-            let name = output
-                .get("name")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Missing output name"))?
-                .to_string();
+    fn parse_output_info(output: serde_json::Value) -> Result<OutputInfo> {
+        let name = Self::parse_output_name(&output)?;
+        let current_mode = Self::parse_current_mode(&output, &name)?;
+        let modes = Self::parse_available_modes(&output, &name)?;
+        let optimal_mode = Self::find_optimal_mode(&modes, &current_mode);
 
-            // Get current mode
-            let current_mode_json = output
-                .get("current_mode")
-                .ok_or_else(|| anyhow::anyhow!("Missing current_mode for {}", name))?;
+        Ok(OutputInfo {
+            name,
+            current_mode,
+            optimal_mode,
+        })
+    }
 
-            let current_mode = DisplayMode {
-                width: current_mode_json
-                    .get("width")
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| anyhow::anyhow!("Missing width in current_mode"))?
-                    as u32,
-                height: current_mode_json
-                    .get("height")
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| anyhow::anyhow!("Missing height in current_mode"))?
-                    as u32,
-                refresh: current_mode_json
-                    .get("refresh")
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| anyhow::anyhow!("Missing refresh in current_mode"))?
-                    as u32,
-            };
+    fn parse_output_name(output: &serde_json::Value) -> Result<String> {
+        Ok(output
+            .get("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing output name"))?
+            .to_string())
+    }
 
-            // Get all available modes and find optimal
-            let modes_json = output
-                .get("modes")
-                .and_then(|v| v.as_array())
-                .ok_or_else(|| anyhow::anyhow!("Missing modes array for {}", name))?;
+    fn parse_current_mode(output: &serde_json::Value, name: &str) -> Result<DisplayMode> {
+        let current_mode_json = output
+            .get("current_mode")
+            .ok_or_else(|| anyhow::anyhow!("Missing current_mode for {}", name))?;
 
-            let mut modes: Vec<DisplayMode> = Vec::new();
-            for mode in modes_json {
-                if let (Some(w), Some(h), Some(r)) = (
-                    mode.get("width").and_then(|v| v.as_u64()),
-                    mode.get("height").and_then(|v| v.as_u64()),
-                    mode.get("refresh").and_then(|v| v.as_u64()),
-                ) {
-                    modes.push(DisplayMode {
-                        width: w as u32,
-                        height: h as u32,
-                        refresh: r as u32,
-                    });
-                }
-            }
+        Self::parse_display_mode(current_mode_json).context("Invalid current_mode")
+    }
 
-            // Find optimal mode: highest resolution, then highest refresh rate
-            let optimal_mode = modes
-                .iter()
-                .max_by(|a, b| {
-                    // First compare by resolution
-                    a.resolution()
-                        .cmp(&b.resolution())
-                        // Then by refresh rate
-                        .then(a.refresh.cmp(&b.refresh))
-                })
-                .cloned()
-                .unwrap_or_else(|| current_mode.clone());
+    fn parse_available_modes(output: &serde_json::Value, name: &str) -> Result<Vec<DisplayMode>> {
+        let modes_json = output
+            .get("modes")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("Missing modes array for {}", name))?;
 
-            result.push(OutputInfo {
-                name,
-                current_mode,
-                optimal_mode,
-            });
-        }
+        Ok(modes_json
+            .iter()
+            .filter_map(|mode| Self::parse_display_mode(mode).ok())
+            .collect())
+    }
 
-        Ok(result)
+    fn parse_display_mode(mode_json: &serde_json::Value) -> Result<DisplayMode> {
+        Ok(DisplayMode {
+            width: mode_json
+                .get("width")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| anyhow::anyhow!("Missing width"))? as u32,
+            height: mode_json
+                .get("height")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| anyhow::anyhow!("Missing height"))? as u32,
+            refresh: mode_json
+                .get("refresh")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| anyhow::anyhow!("Missing refresh"))? as u32,
+        })
+    }
+
+    fn find_optimal_mode(modes: &[DisplayMode], fallback: &DisplayMode) -> DisplayMode {
+        modes
+            .iter()
+            .max_by(|a, b| a.resolution().cmp(&b.resolution()).then(a.refresh.cmp(&b.refresh)))
+            .cloned()
+            .unwrap_or_else(|| fallback.clone())
     }
 
     /// Get outputs using swaymsg

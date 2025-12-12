@@ -25,25 +25,17 @@ impl DoctorCheck for InternetCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
-        //TODO: there are existing utils for checking internet connectivity elsewhere in the
-        //codebase, check if these can or should be used here.
-        let output = TokioCommand::new("ping")
-            .arg("-c")
-            .arg("1")
-            .arg("-W")
-            .arg("1")
-            .arg("8.8.8.8")
-            .output()
-            .await;
+        let has_internet = tokio::task::spawn_blocking(crate::common::network::check_internet)
+            .await
+            .unwrap_or(false);
 
-        match output {
-            Ok(output) if output.status.success() => {
-                CheckStatus::Pass("Internet connection is available".to_string())
-            }
-            _ => CheckStatus::Fail {
+        if has_internet {
+            CheckStatus::Pass("Internet connection is available".to_string())
+        } else {
+            CheckStatus::Fail {
                 message: "No internet connection detected".to_string(),
                 fixable: true, // nmtui can potentially fix network issues
-            },
+            }
         }
     }
 
