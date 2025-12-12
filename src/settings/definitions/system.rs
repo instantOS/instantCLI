@@ -4,14 +4,18 @@
 
 use anyhow::{Context, Result};
 use duct::cmd;
+use std::process::Command;
 
 use crate::common::requirements::{
     COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_FIRMWARE_PACKAGE, PACMAN_CONTRIB_PACKAGE,
     TOPGRADE_PACKAGE,
 };
+use crate::common::systemd::SystemdManager;
+use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
-use crate::settings::store::BoolSettingKey;
+use crate::settings::store::{BoolSettingKey, COCKPIT_PACKAGES, PACMAN_AUTOCLEAN_KEY};
+use crate::settings::sources;
 use crate::ui::prelude::*;
 
 // ============================================================================
@@ -106,7 +110,7 @@ impl Setting for CockpitManager {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        crate::settings::actions::launch_cockpit(ctx)
+        launch_cockpit(ctx)
     }
 }
 
@@ -167,7 +171,7 @@ impl Setting for PacmanAutoclean {
         let current = ctx.bool(Self::KEY);
         let target = !current;
         ctx.set_bool(Self::KEY, target);
-        crate::settings::actions::apply_pacman_autoclean(ctx, target)
+        apply_pacman_autoclean(ctx, target)
     }
 }
 
@@ -190,3 +194,78 @@ simple_toggle_setting!(
     "Welcome app will appear on next startup",
     "Welcome app autostart has been disabled"
 );
+
+// ============================================================================
+// Implementations
+// ============================================================================
+
+pub fn apply_pacman_autoclean(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+    if let Some(source) = sources::source_for(&PACMAN_AUTOCLEAN_KEY) {
+        source.apply(enabled)?;
+        let active = ctx.refresh_bool_source(PACMAN_AUTOCLEAN_KEY)?;
+
+        if active {
+            ctx.notify(
+                "Pacman cache",
+                "Automatic weekly pacman cache cleanup enabled.",
+            );
+        } else {
+            ctx.notify("Pacman cache", "Automatic pacman cache cleanup disabled.");
+        }
+    } else {
+        ctx.set_bool(PACMAN_AUTOCLEAN_KEY, enabled);
+        ctx.notify(
+            "Pacman cache",
+            if enabled {
+                "Automatic weekly pacman cache cleanup enabled."
+            } else {
+                "Automatic pacman cache cleanup disabled."
+            },
+        );
+    }
+
+    Ok(())
+}
+
+const COCKPIT_SOCKET_NAME: &str = "cockpit.socket";
+
+/// Launch Cockpit web-based system management interface
+pub fn launch_cockpit(ctx: &mut SettingsContext) -> Result<()> {
+    // Ensure required packages are installed
+    if !ctx
+        .ensure_packages(COCKPIT_PACKAGES.as_slice())?
+        .is_installed()
+    {
+        ctx.emit_info("settings.cockpit.cancelled", "Cockpit launch cancelled.");
+        return Ok(());
+    }
+
+    let systemd = SystemdManager::system_with_sudo();
+
+    // Check if cockpit.socket is enabled, if not enable it
+    if !systemd.is_enabled(COCKPIT_SOCKET_NAME) {
+        systemd.enable_and_start(COCKPIT_SOCKET_NAME)?;
+
+        // Give cockpit a moment to start up
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        // Show login hint
+        let username = std::env::var("USER").unwrap_or_else(|_| "your username".to_string());
+        FzfWrapper::builder()
+            .message(format!(
+                "Cockpit is starting...\n\nSign in with '{}' in the browser window.",
+                username
+            ))
+            .title("Cockpit")
+            .show_message()?;
+    }
+
+    // Launch chromium in app mode
+    std::process::Command::new("chromium")
+        .arg("--app=http://localhost:9090")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+
+    Ok(())
+}
