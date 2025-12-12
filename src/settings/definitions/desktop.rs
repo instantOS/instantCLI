@@ -69,7 +69,7 @@ impl FzfSelectable for LayoutChoiceDisplay {
 }
 
 /// Apply a window layout via instantwmctl
-fn apply_window_layout(ctx: &mut SettingsContext, choice: &LayoutChoice) -> Result<()> {
+fn apply_window_layout(ctx: &mut SettingsContext, layout: &str) -> Result<()> {
     let compositor = CompositorType::detect();
     if !matches!(compositor, CompositorType::InstantWM) {
         ctx.emit_unsupported(
@@ -83,19 +83,18 @@ fn apply_window_layout(ctx: &mut SettingsContext, choice: &LayoutChoice) -> Resu
     }
 
     let status = Command::new("instantwmctl")
-        .args(["layout", choice.value])
+        .args(["layout", layout])
         .status();
 
     match status {
         Ok(exit) if exit.success() => {
-            ctx.notify("Window Layout", &format!("Set to: {}", choice.label));
+            ctx.notify("Window Layout", &format!("Set to: {layout}"));
         }
         Ok(exit) => {
             ctx.emit_failure(
                 "settings.desktop.layout.apply_failed",
                 &format!(
-                    "Failed to apply layout '{}' (exit code {}).",
-                    choice.value,
+                    "Failed to apply layout '{layout}' (exit code {}).",
                     exit.code().unwrap_or(-1)
                 ),
             );
@@ -225,7 +224,7 @@ impl Setting for WindowLayout {
                     match display.choice {
                         Some(choice) => {
                             ctx.set_string(Self::KEY, choice.value);
-                            apply_window_layout(ctx, choice)?;
+                            apply_window_layout(ctx, choice.value)?;
                         }
                         None => break, // Back selected
                     }
@@ -244,38 +243,7 @@ impl Setting for WindowLayout {
         }
 
         let layout = ctx.string(Self::KEY);
-        let status = Command::new("instantwmctl")
-            .args(["layout", &layout])
-            .status();
-
-        let result = match status {
-            Ok(exit) if exit.success() => {
-                ctx.emit_info(
-                    "settings.desktop.layout.restored",
-                    &format!("Restored instantwm layout: {layout}"),
-                );
-                Ok(())
-            }
-            Ok(exit) => {
-                ctx.emit_failure(
-                    "settings.desktop.layout.restore_failed",
-                    &format!(
-                        "Failed to restore instantwm layout '{layout}' (exit code {}).",
-                        exit.code().unwrap_or(-1)
-                    ),
-                );
-                Ok(())
-            }
-            Err(err) => {
-                ctx.emit_failure(
-                    "settings.desktop.layout.restore_error",
-                    &format!("Failed to run instantwmctl: {err}"),
-                );
-                Ok(())
-            }
-        };
-
-        Some(result)
+        Some(apply_window_layout(ctx, &layout))
     }
 }
 

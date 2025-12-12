@@ -18,6 +18,20 @@ impl KeyboardLayout {
     const KEY_X11: StringSettingKey = StringSettingKey::new("language.keyboard.x11", "");
 }
 
+/// Apply keyboard layout via swaymsg or setxkbmap depending on compositor
+fn apply_keyboard_layout(code: &str, compositor: &CompositorType) -> Result<()> {
+    if matches!(compositor, CompositorType::Sway) {
+        let cmd = format!("input type:keyboard xkb_layout {code}");
+        sway::swaymsg(&cmd)?;
+    } else if compositor.is_x11() {
+        std::process::Command::new("setxkbmap")
+            .arg(code)
+            .status()
+            .with_context(|| format!("Failed to execute setxkbmap for layout '{code}'"))?;
+    }
+    Ok(())
+}
+
 impl Setting for KeyboardLayout {
     fn metadata(&self) -> SettingMetadata {
         SettingMetadata::builder()
@@ -124,23 +138,10 @@ impl Setting for KeyboardLayout {
 
         match result {
             FzfResult::Selected(layout) => {
-                if is_sway {
-                    let cmd = format!("input type:keyboard xkb_layout {}", layout.code);
-                    if let Err(e) = sway::swaymsg(&cmd) {
-                        ctx.emit_info(
-                            "settings.keyboard.apply_error",
-                            &format!("Failed to apply keyboard layout: {e}"),
-                        );
-                        return Ok(());
-                    }
-                } else if is_x11
-                    && let Err(e) = std::process::Command::new("setxkbmap")
-                        .arg(&layout.code)
-                        .status()
-                {
+                if let Err(e) = apply_keyboard_layout(&layout.code, &compositor) {
                     ctx.emit_info(
                         "settings.keyboard.apply_error",
-                        &format!("Failed to execute setxkbmap: {e}"),
+                        &format!("Failed to apply keyboard layout: {e}"),
                     );
                     return Ok(());
                 }
@@ -162,46 +163,33 @@ impl Setting for KeyboardLayout {
 
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
         let compositor = CompositorType::detect();
+        let is_sway = matches!(compositor, CompositorType::Sway);
+        let is_x11 = compositor.is_x11();
 
-        if matches!(compositor, CompositorType::Sway) {
-            let code = ctx.string(Self::KEY_SWAY);
-            if !code.is_empty() {
-                let cmd = format!("input type:keyboard xkb_layout {}", code);
-                if let Err(e) = sway::swaymsg(&cmd) {
-                    emit(
-                        Level::Warn,
-                        "settings.keyboard.restore_failed",
-                        &format!("Failed to restore Sway keyboard layout: {e}"),
-                        None,
-                    );
-                } else {
-                    emit(
-                        Level::Debug,
-                        "settings.keyboard.restored",
-                        &format!("Restored Sway keyboard layout: {code}"),
-                        None,
-                    );
-                }
-            }
-        } else if compositor.is_x11() {
-            let code = ctx.string(Self::KEY_X11);
-            if !code.is_empty() {
-                if let Err(e) = std::process::Command::new("setxkbmap").arg(&code).status() {
-                    emit(
-                        Level::Warn,
-                        "settings.keyboard.restore_failed",
-                        &format!("Failed to restore X11 keyboard layout: {e}"),
-                        None,
-                    );
-                } else {
-                    emit(
-                        Level::Debug,
-                        "settings.keyboard.restored",
-                        &format!("Restored X11 keyboard layout: {code}"),
-                        None,
-                    );
-                }
-            }
+        if !is_sway && !is_x11 {
+            return None;
+        }
+
+        let key = if is_sway { Self::KEY_SWAY } else { Self::KEY_X11 };
+        let code = ctx.string(key);
+        if code.is_empty() {
+            return None;
+        }
+
+        if let Err(e) = apply_keyboard_layout(&code, &compositor) {
+            emit(
+                Level::Warn,
+                "settings.keyboard.restore_failed",
+                &format!("Failed to restore keyboard layout: {e}"),
+                None,
+            );
+        } else {
+            emit(
+                Level::Debug,
+                "settings.keyboard.restored",
+                &format!("Restored keyboard layout: {code}"),
+                None,
+            );
         }
 
         Some(Ok(()))
