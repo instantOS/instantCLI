@@ -407,51 +407,8 @@ impl Setting for GtkIconTheme {
                         continue;
                     } else {
                         // User selected a theme
-                        let theme = selection;
-
-                        // 1. Apply to GSettings (Wayland/Sway primary)
-                        let status = Command::new("gsettings")
-                            .args(["set", "org.gnome.desktop.interface", "icon-theme", &theme])
-                            .status();
-
-                        match status {
-                            Ok(exit) if exit.success() => {
-                                ctx.notify(
-                                    "Icon Theme",
-                                    &format!("Applied '{}' to GSettings", theme),
-                                );
-                            }
-                            Ok(exit) => {
-                                ctx.emit_failure(
-                                    "settings.appearance.gtk_icon_theme.gsettings_failed",
-                                    &format!(
-                                        "GSettings failed with exit code {}",
-                                        exit.code().unwrap_or(-1)
-                                    ),
-                                );
-                            }
-                            Err(e) => {
-                                ctx.emit_failure(
-                                    "settings.appearance.gtk_icon_theme.gsettings_error",
-                                    &format!("Failed to execute gsettings: {e}"),
-                                );
-                            }
-                        }
-
-                        // 2. Update settings.ini files for GTK 3 and 4
-                        if let Err(e) = update_gtk_config("3.0", "gtk-icon-theme-name", &theme) {
-                            ctx.emit_failure(
-                                "settings.appearance.gtk_icon_theme.gtk3_error",
-                                &format!("Failed to update GTK 3.0 config: {e}"),
-                            );
-                        }
-
-                        if let Err(e) = update_gtk_config("4.0", "gtk-icon-theme-name", &theme) {
-                            ctx.emit_failure(
-                                "settings.appearance.gtk_icon_theme.gtk4_error",
-                                &format!("Failed to update GTK 4.0 config: {e}"),
-                            );
-                        }
+                        apply_icon_theme_changes(ctx, &selection);
+                        return Ok(());
                     }
                 }
                 crate::menu_utils::FzfResult::MultiSelected(_)
@@ -538,63 +495,7 @@ impl Setting for GtkTheme {
                         continue;
                     } else {
                         // User selected a theme
-                        let theme = selection;
-
-                        // 1. Apply to GSettings (Wayland/Sway primary)
-                        let status = Command::new("gsettings")
-                            .args(["set", "org.gnome.desktop.interface", "gtk-theme", &theme])
-                            .status();
-
-                        match status {
-                            Ok(exit) if exit.success() => {
-                                ctx.notify(
-                                    "GTK Theme",
-                                    &format!("Applied '{}' to GSettings", theme),
-                                );
-                            }
-                            Ok(exit) => {
-                                ctx.emit_failure(
-                                    "settings.appearance.gtk_theme.gsettings_failed",
-                                    &format!(
-                                        "GSettings failed with exit code {}",
-                                        exit.code().unwrap_or(-1)
-                                    ),
-                                );
-                            }
-                            Err(e) => {
-                                ctx.emit_failure(
-                                    "settings.appearance.gtk_theme.gsettings_error",
-                                    &format!("Failed to execute gsettings: {e}"),
-                                );
-                            }
-                        }
-
-                        // 2. Update settings.ini files for GTK 3 and 4
-                        if let Err(e) = update_gtk_config("3.0", "gtk-theme-name", &theme) {
-                            ctx.emit_failure(
-                                "settings.appearance.gtk_theme.gtk3_error",
-                                &format!("Failed to update GTK 3.0 config: {e}"),
-                            );
-                        }
-
-                        if let Err(e) = update_gtk_config("4.0", "gtk-theme-name", &theme) {
-                            ctx.emit_failure(
-                                "settings.appearance.gtk_theme.gtk4_error",
-                                &format!("Failed to update GTK 4.0 config: {e}"),
-                            );
-                        }
-
-                        // 3. Libadwaita/GTK4 overrides (Symlink ~/.config/gtk-4.0/gtk.css)
-                        if let Err(e) = apply_gtk4_overrides(&theme) {
-                            // Not a critical failure, but worth noting
-                            ctx.emit_info(
-                                "settings.appearance.gtk_theme.gtk4_override_info",
-                                &format!("Could not apply Libadwaita overrides (maybe theme lacks gtk-4.0 support?): {e}"),
-                            );
-                        } else {
-                            ctx.notify("GTK Theme", "Applied Libadwaita overrides");
-                        }
-
+                        apply_gtk_theme_changes(ctx, &selection);
                         return Ok(());
                     }
                 }
@@ -739,6 +640,62 @@ impl Setting for ResetQt {
         }
 
         Ok(())
+    }
+}
+
+fn apply_gtk_theme_changes(ctx: &mut SettingsContext, theme: &str) {
+    // 1. Apply to GSettings (Wayland/Sway primary)
+    let status = Command::new("gsettings")
+        .args(["set", "org.gnome.desktop.interface", "gtk-theme", theme])
+        .status();
+
+    match status {
+        Ok(exit) if exit.success() => {
+            ctx.notify("GTK Theme", &format!("Applied '{}' to GSettings", theme));
+        }
+        Ok(exit) => {
+            ctx.emit_failure(
+                "settings.appearance.gtk_theme.gsettings_failed",
+                &format!(
+                    "GSettings failed with exit code {}",
+                    exit.code().unwrap_or(-1)
+                ),
+            );
+        }
+        Err(e) => {
+            ctx.emit_failure(
+                "settings.appearance.gtk_theme.gsettings_error",
+                &format!("Failed to execute gsettings: {e}"),
+            );
+        }
+    }
+
+    // 2. Update settings.ini files for GTK 3 and 4
+    if let Err(e) = update_gtk_config("3.0", "gtk-theme-name", theme) {
+        ctx.emit_failure(
+            "settings.appearance.gtk_theme.gtk3_error",
+            &format!("Failed to update GTK 3.0 config: {e}"),
+        );
+    }
+
+    if let Err(e) = update_gtk_config("4.0", "gtk-theme-name", theme) {
+        ctx.emit_failure(
+            "settings.appearance.gtk_theme.gtk4_error",
+            &format!("Failed to update GTK 4.0 config: {e}"),
+        );
+    }
+
+    // 3. Libadwaita/GTK4 overrides (Symlink ~/.config/gtk-4.0/gtk.css)
+    if let Err(e) = apply_gtk4_overrides(theme) {
+        // Not a critical failure, but worth noting
+        ctx.emit_info(
+            "settings.appearance.gtk_theme.gtk4_override_info",
+            &format!(
+                "Could not apply Libadwaita overrides (maybe theme lacks gtk-4.0 support?): {e}"
+            ),
+        );
+    } else {
+        ctx.notify("GTK Theme", "Applied Libadwaita overrides");
     }
 }
 
@@ -970,6 +927,49 @@ fn apply_gtk4_overrides(theme_name: &str) -> Result<()> {
     Ok(())
 }
 
+fn apply_icon_theme_changes(ctx: &mut SettingsContext, theme: &str) {
+    // 1. Apply to GSettings (Wayland/Sway primary)
+    let status = Command::new("gsettings")
+        .args(["set", "org.gnome.desktop.interface", "icon-theme", theme])
+        .status();
+
+    match status {
+        Ok(exit) if exit.success() => {
+            ctx.notify("Icon Theme", &format!("Applied '{}' to GSettings", theme));
+        }
+        Ok(exit) => {
+            ctx.emit_failure(
+                "settings.appearance.gtk_icon_theme.gsettings_failed",
+                &format!(
+                    "GSettings failed with exit code {}",
+                    exit.code().unwrap_or(-1)
+                ),
+            );
+        }
+        Err(e) => {
+            ctx.emit_failure(
+                "settings.appearance.gtk_icon_theme.gsettings_error",
+                &format!("Failed to execute gsettings: {e}"),
+            );
+        }
+    }
+
+    // 2. Update settings.ini files for GTK 3 and 4
+    if let Err(e) = update_gtk_config("3.0", "gtk-icon-theme-name", theme) {
+        ctx.emit_failure(
+            "settings.appearance.gtk_icon_theme.gtk3_error",
+            &format!("Failed to update GTK 3.0 config: {e}"),
+        );
+    }
+
+    if let Err(e) = update_gtk_config("4.0", "gtk-icon-theme-name", theme) {
+        ctx.emit_failure(
+            "settings.appearance.gtk_icon_theme.gtk4_error",
+            &format!("Failed to update GTK 4.0 config: {e}"),
+        );
+    }
+}
+
 // Helpers for GTK Icon Theme
 
 fn list_icon_themes() -> Result<Vec<String>> {
@@ -1137,8 +1137,10 @@ impl Setting for DarkMode {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         // Get current GTK theme, icon theme, and color-scheme
-        let current_gtk_theme = get_current_gtk_theme().context("Failed to get current GTK theme")?;
-        let current_icon_theme = get_current_icon_theme().context("Failed to get current icon theme")?;
+        let current_gtk_theme =
+            get_current_gtk_theme().context("Failed to get current GTK theme")?;
+        let current_icon_theme =
+            get_current_icon_theme().context("Failed to get current icon theme")?;
 
         let color_scheme_output = Command::new("gsettings")
             .args(["get", "org.gnome.desktop.interface", "color-scheme"])
@@ -1273,21 +1275,28 @@ impl Setting for DarkMode {
         if status.success() {
             let new_status = if is_dark { "Disabled" } else { "Enabled" };
             let mut details = vec![];
-            
+
             if gtk_theme_changed {
                 details.push(format!("GTK: {} → {}", current_gtk_theme, new_gtk_theme));
             }
             if icon_theme_changed {
-                details.push(format!("Icons: {} → {}", current_icon_theme, new_icon_theme));
+                details.push(format!(
+                    "Icons: {} → {}",
+                    current_icon_theme, new_icon_theme
+                ));
             }
-            
+
             ctx.notify(
                 "Dark Mode",
-                &format!("{}{}", new_status, if !details.is_empty() {
-                    format!("\n{}", details.join("\n"))
-                } else {
-                    String::new()
-                }),
+                &format!(
+                    "{}{}",
+                    new_status,
+                    if !details.is_empty() {
+                        format!("\n{}", details.join("\n"))
+                    } else {
+                        String::new()
+                    }
+                ),
             );
         } else {
             ctx.emit_failure(
