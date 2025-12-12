@@ -1175,14 +1175,13 @@ fn is_dark_mode() -> Result<bool> {
 
 /// Set the gsettings color-scheme preference.
 fn set_color_scheme(prefer_dark: bool) -> Result<()> {
-    let scheme = if prefer_dark { "prefer-dark" } else { "default" };
+    let scheme = if prefer_dark {
+        "prefer-dark"
+    } else {
+        "default"
+    };
     let status = Command::new("gsettings")
-        .args([
-            "set",
-            "org.gnome.desktop.interface",
-            "color-scheme",
-            scheme,
-        ])
+        .args(["set", "org.gnome.desktop.interface", "color-scheme", scheme])
         .status()
         .context("Failed to set gsettings color-scheme")?;
 
@@ -1240,10 +1239,17 @@ impl Setting for DarkMode {
             details.push(format!("GTK: {} → {}", current_gtk_theme, new_gtk_theme));
         }
         if icon_changed {
-            details.push(format!("Icons: {} → {}", current_icon_theme, new_icon_theme));
+            details.push(format!(
+                "Icons: {} → {}",
+                current_icon_theme, new_icon_theme
+            ));
         }
 
-        let status_text = if switch_to_dark { "Enabled" } else { "Disabled" };
+        let status_text = if switch_to_dark {
+            "Enabled"
+        } else {
+            "Disabled"
+        };
         let message = if details.is_empty() {
             status_text.to_string()
         } else {
