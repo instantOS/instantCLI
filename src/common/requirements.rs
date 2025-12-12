@@ -370,7 +370,12 @@ fn build_package_list_message(
     packages: &[&RequiredPackage],
     package_manager: &PackageManager,
 ) -> Result<String> {
-    let mut msg = String::from("The following packages are required:\n\n");
+    let header = if packages.len() == 1 {
+        "The following package is required:\n\n"
+    } else {
+        "The following packages are required:\n\n"
+    };
+    let mut msg = String::from(header);
 
     for pkg in packages {
         let package_name = package_manager.package_name(pkg).ok_or_else(|| {
@@ -414,11 +419,16 @@ fn prompt_batch_installation(
     package_manager: &PackageManager,
 ) -> Result<bool> {
     let mut msg = build_package_list_message(packages, package_manager)?;
-    msg.push_str("\nDo you want to install all of them?");
+    let (question, yes_text) = if packages.len() == 1 {
+        ("\nDo you want to install it?", "Install")
+    } else {
+        ("\nDo you want to install all of them?", "Install All")
+    };
+    msg.push_str(question);
 
     let should_install = FzfWrapper::builder()
         .confirm(&msg)
-        .yes_text("Install All")
+        .yes_text(yes_text)
         .no_text("Cancel")
         .show_confirmation()?;
 
@@ -539,15 +549,25 @@ pub fn ensure_flatpaks_batch(packages: &[FlatpakPackage]) -> Result<PackageStatu
     }
 
     // Build prompt message
-    let mut msg = String::from("The following Flatpak applications are required:\n\n");
+    let header = if missing.len() == 1 {
+        "The following Flatpak application is required:\n\n"
+    } else {
+        "The following Flatpak applications are required:\n\n"
+    };
+    let mut msg = String::from(header);
     for pkg in &missing {
         msg.push_str(&format!("  • {} (id: {})\n", pkg.name, pkg.app_id));
     }
-    msg.push_str("\nDo you want to install them from Flathub?");
+    let (question, yes_text) = if missing.len() == 1 {
+        ("\nDo you want to install it from Flathub?", "Install")
+    } else {
+        ("\nDo you want to install them from Flathub?", "Install All")
+    };
+    msg.push_str(question);
 
     let should_install = FzfWrapper::builder()
         .confirm(&msg)
-        .yes_text("Install All")
+        .yes_text(yes_text)
         .no_text("Cancel")
         .show_confirmation()?;
 
