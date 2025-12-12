@@ -39,7 +39,11 @@ pub fn ensure_groups_exist(executor: &CommandExecutor) -> Result<()> {
 ///
 /// This is used by `ins arch setup` to add an existing user to the required groups.
 pub fn add_user_to_groups(username: &str, executor: &CommandExecutor) -> Result<()> {
-    println!("Adding user {} to groups: {}", username, USER_GROUPS.join(", "));
+    println!(
+        "Adding user {} to groups: {}",
+        username,
+        USER_GROUPS.join(", ")
+    );
     let mut cmd = Command::new("usermod");
     cmd.arg("-aG").arg(USER_GROUPS.join(",")).arg(username);
     executor.run(&mut cmd)?;
@@ -378,10 +382,7 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
             username
         );
         // Add user to groups if not already a member
-        let mut cmd_mod = Command::new("usermod");
-        //TODO: is this duplicated between here and `ins arch setup`?
-        cmd_mod.arg("-aG").arg(USER_GROUPS.join(",")).arg(username);
-        executor.run(&mut cmd_mod)?;
+        add_user_to_groups(username, executor)?;
 
         // Ensure shell is zsh
         let mut cmd_chsh = Command::new("chsh");
