@@ -16,18 +16,44 @@ pub async fn install_base(context: &InstallContext, executor: &CommandExecutor) 
 }
 
 async fn setup_mirrors(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
-    let region_name = context
-        .get_answer(&QuestionId::MirrorRegion)
-        .context("No mirror region selected")?;
-
-    println!("Selected region: {}", region_name);
+    // Check if a region was selected (question may have been skipped if fetch failed)
+    let region_name = context.get_answer(&QuestionId::MirrorRegion);
 
     if executor.dry_run {
-        println!("[DRY RUN] Fetching mirrorlist for region: {}", region_name);
+        match region_name {
+            Some(region) => {
+                println!("[DRY RUN] Fetching mirrorlist for region: {}", region);
+            }
+            None => {
+                println!("[DRY RUN] Using fallback mirrorlist (region selection was skipped)");
+            }
+        }
         println!("[DRY RUN] Writing to /etc/pacman.d/mirrorlist");
         return Ok(());
     }
 
+    let mirrorlist = match region_name {
+        Some(region) => {
+            // Normal path: user selected a region
+            println!("Selected region: {}", region);
+            fetch_mirrorlist_for_region(region).await?
+        }
+        None => {
+            // Fallback path: region selection was skipped (fetch failed)
+            println!("Mirror region selection was skipped, using fallback mirrorlist...");
+            fetch_fallback_mirrorlist().await?
+        }
+    };
+
+    // Write to file
+    std::fs::write("/etc/pacman.d/mirrorlist", mirrorlist)?;
+    println!("Mirrors updated.");
+
+    Ok(())
+}
+
+/// Fetch mirrorlist for a specific region
+async fn fetch_mirrorlist_for_region(region_name: &str) -> Result<String> {
     // Fetch region map to get code
     let regions = crate::arch::mirrors::fetch_mirror_regions().await?;
     let region_code = regions
@@ -35,13 +61,13 @@ async fn setup_mirrors(context: &InstallContext, executor: &CommandExecutor) -> 
         .context(format!("Could not find code for region: {}", region_name))?;
 
     println!("Fetching mirrors for code: {}", region_code);
-    let mirrorlist = crate::arch::mirrors::fetch_mirrorlist(region_code).await?;
+    crate::arch::mirrors::fetch_mirrorlist(region_code).await
+}
 
-    // Write to file
-    std::fs::write("/etc/pacman.d/mirrorlist", mirrorlist)?;
-    println!("Mirrors updated.");
-
-    Ok(())
+/// Fetch fallback mirrorlist when region selection was skipped
+async fn fetch_fallback_mirrorlist() -> Result<String> {
+    // Use empty region code to trigger fallback chain in fetch_mirrorlist
+    crate::arch::mirrors::fetch_mirrorlist("").await
 }
 
 fn run_pacstrap(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {

@@ -88,10 +88,24 @@ impl Question for MirrorRegionQuestion {
         vec![crate::arch::mirrors::MirrorRegionsKey::KEY.to_string()]
     }
 
+    /// Skip this question if mirror regions fetch failed.
+    /// Installation will proceed with fallback mirrorlist.
+    fn should_ask(&self, context: &InstallContext) -> bool {
+        // If the fetch failed, skip this question
+        !context
+            .get::<crate::arch::mirrors::MirrorRegionsFetchFailed>()
+            .unwrap_or(false)
+    }
+
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let regions = context
             .get::<crate::arch::mirrors::MirrorRegionsKey>()
             .unwrap_or_default();
+
+        // Defensive: if somehow we got here with no regions, cancel
+        if regions.is_empty() {
+            return Ok(QuestionResult::Cancelled);
+        }
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select Mirror Region", NerdFont::Globe))
