@@ -3,6 +3,37 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::process::Command as TokioCommand;
 
+/// Check if any polkit authentication agent is running
+/// This detects any agent that properly registers with polkit via D-Bus
+pub async fn is_polkit_agent_running() -> bool {
+    // Check for registered polkit authentication agents via D-Bus
+    // This detects any agent that properly registers with polkit, regardless of process name
+    TokioCommand::new("busctl")
+        .arg("--user")
+        .arg("list")
+        .output()
+        .await
+        .map(|output| {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // Look for any RUNNING service (has a PID) that contains "polkit" or "PolicyKit" in the name
+                // Skip activatable services (those with "-" under PID column)
+                stdout.lines().any(|line| {
+                    let line_lower = line.to_lowercase();
+                    // Must have a PID (not activatable) AND contain polkit/PolicyKit
+                    (line_lower.contains("polkit") || line_lower.contains("policykit"))
+                        && line
+                            .split_whitespace()
+                            .nth(1)
+                            .map_or(false, |pid| pid != "-")
+                })
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false)
+}
+
 #[derive(Default)]
 pub struct PolkitAgentCheck;
 
@@ -57,31 +88,7 @@ impl DoctorCheck for PolkitAgentCheck {
         // We really want to know if it *fails* to find an agent.
 
         // Check for registered polkit authentication agents via D-Bus
-        // This detects any agent that properly registers with polkit, regardless of process name
-        let agent_found = TokioCommand::new("busctl")
-            .arg("--user")
-            .arg("list")
-            .output()
-            .await
-            .map(|output| {
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    // Look for any RUNNING service (has a PID) that contains "polkit" or "PolicyKit" in the name
-                    // Skip activatable services (those with "-" under PID column)
-                    stdout.lines().any(|line| {
-                        let line_lower = line.to_lowercase();
-                        // Must have a PID (not activatable) AND contain polkit/PolicyKit
-                        (line_lower.contains("polkit") || line_lower.contains("policykit"))
-                            && line
-                                .split_whitespace()
-                                .nth(1)
-                                .map_or(false, |pid| pid != "-")
-                    })
-                } else {
-                    false
-                }
-            })
-            .unwrap_or(false);
+        let agent_found = is_polkit_agent_running().await;
 
         if agent_found {
             return CheckStatus::Pass("Polkit authentication agent detected".to_string());
