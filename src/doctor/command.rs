@@ -167,14 +167,20 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
 
     // STEP 1: Determine if we need to escalate privileges
     // Check both the check and fix privilege requirements upfront
-    let need_root_for_check = matches!(
-        check_privilege_requirements(check.as_ref(), false),
-        Err(PrivilegeError::NeedRoot)
-    );
-    let need_root_for_fix = matches!(
-        check_privilege_requirements(check.as_ref(), true),
-        Err(PrivilegeError::NeedRoot)
-    );
+    let check_priv_err = check_privilege_requirements(check.as_ref(), false).err();
+    let fix_priv_err = check_privilege_requirements(check.as_ref(), true).err();
+
+    if matches!(check_priv_err, Some(PrivilegeError::MustNotBeRoot))
+        || matches!(fix_priv_err, Some(PrivilegeError::MustNotBeRoot))
+    {
+        return Err(anyhow!(
+            "Check '{}' must be run as a regular user (not root). Please run without sudo.",
+            check.name()
+        ));
+    }
+
+    let need_root_for_check = matches!(check_priv_err, Some(PrivilegeError::NeedRoot));
+    let need_root_for_fix = matches!(fix_priv_err, Some(PrivilegeError::NeedRoot));
 
     if need_root_for_check || need_root_for_fix {
         let reason = if need_root_for_check {
