@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.8](https://github.com/instantOS/instantCLI/compare/v0.10.7...v0.10.8) - 2025-12-12
+
+### Fixed
+
+- fix script?
+- fix signature issues
+- fix settings sorting
+- fix dark/light switching for GTK 3
+- fix GTK4 not being reset correctly
+
+### Other
+
+- add fatal installer error message
+- fmt
+- implement mirrorlist fallback
+- fallback plans
+- settings refactor
+- simpler deduplication approach
+- deduplicate restore
+- add gtk menu icons setting
+- better batch terminology
+- refactor fzf select
+- fmt
+- refactor dark/light mode setting
+- refactor apply function
+- more gtk icon light/dark theme variants
+- init icon theme dark/light variants
+- init new doctor check
+- add 'install more' for browsers
+- add 'install more' setting to default file managers
+- add adapta theme
+- replace outdated themes
+- migrate to builder pattern for terminal launch
+- unify qrcode terminal use
+- further unify terminal use
+- refactor terminal handling
+- add network config to welcome
+- better welcome app disabling experience
+- add archive manager install more options
+- fmt
+- use nerd fonts
+- init `install more`
+
 ## [0.10.7](https://github.com/instantOS/instantCLI/compare/v0.10.6...v0.10.7) - 2025-12-10
 
 ### Fixed
