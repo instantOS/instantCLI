@@ -782,6 +782,58 @@ fn list_gtk_themes() -> Result<Vec<String>> {
     Ok(result)
 }
 
+/// Check if a theme with the given name exists
+fn theme_exists(theme_name: &str) -> bool {
+    let dirs = [
+        dirs::home_dir().map(|p| p.join(".themes")),
+        dirs::home_dir().map(|p| p.join(".local/share/themes")),
+        Some(std::path::PathBuf::from("/usr/share/themes")),
+    ];
+
+    for dir in dirs.into_iter().flatten() {
+        let theme_path = dir.join(theme_name);
+        if theme_path.exists() 
+            && (theme_path.join("index.theme").exists()
+                || theme_path.join("gtk-3.0/gtk.css").exists()
+                || theme_path.join("gtk-4.0/gtk.css").exists())
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Get the current GTK theme name
+fn get_current_gtk_theme() -> Result<String> {
+    let output = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "gtk-theme"])
+        .output()
+        .context("Failed to query current GTK theme")?;
+
+    let theme = String::from_utf8_lossy(&output.stdout);
+    // Remove quotes and whitespace
+    Ok(theme.trim().trim_matches('\'').trim_matches('"').to_string())
+}
+
+/// Set the GTK theme
+fn set_gtk_theme(theme_name: &str) -> Result<()> {
+    let status = Command::new("gsettings")
+        .args([
+            "set",
+            "org.gnome.desktop.interface",
+            "gtk-theme",
+            theme_name,
+        ])
+        .status()
+        .context("Failed to set GTK theme")?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        anyhow::bail!("Failed to set GTK theme to {}", theme_name);
+    }
+}
+
 fn apply_gtk4_overrides(theme_name: &str) -> Result<()> {
     // Find the theme directory
     let dirs = [
@@ -1028,18 +1080,75 @@ impl Setting for DarkMode {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        // Query current color-scheme from gsettings
-        let output = Command::new("gsettings")
+        // Get current GTK theme and color-scheme
+        let current_theme = get_current_gtk_theme()
+            .context("Failed to get current GTK theme")?;
+        
+        let color_scheme_output = Command::new("gsettings")
             .args(["get", "org.gnome.desktop.interface", "color-scheme"])
             .output()
             .context("Failed to query gsettings color-scheme")?;
 
-        let current = String::from_utf8_lossy(&output.stdout);
-        let is_dark = current.contains("prefer-dark");
+        let current_scheme = String::from_utf8_lossy(&color_scheme_output.stdout);
+        let is_dark = current_scheme.contains("prefer-dark");
 
-        // Toggle between prefer-dark and default (light)
+        // Determine new theme based on current state
+        let (new_theme, new_status) = if is_dark {
+            // Currently dark, switch to light
+            if current_theme.ends_with("-dark") {
+                // Remove -dark suffix to get light variant
+                let light_theme = current_theme.trim_end_matches("-dark");
+                if theme_exists(light_theme) {
+                    (light_theme.to_string(), "Disabled")
+                } else {
+                    // Fallback: check for -light variant
+                    let light_theme_alt = format!("{}-light", current_theme.trim_end_matches("-dark"));
+                    if theme_exists(&light_theme_alt) {
+                        (light_theme_alt, "Disabled")
+                    } else {
+                        // No light variant found, keep current theme but change color-scheme
+                        (current_theme.clone(), "Disabled")
+                    }
+                }
+            } else {
+                // Theme doesn't end with -dark, just change color-scheme
+                (current_theme.clone(), "Disabled")
+            }
+        } else {
+            // Currently light, switch to dark
+            if current_theme.ends_with("-light") {
+                // Remove -light suffix to get base theme, then add -dark
+                let base_theme = current_theme.trim_end_matches("-light");
+                let dark_theme = format!("{}-dark", base_theme);
+                if theme_exists(&dark_theme) {
+                    (dark_theme, "Enabled")
+                } else {
+                    // No dark variant found, try base theme with -dark
+                    (format!("{}-dark", current_theme), "Enabled")
+                }
+            } else if !current_theme.ends_with("-dark") {
+                // Check if -dark variant exists
+                let dark_theme = format!("{}-dark", current_theme);
+                if theme_exists(&dark_theme) {
+                    (dark_theme, "Enabled")
+                } else {
+                    // No dark variant found, keep current theme but change color-scheme
+                    (current_theme.clone(), "Enabled")
+                }
+            } else {
+                // Already ends with -dark, just change color-scheme
+                (current_theme.clone(), "Enabled")
+            }
+        };
+
+        // Set the new GTK theme (if different)
+        if new_theme != current_theme {
+            set_gtk_theme(&new_theme)
+                .context("Failed to set GTK theme")?;
+        }
+
+        // Always set the color-scheme for GTK 4+ compatibility
         let new_scheme = if is_dark { "default" } else { "prefer-dark" };
-
         let status = Command::new("gsettings")
             .args([
                 "set",
@@ -1053,11 +1162,7 @@ impl Setting for DarkMode {
         if status.success() {
             ctx.notify(
                 "Dark Mode",
-                if new_scheme == "prefer-dark" {
-                    "Enabled"
-                } else {
-                    "Disabled"
-                },
+                new_status,
             );
         } else {
             ctx.emit_failure(
@@ -1074,18 +1179,22 @@ impl Setting for DarkMode {
         Some(
             r#"bash -c '
 scheme=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)
+theme=$(gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null)
+
 if echo "$scheme" | grep -q "prefer-dark"; then
     status="Dark"
 else
     status="Light"
 fi
 
-echo "Request applications to use dark theme."
+echo "Toggle between light and dark theme variants."
 echo ""
-echo "Sets the system color-scheme preference via gsettings."
-echo "This affects GTK 4+, Libadwaita, and xdg-desktop-portal aware apps."
+echo "Switches between GTK theme variants (e.g., Pop ↔ Pop-dark)"
+echo "and sets color-scheme preference for GTK 4+ compatibility."
+echo "Changes apply instantly to running GTK applications."
 echo ""
-echo "Current: $status"
+echo "Current theme: $theme"
+echo "Current mode: $status"
 '"#
             .to_string(),
         )
