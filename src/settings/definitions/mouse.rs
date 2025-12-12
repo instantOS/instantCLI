@@ -48,6 +48,14 @@ impl Setting for NaturalScroll {
     fn apply_value(&self, ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
         apply_natural_scrolling(ctx, enabled)
     }
+
+    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
+        let enabled = ctx.bool(Self::KEY);
+        if !enabled {
+            return None;
+        }
+        Some(self.apply_value(ctx, enabled))
+    }
 }
 
 // ============================================================================
@@ -84,6 +92,14 @@ impl Setting for SwapButtons {
 
     fn apply_value(&self, ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
         apply_swap_buttons(ctx, enabled)
+    }
+
+    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
+        let enabled = ctx.bool(Self::KEY);
+        if !enabled {
+            return None;
+        }
+        Some(self.apply_value(ctx, enabled))
     }
 }
 

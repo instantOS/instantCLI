@@ -43,7 +43,10 @@ impl Setting for Animations {
         let current = ctx.bool(Self::KEY);
         let enabled = !current;
         ctx.set_bool(Self::KEY, enabled);
+        self.apply_value(ctx, enabled)
+    }
 
+    fn apply_value(&self, ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
         let compositor = CompositorType::detect();
         if !matches!(compositor, CompositorType::InstantWM) {
             ctx.emit_unsupported(
@@ -63,7 +66,7 @@ impl Setting for Animations {
             }
             Err(err) => {
                 ctx.emit_failure(
-                    "settings.appearance.animations.apply_error",
+                    "settings.appearance.animations.error",
                     &format!("Failed to apply animation setting: {err}"),
                 );
             }
@@ -77,31 +80,7 @@ impl Setting for Animations {
         if !matches!(compositor, CompositorType::InstantWM) {
             return None;
         }
-
-        let enabled = ctx.bool(Self::KEY);
-        let controller = InstantWmController::new();
-
-        let result = match controller.set_animations(enabled) {
-            Ok(()) => {
-                ctx.emit_info(
-                    "settings.appearance.animations.restored",
-                    &format!(
-                        "Restored instantwm animations: {}",
-                        if enabled { "enabled" } else { "disabled" }
-                    ),
-                );
-                Ok(())
-            }
-            Err(err) => {
-                ctx.emit_failure(
-                    "settings.appearance.animations.restore_error",
-                    &format!("Failed to restore animations: {err}"),
-                );
-                Ok(())
-            }
-        };
-
-        Some(result)
+        Some(self.apply_value(ctx, ctx.bool(Self::KEY)))
     }
 }
 
@@ -362,8 +341,11 @@ impl Setting for GtkMenuIcons {
         let current = ctx.bool(Self::KEY);
         let target = !current;
         ctx.set_bool(Self::KEY, target);
+        self.apply_value(ctx, target)
+    }
 
-        let value_str = if target { "true" } else { "false" };
+    fn apply_value(&self, ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+        let value_str = if enabled { "true" } else { "false" };
 
         // Update GTK 3.0 and 4.0 settings.ini files
         if let Err(e) = update_gtk_config("3.0", "gtk-menu-images", value_str) {
@@ -380,37 +362,12 @@ impl Setting for GtkMenuIcons {
             );
         }
 
-        ctx.notify("Menu Icons", if target { "Enabled" } else { "Disabled" });
+        ctx.notify("Menu Icons", if enabled { "Enabled" } else { "Disabled" });
         Ok(())
     }
 
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
-        let enabled = ctx.bool(Self::KEY);
-        let value_str = if enabled { "true" } else { "false" };
-
-        if let Err(e) = update_gtk_config("3.0", "gtk-menu-images", value_str) {
-            ctx.emit_failure(
-                "settings.appearance.gtk_menu_images.restore_gtk3_error",
-                &format!("Failed to restore GTK 3.0 menu icons setting: {e}"),
-            );
-        }
-
-        if let Err(e) = update_gtk_config("4.0", "gtk-menu-images", value_str) {
-            ctx.emit_failure(
-                "settings.appearance.gtk_menu_images.restore_gtk4_error",
-                &format!("Failed to restore GTK 4.0 menu icons setting: {e}"),
-            );
-        }
-
-        ctx.emit_info(
-            "settings.appearance.gtk_menu_images.restored",
-            &format!(
-                "GTK menu icons: {}",
-                if enabled { "enabled" } else { "disabled" }
-            ),
-        );
-
-        Some(Ok(()))
+        Some(self.apply_value(ctx, ctx.bool(Self::KEY)))
     }
 }
 

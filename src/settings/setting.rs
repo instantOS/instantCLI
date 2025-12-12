@@ -337,12 +337,20 @@ pub trait Setting: Send + Sync + 'static {
 
     /// Core action logic for toggle settings.
     ///
-    /// Receives the target boolean value directly and applies the setting.
-    /// When implemented for a toggle setting with `requires_reapply`, the default
-    /// `restore()` will automatically use this method.
+    /// Implement this to share logic between `apply()` and `restore()`.
+    /// Call from both methods to reduce code duplication.
     ///
-    /// The default implementation is a no-op, which means `restore()` will return
-    /// `None` for settings that don't override this method.
+    /// Example:
+    /// ```ignore
+    /// fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+    ///     let enabled = !ctx.bool(Self::KEY);
+    ///     ctx.set_bool(Self::KEY, enabled);
+    ///     self.apply_value(ctx, enabled)
+    /// }
+    /// fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
+    ///     Some(self.apply_value(ctx, ctx.bool(Self::KEY)))
+    /// }
+    /// ```
     fn apply_value(&self, _ctx: &mut SettingsContext, _value: bool) -> Result<()> {
         Ok(())
     }
@@ -350,27 +358,8 @@ pub trait Setting: Send + Sync + 'static {
     /// Restore setting on login/reboot (if applicable)
     ///
     /// Returns None if the setting doesn't need restoration.
-    ///
-    /// For toggle settings with `requires_reapply` that implement `apply_value()`,
-    /// the default implementation will automatically restore the setting.
-    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
-        // Default implementation for toggle settings that use apply_value()
-        if let SettingType::Toggle { key } = self.setting_type() {
-            if !self.metadata().requires_reapply {
-                return None;
-            }
-            let enabled = ctx.bool(key);
-            if !enabled {
-                return None;
-            }
-            // Check if apply_value is a no-op (not overridden)
-            // We do this by checking if the trait has a custom implementation
-            // Since we can't easily check this, we rely on apply_value returning Ok(())
-            // for the no-op case and the caller checking if the setting has real logic
-            Some(self.apply_value(ctx, enabled))
-        } else {
-            None
-        }
+    fn restore(&self, _ctx: &mut SettingsContext) -> Option<Result<()>> {
+        None
     }
 
     /// Optional shell command to run for preview content
