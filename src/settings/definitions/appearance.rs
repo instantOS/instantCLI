@@ -338,6 +338,81 @@ impl Setting for ApplyColoredWallpaper {
 // GTK Icon Theme
 // ============================================================================
 
+pub struct GtkMenuIcons;
+
+impl GtkMenuIcons {
+    const KEY: BoolSettingKey = BoolSettingKey::new("appearance.gtk_menu_icons", false);
+}
+
+impl Setting for GtkMenuIcons {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("appearance.gtk_menu_icons")
+            .title("Menu Icons")
+            .icon(NerdFont::List)
+            .summary("Toggle icons in GTK application menus.\n\nNote: This is a legacy setting and may not work with all modern GTK applications.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Toggle { key: Self::KEY }
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let current = ctx.bool(Self::KEY);
+        let target = !current;
+        ctx.set_bool(Self::KEY, target);
+
+        let value_str = if target { "true" } else { "false" };
+
+        // Update GTK 3.0 and 4.0 settings.ini files
+        if let Err(e) = update_gtk_config("3.0", "gtk-menu-images", value_str) {
+            ctx.emit_failure(
+                "settings.appearance.gtk_menu_images.gtk3_error",
+                &format!("Failed to update GTK 3.0 config: {e}"),
+            );
+        }
+
+        if let Err(e) = update_gtk_config("4.0", "gtk-menu-images", value_str) {
+            ctx.emit_failure(
+                "settings.appearance.gtk_menu_images.gtk4_error",
+                &format!("Failed to update GTK 4.0 config: {e}"),
+            );
+        }
+
+        ctx.notify("Menu Icons", if target { "Enabled" } else { "Disabled" });
+        Ok(())
+    }
+
+  
+
+    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
+        let enabled = ctx.bool(Self::KEY);
+        let value_str = if enabled { "true" } else { "false" };
+
+        if let Err(e) = update_gtk_config("3.0", "gtk-menu-images", value_str) {
+            ctx.emit_failure(
+                "settings.appearance.gtk_menu_images.restore_gtk3_error",
+                &format!("Failed to restore GTK 3.0 menu icons setting: {e}"),
+            );
+        }
+
+        if let Err(e) = update_gtk_config("4.0", "gtk-menu-images", value_str) {
+            ctx.emit_failure(
+                "settings.appearance.gtk_menu_images.restore_gtk4_error",
+                &format!("Failed to restore GTK 4.0 menu icons setting: {e}"),
+            );
+        }
+
+        ctx.emit_info(
+            "settings.appearance.gtk_menu_images.restored",
+            &format!("GTK menu icons: {}", if enabled { "enabled" } else { "disabled" }),
+        );
+
+        Some(Ok(()))
+    }
+}
+
 pub struct GtkIconTheme;
 
 impl Setting for GtkIconTheme {

@@ -66,6 +66,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::group("GTK")
                 .child(CategoryNode::setting(&appearance::GtkTheme))
                 .child(CategoryNode::setting(&appearance::GtkIconTheme))
+                .child(CategoryNode::setting(&appearance::GtkMenuIcons))
                 .child(CategoryNode::setting(&appearance::ResetGtk)),
             CategoryNode::group("Qt").child(CategoryNode::setting(&appearance::ResetQt)),
         ],
