@@ -731,8 +731,8 @@ fn manage_default_app_for_mime(
 ) -> Result<()> {
     use crate::menu_utils::FzfResult;
     use crate::settings::installable_packages::{
-        self, ARCHIVE_MANAGERS, IMAGE_VIEWERS, InstallableApp, PDF_VIEWERS, TEXT_EDITORS,
-        VIDEO_PLAYERS,
+        self, ARCHIVE_MANAGERS, FILE_MANAGERS, IMAGE_VIEWERS, InstallableApp, PDF_VIEWERS,
+        TEXT_EDITORS, VIDEO_PLAYERS,
     };
 
     // Map app_name to corresponding installable packages
@@ -742,6 +742,7 @@ fn manage_default_app_for_mime(
         "Video Player" => Some(VIDEO_PLAYERS),
         "Text Editor" => Some(TEXT_EDITORS),
         "Archive Manager" => Some(ARCHIVE_MANAGERS),
+        "File Manager" => Some(FILE_MANAGERS),
         _ => None,
     };
 

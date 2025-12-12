@@ -290,6 +290,13 @@ pub const XEDIT_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::WhichSucceeds("xed")],
 };
 
+pub const PLUMA_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "pluma",
+    arch_package_name: Some("pluma"),
+    ubuntu_package_name: Some("pluma"),
+    tests: &[InstallTest::WhichSucceeds("pluma")],
+};
+
 pub static TEXT_EDITORS: &[InstallableApp] = &[
     InstallableApp {
         name: "gedit",
@@ -315,6 +322,11 @@ pub static TEXT_EDITORS: &[InstallableApp] = &[
         name: "xed",
         description: "X-Apps text editor (Linux Mint)",
         packages: &[XEDIT_PACKAGE],
+    },
+    InstallableApp {
+        name: "pluma",
+        description: "MATE desktop text editor",
+        packages: &[PLUMA_PACKAGE],
     },
 ];
 
@@ -487,6 +499,97 @@ pub static GTK_ICON_THEMES: &[InstallableApp] = &[
         name: "COSMIC Icons",
         description: "Modern icon theme from COSMIC desktop",
         packages: &[COSMIC_ICON_THEME_PACKAGE],
+    },
+];
+
+// =============================================================================
+// File Managers
+// =============================================================================
+
+pub const NAUTILUS_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Nautilus",
+    arch_package_name: Some("nautilus"),
+    ubuntu_package_name: Some("nautilus"),
+    tests: &[InstallTest::WhichSucceeds("nautilus")],
+};
+
+pub const DOLPHIN_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Dolphin",
+    arch_package_name: Some("dolphin"),
+    ubuntu_package_name: Some("dolphin"),
+    tests: &[InstallTest::WhichSucceeds("dolphin")],
+};
+
+pub const THUNAR_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Thunar",
+    arch_package_name: Some("thunar"),
+    ubuntu_package_name: Some("thunar"),
+    tests: &[InstallTest::WhichSucceeds("thunar")],
+};
+
+pub const PCMANFM_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "PCManFM",
+    arch_package_name: Some("pcmanfm"),
+    ubuntu_package_name: Some("pcmanfm"),
+    tests: &[InstallTest::WhichSucceeds("pcmanfm")],
+};
+
+pub const PCMANFM_QT_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "PCManFM-Qt",
+    arch_package_name: Some("pcmanfm-qt"),
+    ubuntu_package_name: Some("pcmanfm-qt"),
+    tests: &[InstallTest::WhichSucceeds("pcmanfm-qt")],
+};
+
+pub const RANGER_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "ranger",
+    arch_package_name: Some("ranger"),
+    ubuntu_package_name: Some("ranger"),
+    tests: &[InstallTest::WhichSucceeds("ranger")],
+};
+
+pub const LF_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "lf",
+    arch_package_name: Some("lf"),
+    ubuntu_package_name: Some("lf"),
+    tests: &[InstallTest::WhichSucceeds("lf")],
+};
+
+pub static FILE_MANAGERS: &[InstallableApp] = &[
+    InstallableApp {
+        name: "Nautilus",
+        description: "GNOME file manager with advanced features",
+        packages: &[NAUTILUS_PACKAGE],
+    },
+    InstallableApp {
+        name: "Dolphin",
+        description: "KDE file manager with panels and split views",
+        packages: &[DOLPHIN_PACKAGE],
+    },
+    InstallableApp {
+        name: "Thunar",
+        description: "Xfce file manager, fast and lightweight",
+        packages: &[THUNAR_PACKAGE],
+    },
+    InstallableApp {
+        name: "PCManFM",
+        description: "LXDE file manager, simple and fast",
+        packages: &[PCMANFM_PACKAGE],
+    },
+    InstallableApp {
+        name: "PCManFM-Qt",
+        description: "LXQt file manager with modern interface",
+        packages: &[PCMANFM_QT_PACKAGE],
+    },
+    InstallableApp {
+        name: "ranger",
+        description: "Terminal file manager with vi-style navigation",
+        packages: &[RANGER_PACKAGE],
+    },
+    InstallableApp {
+        name: "lf",
+        description: "Fast terminal file manager written in Go",
+        packages: &[LF_PACKAGE],
     },
 ];
 
