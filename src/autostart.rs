@@ -142,23 +142,6 @@ pub async fn run(debug: bool) -> Result<()> {
     Ok(())
 }
 
-/// Check if a systemd user service exists
-fn systemd_user_service_exists(service_name: &str) -> bool {
-    std::process::Command::new("systemctl")
-        .arg("--user")
-        .arg("list-unit-files")
-        .output()
-        .map(|output| {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                stdout.lines().any(|line| line.starts_with(service_name))
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false)
-}
-
 async fn ensure_polkit_agent(debug: bool) {
     use crate::common::display_server::DisplayServer;
 
@@ -183,12 +166,12 @@ async fn ensure_polkit_agent(debug: bool) {
     }
 
     // Try to start hyprpolkitagent via systemd user service if available
-    if systemd_user_service_exists("hyprpolkitagent.service") {
+    let systemd_manager = systemd::SystemdManager::user();
+    if systemd_manager.service_exists("hyprpolkitagent.service") {
         if debug {
             println!("hyprpolkitagent.service found, attempting to start systemd service");
         }
 
-        let systemd_manager = systemd::SystemdManager::user();
         match systemd_manager.start("hyprpolkitagent.service") {
             Ok(()) => {
                 if debug {

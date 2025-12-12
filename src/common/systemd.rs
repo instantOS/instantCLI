@@ -163,6 +163,20 @@ impl SystemdManager {
             .unwrap_or(false)
     }
 
+    /// Check if a service unit file exists (installed)
+    pub fn service_exists(&self, service_name: &str) -> bool {
+        self.run_systemctl_output(&["list-unit-files"])
+            .map(|output| {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    stdout.lines().any(|line| line.starts_with(service_name))
+                } else {
+                    false
+                }
+            })
+            .unwrap_or(false)
+    }
+
     /// Get the detailed state of a service
     #[allow(dead_code)]
     pub fn get_state(&self, service_name: &str) -> ServiceState {
@@ -390,6 +404,28 @@ impl SystemdManager {
             .status()
             .with_context(|| format!("Failed to run systemctl with args: {:?}", full_args))?;
         Ok(status)
+    }
+
+    /// Run systemctl with the appropriate scope arguments and return output
+    fn run_systemctl_output(&self, args: &[&str]) -> Result<std::process::Output> {
+        let mut full_args = self.scope.systemctl_args();
+        full_args.extend_from_slice(args);
+
+        let mut cmd = if self.use_sudo {
+            let mut cmd = Command::new("/usr/bin/sudo");
+            cmd.arg("systemctl");
+            cmd.args(&full_args);
+            cmd
+        } else {
+            let mut cmd = Command::new("systemctl");
+            cmd.args(&full_args);
+            cmd
+        };
+
+        let output = cmd
+            .output()
+            .with_context(|| format!("Failed to run systemctl with args: {:?}", full_args))?;
+        Ok(output)
     }
 }
 
