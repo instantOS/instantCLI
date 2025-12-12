@@ -4,6 +4,48 @@ use crate::arch::mkinitcpio::MkinitcpioConfig;
 use anyhow::{Context, Result};
 use std::process::Command;
 
+/// Groups that users should be added to for normal desktop usage
+pub const USER_GROUPS: &[&str] = &["wheel", "video", "docker", "sys", "rfkill"];
+
+/// System groups that need to exist but users shouldn't be members of
+pub const SYSTEM_GROUPS: &[&str] = &["nobody"];
+
+/// Ensure required groups exist on the system.
+///
+/// This creates both user groups (that users should be members of) and
+/// system groups (that need to exist but users shouldn't be members of).
+///
+/// This is called by both `configure_users` during fresh install and
+/// `setup_instantos` during `ins arch setup`.
+pub fn ensure_groups_exist(executor: &CommandExecutor) -> Result<()> {
+    // Ensure user groups exist
+    for group in USER_GROUPS {
+        let mut cmd = Command::new("groupadd");
+        cmd.arg("-f").arg(group);
+        executor.run(&mut cmd)?;
+    }
+
+    // Ensure system groups exist (these are not for user membership)
+    for group in SYSTEM_GROUPS {
+        let mut cmd = Command::new("groupadd");
+        cmd.arg("-f").arg(group);
+        executor.run(&mut cmd)?;
+    }
+
+    Ok(())
+}
+
+/// Add an existing user to the standard user groups.
+///
+/// This is used by `ins arch setup` to add an existing user to the required groups.
+pub fn add_user_to_groups(username: &str, executor: &CommandExecutor) -> Result<()> {
+    println!("Adding user {} to groups: {}", username, USER_GROUPS.join(", "));
+    let mut cmd = Command::new("usermod");
+    cmd.arg("-aG").arg(USER_GROUPS.join(",")).arg(username);
+    executor.run(&mut cmd)?;
+    Ok(())
+}
+
 pub async fn install_config(context: &InstallContext, executor: &CommandExecutor) -> Result<()> {
     println!("Configuring system (inside chroot)...");
 
@@ -314,22 +356,8 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
     let mut cmd_root = Command::new("chpasswd");
     executor.run_with_input(&mut cmd_root, &root_input)?;
 
-    // Create user - use shared group constants from setup module
-    use super::setup::{SYSTEM_GROUPS, USER_GROUPS};
-
-    // Ensure user groups exist
-    for group in USER_GROUPS {
-        let mut cmd = Command::new("groupadd");
-        cmd.arg("-f").arg(group);
-        executor.run(&mut cmd)?;
-    }
-
-    // Ensure system groups exist (these are not for user membership)
-    for group in SYSTEM_GROUPS {
-        let mut cmd = Command::new("groupadd");
-        cmd.arg("-f").arg(group);
-        executor.run(&mut cmd)?;
-    }
+    // Ensure all required groups exist
+    ensure_groups_exist(executor)?;
 
     // Check if user already exists (idempotent)
     let user_exists = if executor.dry_run {
@@ -351,6 +379,7 @@ fn configure_users(context: &InstallContext, executor: &CommandExecutor) -> Resu
         );
         // Add user to groups if not already a member
         let mut cmd_mod = Command::new("usermod");
+        //TODO: is this duplicated between here and `ins arch setup`?
         cmd_mod.arg("-aG").arg(USER_GROUPS.join(",")).arg(username);
         executor.run(&mut cmd_mod)?;
 
