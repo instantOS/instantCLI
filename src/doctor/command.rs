@@ -18,7 +18,7 @@ pub async fn handle_doctor_command(command: Option<DoctorCommands>) -> Result<()
 async fn run_all_checks_cmd() -> Result<()> {
     let checks = REGISTRY.all_checks();
     let results = run_all_checks(checks).await;
-    print_results(&results);
+    super::print_results_table(&results);
 
     // Show available fixes (only for fixable failures)
     show_available_fixes(&results);
@@ -29,11 +29,6 @@ async fn list_available_checks() -> Result<()> {
     let checks = REGISTRY.all_checks();
     super::print_check_list_table(&checks);
     Ok(())
-}
-
-//TODO: this is a single line wrapper, can it be removed?
-fn print_results(results: &[CheckResult]) {
-    super::print_results_table(results);
 }
 
 fn show_available_fixes(results: &[CheckResult]) {
@@ -133,8 +128,8 @@ fn show_available_fixes(results: &[CheckResult]) {
     }
 }
 
-//TODO: why is there both run_single_check and execute_single_check, can this be named or
-//structured better?
+/// Execute a single health check with validation and display
+/// This function handles validation, privilege checking, execution, and result display
 async fn run_single_check(check_id: &str) -> Result<()> {
     let check = REGISTRY
         .create_check(check_id)
@@ -145,12 +140,13 @@ async fn run_single_check(check_id: &str) -> Result<()> {
         return Err(anyhow!("Privilege error: {}", e));
     }
 
-    let result = execute_single_check(check).await;
-    print_single_result(&result);
+    let result = execute_check_logic(check).await;
+    super::print_single_check_result_table(&result);
     Ok(())
 }
 
-async fn execute_single_check(check: Box<dyn DoctorCheck + Send + Sync>) -> CheckResult {
+/// Core check execution logic - executes the check and builds the result
+async fn execute_check_logic(check: Box<dyn DoctorCheck + Send + Sync>) -> CheckResult {
     let name = check.name().to_string();
     let check_id = check.id().to_string();
     let status = check.execute().await;
@@ -162,12 +158,6 @@ async fn execute_single_check(check: Box<dyn DoctorCheck + Send + Sync>) -> Chec
         status,
         fix_message,
     }
-}
-
-//TODO: this is a one-line wrapper, can this be removed and its callsites call the original
-//function directly?
-fn print_single_result(result: &CheckResult) {
-    super::print_single_check_result_table(result);
 }
 
 async fn fix_single_check(check_id: &str) -> Result<()> {
