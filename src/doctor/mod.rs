@@ -38,12 +38,12 @@ pub enum CheckStatus {
 }
 
 impl CheckStatus {
-    pub fn message(&self) -> &String {
+    pub fn message(&self) -> &str {
         match self {
-            CheckStatus::Pass(msg) => msg,
-            CheckStatus::Warning { message, .. } => message,
-            CheckStatus::Fail { message, .. } => message,
-            CheckStatus::Skipped(msg) => msg,
+            CheckStatus::Pass(msg) => msg.as_str(),
+            CheckStatus::Warning { message, .. } => message.as_str(),
+            CheckStatus::Fail { message, .. } => message.as_str(),
+            CheckStatus::Skipped(msg) => msg.as_str(),
         }
     }
 

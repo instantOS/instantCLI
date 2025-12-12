@@ -165,13 +165,14 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         .create_check(check_id)
         .ok_or_else(|| anyhow!("Unknown check: {}", check_id))?;
 
-    // STEP 1: Determine if we need to escalate privileges
-    // Check both the check and fix privilege requirements upfront
-    let check_priv_err = check_privilege_requirements(check.as_ref(), false).err();
-    let fix_priv_err = check_privilege_requirements(check.as_ref(), true).err();
+    // STEP 1: Determine if we need to adjust privileges
+    // Treat privilege requirements as first-class outcomes to avoid unsafe escalation.
+    let check_priv_status = check_privilege_requirements(check.as_ref(), false).err();
+    let fix_priv_status = check_privilege_requirements(check.as_ref(), true).err();
 
-    if matches!(check_priv_err, Some(PrivilegeError::MustNotBeRoot))
-        || matches!(fix_priv_err, Some(PrivilegeError::MustNotBeRoot))
+    // If either phase must not run as root, bail out early to avoid accidental root execution.
+    if matches!(check_priv_status, Some(PrivilegeError::MustNotBeRoot))
+        || matches!(fix_priv_status, Some(PrivilegeError::MustNotBeRoot))
     {
         return Err(anyhow!(
             "Check '{}' must be run as a regular user (not root). Please run without sudo.",
@@ -179,24 +180,15 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         ));
     }
 
-    let need_root_for_check = matches!(check_priv_err, Some(PrivilegeError::NeedRoot));
-    let need_root_for_fix = matches!(fix_priv_err, Some(PrivilegeError::NeedRoot));
-
-    if need_root_for_check || need_root_for_fix {
-        let reason = if need_root_for_check {
-            "requires root privileges to run accurately"
-        } else {
-            "fix requires administrator privileges"
-        };
-
+    // Fix requires root: offer escalation.
+    if matches!(fix_priv_status, Some(PrivilegeError::NeedRoot)) {
         emit(
             Level::Warn,
             "doctor.fix.privileges",
             &format!(
-                "{} Check '{}' {}.",
+                "{} Check '{}' fix requires administrator privileges.",
                 char::from(NerdFont::Warning),
                 check.name(),
-                reason
             ),
             None,
         );
@@ -213,6 +205,21 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
             );
             return Ok(());
         }
+    }
+
+    // Only the check requires root: do NOT escalate automatically.
+    // Running the fix as root could be unsafe for user-session checks.
+    if matches!(check_priv_status, Some(PrivilegeError::NeedRoot)) {
+        emit(
+            Level::Warn,
+            "doctor.fix.privileges",
+            &format!(
+                "{} Check '{}' requires root privileges to run accurately; proceeding without escalation because the fix can run as a regular user.",
+                char::from(NerdFont::Warning),
+                check.name()
+            ),
+            None,
+        );
     }
 
     // STEP 2: Run the check to determine current state
