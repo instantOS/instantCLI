@@ -25,6 +25,8 @@ impl DoctorCheck for InternetCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
+        //TODO: there are existing utils for checking internet connectivity elsewhere in the
+        //codebase, check if these can or should be used here.
         let output = TokioCommand::new("ping")
             .arg("-c")
             .arg("1")

@@ -328,7 +328,8 @@ impl DoctorCheck for SmartHealthCheck {
         use crate::common::systemd::{ServiceScope, SystemdManager};
 
         // Install smartmontools using the standard ensure() flow if not installed
-        if !SMARTMONTOOLS_PACKAGE.is_installed() && !SMARTMONTOOLS_PACKAGE.ensure()?.is_installed() {
+        if !SMARTMONTOOLS_PACKAGE.is_installed() && !SMARTMONTOOLS_PACKAGE.ensure()?.is_installed()
+        {
             return Err(anyhow::anyhow!("smartmontools installation cancelled"));
         }
 
@@ -473,7 +474,7 @@ impl YayCacheCheck {
     const THRESHOLD_BYTES: u64 = 10 * 1024 * 1024 * 1024; // 10 GB
 
     fn get_cache_dir() -> Result<String> {
-        let home_dir = dirs::home_dir() 
+        let home_dir = dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
         Ok(home_dir
             .join(".cache")

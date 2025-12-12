@@ -47,8 +47,9 @@ pub struct SwayDisplayCheck;
 
 impl SwayDisplayCheck {
     /// Parse swaymsg -t get_outputs JSON and extract output info
+    // TODO: this function has too many responsibilities
     fn parse_outputs(json_str: &str) -> Result<Vec<OutputInfo>> {
-        let outputs: Vec<serde_json::Value> = 
+        let outputs: Vec<serde_json::Value> =
             serde_json::from_str(json_str).context("Failed to parse swaymsg output JSON")?;
 
         let mut result = Vec::new();

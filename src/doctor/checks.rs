@@ -1,5 +1,5 @@
 //! Health check implementations for the doctor module
-//! 
+//!
 //! This module has been refactored into multiple files by functionality:
 //! - network.rs: Network-related checks (internet, repository configuration)
 //! - locale.rs: Locale and language configuration checks
@@ -10,20 +10,19 @@
 
 use crate::doctor::{CheckStatus, DoctorCheck, PrivilegeLevel};
 
-pub mod network;
-pub mod locale;
-pub mod system;
-pub mod storage;
 pub mod display;
+pub mod locale;
+pub mod network;
 pub mod security;
+pub mod storage;
+pub mod system;
 
 // Re-export all check types for easy access
-pub use network::{InternetCheck, InstantRepoCheck};
-pub use locale::LocaleCheck;
-pub use system::{SwapCheck, PendingUpdatesCheck};
-pub use storage::{
-    PacmanCacheCheck, PacmanStaleDownloadsCheck, SmartHealthCheck, 
-    PacmanDbSyncCheck, YayCacheCheck
-};
 pub use display::SwayDisplayCheck;
+pub use locale::LocaleCheck;
+pub use network::{InstantRepoCheck, InternetCheck};
 pub use security::PolkitAgentCheck;
+pub use storage::{
+    PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck, YayCacheCheck,
+};
+pub use system::{PendingUpdatesCheck, SwapCheck};

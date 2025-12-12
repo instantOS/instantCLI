@@ -13,8 +13,8 @@ use crate::common::systemd::SystemdManager;
 use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
-use crate::settings::store::{BoolSettingKey, COCKPIT_PACKAGES, PACMAN_AUTOCLEAN_KEY};
 use crate::settings::sources;
+use crate::settings::store::{BoolSettingKey, COCKPIT_PACKAGES, PACMAN_AUTOCLEAN_KEY};
 use crate::ui::prelude::*;
 
 // ============================================================================

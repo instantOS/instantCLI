@@ -41,7 +41,7 @@ impl DoctorCheck for PolkitAgentCheck {
             .unwrap_or(false);
 
         if !polkitd_running {
-             return CheckStatus::Fail {
+            return CheckStatus::Fail {
                 message: "Polkit daemon (polkitd) is not running".to_string(),
                 fixable: false, // System level issue
             };
@@ -55,40 +55,38 @@ impl DoctorCheck for PolkitAgentCheck {
         // However, pkcheck returns 0 if authorized, 1 if not authorized, 2 if not authorized
         // and no agent is available (or other errors), 3 if not authorized and dismissed.
         // We really want to know if it *fails* to find an agent.
-        
-        // A better check might be to look for known agent processes first.
-        let agents = [
-            "polkit-gnome-authentication-agent-1",
-            "polkit-kde-authentication-agent-1",
-            "lxpolkit",
-            "lxqt-policykit-agent",
-            "mate-polkit",
-            "polkit-mate-authentication-agent-1",
-            "ts-polkitagent",
-            "ukui-polkit-agent",
-            "pantheon-polkit-agent",
-            "polkit-dumb-agent",
-        ];
 
-        let mut agent_found = false;
-        for agent in agents {
-             if TokioCommand::new("pgrep")
-                .arg("-f")
-                .arg(agent)
-                .output()
-                .await
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
-                agent_found = true;
-                break;
-            }
-        }
+        // Check for registered polkit authentication agents via D-Bus
+        // This detects any agent that properly registers with polkit, regardless of process name
+        let agent_found = TokioCommand::new("busctl")
+            .arg("--user")
+            .arg("list")
+            .output()
+            .await
+            .map(|output| {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    // Look for any RUNNING service (has a PID) that contains "polkit" or "PolicyKit" in the name
+                    // Skip activatable services (those with "-" under PID column)
+                    stdout.lines().any(|line| {
+                        let line_lower = line.to_lowercase();
+                        // Must have a PID (not activatable) AND contain polkit/PolicyKit
+                        (line_lower.contains("polkit") || line_lower.contains("policykit"))
+                            && line
+                                .split_whitespace()
+                                .nth(1)
+                                .map_or(false, |pid| pid != "-")
+                    })
+                } else {
+                    false
+                }
+            })
+            .unwrap_or(false);
 
         if agent_found {
-             return CheckStatus::Pass("Polkit authentication agent detected".to_string());
+            return CheckStatus::Pass("Polkit authentication agent detected".to_string());
         }
-        
+
         // If no known agent process found, try the functional test as a fallback
         // If pkcheck returns 2 or 3, it usually means no agent or cancelled.
         // But running pkcheck might pop up a dialog which is annoying for a background check.
@@ -105,6 +103,8 @@ impl DoctorCheck for PolkitAgentCheck {
     }
 
     async fn fix(&self) -> Result<()> {
-         Err(anyhow::anyhow!("Please install a polkit agent manually. Common options: polkit-gnome, lxpolkit, lxqt-policykit."))
+        Err(anyhow::anyhow!(
+            "Please install a polkit agent manually. Common options: polkit-gnome, lxpolkit, lxqt-policykit."
+        ))
     }
 }
