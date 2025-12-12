@@ -112,15 +112,10 @@ impl Setting for SwapEscape {
         let current = ctx.bool(Self::KEY);
         let enabled = !current;
         ctx.set_bool(Self::KEY, enabled);
-        apply_swap_escape_setting(ctx, enabled)
+        self.apply_value(ctx, enabled)
     }
 
-    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
-        let enabled = ctx.bool(Self::KEY);
-        if !enabled {
-            return None;
-        }
-
-        Some(apply_swap_escape_setting(ctx, enabled))
+    fn apply_value(&self, ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+        apply_swap_escape_setting(ctx, enabled)
     }
 }

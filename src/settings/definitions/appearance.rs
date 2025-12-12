@@ -384,8 +384,6 @@ impl Setting for GtkMenuIcons {
         Ok(())
     }
 
-  
-
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
         let enabled = ctx.bool(Self::KEY);
         let value_str = if enabled { "true" } else { "false" };
@@ -406,7 +404,10 @@ impl Setting for GtkMenuIcons {
 
         ctx.emit_info(
             "settings.appearance.gtk_menu_images.restored",
-            &format!("GTK menu icons: {}", if enabled { "enabled" } else { "disabled" }),
+            &format!(
+                "GTK menu icons: {}",
+                if enabled { "enabled" } else { "disabled" }
+            ),
         );
 
         Some(Ok(()))
