@@ -23,6 +23,7 @@ struct TimezoneChoice {
     is_current: bool,
 }
 
+//TODO: this is only used in a one-line wrapper
 fn timezone_preview_command() -> String {
     r#"bash -c '
 tz="$1"
@@ -72,6 +73,7 @@ impl FzfSelectable for TimezoneChoice {
         self.value.clone()
     }
 
+    //TODO: this is a one-line wrapper
     fn fzf_preview(&self) -> FzfPreview {
         FzfPreview::Command(timezone_preview_command())
     }

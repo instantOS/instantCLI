@@ -132,7 +132,7 @@ impl CompositorType {
     pub fn provider(&self) -> Box<dyn ScratchpadProvider> {
         match self {
             CompositorType::I3 => Box::new(i3::I3),
-            CompositorType::Dwm => Box::new(fallback::Fallback), // TODO: Add dwm scratchpad support if needed
+            CompositorType::Dwm => Box::new(fallback::Fallback),
             CompositorType::InstantWM => Box::new(fallback::Fallback), // TODO: Add InstantWM scratchpad support if needed
             CompositorType::Sway => Box::new(sway::Sway),
             CompositorType::Hyprland => Box::new(hyprland::Hyprland),
