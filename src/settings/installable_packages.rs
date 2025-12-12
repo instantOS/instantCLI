@@ -3,7 +3,7 @@
 //! Defines curated collections of packages that can be installed
 //! from within settings menus via "Install more..." options.
 
-use crate::common::requirements::{InstallTest, RequiredPackage};
+use crate::common::requirements::{InstallTest, RequiredPackage, CHROMIUM_PACKAGE, FIREFOX_PACKAGE, FALKON_PACKAGE, EPIPHANY_PACKAGE};
 
 /// Represents an installable application/package collection
 #[derive(Debug, Clone)]
@@ -590,6 +590,33 @@ pub static FILE_MANAGERS: &[InstallableApp] = &[
         name: "lf",
         description: "Fast terminal file manager written in Go",
         packages: &[LF_PACKAGE],
+    },
+];
+
+// =============================================================================
+// Web Browsers
+// =============================================================================
+
+pub static WEB_BROWSERS: &[InstallableApp] = &[
+    InstallableApp {
+        name: "Firefox",
+        description: "Privacy-focused open source browser from Mozilla",
+        packages: &[FIREFOX_PACKAGE],
+    },
+    InstallableApp {
+        name: "Chromium",
+        description: "Open source foundation for Google Chrome",
+        packages: &[CHROMIUM_PACKAGE],
+    },
+    InstallableApp {
+        name: "Falkon",
+        description: "Qt-based browser with KDE integration",
+        packages: &[FALKON_PACKAGE],
+    },
+    InstallableApp {
+        name: "GNOME Web",
+        description: "Simple and clean browser for GNOME desktop",
+        packages: &[EPIPHANY_PACKAGE],
     },
 ];
 

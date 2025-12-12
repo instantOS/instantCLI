@@ -698,6 +698,27 @@ pub const CHROMIUM_PACKAGE: RequiredPackage = RequiredPackage {
     tests: &[InstallTest::WhichSucceeds("chromium")],
 };
 
+pub const FIREFOX_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Firefox",
+    arch_package_name: Some("firefox"),
+    ubuntu_package_name: Some("firefox"),
+    tests: &[InstallTest::WhichSucceeds("firefox")],
+};
+
+pub const FALKON_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "Falkon",
+    arch_package_name: Some("falkon"),
+    ubuntu_package_name: Some("falkon"),
+    tests: &[InstallTest::WhichSucceeds("falkon")],
+};
+
+pub const EPIPHANY_PACKAGE: RequiredPackage = RequiredPackage {
+    name: "GNOME Web (Epiphany)",
+    arch_package_name: Some("epiphany"),
+    ubuntu_package_name: Some("epiphany-browser"),
+    tests: &[InstallTest::WhichSucceeds("epiphany")],
+};
+
 pub const GNOME_FIRMWARE_PACKAGE: RequiredPackage = RequiredPackage {
     name: "GNOME Firmware manager",
     arch_package_name: Some("gnome-firmware"),
