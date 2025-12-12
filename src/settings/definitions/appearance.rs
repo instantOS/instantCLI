@@ -1119,6 +1119,80 @@ fn rgb_to_hex(rgb: &str) -> Option<String> {
 // Dark Mode
 // ============================================================================
 
+/// Find the opposite theme variant (dark ↔ light) for a given theme name.
+///
+/// Returns `(new_theme_name, changed)` where `changed` indicates if a variant was found.
+fn find_theme_variant<F>(current_theme: &str, switch_to_dark: bool, exists_fn: F) -> (String, bool)
+where
+    F: Fn(&str) -> bool,
+{
+    if switch_to_dark {
+        // Currently light, switch to dark
+        if current_theme.ends_with("-light") {
+            // Try base-dark variant first
+            let base_theme = current_theme.trim_end_matches("-light");
+            let dark_theme = format!("{}-dark", base_theme);
+            if exists_fn(&dark_theme) {
+                return (dark_theme, true);
+            }
+        }
+        // Check if -dark variant exists for the current theme
+        if !current_theme.ends_with("-dark") {
+            let dark_theme = format!("{}-dark", current_theme);
+            if exists_fn(&dark_theme) {
+                return (dark_theme, true);
+            }
+        }
+    } else {
+        // Currently dark, switch to light
+        if current_theme.ends_with("-dark") {
+            // Try removing -dark suffix
+            let light_theme = current_theme.trim_end_matches("-dark");
+            if exists_fn(light_theme) {
+                return (light_theme.to_string(), true);
+            }
+            // Try explicit -light variant
+            let light_theme_alt = format!("{}-light", light_theme);
+            if exists_fn(&light_theme_alt) {
+                return (light_theme_alt, true);
+            }
+        }
+    }
+
+    // No variant found, keep current theme
+    (current_theme.to_string(), false)
+}
+
+/// Check if the system is currently in dark mode by querying gsettings color-scheme.
+fn is_dark_mode() -> Result<bool> {
+    let output = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+        .output()
+        .context("Failed to query gsettings color-scheme")?;
+
+    Ok(String::from_utf8_lossy(&output.stdout).contains("prefer-dark"))
+}
+
+/// Set the gsettings color-scheme preference.
+fn set_color_scheme(prefer_dark: bool) -> Result<()> {
+    let scheme = if prefer_dark { "prefer-dark" } else { "default" };
+    let status = Command::new("gsettings")
+        .args([
+            "set",
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            scheme,
+        ])
+        .status()
+        .context("Failed to set gsettings color-scheme")?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        anyhow::bail!("gsettings returned non-zero exit code")
+    }
+}
+
 pub struct DarkMode;
 
 impl Setting for DarkMode {
@@ -1136,175 +1210,47 @@ impl Setting for DarkMode {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        // Get current GTK theme, icon theme, and color-scheme
         let current_gtk_theme =
             get_current_gtk_theme().context("Failed to get current GTK theme")?;
         let current_icon_theme =
             get_current_icon_theme().context("Failed to get current icon theme")?;
+        let is_dark = is_dark_mode()?;
 
-        let color_scheme_output = Command::new("gsettings")
-            .args(["get", "org.gnome.desktop.interface", "color-scheme"])
-            .output()
-            .context("Failed to query gsettings color-scheme")?;
+        // Find theme variants (dark ↔ light)
+        let switch_to_dark = !is_dark;
+        let (new_gtk_theme, gtk_changed) =
+            find_theme_variant(&current_gtk_theme, switch_to_dark, theme_exists);
+        let (new_icon_theme, icon_changed) =
+            find_theme_variant(&current_icon_theme, switch_to_dark, icon_theme_exists);
 
-        let current_scheme = String::from_utf8_lossy(&color_scheme_output.stdout);
-        let is_dark = current_scheme.contains("prefer-dark");
-
-        // Determine new GTK theme based on current state
-        let (new_gtk_theme, gtk_theme_changed) = if is_dark {
-            // Currently dark, switch to light
-            if current_gtk_theme.ends_with("-dark") {
-                // Remove -dark suffix to get light variant
-                let light_theme = current_gtk_theme.trim_end_matches("-dark");
-                if theme_exists(light_theme) {
-                    (light_theme.to_string(), true)
-                } else {
-                    // Fallback: check for -light variant
-                    let light_theme_alt =
-                        format!("{}-light", current_gtk_theme.trim_end_matches("-dark"));
-                    if theme_exists(&light_theme_alt) {
-                        (light_theme_alt, true)
-                    } else {
-                        // No light variant found, keep current theme
-                        (current_gtk_theme.clone(), false)
-                    }
-                }
-            } else {
-                // Theme doesn't end with -dark, just change color-scheme
-                (current_gtk_theme.clone(), false)
-            }
-        } else {
-            // Currently light, switch to dark
-            if current_gtk_theme.ends_with("-light") {
-                // Remove -light suffix to get base theme, then add -dark
-                let base_theme = current_gtk_theme.trim_end_matches("-light");
-                let dark_theme = format!("{}-dark", base_theme);
-                if theme_exists(&dark_theme) {
-                    (dark_theme, true)
-                } else {
-                    // No dark variant found, try base theme with -dark
-                    (format!("{}-dark", current_gtk_theme), true)
-                }
-            } else if !current_gtk_theme.ends_with("-dark") {
-                // Check if -dark variant exists
-                let dark_theme = format!("{}-dark", current_gtk_theme);
-                if theme_exists(&dark_theme) {
-                    (dark_theme, true)
-                } else {
-                    // No dark variant found, keep current theme
-                    (current_gtk_theme.clone(), false)
-                }
-            } else {
-                // Already ends with -dark, just change color-scheme
-                (current_gtk_theme.clone(), false)
-            }
-        };
-
-        // Determine new icon theme based on current state
-        let (new_icon_theme, icon_theme_changed) = if is_dark {
-            // Currently dark, switch to light
-            if current_icon_theme.ends_with("-dark") {
-                // Remove -dark suffix to get light variant
-                let light_theme = current_icon_theme.trim_end_matches("-dark");
-                if icon_theme_exists(light_theme) {
-                    (light_theme.to_string(), true)
-                } else {
-                    // Fallback: check for -light variant
-                    let light_theme_alt =
-                        format!("{}-light", current_icon_theme.trim_end_matches("-dark"));
-                    if icon_theme_exists(&light_theme_alt) {
-                        (light_theme_alt, true)
-                    } else {
-                        // No light variant found, keep current theme
-                        (current_icon_theme.clone(), false)
-                    }
-                }
-            } else {
-                // Theme doesn't end with -dark, just change color-scheme
-                (current_icon_theme.clone(), false)
-            }
-        } else {
-            // Currently light, switch to dark
-            if current_icon_theme.ends_with("-light") {
-                // Remove -light suffix to get base theme, then add -dark
-                let base_theme = current_icon_theme.trim_end_matches("-light");
-                let dark_theme = format!("{}-dark", base_theme);
-                if icon_theme_exists(&dark_theme) {
-                    (dark_theme, true)
-                } else {
-                    // No dark variant found, try base theme with -dark
-                    (format!("{}-dark", current_icon_theme), true)
-                }
-            } else if !current_icon_theme.ends_with("-dark") {
-                // Check if -dark variant exists
-                let dark_theme = format!("{}-dark", current_icon_theme);
-                if icon_theme_exists(&dark_theme) {
-                    (dark_theme, true)
-                } else {
-                    // No dark variant found, keep current theme
-                    (current_icon_theme.clone(), false)
-                }
-            } else {
-                // Already ends with -dark, just change color-scheme
-                (current_icon_theme.clone(), false)
-            }
-        };
-
-        // Set the new GTK theme (if different)
-        if gtk_theme_changed {
+        // Apply theme changes
+        if gtk_changed {
             set_gtk_theme(&new_gtk_theme).context("Failed to set GTK theme")?;
         }
-
-        // Set the new icon theme (if different)
-        if icon_theme_changed {
+        if icon_changed {
             set_icon_theme(&new_icon_theme).context("Failed to set icon theme")?;
         }
 
-        // Always set the color-scheme for GTK 4+ compatibility
-        let new_scheme = if is_dark { "default" } else { "prefer-dark" };
-        let status = Command::new("gsettings")
-            .args([
-                "set",
-                "org.gnome.desktop.interface",
-                "color-scheme",
-                new_scheme,
-            ])
-            .status()
-            .context("Failed to set gsettings color-scheme")?;
+        // Set color-scheme for GTK 4+ compatibility
+        set_color_scheme(switch_to_dark)?;
 
-        if status.success() {
-            let new_status = if is_dark { "Disabled" } else { "Enabled" };
-            let mut details = vec![];
-
-            if gtk_theme_changed {
-                details.push(format!("GTK: {} → {}", current_gtk_theme, new_gtk_theme));
-            }
-            if icon_theme_changed {
-                details.push(format!(
-                    "Icons: {} → {}",
-                    current_icon_theme, new_icon_theme
-                ));
-            }
-
-            ctx.notify(
-                "Dark Mode",
-                &format!(
-                    "{}{}",
-                    new_status,
-                    if !details.is_empty() {
-                        format!("\n{}", details.join("\n"))
-                    } else {
-                        String::new()
-                    }
-                ),
-            );
-        } else {
-            ctx.emit_failure(
-                "settings.appearance.dark_mode.failed",
-                "Failed to set color-scheme preference",
-            );
+        // Build notification
+        let mut details = vec![];
+        if gtk_changed {
+            details.push(format!("GTK: {} → {}", current_gtk_theme, new_gtk_theme));
+        }
+        if icon_changed {
+            details.push(format!("Icons: {} → {}", current_icon_theme, new_icon_theme));
         }
 
+        let status_text = if switch_to_dark { "Enabled" } else { "Disabled" };
+        let message = if details.is_empty() {
+            status_text.to_string()
+        } else {
+            format!("{}\n{}", status_text, details.join("\n"))
+        };
+
+        ctx.notify("Dark Mode", &message);
         Ok(())
     }
 
