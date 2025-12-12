@@ -150,7 +150,6 @@ fn build_tree(category: Category) -> Vec<TreeNode> {
         nodes.push(convert_category_node(node));
     }
 
-    sort_tree(&mut nodes);
     nodes
 }
 
@@ -166,25 +165,6 @@ fn convert_category_node(node: crate::settings::category_tree::CategoryNode) -> 
         TreeNode::Folder {
             name: node.name.unwrap_or("Unknown").to_string(),
             children: converted_children,
-        }
-    }
-}
-
-fn sort_tree(nodes: &mut Vec<TreeNode>) {
-    nodes.sort_by(|a, b| match (a, b) {
-        (TreeNode::Folder { name: a_name, .. }, TreeNode::Folder { name: b_name, .. }) => {
-            a_name.cmp(b_name)
-        }
-        (TreeNode::Folder { .. }, TreeNode::Leaf(_)) => std::cmp::Ordering::Less,
-        (TreeNode::Leaf(_), TreeNode::Folder { .. }) => std::cmp::Ordering::Greater,
-        (TreeNode::Leaf(a_s), TreeNode::Leaf(b_s)) => {
-            a_s.metadata().title.cmp(b_s.metadata().title)
-        }
-    });
-
-    for node in nodes {
-        if let TreeNode::Folder { children, .. } = node {
-            sort_tree(children);
         }
     }
 }

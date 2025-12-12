@@ -92,16 +92,16 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         ],
         Category::Audio => vec![CategoryNode::setting(&wiremix::LaunchWiremix)],
         Category::Apps => vec![
+            CategoryNode::setting(&apps::ManageAllApps),
             CategoryNode::setting(&apps::DefaultBrowser),
-            CategoryNode::setting(&apps::DefaultEmail),
-            CategoryNode::setting(&apps::DefaultFileManager),
             CategoryNode::setting(&apps::DefaultTextEditor),
+            CategoryNode::setting(&apps::DefaultFileManager),
             CategoryNode::setting(&apps::DefaultImageViewer),
             CategoryNode::setting(&apps::DefaultVideoPlayer),
             CategoryNode::setting(&apps::DefaultMusicPlayer),
             CategoryNode::setting(&apps::DefaultPdfViewer),
             CategoryNode::setting(&apps::DefaultArchiveManager),
-            CategoryNode::setting(&apps::ManageAllApps),
+            CategoryNode::setting(&apps::DefaultEmail),
         ],
         Category::Storage => vec![
             CategoryNode::setting(&toggles::AutomountDisks),
@@ -115,6 +115,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         Category::Users => vec![CategoryNode::setting(&users::ManageUsers)],
         Category::Language => vec![
             CategoryNode::setting(&language::SystemLanguage),
+            CategoryNode::setting(&language::Timezone),
             CategoryNode::setting(&keyboard::KeyboardLayout),
         ],
         Category::System => vec![
@@ -125,7 +126,6 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&system::SystemUpgrade),
             CategoryNode::setting(&system::PacmanAutoclean),
             CategoryNode::setting(&system::WelcomeAutostart),
-            CategoryNode::setting(&language::Timezone),
         ],
         Category::Install => vec![
             CategoryNode::setting(&packages::InstallPackages),

@@ -170,7 +170,11 @@ impl Setting for KeyboardLayout {
             return None;
         }
 
-        let key = if is_sway { Self::KEY_SWAY } else { Self::KEY_X11 };
+        let key = if is_sway {
+            Self::KEY_SWAY
+        } else {
+            Self::KEY_X11
+        };
         let code = ctx.string(key);
         if code.is_empty() {
             return None;
