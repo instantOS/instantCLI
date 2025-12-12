@@ -142,6 +142,23 @@ pub async fn run(debug: bool) -> Result<()> {
     Ok(())
 }
 
+/// Check if a systemd user service exists
+fn systemd_user_service_exists(service_name: &str) -> bool {
+    std::process::Command::new("systemctl")
+        .arg("--user")
+        .arg("list-unit-files")
+        .output()
+        .map(|output| {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                stdout.lines().any(|line| line.starts_with(service_name))
+            } else {
+                false
+            }
+        })
+        .unwrap_or(false)
+}
+
 async fn ensure_polkit_agent(debug: bool) {
     use crate::common::display_server::DisplayServer;
 
@@ -165,23 +182,45 @@ async fn ensure_polkit_agent(debug: bool) {
         println!("No polkit authentication agent found, attempting to start one");
     }
 
-    // Try to start hyprpolkitagent via systemd user service if installed
-    if which::which("hyprpolkitagent").is_ok() {
+    // Try to start hyprpolkitagent via systemd user service if available
+    if systemd_user_service_exists("hyprpolkitagent.service") {
         if debug {
-            println!("hyprpolkitagent found, attempting to enable and start systemd service");
+            println!("hyprpolkitagent.service found, attempting to start systemd service");
         }
 
         let systemd_manager = systemd::SystemdManager::user();
-        match systemd_manager.enable_and_start("hyprpolkitagent.service") {
+        match systemd_manager.start("hyprpolkitagent.service") {
             Ok(()) => {
                 if debug {
-                    println!("Successfully enabled and started hyprpolkitagent service");
+                    println!("Successfully started hyprpolkitagent service");
                 }
                 return;
             }
             Err(e) => {
                 if debug {
-                    eprintln!("Failed to enable/start hyprpolkitagent service: {}", e);
+                    eprintln!("Failed to start hyprpolkitagent service: {}", e);
+                }
+            }
+        }
+    }
+
+    // Fallback: try to start hyprpolkitagent via PATH if available
+    if which::which("hyprpolkitagent").is_ok() {
+        if debug {
+            println!("hyprpolkitagent found in PATH, attempting to start in background");
+        }
+
+        match std::process::Command::new("hyprpolkitagent").spawn() {
+            Ok(child) => {
+                std::mem::forget(child);
+                if debug {
+                    println!("Successfully started hyprpolkitagent in background");
+                }
+                return;
+            }
+            Err(e) => {
+                if debug {
+                    eprintln!("Failed to start hyprpolkitagent: {}", e);
                 }
             }
         }
@@ -195,8 +234,6 @@ async fn ensure_polkit_agent(debug: bool) {
 
         match std::process::Command::new("lxpolkit").spawn() {
             Ok(child) => {
-                // Let the child process run independently
-                // We don't wait for it, allowing it to continue in background
                 std::mem::forget(child);
                 if debug {
                     println!("Successfully started lxpolkit in background");
@@ -213,7 +250,7 @@ async fn ensure_polkit_agent(debug: bool) {
 
     if debug {
         println!(
-            "No polkit agent could be started. Neither hyprpolkitagent nor lxpolkit are installed."
+            "No polkit agent could be started. Neither hyprpolkitagent nor lxpolkit are available."
         );
     }
 }
