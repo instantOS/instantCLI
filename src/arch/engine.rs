@@ -510,6 +510,14 @@ pub trait Question: Send + Sync {
     fn get_default(&self, _context: &InstallContext) -> Option<String> {
         None
     }
+
+    /// Returns a fatal error message if this question cannot proceed due to a required
+    /// data provider failure. Override this for questions where provider failure is fatal
+    /// (e.g., disk selection). Return None for questions that handle failures gracefully
+    /// (e.g., mirror regions with fallback).
+    fn fatal_error_message(&self, _context: &InstallContext) -> Option<String> {
+        None
+    }
 }
 
 pub struct QuestionEngine {
@@ -608,6 +616,12 @@ impl QuestionEngine {
                         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     }
 
+                    // Check for fatal provider errors before asking
+                    if let Some(error_msg) = self.questions[idx].fatal_error_message(&self.context)
+                    {
+                        self.show_fatal_error_and_exit(&error_msg)?;
+                    }
+
                     loop {
                         // Clear screen if running in TTY to avoid artifacts
                         if self.is_tty {
@@ -652,6 +666,18 @@ impl QuestionEngine {
         }
 
         Ok(self.context.clone())
+    }
+
+    /// Show a fatal error message and exit the installer
+    fn show_fatal_error_and_exit(&self, message: &str) -> Result<()> {
+        let full_message = format!(
+            "{} Fatal Error\n\n{}\n\nThe installation cannot continue.",
+            NerdFont::CrossCircle,
+            message
+        );
+        // Show fatal error dialog
+        let _ = crate::menu_utils::FzfWrapper::message_dialog(&full_message);
+        std::process::exit(1);
     }
 
     fn find_next_question_index(&mut self) -> Option<usize> {

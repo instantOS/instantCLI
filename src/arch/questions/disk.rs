@@ -151,6 +151,26 @@ impl Question for DiskQuestion {
     fn data_providers(&self) -> Vec<Box<dyn crate::arch::engine::AsyncDataProvider>> {
         vec![Box::new(crate::arch::disks::DiskProvider)]
     }
+
+    fn fatal_error_message(&self, context: &InstallContext) -> Option<String> {
+        let disks = context
+            .get::<crate::arch::disks::DisksKey>()
+            .unwrap_or_default();
+
+        if disks.is_empty() {
+            Some(
+                "No disks were detected on this system.\n\n\
+                Possible causes:\n\
+                • The system has no disks installed\n\
+                • You are not running with root/sudo privileges\n\
+                • The disk driver is not loaded\n\n\
+                Please check your hardware and ensure you are running as root."
+                    .to_string(),
+            )
+        } else {
+            None
+        }
+    }
 }
 
 pub struct PartitioningMethodQuestion;
