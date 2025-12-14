@@ -5,6 +5,7 @@ pub mod distro;
 pub mod git;
 pub mod instantwm;
 pub mod network;
+pub mod package;
 pub mod pacman;
 pub mod paths;
 pub mod progress;

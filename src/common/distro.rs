@@ -185,7 +185,11 @@ impl OperatingSystem {
     // Package Manager Integration
     // ========================================================================
 
-    /// Get the package manager for this operating system
+    /// Get the package manager for this operating system (legacy method).
+    ///
+    /// # Deprecated
+    /// Use `native_package_manager()` instead, which returns the new unified
+    /// `PackageManager` enum from `crate::common::package`.
     pub fn package_manager(&self) -> Option<PackageManager> {
         match self {
             Self::Arch => Some(PackageManager::Pacman),
@@ -194,6 +198,42 @@ impl OperatingSystem {
             Self::Fedora | Self::CentOS | Self::OpenSUSE | Self::Unknown(_) => None,
             // Derivatives fall back to parent
             _ => self.based_on().and_then(|p| p.package_manager()),
+        }
+    }
+
+    /// Get the native package manager for this operating system.
+    ///
+    /// This is the single source of truth for the OS → native package manager mapping.
+    /// Returns the new unified `PackageManager` enum from `crate::common::package`.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use crate::common::distro::OperatingSystem;
+    /// use crate::common::package::PackageManager;
+    ///
+    /// let os = OperatingSystem::detect();
+    /// match os.native_package_manager() {
+    ///     Some(PackageManager::Pacman) => println!("Arch-based!"),
+    ///     Some(PackageManager::Apt) => println!("Debian-based!"),
+    ///     _ => println!("Other or unknown"),
+    /// }
+    /// ```
+    pub fn native_package_manager(&self) -> Option<crate::common::package::PackageManager> {
+        use crate::common::package::PackageManager as PM;
+        match self {
+            // Root distributions
+            Self::Arch => Some(PM::Pacman),
+            Self::Debian => Some(PM::Apt),
+            Self::Fedora => Some(PM::Dnf),
+            Self::CentOS => Some(PM::Dnf),
+            Self::OpenSUSE => Some(PM::Zypper),
+
+            // Unknown has no supported manager
+            Self::Unknown(_) => None,
+
+            // All derivatives fall back to parent
+            _ => self.based_on().and_then(|p| p.native_package_manager()),
         }
     }
 
