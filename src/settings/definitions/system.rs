@@ -5,11 +5,13 @@
 use anyhow::{Context, Result};
 use duct::cmd;
 
-use crate::common::package::{ensure_all, InstallResult};
+use crate::common::package::{InstallResult, ensure_all};
 use crate::common::systemd::SystemdManager;
 use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
-use crate::settings::deps::{COCKPIT, COCKPIT_DEPS, FASTFETCH, GNOME_FIRMWARE, PACMAN_CONTRIB, TOPGRADE};
+use crate::settings::deps::{
+    COCKPIT, COCKPIT_DEPS, FASTFETCH, GNOME_FIRMWARE, PACMAN_CONTRIB, TOPGRADE,
+};
 use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::settings::sources;
 use crate::settings::store::{BoolSettingKey, PACMAN_AUTOCLEAN_KEY};

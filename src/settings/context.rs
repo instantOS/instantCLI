@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use duct::cmd;
 use sudo::RunningAs;
 
-use crate::common::package::{ensure_all, Dependency, InstallResult};
+use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::*;
 

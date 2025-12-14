@@ -4,7 +4,7 @@
 //! `FlatpakPackage` types to the new `Dependency` format.
 
 use super::{Dependency, PackageDefinition, PackageManager};
-use crate::common::requirements::{FlatpakPackage, InstallTest, RequiredPackage};
+use crate::common::requirements::{FlatpakPackage, RequiredPackage};
 
 /// Convert a `RequiredPackage` to a `Dependency`.
 ///
@@ -51,12 +51,14 @@ impl RequiredPackage {
 impl FlatpakPackage {
     /// Convert this `FlatpakPackage` to the new `Dependency` format.
     pub fn to_dependency(&self) -> Dependency {
-        let packages: &'static [PackageDefinition] =
-            Box::leak(vec![PackageDefinition {
+        let packages: &'static [PackageDefinition] = Box::leak(
+            vec![PackageDefinition {
                 package_name: self.app_id,
                 manager: PackageManager::Flatpak,
                 distros: None,
-            }].into_boxed_slice());
+            }]
+            .into_boxed_slice(),
+        );
 
         Dependency {
             name: self.name,
@@ -91,133 +93,151 @@ impl FlatpakPackage {
 macro_rules! dep {
     // Simple: same package name for pacman and apt
     ($name:ident, $display:expr, $pkg:expr) => {
-        pub static $name: $crate::common::package::Dependency = $crate::common::package::Dependency {
-            name: $display,
-            description: None,
-            packages: &[
-                $crate::common::package::PackageDefinition {
-                    package_name: $pkg,
-                    manager: $crate::common::package::PackageManager::Pacman,
-                    distros: None,
-                },
-                $crate::common::package::PackageDefinition {
-                    package_name: $pkg,
-                    manager: $crate::common::package::PackageManager::Apt,
-                    distros: None,
-                },
-            ],
-            tests: &[$crate::common::requirements::InstallTest::WhichSucceeds($pkg)],
-        };
+        pub static $name: $crate::common::package::Dependency =
+            $crate::common::package::Dependency {
+                name: $display,
+                description: None,
+                packages: &[
+                    $crate::common::package::PackageDefinition {
+                        package_name: $pkg,
+                        manager: $crate::common::package::PackageManager::Pacman,
+                        distros: None,
+                    },
+                    $crate::common::package::PackageDefinition {
+                        package_name: $pkg,
+                        manager: $crate::common::package::PackageManager::Apt,
+                        distros: None,
+                    },
+                ],
+                tests: &[$crate::common::requirements::InstallTest::WhichSucceeds(
+                    $pkg,
+                )],
+            };
     };
 
     // With description
     ($name:ident, $display:expr, $pkg:expr, $desc:expr) => {
-        pub static $name: $crate::common::package::Dependency = $crate::common::package::Dependency {
-            name: $display,
-            description: Some($desc),
-            packages: &[
-                $crate::common::package::PackageDefinition {
-                    package_name: $pkg,
-                    manager: $crate::common::package::PackageManager::Pacman,
-                    distros: None,
-                },
-                $crate::common::package::PackageDefinition {
-                    package_name: $pkg,
-                    manager: $crate::common::package::PackageManager::Apt,
-                    distros: None,
-                },
-            ],
-            tests: &[$crate::common::requirements::InstallTest::WhichSucceeds($pkg)],
-        };
+        pub static $name: $crate::common::package::Dependency =
+            $crate::common::package::Dependency {
+                name: $display,
+                description: Some($desc),
+                packages: &[
+                    $crate::common::package::PackageDefinition {
+                        package_name: $pkg,
+                        manager: $crate::common::package::PackageManager::Pacman,
+                        distros: None,
+                    },
+                    $crate::common::package::PackageDefinition {
+                        package_name: $pkg,
+                        manager: $crate::common::package::PackageManager::Apt,
+                        distros: None,
+                    },
+                ],
+                tests: &[$crate::common::requirements::InstallTest::WhichSucceeds(
+                    $pkg,
+                )],
+            };
     };
 
     // Different package names for pacman and apt
     ($name:ident, $display:expr, pacman: $pacman:expr, apt: $apt:expr) => {
-        pub static $name: $crate::common::package::Dependency = $crate::common::package::Dependency {
-            name: $display,
-            description: None,
-            packages: &[
-                $crate::common::package::PackageDefinition {
-                    package_name: $pacman,
-                    manager: $crate::common::package::PackageManager::Pacman,
-                    distros: None,
-                },
-                $crate::common::package::PackageDefinition {
-                    package_name: $apt,
-                    manager: $crate::common::package::PackageManager::Apt,
-                    distros: None,
-                },
-            ],
-            tests: &[$crate::common::requirements::InstallTest::WhichSucceeds($pacman)],
-        };
+        pub static $name: $crate::common::package::Dependency =
+            $crate::common::package::Dependency {
+                name: $display,
+                description: None,
+                packages: &[
+                    $crate::common::package::PackageDefinition {
+                        package_name: $pacman,
+                        manager: $crate::common::package::PackageManager::Pacman,
+                        distros: None,
+                    },
+                    $crate::common::package::PackageDefinition {
+                        package_name: $apt,
+                        manager: $crate::common::package::PackageManager::Apt,
+                        distros: None,
+                    },
+                ],
+                tests: &[$crate::common::requirements::InstallTest::WhichSucceeds(
+                    $pacman,
+                )],
+            };
     };
 
     // Different package names with custom binary test
     ($name:ident, $display:expr, pacman: $pacman:expr, apt: $apt:expr, test: $bin:expr) => {
-        pub static $name: $crate::common::package::Dependency = $crate::common::package::Dependency {
-            name: $display,
-            description: None,
-            packages: &[
-                $crate::common::package::PackageDefinition {
-                    package_name: $pacman,
-                    manager: $crate::common::package::PackageManager::Pacman,
-                    distros: None,
-                },
-                $crate::common::package::PackageDefinition {
-                    package_name: $apt,
-                    manager: $crate::common::package::PackageManager::Apt,
-                    distros: None,
-                },
-            ],
-            tests: &[$crate::common::requirements::InstallTest::WhichSucceeds($bin)],
-        };
+        pub static $name: $crate::common::package::Dependency =
+            $crate::common::package::Dependency {
+                name: $display,
+                description: None,
+                packages: &[
+                    $crate::common::package::PackageDefinition {
+                        package_name: $pacman,
+                        manager: $crate::common::package::PackageManager::Pacman,
+                        distros: None,
+                    },
+                    $crate::common::package::PackageDefinition {
+                        package_name: $apt,
+                        manager: $crate::common::package::PackageManager::Apt,
+                        distros: None,
+                    },
+                ],
+                tests: &[$crate::common::requirements::InstallTest::WhichSucceeds(
+                    $bin,
+                )],
+            };
     };
 
     // With Flatpak fallback
     ($name:ident, $display:expr, $pkg:expr, flatpak: $flatpak:expr) => {
-        pub static $name: $crate::common::package::Dependency = $crate::common::package::Dependency {
-            name: $display,
-            description: None,
-            packages: &[
-                $crate::common::package::PackageDefinition {
-                    package_name: $pkg,
-                    manager: $crate::common::package::PackageManager::Pacman,
-                    distros: None,
-                },
-                $crate::common::package::PackageDefinition {
-                    package_name: $pkg,
-                    manager: $crate::common::package::PackageManager::Apt,
-                    distros: None,
-                },
-                $crate::common::package::PackageDefinition {
-                    package_name: $flatpak,
-                    manager: $crate::common::package::PackageManager::Flatpak,
-                    distros: None,
-                },
-            ],
-            tests: &[$crate::common::requirements::InstallTest::WhichSucceeds($pkg)],
-        };
+        pub static $name: $crate::common::package::Dependency =
+            $crate::common::package::Dependency {
+                name: $display,
+                description: None,
+                packages: &[
+                    $crate::common::package::PackageDefinition {
+                        package_name: $pkg,
+                        manager: $crate::common::package::PackageManager::Pacman,
+                        distros: None,
+                    },
+                    $crate::common::package::PackageDefinition {
+                        package_name: $pkg,
+                        manager: $crate::common::package::PackageManager::Apt,
+                        distros: None,
+                    },
+                    $crate::common::package::PackageDefinition {
+                        package_name: $flatpak,
+                        manager: $crate::common::package::PackageManager::Flatpak,
+                        distros: None,
+                    },
+                ],
+                tests: &[$crate::common::requirements::InstallTest::WhichSucceeds(
+                    $pkg,
+                )],
+            };
     };
 
     // Pacman only with Cargo fallback
     ($name:ident, $display:expr, pacman: $pacman:expr, cargo: $cargo:expr) => {
-        pub static $name: $crate::common::package::Dependency = $crate::common::package::Dependency {
-            name: $display,
-            description: None,
-            packages: &[
-                $crate::common::package::PackageDefinition {
-                    package_name: $pacman,
-                    manager: $crate::common::package::PackageManager::Pacman,
-                    distros: None,
-                },
-                $crate::common::package::PackageDefinition {
-                    package_name: $cargo,
-                    manager: $crate::common::package::PackageManager::Cargo,
-                    distros: None,
-                },
-            ],
-            tests: &[$crate::common::requirements::InstallTest::WhichSucceeds($pacman)],
-        };
+        pub static $name: $crate::common::package::Dependency =
+            $crate::common::package::Dependency {
+                name: $display,
+                description: None,
+                packages: &[
+                    $crate::common::package::PackageDefinition {
+                        package_name: $pacman,
+                        manager: $crate::common::package::PackageManager::Pacman,
+                        distros: None,
+                    },
+                    $crate::common::package::PackageDefinition {
+                        package_name: $cargo,
+                        manager: $crate::common::package::PackageManager::Cargo,
+                        distros: None,
+                    },
+                ],
+                tests: &[$crate::common::requirements::InstallTest::WhichSucceeds(
+                    $pacman,
+                )],
+            };
     };
 }
 

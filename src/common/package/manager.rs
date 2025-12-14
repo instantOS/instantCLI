@@ -82,9 +82,7 @@ impl PackageManager {
 
             // Cross-platform managers - check binary availability
             Self::Flatpak => which::which("flatpak").is_ok(),
-            Self::Aur => {
-                OperatingSystem::detect().is_arch_based() && detect_aur_helper().is_some()
-            }
+            Self::Aur => OperatingSystem::detect().is_arch_based() && detect_aur_helper().is_some(),
             Self::Cargo => which::which("cargo").is_ok(),
             Self::Snap => which::which("snap").is_ok(),
         }
@@ -143,12 +141,10 @@ impl std::fmt::Display for PackageManager {
 pub fn detect_aur_helper() -> Option<&'static str> {
     const AUR_HELPERS: &[&str] = &["yay", "paru", "pikaur", "trizen"];
 
-    for helper in AUR_HELPERS {
-        if which::which(helper).is_ok() {
-            return Some(helper);
-        }
-    }
-    None
+    AUR_HELPERS
+        .iter()
+        .find(|&helper| which::which(helper).is_ok())
+        .map(|v| v as _)
 }
 
 #[cfg(test)]

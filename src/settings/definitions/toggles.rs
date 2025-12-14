@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 
-use crate::common::package::{ensure_all, InstallResult};
+use crate::common::package::{InstallResult, ensure_all};
 use crate::common::systemd::{SystemdManager, UserServiceConfig};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::settings::context::SettingsContext;

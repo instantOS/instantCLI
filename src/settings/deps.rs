@@ -87,7 +87,10 @@ pub static FASTFETCH: Dependency = Dependency {
 pub static PACMAN_CONTRIB: Dependency = Dependency {
     name: "pacman-contrib",
     description: Some("Pacman helper utilities"),
-    packages: &[PackageDefinition::new("pacman-contrib", PackageManager::Pacman)],
+    packages: &[PackageDefinition::new(
+        "pacman-contrib",
+        PackageManager::Pacman,
+    )],
     tests: &[
         InstallTest::WhichSucceeds("paccache"),
         InstallTest::WhichSucceeds("checkupdates"),

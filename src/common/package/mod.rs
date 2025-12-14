@@ -55,8 +55,6 @@ mod install;
 mod legacy;
 mod manager;
 
-pub use batch::{ensure_dependencies_batch, InstallBatch};
 pub use definition::PackageDefinition;
-pub use dependency::{ensure_all, Dependency, InstallResult};
-pub use install::PackageInstaller;
-pub use manager::{detect_aur_helper, PackageManager};
+pub use dependency::{Dependency, InstallResult, ensure_all};
+pub use manager::PackageManager;

@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use super::{Dependency, PackageDefinition, PackageManager};
 use crate::common::requirements::PackageStatus;

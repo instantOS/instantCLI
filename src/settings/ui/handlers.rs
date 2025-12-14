@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 
-use crate::common::package::{ensure_all, Dependency, InstallResult};
+use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Requirement, Setting};
@@ -36,7 +36,9 @@ fn ensure_requirements(setting: &'static dyn Setting) -> Result<bool> {
     if !required_deps.is_empty() {
         match ensure_all(&required_deps)? {
             InstallResult::Installed | InstallResult::AlreadyInstalled => {}
-            InstallResult::Declined | InstallResult::NotAvailable { .. } | InstallResult::Failed { .. } => {
+            InstallResult::Declined
+            | InstallResult::NotAvailable { .. }
+            | InstallResult::Failed { .. } => {
                 return Ok(false);
             }
         }

@@ -5,7 +5,9 @@
 use anyhow::Result;
 
 use crate::settings::context::SettingsContext;
-use crate::settings::deps::{AVAHI, CUPS, CUPS_FILTERS, GHOSTSCRIPT, NSS_MDNS, SYSTEM_CONFIG_PRINTER};
+use crate::settings::deps::{
+    AVAHI, CUPS, CUPS_FILTERS, GHOSTSCRIPT, NSS_MDNS, SYSTEM_CONFIG_PRINTER,
+};
 use crate::settings::printer;
 use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;

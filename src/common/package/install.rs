@@ -3,9 +3,9 @@
 use anyhow::{Context, Result};
 use duct::cmd;
 
+use super::PackageManager;
 use super::batch::PackageToInstall;
 use super::manager::detect_aur_helper;
-use super::PackageManager;
 
 /// Trait for package installation functionality.
 pub trait PackageInstaller {
@@ -19,7 +19,10 @@ pub fn install_packages(manager: PackageManager, packages: &[PackageToInstall]) 
         return Ok(());
     }
 
-    let package_names: Vec<&str> = packages.iter().map(|p| p.package_def.package_name).collect();
+    let package_names: Vec<&str> = packages
+        .iter()
+        .map(|p| p.package_def.package_name)
+        .collect();
 
     match manager {
         PackageManager::Pacman => install_pacman(&package_names),

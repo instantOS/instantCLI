@@ -3,7 +3,9 @@
 //! Defines curated collections of packages that can be installed
 //! from within settings menus via "Install more..." options.
 
-use crate::common::package::{ensure_all, Dependency, InstallResult, PackageDefinition, PackageManager};
+use crate::common::package::{
+    Dependency, InstallResult, PackageDefinition, PackageManager, ensure_all,
+};
 use crate::common::requirements::InstallTest;
 use crate::dep;
 

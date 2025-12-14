@@ -6,7 +6,6 @@ use super::deps;
 
 use deps::*;
 
-
 #[derive(Debug, Clone)]
 pub enum AssistEntry {
     Action(AssistAction),
@@ -21,7 +20,6 @@ pub struct AssistAction {
     pub dependencies: &'static [&'static Dependency],
     pub execute: fn() -> anyhow::Result<()>,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct AssistGroup {
@@ -188,14 +186,7 @@ pub const ASSISTS: &[AssistEntry] = &[
                 key: 'c',
                 description: "Screenshot to Clipboard: Capture area to clipboard",
                 icon: NerdFont::Clipboard,
-                dependencies: &[
-                    &SLURP,
-                    &SLOP,
-                    &GRIM,
-                    &IMAGEMAGICK,
-                    &WL_CLIPBOARD,
-                    &XCLIP,
-                ],
+                dependencies: &[&SLURP, &SLOP, &GRIM, &IMAGEMAGICK, &WL_CLIPBOARD, &XCLIP],
                 execute: actions::screenshot::screenshot_to_clipboard,
             }),
             AssistEntry::Action(AssistAction {
@@ -217,42 +208,21 @@ pub const ASSISTS: &[AssistEntry] = &[
                 key: 'm',
                 description: "Fullscreen to Clipboard: Fullscreen screenshot directly to clipboard",
                 icon: NerdFont::Desktop,
-                dependencies: &[
-                    &SLURP,
-                    &SLOP,
-                    &GRIM,
-                    &IMAGEMAGICK,
-                    &WL_CLIPBOARD,
-                    &XCLIP,
-                ],
+                dependencies: &[&SLURP, &SLOP, &GRIM, &IMAGEMAGICK, &WL_CLIPBOARD, &XCLIP],
                 execute: actions::screenshot::screenshot_to_clipboard_fullscreen,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'p',
                 description: "Area to Pictures: Selected area screenshot to Pictures folder",
                 icon: NerdFont::FolderOpen,
-                dependencies: &[
-                    &SLURP,
-                    &SLOP,
-                    &GRIM,
-                    &IMAGEMAGICK,
-                    &WL_CLIPBOARD,
-                    &XCLIP,
-                ],
+                dependencies: &[&SLURP, &SLOP, &GRIM, &IMAGEMAGICK, &WL_CLIPBOARD, &XCLIP],
                 execute: actions::screenshot::screenshot_area_to_pictures,
             }),
             AssistEntry::Action(AssistAction {
                 key: 'q',
                 description: "QR Code Scanner: Scan QR code from selected area",
                 icon: NerdFont::QrCode,
-                dependencies: &[
-                    &SLURP,
-                    &SLOP,
-                    &GRIM,
-                    &IMAGEMAGICK,
-                    &ZBAR,
-                    &LIBNOTIFY,
-                ],
+                dependencies: &[&SLURP, &SLOP, &GRIM, &IMAGEMAGICK, &ZBAR, &LIBNOTIFY],
                 execute: actions::qr::qr_scan,
             }),
             AssistEntry::Action(AssistAction {

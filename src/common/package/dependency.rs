@@ -204,7 +204,7 @@ pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult>
             not_available.push((dep.name, dep.install_hint()));
         } else {
             // Safe because we have static lifetime
-            batch.add(*dep)?;
+            batch.add(dep)?;
         }
     }
 
@@ -219,9 +219,10 @@ pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult>
         }
         // Show warning but continue with installable packages
         crate::menu_utils::FzfWrapper::builder()
-            .message(&format!(
+            .message(format!(
                 "Some packages are unavailable:\n{}",
-                not_available.iter()
+                not_available
+                    .iter()
                     .map(|(n, _)| format!("  • {}", n))
                     .collect::<Vec<_>>()
                     .join("\n")
@@ -243,7 +244,9 @@ pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult>
     match batch.execute() {
         Ok(_) => {
             // Verify installation
-            let all_installed = deps.iter().all(|d| d.is_installed() || d.get_best_package().is_none());
+            let all_installed = deps
+                .iter()
+                .all(|d| d.is_installed() || d.get_best_package().is_none());
             if all_installed {
                 Ok(InstallResult::Installed)
             } else {
@@ -328,8 +331,9 @@ mod tests {
     }
 
     static EMPTY_PACKAGES: &[PackageDefinition] = &[];
-    static NONEXISTENT_TESTS: &[InstallTest] =
-        &[InstallTest::WhichSucceeds("definitely-does-not-exist-12345")];
+    static NONEXISTENT_TESTS: &[InstallTest] = &[InstallTest::WhichSucceeds(
+        "definitely-does-not-exist-12345",
+    )];
 
     static NONEXISTENT_DEPENDENCY: Dependency = Dependency {
         name: "nonexistent",

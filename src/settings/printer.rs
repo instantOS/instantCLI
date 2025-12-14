@@ -6,7 +6,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use tempfile::NamedTempFile;
 
-use crate::common::package::{ensure_all, InstallResult};
+use crate::common::package::{InstallResult, ensure_all};
 use crate::common::systemd::SystemdManager;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::prelude::NerdFont;

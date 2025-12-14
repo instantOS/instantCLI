@@ -7,4 +7,4 @@ pub mod execute;
 pub mod registry;
 pub mod utils;
 
-pub use commands::{dispatch_assist_command, AssistCommands};
+pub use commands::{AssistCommands, dispatch_assist_command};

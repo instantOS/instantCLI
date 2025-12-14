@@ -1,5 +1,5 @@
 use crate::assist::utils;
-use crate::common::package::{ensure_all, InstallResult};
+use crate::common::package::{InstallResult, ensure_all};
 use crate::common::shell::shell_quote;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
@@ -16,7 +16,11 @@ pub fn execute_assist(assist: &AssistAction, key_sequence: &str) -> Result<()> {
     emit(
         Level::Info,
         "assist.executing",
-        &format!("{} Executing {}...", char::from(assist.icon), assist.description),
+        &format!(
+            "{} Executing {}...",
+            char::from(assist.icon),
+            assist.description
+        ),
         None,
     );
 
@@ -25,7 +29,11 @@ pub fn execute_assist(assist: &AssistAction, key_sequence: &str) -> Result<()> {
     emit(
         Level::Success,
         "assist.executed",
-        &format!("{} {} launched successfully", char::from(NerdFont::Check), assist.description),
+        &format!(
+            "{} {} launched successfully",
+            char::from(NerdFont::Check),
+            assist.description
+        ),
         None,
     );
 
@@ -48,7 +56,11 @@ fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Resul
     emit(
         Level::Info,
         "assist.checking_dependencies",
-        &format!("{} Checking dependencies for {}...", char::from(NerdFont::Package), assist.description),
+        &format!(
+            "{} Checking dependencies for {}...",
+            char::from(NerdFont::Package),
+            assist.description
+        ),
         None,
     );
 
@@ -57,7 +69,9 @@ fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Resul
     } else if install_dependencies_via_terminal(assist, key_sequence)? {
         InstallResult::Installed
     } else {
-        InstallResult::Failed { reason: "Terminal installation failed".to_string() }
+        InstallResult::Failed {
+            reason: "Terminal installation failed".to_string(),
+        }
     };
 
     match result {
@@ -70,14 +84,24 @@ fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Resul
             }
         }
         InstallResult::Declined => {
-            emit(Level::Info, "assist.cancelled", "Assist execution cancelled.", None);
+            emit(
+                Level::Info,
+                "assist.cancelled",
+                "Assist execution cancelled.",
+                None,
+            );
             Ok(false)
         }
         InstallResult::NotAvailable { name, hint } => {
             emit(
                 Level::Warn,
                 "assist.not_available",
-                &format!("{} {} is not available: {}", char::from(NerdFont::Warning), name, hint),
+                &format!(
+                    "{} {} is not available: {}",
+                    char::from(NerdFont::Warning),
+                    name,
+                    hint
+                ),
                 None,
             );
             Ok(false)
@@ -110,7 +134,11 @@ fn emit_dependency_warning(assist: &AssistAction) {
     emit(
         Level::Warn,
         "assist.dependencies_not_met",
-        &format!("{} Dependencies not met for {}", char::from(NerdFont::Warning), assist.description),
+        &format!(
+            "{} Dependencies not met for {}",
+            char::from(NerdFont::Warning),
+            assist.description
+        ),
         None,
     );
 }
