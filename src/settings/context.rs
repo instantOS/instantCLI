@@ -117,6 +117,10 @@ impl SettingsContext {
         self.store.optional_string(key)
     }
 
+    pub fn get_network_device(&self) -> Option<String> {
+        self.store.get_network_device()
+    }
+
     pub fn set_optional_string<S: Into<String>>(
         &mut self,
         key: OptionalStringSettingKey,

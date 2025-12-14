@@ -6,15 +6,17 @@ use anyhow::Result;
 use super::context::SettingsContext;
 
 /// Show IP address information
-// TODO: this should be moved to the definition
 pub fn show_ip_info(ctx: &mut SettingsContext) -> Result<()> {
     ctx.emit_info(
         "settings.network.ip_info",
         "Gathering network information...",
     );
 
+    // Get configured network device
+    let device = ctx.get_network_device();
+
     // Get local IP address
-    let local_ip = get_local_ip();
+    let local_ip = get_local_ip(device.as_deref());
 
     // Check internet connectivity
     let has_internet = check_internet();

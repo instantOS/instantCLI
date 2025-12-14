@@ -167,6 +167,11 @@ pub const PACMAN_AUTOCLEAN_KEY: BoolSettingKey =
 // Required package groups for settings
 use crate::common::requirements::{CHROMIUM_PACKAGE, COCKPIT_PACKAGE, RequiredPackage};
 
+use crate::common::network;
+
+pub const NETWORK_DEVICE_KEY: OptionalStringSettingKey =
+    OptionalStringSettingKey::new("network.device");
+
 pub const COCKPIT_PACKAGES: [RequiredPackage; 2] = [COCKPIT_PACKAGE, CHROMIUM_PACKAGE];
 
 #[derive(Debug)]
@@ -272,6 +277,13 @@ impl SettingsStore {
 
     pub fn is_empty(&self) -> bool {
         self.data.sections.is_empty()
+    }
+
+    pub fn get_network_device(&self) -> Option<String> {
+        if let Some(device) = self.optional_string(NETWORK_DEVICE_KEY) {
+            return Some(device);
+        }
+        network::get_default_interface()
     }
 }
 
@@ -448,5 +460,26 @@ layout = "monocle"
 
         let key = BoolSettingKey::new("test.key", true);
         assert_eq!(store.bool(key), true); // Should return default
+    }
+
+    #[test]
+    fn test_network_device_setting() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path().to_path_buf();
+        let mut store = SettingsStore::load_from_path(path).unwrap();
+
+        // Initially uses auto-detection
+        let device = store.get_network_device();
+        // It might be None if no network interface is found in sandbox, or Some("eth0") etc.
+        println!("Detected device: {:?}", device);
+
+        // Set explicit device
+        store.set_optional_string(NETWORK_DEVICE_KEY, Some("dummy0"));
+        assert_eq!(store.get_network_device(), Some("dummy0".to_string()));
+
+        // Unset
+        store.set_optional_string(NETWORK_DEVICE_KEY, Option::<String>::None);
+        // Should revert to auto-detection (which is same as first call)
+        assert_eq!(store.get_network_device(), device);
     }
 }
