@@ -171,6 +171,16 @@ impl OperatingSystem {
         matches!(self, Self::EndeavourOS)
     }
 
+    /// Check if this OS is compatible with a list of supported OSs
+    /// Checks if self is in the list, or if any of its base OSs are in the list.
+    pub fn is_supported_by(&self, supported: &[OperatingSystem]) -> bool {
+        if supported.contains(self) {
+            return true;
+        }
+        self.based_on()
+            .map_or(false, |base| base.is_supported_by(supported))
+    }
+
     // ========================================================================
     // Package Manager Integration
     // ========================================================================
@@ -442,5 +452,35 @@ ID_LIKE="arch""#;
         assert_eq!(OperatingSystem::Arch.based_on(), None);
         assert_eq!(OperatingSystem::Debian.based_on(), None);
         assert_eq!(OperatingSystem::Fedora.based_on(), None);
+    }
+
+    #[test]
+    fn test_is_supported_by() {
+        let supported_arch = &[OperatingSystem::Arch];
+        let supported_ubuntu = &[OperatingSystem::Ubuntu];
+        let supported_debian = &[OperatingSystem::Debian];
+        let supported_instantos = &[OperatingSystem::InstantOS];
+
+        // Arch support
+        assert!(OperatingSystem::Arch.is_supported_by(supported_arch));
+        assert!(OperatingSystem::InstantOS.is_supported_by(supported_arch));
+        assert!(OperatingSystem::Manjaro.is_supported_by(supported_arch));
+        assert!(!OperatingSystem::Ubuntu.is_supported_by(supported_arch));
+
+        // Ubuntu support
+        assert!(OperatingSystem::Ubuntu.is_supported_by(supported_ubuntu));
+        assert!(OperatingSystem::PopOS.is_supported_by(supported_ubuntu));
+        assert!(!OperatingSystem::Debian.is_supported_by(supported_ubuntu)); // Parent not supported by child
+        assert!(!OperatingSystem::Arch.is_supported_by(supported_ubuntu));
+
+        // Debian support
+        assert!(OperatingSystem::Debian.is_supported_by(supported_debian));
+        assert!(OperatingSystem::Ubuntu.is_supported_by(supported_debian)); // Ubuntu is based on Debian
+        assert!(OperatingSystem::PopOS.is_supported_by(supported_debian)); // PopOS -> Ubuntu -> Debian
+
+        // InstantOS specific support
+        assert!(OperatingSystem::InstantOS.is_supported_by(supported_instantos));
+        assert!(!OperatingSystem::Arch.is_supported_by(supported_instantos));
+        assert!(!OperatingSystem::Manjaro.is_supported_by(supported_instantos));
     }
 }

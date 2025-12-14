@@ -7,6 +7,7 @@ use anyhow::Result;
 
 use super::context::SettingsContext;
 use super::store::{BoolSettingKey, StringSettingKey};
+use crate::common::distro::OperatingSystem;
 use crate::common::requirements::RequiredPackage;
 use crate::ui::prelude::NerdFont;
 
@@ -206,6 +207,7 @@ pub struct SettingMetadata {
     pub summary: &'static str,
     pub requires_reapply: bool,
     pub requirements: &'static [Requirement],
+    pub supported_distros: Option<&'static [OperatingSystem]>,
 }
 
 impl SettingMetadata {
@@ -223,6 +225,7 @@ pub struct SettingMetadataBuilder {
     summary: &'static str,
     requires_reapply: bool,
     requirements: &'static [Requirement],
+    supported_distros: Option<&'static [OperatingSystem]>,
 }
 
 impl SettingMetadataBuilder {
@@ -270,6 +273,11 @@ impl SettingMetadataBuilder {
         self
     }
 
+    pub fn supported_distros(mut self, distros: &'static [OperatingSystem]) -> Self {
+        self.supported_distros = Some(distros);
+        self
+    }
+
     pub fn build(self) -> SettingMetadata {
         let title = self.title.expect("SettingMetadata: title is required");
 
@@ -281,6 +289,7 @@ impl SettingMetadataBuilder {
             summary: self.summary,
             requires_reapply: self.requires_reapply,
             requirements: self.requirements,
+            supported_distros: self.supported_distros,
         }
     }
 }

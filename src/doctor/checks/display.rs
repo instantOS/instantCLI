@@ -118,7 +118,11 @@ impl SwayDisplayCheck {
     fn find_optimal_mode(modes: &[DisplayMode], fallback: &DisplayMode) -> DisplayMode {
         modes
             .iter()
-            .max_by(|a, b| a.resolution().cmp(&b.resolution()).then(a.refresh.cmp(&b.refresh)))
+            .max_by(|a, b| {
+                a.resolution()
+                    .cmp(&b.resolution())
+                    .then(a.refresh.cmp(&b.refresh))
+            })
             .cloned()
             .unwrap_or_else(|| fallback.clone())
     }
