@@ -157,38 +157,56 @@ impl Dependency {
 mod tests {
     use super::*;
 
-    // Helper to create a test dependency
-    fn test_dependency() -> Dependency {
-        Dependency {
-            name: "test-pkg",
-            description: Some("A test package"),
-            packages: &[
-                PackageDefinition::new("test-pkg", PackageManager::Pacman),
-                PackageDefinition::new("test-pkg", PackageManager::Apt),
-                PackageDefinition::new("test-pkg", PackageManager::Flatpak),
-            ],
-            tests: &[InstallTest::WhichSucceeds("test-pkg-binary")],
-        }
-    }
+    // Static test data - must be 'static for Dependency struct
+    static TEST_PACKAGES: &[PackageDefinition] = &[
+        PackageDefinition {
+            package_name: "test-pkg",
+            manager: PackageManager::Pacman,
+            distros: None,
+        },
+        PackageDefinition {
+            package_name: "test-pkg",
+            manager: PackageManager::Apt,
+            distros: None,
+        },
+        PackageDefinition {
+            package_name: "test-pkg",
+            manager: PackageManager::Flatpak,
+            distros: None,
+        },
+    ];
+
+    static TEST_TESTS: &[InstallTest] = &[InstallTest::WhichSucceeds("test-pkg-binary")];
+
+    static TEST_DEPENDENCY: Dependency = Dependency {
+        name: "test-pkg",
+        description: Some("A test package"),
+        packages: TEST_PACKAGES,
+        tests: TEST_TESTS,
+    };
 
     #[test]
     fn test_install_hint() {
-        let dep = test_dependency();
-        let hint = dep.install_hint();
+        let hint = TEST_DEPENDENCY.install_hint();
         assert!(hint.contains("pacman -S test-pkg"));
         assert!(hint.contains("apt install test-pkg"));
         assert!(hint.contains("flatpak install flathub test-pkg"));
     }
 
+    static EMPTY_PACKAGES: &[PackageDefinition] = &[];
+    static NONEXISTENT_TESTS: &[InstallTest] =
+        &[InstallTest::WhichSucceeds("definitely-does-not-exist-12345")];
+
+    static NONEXISTENT_DEPENDENCY: Dependency = Dependency {
+        name: "nonexistent",
+        description: None,
+        packages: EMPTY_PACKAGES,
+        tests: NONEXISTENT_TESTS,
+    };
+
     #[test]
     fn test_can_auto_install_when_not_installed() {
-        let dep = Dependency {
-            name: "nonexistent",
-            description: None,
-            packages: &[],
-            tests: &[InstallTest::WhichSucceeds("definitely-does-not-exist-12345")],
-        };
         // No packages available, so can't auto-install
-        assert!(!dep.can_auto_install());
+        assert!(!NONEXISTENT_DEPENDENCY.can_auto_install());
     }
 }
