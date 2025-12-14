@@ -8,6 +8,7 @@ use crate::settings::context::SettingsContext;
 use crate::settings::packages;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
+use crate::common::distro::OperatingSystem;
 
 // ============================================================================
 // Install Packages
@@ -22,6 +23,7 @@ impl Setting for InstallPackages {
             .title("Install packages")
             .icon(NerdFont::Download)
             .summary("Browse and install system packages using an interactive fuzzy finder.")
+            .supported_distros(&[OperatingSystem::Arch])
             .build()
     }
 
