@@ -2,8 +2,6 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 
-use crate::common::requirements::PackageManager;
-
 /// Represents a detected operating system with methods for family checks
 /// and package manager detection.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,22 +183,6 @@ impl OperatingSystem {
     // Package Manager Integration
     // ========================================================================
 
-    /// Get the package manager for this operating system (legacy method).
-    ///
-    /// # Deprecated
-    /// Use `native_package_manager()` instead, which returns the new unified
-    /// `PackageManager` enum from `crate::common::package`.
-    pub fn package_manager(&self) -> Option<PackageManager> {
-        match self {
-            Self::Arch => Some(PackageManager::Pacman),
-            Self::Debian => Some(PackageManager::Apt),
-            // RPM-based and Unknown not yet supported
-            Self::Fedora | Self::CentOS | Self::OpenSUSE | Self::Unknown(_) => None,
-            // Derivatives fall back to parent
-            _ => self.based_on().and_then(|p| p.package_manager()),
-        }
-    }
-
     /// Get the native package manager for this operating system.
     ///
     /// This is the single source of truth for the OS → native package manager mapping.
@@ -263,26 +245,6 @@ impl std::fmt::Display for OperatingSystem {
             _ => write!(f, "{}", self.name()),
         }
     }
-}
-
-// ============================================================================
-// Legacy Functions (for backward compatibility during migration)
-// ============================================================================
-
-/// Detect the current Linux distribution
-///
-/// # Deprecated
-/// Use `OperatingSystem::detect()` instead
-pub fn detect_distro() -> Result<OperatingSystem> {
-    Ok(OperatingSystem::detect())
-}
-
-/// Check if the system is running instantOS
-///
-/// # Deprecated
-/// Use `OperatingSystem::detect().is_instantos()` instead
-pub fn is_instantos() -> bool {
-    OperatingSystem::detect().is_instantos()
 }
 
 /// Check if running from a live ISO
@@ -439,23 +401,28 @@ ID_LIKE="arch""#;
 
     #[test]
     fn test_package_manager() {
+        use crate::common::package::PackageManager;
+
         assert_eq!(
-            OperatingSystem::Arch.package_manager(),
+            OperatingSystem::Arch.native_package_manager(),
             Some(PackageManager::Pacman)
         );
         assert_eq!(
-            OperatingSystem::InstantOS.package_manager(),
+            OperatingSystem::InstantOS.native_package_manager(),
             Some(PackageManager::Pacman)
         );
         assert_eq!(
-            OperatingSystem::Ubuntu.package_manager(),
+            OperatingSystem::Ubuntu.native_package_manager(),
             Some(PackageManager::Apt)
         );
         assert_eq!(
-            OperatingSystem::Debian.package_manager(),
+            OperatingSystem::Debian.native_package_manager(),
             Some(PackageManager::Apt)
         );
-        assert_eq!(OperatingSystem::Fedora.package_manager(), None); // Not yet supported
+        assert_eq!(
+            OperatingSystem::Fedora.native_package_manager(),
+            Some(PackageManager::Dnf)
+        );
     }
 
     #[test]
