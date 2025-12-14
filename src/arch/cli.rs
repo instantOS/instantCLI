@@ -258,7 +258,9 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                     let mut missing_packages = Vec::new();
                     for dep in dependencies {
                         if !dep.is_installed()
-                            && let Some(pkg) = dep.packages.iter().find(|p| p.manager == crate::common::package::PackageManager::Pacman)
+                            && let Some(pkg) = dep.packages.iter().find(|p| {
+                                p.manager == crate::common::package::PackageManager::Pacman
+                            })
                         {
                             missing_packages.push(pkg.package_name);
                             println!("Will install missing dependency: {}...", dep.name);

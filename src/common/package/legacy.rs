@@ -244,6 +244,7 @@ macro_rules! dep {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::requirements::InstallTest;
 
     #[test]
     fn test_required_package_to_dependency() {

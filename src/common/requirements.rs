@@ -1,3 +1,15 @@
+//! Legacy package requirements types.
+//!
+//! This module contains types that are being phased out in favor of the new
+//! unified `Dependency` system in `crate::common::package`.
+//!
+//! The only actively used exports are:
+//! - `InstallTest` - Test conditions for verifying package installation
+//! - `PackageStatus` - Result status of installation attempts
+//!
+//! The remaining types (`RequiredPackage`, `FlatpakPackage`, `PackageManager`)
+//! are kept for compatibility with `legacy.rs` conversions.
+
 use std::path::Path;
 
 use crate::menu_utils::FzfWrapper;
@@ -46,7 +58,12 @@ impl InstallTest {
     }
 }
 
+// =============================================================================
+// Legacy Types (for backward compatibility with legacy.rs)
+// =============================================================================
+
 /// Represents an external dependency a setting may require.
+/// DEPRECATED: Use `crate::common::package::Dependency` instead.
 #[derive(Debug, Clone, Copy)]
 pub struct RequiredPackage {
     pub name: &'static str,
@@ -56,6 +73,7 @@ pub struct RequiredPackage {
 }
 
 /// Represents a Flatpak application dependency
+/// DEPRECATED: Use `crate::common::package::Dependency` with `PackageManager::Flatpak` instead.
 #[derive(Debug, Clone, Copy)]
 pub struct FlatpakPackage {
     pub name: &'static str,
@@ -63,6 +81,8 @@ pub struct FlatpakPackage {
     pub tests: &'static [InstallTest],
 }
 
+/// Legacy package manager enum used by distro detection.
+/// Note: This is different from `crate::common::package::PackageManager`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackageManager {
     Pacman,
@@ -111,8 +131,6 @@ impl RequiredPackage {
     }
 
     /// Check if this package can be automatically installed on the current system.
-    /// Returns `true` if the package is already installed, or if both a package manager
-    /// is detected AND the package has a name defined for that package manager.
     pub fn can_auto_install(&self) -> bool {
         if self.is_installed() {
             return true;
@@ -120,6 +138,15 @@ impl RequiredPackage {
         PackageManager::detect()
             .and_then(|pm| pm.package_name(self))
             .is_some()
+    }
+
+    fn install_hint(&self) -> String {
+        let manual = format!(
+            "Package names:\n  - Arch: {}\n  - Ubuntu: {}",
+            self.arch_package_name.unwrap_or("not available"),
+            self.ubuntu_package_name.unwrap_or("not available")
+        );
+        manual
     }
 
     /// Ensure the package is installed, prompting for installation if needed
@@ -158,7 +185,6 @@ impl RequiredPackage {
 
         if should_install {
             if let Err(err) = self.install_with_prompt() {
-                // Installation failed, show message and return false
                 let error_msg = format!(
                     "Failed to install '{}': {}\n\nThis package is required for the selected setting.\n\n{}",
                     self.name,
@@ -173,17 +199,8 @@ impl RequiredPackage {
             }
             Ok(PackageStatus::Installed)
         } else {
-            // User declined installation
             Ok(PackageStatus::Declined)
         }
-    }
-
-    /// Get the package name for the current system
-    #[allow(dead_code)]
-    pub fn get_package_name(&self) -> Option<(&'static str, PackageManager)> {
-        let pm = PackageManager::detect()?;
-        let name = pm.package_name(self)?;
-        Some((name, pm))
     }
 
     /// Attempt to install the package
@@ -197,7 +214,6 @@ impl RequiredPackage {
 
         let installing_msg = format!("Installing {} (package: {})...", self.name, package_name);
 
-        // Show installation progress message
         FzfWrapper::builder()
             .message(&installing_msg)
             .title("Installing Package")
@@ -205,36 +221,20 @@ impl RequiredPackage {
 
         package_manager.install_package(self)?;
 
-        // Verify installation succeeded
         if !self.is_installed() {
             return Err(anyhow::anyhow!(
-                "Installation of package '{}' completed but verification checks still failed",
-                package_name
+                "Installation of '{}' completed but verification checks still failed",
+                self.name
             ));
         }
 
-        let success_msg = format!("Successfully installed {} ({})!", self.name, package_name);
+        let success_msg = format!("Successfully installed {}!", self.name);
         FzfWrapper::builder()
             .message(&success_msg)
             .title("Installation Complete")
             .show_message()?;
 
         Ok(())
-    }
-
-    pub fn install_hint(&self) -> String {
-        let mut hints = Vec::new();
-        if let Some(pkg) = self.arch_package_name {
-            hints.push(format!("pacman -S {pkg}"));
-        }
-        if let Some(pkg) = self.ubuntu_package_name {
-            hints.push(format!("apt install {pkg}"));
-        }
-        if hints.is_empty() {
-            format!("Install `{}`", self.name)
-        } else {
-            format!("Try one of: {}", hints.join(" | "))
-        }
     }
 }
 
@@ -244,16 +244,17 @@ impl FlatpakPackage {
     }
 
     fn is_flathub_configured() -> bool {
-        cmd!("flatpak", "remotes", "--columns=name")
+        cmd!("flatpak", "remote-list")
             .read()
-            .map(|output| output.lines().any(|line| line.trim() == "flathub"))
+            .map(|output| output.contains("flathub"))
             .unwrap_or(false)
     }
 
     fn setup_flathub() -> Result<()> {
+        let msg = "Flathub is not configured. Setting up Flathub remote...";
         FzfWrapper::builder()
-            .message("Flathub repository needs to be configured to install Flatpak applications.")
-            .title("Setting up Flathub")
+            .message(msg)
+            .title("Flatpak Setup")
             .show_message()?;
 
         cmd!(
@@ -261,7 +262,7 @@ impl FlatpakPackage {
             "remote-add",
             "--if-not-exists",
             "flathub",
-            "https://flathub.org/repo/flathub.flatpakrepo"
+            "https://dl.flathub.org/repo/flathub.flatpakrepo"
         )
         .run()
         .context("Failed to add Flathub remote")?;
@@ -336,496 +337,3 @@ impl FlatpakPackage {
         }
     }
 }
-
-/// Required package for restic (backup tool used by game commands)
-pub static RESTIC_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "restic",
-    arch_package_name: Some("restic"),
-    ubuntu_package_name: Some("restic"),
-    tests: &[InstallTest::WhichSucceeds("restic")],
-};
-
-/// Find packages that are not currently installed
-fn find_missing_packages(packages: &[RequiredPackage]) -> Vec<&RequiredPackage> {
-    packages.iter().filter(|pkg| !pkg.is_installed()).collect()
-}
-
-/// Get package names for the detected package manager
-fn get_package_names(
-    packages: &[&RequiredPackage],
-    package_manager: &PackageManager,
-) -> Result<Vec<&'static str>> {
-    let mut names = Vec::new();
-    for pkg in packages {
-        let package_name = package_manager.package_name(pkg).ok_or_else(|| {
-            anyhow::anyhow!("Package '{}' not available for this system", pkg.name)
-        })?;
-        names.push(package_name);
-    }
-    Ok(names)
-}
-
-/// Build a message listing packages with their system package names
-fn build_package_list_message(
-    packages: &[&RequiredPackage],
-    package_manager: &PackageManager,
-) -> Result<String> {
-    let header = if packages.len() == 1 {
-        "The following package is required:\n\n"
-    } else {
-        "The following packages are required:\n\n"
-    };
-    let mut msg = String::from(header);
-
-    for pkg in packages {
-        let package_name = package_manager.package_name(pkg).ok_or_else(|| {
-            anyhow::anyhow!("Package '{}' not available for this system", pkg.name)
-        })?;
-
-        msg.push_str(&format!("  • {} (package: {})\n", pkg.name, package_name));
-    }
-
-    Ok(msg)
-}
-
-/// Build a message showing failed installations
-fn build_failure_message(failed_packages: &[String]) -> String {
-    format!(
-        "Installation completed but the following packages failed verification:\n\n{}\n\nSome packages may require a system restart or PATH update.",
-        failed_packages
-            .iter()
-            .map(|s| format!("  • {}", s))
-            .collect::<Vec<_>>()
-            .join("\n")
-    )
-}
-
-/// Show installation success message
-fn show_success_message(count: usize) -> Result<()> {
-    let success_msg = format!(
-        "Successfully installed {} package{}!",
-        count,
-        if count == 1 { "" } else { "s" }
-    );
-    FzfWrapper::builder()
-        .message(&success_msg)
-        .title("Installation Complete")
-        .show_message()
-}
-
-/// Prompt user for batch installation confirmation
-fn prompt_batch_installation(
-    packages: &[&RequiredPackage],
-    package_manager: &PackageManager,
-) -> Result<bool> {
-    let mut msg = build_package_list_message(packages, package_manager)?;
-    let (question, yes_text) = if packages.len() == 1 {
-        ("\nDo you want to install it?", "Install")
-    } else {
-        ("\nDo you want to install all of them?", "Install All")
-    };
-    msg.push_str(question);
-
-    let should_install = FzfWrapper::builder()
-        .confirm(&msg)
-        .yes_text(yes_text)
-        .no_text("Cancel")
-        .show_confirmation()?;
-
-    Ok(matches!(
-        should_install,
-        crate::menu_utils::ConfirmResult::Yes
-    ))
-}
-
-/// Execute batch installation using the appropriate package manager
-fn execute_batch_installation(
-    package_names: &[&'static str],
-    package_manager: &PackageManager,
-) -> Result<()> {
-    match package_manager {
-        PackageManager::Pacman => {
-            let mut args = vec!["pacman", "-S", "--noconfirm"];
-            for name in package_names {
-                args.push(name);
-            }
-            cmd("sudo", &args)
-                .run()
-                .context("Failed to install packages with pacman")?;
-        }
-        PackageManager::Apt => {
-            let mut args = vec!["apt", "install", "-y"];
-            for name in package_names {
-                args.push(name);
-            }
-            cmd("sudo", &args)
-                .run()
-                .context("Failed to install packages with apt")?;
-        }
-    }
-    Ok(())
-}
-
-/// Verify that all packages were installed successfully
-fn verify_installations(
-    packages: &[&RequiredPackage],
-    package_manager: &PackageManager,
-) -> Result<Vec<String>> {
-    let mut failed = Vec::new();
-    for pkg in packages {
-        if !pkg.is_installed() {
-            if let Some(package_name) = package_manager.package_name(pkg) {
-                failed.push(format!("{} ({})", pkg.name, package_name));
-            } else {
-                failed.push(pkg.name.to_string());
-            }
-        }
-    }
-    Ok(failed)
-}
-
-/// Ensure multiple packages are installed with a single prompt for all missing packages.
-/// Returns Ok(PackageStatus::Installed) if all packages are installed or were successfully installed.
-/// Returns Ok(PackageStatus::Declined) if user cancelled.
-/// Returns Ok(PackageStatus::Failed) if any installation failed.
-pub fn ensure_packages_batch(packages: &[RequiredPackage]) -> Result<PackageStatus> {
-    // First, check which packages are missing
-    let missing = find_missing_packages(packages);
-
-    if missing.is_empty() {
-        return Ok(PackageStatus::Installed);
-    }
-
-    // Detect package manager
-    let package_manager = PackageManager::detect()
-        .ok_or_else(|| anyhow::anyhow!("No supported package manager found"))?;
-
-    // Get package names for installation
-    let package_names = get_package_names(&missing, &package_manager)?;
-
-    // Prompt user for installation
-    if !prompt_batch_installation(&missing, &package_manager)? {
-        return Ok(PackageStatus::Declined);
-    }
-
-    // Show installation progress message
-    let installing_msg = format!(
-        "Installing {} package{}...",
-        package_names.len(),
-        if package_names.len() == 1 { "" } else { "s" }
-    );
-
-    FzfWrapper::builder()
-        .message(&installing_msg)
-        .title("Installing Packages")
-        .show_message()?;
-
-    // Install all packages
-    execute_batch_installation(&package_names, &package_manager)?;
-
-    // Verify installations
-    let failed = verify_installations(&missing, &package_manager)?;
-
-    if !failed.is_empty() {
-        let error_msg = build_failure_message(&failed);
-        FzfWrapper::builder()
-            .message(&error_msg)
-            .title("Installation Warning")
-            .show_message()?;
-        return Ok(PackageStatus::Failed);
-    }
-
-    show_success_message(package_names.len())?;
-    Ok(PackageStatus::Installed)
-}
-
-/// Ensure multiple Flatpak packages are installed with a single prompt.
-pub fn ensure_flatpaks_batch(packages: &[FlatpakPackage]) -> Result<PackageStatus> {
-    // Check which packages are missing
-    let missing: Vec<&FlatpakPackage> = packages.iter().filter(|pkg| !pkg.is_installed()).collect();
-
-    if missing.is_empty() {
-        return Ok(PackageStatus::Installed);
-    }
-
-    // Build prompt message
-    let header = if missing.len() == 1 {
-        "The following Flatpak application is required:\n\n"
-    } else {
-        "The following Flatpak applications are required:\n\n"
-    };
-    let mut msg = String::from(header);
-    for pkg in &missing {
-        msg.push_str(&format!("  • {} (id: {})\n", pkg.name, pkg.app_id));
-    }
-    let (question, yes_text) = if missing.len() == 1 {
-        ("\nDo you want to install it from Flathub?", "Install")
-    } else {
-        ("\nDo you want to install them from Flathub?", "Install All")
-    };
-    msg.push_str(question);
-
-    let should_install = FzfWrapper::builder()
-        .confirm(&msg)
-        .yes_text(yes_text)
-        .no_text("Cancel")
-        .show_confirmation()?;
-
-    if !matches!(should_install, crate::menu_utils::ConfirmResult::Yes) {
-        return Ok(PackageStatus::Declined);
-    }
-
-    // Ensure Flathub is configured
-    if !FlatpakPackage::is_flathub_configured() {
-        FlatpakPackage::setup_flathub()?;
-    }
-
-    // Show installation progress
-    let installing_msg = format!(
-        "Installing {} application{}...",
-        missing.len(),
-        if missing.len() == 1 { "" } else { "s" }
-    );
-
-    FzfWrapper::builder()
-        .message(&installing_msg)
-        .title("Installing Flatpaks")
-        .show_message()?;
-
-    // Construct flatpak install command
-    let mut args = vec!["install", "-y", "flathub"];
-    for pkg in &missing {
-        args.push(pkg.app_id);
-    }
-
-    cmd("flatpak", &args) // Use dynamic args slice
-        .run()
-        .context("Failed to install Flatpak packages")?;
-
-    // Verify installations
-    let mut failed = Vec::new();
-    for pkg in &missing {
-        if !pkg.is_installed() {
-            failed.push(format!("{} ({})", pkg.name, pkg.app_id));
-        }
-    }
-
-    if !failed.is_empty() {
-        let error_msg = build_failure_message(&failed);
-        FzfWrapper::builder()
-            .message(&error_msg)
-            .title("Installation Warning")
-            .show_message()?;
-        return Ok(PackageStatus::Failed);
-    }
-
-    show_success_message(missing.len())?;
-    Ok(PackageStatus::Installed)
-}
-
-// Common Package Definitions
-
-pub const WIREMIX_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "wiremix",
-    arch_package_name: Some("wiremix"),
-    ubuntu_package_name: None,
-    tests: &[InstallTest::WhichSucceeds("wiremix")],
-};
-
-pub const UDISKIE_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "udiskie",
-    arch_package_name: Some("udiskie"),
-    ubuntu_package_name: Some("udiskie"),
-    tests: &[InstallTest::WhichSucceeds("udiskie")],
-};
-
-pub const GNOME_DISKS_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "GNOME Disks",
-    arch_package_name: Some("gnome-disk-utility"),
-    ubuntu_package_name: Some("gnome-disk-utility"),
-    tests: &[InstallTest::WhichSucceeds("gnome-disks")],
-};
-
-pub const GPARTED_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "GParted",
-    arch_package_name: Some("gparted"),
-    ubuntu_package_name: Some("gparted"),
-    tests: &[InstallTest::WhichSucceeds("gparted")],
-};
-
-pub const FASTFETCH_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "fastfetch",
-    arch_package_name: Some("fastfetch"),
-    ubuntu_package_name: Some("fastfetch"),
-    tests: &[InstallTest::WhichSucceeds("fastfetch")],
-};
-
-pub const PACMAN_CONTRIB_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "pacman-contrib",
-    arch_package_name: Some("pacman-contrib"),
-    ubuntu_package_name: None,
-    tests: &[
-        InstallTest::WhichSucceeds("paccache"),
-        InstallTest::WhichSucceeds("checkupdates"),
-    ],
-};
-
-pub const TOPGRADE_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "topgrade",
-    arch_package_name: Some("topgrade"),
-    ubuntu_package_name: None,
-    tests: &[InstallTest::WhichSucceeds("topgrade")],
-};
-
-pub const BLUEZ_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "BlueZ bluetooth daemon",
-    arch_package_name: Some("bluez"),
-    ubuntu_package_name: Some("bluez"),
-    tests: &[
-        InstallTest::WhichSucceeds("bluetoothd"),
-        InstallTest::FileExists("/usr/lib/systemd/system/bluetooth.service"),
-    ],
-};
-
-pub const BLUEZ_UTILS_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "BlueZ utilities",
-    arch_package_name: Some("bluez-utils"),
-    ubuntu_package_name: Some("bluez"),
-    tests: &[InstallTest::WhichSucceeds("bluetoothctl")],
-};
-
-pub const BLUEMAN_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Blueman applet",
-    arch_package_name: Some("blueman"),
-    ubuntu_package_name: Some("blueman"),
-    tests: &[InstallTest::WhichSucceeds("blueman-applet")],
-};
-
-pub const COCKPIT_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Cockpit",
-    arch_package_name: Some("cockpit"),
-    ubuntu_package_name: Some("cockpit"),
-    tests: &[
-        InstallTest::FileExists("/usr/lib/systemd/system/cockpit.socket"),
-        InstallTest::WhichSucceeds("cockpit-bridge"),
-    ],
-};
-
-pub const CHROMIUM_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Chromium browser",
-    arch_package_name: Some("chromium"),
-    ubuntu_package_name: Some("chromium-browser"),
-    tests: &[InstallTest::WhichSucceeds("chromium")],
-};
-
-pub const FIREFOX_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Firefox",
-    arch_package_name: Some("firefox"),
-    ubuntu_package_name: Some("firefox"),
-    tests: &[InstallTest::WhichSucceeds("firefox")],
-};
-
-pub const FALKON_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Falkon",
-    arch_package_name: Some("falkon"),
-    ubuntu_package_name: Some("falkon"),
-    tests: &[InstallTest::WhichSucceeds("falkon")],
-};
-
-pub const EPIPHANY_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "GNOME Web (Epiphany)",
-    arch_package_name: Some("epiphany"),
-    ubuntu_package_name: Some("epiphany-browser"),
-    tests: &[InstallTest::WhichSucceeds("epiphany")],
-};
-
-pub const GNOME_FIRMWARE_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "GNOME Firmware manager",
-    arch_package_name: Some("gnome-firmware"),
-    ubuntu_package_name: Some("gnome-firmware"),
-    tests: &[InstallTest::WhichSucceeds("gnome-firmware")],
-};
-
-pub const XDG_UTILS_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "XDG utilities",
-    arch_package_name: Some("xdg-utils"),
-    ubuntu_package_name: Some("xdg-utils"),
-    tests: &[InstallTest::WhichSucceeds("xdg-mime")],
-};
-
-pub const NM_CONNECTION_EDITOR_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Network Manager Connection Editor",
-    arch_package_name: Some("nm-connection-editor"),
-    ubuntu_package_name: Some("network-manager-gnome"),
-    tests: &[InstallTest::WhichSucceeds("nm-connection-editor")],
-};
-
-pub const FZF_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "fzf",
-    arch_package_name: Some("fzf"),
-    ubuntu_package_name: Some("fzf"),
-    tests: &[InstallTest::WhichSucceeds("fzf")],
-};
-
-pub const LIBGIT2_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "libgit2",
-    arch_package_name: Some("libgit2"),
-    ubuntu_package_name: Some("libgit2-dev"),
-    tests: &[InstallTest::FileExists("/usr/lib/libgit2.so")],
-};
-
-pub const GIT_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "git",
-    arch_package_name: Some("git"),
-    ubuntu_package_name: Some("git"),
-    tests: &[InstallTest::WhichSucceeds("git")],
-};
-
-pub const GUM_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "gum",
-    arch_package_name: Some("gum"),
-    ubuntu_package_name: Some("gum"),
-    tests: &[InstallTest::WhichSucceeds("gum")],
-};
-
-pub const CLIPMENU_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "clipmenu",
-    arch_package_name: Some("clipmenu"),
-    ubuntu_package_name: None,
-    tests: &[InstallTest::WhichSucceeds("clipmenud")],
-};
-
-pub const CFDISK_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "cfdisk",
-    arch_package_name: Some("util-linux"),
-    ubuntu_package_name: Some("util-linux"),
-    tests: &[InstallTest::WhichSucceeds("cfdisk")],
-};
-
-pub const YAZI_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "yazi",
-    arch_package_name: Some("yazi"),
-    ubuntu_package_name: None, // yazi is not in default ubuntu repos yet, usually installed via cargo or prebuilt binary
-    tests: &[InstallTest::WhichSucceeds("yazi")],
-};
-
-pub const PIPER_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Piper",
-    arch_package_name: Some("piper"),
-    ubuntu_package_name: Some("piper"),
-    tests: &[InstallTest::WhichSucceeds("piper")],
-};
-
-pub const ZENITY_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Zenity",
-    arch_package_name: Some("zenity"),
-    ubuntu_package_name: Some("zenity"),
-    tests: &[InstallTest::WhichSucceeds("zenity")],
-};
-
-pub const SMARTMONTOOLS_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "S.M.A.R.T. monitoring tools",
-    arch_package_name: Some("smartmontools"),
-    ubuntu_package_name: Some("smartmontools"),
-    tests: &[InstallTest::WhichSucceeds("smartctl")],
-};
