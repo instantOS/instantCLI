@@ -86,7 +86,7 @@ fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Resul
             emit(
                 Level::Error,
                 "assist.install_failed",
-                &format!("{} {}", char::from(NerdFont::Error), reason),
+                &format!("{} {}", char::from(NerdFont::CrossCircle), reason),
                 None,
             );
             Ok(false)
