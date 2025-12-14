@@ -340,7 +340,7 @@ fn apply_nsswitch_update(
         ],
     )?;
 
-    Ok(()))
+    Ok(())
 }
 
 #[cfg(test)]
