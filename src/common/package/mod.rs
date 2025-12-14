@@ -35,15 +35,29 @@
 //!     tests: &[InstallTest::WhichSucceeds("firefox")],
 //! };
 //! ```
+//!
+//! # Migration from Old Types
+//!
+//! Use the `dep!` macro or `to_dependency()` method on old types:
+//!
+//! ```ignore
+//! // Using the dep! macro for new definitions
+//! dep!(FIREFOX, "Firefox", "firefox", flatpak: "org.mozilla.firefox");
+//!
+//! // Converting existing RequiredPackage
+//! let dep = PLAYERCTL.to_dependency();
+//! ```
 
-mod manager;
+mod batch;
 mod definition;
 mod dependency;
-mod batch;
 mod install;
+mod legacy;
+mod manager;
 
-pub use manager::PackageManager;
+pub use batch::{ensure_dependencies_batch, InstallBatch};
 pub use definition::PackageDefinition;
 pub use dependency::Dependency;
-pub use batch::{InstallBatch, ensure_dependencies_batch};
 pub use install::PackageInstaller;
+pub use manager::{detect_aur_helper, PackageManager};
+
