@@ -154,167 +154,134 @@ impl Dependency {
 
     /// Ensure this dependency is installed, prompting the user if needed.
     ///
-    /// This is the main entry point for dependency installation. It handles:
-    /// - Checking if already installed
-    /// - Finding the best package for the current system
-    /// - Prompting for user confirmation
-    /// - Executing the installation
-    /// - Verifying the installation succeeded
-    ///
-    /// # Returns
-    ///
-    /// - `InstallResult::AlreadyInstalled` - Dependency was already satisfied
-    /// - `InstallResult::Installed` - Successfully installed
-    /// - `InstallResult::Declined` - User declined installation
-    /// - `InstallResult::NotAvailable` - No package available for this system
-    /// - `InstallResult::Failed` - Installation failed
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// use crate::common::package::InstallResult;
-    ///
-    /// match FIREFOX.ensure()? {
-    ///     InstallResult::AlreadyInstalled | InstallResult::Installed => {
-    ///         // Firefox is ready to use
-    ///     }
-    ///     InstallResult::Declined => {
-    ///         // User cancelled, exit gracefully
-    ///     }
-    ///     InstallResult::NotAvailable { hint } => {
-    ///         println!("Firefox not available. {}", hint);
-    ///     }
-    ///     InstallResult::Failed { reason } => {
-    ///         eprintln!("Installation failed: {}", reason);
-    ///     }
-    /// }
-    /// ```
-    pub fn ensure(&self) -> anyhow::Result<InstallResult> {
-        // Already installed - no action needed
-        if self.is_installed() {
-            return Ok(InstallResult::AlreadyInstalled);
-        }
-
-        // Find the best package for this system
-        let pkg_def = match self.get_best_package() {
-            Some(p) => p,
-            None => {
-                return Ok(InstallResult::NotAvailable {
-                    name: self.name.to_string(),
-                    hint: self.install_hint(),
-                });
-            }
-        };
-
-        // Prompt for confirmation
-        let msg = format!(
-            "Install {} via {}?\n\n{}",
-            self.name,
-            pkg_def.manager.display_name(),
-            pkg_def.install_hint()
-        );
-
-        let should_install = crate::menu_utils::FzfWrapper::builder()
-            .confirm(&msg)
-            .yes_text("Install")
-            .no_text("Cancel")
-            .show_confirmation()?;
-
-        if !matches!(should_install, crate::menu_utils::ConfirmResult::Yes) {
-            return Ok(InstallResult::Declined);
-        }
-
-        // Execute installation
-        self.install_package(pkg_def)?;
-
-        // Verify installation
-        if self.is_installed() {
-            Ok(InstallResult::Installed)
-        } else {
-            Ok(InstallResult::Failed {
-                reason: format!(
-                    "Installation completed but {} is still not detected",
-                    self.name
-                ),
-            })
-        }
-    }
-
-    /// Install a specific package definition (internal helper).
-    fn install_package(&self, pkg_def: &PackageDefinition) -> anyhow::Result<()> {
-        use anyhow::Context;
-
-        let (cmd, base_args) = pkg_def.manager.install_command();
-        let mut args: Vec<&str> = base_args.to_vec();
-        args.push(pkg_def.package_name);
-
-        // Handle AUR helper detection
-        let actual_cmd = if pkg_def.manager == PackageManager::Aur {
-            super::detect_aur_helper().unwrap_or("yay")
-        } else {
-            cmd
-        };
-
-        duct::cmd(actual_cmd, &args)
-            .run()
-            .with_context(|| {
-                format!(
-                    "Failed to install {} via {}",
-                    self.name,
-                    pkg_def.manager.display_name()
-                )
-            })?;
-
-        Ok(())
+    /// For installing multiple dependencies at once with a single prompt,
+    /// use [`ensure_all`] instead.
+    pub fn ensure(&'static self) -> anyhow::Result<InstallResult> {
+        ensure_all(&[self])
     }
 }
 
-/// Result of attempting to ensure a dependency is installed.
+/// Ensure multiple dependencies are installed with a single confirmation prompt.
 ///
-/// This enum covers all possible outcomes of a dependency installation attempt,
-/// making it easy for consumers to handle each case appropriately.
+/// Groups packages by manager and installs them efficiently in batches.
+/// Only shows one prompt for all packages.
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::common::package::{ensure_all, InstallResult};
+///
+/// match ensure_all(&[&FIREFOX, &PLAYERCTL, &MPV])? {
+///     InstallResult::Installed | InstallResult::AlreadyInstalled => {
+///         // All dependencies ready
+///     }
+///     InstallResult::Declined => return Ok(()),
+///     InstallResult::NotAvailable { name, hint } => {
+///         eprintln!("{} is not available: {}", name, hint);
+///     }
+///     InstallResult::Failed { reason } => {
+///         eprintln!("Installation failed: {}", reason);
+///     }
+/// }
+/// ```
+pub fn ensure_all(deps: &[&'static Dependency]) -> anyhow::Result<InstallResult> {
+    use super::batch::InstallBatch;
+
+    // Check if all already installed
+    if deps.iter().all(|d| d.is_installed()) {
+        return Ok(InstallResult::AlreadyInstalled);
+    }
+
+    // Build the batch
+    let mut batch = InstallBatch::new();
+    let mut not_available = Vec::new();
+
+    for dep in deps {
+        if dep.is_installed() {
+            continue;
+        }
+        if dep.get_best_package().is_none() {
+            not_available.push((dep.name, dep.install_hint()));
+        } else {
+            // Safe because we have static lifetime
+            batch.add(*dep)?;
+        }
+    }
+
+    // Report unavailable packages
+    if !not_available.is_empty() {
+        let (name, hint) = not_available.first().unwrap();
+        if batch.is_empty() {
+            return Ok(InstallResult::NotAvailable {
+                name: name.to_string(),
+                hint: hint.clone(),
+            });
+        }
+        // Show warning but continue with installable packages
+        crate::menu_utils::FzfWrapper::builder()
+            .message(&format!(
+                "Some packages are unavailable:\n{}",
+                not_available.iter()
+                    .map(|(n, _)| format!("  • {}", n))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ))
+            .title("Warning")
+            .show_message()?;
+    }
+
+    if batch.is_empty() {
+        return Ok(InstallResult::AlreadyInstalled);
+    }
+
+    // Single prompt for all packages
+    if !batch.prompt_confirmation()? {
+        return Ok(InstallResult::Declined);
+    }
+
+    // Execute batched installation
+    match batch.execute() {
+        Ok(_) => {
+            // Verify installation
+            let all_installed = deps.iter().all(|d| d.is_installed() || d.get_best_package().is_none());
+            if all_installed {
+                Ok(InstallResult::Installed)
+            } else {
+                Ok(InstallResult::Failed {
+                    reason: "Some packages failed to install".to_string(),
+                })
+            }
+        }
+        Err(e) => Ok(InstallResult::Failed {
+            reason: e.to_string(),
+        }),
+    }
+}
+
+/// Result of attempting to install dependencies.
 #[derive(Debug, Clone, PartialEq)]
 pub enum InstallResult {
-    /// Dependency was already installed before we checked.
+    /// All dependencies were already installed.
     AlreadyInstalled,
-
-    /// Dependency was successfully installed.
+    /// All dependencies were successfully installed.
     Installed,
-
-    /// User declined the installation prompt.
+    /// User declined the installation.
     Declined,
-
-    /// No package is available for this dependency on the current system.
-    ///
-    /// This happens when:
-    /// - The dependency has no packages defined for the current OS
-    /// - No package manager is available that can install it
-    NotAvailable {
-        /// Name of the dependency
-        name: String,
-        /// Hint for manual installation
-        hint: String,
-    },
-
-    /// Installation was attempted but failed.
-    Failed {
-        /// Reason for the failure
-        reason: String,
-    },
+    /// No package available for this system.
+    NotAvailable { name: String, hint: String },
+    /// Installation failed.
+    Failed { reason: String },
 }
 
 impl InstallResult {
-    /// Returns true if the dependency is now available for use.
     pub fn is_available(&self) -> bool {
         matches!(self, Self::AlreadyInstalled | Self::Installed)
     }
 
-    /// Returns true if installation was declined by the user.
     pub fn is_declined(&self) -> bool {
         matches!(self, Self::Declined)
     }
 
-    /// Returns true if installation failed or wasn't possible.
     pub fn is_failed(&self) -> bool {
         matches!(self, Self::Failed { .. } | Self::NotAvailable { .. })
     }
