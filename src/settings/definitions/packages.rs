@@ -4,11 +4,11 @@
 
 use anyhow::Result;
 
+use crate::common::distro::OperatingSystem;
 use crate::settings::context::SettingsContext;
 use crate::settings::packages;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
-use crate::common::distro::OperatingSystem;
 
 // ============================================================================
 // Install Packages
