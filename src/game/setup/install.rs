@@ -326,9 +326,8 @@ fn prepare_save_path(
 
     if kind.is_directory() {
         if !save_path.as_path().exists() {
-            //TODO save path could be pretty long, add newline after it
             match FzfWrapper::confirm(&format!(
-                "Save path '{display}' does not exist. Would you like to create it?"
+                "Save path '{display}'\ndoes not exist. Would you like to create it?"
             ))
             .map_err(|e| anyhow!("Failed to get confirmation: {e}"))?
             {
