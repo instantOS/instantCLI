@@ -8,14 +8,14 @@ use anyhow::Result;
 use super::context::SettingsContext;
 use super::store::{BoolSettingKey, StringSettingKey};
 use crate::common::distro::OperatingSystem;
-use crate::common::requirements::RequiredPackage;
+use crate::common::package::Dependency;
 use crate::ui::prelude::NerdFont;
 
 /// Requirement that must be satisfied before a setting can be used
 #[derive(Debug, Clone)]
 pub enum Requirement {
-    /// Requires a package to be installed
-    Package(RequiredPackage),
+    /// Requires a package/dependency to be installed
+    Dependency(&'static Dependency),
     /// Custom runtime condition
     Condition {
         description: &'static str,
@@ -27,21 +27,21 @@ pub enum Requirement {
 impl Requirement {
     pub fn is_satisfied(&self) -> bool {
         match self {
-            Requirement::Package(pkg) => pkg.is_installed(),
+            Requirement::Dependency(dep) => dep.is_installed(),
             Requirement::Condition { check, .. } => check(),
         }
     }
 
     pub fn description(&self) -> &str {
         match self {
-            Requirement::Package(pkg) => pkg.name,
+            Requirement::Dependency(dep) => dep.name,
             Requirement::Condition { description, .. } => description,
         }
     }
 
     pub fn resolve_hint(&self) -> String {
         match self {
-            Requirement::Package(pkg) => pkg.install_hint(),
+            Requirement::Dependency(dep) => dep.install_hint(),
             Requirement::Condition { resolve_hint, .. } => resolve_hint.to_string(),
         }
     }

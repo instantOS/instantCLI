@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 
+use crate::common::package::{ensure_all, Dependency, InstallResult};
 use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Requirement, Setting};
@@ -12,15 +13,15 @@ use crate::settings::setting::{Requirement, Setting};
 fn ensure_requirements(setting: &'static dyn Setting) -> Result<bool> {
     let metadata = setting.metadata();
 
-    // Split requirements into packages and other conditions
-    let mut required_packages = Vec::new();
+    // Split requirements into dependencies and other conditions
+    let mut required_deps: Vec<&'static Dependency> = Vec::new();
     let mut unsatisfied_conditions = Vec::new();
 
     for requirement in metadata.requirements {
         match requirement {
-            Requirement::Package(pkg) => {
-                if !pkg.is_installed() {
-                    required_packages.push(*pkg);
+            Requirement::Dependency(dep) => {
+                if !dep.is_installed() {
+                    required_deps.push(dep);
                 }
             }
             Requirement::Condition { check, .. } => {
@@ -31,14 +32,13 @@ fn ensure_requirements(setting: &'static dyn Setting) -> Result<bool> {
         }
     }
 
-    // 1. Batch install any missing packages
-    if !required_packages.is_empty() {
-        // This handles prompting, installing, and reporting errors for packages
-        let status = crate::common::requirements::ensure_packages_batch(&required_packages)?;
-        if !status.is_installed() {
-            // If declined or failed, we return false.
-            // Note: ensure_packages_batch already showed success/fail/decline messages.
-            return Ok(false);
+    // 1. Batch install any missing dependencies
+    if !required_deps.is_empty() {
+        match ensure_all(&required_deps)? {
+            InstallResult::Installed | InstallResult::AlreadyInstalled => {}
+            InstallResult::Declined | InstallResult::NotAvailable { .. } | InstallResult::Failed { .. } => {
+                return Ok(false);
+            }
         }
     }
 

@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use duct::cmd;
 use sudo::RunningAs;
 
-use crate::common::requirements::RequiredPackage;
+use crate::common::package::{ensure_all, Dependency, InstallResult};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::*;
 
@@ -184,11 +184,8 @@ impl SettingsContext {
         }
     }
 
-    pub fn ensure_packages(
-        &mut self,
-        packages: &[RequiredPackage],
-    ) -> Result<crate::common::requirements::PackageStatus> {
-        crate::common::requirements::ensure_packages_batch(packages)
+    pub fn ensure_dependencies(&mut self, deps: &[&'static Dependency]) -> Result<InstallResult> {
+        ensure_all(deps)
     }
 
     pub fn persist(&mut self) -> Result<()> {

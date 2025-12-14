@@ -4,10 +4,11 @@
 
 use anyhow::Result;
 
-use crate::common::requirements::UDISKIE_PACKAGE;
+use crate::common::package::{ensure_all, InstallResult};
 use crate::common::systemd::{SystemdManager, UserServiceConfig};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::settings::context::SettingsContext;
+use crate::settings::deps::{BLUEZ, BLUEZ_UTILS, CLIPMENU, UDISKIE};
 use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
 use crate::ui::prelude::*;
@@ -29,9 +30,7 @@ impl Setting for ClipboardManager {
             .title("Clipboard History")
             .icon(NerdFont::Clipboard)
             .summary("Remember your copy/paste history so you can access previously copied items.\n\nWhen enabled, you can paste from your clipboard history instead of just the last copied item.")
-            .requirements(&[Requirement::Package(
-                crate::common::requirements::CLIPMENU_PACKAGE,
-            )])
+            .requirements(&[Requirement::Dependency(&CLIPMENU)])
             .build()
     }
 
@@ -44,7 +43,7 @@ impl Setting for ClipboardManager {
         use crate::settings::setting::SettingState;
 
         // Check if package is installed first
-        if !crate::common::requirements::CLIPMENU_PACKAGE.is_installed() {
+        if !CLIPMENU.is_installed() {
             return SettingState::Toggle { enabled: false };
         }
 
@@ -71,15 +70,15 @@ impl Setting for ClipboardManager {
 
         if should_enable {
             // Ensure package is installed before trying to enable service
-            if !crate::common::requirements::CLIPMENU_PACKAGE
-                .ensure()?
-                .is_installed()
-            {
-                ctx.emit_info(
-                    "settings.clipboard.aborted",
-                    "Clipboard history setup was cancelled.",
-                );
-                return Ok(());
+            match CLIPMENU.ensure()? {
+                InstallResult::Installed | InstallResult::AlreadyInstalled => {}
+                _ => {
+                    ctx.emit_info(
+                        "settings.clipboard.aborted",
+                        "Clipboard history setup was cancelled.",
+                    );
+                    return Ok(());
+                }
             }
 
             let systemd = SystemdManager::user();
@@ -135,13 +134,16 @@ impl Setting for AutomountDisks {
         const UDISKIE_SERVICE_NAME: &str = "udiskie";
 
         // Ensure udiskie is installed
-        if !UDISKIE_PACKAGE.ensure()?.is_installed() {
-            ctx.set_bool(Self::KEY, false);
-            ctx.emit_info(
-                "settings.storage.udiskie.aborted",
-                "Auto-mount setup was cancelled.",
-            );
-            return Ok(());
+        match UDISKIE.ensure()? {
+            InstallResult::Installed | InstallResult::AlreadyInstalled => {}
+            _ => {
+                ctx.set_bool(Self::KEY, false);
+                ctx.emit_info(
+                    "settings.storage.udiskie.aborted",
+                    "Auto-mount setup was cancelled.",
+                );
+                return Ok(());
+            }
         }
 
         let systemd_manager = SystemdManager::user();
@@ -251,8 +253,6 @@ impl Setting for BluetoothService {
         }
 
         fn ensure_bluetooth_ready(ctx: &mut SettingsContext) -> Result<bool> {
-            use crate::common::requirements::{BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE};
-
             if !ctx.bool(BluetoothService::HARDWARE_OVERRIDE_KEY) && !detect_bluetooth_hardware() {
                 let result = FzfWrapper::builder()
                     .confirm("System does not appear to have Bluetooth hardware. Proceed anyway?")
@@ -270,14 +270,10 @@ impl Setting for BluetoothService {
                 }
             }
 
-            if !ctx
-                .ensure_packages(&[BLUEZ_PACKAGE, BLUEZ_UTILS_PACKAGE])?
-                .is_installed()
-            {
-                return Ok(false);
+            match ensure_all(&[&BLUEZ, &BLUEZ_UTILS])? {
+                InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(true),
+                _ => Ok(false),
             }
-
-            Ok(true)
         }
 
         let systemd = SystemdManager::system_with_sudo();
