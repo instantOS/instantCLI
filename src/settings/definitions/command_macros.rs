@@ -48,7 +48,7 @@ macro_rules! gui_command_setting {
                     .title($title)
                     .icon($icon)
                     .summary($summary)
-                    .requirements(&[$crate::settings::setting::Requirement::Package(
+                    .requirements(&[$crate::settings::setting::Requirement::Dependency(
                         $requirement,
                     )])
                     .build()
@@ -130,7 +130,7 @@ macro_rules! tui_command_setting {
                     .title($title)
                     .icon($icon)
                     .summary($summary)
-                    .requirements(&[$crate::settings::setting::Requirement::Package(
+                    .requirements(&[$crate::settings::setting::Requirement::Dependency(
                         $requirement,
                     )])
                     .build()

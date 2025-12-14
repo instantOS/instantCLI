@@ -164,11 +164,6 @@ pub const WALLPAPER_FG_COLOR_KEY: OptionalStringSettingKey =
 pub const PACMAN_AUTOCLEAN_KEY: BoolSettingKey =
     BoolSettingKey::new("system.pacman_autoclean", false);
 
-// Required package groups for settings
-use crate::common::requirements::{CHROMIUM_PACKAGE, COCKPIT_PACKAGE, RequiredPackage};
-
-pub const COCKPIT_PACKAGES: [RequiredPackage; 2] = [COCKPIT_PACKAGE, CHROMIUM_PACKAGE];
-
 #[derive(Debug)]
 pub struct SettingsStore {
     path: PathBuf,

@@ -7,9 +7,9 @@ use std::process::Command;
 
 use crate::common::compositor::CompositorType;
 use crate::common::instantwm::InstantWmController;
-use crate::common::requirements::{YAZI_PACKAGE, ZENITY_PACKAGE};
 use crate::menu_utils::{FzfWrapper, MenuWrapper};
 use crate::settings::context::SettingsContext;
+use crate::settings::deps::{YAZI, ZENITY};
 use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, OptionalStringSettingKey};
 use crate::ui::prelude::*;
@@ -97,7 +97,7 @@ impl Setting for SetWallpaper {
             .title("Wallpaper")
             .icon(NerdFont::Image)
             .summary("Select and set a new wallpaper image.")
-            .requirements(&[Requirement::Package(YAZI_PACKAGE)])
+            .requirements(&[Requirement::Dependency(&YAZI)])
             .build()
     }
 
@@ -224,7 +224,7 @@ impl Setting for WallpaperBgColor {
             .summary(
                 "Choose a background color for colored wallpapers.\n\nUses zenity color picker.",
             )
-            .requirements(&[Requirement::Package(ZENITY_PACKAGE)])
+            .requirements(&[Requirement::Dependency(&ZENITY)])
             .build()
     }
 
@@ -254,7 +254,7 @@ impl Setting for WallpaperFgColor {
             .title("Foreground Color")
             .icon(NerdFont::Palette)
             .summary("Choose a foreground/logo color for colored wallpapers.\n\nUses zenity color picker.")
-            .requirements(&[Requirement::Package(ZENITY_PACKAGE)])
+            .requirements(&[Requirement::Dependency(&ZENITY)])
             .build()
     }
 

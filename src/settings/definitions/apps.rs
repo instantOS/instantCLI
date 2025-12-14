@@ -4,10 +4,10 @@
 
 use anyhow::Result;
 
-use crate::common::requirements::XDG_UTILS_PACKAGE;
 use crate::settings::context::SettingsContext;
 use crate::settings::context::colors;
 use crate::settings::defaultapps;
+use crate::settings::deps::XDG_UTILS;
 use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
@@ -23,7 +23,7 @@ macro_rules! default_app_setting {
                     .icon($icon)
                     .icon_color($color)
                     .summary($summary)
-                    .requirements(&[Requirement::Package(XDG_UTILS_PACKAGE)])
+                    .requirements(&[Requirement::Dependency(&XDG_UTILS)])
                     .build()
             }
 

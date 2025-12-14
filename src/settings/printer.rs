@@ -6,66 +6,19 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use tempfile::NamedTempFile;
 
-use crate::common::requirements::{InstallTest, RequiredPackage};
+use crate::common::package::{ensure_all, InstallResult};
 use crate::common::systemd::SystemdManager;
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::prelude::NerdFont;
 
 use super::context::SettingsContext;
+use super::deps::PRINTER_DEPS;
 use super::store::BoolSettingKey;
 
 const CUPS_SERVICE: &str = "cups";
 const AVAHI_SERVICE: &str = "avahi-daemon";
 
 pub const PRINTER_SERVICES_KEY: BoolSettingKey = BoolSettingKey::new("printers.services", false);
-
-pub const CUPS_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "CUPS print server",
-    arch_package_name: Some("cups"),
-    ubuntu_package_name: Some("cups"),
-    tests: &[
-        InstallTest::FileExists("/usr/bin/cupsd"),
-        InstallTest::FileExists("/usr/sbin/cupsd"),
-    ],
-};
-
-pub const CUPS_FILTERS_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "cups-filters driverless printing",
-    arch_package_name: Some("cups-filters"),
-    ubuntu_package_name: Some("cups-filters"),
-    tests: &[InstallTest::WhichSucceeds("cupsfilter")],
-};
-
-pub const GHOSTSCRIPT_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Ghostscript renderer",
-    arch_package_name: Some("ghostscript"),
-    ubuntu_package_name: Some("ghostscript"),
-    tests: &[InstallTest::WhichSucceeds("gs")],
-};
-
-pub const AVAHI_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Avahi discovery daemon",
-    arch_package_name: Some("avahi"),
-    ubuntu_package_name: Some("avahi-daemon"),
-    tests: &[InstallTest::WhichSucceeds("avahi-daemon")],
-};
-
-pub const SYSTEM_CONFIG_PRINTER_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "Printer configuration utility",
-    arch_package_name: Some("system-config-printer"),
-    ubuntu_package_name: Some("system-config-printer"),
-    tests: &[InstallTest::WhichSucceeds("system-config-printer")],
-};
-
-pub const NSS_MDNS_PACKAGE: RequiredPackage = RequiredPackage {
-    name: "nss-mdns resolver",
-    arch_package_name: Some("nss-mdns"),
-    ubuntu_package_name: Some("libnss-mdns"),
-    tests: &[
-        InstallTest::FileExists("/usr/lib/libnss_mdns.so.2"),
-        InstallTest::FileExists("/usr/lib/x86_64-linux-gnu/libnss_mdns.so.2"),
-    ],
-};
 
 const NSSWITCH_PATH: &str = "/etc/nsswitch.conf";
 
@@ -75,26 +28,21 @@ const ALTERNATIVE_RECOMMENDED_LINE: &str = "hosts: mymachines resolve [!UNAVAIL=
 
 const LEGACY_HOSTS_PATTERNS: &[&str] = &["hosts:", " mdns"];
 
-pub fn ensure_printer_packages(
-    ctx: &mut SettingsContext,
-) -> Result<crate::common::requirements::PackageStatus> {
-    let required = [
-        CUPS_PACKAGE,
-        CUPS_FILTERS_PACKAGE,
-        GHOSTSCRIPT_PACKAGE,
-        AVAHI_PACKAGE,
-        SYSTEM_CONFIG_PRINTER_PACKAGE,
-        NSS_MDNS_PACKAGE,
-    ];
-    ctx.ensure_packages(&required)
+pub fn ensure_printer_packages(ctx: &mut SettingsContext) -> Result<bool> {
+    match ensure_all(PRINTER_DEPS)? {
+        InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(true),
+        _ => {
+            ctx.emit_info(
+                "settings.printer.installation_cancelled",
+                "Printer support setup was cancelled.",
+            );
+            Ok(false)
+        }
+    }
 }
 
 pub fn launch_printer_manager(ctx: &mut SettingsContext) -> Result<()> {
-    if !ensure_printer_packages(ctx)?.is_installed() {
-        ctx.emit_info(
-            "settings.printer.installation_cancelled",
-            "Printer support setup was cancelled.",
-        );
+    if !ensure_printer_packages(ctx)? {
         ctx.notify("Printer manager", "Required printer packages missing.");
         return Ok(());
     }
@@ -118,11 +66,7 @@ pub fn configure_printer_support(ctx: &mut SettingsContext, enabled: bool) -> Re
     let systemd = SystemdManager::system_with_sudo();
 
     if enabled {
-        if !ensure_printer_packages(ctx)?.is_installed() {
-            ctx.emit_info(
-                "settings.printer.enable.cancelled",
-                "Printer service enablement cancelled.",
-            );
+        if !ensure_printer_packages(ctx)? {
             ctx.set_bool(PRINTER_SERVICES_KEY, false);
             return Ok(());
         }
@@ -396,7 +340,7 @@ fn apply_nsswitch_update(
         ],
     )?;
 
-    Ok(())
+    Ok(()))
 }
 
 #[cfg(test)]

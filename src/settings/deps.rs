@@ -123,3 +123,135 @@ pub static CHROMIUM: Dependency = Dependency {
 
 // Cockpit requires both cockpit and chromium for the browser interface
 pub static COCKPIT_DEPS: &[&Dependency] = &[&COCKPIT, &CHROMIUM];
+
+// =============================================================================
+// Default Apps (apps.rs)
+// =============================================================================
+
+pub static XDG_UTILS: Dependency = Dependency {
+    name: "xdg-utils",
+    description: Some("Desktop integration utilities"),
+    packages: &[
+        PackageDefinition::new("xdg-utils", PackageManager::Pacman),
+        PackageDefinition::new("xdg-utils", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("xdg-open")],
+};
+
+// =============================================================================
+// Network (network.rs)
+// =============================================================================
+
+pub static NM_CONNECTION_EDITOR: Dependency = Dependency {
+    name: "Network connection editor",
+    description: Some("NetworkManager connection editor"),
+    packages: &[
+        PackageDefinition::new("nm-connection-editor", PackageManager::Pacman),
+        PackageDefinition::new("network-manager-gnome", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("nm-connection-editor")],
+};
+
+// =============================================================================
+// Appearance (appearance.rs)
+// =============================================================================
+
+pub static YAZI: Dependency = Dependency {
+    name: "Yazi file manager",
+    description: Some("Terminal file manager with image preview"),
+    packages: &[
+        PackageDefinition::new("yazi", PackageManager::Pacman),
+        PackageDefinition::new("yazi", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("yazi")],
+};
+
+pub static ZENITY: Dependency = Dependency {
+    name: "Zenity dialogs",
+    description: Some("GTK dialog utility"),
+    packages: &[
+        PackageDefinition::new("zenity", PackageManager::Pacman),
+        PackageDefinition::new("zenity", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("zenity")],
+};
+
+// =============================================================================
+// Printer (printer.rs)
+// =============================================================================
+
+pub static CUPS: Dependency = Dependency {
+    name: "CUPS print server",
+    description: Some("Common Unix Printing System"),
+    packages: &[
+        PackageDefinition::new("cups", PackageManager::Pacman),
+        PackageDefinition::new("cups", PackageManager::Apt),
+    ],
+    tests: &[
+        InstallTest::FileExists("/usr/bin/cupsd"),
+        InstallTest::FileExists("/usr/sbin/cupsd"),
+    ],
+};
+
+pub static CUPS_FILTERS: Dependency = Dependency {
+    name: "cups-filters",
+    description: Some("Driverless printing support"),
+    packages: &[
+        PackageDefinition::new("cups-filters", PackageManager::Pacman),
+        PackageDefinition::new("cups-filters", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("cupsfilter")],
+};
+
+pub static GHOSTSCRIPT: Dependency = Dependency {
+    name: "Ghostscript",
+    description: Some("PostScript/PDF interpreter"),
+    packages: &[
+        PackageDefinition::new("ghostscript", PackageManager::Pacman),
+        PackageDefinition::new("ghostscript", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("gs")],
+};
+
+pub static AVAHI: Dependency = Dependency {
+    name: "Avahi",
+    description: Some("mDNS/DNS-SD discovery daemon"),
+    packages: &[
+        PackageDefinition::new("avahi", PackageManager::Pacman),
+        PackageDefinition::new("avahi-daemon", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("avahi-daemon")],
+};
+
+pub static SYSTEM_CONFIG_PRINTER: Dependency = Dependency {
+    name: "Printer configuration utility",
+    description: Some("CUPS printer configuration tool"),
+    packages: &[
+        PackageDefinition::new("system-config-printer", PackageManager::Pacman),
+        PackageDefinition::new("system-config-printer", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("system-config-printer")],
+};
+
+pub static NSS_MDNS: Dependency = Dependency {
+    name: "nss-mdns",
+    description: Some("mDNS name resolution"),
+    packages: &[
+        PackageDefinition::new("nss-mdns", PackageManager::Pacman),
+        PackageDefinition::new("libnss-mdns", PackageManager::Apt),
+    ],
+    tests: &[
+        InstallTest::FileExists("/usr/lib/libnss_mdns.so.2"),
+        InstallTest::FileExists("/usr/lib/x86_64-linux-gnu/libnss_mdns.so.2"),
+    ],
+};
+
+/// All printer-related dependencies for installation
+pub static PRINTER_DEPS: &[&Dependency] = &[
+    &CUPS,
+    &CUPS_FILTERS,
+    &GHOSTSCRIPT,
+    &AVAHI,
+    &SYSTEM_CONFIG_PRINTER,
+    &NSS_MDNS,
+];

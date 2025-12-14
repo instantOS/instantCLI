@@ -5,6 +5,7 @@
 use anyhow::Result;
 
 use crate::settings::context::SettingsContext;
+use crate::settings::deps::{AVAHI, CUPS, CUPS_FILTERS, GHOSTSCRIPT, NSS_MDNS, SYSTEM_CONFIG_PRINTER};
 use crate::settings::printer;
 use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
@@ -28,11 +29,11 @@ impl Setting for PrinterServices {
             .icon(NerdFont::Printer)
             .summary("Enable CUPS printing and Avahi discovery for network printers.")
             .requirements(&[
-                Requirement::Package(printer::CUPS_PACKAGE),
-                Requirement::Package(printer::AVAHI_PACKAGE),
-                Requirement::Package(printer::CUPS_FILTERS_PACKAGE),
-                Requirement::Package(printer::GHOSTSCRIPT_PACKAGE),
-                Requirement::Package(printer::NSS_MDNS_PACKAGE),
+                Requirement::Dependency(&CUPS),
+                Requirement::Dependency(&AVAHI),
+                Requirement::Dependency(&CUPS_FILTERS),
+                Requirement::Dependency(&GHOSTSCRIPT),
+                Requirement::Dependency(&NSS_MDNS),
             ])
             .build()
     }
@@ -62,7 +63,7 @@ impl Setting for PrinterManager {
             .title("Open printer manager")
             .icon(NerdFont::Printer)
             .summary("Launch the graphical printer setup utility.")
-            .requirements(&[Requirement::Package(printer::SYSTEM_CONFIG_PRINTER_PACKAGE)])
+            .requirements(&[Requirement::Dependency(&SYSTEM_CONFIG_PRINTER)])
             .build()
     }
 

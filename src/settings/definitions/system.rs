@@ -5,16 +5,14 @@
 use anyhow::{Context, Result};
 use duct::cmd;
 
-use crate::common::requirements::{
-    COCKPIT_PACKAGE, FASTFETCH_PACKAGE, GNOME_FIRMWARE_PACKAGE, PACMAN_CONTRIB_PACKAGE,
-    TOPGRADE_PACKAGE,
-};
+use crate::common::package::{ensure_all, InstallResult};
 use crate::common::systemd::SystemdManager;
 use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
+use crate::settings::deps::{COCKPIT, COCKPIT_DEPS, FASTFETCH, GNOME_FIRMWARE, PACMAN_CONTRIB, TOPGRADE};
 use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
 use crate::settings::sources;
-use crate::settings::store::{BoolSettingKey, COCKPIT_PACKAGES, PACMAN_AUTOCLEAN_KEY};
+use crate::settings::store::{BoolSettingKey, PACMAN_AUTOCLEAN_KEY};
 use crate::ui::prelude::*;
 
 // ============================================================================
@@ -30,7 +28,7 @@ impl Setting for AboutSystem {
             .title("About")
             .icon(NerdFont::About)
             .summary("Display system information using fastfetch.")
-            .requirements(&[Requirement::Package(FASTFETCH_PACKAGE)])
+            .requirements(&[Requirement::Dependency(&FASTFETCH)])
             .build()
     }
 
@@ -63,7 +61,7 @@ impl Setting for SystemDoctor {
             .title("System Diagnostics")
             .icon(NerdFont::ShieldCheck)
             .summary("Run system diagnostics to check for common issues and available fixes.")
-            .requirements(&[Requirement::Package(PACMAN_CONTRIB_PACKAGE)])
+            .requirements(&[Requirement::Dependency(&PACMAN_CONTRIB)])
             .build()
     }
 
@@ -100,7 +98,7 @@ impl Setting for CockpitManager {
             .title("Systemd manager (Cockpit)")
             .icon(NerdFont::Server)
             .summary("Launch Cockpit web interface for managing systemd services, logs, and system resources.")
-            .requirements(&[Requirement::Package(COCKPIT_PACKAGE)])
+            .requirements(&[Requirement::Dependency(&COCKPIT)])
             .build()
     }
 
@@ -124,7 +122,7 @@ gui_command_setting!(
     NerdFont::Cpu,
     "Launch GNOME Firmware manager to view and update device firmware.\n\nManage firmware for BIOS/UEFI, devices, and peripherals.",
     "gnome-firmware",
-    GNOME_FIRMWARE_PACKAGE
+    &GNOME_FIRMWARE
 );
 
 // ============================================================================
@@ -138,7 +136,7 @@ tui_command_setting!(
     NerdFont::Upgrade,
     "Upgrade all installed packages and system components using topgrade.",
     "topgrade",
-    TOPGRADE_PACKAGE
+    &TOPGRADE
 );
 
 // ============================================================================
@@ -158,7 +156,7 @@ impl Setting for PacmanAutoclean {
             .title("Pacman cache autoclean")
             .icon(NerdFont::Trash)
             .summary("Run paccache weekly to keep only the latest pacman packages.")
-            .requirements(&[Requirement::Package(PACMAN_CONTRIB_PACKAGE)])
+            .requirements(&[Requirement::Dependency(&PACMAN_CONTRIB)])
             .build()
     }
 
@@ -231,12 +229,12 @@ const COCKPIT_SOCKET_NAME: &str = "cockpit.socket";
 /// Launch Cockpit web-based system management interface
 pub fn launch_cockpit(ctx: &mut SettingsContext) -> Result<()> {
     // Ensure required packages are installed
-    if !ctx
-        .ensure_packages(COCKPIT_PACKAGES.as_slice())?
-        .is_installed()
-    {
-        ctx.emit_info("settings.cockpit.cancelled", "Cockpit launch cancelled.");
-        return Ok(());
+    match ensure_all(COCKPIT_DEPS)? {
+        InstallResult::Installed | InstallResult::AlreadyInstalled => {}
+        _ => {
+            ctx.emit_info("settings.cockpit.cancelled", "Cockpit launch cancelled.");
+            return Ok(());
+        }
     }
 
     let systemd = SystemdManager::system_with_sudo();
