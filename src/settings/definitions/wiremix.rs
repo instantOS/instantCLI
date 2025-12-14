@@ -1,6 +1,6 @@
 //! Launch wiremix audio settings
 
-use crate::common::requirements::WIREMIX_PACKAGE;
+use crate::settings::deps::WIREMIX;
 use crate::ui::prelude::*;
 
 tui_command_setting!(
@@ -10,5 +10,5 @@ tui_command_setting!(
     NerdFont::Settings,
     "Launch wiremix TUI to manage PipeWire routing and volumes.",
     "wiremix",
-    WIREMIX_PACKAGE
+    &WIREMIX
 );

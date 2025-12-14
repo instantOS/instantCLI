@@ -4,40 +4,8 @@
 
 use crate::common::package::{Dependency, PackageDefinition, PackageManager};
 use crate::common::requirements::InstallTest;
-use crate::settings::setting::Requirement;
 
-/// Helper macro to create static requirement slices for dependencies
-macro_rules! dep_req {
-    ($dep:ident) => {
-        pub static $dep: Requirement = Requirement::Dependency(&super::$dep);
-    };
-}
-
-/// Module containing pre-built Requirement wrappers for dependencies
-pub mod req {
-    use super::*;
-    
-    dep_req!(CLIPMENU);
-    dep_req!(UDISKIE);
-    dep_req!(BLUEZ);
-    dep_req!(BLUEZ_UTILS);
-    dep_req!(COCKPIT);
-    dep_req!(FASTFETCH);
-    dep_req!(PACMAN_CONTRIB);
-    dep_req!(TOPGRADE);
-    dep_req!(GNOME_FIRMWARE);
-    dep_req!(CHROMIUM);
-    dep_req!(XDG_UTILS);
-    dep_req!(NM_CONNECTION_EDITOR);
-    dep_req!(YAZI);
-    dep_req!(ZENITY);
-    dep_req!(CUPS);
-    dep_req!(CUPS_FILTERS);
-    dep_req!(GHOSTSCRIPT);
-    dep_req!(AVAHI);
-    dep_req!(SYSTEM_CONFIG_PRINTER);
-    dep_req!(NSS_MDNS);
-}
+// =============================================================================
 // Clipboard
 // =============================================================================
 
@@ -334,4 +302,15 @@ pub static GPARTED: Dependency = Dependency {
         PackageDefinition::new("gparted", PackageManager::Apt),
     ],
     tests: &[InstallTest::WhichSucceeds("gparted")],
+};
+
+// =============================================================================
+// Audio (wiremix.rs)
+// =============================================================================
+
+pub static WIREMIX: Dependency = Dependency {
+    name: "Wiremix",
+    description: Some("PipeWire TUI audio mixer"),
+    packages: &[PackageDefinition::new("wiremix", PackageManager::Pacman)],
+    tests: &[InstallTest::WhichSucceeds("wiremix")],
 };
