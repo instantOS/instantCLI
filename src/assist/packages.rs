@@ -1,3 +1,11 @@
+//! DEPRECATED: Use `super::deps` instead.
+//!
+//! This module contains the old-style `RequiredPackage` definitions.
+//! New code should use the `deps` module which uses the unified
+//! `Dependency` type from `common::package`.
+
+#![allow(dead_code)]
+
 use crate::common::requirements::{FlatpakPackage, RequiredPackage};
 
 macro_rules! pkg {

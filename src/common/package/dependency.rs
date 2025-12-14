@@ -151,6 +151,173 @@ impl Dependency {
         managers.dedup();
         managers
     }
+
+    /// Ensure this dependency is installed, prompting the user if needed.
+    ///
+    /// This is the main entry point for dependency installation. It handles:
+    /// - Checking if already installed
+    /// - Finding the best package for the current system
+    /// - Prompting for user confirmation
+    /// - Executing the installation
+    /// - Verifying the installation succeeded
+    ///
+    /// # Returns
+    ///
+    /// - `InstallResult::AlreadyInstalled` - Dependency was already satisfied
+    /// - `InstallResult::Installed` - Successfully installed
+    /// - `InstallResult::Declined` - User declined installation
+    /// - `InstallResult::NotAvailable` - No package available for this system
+    /// - `InstallResult::Failed` - Installation failed
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use crate::common::package::InstallResult;
+    ///
+    /// match FIREFOX.ensure()? {
+    ///     InstallResult::AlreadyInstalled | InstallResult::Installed => {
+    ///         // Firefox is ready to use
+    ///     }
+    ///     InstallResult::Declined => {
+    ///         // User cancelled, exit gracefully
+    ///     }
+    ///     InstallResult::NotAvailable { hint } => {
+    ///         println!("Firefox not available. {}", hint);
+    ///     }
+    ///     InstallResult::Failed { reason } => {
+    ///         eprintln!("Installation failed: {}", reason);
+    ///     }
+    /// }
+    /// ```
+    pub fn ensure(&self) -> anyhow::Result<InstallResult> {
+        // Already installed - no action needed
+        if self.is_installed() {
+            return Ok(InstallResult::AlreadyInstalled);
+        }
+
+        // Find the best package for this system
+        let pkg_def = match self.get_best_package() {
+            Some(p) => p,
+            None => {
+                return Ok(InstallResult::NotAvailable {
+                    name: self.name.to_string(),
+                    hint: self.install_hint(),
+                });
+            }
+        };
+
+        // Prompt for confirmation
+        let msg = format!(
+            "Install {} via {}?\n\n{}",
+            self.name,
+            pkg_def.manager.display_name(),
+            pkg_def.install_hint()
+        );
+
+        let should_install = crate::menu_utils::FzfWrapper::builder()
+            .confirm(&msg)
+            .yes_text("Install")
+            .no_text("Cancel")
+            .show_confirmation()?;
+
+        if !matches!(should_install, crate::menu_utils::ConfirmResult::Yes) {
+            return Ok(InstallResult::Declined);
+        }
+
+        // Execute installation
+        self.install_package(pkg_def)?;
+
+        // Verify installation
+        if self.is_installed() {
+            Ok(InstallResult::Installed)
+        } else {
+            Ok(InstallResult::Failed {
+                reason: format!(
+                    "Installation completed but {} is still not detected",
+                    self.name
+                ),
+            })
+        }
+    }
+
+    /// Install a specific package definition (internal helper).
+    fn install_package(&self, pkg_def: &PackageDefinition) -> anyhow::Result<()> {
+        use anyhow::Context;
+
+        let (cmd, base_args) = pkg_def.manager.install_command();
+        let mut args: Vec<&str> = base_args.to_vec();
+        args.push(pkg_def.package_name);
+
+        // Handle AUR helper detection
+        let actual_cmd = if pkg_def.manager == PackageManager::Aur {
+            super::detect_aur_helper().unwrap_or("yay")
+        } else {
+            cmd
+        };
+
+        duct::cmd(actual_cmd, &args)
+            .run()
+            .with_context(|| {
+                format!(
+                    "Failed to install {} via {}",
+                    self.name,
+                    pkg_def.manager.display_name()
+                )
+            })?;
+
+        Ok(())
+    }
+}
+
+/// Result of attempting to ensure a dependency is installed.
+///
+/// This enum covers all possible outcomes of a dependency installation attempt,
+/// making it easy for consumers to handle each case appropriately.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InstallResult {
+    /// Dependency was already installed before we checked.
+    AlreadyInstalled,
+
+    /// Dependency was successfully installed.
+    Installed,
+
+    /// User declined the installation prompt.
+    Declined,
+
+    /// No package is available for this dependency on the current system.
+    ///
+    /// This happens when:
+    /// - The dependency has no packages defined for the current OS
+    /// - No package manager is available that can install it
+    NotAvailable {
+        /// Name of the dependency
+        name: String,
+        /// Hint for manual installation
+        hint: String,
+    },
+
+    /// Installation was attempted but failed.
+    Failed {
+        /// Reason for the failure
+        reason: String,
+    },
+}
+
+impl InstallResult {
+    /// Returns true if the dependency is now available for use.
+    pub fn is_available(&self) -> bool {
+        matches!(self, Self::AlreadyInstalled | Self::Installed)
+    }
+
+    /// Returns true if installation was declined by the user.
+    pub fn is_declined(&self) -> bool {
+        matches!(self, Self::Declined)
+    }
+
+    /// Returns true if installation failed or wasn't possible.
+    pub fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed { .. } | Self::NotAvailable { .. })
+    }
 }
 
 #[cfg(test)]

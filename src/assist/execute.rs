@@ -1,6 +1,6 @@
 use crate::assist::utils;
-use crate::common::dependencies::Package;
-use crate::common::requirements::ensure_packages_batch;
+use crate::common::package::Dependency;
+use crate::common::requirements::PackageStatus;
 use crate::common::shell::shell_quote;
 use crate::ui::prelude::*;
 use anyhow::{Context, Result};
@@ -41,50 +41,119 @@ pub fn execute_assist(assist: &AssistAction, key_sequence: &str) -> Result<()> {
     Ok(())
 }
 
-/// Install dependencies for the given assist in the current terminal context
-/// Install dependencies for the given assist in the current terminal context
-pub fn install_dependencies_for_assist(
-    assist: &AssistAction,
-) -> Result<crate::common::requirements::PackageStatus> {
+/// Install dependencies for the given assist using the new unified package system.
+///
+/// This uses the new `Dependency` type from `common::package` which supports
+/// multiple package managers with automatic fallback.
+pub fn install_dependencies_for_assist(assist: &AssistAction) -> Result<PackageStatus> {
     if assist.dependencies.is_empty() {
-        return Ok(crate::common::requirements::PackageStatus::Installed);
+        return Ok(PackageStatus::Installed);
     }
 
-    let mut os_packages = Vec::new();
-    let mut flatpak_packages = Vec::new();
+    // Collect all dependencies that need to be installed
+    let missing: Vec<&&Dependency> = assist
+        .dependencies
+        .iter()
+        .filter(|dep| !dep.is_installed())
+        .collect();
 
-    for dependency in assist.dependencies {
-        match &dependency.package {
-            Package::Os(pkg) => {
-                // pkg is &&RequiredPackage (reference to field valid for static lifetime)
-                os_packages.push(**pkg);
+    if missing.is_empty() {
+        return Ok(PackageStatus::Installed);
+    }
+
+    // Install each dependency individually using the best available package manager
+    for dep in &missing {
+        // We need to handle static lifetime requirement
+        // For now, we'll install each dependency individually
+        if let Some(pkg_def) = dep.get_best_package() {
+            // Check if the package manager is available
+            if !pkg_def.manager.is_available() {
+                emit(
+                    Level::Warn,
+                    "assist.package_unavailable",
+                    &format!(
+                        "No supported package manager available for {}",
+                        dep.name
+                    ),
+                    None,
+                );
+                continue;
             }
-            Package::Flatpak(fp) => {
-                flatpak_packages.push(**fp);
-            }
+
+            // Install using the package manager
+            install_single_dependency(dep)?;
+        } else {
+            emit(
+                Level::Warn,
+                "assist.no_package",
+                &format!(
+                    "No installable package found for {}. {}",
+                    dep.name,
+                    dep.install_hint()
+                ),
+                None,
+            );
         }
     }
 
-    // Batch install OS packages
-    if !os_packages.is_empty() {
-        let status = ensure_packages_batch(&os_packages).context("Failed to ensure OS packages")?;
+    // Verify all are now installed
+    if assist.dependencies.iter().all(|d| d.is_installed()) {
+        Ok(PackageStatus::Installed)
+    } else {
+        Ok(PackageStatus::Failed)
+    }
+}
 
-        if !status.is_installed() {
-            return Ok(status);
-        }
+/// Install a single dependency using the best available package manager.
+fn install_single_dependency(dep: &Dependency) -> Result<()> {
+    let pkg_def = match dep.get_best_package() {
+        Some(p) => p,
+        None => return Ok(()), // No package available
+    };
+
+    // Build confirmation message
+    let msg = format!(
+        "Install {} via {}?\n\n{}",
+        dep.name,
+        pkg_def.manager.display_name(),
+        pkg_def.install_hint()
+    );
+
+    // Prompt for confirmation
+    let should_install = crate::menu_utils::FzfWrapper::builder()
+        .confirm(&msg)
+        .yes_text("Install")
+        .no_text("Cancel")
+        .show_confirmation()?;
+
+    if !matches!(should_install, crate::menu_utils::ConfirmResult::Yes) {
+        return Ok(());
     }
 
-    // Batch install Flatpak packages
-    if !flatpak_packages.is_empty() {
-        let status = crate::common::requirements::ensure_flatpaks_batch(&flatpak_packages)
-            .context("Failed to ensure Flatpak packages")?;
+    // Execute installation
+    let (cmd, base_args) = pkg_def.manager.install_command();
+    let mut args: Vec<&str> = base_args.to_vec();
+    args.push(pkg_def.package_name);
 
-        if !status.is_installed() {
-            return Ok(status);
-        }
-    }
+    emit(
+        Level::Info,
+        "assist.installing",
+        &format!("Installing {} via {}...", dep.name, pkg_def.manager),
+        None,
+    );
 
-    Ok(crate::common::requirements::PackageStatus::Installed)
+    // Handle AUR helper detection
+    let actual_cmd = if pkg_def.manager == crate::common::package::PackageManager::Aur {
+        crate::common::package::detect_aur_helper().unwrap_or("yay")
+    } else {
+        cmd
+    };
+
+    duct::cmd(actual_cmd, &args)
+        .run()
+        .with_context(|| format!("Failed to install {} via {}", dep.name, pkg_def.manager))?;
+
+    Ok(())
 }
 
 fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Result<bool> {
@@ -92,7 +161,7 @@ fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Resul
         || assist
             .dependencies
             .iter()
-            .all(|dependency| dependency.is_satisfied())
+            .all(|dependency| dependency.is_installed())
     {
         return Ok(true);
     }
@@ -111,20 +180,20 @@ fn ensure_dependencies_ready(assist: &AssistAction, key_sequence: &str) -> Resul
     let status = if std::io::stdout().is_terminal() {
         install_dependencies_for_assist(assist)?
     } else if install_dependencies_via_terminal(assist, key_sequence)? {
-        crate::common::requirements::PackageStatus::Installed
+        PackageStatus::Installed
     } else {
-        crate::common::requirements::PackageStatus::Failed
+        PackageStatus::Failed
     };
 
     if status.is_installed() {
         // Double check they are actually satisfied
-        if assist.dependencies.iter().all(|d| d.is_satisfied()) {
+        if assist.dependencies.iter().all(|d| d.is_installed()) {
             Ok(true)
         } else {
             emit_dependency_warning(assist);
             Ok(false)
         }
-    } else if matches!(status, crate::common::requirements::PackageStatus::Declined) {
+    } else if matches!(status, PackageStatus::Declined) {
         emit(
             Level::Info,
             "assist.cancelled",

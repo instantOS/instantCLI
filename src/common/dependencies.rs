@@ -1,10 +1,19 @@
+//! DEPRECATED: Use `crate::common::package::Dependency` instead.
+//!
+//! This module is kept for backward compatibility but should not be used
+//! in new code. The new unified package system in `common::package` supports
+//! multiple package managers (Pacman, Apt, Dnf, Zypper, Flatpak, AUR, Cargo).
+
 use crate::common::requirements::{FlatpakPackage, InstallTest, RequiredPackage};
+
+#[deprecated(note = "Use `crate::common::package::Dependency` instead")]
 #[derive(Debug, Clone)]
 pub enum Package {
     Os(&'static RequiredPackage),
     Flatpak(&'static FlatpakPackage),
 }
 
+#[deprecated(note = "Use `crate::common::package::Dependency` instead")]
 #[derive(Debug, Clone)]
 pub struct Dependency {
     pub package: Package,
