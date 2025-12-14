@@ -36,23 +36,20 @@
 //! };
 //! ```
 //!
-//! # Migration from Old Types
+//! # Defining Dependencies
 //!
-//! Use the `dep!` macro or `to_dependency()` method on old types:
+//! Use the `dep!` macro for defining new dependencies:
 //!
 //! ```ignore
 //! // Using the dep! macro for new definitions
 //! dep!(FIREFOX, "Firefox", "firefox", flatpak: "org.mozilla.firefox");
-//!
-//! // Converting existing RequiredPackage
-//! let dep = PLAYERCTL.to_dependency();
 //! ```
 
 mod batch;
 mod definition;
 mod dependency;
 mod install;
-mod legacy;
+mod macros;
 mod manager;
 
 pub use definition::PackageDefinition;
