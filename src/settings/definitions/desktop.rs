@@ -6,11 +6,11 @@ use anyhow::Result;
 use std::process::Command;
 
 use crate::common::compositor::CompositorType;
-use crate::common::requirements::{BLUEMAN_PACKAGE, PIPER_PACKAGE};
 use crate::menu_utils::FzfSelectable;
 use crate::settings::context::{
     SettingsContext, colors, format_back_icon, format_icon_colored, select_one_with_style_at,
 };
+use crate::settings::deps::{BLUEMAN, PIPER};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::StringSettingKey;
 use crate::ui::prelude::*;
@@ -258,7 +258,7 @@ gui_command_setting!(
     NerdFont::Mouse,
     "Configure gaming mice with customizable buttons, RGB lighting, and DPI settings.\n\nUses Piper to configure Logitech and other gaming mice supported by libratbag.",
     "piper",
-    PIPER_PACKAGE
+    &PIPER
 );
 
 // ============================================================================
@@ -272,5 +272,5 @@ gui_command_setting!(
     NerdFont::Settings,
     "Pair new devices and manage connected Bluetooth devices.\n\nUse this to connect headphones, speakers, keyboards, mice, and other wireless devices.",
     "blueman-manager",
-    BLUEMAN_PACKAGE
+    &BLUEMAN
 );

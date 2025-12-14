@@ -287,3 +287,51 @@ pub static PRINTER_DEPS: &[&Dependency] = &[
     &SYSTEM_CONFIG_PRINTER,
     &NSS_MDNS,
 ];
+
+// =============================================================================
+// Desktop (desktop.rs)
+// =============================================================================
+
+pub static PIPER: Dependency = Dependency {
+    name: "Piper mouse configurator",
+    description: Some("Gaming mouse configuration tool"),
+    packages: &[
+        PackageDefinition::new("piper", PackageManager::Pacman),
+        PackageDefinition::new("piper", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("piper")],
+};
+
+pub static BLUEMAN: Dependency = Dependency {
+    name: "Blueman",
+    description: Some("GTK Bluetooth manager"),
+    packages: &[
+        PackageDefinition::new("blueman", PackageManager::Pacman),
+        PackageDefinition::new("blueman", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("blueman-manager")],
+};
+
+// =============================================================================
+// Storage (storage.rs)
+// =============================================================================
+
+pub static GNOME_DISKS: Dependency = Dependency {
+    name: "GNOME Disks",
+    description: Some("Disk management utility"),
+    packages: &[
+        PackageDefinition::new("gnome-disk-utility", PackageManager::Pacman),
+        PackageDefinition::new("gnome-disk-utility", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("gnome-disks")],
+};
+
+pub static GPARTED: Dependency = Dependency {
+    name: "GParted",
+    description: Some("Partition editor"),
+    packages: &[
+        PackageDefinition::new("gparted", PackageManager::Pacman),
+        PackageDefinition::new("gparted", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("gparted")],
+};

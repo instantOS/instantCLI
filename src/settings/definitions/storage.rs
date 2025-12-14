@@ -2,7 +2,7 @@
 //!
 //! Disk management and partition editor.
 
-use crate::common::requirements::{GNOME_DISKS_PACKAGE, GPARTED_PACKAGE};
+use crate::settings::deps::{GNOME_DISKS, GPARTED};
 use crate::ui::prelude::*;
 
 gui_command_setting!(
@@ -12,7 +12,7 @@ gui_command_setting!(
     NerdFont::HardDrive,
     "Launch GNOME Disks to manage drives and partitions.",
     "gnome-disks",
-    GNOME_DISKS_PACKAGE
+    &GNOME_DISKS
 );
 
 gui_command_setting!(
@@ -22,5 +22,5 @@ gui_command_setting!(
     NerdFont::Partition,
     "Launch GParted for advanced partition management (requires root).",
     "gparted",
-    GPARTED_PACKAGE
+    &GPARTED
 );
