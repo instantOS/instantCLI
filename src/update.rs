@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use duct::cmd;
 
-use crate::common::requirements::TOPGRADE_PACKAGE;
+use crate::common::deps::TOPGRADE;
+use crate::common::package::{InstallResult, ensure_all};
 use crate::dot;
 use crate::game::operations::sync_game_saves;
 use crate::self_update;
@@ -9,25 +10,26 @@ use crate::ui::prelude::*;
 
 pub async fn handle_update_command(debug: bool) -> Result<()> {
     // 1. Ensure topgrade is installed
-    // 1. Ensure topgrade is installed
-    let status = TOPGRADE_PACKAGE.ensure()?;
-    if !status.is_installed() {
-        if matches!(status, crate::common::requirements::PackageStatus::Declined) {
+    match ensure_all(&[&TOPGRADE])? {
+        InstallResult::Installed | InstallResult::AlreadyInstalled => {}
+        InstallResult::Declined => {
             emit(
                 Level::Info,
                 "update.cancelled",
                 "System update cancelled.",
                 None,
             );
-        } else {
+            return Ok(());
+        }
+        InstallResult::NotAvailable { .. } | InstallResult::Failed { .. } => {
             emit(
                 Level::Warn,
                 "update.topgrade.missing",
                 "Topgrade is required for system updates but was not installed.",
                 None,
             );
+            return Ok(());
         }
-        return Ok(());
     }
 
     // 2. Run topgrade

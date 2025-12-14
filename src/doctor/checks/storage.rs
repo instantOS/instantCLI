@@ -216,11 +216,11 @@ impl DoctorCheck for SmartHealthCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
-        use crate::common::requirements::SMARTMONTOOLS_PACKAGE;
+        use crate::common::deps::SMARTMONTOOLS;
         use crate::common::systemd::{ServiceScope, SystemdManager};
 
         // First, check if smartctl is available
-        if !SMARTMONTOOLS_PACKAGE.is_installed() {
+        if !SMARTMONTOOLS.is_installed() {
             return CheckStatus::Warning {
                 message: "smartmontools not installed".to_string(),
                 fixable: true,
@@ -324,13 +324,16 @@ impl DoctorCheck for SmartHealthCheck {
     }
 
     async fn fix(&self) -> Result<()> {
-        use crate::common::requirements::SMARTMONTOOLS_PACKAGE;
+        use crate::common::deps::SMARTMONTOOLS;
+        use crate::common::package::{InstallResult, ensure_all};
         use crate::common::systemd::{ServiceScope, SystemdManager};
 
-        // Install smartmontools using the standard ensure() flow if not installed
-        if !SMARTMONTOOLS_PACKAGE.is_installed() && !SMARTMONTOOLS_PACKAGE.ensure()?.is_installed()
-        {
-            return Err(anyhow::anyhow!("smartmontools installation cancelled"));
+        // Install smartmontools using the standard ensure_all() flow if not installed
+        if !SMARTMONTOOLS.is_installed() {
+            match ensure_all(&[&SMARTMONTOOLS])? {
+                InstallResult::Installed | InstallResult::AlreadyInstalled => {}
+                _ => return Err(anyhow::anyhow!("smartmontools installation cancelled")),
+            }
         }
 
         // Enable and start smartd service

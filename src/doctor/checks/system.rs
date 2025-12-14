@@ -180,13 +180,15 @@ impl DoctorCheck for PendingUpdatesCheck {
     }
 
     async fn fix(&self) -> Result<()> {
-        use crate::common::requirements::PACMAN_CONTRIB_PACKAGE;
+        use crate::common::deps::PACMAN_CONTRIB;
+        use crate::common::package::{InstallResult, ensure_all};
 
         // Ensure pacman-contrib is installed (provides checkupdates)
-        if !PACMAN_CONTRIB_PACKAGE.is_installed()
-            && !PACMAN_CONTRIB_PACKAGE.ensure()?.is_installed()
-        {
-            return Err(anyhow::anyhow!("pacman-contrib installation cancelled"));
+        if !PACMAN_CONTRIB.is_installed() {
+            match ensure_all(&[&PACMAN_CONTRIB])? {
+                InstallResult::Installed | InstallResult::AlreadyInstalled => {}
+                _ => return Err(anyhow::anyhow!("pacman-contrib installation cancelled")),
+            }
         }
 
         // Run pacman -Syu

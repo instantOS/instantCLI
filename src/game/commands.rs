@@ -2,7 +2,8 @@ use std::ffi::OsString;
 
 use anyhow::Result;
 
-use crate::common::requirements::RESTIC_PACKAGE;
+use crate::common::deps::RESTIC;
+use crate::common::package::{InstallResult, ensure_all};
 
 use super::cli::{DependencyCommands, GameCommands};
 use super::deps::{
@@ -26,10 +27,16 @@ use super::cli::DebugCommands;
 
 /// Ensure restic is available, prompting for installation if needed
 fn ensure_restic_available() -> Result<()> {
-    if !RESTIC_PACKAGE.ensure()?.is_installed() {
-        return Err(anyhow::anyhow!("restic installation cancelled"));
+    match ensure_all(&[&RESTIC])? {
+        InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(()),
+        InstallResult::Declined => Err(anyhow::anyhow!("restic installation cancelled")),
+        InstallResult::NotAvailable { hint, .. } => {
+            Err(anyhow::anyhow!("restic not available: {}", hint))
+        }
+        InstallResult::Failed { reason } => {
+            Err(anyhow::anyhow!("restic installation failed: {}", reason))
+        }
     }
-    Ok(())
 }
 
 pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {

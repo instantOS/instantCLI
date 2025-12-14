@@ -253,9 +253,9 @@ impl Question for RunCfdiskQuestion {
             .context("No disk selected")?;
 
         // Check for cfdisk
-        if !crate::common::requirements::CFDISK_PACKAGE.is_installed() {
-            // Try to install cfdisk if missing
-            if let Err(e) = crate::common::requirements::CFDISK_PACKAGE.ensure() {
+        if !crate::common::deps::CFDISK.is_installed() {
+            // Prompt to install cfdisk
+            if let Err(e) = crate::common::package::ensure_all(&[&crate::common::deps::CFDISK]) {
                 return Err(anyhow::anyhow!(
                     "cfdisk is required for manual partitioning but could not be installed: {}",
                     e

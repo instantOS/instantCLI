@@ -246,21 +246,21 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
                 if is_live_iso() {
                     println!("Detected Arch Linux Live ISO environment.");
 
-                    let dependencies = vec![
-                        crate::common::requirements::FZF_PACKAGE,
-                        crate::common::requirements::GIT_PACKAGE,
-                        crate::common::requirements::LIBGIT2_PACKAGE,
-                        crate::common::requirements::GUM_PACKAGE,
-                        crate::common::requirements::CFDISK_PACKAGE,
+                    let dependencies = &[
+                        &crate::common::deps::FZF,
+                        &crate::common::deps::GIT,
+                        &crate::common::deps::LIBGIT2,
+                        &crate::common::deps::GUM,
+                        &crate::common::deps::CFDISK,
                     ];
 
                     // Collect all missing packages first
                     let mut missing_packages = Vec::new();
-                    for dep in &dependencies {
+                    for dep in dependencies {
                         if !dep.is_installed()
-                            && let Some(package_name) = dep.arch_package_name
+                            && let Some(pkg) = dep.packages.iter().find(|p| p.manager == crate::common::package::PackageManager::Pacman)
                         {
-                            missing_packages.push(package_name);
+                            missing_packages.push(pkg.package_name);
                             println!("Will install missing dependency: {}...", dep.name);
                         }
                     }
