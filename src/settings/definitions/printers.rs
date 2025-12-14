@@ -28,7 +28,7 @@ impl Setting for PrinterServices {
             .title("Printer services")
             .icon(NerdFont::Printer)
             .summary("Enable CUPS printing and Avahi discovery for network printers.")
-            .requirements(&[
+            .requirements(vec![
                 Requirement::Dependency(&CUPS),
                 Requirement::Dependency(&AVAHI),
                 Requirement::Dependency(&CUPS_FILTERS),
@@ -63,7 +63,7 @@ impl Setting for PrinterManager {
             .title("Open printer manager")
             .icon(NerdFont::Printer)
             .summary("Launch the graphical printer setup utility.")
-            .requirements(&[Requirement::Dependency(&SYSTEM_CONFIG_PRINTER)])
+            .requirements(vec![Requirement::Dependency(&SYSTEM_CONFIG_PRINTER)])
             .build()
     }
 

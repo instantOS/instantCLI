@@ -97,7 +97,7 @@ impl Setting for SetWallpaper {
             .title("Wallpaper")
             .icon(NerdFont::Image)
             .summary("Select and set a new wallpaper image.")
-            .requirements(&[Requirement::Dependency(&YAZI)])
+            .requirements(vec![Requirement::Dependency(&YAZI)])
             .build()
     }
 
@@ -224,7 +224,7 @@ impl Setting for WallpaperBgColor {
             .summary(
                 "Choose a background color for colored wallpapers.\n\nUses zenity color picker.",
             )
-            .requirements(&[Requirement::Dependency(&ZENITY)])
+            .requirements(vec![Requirement::Dependency(&ZENITY)])
             .build()
     }
 
@@ -254,7 +254,7 @@ impl Setting for WallpaperFgColor {
             .title("Foreground Color")
             .icon(NerdFont::Palette)
             .summary("Choose a foreground/logo color for colored wallpapers.\n\nUses zenity color picker.")
-            .requirements(&[Requirement::Dependency(&ZENITY)])
+            .requirements(vec![Requirement::Dependency(&ZENITY)])
             .build()
     }
 

@@ -206,7 +206,7 @@ pub struct SettingMetadata {
     pub icon_color: Option<&'static str>,
     pub summary: &'static str,
     pub requires_reapply: bool,
-    pub requirements: &'static [Requirement],
+    pub requirements: Vec<Requirement>,
     pub supported_distros: Option<&'static [OperatingSystem]>,
 }
 
@@ -224,7 +224,7 @@ pub struct SettingMetadataBuilder {
     icon_color: Option<&'static str>,
     summary: &'static str,
     requires_reapply: bool,
-    requirements: &'static [Requirement],
+    requirements: Vec<Requirement>,
     supported_distros: Option<&'static [OperatingSystem]>,
 }
 
@@ -268,7 +268,7 @@ impl SettingMetadataBuilder {
         self
     }
 
-    pub fn requirements(mut self, requirements: &'static [Requirement]) -> Self {
+    pub fn requirements(mut self, requirements: Vec<Requirement>) -> Self {
         self.requirements = requirements;
         self
     }

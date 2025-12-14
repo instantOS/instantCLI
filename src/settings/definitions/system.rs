@@ -28,7 +28,7 @@ impl Setting for AboutSystem {
             .title("About")
             .icon(NerdFont::About)
             .summary("Display system information using fastfetch.")
-            .requirements(&[Requirement::Dependency(&FASTFETCH)])
+            .requirements(vec![Requirement::Dependency(&FASTFETCH)])
             .build()
     }
 
@@ -61,7 +61,7 @@ impl Setting for SystemDoctor {
             .title("System Diagnostics")
             .icon(NerdFont::ShieldCheck)
             .summary("Run system diagnostics to check for common issues and available fixes.")
-            .requirements(&[Requirement::Dependency(&PACMAN_CONTRIB)])
+            .requirements(vec![Requirement::Dependency(&PACMAN_CONTRIB)])
             .build()
     }
 
@@ -98,7 +98,7 @@ impl Setting for CockpitManager {
             .title("Systemd manager (Cockpit)")
             .icon(NerdFont::Server)
             .summary("Launch Cockpit web interface for managing systemd services, logs, and system resources.")
-            .requirements(&[Requirement::Dependency(&COCKPIT)])
+            .requirements(vec![Requirement::Dependency(&COCKPIT)])
             .build()
     }
 
@@ -156,7 +156,7 @@ impl Setting for PacmanAutoclean {
             .title("Pacman cache autoclean")
             .icon(NerdFont::Trash)
             .summary("Run paccache weekly to keep only the latest pacman packages.")
-            .requirements(&[Requirement::Dependency(&PACMAN_CONTRIB)])
+            .requirements(vec![Requirement::Dependency(&PACMAN_CONTRIB)])
             .build()
     }
 

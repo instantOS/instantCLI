@@ -23,7 +23,7 @@ macro_rules! default_app_setting {
                     .icon($icon)
                     .icon_color($color)
                     .summary($summary)
-                    .requirements(&[Requirement::Dependency(&XDG_UTILS)])
+                    .requirements(vec![Requirement::Dependency(&XDG_UTILS)])
                     .build()
             }
 

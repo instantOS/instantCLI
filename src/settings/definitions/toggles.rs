@@ -30,7 +30,7 @@ impl Setting for ClipboardManager {
             .title("Clipboard History")
             .icon(NerdFont::Clipboard)
             .summary("Remember your copy/paste history so you can access previously copied items.\n\nWhen enabled, you can paste from your clipboard history instead of just the last copied item.")
-            .requirements(&[Requirement::Dependency(&CLIPMENU)])
+            .requirements(vec![Requirement::Dependency(&CLIPMENU)])
             .build()
     }
 
