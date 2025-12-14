@@ -1,5 +1,5 @@
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use tokio::process::Command as TokioCommand;
 

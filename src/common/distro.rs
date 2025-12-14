@@ -178,7 +178,7 @@ impl OperatingSystem {
             return true;
         }
         self.based_on()
-            .map_or(false, |base| base.is_supported_by(supported))
+            .is_some_and(|base| base.is_supported_by(supported))
     }
 
     // ========================================================================

@@ -258,10 +258,10 @@ fn parse_fzf_output<T: Clone>(
     multi_select: bool,
 ) -> Result<FzfResult<T>> {
     // Handle cancellation (Esc, Ctrl-C)
-    if let Some(code) = result.status.code() {
-        if code == 130 || code == 143 {
-            return Ok(FzfResult::Cancelled);
-        }
+    if let Some(code) = result.status.code()
+        && (code == 130 || code == 143)
+    {
+        return Ok(FzfResult::Cancelled);
     }
 
     // Log failures for debugging

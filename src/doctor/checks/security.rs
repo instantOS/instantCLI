@@ -22,10 +22,7 @@ pub async fn is_polkit_agent_running() -> bool {
                     let line_lower = line.to_lowercase();
                     // Must have a PID (not activatable) AND contain polkit/PolicyKit
                     (line_lower.contains("polkit") || line_lower.contains("policykit"))
-                        && line
-                            .split_whitespace()
-                            .nth(1)
-                            .map_or(false, |pid| pid != "-")
+                        && line.split_whitespace().nth(1).is_some_and(|pid| pid != "-")
                 })
             } else {
                 false
