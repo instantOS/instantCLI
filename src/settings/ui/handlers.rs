@@ -5,7 +5,6 @@
 use anyhow::Result;
 
 use crate::common::package::{Dependency, InstallResult, ensure_all};
-use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::Setting;
 

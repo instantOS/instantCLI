@@ -110,10 +110,10 @@ impl CompositorType {
         }
 
         // Check XDG_CURRENT_DESKTOP for KDE
-        if let Ok(current) = env::var("XDG_CURRENT_DESKTOP") {
-            if current.to_lowercase() == "kde" {
-                return CompositorType::KWin;
-            }
+        if let Ok(current) = env::var("XDG_CURRENT_DESKTOP")
+            && current.to_lowercase() == "kde"
+        {
+            return CompositorType::KWin;
         }
 
         // Use display server detection to guide compositor detection

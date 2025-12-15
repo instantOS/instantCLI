@@ -19,9 +19,10 @@ impl SwapEscape {
 fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
     let compositor = CompositorType::detect();
     let is_sway = matches!(compositor, CompositorType::Sway);
+    let is_gnome = matches!(compositor, CompositorType::Gnome);
     let is_x11 = compositor.is_x11();
 
-    if !is_sway && !is_x11 {
+    if !is_sway && !is_gnome && !is_x11 {
         ctx.emit_info(
             "settings.keyboard.swap_escape.unsupported",
             &format!(
@@ -50,6 +51,46 @@ fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result
                 ctx.emit_info(
                     "settings.keyboard.swap_escape.sway_failed",
                     &format!("Failed to apply in Sway: {e}"),
+                );
+            }
+        }
+    } else if is_gnome {
+        let result = if enabled {
+            std::process::Command::new("gsettings")
+                .args([
+                    "set",
+                    "org.gnome.desktop.input-sources",
+                    "xkb-options",
+                    "['caps:swapescape']",
+                ])
+                .status()
+        } else {
+            std::process::Command::new("gsettings")
+                .args(["reset", "org.gnome.desktop.input-sources", "xkb-options"])
+                .status()
+        };
+
+        match result {
+            Ok(status) if status.success() => {
+                ctx.notify(
+                    "Swap Escape/Caps Lock",
+                    if enabled {
+                        "Escape and Caps Lock keys swapped"
+                    } else {
+                        "Escape and Caps Lock keys restored to normal"
+                    },
+                );
+            }
+            Ok(_) => {
+                ctx.emit_info(
+                    "settings.keyboard.swap_escape.failed",
+                    "gsettings command failed to apply the setting.",
+                );
+            }
+            Err(e) => {
+                ctx.emit_info(
+                    "settings.keyboard.swap_escape.error",
+                    &format!("Failed to execute gsettings: {e}"),
                 );
             }
         }
@@ -99,7 +140,7 @@ impl Setting for SwapEscape {
             .id("desktop.swap_escape")
             .title("Swap Escape and Caps Lock")
             .icon(NerdFont::Keyboard)
-            .summary("Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports Sway and X11 window managers.")
+            .summary("Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports Sway, GNOME, and X11 window managers.")
             .requires_reapply(true)
             .build()
     }
