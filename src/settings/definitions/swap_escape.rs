@@ -1,6 +1,7 @@
 //! Swap Escape and Caps Lock setting
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use regex;
 
 use crate::common::compositor::{CompositorType, sway};
 use crate::settings::context::SettingsContext;
@@ -20,10 +21,11 @@ fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result
     let compositor = CompositorType::detect();
     let is_sway = matches!(compositor, CompositorType::Sway);
     let is_gnome = matches!(compositor, CompositorType::Gnome);
+    let is_kwin = matches!(compositor, CompositorType::KWin);
     let is_x11 = compositor.is_x11();
 
-    if !is_sway && !is_gnome && !is_x11 {
-        ctx.emit_info(
+    if !is_sway && !is_gnome && !is_kwin && !is_x11 {
+        ctx.emit_unsupported(
             "settings.keyboard.swap_escape.unsupported",
             &format!(
                 "Swap Escape/Caps Lock configuration is not yet supported on {}. Setting saved but not applied.",
@@ -94,6 +96,74 @@ fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result
                 );
             }
         }
+    } else if is_kwin {
+        // KWin/KDE keyboard configuration through kxkbrc
+        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
+        let kxkbrc_path = format!("{}/.config/kxkbrc", home_dir);
+
+        // Read existing configuration or create new one
+        let mut config_content = std::fs::read_to_string(&kxkbrc_path)
+            .unwrap_or_else(|_| "[Layout]\nUse=true\n".to_string());
+
+        // Update or add the Options line
+        let options_line = if enabled {
+            "Options=grp:alt_shift_toggle,caps:swapescape"
+        } else {
+            "Options=grp:alt_shift_toggle"
+        };
+
+        // Replace existing Options line or add it
+        if config_content.contains("Options=") {
+            config_content = regex::Regex::new(r"Options=.*")
+                .unwrap()
+                .replace(&config_content, options_line)
+                .to_string();
+        } else {
+            config_content.push_str(&format!("\n{}\n", options_line));
+        }
+
+        // Write configuration back
+        std::fs::write(&kxkbrc_path, config_content).with_context(|| {
+            format!(
+                "Failed to write KDE keyboard configuration to {}",
+                kxkbrc_path
+            )
+        })?;
+
+        // Apply the configuration using qdbus
+        let result = std::process::Command::new("qdbus")
+            .args([
+                "org.kde.keyboard",
+                "/Layouts",
+                "org.kde.Keyboard.Layouts.setLayout",
+                "0",
+            ])
+            .status();
+
+        match result {
+            Ok(status) if status.success() => {
+                ctx.notify(
+                    "Swap Escape/Caps Lock",
+                    if enabled {
+                        "Escape and Caps Lock keys swapped"
+                    } else {
+                        "Escape and Caps Lock keys restored to normal"
+                    },
+                );
+            }
+            Ok(_) => {
+                ctx.emit_info(
+                    "settings.keyboard.swap_escape.kwin_apply_failed",
+                    "KDE configuration updated, but requires restart or manual reapply.\n\nSystem Settings → Input Devices → Keyboard → Advanced → Caps Lock behavior",
+                );
+            }
+            Err(e) => {
+                ctx.emit_info(
+                    "settings.keyboard.swap_escape.kwin_dbus_failed",
+                    &format!("KDE configuration updated, but failed to notify system: {e}\n\nRestart or apply manually through System Settings → Input Devices → Keyboard → Advanced"),
+                );
+            }
+        }
     } else {
         let result = if enabled {
             std::process::Command::new("setxkbmap")
@@ -140,7 +210,7 @@ impl Setting for SwapEscape {
             .id("desktop.swap_escape")
             .title("Swap Escape and Caps Lock")
             .icon(NerdFont::Keyboard)
-            .summary("Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports Sway, GNOME, and X11 window managers.")
+            .summary("Swap the Escape and Caps Lock keys.\n\nWhen enabled, pressing Caps Lock will produce Escape and vice versa.\n\nSupports Sway, GNOME, KWin/KDE, and X11 window managers.")
             .requires_reapply(true)
             .build()
     }
