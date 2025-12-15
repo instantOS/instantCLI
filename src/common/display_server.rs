@@ -16,8 +16,16 @@ pub enum DisplayServer {
 impl DisplayServer {
     /// Detect the current display server type
     pub fn detect() -> Self {
+        Self::detect_from_env(|k| env::var(k))
+    }
+
+    /// Detect display server using provided environment variable lookup function
+    pub fn detect_from_env<F>(env_var: F) -> Self
+    where
+        F: Fn(&str) -> Result<String, env::VarError>,
+    {
         // Check XDG_SESSION_TYPE first (most reliable)
-        if let Ok(session_type) = env::var("XDG_SESSION_TYPE") {
+        if let Ok(session_type) = env_var("XDG_SESSION_TYPE") {
             match session_type.to_lowercase().as_str() {
                 "wayland" => return DisplayServer::Wayland,
                 "x11" => return DisplayServer::X11,
@@ -26,12 +34,12 @@ impl DisplayServer {
         }
 
         // Check WAYLAND_DISPLAY environment variable
-        if env::var("WAYLAND_DISPLAY").is_ok() {
+        if env_var("WAYLAND_DISPLAY").is_ok() {
             return DisplayServer::Wayland;
         }
 
         // Check DISPLAY environment variable
-        if env::var("DISPLAY").is_ok() {
+        if env_var("DISPLAY").is_ok() {
             return DisplayServer::X11;
         }
 

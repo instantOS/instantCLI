@@ -287,37 +287,22 @@ mod tests {
     fn test_kde_color_picker_detection() {
         // Test that logic correctly identifies KDE and would use KDE-specific tools
 
-        // Save original env vars
-        let original_session = env::var("XDG_SESSION_DESKTOP").ok();
-        let original_wayland = env::var("WAYLAND_DISPLAY").ok();
+        // Use a mock environment variable provider
+        let mock_env = |key: &str| -> Result<String, env::VarError> {
+            match key {
+                "XDG_SESSION_DESKTOP" => Ok("KDE".to_string()),
+                "WAYLAND_DISPLAY" => Ok("wayland-0".to_string()),
+                _ => Err(env::VarError::NotPresent),
+            }
+        };
 
-        // Set up KDE environment
-        unsafe {
-            env::set_var("XDG_SESSION_DESKTOP", "KDE");
-            env::set_var("WAYLAND_DISPLAY", "wayland-0");
-        }
-
-        // Detect compositor and display server
-        let compositor = CompositorType::detect();
-        let display_server = DisplayServer::detect();
+        // Detect compositor and display server using mock environment
+        let compositor = CompositorType::detect_from_env(mock_env);
+        let display_server = DisplayServer::detect_from_env(mock_env);
 
         // Verify detection works
         assert_eq!(compositor, CompositorType::KWin);
         assert!(matches!(display_server, DisplayServer::Wayland));
-
-        // Restore original env vars
-        unsafe {
-            if let Some(val) = original_session {
-                env::set_var("XDG_SESSION_DESKTOP", val);
-            } else {
-                env::remove_var("XDG_SESSION_DESKTOP");
-            }
-            if let Some(val) = original_wayland {
-                env::set_var("WAYLAND_DISPLAY", val);
-            } else {
-                env::remove_var("WAYLAND_DISPLAY");
-            }
-        }
     }
 
     #[test]

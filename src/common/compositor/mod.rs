@@ -82,8 +82,16 @@ pub enum CompositorType {
 impl CompositorType {
     /// Detect the current window compositor
     pub fn detect() -> Self {
+        Self::detect_from_env(|k| env::var(k))
+    }
+
+    /// Detect compositor using provided environment variable lookup function
+    pub fn detect_from_env<F>(env_var: F) -> Self
+    where
+        F: Fn(&str) -> Result<String, env::VarError>,
+    {
         // Check environment variables first
-        if let Ok(session) = env::var("XDG_SESSION_DESKTOP") {
+        if let Ok(session) = env_var("XDG_SESSION_DESKTOP") {
             match session.to_lowercase().as_str() {
                 "i3" => return CompositorType::I3,
                 "dwm" => return CompositorType::Dwm,
@@ -96,7 +104,7 @@ impl CompositorType {
             }
         }
 
-        if let Ok(desktop) = env::var("DESKTOP_SESSION") {
+        if let Ok(desktop) = env_var("DESKTOP_SESSION") {
             match desktop.to_lowercase().as_str() {
                 "i3" => return CompositorType::I3,
                 "dwm" => return CompositorType::Dwm,
@@ -110,14 +118,14 @@ impl CompositorType {
         }
 
         // Check XDG_CURRENT_DESKTOP for KDE
-        if let Ok(current) = env::var("XDG_CURRENT_DESKTOP")
+        if let Ok(current) = env_var("XDG_CURRENT_DESKTOP")
             && current.to_lowercase() == "kde"
         {
             return CompositorType::KWin;
         }
 
         // Use display server detection to guide compositor detection
-        match DisplayServer::detect() {
+        match DisplayServer::detect_from_env(&env_var) {
             DisplayServer::Wayland => {
                 // Try to detect specific Wayland compositors
                 if CompositorType::is_process_running("sway") {
