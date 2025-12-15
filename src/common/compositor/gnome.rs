@@ -32,8 +32,6 @@ impl Gnome {
             cmd.arg(arg);
         }
 
-        cmd.arg("--print-reply=literal");
-
         let output = cmd.output().context("Failed to execute gdbus")?;
 
         if !output.status.success() {
@@ -51,7 +49,14 @@ impl Gnome {
         }
 
         let stdout = String::from_utf8(output.stdout).context("Invalid UTF-8 from gdbus")?;
-        Ok(stdout.trim().to_string())
+        let trimmed = stdout.trim();
+        // gdbus output format: ('[{"..."}]',)
+        // Remove outer parentheses and trailing comma, then remove quotes
+        let mut cleaned = trimmed.trim_start_matches('(').trim_end_matches(')');
+        cleaned = cleaned.trim_end_matches(',');
+        // Remove surrounding quotes
+        cleaned = cleaned.trim_start_matches('\'').trim_end_matches('\'');
+        Ok(cleaned.to_string())
     }
 
     fn list_windows() -> Result<Vec<WindowInfo>> {
