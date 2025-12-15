@@ -145,22 +145,45 @@ impl KWin {
 
     fn run_script(&self, config: &ScratchpadConfig, action: &str) -> Result<()> {
         let class = config.window_class();
+        let width_pct = config.width_pct as f64 / 100.0;
+        let height_pct = config.height_pct as f64 / 100.0;
 
-        // Plasma 6 Script
-        // Uses `workspace.windows` (QList<KWin::Window*>)
-        // `client.resourceClass` (property)
-        // `client.minimized` (property)
-        // `client.desktops` (property)
-
+        // Plasma 6 Script - Enhanced with geometry and positioning
         let script_content = format!(
             r#"
             (function() {{
                 const clients = workspace.windows;
                 const targetClass = "{class}";
                 const action = "{action}";
+                const widthPct = {width_pct};
+                const heightPct = {height_pct};
 
                 for (const client of clients) {{
                     if (client.resourceClass === targetClass) {{
+                        // Configure window properties for scratchpad behavior
+                        client.keepAbove = true;
+                        client.skipTaskbar = true;
+                        client.skipSwitcher = true;
+                        client.skipPager = true;
+
+                        // Set window geometry (centered, sized to percentages)
+                        const maxBounds = workspace.clientArea(
+                            KWin.PlacementArea,
+                            workspace.activeScreen,
+                            workspace.currentDesktop
+                        );
+                        const targetWidth = Math.round(maxBounds.width * widthPct);
+                        const targetHeight = Math.round(maxBounds.height * heightPct);
+                        const targetX = maxBounds.x + Math.round((maxBounds.width - targetWidth) / 2);
+                        const targetY = maxBounds.y + Math.round((maxBounds.height - targetHeight) / 2);
+                        
+                        client.geometry = {{
+                            x: targetX,
+                            y: targetY,
+                            width: targetWidth,
+                            height: targetHeight
+                        }};
+
                         if (action === "toggle") {{
                             if (workspace.activeWindow === client && !client.minimized) {{
                                 client.minimized = true;
