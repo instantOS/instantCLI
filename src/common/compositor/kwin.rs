@@ -43,65 +43,43 @@ impl ScratchpadProvider for KWin {
     }
 
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
-        // Use KWin scripting to find all scratchpad windows
-        let script_content = r#"
-            (function() {
-                const results = [];
-                const clients = workspace.windowList();
-                
-                for (let i = 0; i < clients.length; i++) {
-                    const client = clients[i];
-                    if (client.resourceClass && client.resourceClass.indexOf("scratchpad_") !== -1) {
-                        results.push({
-                            name: client.resourceClass.replace("scratchpad_", ""),
-                            windowClass: client.resourceClass,
-                            title: client.caption || "",
-                            visible: !client.minimized && client.desktops.indexOf(workspace.currentDesktop) !== -1
-                        });
+        let mut windows = Vec::new();
+        
+        // Get list of running processes that could be scratchpad terminals
+        let common_terminals = ["kitty", "alacritty", "wezterm", "foot", "gnome-terminal", "konsole"];
+        
+        for terminal in &common_terminals {
+            if let Ok(output) = Command::new("pgrep")
+                .args(["-f", &format!("{}.*scratchpad_", terminal)])
+                .output()
+            {
+                if output.status.success() {
+                    let pids = String::from_utf8_lossy(&output.stdout);
+                    for pid_line in pids.lines() {
+                        if let Ok(pid) = pid_line.trim().parse::<u32>() {
+                            // Get command line for this process to extract the class
+                            if let Ok(cmd_output) = Command::new("ps")
+                                .args(["-p", &pid.to_string(), "-o", "command="])
+                                .output()
+                            {
+                                let cmd_line = String::from_utf8_lossy(&cmd_output.stdout);
+                                // Extract scratchpad name from class flag
+                                if let Some(name) = self.extract_scratchpad_name(&cmd_line) {
+                                    windows.push(ScratchpadWindowInfo {
+                                        name: name.clone(),
+                                        window_class: format!("scratchpad_{}", name),
+                                        title: format!("Scratchpad: {}", name),
+                                        visible: self.is_window_visible_by_process(pid)?,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
-                return results;
-            })();
-        "#;
-
-        let mut temp_file = Builder::new()
-            .prefix("kwin-list-")
-            .suffix(".js")
-            .tempfile()?;
-
-        write!(temp_file, "{}", script_content)?;
-        let path = temp_file.path().to_str().context("Invalid path")?;
-
-        let output = Command::new("dbus-send")
-            .args([
-                "--session",
-                "--print-reply",
-                "--dest=org.kde.KWin",
-                "/Scripting",
-                "org.kde.kwin.Scripting.loadScript",
-                &format!("string:{}", path),
-            ])
-            .output()?;
-
-        if !output.status.success() {
-            return Ok(Vec::new());
+            }
         }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let id_str = stdout.lines().last().unwrap_or("").trim();
-        let id_parts: Vec<&str> = id_str.split_whitespace().collect();
-
-        let id = if id_parts.len() >= 2 && id_parts[0] == "int32" {
-            id_parts[1]
-        } else {
-            return Ok(Vec::new());
-        };
-
-        let script_obj_path = format!("/Scripting/Script{}", id);
-
-        // Since we can't easily get return values from dbus-send,
-        // fall back to process-based detection for now
-        Ok(Vec::new())
+        
+        Ok(windows)
     }
 
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
@@ -179,6 +157,53 @@ impl ScratchpadProvider for KWin {
 }
 
 impl KWin {
+    /// Extract scratchpad name from command line by looking for class flags
+    fn extract_scratchpad_name(&self, cmd_line: &str) -> Option<String> {
+        // Look for patterns like "--class scratchpad_name" or "--class instantscratchpad"
+        let patterns = [
+            format!("--class scratchpad_"),
+            "--class ".to_string(),
+            "-c ".to_string(),
+        ];
+        
+        for pattern in patterns {
+            if let Some(idx) = cmd_line.find(&pattern) {
+                let after_class = &cmd_line[idx + pattern.len()..];
+                // Extract the next word/argument
+                let name_end = after_class.find(&[' ', '\n', '\t'][..])
+                    .unwrap_or(after_class.len());
+                let potential_name = &after_class[..name_end];
+                
+                // Only return if it looks like a scratchpad name
+                if potential_name.starts_with("scratchpad_") || potential_name.contains("scratchpad") {
+                    let name = potential_name.replace("scratchpad_", "");
+                    if !name.is_empty() {
+                        return Some(name);
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+    
+    /// Check if a window is visible by checking if the process is running and not minimized
+    fn is_window_visible_by_process(&self, pid: u32) -> Result<bool> {
+        // For now, assume if the process is running, it's potentially visible
+        // This is a simplified check - a more accurate check would require KWin scripting
+        let output = Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "stat="])
+            .output()?;
+        
+        if output.status.success() {
+            let stat = String::from_utf8_lossy(&output.stdout);
+            // Process state: 'R' = running, 'S' = sleeping, 'T' = stopped/traced, 'Z' = zombie
+            // Assume running/sleeping processes are visible
+            Ok(stat.trim().chars().next().map_or(false, |c| c == 'R' || c == 'S'))
+        } else {
+            Ok(false)
+        }
+    }
     fn run_script(&self, config: &ScratchpadConfig, action: &str) -> Result<()> {
         let class = config.window_class();
         let width_pct = config.width_pct as f64 / 100.0;
