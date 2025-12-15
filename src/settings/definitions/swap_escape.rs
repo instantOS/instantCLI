@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use regex;
 
 use crate::common::compositor::{CompositorType, sway};
+use crate::menu_utils::FzfWrapper;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
@@ -16,8 +17,12 @@ impl SwapEscape {
     const KEY: BoolSettingKey = BoolSettingKey::new("desktop.swap_escape", false);
 }
 
-/// Apply swap escape setting (shared by both apply and restore)
-fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+/// Apply swap escape setting with configurable verbosity
+fn apply_swap_escape_setting_impl(
+    ctx: &mut SettingsContext,
+    enabled: bool,
+    verbose: bool,
+) -> Result<()> {
     let compositor = CompositorType::detect();
     let is_sway = matches!(compositor, CompositorType::Sway);
     let is_gnome = matches!(compositor, CompositorType::Gnome);
@@ -25,13 +30,13 @@ fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result
     let is_x11 = compositor.is_x11();
 
     if !is_sway && !is_gnome && !is_kwin && !is_x11 {
-        ctx.emit_unsupported(
-            "settings.keyboard.swap_escape.unsupported",
-            &format!(
+        if verbose {
+            let message = format!(
                 "Swap Escape/Caps Lock configuration is not yet supported on {}. Setting saved but not applied.",
                 compositor.name()
-            ),
-        );
+            );
+            let _ = FzfWrapper::message_dialog(&message);
+        }
         return Ok(());
     }
 
@@ -40,20 +45,22 @@ fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result
         let cmd = format!("input type:keyboard xkb_options {}", xkb_options);
         match sway::swaymsg(&cmd) {
             Ok(_) => {
-                ctx.notify(
-                    "Swap Escape/Caps Lock",
-                    if enabled {
-                        "Escape and Caps Lock keys swapped"
-                    } else {
-                        "Escape and Caps Lock keys restored to normal"
-                    },
-                );
+                if verbose {
+                    ctx.notify(
+                        "Swap Escape/Caps Lock",
+                        if enabled {
+                            "Escape and Caps Lock keys swapped"
+                        } else {
+                            "Escape and Caps Lock keys restored to normal"
+                        },
+                    );
+                }
             }
             Err(e) => {
-                ctx.emit_info(
-                    "settings.keyboard.swap_escape.sway_failed",
-                    &format!("Failed to apply in Sway: {e}"),
-                );
+                if verbose {
+                    let message = format!("Failed to apply in Sway: {e}");
+                    let _ = FzfWrapper::message_dialog(&message);
+                }
             }
         }
     } else if is_gnome {
@@ -74,26 +81,28 @@ fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result
 
         match result {
             Ok(status) if status.success() => {
-                ctx.notify(
-                    "Swap Escape/Caps Lock",
-                    if enabled {
-                        "Escape and Caps Lock keys swapped"
-                    } else {
-                        "Escape and Caps Lock keys restored to normal"
-                    },
-                );
+                if verbose {
+                    ctx.notify(
+                        "Swap Escape/Caps Lock",
+                        if enabled {
+                            "Escape and Caps Lock keys swapped"
+                        } else {
+                            "Escape and Caps Lock keys restored to normal"
+                        },
+                    );
+                }
             }
             Ok(_) => {
-                ctx.emit_info(
-                    "settings.keyboard.swap_escape.failed",
-                    "gsettings command failed to apply the setting.",
-                );
+                if verbose {
+                    let message = "gsettings command failed to apply the setting.";
+                    let _ = FzfWrapper::message_dialog(message);
+                }
             }
             Err(e) => {
-                ctx.emit_info(
-                    "settings.keyboard.swap_escape.error",
-                    &format!("Failed to execute gsettings: {e}"),
-                );
+                if verbose {
+                    let message = format!("Failed to execute gsettings: {e}");
+                    let _ = FzfWrapper::message_dialog(&message);
+                }
             }
         }
     } else if is_kwin {
@@ -123,88 +132,92 @@ fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result
         }
 
         // Write configuration back
-        std::fs::write(&kxkbrc_path, config_content).with_context(|| {
-            format!(
-                "Failed to write KDE keyboard configuration to {}",
-                kxkbrc_path
-            )
-        })?;
+        if verbose {
+            std::fs::write(&kxkbrc_path, config_content).with_context(|| {
+                format!(
+                    "Failed to write KDE keyboard configuration to {}",
+                    kxkbrc_path
+                )
+            })?;
+        } else {
+            let _ = std::fs::write(&kxkbrc_path, config_content);
+        }
 
         // Apply the configuration by restarting KDE keyboard daemon
-        // Try multiple methods to reload the configuration
-        let mut applied_successfully = false;
+        if verbose {
+            // Try multiple methods to reload the configuration
+            let mut applied_successfully = false;
 
-        // Method 1: Try to restart kxkb daemon (KDE 5)
-        if let Ok(_) = std::process::Command::new("killall")
-            .args(["-USR1", "kxkb"])
-            .status()
-        {
-            applied_successfully = true;
-        }
-
-        // Method 2: Try kwriteconfig6 to force reapply (KDE 6)
-        if !applied_successfully {
-            if let Ok(_) = std::process::Command::new("kwriteconfig6")
-                .args([
-                    "--file", "kxkbrc", "--group", "Layout", "--key", "Use", "--type", "bool",
-                    "true",
-                ])
+            // Method 1: Try to restart kxkb daemon (KDE 5)
+            if let Ok(_) = std::process::Command::new("killall")
+                .args(["-USR1", "kxkb"])
                 .status()
             {
                 applied_successfully = true;
             }
-        }
 
-        // Method 3: Try kwriteconfig5 as fallback (KDE 5)
-        if !applied_successfully {
-            if let Ok(_) = std::process::Command::new("kwriteconfig5")
-                .args([
-                    "--file", "kxkbrc", "--group", "Layout", "--key", "Use", "--type", "bool",
-                    "true",
-                ])
-                .status()
-            {
-                applied_successfully = true;
+            // Method 2: Try kwriteconfig6 to force reapply (KDE 6)
+            if !applied_successfully {
+                if let Ok(_) = std::process::Command::new("kwriteconfig6")
+                    .args([
+                        "--file", "kxkbrc", "--group", "Layout", "--key", "Use", "--type", "bool",
+                        "true",
+                    ])
+                    .status()
+                {
+                    applied_successfully = true;
+                }
             }
-        }
 
-        // Method 4: Try using qdbus to trigger layout reload
-        if !applied_successfully {
-            if std::process::Command::new("qdbus")
-                .args([
-                    "org.kde.keyboard",
-                    "/Layouts",
-                    "org.kde.KeyboardLayouts.switchToNextLayout",
-                ])
-                .status()
-                .is_ok_and(|s| s.success())
-            {
-                // Switch back to original layout
-                let _ = std::process::Command::new("qdbus")
+            // Method 3: Try kwriteconfig5 as fallback (KDE 5)
+            if !applied_successfully {
+                if let Ok(_) = std::process::Command::new("kwriteconfig5")
+                    .args([
+                        "--file", "kxkbrc", "--group", "Layout", "--key", "Use", "--type", "bool",
+                        "true",
+                    ])
+                    .status()
+                {
+                    applied_successfully = true;
+                }
+            }
+
+            // Method 4: Try using qdbus to trigger layout reload
+            if !applied_successfully {
+                if std::process::Command::new("qdbus")
                     .args([
                         "org.kde.keyboard",
                         "/Layouts",
-                        "org.kde.KeyboardLayouts.switchToPreviousLayout",
+                        "org.kde.KeyboardLayouts.switchToNextLayout",
                     ])
-                    .status();
-                applied_successfully = true;
+                    .status()
+                    .is_ok_and(|s| s.success())
+                {
+                    // Switch back to original layout
+                    let _ = std::process::Command::new("qdbus")
+                        .args([
+                            "org.kde.keyboard",
+                            "/Layouts",
+                            "org.kde.KeyboardLayouts.switchToPreviousLayout",
+                        ])
+                        .status();
+                    applied_successfully = true;
+                }
             }
-        }
 
-        if applied_successfully {
-            ctx.notify(
-                "Swap Escape/Caps Lock",
-                if enabled {
-                    "Escape and Caps Lock keys swapped"
-                } else {
-                    "Escape and Caps Lock keys restored to normal"
-                },
-            );
-        } else {
-            ctx.emit_info(
-                "settings.keyboard.swap_escape.kwin_apply_failed",
-                "KDE configuration updated, but requires restart or manual reapply.\n\nSystem Settings → Input Devices → Keyboard → Advanced → Caps Lock behavior\n\nOr restart the keyboard daemon by logging out and back in.",
-            );
+            if applied_successfully {
+                ctx.notify(
+                    "Swap Escape/Caps Lock",
+                    if enabled {
+                        "Escape and Caps Lock keys swapped"
+                    } else {
+                        "Escape and Caps Lock keys restored to normal"
+                    },
+                );
+            } else {
+                let message = "KDE configuration updated, but requires restart or manual reapply.\n\nSystem Settings → Input Devices → Keyboard → Advanced → Caps Lock behavior\n\nOr restart the keyboard daemon by logging out and back in.";
+                let _ = FzfWrapper::message_dialog(message);
+            }
         }
     } else {
         let result = if enabled {
@@ -219,31 +232,43 @@ fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result
 
         match result {
             Ok(status) if status.success() => {
-                ctx.notify(
-                    "Swap Escape/Caps Lock",
-                    if enabled {
-                        "Escape and Caps Lock keys swapped"
-                    } else {
-                        "Escape and Caps Lock keys restored to normal"
-                    },
-                );
+                if verbose {
+                    ctx.notify(
+                        "Swap Escape/Caps Lock",
+                        if enabled {
+                            "Escape and Caps Lock keys swapped"
+                        } else {
+                            "Escape and Caps Lock keys restored to normal"
+                        },
+                    );
+                }
             }
             Ok(_) => {
-                ctx.emit_info(
-                    "settings.keyboard.swap_escape.failed",
-                    "setxkbmap command failed to apply the setting.",
-                );
+                if verbose {
+                    let message = "setxkbmap command failed to apply the setting.";
+                    let _ = FzfWrapper::message_dialog(message);
+                }
             }
             Err(e) => {
-                ctx.emit_info(
-                    "settings.keyboard.swap_escape.error",
-                    &format!("Failed to execute setxkbmap: {e}"),
-                );
+                if verbose {
+                    let message = format!("Failed to execute setxkbmap: {e}");
+                    let _ = FzfWrapper::message_dialog(&message);
+                }
             }
         }
     }
 
     Ok(())
+}
+
+/// Apply swap escape setting (shared by both apply and restore)
+fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+    apply_swap_escape_setting_impl(ctx, enabled, true)
+}
+
+/// Apply swap escape setting silently (for restore operations)
+fn apply_swap_escape_setting_silent(ctx: &mut SettingsContext, enabled: bool) -> Result<()> {
+    apply_swap_escape_setting_impl(ctx, enabled, false)
 }
 
 impl Setting for SwapEscape {
@@ -277,6 +302,6 @@ impl Setting for SwapEscape {
         if !enabled {
             return None;
         }
-        Some(self.apply_value(ctx, enabled))
+        Some(apply_swap_escape_setting_silent(ctx, enabled))
     }
 }
