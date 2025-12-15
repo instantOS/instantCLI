@@ -38,15 +38,16 @@ pub fn unregister_menu_process(pid: u32) {
 
 /// Kill all registered menu processes (called when scratchpad becomes invisible)
 /// Uses SIGINT to simulate the same behavior as pressing ESC
-pub fn kill_active_menu_processes() -> Result<()> {
+pub fn kill_active_menu_processes() -> Result<usize> {
     let processes = if let Ok(mut procs) = ACTIVE_MENU_PROCESSES.lock() {
         let current = procs.clone();
         procs.clear(); // Clear the list since we're killing them all
         current
     } else {
-        return Ok(()); // If we can't lock, just return
+        return Ok(0); // If we can't lock, just return
     };
 
+    let count = processes.len();
     for pid in processes {
         // Use SIGINT (same as Ctrl+C/ESC) instead of SIGTERM to match normal cancellation behavior
         let _ = std::process::Command::new("kill")
@@ -55,7 +56,7 @@ pub fn kill_active_menu_processes() -> Result<()> {
             .output();
     }
 
-    Ok(())
+    Ok(count)
 }
 
 /// Menu server for handling GUI menu requests
@@ -349,10 +350,15 @@ impl MenuServer {
                         Ok(false) => {
                             consecutive_failures += 1;
                             if consecutive_failures >= max_failures {
-                                // Scratchpad became invisible, kill all fzf processes
-                                println!("Scratchpad became invisible, cancelling menu operation");
-                                was_killed_clone.store(true, Ordering::SeqCst);
-                                let _ = kill_active_menu_processes();
+                                // Scratchpad became invisible
+                                // Only cancel if we actually killed external processes (like fzf)
+                                // For internal TUIs (like Chord), we don't want to cancel on false positives
+                                if let Ok(killed_count) = kill_active_menu_processes() {
+                                    if killed_count > 0 {
+                                        println!("Scratchpad became invisible, cancelling menu operation");
+                                        was_killed_clone.store(true, Ordering::SeqCst);
+                                    }
+                                }
                                 break;
                             }
                         }
