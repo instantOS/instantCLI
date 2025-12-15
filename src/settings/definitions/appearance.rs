@@ -10,7 +10,7 @@ use crate::common::instantwm::InstantWmController;
 use crate::menu_utils::{FzfWrapper, MenuWrapper};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{YAZI, ZENITY};
-use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, OptionalStringSettingKey};
 use crate::ui::prelude::*;
 
@@ -97,7 +97,7 @@ impl Setting for SetWallpaper {
             .title("Wallpaper")
             .icon(NerdFont::Image)
             .summary("Select and set a new wallpaper image.")
-            .requirements(vec![Requirement::Dependency(&YAZI)])
+            .requirements(vec![&YAZI])
             .build()
     }
 
@@ -224,7 +224,7 @@ impl Setting for WallpaperBgColor {
             .summary(
                 "Choose a background color for colored wallpapers.\n\nUses zenity color picker.",
             )
-            .requirements(vec![Requirement::Dependency(&ZENITY)])
+            .requirements(vec![&ZENITY])
             .build()
     }
 
@@ -254,7 +254,7 @@ impl Setting for WallpaperFgColor {
             .title("Foreground Color")
             .icon(NerdFont::Palette)
             .summary("Choose a foreground/logo color for colored wallpapers.\n\nUses zenity color picker.")
-            .requirements(vec![Requirement::Dependency(&ZENITY)])
+            .requirements(vec![&ZENITY])
             .build()
     }
 

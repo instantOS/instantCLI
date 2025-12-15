@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{CHROMIUM, NM_CONNECTION_EDITOR};
 use crate::settings::network;
-use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
 
 // ============================================================================
@@ -49,7 +49,7 @@ impl Setting for SpeedTest {
             .title("Internet Speed Test")
             .icon(NerdFont::Rocket)
             .summary("Test your internet connection speed using fast.com.\n\nMeasures download speed from Netflix servers.")
-            .requirements(vec![Requirement::Dependency(&CHROMIUM)])
+            .requirements(vec![&CHROMIUM])
             .build()
     }
 
@@ -86,7 +86,7 @@ impl Setting for EditConnections {
             .title("Edit Connections")
             .icon(NerdFont::Settings)
             .summary("Manage WiFi, Ethernet, VPN, and other network connections.\n\nConfigure connection settings, passwords, and advanced options.")
-            .requirements(vec![Requirement::Dependency(&NM_CONNECTION_EDITOR)])
+            .requirements(vec![&NM_CONNECTION_EDITOR])
             .build()
     }
 

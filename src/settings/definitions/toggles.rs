@@ -9,7 +9,7 @@ use crate::common::systemd::{SystemdManager, UserServiceConfig};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEZ, BLUEZ_UTILS, CLIPMENU, UDISKIE};
-use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
 use crate::ui::prelude::*;
 
@@ -30,7 +30,7 @@ impl Setting for ClipboardManager {
             .title("Clipboard History")
             .icon(NerdFont::Clipboard)
             .summary("Remember your copy/paste history so you can access previously copied items.\n\nWhen enabled, you can paste from your clipboard history instead of just the last copied item.")
-            .requirements(vec![Requirement::Dependency(&CLIPMENU)])
+            .requirements(vec![&CLIPMENU])
             .build()
     }
 

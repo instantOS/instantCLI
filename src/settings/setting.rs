@@ -11,191 +11,6 @@ use crate::common::distro::OperatingSystem;
 use crate::common::package::Dependency;
 use crate::ui::prelude::NerdFont;
 
-/// Requirement that must be satisfied before a setting can be used
-#[derive(Debug, Clone)]
-pub enum Requirement {
-    /// Requires a package/dependency to be installed
-    Dependency(&'static Dependency),
-    /// Custom runtime condition
-    Condition {
-        description: &'static str,
-        check: fn() -> bool,
-        resolve_hint: &'static str,
-    },
-}
-
-impl Requirement {
-    pub fn is_satisfied(&self) -> bool {
-        match self {
-            Requirement::Dependency(dep) => dep.is_installed(),
-            Requirement::Condition { check, .. } => check(),
-        }
-    }
-
-    pub fn description(&self) -> &str {
-        match self {
-            Requirement::Dependency(dep) => dep.name,
-            Requirement::Condition { description, .. } => description,
-        }
-    }
-
-    pub fn resolve_hint(&self) -> String {
-        match self {
-            Requirement::Dependency(dep) => dep.install_hint(),
-            Requirement::Condition { resolve_hint, .. } => resolve_hint.to_string(),
-        }
-    }
-}
-
-/// Category identifiers for settings organization
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Category {
-    Install,
-    Network,
-    Bluetooth,
-    Appearance,
-    Mouse,
-    Desktop,
-    Audio,
-    Apps,
-    Storage,
-    Printers,
-    Users,
-    Language,
-    System,
-}
-
-impl Category {
-    pub fn id(&self) -> &'static str {
-        match self {
-            Category::Install => "install",
-            Category::Network => "network",
-            Category::Bluetooth => "bluetooth",
-            Category::Appearance => "appearance",
-            Category::Mouse => "mouse",
-            Category::Desktop => "desktop",
-            Category::Audio => "audio",
-            Category::Apps => "apps",
-            Category::Storage => "storage",
-            Category::Printers => "printers",
-            Category::Users => "users",
-            Category::Language => "language",
-            Category::System => "system",
-        }
-    }
-
-    pub fn title(&self) -> &'static str {
-        match self {
-            Category::Install => "Installation",
-            Category::Network => "Networking",
-            Category::Bluetooth => "Bluetooth",
-            Category::Appearance => "Appearance",
-            Category::Mouse => "Mouse & Touchpad",
-            Category::Desktop => "Desktop",
-            Category::Audio => "Sound",
-            Category::Apps => "Default Apps",
-            Category::Storage => "Storage",
-            Category::Printers => "Printers",
-            Category::Users => "Users & Accounts",
-            Category::Language => "Language & Region",
-            Category::System => "System & Updates",
-        }
-    }
-
-    pub fn description(&self) -> &'static str {
-        match self {
-            Category::Install => "Installation and setup options.",
-            Category::Network => "WiFi, Ethernet, VPN, and network diagnostics.",
-            Category::Bluetooth => "Pair devices and manage Bluetooth settings.",
-            Category::Appearance => "Themes, wallpaper, brightness, and visual styles.",
-            Category::Mouse => "Pointer speed, scrolling, and button settings.",
-            Category::Desktop => "Desktop behaviour, window management, and layout preferences.",
-            Category::Audio => "Sound routing tools and audio behaviour.",
-            Category::Apps => "Default applications and file associations.",
-            Category::Storage => "Disk management and auto-mounting.",
-            Category::Printers => "Discover, configure, and manage printers.",
-            Category::Users => "Create and manage user accounts.",
-            Category::Language => "Manage system locales and language defaults.",
-            Category::System => "System administration and maintenance.",
-        }
-    }
-
-    pub fn icon(&self) -> NerdFont {
-        match self {
-            Category::Install => NerdFont::Download,
-            Category::Network => NerdFont::Network,
-            Category::Bluetooth => NerdFont::Bluetooth,
-            Category::Appearance => NerdFont::Palette,
-            Category::Mouse => NerdFont::Mouse,
-            Category::Desktop => NerdFont::Desktop,
-            Category::Audio => NerdFont::VolumeUp,
-            Category::Apps => NerdFont::Package,
-            Category::Storage => NerdFont::Database2,
-            Category::Printers => NerdFont::Printer,
-            Category::Users => NerdFont::Users,
-            Category::Language => NerdFont::Globe,
-            Category::System => NerdFont::Server,
-        }
-    }
-
-    pub fn color(&self) -> &'static str {
-        use super::context::colors;
-        match self {
-            Category::Install => colors::BLUE,
-            Category::Network => colors::GREEN,
-            Category::Bluetooth => colors::BLUE,
-            Category::Appearance => colors::LAVENDER,
-            Category::Mouse => colors::PEACH,
-            Category::Desktop => colors::MAUVE,
-            Category::Audio => colors::TEAL,
-            Category::Apps => colors::SAPPHIRE,
-            Category::Storage => colors::YELLOW,
-            Category::Printers => colors::FLAMINGO,
-            Category::Users => colors::MAROON,
-            Category::Language => colors::ROSEWATER,
-            Category::System => colors::RED,
-        }
-    }
-
-    pub fn from_id(id: &str) -> Option<Category> {
-        match id {
-            "install" => Some(Category::Install),
-            "network" => Some(Category::Network),
-            "bluetooth" => Some(Category::Bluetooth),
-            "appearance" => Some(Category::Appearance),
-            "mouse" => Some(Category::Mouse),
-            "desktop" => Some(Category::Desktop),
-            "audio" => Some(Category::Audio),
-            "apps" => Some(Category::Apps),
-            "storage" => Some(Category::Storage),
-            "printers" => Some(Category::Printers),
-            "users" => Some(Category::Users),
-            "language" => Some(Category::Language),
-            "system" => Some(Category::System),
-            _ => None,
-        }
-    }
-
-    /// All categories in display order
-    pub fn all() -> &'static [Category] {
-        &[
-            Category::Install,
-            Category::Appearance,
-            Category::Network,
-            Category::Bluetooth,
-            Category::Mouse,
-            Category::Desktop,
-            Category::Audio,
-            Category::Apps,
-            Category::Storage,
-            Category::Printers,
-            Category::Users,
-            Category::Language,
-            Category::System,
-        ]
-    }
-}
-
 /// UI metadata for displaying a setting
 #[derive(Debug)]
 pub struct SettingMetadata {
@@ -206,7 +21,7 @@ pub struct SettingMetadata {
     pub icon_color: Option<&'static str>,
     pub summary: &'static str,
     pub requires_reapply: bool,
-    pub requirements: Vec<Requirement>,
+    pub requirements: Vec<&'static Dependency>,
     pub supported_distros: Option<&'static [OperatingSystem]>,
 }
 
@@ -224,7 +39,7 @@ pub struct SettingMetadataBuilder {
     icon_color: Option<&'static str>,
     summary: &'static str,
     requires_reapply: bool,
-    requirements: Vec<Requirement>,
+    requirements: Vec<&'static Dependency>,
     supported_distros: Option<&'static [OperatingSystem]>,
 }
 
@@ -268,7 +83,7 @@ impl SettingMetadataBuilder {
         self
     }
 
-    pub fn requirements(mut self, requirements: Vec<Requirement>) -> Self {
+    pub fn requirements(mut self, requirements: Vec<&'static Dependency>) -> Self {
         self.requirements = requirements;
         self
     }

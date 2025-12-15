@@ -12,7 +12,7 @@ use crate::settings::context::SettingsContext;
 use crate::settings::deps::{
     COCKPIT, COCKPIT_DEPS, FASTFETCH, GNOME_FIRMWARE, PACMAN_CONTRIB, TOPGRADE,
 };
-use crate::settings::setting::{Requirement, Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::sources;
 use crate::settings::store::{BoolSettingKey, PACMAN_AUTOCLEAN_KEY};
 use crate::ui::prelude::*;
@@ -30,7 +30,7 @@ impl Setting for AboutSystem {
             .title("About")
             .icon(NerdFont::About)
             .summary("Display system information using fastfetch.")
-            .requirements(vec![Requirement::Dependency(&FASTFETCH)])
+            .requirements(vec![&FASTFETCH])
             .build()
     }
 
@@ -63,7 +63,7 @@ impl Setting for SystemDoctor {
             .title("System Diagnostics")
             .icon(NerdFont::ShieldCheck)
             .summary("Run system diagnostics to check for common issues and available fixes.")
-            .requirements(vec![Requirement::Dependency(&PACMAN_CONTRIB)])
+            .requirements(vec![&PACMAN_CONTRIB])
             .build()
     }
 
@@ -100,7 +100,7 @@ impl Setting for CockpitManager {
             .title("Systemd manager (Cockpit)")
             .icon(NerdFont::Server)
             .summary("Launch Cockpit web interface for managing systemd services, logs, and system resources.")
-            .requirements(vec![Requirement::Dependency(&COCKPIT)])
+            .requirements(vec![&COCKPIT])
             .build()
     }
 
@@ -158,7 +158,7 @@ impl Setting for PacmanAutoclean {
             .title("Pacman cache autoclean")
             .icon(NerdFont::Trash)
             .summary("Run paccache weekly to keep only the latest pacman packages.")
-            .requirements(vec![Requirement::Dependency(&PACMAN_CONTRIB)])
+            .requirements(vec![&PACMAN_CONTRIB])
             .build()
     }
 
