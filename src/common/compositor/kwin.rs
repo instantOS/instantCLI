@@ -10,12 +10,18 @@ pub struct KWin;
 
 impl ScratchpadProvider for KWin {
     fn show(&self, config: &ScratchpadConfig) -> Result<()> {
-        if !self.is_window_running(config)? {
+        // Try to show the window first
+        let window_found = self.run_script_and_check_found(config, "show")?;
+
+        // If window wasn't found, create it
+        if !window_found {
             super::create_terminal_process(config)?;
-            // Give terminal a moment to initialize
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            // Give terminal time to initialize and register with KWin
+            std::thread::sleep(std::time::Duration::from_millis(800));
+            // Show the newly created window
+            self.run_script(config, "show")?;
         }
-        self.run_script(config, "show")
+        Ok(())
     }
 
     fn hide(&self, config: &ScratchpadConfig) -> Result<()> {
@@ -23,14 +29,18 @@ impl ScratchpadProvider for KWin {
     }
 
     fn toggle(&self, config: &ScratchpadConfig) -> Result<()> {
-        if !self.is_window_running(config)? {
+        // Try to toggle the window first
+        let window_found = self.run_script_and_check_found(config, "toggle")?;
+
+        // If window wasn't found, create it and show it
+        if !window_found {
             super::create_terminal_process(config)?;
-            // Give terminal a moment to initialize
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            self.run_script(config, "show")
-        } else {
-            self.run_script(config, "toggle")
+            // Give terminal time to initialize and register with KWin
+            std::thread::sleep(std::time::Duration::from_millis(800));
+            // Show the newly created window
+            self.run_script(config, "show")?;
         }
+        Ok(())
     }
 
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
@@ -38,15 +48,16 @@ impl ScratchpadProvider for KWin {
         let script_content = r#"
             (function() {
                 const results = [];
-                const clients = workspace.windows;
+                const clients = workspace.windowList();
                 
-                for (const client of clients) {
-                    if (client.resourceClass && client.resourceClass.includes("scratchpad_")) {
+                for (let i = 0; i < clients.length; i++) {
+                    const client = clients[i];
+                    if (client.resourceClass && client.resourceClass.indexOf("scratchpad_") !== -1) {
                         results.push({
                             name: client.resourceClass.replace("scratchpad_", ""),
                             windowClass: client.resourceClass,
                             title: client.caption || "",
-                            visible: !client.minimized && client.desktops.includes(workspace.currentDesktop)
+                            visible: !client.minimized && client.desktops.indexOf(workspace.currentDesktop) !== -1
                         });
                     }
                 }
@@ -115,10 +126,11 @@ impl ScratchpadProvider for KWin {
         let script_content = format!(
             r#"
             (function() {{
-                const clients = workspace.windows;
-                for (const client of clients) {{
+                const clients = workspace.windowList();
+                for (let i = 0; i < clients.length; i++) {{
+                    const client = clients[i];
                     if (client.resourceClass === "{class}") {{
-                        return (!client.minimized && client.desktops.includes(workspace.currentDesktop)).toString();
+                        return (!client.minimized && client.desktops.indexOf(workspace.currentDesktop) !== -1).toString();
                     }}
                 }}
                 return "false";
@@ -173,8 +185,9 @@ impl KWin {
         let script_content = format!(
             r#"
             (function() {{
-                const clients = workspace.windows;
-                for (const client of clients) {{
+                const clients = workspace.windowList();
+                for (let i = 0; i < clients.length; i++) {{
+                    const client = clients[i];
                     if (client.resourceClass === "{target_class}") {{
                         return true;
                     }}
@@ -259,13 +272,14 @@ impl KWin {
         let script_content = format!(
             r#"
             (function() {{
-                const clients = workspace.windows;
+                const clients = workspace.windowList();
                 const targetClass = "{class}";
                 const action = "{action}";
                 const widthPct = {width_pct};
                 const heightPct = {height_pct};
 
-                for (const client of clients) {{
+                for (let i = 0; i < clients.length; i++) {{
+                    const client = clients[i];
                     if (client.resourceClass === targetClass) {{
                         // Configure window properties for scratchpad behavior
                         client.keepAbove = true;
@@ -284,7 +298,7 @@ impl KWin {
                         const targetX = maxBounds.x + Math.round((maxBounds.width - targetWidth) / 2);
                         const targetY = maxBounds.y + Math.round((maxBounds.height - targetHeight) / 2);
                         
-                        client.geometry = {{
+                        client.frameGeometry = {{
                             x: targetX,
                             y: targetY,
                             width: targetWidth,
@@ -306,9 +320,12 @@ impl KWin {
                         }} else if (action === "hide") {{
                             client.minimized = true;
                         }}
+                        
+                        print("WINDOW_FOUND");
                         return;
                     }}
                 }}
+                print("WINDOW_NOT_FOUND");
             }})();
         "#
         );
@@ -320,6 +337,7 @@ impl KWin {
             .tempfile()?;
 
         write!(temp_file, "{}", script_content)?;
+        temp_file.flush()?;
         let path = temp_file.path().to_str().context("Invalid path")?;
 
         // DBus call to load script
@@ -336,6 +354,10 @@ impl KWin {
             .context("Failed to execute dbus-send to load script")?;
 
         if !output.status.success() {
+            eprintln!(
+                "DEBUG: loadScript failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
             return Err(anyhow::anyhow!(
                 "Failed to load KWin script: {}",
                 String::from_utf8_lossy(&output.stderr)
@@ -346,6 +368,7 @@ impl KWin {
         // method return time=... sender=... -> destination=... serial=... reply_serial=...
         //    int32 4
         let stdout = String::from_utf8_lossy(&output.stdout);
+        eprintln!("DEBUG: loadScript output: {}", stdout);
         let id_str = stdout.lines().last().unwrap_or("").trim();
         // Extract number
         let id_parts: Vec<&str> = id_str.split_whitespace().collect();
@@ -360,7 +383,8 @@ impl KWin {
 
         // Run script
         let script_obj_path = format!("/Scripting/Script{}", id);
-        Command::new("dbus-send")
+        eprintln!("DEBUG: Running script at path: {}", script_obj_path);
+        let run_output = Command::new("dbus-send")
             .args([
                 "--session",
                 "--print-reply",
@@ -370,6 +394,18 @@ impl KWin {
             ])
             .output()
             .context("Failed to run KWin script")?;
+
+        eprintln!("DEBUG: Script run status: {}", run_output.status);
+        eprintln!(
+            "DEBUG: Script run output: {}",
+            String::from_utf8_lossy(&run_output.stdout)
+        );
+        if !run_output.stderr.is_empty() {
+            eprintln!(
+                "DEBUG: Script run stderr: {}",
+                String::from_utf8_lossy(&run_output.stderr)
+            );
+        }
 
         // Cleanup: Stop/Unload script?
         let _ = Command::new("dbus-send")
@@ -382,5 +418,29 @@ impl KWin {
             .output();
 
         Ok(())
+    }
+
+    /// Run script and check if the window was found
+    /// Returns true if window was found and operated on, false otherwise
+    fn run_script_and_check_found(&self, config: &ScratchpadConfig, action: &str) -> Result<bool> {
+        self.run_script(config, action)?;
+
+        // Check journalctl for the WINDOW_FOUND/WINDOW_NOT_FOUND message
+        // This is a simple approach - wait a bit and check logs
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let output = Command::new("journalctl")
+            .args([
+                "--user",
+                "-u",
+                "plasma-kwin_wayland.service",
+                "--since",
+                "1 second ago",
+                "--no-pager",
+            ])
+            .output()?;
+
+        let log_output = String::from_utf8_lossy(&output.stdout);
+        Ok(log_output.contains("WINDOW_FOUND"))
     }
 }
