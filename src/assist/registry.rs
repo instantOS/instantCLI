@@ -156,6 +156,7 @@ pub const ASSISTS: &[AssistEntry] = &[
         dependencies: &[
             &HYPRPICKER,
             &XCOLOR,
+            &KDIALOG,
             &IMAGEMAGICK,
             &WL_CLIPBOARD,
             &XCLIP,

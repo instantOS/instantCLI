@@ -235,6 +235,18 @@ pub static XCOLOR: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("xcolor")],
 };
 
+/// kdialog - KDE dialog utility (includes color picker)
+pub static KDIALOG: Dependency = Dependency {
+    name: "kdialog",
+    description: Some("KDE dialog utility with color picker"),
+    packages: &[
+        PackageDefinition::new("kdialog", PackageManager::Pacman),
+        PackageDefinition::new("kdialog", PackageManager::Dnf),
+        PackageDefinition::new("kdialog", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("kdialog")],
+};
+
 /// Emote - emoji picker (Flatpak only)
 pub static EMOTE: Dependency = Dependency {
     name: "Emote",
