@@ -10,6 +10,11 @@ pub struct KWin;
 
 impl ScratchpadProvider for KWin {
     fn show(&self, config: &ScratchpadConfig) -> Result<()> {
+        if !self.is_window_running(config)? {
+            super::create_terminal_process(config)?;
+            // Give terminal a moment to initialize
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
         self.run_script(config, "show")
     }
 
@@ -18,7 +23,14 @@ impl ScratchpadProvider for KWin {
     }
 
     fn toggle(&self, config: &ScratchpadConfig) -> Result<()> {
-        self.run_script(config, "toggle")
+        if !self.is_window_running(config)? {
+            super::create_terminal_process(config)?;
+            // Give terminal a moment to initialize
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            self.run_script(config, "show")
+        } else {
+            self.run_script(config, "toggle")
+        }
     }
 
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
@@ -28,8 +40,14 @@ impl ScratchpadProvider for KWin {
     }
 
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
-        // Check using pgrep as fallback
         let class = config.window_class();
+        
+        // First try using KWin scripting to check for window (more reliable)
+        if let Ok(()) = self.check_window_via_script(&class) {
+            return Ok(true);
+        }
+        
+        // Fallback to pgrep
         let output = Command::new("pgrep").arg("-f").arg(&class).output()?;
 
         Ok(output.status.success())
@@ -43,6 +61,88 @@ impl ScratchpadProvider for KWin {
 }
 
 impl KWin {
+    /// Check if a window with the given class exists using KWin scripting
+    fn check_window_via_script(&self, target_class: &str) -> Result<()> {
+        let script_content = format!(
+            r#"
+            (function() {{
+                const clients = workspace.windows;
+                for (const client of clients) {{
+                    if (client.resourceClass === "{target_class}") {{
+                        return true;
+                    }}
+                }}
+                return false;
+            }})();
+            "#
+        );
+
+        let mut temp_file = Builder::new()
+            .prefix("kwin-check-")
+            .suffix(".js")
+            .tempfile()?;
+
+        write!(temp_file, "{}", script_content)?;
+        let path = temp_file.path().to_str().context("Invalid path")?;
+
+        let output = Command::new("dbus-send")
+            .args([
+                "--session",
+                "--print-reply",
+                "--dest=org.kde.KWin",
+                "/Scripting",
+                "org.kde.kwin.Scripting.loadScript",
+                &format!("string:{}", path),
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Failed to load check script: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let id_str = stdout.lines().last().unwrap_or("").trim();
+        let id_parts: Vec<&str> = id_str.split_whitespace().collect();
+        let id = if id_parts.len() >= 2 && id_parts[0] == "int32" {
+            id_parts[1]
+        } else {
+            return Err(anyhow::anyhow!(
+                "Unexpected response from loadScript: {}",
+                stdout
+            ));
+        };
+
+        let script_obj_path = format!("/Scripting/Script{}", id);
+        let output = Command::new("dbus-send")
+            .args([
+                "--session",
+                "--dest=org.kde.KWin",
+                &script_obj_path,
+                "org.kde.kwin.Script.run",
+            ])
+            .output()?;
+
+        // Cleanup
+        let _ = Command::new("dbus-send")
+            .args([
+                "--session",
+                "--dest=org.kde.KWin",
+                &script_obj_path,
+                "org.kde.kwin.Script.stop",
+            ])
+            .output();
+
+        // If script runs without error, window exists
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Window not found"))
+        }
+    }
+
     fn run_script(&self, config: &ScratchpadConfig, action: &str) -> Result<()> {
         let class = config.window_class();
 
