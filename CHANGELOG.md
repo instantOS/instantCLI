@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.9](https://github.com/instantOS/instantCLI/compare/v0.10.8...v0.10.9) - 2025-12-15
+
+### Added
+
+- Implement scratchpad support for Gnome
+
+### Other
+
+- Add newline after save path in setup installation
+
 ## [0.10.8](https://github.com/instantOS/instantCLI/compare/v0.10.7...v0.10.8) - 2025-12-12
 
 ### Fixed
