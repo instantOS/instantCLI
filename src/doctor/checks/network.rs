@@ -76,7 +76,10 @@ impl DoctorCheck for InstantRepoCheck {
 
     async fn execute(&self) -> CheckStatus {
         // Only check on instantOS
-        if !crate::common::distro::OperatingSystem::detect().is_instantos() {
+        if !matches!(
+            crate::common::distro::OperatingSystem::detect(),
+            crate::common::distro::OperatingSystem::InstantOS
+        ) {
             return CheckStatus::Skipped("Not running on instantOS".to_string());
         }
 
