@@ -125,9 +125,8 @@ fn install_dependencies_via_terminal(assist: &AssistAction, key_sequence: &str) 
         shell_quote(&binary.to_string_lossy()),
         shell_quote(key_sequence)
     );
-    let script = format!("#!/usr/bin/env bash\nset -e\n{}\n", command);
     let title = format!("Install dependencies for {}", assist.description);
-    Ok(utils::run_script_in_terminal_and_wait(&script, &title)?.success())
+    Ok(utils::run_installation_in_terminal(&command, &title)?.success())
 }
 
 fn emit_dependency_warning(assist: &AssistAction) {

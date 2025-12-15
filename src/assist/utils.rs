@@ -4,6 +4,7 @@ use std::io::Write;
 use std::process::{Command, ExitStatus};
 
 use crate::common::display_server::DisplayServer;
+use crate::common::shell::shell_quote;
 
 /// Launch a command in a detached terminal window
 ///
@@ -50,42 +51,42 @@ pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
     Ok(())
 }
 
-/// Run a script in a terminal window and wait for completion
+/// Run an installation command in a terminal with a post-installation menu
 ///
-/// Auto-detects the user's preferred terminal emulator.
-/// Note: Hold/wait behavior varies by terminal emulator.
-pub fn run_script_in_terminal_and_wait(script: &str, title: &str) -> Result<ExitStatus> {
+/// Shows the user a menu after installation completes, allowing them to either
+/// close the terminal or keep it open for review. Uses `ins menu` for the prompt.
+pub fn run_installation_in_terminal(install_command: &str, title: &str) -> Result<ExitStatus> {
     use tempfile::NamedTempFile;
 
-    // Wrap the script with a post-execution menu
+    let binary = current_exe()?;
+
+    // Wrap the installation with a post-execution menu using ins menu
     let wrapped_script = format!(
-        r#"{}
+        r#"#!/usr/bin/env bash
+set -e
 
-# Post-installation menu
+# Run installation
+{}
+
+# Post-installation menu using ins menu choice
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Installation complete!"
+echo "Installation Complete"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "What would you like to do?"
-echo ""
-echo "  1) Close this terminal and continue"
-echo "  2) Keep terminal open for review"
-echo ""
-read -p "Select an option [1-2]: " choice
 
-case "$choice" in
-    2)
-        echo ""
-        echo "Terminal will stay open. Close when ready."
-        read -p "Press Enter to close..."
-        ;;
-    *)
-        # Default to closing (option 1 or any other input)
-        ;;
-esac
+# Use stdin for menu items to handle multi-word choices properly
+choice=$(printf "Close terminal and continue\nKeep terminal open for review" | \
+    {} menu choice --prompt "What would you like to do?")
+
+if [ "$choice" = "Keep terminal open for review" ]; then
+    echo ""
+    echo "Terminal will stay open. Close when ready."
+    read -p "Press Enter to close..."
+fi
 "#,
-        script
+        install_command,
+        shell_quote(&binary.to_string_lossy())
     );
 
     let mut temp_file = NamedTempFile::new().context("Failed to create temporary script file")?;
@@ -108,14 +109,59 @@ esac
 
     let mut cmd = Command::new(&terminal);
 
-    // Add terminal-specific flags for title (removed --hold since we have our own menu)
+    // Add terminal-specific flags for title
     match terminal.as_str() {
         "kitty" | "alacritty" | "wezterm" => {
             cmd.arg("--title").arg(title);
         }
-        _ => {
-            // Other terminals may not support these flags
+        _ => {}
+    }
+
+    let status = cmd
+        .arg(exec_flag)
+        .arg("bash")
+        .arg(&script_path)
+        .status()
+        .context("Failed to run terminal command")?;
+
+    Ok(status)
+}
+
+/// Run a command in a terminal window and wait for completion
+///
+/// Generic function for running any command in a terminal.
+/// For installation commands, use `run_installation_in_terminal` instead.
+pub fn run_command_in_terminal(command: &str, title: &str) -> Result<ExitStatus> {
+    use tempfile::NamedTempFile;
+
+    let script = format!("#!/usr/bin/env bash\nset -e\n{}\n", command);
+
+    let mut temp_file = NamedTempFile::new().context("Failed to create temporary script file")?;
+    temp_file
+        .write_all(script.as_bytes())
+        .context("Failed to write script")?;
+
+    let script_path = temp_file.path().to_owned();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script_path)?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms)?;
+    }
+
+    let terminal = crate::common::terminal::detect_terminal();
+    let exec_flag = crate::common::terminal::get_execute_flag(&terminal);
+
+    let mut cmd = Command::new(&terminal);
+
+    // Add terminal-specific flags for title
+    match terminal.as_str() {
+        "kitty" | "alacritty" | "wezterm" => {
+            cmd.arg("--title").arg(title);
         }
+        _ => {}
     }
 
     let status = cmd

@@ -31,8 +31,8 @@ pub fn search_man_pages() -> Result<()> {
     let selected = FzfWrapper::builder().prompt("Man Page").select(pages)?;
 
     if let crate::menu_utils::FzfResult::Selected(page) = selected {
-        let script = format!(r#"man "{}""#, page);
-        crate::assist::utils::run_script_in_terminal_and_wait(&script, "Man Pages")?;
+        let command = format!(r#"man "{}""#, page);
+        crate::assist::utils::run_command_in_terminal(&command, "Man Pages")?;
     }
 
     Ok(())
