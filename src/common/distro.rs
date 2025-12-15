@@ -116,11 +116,6 @@ impl OperatingSystem {
     // Family Check Methods
     // ========================================================================
 
-    /// Check if this is a Linux operating system (always true currently)
-    pub fn is_linux(&self) -> bool {
-        true
-    }
-
     /// Check if this OS is Arch-based (uses pacman)
     pub fn is_arch_based(&self) -> bool {
         *self == Self::Arch || self.based_on().map(|p| p.is_arch_based()).unwrap_or(false)
@@ -135,39 +130,9 @@ impl OperatingSystem {
                 .unwrap_or(false)
     }
 
-    /// Check if this OS is RPM-based (uses dnf/yum)
-    pub fn is_rpm_based(&self) -> bool {
-        matches!(self, Self::Fedora | Self::CentOS | Self::OpenSUSE)
-    }
-
     // ========================================================================
     // Specific OS Check Methods
     // ========================================================================
-
-    /// Check if this is instantOS specifically
-    pub fn is_instantos(&self) -> bool {
-        matches!(self, Self::InstantOS)
-    }
-
-    /// Check if this is vanilla Arch Linux
-    pub fn is_arch(&self) -> bool {
-        matches!(self, Self::Arch)
-    }
-
-    /// Check if this is Ubuntu
-    pub fn is_ubuntu(&self) -> bool {
-        matches!(self, Self::Ubuntu)
-    }
-
-    /// Check if this is Manjaro
-    pub fn is_manjaro(&self) -> bool {
-        matches!(self, Self::Manjaro)
-    }
-
-    /// Check if this is EndeavourOS
-    pub fn is_endeavouros(&self) -> bool {
-        matches!(self, Self::EndeavourOS)
-    }
 
     /// Check if this OS is compatible with a list of supported OSs
     /// Checks if self is in the list, or if any of its base OSs are in the list.
@@ -362,7 +327,6 @@ LOGO=archlinux-logo
 ID_LIKE="arch""#;
         let os = OperatingSystem::parse_os_release(content);
         assert_eq!(os, OperatingSystem::InstantOS);
-        assert!(os.is_instantos());
         assert!(os.is_arch_based());
     }
 
@@ -389,10 +353,6 @@ ID_LIKE="arch""#;
         assert!(OperatingSystem::Ubuntu.is_debian_based());
         assert!(OperatingSystem::PopOS.is_debian_based());
         assert!(OperatingSystem::LinuxMint.is_debian_based());
-
-        assert!(OperatingSystem::Fedora.is_rpm_based());
-        assert!(OperatingSystem::CentOS.is_rpm_based());
-        assert!(OperatingSystem::OpenSUSE.is_rpm_based());
 
         // Cross-checks
         assert!(!OperatingSystem::Arch.is_debian_based());
