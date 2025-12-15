@@ -31,9 +31,11 @@ impl MenuTransport {
             return override_transport;
         }
 
-        match CompositorType::detect() {
-            CompositorType::Sway | CompositorType::Hyprland => MenuTransport::ScratchpadServer,
-            _ => MenuTransport::KittyTransient,
+        let compositor = CompositorType::detect();
+        if compositor.supports_scratchpad() {
+            MenuTransport::ScratchpadServer
+        } else {
+            MenuTransport::KittyTransient
         }
     }
 }

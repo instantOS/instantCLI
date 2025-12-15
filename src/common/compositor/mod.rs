@@ -217,6 +217,19 @@ impl CompositorType {
         }
     }
 
+    /// Check if the compositor supports scratchpad functionality
+    pub fn supports_scratchpad(&self) -> bool {
+        match self {
+            CompositorType::Sway | CompositorType::Hyprland | CompositorType::Gnome => true,
+            CompositorType::KWin => {
+                // KWin supports scratchpads on Wayland
+                DisplayServer::detect() == DisplayServer::Wayland
+            }
+            CompositorType::Other(_) => false,
+            _ => false,
+        }
+    }
+
     /// Check if the compositor is X11-based
     #[allow(dead_code)]
     pub fn is_x11(&self) -> bool {

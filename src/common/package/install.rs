@@ -7,12 +7,6 @@ use super::PackageManager;
 use super::batch::PackageToInstall;
 use super::manager::detect_aur_helper;
 
-/// Trait for package installation functionality.
-pub trait PackageInstaller {
-    /// Install packages using this package manager.
-    fn install(&self, packages: &[&str]) -> Result<()>;
-}
-
 /// Install packages using the specified package manager.
 pub fn install_packages(manager: PackageManager, packages: &[PackageToInstall]) -> Result<()> {
     if packages.is_empty() {
