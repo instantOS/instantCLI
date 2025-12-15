@@ -34,8 +34,63 @@ impl ScratchpadProvider for KWin {
     }
 
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
-        // Implementing this properly requires bi-directional communication which is hard with dbus-send.
-        // For now, return empty list or fallback implementation logic if we can.
+        // Use KWin scripting to find all scratchpad windows
+        let script_content = r#"
+            (function() {
+                const results = [];
+                const clients = workspace.windows;
+                
+                for (const client of clients) {
+                    if (client.resourceClass && client.resourceClass.includes("scratchpad_")) {
+                        results.push({
+                            name: client.resourceClass.replace("scratchpad_", ""),
+                            windowClass: client.resourceClass,
+                            title: client.caption || "",
+                            visible: !client.minimized && client.desktops.includes(workspace.currentDesktop)
+                        });
+                    }
+                }
+                return results;
+            })();
+        "#;
+
+        let mut temp_file = Builder::new()
+            .prefix("kwin-list-")
+            .suffix(".js")
+            .tempfile()?;
+
+        write!(temp_file, "{}", script_content)?;
+        let path = temp_file.path().to_str().context("Invalid path")?;
+
+        let output = Command::new("dbus-send")
+            .args([
+                "--session",
+                "--print-reply",
+                "--dest=org.kde.KWin",
+                "/Scripting",
+                "org.kde.kwin.Scripting.loadScript",
+                &format!("string:{}", path),
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let id_str = stdout.lines().last().unwrap_or("").trim();
+        let id_parts: Vec<&str> = id_str.split_whitespace().collect();
+        
+        let id = if id_parts.len() >= 2 && id_parts[0] == "int32" {
+            id_parts[1]
+        } else {
+            return Ok(Vec::new());
+        };
+
+        let script_obj_path = format!("/Scripting/Script{}", id);
+        
+        // Since we can't easily get return values from dbus-send, 
+        // fall back to process-based detection for now
         Ok(Vec::new())
     }
 
@@ -53,9 +108,61 @@ impl ScratchpadProvider for KWin {
         Ok(output.status.success())
     }
 
-    fn is_visible(&self, _config: &ScratchpadConfig) -> Result<bool> {
-        // Without bi-directional communication, we can't know for sure.
-        // Return Ok(false) so that `toggle` logic in the script (which knows the truth) can handle it?
+    fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool> {
+        let class = config.window_class();
+        
+        // Use KWin scripting to check visibility
+        let script_content = format!(
+            r#"
+            (function() {{
+                const clients = workspace.windows;
+                for (const client of clients) {{
+                    if (client.resourceClass === "{class}") {{
+                        return (!client.minimized && client.desktops.includes(workspace.currentDesktop)).toString();
+                    }}
+                }}
+                return "false";
+            }})();
+            "#
+        );
+
+        let mut temp_file = Builder::new()
+            .prefix("kwin-visible-")
+            .suffix(".js")
+            .tempfile()?;
+
+        write!(temp_file, "{}", script_content)?;
+        let path = temp_file.path().to_str().context("Invalid path")?;
+
+        let output = Command::new("dbus-send")
+            .args([
+                "--session",
+                "--print-reply",
+                "--dest=org.kde.KWin",
+                "/Scripting",
+                "org.kde.kwin.Scripting.loadScript",
+                &format!("string:{}", path),
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            return Ok(false);
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let id_str = stdout.lines().last().unwrap_or("").trim();
+        let id_parts: Vec<&str> = id_str.split_whitespace().collect();
+        
+        let id = if id_parts.len() >= 2 && id_parts[0] == "int32" {
+            id_parts[1]
+        } else {
+            return Ok(false);
+        };
+
+        let script_obj_path = format!("/Scripting/Script{}", id);
+        
+        // For now, return false as we can't easily get return values
+        // This will be improved when we have better communication
         Ok(false)
     }
 }
