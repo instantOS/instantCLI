@@ -59,6 +59,7 @@ pub async fn setup_instantos(
         }
     }
 
+    setup_backlight_udev_rule(executor)?;
     enable_services(executor, context)?;
 
     Ok(())
@@ -341,6 +342,37 @@ fn update_lightdm_conf(content: &str, username: &str) -> String {
     }
 
     new_lines.join("\n")
+}
+
+fn setup_backlight_udev_rule(executor: &CommandExecutor) -> Result<()> {
+    println!("Configuring backlight udev rules...");
+
+    if executor.dry_run {
+        println!("[DRY RUN] Create /etc/udev/rules.d/90-backlight.rules");
+        return Ok(());
+    }
+
+    let rules_path = "/etc/udev/rules.d/90-backlight.rules";
+    let rules_content = r#"ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video $sys$devpath/brightness", RUN+="/bin/chmod g+w $sys$devpath/brightness""#;
+
+    // Ensure parent directory exists
+    if let Some(parent) = std::path::Path::new(rules_path).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    std::fs::write(rules_path, rules_content)?;
+    println!("Created {}", rules_path);
+
+    // Try to reload udev rules (ignore errors as it might fail in chroot)
+    let mut cmd = Command::new("udevadm");
+    cmd.arg("control").arg("--reload-rules");
+    let _ = executor.run(&mut cmd);
+
+    let mut cmd_trigger = Command::new("udevadm");
+    cmd_trigger.arg("trigger");
+    let _ = executor.run(&mut cmd_trigger);
+
+    Ok(())
 }
 
 #[cfg(test)]
