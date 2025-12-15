@@ -56,7 +56,7 @@ impl DoctorCheck for PolkitAgentCheck {
         use crate::common::display_server::DisplayServer;
 
         // Skip if not a desktop session
-        if !DisplayServer::detect().is_desktop_session() {
+        if matches!(DisplayServer::detect(), DisplayServer::Unknown) {
             return CheckStatus::Skipped("Not running in a desktop session".to_string());
         }
 

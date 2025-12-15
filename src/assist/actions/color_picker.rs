@@ -208,9 +208,9 @@ fn pick_color_with_fallbacks(display_server: &DisplayServer) -> Result<Option<St
 fn pick_color_internal() -> Result<()> {
     let display_server = DisplayServer::detect();
 
-    let color_opt = if display_server.is_wayland() {
+    let color_opt = if matches!(display_server, DisplayServer::Wayland) {
         pick_color_with_fallbacks(&display_server)?
-    } else if display_server.is_x11() {
+    } else if matches!(display_server, DisplayServer::X11) {
         // X11: xcolor
         let output = Command::new("xcolor")
             .output()
@@ -292,8 +292,10 @@ mod tests {
         let original_wayland = env::var("WAYLAND_DISPLAY").ok();
 
         // Set up KDE environment
-        env::set_var("XDG_SESSION_DESKTOP", "KDE");
-        env::set_var("WAYLAND_DISPLAY", "wayland-0");
+        unsafe {
+            env::set_var("XDG_SESSION_DESKTOP", "KDE");
+            env::set_var("WAYLAND_DISPLAY", "wayland-0");
+        }
 
         // Detect compositor and display server
         let compositor = CompositorType::detect();
@@ -301,18 +303,20 @@ mod tests {
 
         // Verify detection works
         assert_eq!(compositor, CompositorType::KWin);
-        assert!(display_server.is_wayland());
+        assert!(matches!(display_server, DisplayServer::Wayland));
 
         // Restore original env vars
-        if let Some(val) = original_session {
-            env::set_var("XDG_SESSION_DESKTOP", val);
-        } else {
-            env::remove_var("XDG_SESSION_DESKTOP");
-        }
-        if let Some(val) = original_wayland {
-            env::set_var("WAYLAND_DISPLAY", val);
-        } else {
-            env::remove_var("WAYLAND_DISPLAY");
+        unsafe {
+            if let Some(val) = original_session {
+                env::set_var("XDG_SESSION_DESKTOP", val);
+            } else {
+                env::remove_var("XDG_SESSION_DESKTOP");
+            }
+            if let Some(val) = original_wayland {
+                env::set_var("WAYLAND_DISPLAY", val);
+            } else {
+                env::remove_var("WAYLAND_DISPLAY");
+            }
         }
     }
 

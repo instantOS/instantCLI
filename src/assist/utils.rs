@@ -282,7 +282,7 @@ impl AreaSelectionConfig {
 
 /// Copy data to clipboard using the appropriate tool for the display server
 pub fn copy_to_clipboard(data: &[u8], display_server: &DisplayServer) -> Result<()> {
-    if display_server.is_wayland() {
+    if matches!(*display_server, DisplayServer::Wayland) {
         let mut wl_copy = Command::new("wl-copy")
             .stdin(std::process::Stdio::piped())
             .spawn()
@@ -295,7 +295,7 @@ pub fn copy_to_clipboard(data: &[u8], display_server: &DisplayServer) -> Result<
         }
 
         wl_copy.wait().context("Failed to wait for wl-copy")?;
-    } else if display_server.is_x11() {
+    } else if matches!(*display_server, DisplayServer::X11) {
         let mut xclip = Command::new("xclip")
             .args(["-selection", "clipboard"])
             .stdin(std::process::Stdio::piped())
@@ -320,7 +320,7 @@ pub fn copy_image_to_clipboard(
     mime_type: &str,
     display_server: &DisplayServer,
 ) -> Result<()> {
-    if display_server.is_wayland() {
+    if matches!(*display_server, DisplayServer::Wayland) {
         let mut wl_copy = Command::new("wl-copy")
             .stdin(std::process::Stdio::piped())
             .spawn()
@@ -333,7 +333,7 @@ pub fn copy_image_to_clipboard(
         }
 
         wl_copy.wait().context("Failed to wait for wl-copy")?;
-    } else if display_server.is_x11() {
+    } else if matches!(*display_server, DisplayServer::X11) {
         let mut xclip = Command::new("xclip")
             .args(["-selection", "clipboard", "-t", mime_type])
             .stdin(std::process::Stdio::piped())
@@ -354,7 +354,7 @@ pub fn copy_image_to_clipboard(
 
 /// Capture screenshot of selected area to memory (as PNG bytes)
 pub fn capture_area_to_memory(geometry: &str, display_server: &DisplayServer) -> Result<Vec<u8>> {
-    if display_server.is_wayland() {
+    if matches!(*display_server, DisplayServer::Wayland) {
         let grim_output = Command::new("grim")
             .args(["-g", geometry, "-"])
             .output()
@@ -365,7 +365,7 @@ pub fn capture_area_to_memory(geometry: &str, display_server: &DisplayServer) ->
         }
 
         Ok(grim_output.stdout)
-    } else if display_server.is_x11() {
+    } else if matches!(*display_server, DisplayServer::X11) {
         let import_output = Command::new("import")
             .args(["-window", "root", "-crop", geometry, "png:-"])
             .output()
@@ -387,7 +387,7 @@ pub fn capture_area_to_file(
     file_path: &std::path::Path,
     display_server: &DisplayServer,
 ) -> Result<()> {
-    if display_server.is_wayland() {
+    if matches!(*display_server, DisplayServer::Wayland) {
         let status = Command::new("grim")
             .args(["-g", geometry])
             .arg(file_path)
@@ -397,7 +397,7 @@ pub fn capture_area_to_file(
         if !status.success() {
             anyhow::bail!("Failed to capture screenshot");
         }
-    } else if display_server.is_x11() {
+    } else if matches!(*display_server, DisplayServer::X11) {
         let status = Command::new("import")
             .args(["-window", "root", "-crop", geometry])
             .arg(file_path)
@@ -441,11 +441,11 @@ pub fn generate_screenshot_filename() -> String {
 
 /// Get text content from clipboard using the appropriate tool for the display server
 pub fn get_clipboard_content(display_server: &DisplayServer) -> Result<String> {
-    let output = if display_server.is_wayland() {
+    let output = if matches!(*display_server, DisplayServer::Wayland) {
         Command::new("wl-paste")
             .output()
             .context("Failed to run wl-paste")?
-    } else if display_server.is_x11() {
+    } else if matches!(*display_server, DisplayServer::X11) {
         Command::new("xclip")
             .args(["-selection", "clipboard", "-o"])
             .output()
