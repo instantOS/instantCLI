@@ -2,8 +2,8 @@
 //!
 //! This module contains types for verifying package installation.
 
-use std::path::Path;
 use duct::cmd;
+use std::path::Path;
 
 /// Status of a package installation request
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

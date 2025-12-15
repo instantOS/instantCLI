@@ -6,6 +6,7 @@ use std::env;
 use std::process::Command;
 
 pub mod fallback;
+pub mod gnome;
 pub mod hyprland;
 pub mod i3;
 pub mod kwin;
@@ -72,6 +73,8 @@ pub enum CompositorType {
     Hyprland,
     /// KDE KWin compositor
     KWin,
+    /// Gnome compositor
+    Gnome,
     /// Other/unknown compositor
     Other(String),
 }
@@ -88,6 +91,7 @@ impl CompositorType {
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
                 "kde" | "plasma" | "kwin" => return CompositorType::KWin,
+                s if s.contains("gnome") => return CompositorType::Gnome,
                 _ => {}
             }
         }
@@ -100,6 +104,7 @@ impl CompositorType {
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
                 "kde" | "plasma" | "kwin" => return CompositorType::KWin,
+                s if s.contains("gnome") => return CompositorType::Gnome,
                 _ => {}
             }
         }
@@ -124,6 +129,9 @@ impl CompositorType {
                 if CompositorType::is_process_running("kwin_wayland") {
                     return CompositorType::KWin;
                 }
+                if CompositorType::is_process_running("gnome-shell") {
+                    return CompositorType::Gnome;
+                }
                 CompositorType::Other("wayland".to_string())
             }
             DisplayServer::X11 => {
@@ -140,6 +148,9 @@ impl CompositorType {
                 if CompositorType::is_process_running("kwin_x11") {
                     return CompositorType::KWin;
                 }
+                if CompositorType::is_process_running("gnome-shell") {
+                    return CompositorType::Gnome;
+                }
                 CompositorType::Other("x11".to_string())
             }
             DisplayServer::Unknown => CompositorType::Other("unknown".to_string()),
@@ -155,6 +166,7 @@ impl CompositorType {
             CompositorType::Sway => Box::new(sway::Sway),
             CompositorType::Hyprland => Box::new(hyprland::Hyprland),
             CompositorType::KWin => Box::new(kwin::KWin),
+            CompositorType::Gnome => Box::new(gnome::Gnome),
             CompositorType::Other(_) => Box::new(fallback::Fallback),
         }
     }
@@ -188,6 +200,7 @@ impl CompositorType {
             CompositorType::Sway => "Sway".to_string(),
             CompositorType::Hyprland => "Hyprland".to_string(),
             CompositorType::KWin => "KWin".to_string(),
+            CompositorType::Gnome => "Gnome".to_string(),
             CompositorType::Other(name) => name.clone(),
         }
     }
@@ -198,6 +211,7 @@ impl CompositorType {
         match self {
             CompositorType::Sway | CompositorType::Hyprland => true,
             CompositorType::KWin => DisplayServer::detect() == DisplayServer::Wayland,
+            CompositorType::Gnome => DisplayServer::detect() == DisplayServer::Wayland,
             CompositorType::Other(name) => name.to_lowercase().contains("wayland"),
             _ => false,
         }
@@ -211,6 +225,7 @@ impl CompositorType {
             CompositorType::Dwm => true,
             CompositorType::InstantWM => true,
             CompositorType::KWin => DisplayServer::detect() == DisplayServer::X11,
+            CompositorType::Gnome => DisplayServer::detect() == DisplayServer::X11,
             CompositorType::Other(name) => name.to_lowercase().contains("x11"),
             _ => false,
         }
@@ -225,6 +240,7 @@ impl CompositorType {
             CompositorType::Dwm => DisplayServer::X11,
             CompositorType::InstantWM => DisplayServer::X11,
             CompositorType::KWin => DisplayServer::detect(),
+            CompositorType::Gnome => DisplayServer::detect(),
             CompositorType::Other(name) => {
                 if name.to_lowercase().contains("wayland") {
                     DisplayServer::Wayland
@@ -256,6 +272,8 @@ mod tests {
             CompositorType::I3
             | CompositorType::Sway
             | CompositorType::Hyprland
+            | CompositorType::KWin
+            | CompositorType::Gnome
             | CompositorType::Dwm
             | CompositorType::InstantWM
             | CompositorType::Other(_) => {
@@ -268,6 +286,8 @@ mod tests {
     fn test_compositor_name() {
         assert_eq!(CompositorType::Sway.name(), "Sway");
         assert_eq!(CompositorType::Hyprland.name(), "Hyprland");
+        assert_eq!(CompositorType::KWin.name(), "KWin");
+        assert_eq!(CompositorType::Gnome.name(), "Gnome");
         assert_eq!(CompositorType::Other("test".to_string()).name(), "test");
     }
 

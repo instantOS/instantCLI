@@ -30,10 +30,7 @@ impl ScratchpadProvider for KWin {
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
         // Check using pgrep as fallback
         let class = config.window_class();
-        let output = Command::new("pgrep")
-            .arg("-f")
-            .arg(&class)
-            .output()?;
+        let output = Command::new("pgrep").arg("-f").arg(&class).output()?;
 
         Ok(output.status.success())
     }
@@ -55,7 +52,8 @@ impl KWin {
         // `client.minimized` (property)
         // `client.desktops` (property)
 
-        let script_content = format!(r#"
+        let script_content = format!(
+            r#"
             (function() {{
                 const clients = workspace.windows;
                 const targetClass = "{class}";
@@ -82,7 +80,8 @@ impl KWin {
                     }}
                 }}
             }})();
-        "#);
+        "#
+        );
 
         // Create temp file
         let mut temp_file = Builder::new()
@@ -101,13 +100,16 @@ impl KWin {
                 "--dest=org.kde.KWin",
                 "/Scripting",
                 "org.kde.kwin.Scripting.loadScript",
-                &format!("string:{}", path)
+                &format!("string:{}", path),
             ])
             .output()
             .context("Failed to execute dbus-send to load script")?;
 
         if !output.status.success() {
-            return Err(anyhow::anyhow!("Failed to load KWin script: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow::anyhow!(
+                "Failed to load KWin script: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
 
         // Parse ID from output. Output format:
@@ -120,7 +122,10 @@ impl KWin {
         let id = if id_parts.len() >= 2 && id_parts[0] == "int32" {
             id_parts[1]
         } else {
-            return Err(anyhow::anyhow!("Unexpected response from loadScript: {}", stdout));
+            return Err(anyhow::anyhow!(
+                "Unexpected response from loadScript: {}",
+                stdout
+            ));
         };
 
         // Run script
@@ -131,7 +136,7 @@ impl KWin {
                 "--print-reply",
                 "--dest=org.kde.KWin",
                 &script_obj_path,
-                "org.kde.kwin.Script.run"
+                "org.kde.kwin.Script.run",
             ])
             .output()
             .context("Failed to run KWin script")?;
@@ -142,7 +147,7 @@ impl KWin {
                 "--session",
                 "--dest=org.kde.KWin",
                 &script_obj_path,
-                "org.kde.kwin.Script.stop"
+                "org.kde.kwin.Script.stop",
             ])
             .output();
 
