@@ -8,6 +8,7 @@ use std::process::Command;
 pub mod fallback;
 pub mod hyprland;
 pub mod i3;
+pub mod kwin;
 pub mod sway;
 
 /// Create and launch terminal in background
@@ -69,6 +70,8 @@ pub enum CompositorType {
     Sway,
     /// Hyprland compositor (dynamic tiling Wayland compositor)
     Hyprland,
+    /// KDE KWin compositor
+    KWin,
     /// Other/unknown compositor
     Other(String),
 }
@@ -84,6 +87,7 @@ impl CompositorType {
                 "instantwm" => return CompositorType::InstantWM,
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
+                "kde" | "plasma" | "kwin" => return CompositorType::KWin,
                 _ => {}
             }
         }
@@ -95,7 +99,15 @@ impl CompositorType {
                 "instantwm" => return CompositorType::InstantWM,
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
+                "kde" | "plasma" | "kwin" => return CompositorType::KWin,
                 _ => {}
+            }
+        }
+
+        // Check XDG_CURRENT_DESKTOP for KDE
+        if let Ok(current) = env::var("XDG_CURRENT_DESKTOP") {
+            if current.to_lowercase() == "kde" {
+                return CompositorType::KWin;
             }
         }
 
@@ -109,6 +121,9 @@ impl CompositorType {
                 if CompositorType::is_process_running("Hyprland") {
                     return CompositorType::Hyprland;
                 }
+                if CompositorType::is_process_running("kwin_wayland") {
+                    return CompositorType::KWin;
+                }
                 CompositorType::Other("wayland".to_string())
             }
             DisplayServer::X11 => {
@@ -121,6 +136,9 @@ impl CompositorType {
                 }
                 if CompositorType::is_process_running("instantwm") {
                     return CompositorType::InstantWM;
+                }
+                if CompositorType::is_process_running("kwin_x11") {
+                    return CompositorType::KWin;
                 }
                 CompositorType::Other("x11".to_string())
             }
@@ -136,6 +154,7 @@ impl CompositorType {
             CompositorType::InstantWM => Box::new(fallback::Fallback), // TODO: Add InstantWM scratchpad support if needed
             CompositorType::Sway => Box::new(sway::Sway),
             CompositorType::Hyprland => Box::new(hyprland::Hyprland),
+            CompositorType::KWin => Box::new(kwin::KWin),
             CompositorType::Other(_) => Box::new(fallback::Fallback),
         }
     }
@@ -168,6 +187,7 @@ impl CompositorType {
             CompositorType::InstantWM => "instantwm".to_string(),
             CompositorType::Sway => "Sway".to_string(),
             CompositorType::Hyprland => "Hyprland".to_string(),
+            CompositorType::KWin => "KWin".to_string(),
             CompositorType::Other(name) => name.clone(),
         }
     }
@@ -177,6 +197,7 @@ impl CompositorType {
     pub fn is_wayland(&self) -> bool {
         match self {
             CompositorType::Sway | CompositorType::Hyprland => true,
+            CompositorType::KWin => DisplayServer::detect() == DisplayServer::Wayland,
             CompositorType::Other(name) => name.to_lowercase().contains("wayland"),
             _ => false,
         }
@@ -189,6 +210,7 @@ impl CompositorType {
             CompositorType::I3 => true,
             CompositorType::Dwm => true,
             CompositorType::InstantWM => true,
+            CompositorType::KWin => DisplayServer::detect() == DisplayServer::X11,
             CompositorType::Other(name) => name.to_lowercase().contains("x11"),
             _ => false,
         }
@@ -202,6 +224,7 @@ impl CompositorType {
             CompositorType::I3 => DisplayServer::X11,
             CompositorType::Dwm => DisplayServer::X11,
             CompositorType::InstantWM => DisplayServer::X11,
+            CompositorType::KWin => DisplayServer::detect(),
             CompositorType::Other(name) => {
                 if name.to_lowercase().contains("wayland") {
                     DisplayServer::Wayland
