@@ -39,6 +39,10 @@ pub fn control_media() -> Result<()> {
     let players: Vec<&str> = players_str.lines().collect();
 
     if players.is_empty() {
+        let _ = crate::assist::utils::show_notification(
+            "Media Control",
+            "No media players found",
+        );
         return Ok(());
     }
 
