@@ -355,7 +355,9 @@ impl MenuServer {
                                 // For internal TUIs (like Chord), we don't want to cancel on false positives
                                 if let Ok(killed_count) = kill_active_menu_processes() {
                                     if killed_count > 0 {
-                                        println!("Scratchpad became invisible, cancelling menu operation");
+                                        println!(
+                                            "Scratchpad became invisible, cancelling menu operation"
+                                        );
                                         was_killed_clone.store(true, Ordering::SeqCst);
                                     }
                                 }

@@ -57,9 +57,40 @@ pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
 pub fn run_script_in_terminal_and_wait(script: &str, title: &str) -> Result<ExitStatus> {
     use tempfile::NamedTempFile;
 
+    // Wrap the script with a post-execution menu
+    let wrapped_script = format!(
+        r#"{}
+
+# Post-installation menu
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Installation complete!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "What would you like to do?"
+echo ""
+echo "  1) Close this terminal and continue"
+echo "  2) Keep terminal open for review"
+echo ""
+read -p "Select an option [1-2]: " choice
+
+case "$choice" in
+    2)
+        echo ""
+        echo "Terminal will stay open. Close when ready."
+        read -p "Press Enter to close..."
+        ;;
+    *)
+        # Default to closing (option 1 or any other input)
+        ;;
+esac
+"#,
+        script
+    );
+
     let mut temp_file = NamedTempFile::new().context("Failed to create temporary script file")?;
     temp_file
-        .write_all(script.as_bytes())
+        .write_all(wrapped_script.as_bytes())
         .context("Failed to write script")?;
 
     let script_path = temp_file.path().to_owned();
@@ -77,12 +108,9 @@ pub fn run_script_in_terminal_and_wait(script: &str, title: &str) -> Result<Exit
 
     let mut cmd = Command::new(&terminal);
 
-    // Add terminal-specific flags for hold/wait behavior and title
+    // Add terminal-specific flags for title (removed --hold since we have our own menu)
     match terminal.as_str() {
-        "kitty" => {
-            cmd.arg("--hold").arg("--title").arg(title);
-        }
-        "alacritty" | "wezterm" => {
+        "kitty" | "alacritty" | "wezterm" => {
             cmd.arg("--title").arg(title);
         }
         _ => {

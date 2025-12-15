@@ -238,7 +238,7 @@ impl KWin {
                         if let Some(start_idx) = l.find("string \"") {
                             let content = &l[start_idx + 8..];
                             if content.ends_with('"') {
-                                json_str = content[..content.len()-1].to_string();
+                                json_str = content[..content.len() - 1].to_string();
                                 found = true;
                                 break;
                             }
@@ -257,8 +257,8 @@ impl KWin {
         // dbus-monitor escapes quotes as \", we need to unescape
         let json_str = json_str.replace("\\\"", "\"");
 
-        let windows: Vec<KWinWindowInfo> = serde_json::from_str(&json_str)
-            .context("Failed to parse KWin window info JSON")?;
+        let windows: Vec<KWinWindowInfo> =
+            serde_json::from_str(&json_str).context("Failed to parse KWin window info JSON")?;
 
         Ok(windows)
     }
