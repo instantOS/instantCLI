@@ -121,6 +121,25 @@ fn apply_swap_escape_setting_impl(
             "Options=grp:alt_shift_toggle"
         };
 
+        // Ensure Use=true is set when applying keyboard options
+        if config_content.contains("Use=") {
+            config_content = regex::Regex::new(r"Use=\w+")
+                .unwrap()
+                .replace(&config_content, "Use=true")
+                .to_string();
+        } else {
+            // Add Use=true if it doesn't exist (ensure we're in the [Layout] section)
+            if config_content.contains("[Layout]") {
+                config_content = regex::Regex::new(r"\[Layout\]")
+                    .unwrap()
+                    .replace(&config_content, "[Layout]\nUse=true")
+                    .to_string();
+            } else {
+                // If no [Layout] section, create one
+                config_content = format!("[Layout]\nUse=true\n{}", config_content);
+            }
+        }
+
         // Replace existing Options line or add it
         if config_content.contains("Options=") {
             config_content = regex::Regex::new(r"Options=.*")
