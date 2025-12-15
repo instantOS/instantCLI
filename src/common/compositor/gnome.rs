@@ -1,8 +1,11 @@
+//! Gnome scratchpad provider using 'Window Calls' extension DBus API.
+
 use super::{create_terminal_process, ScratchpadProvider, ScratchpadWindowInfo};
 use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::process::Command;
+use std::{thread, time::Duration};
 
 pub struct Gnome;
 
@@ -61,13 +64,30 @@ impl Gnome {
         }
 
         let windows: Vec<WindowInfo> = serde_json::from_str(&json_str)
-            .context(format!("Failed to parse window list JSON: {}", json_str))?;
+            .with_context(|| format!("Failed to parse window list JSON: {}", json_str))?;
         Ok(windows)
     }
 
     fn find_window(window_class: &str) -> Result<Option<WindowInfo>> {
         let windows = Self::list_windows()?;
         Ok(windows.into_iter().find(|w| w.wm_class == window_class))
+    }
+
+    fn create_and_wait(&self, config: &ScratchpadConfig) -> Result<()> {
+        let window_class = config.window_class();
+        create_terminal_process(config)?;
+
+        // Wait for window
+        let mut attempts = 0;
+        while attempts < 30 {
+            if Self::find_window(&window_class)?.is_some() {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(200));
+            attempts += 1;
+        }
+
+        Err(anyhow::anyhow!("Terminal window did not appear"))
     }
 }
 
@@ -79,7 +99,7 @@ impl ScratchpadProvider for Gnome {
             Self::call_dbus_method("Unminimize", &[window.id.to_string()])?;
             Self::call_dbus_method("Activate", &[window.id.to_string()])?;
         } else {
-            create_terminal_process(config)?;
+            self.create_and_wait(config)?;
         }
         Ok(())
     }
@@ -102,7 +122,7 @@ impl ScratchpadProvider for Gnome {
                 Self::call_dbus_method("Activate", &[window.id.to_string()])?;
             }
         } else {
-            create_terminal_process(config)?;
+            self.create_and_wait(config)?;
         }
         Ok(())
     }
@@ -136,5 +156,42 @@ impl ScratchpadProvider for Gnome {
         } else {
             Ok(false)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_window_info_deserialization() {
+        let json = r#"[
+            {
+                "id": 12345,
+                "wm_class": "scratchpad_test",
+                "title": "Test Window",
+                "focus": true
+            },
+            {
+                "id": 67890,
+                "wm_class": "other_window",
+                "title": "Other",
+                "focus": false
+            }
+        ]"#;
+
+        let windows: Vec<WindowInfo> = serde_json::from_str(json).expect("Failed to parse JSON");
+
+        assert_eq!(windows.len(), 2);
+
+        let scratchpad = &windows[0];
+        assert_eq!(scratchpad.id, 12345);
+        assert_eq!(scratchpad.wm_class, "scratchpad_test");
+        assert_eq!(scratchpad.title, "Test Window");
+        assert!(scratchpad.focus);
+
+        let other = &windows[1];
+        assert_eq!(other.id, 67890);
+        assert!(!other.focus);
     }
 }
