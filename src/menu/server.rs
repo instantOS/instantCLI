@@ -324,17 +324,36 @@ impl MenuServer {
             Some(thread::spawn(move || {
                 let check_interval = Duration::from_millis(100);
 
+                // Grace period for KDE: allow some time for the window to appear (250ms)
+                // This prevents race conditions where the window is being shown but not reported as visible yet
+                if matches!(compositor, crate::common::compositor::CompositorType::KWin) {
+                    for _ in 0..5 {
+                        if !monitoring_active_clone.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                }
+
+                let mut consecutive_failures = 0;
+                // Require multiple consecutive failures for KWin to handle flaky visibility reporting
+                let max_failures = if matches!(compositor, crate::common::compositor::CompositorType::KWin) { 5 } else { 1 };
+
                 while monitoring_active_clone.load(Ordering::SeqCst) {
                     match compositor.provider().is_visible(&config) {
                         Ok(false) => {
-                            // Scratchpad became invisible, kill all fzf processes
-                            println!("Scratchpad became invisible, cancelling menu operation");
-                            was_killed_clone.store(true, Ordering::SeqCst);
-                            let _ = kill_active_menu_processes();
-                            break;
+                            consecutive_failures += 1;
+                            if consecutive_failures >= max_failures {
+                                // Scratchpad became invisible, kill all fzf processes
+                                println!("Scratchpad became invisible, cancelling menu operation");
+                                was_killed_clone.store(true, Ordering::SeqCst);
+                                let _ = kill_active_menu_processes();
+                                break;
+                            }
                         }
                         Ok(true) => {
                             // Still visible, continue monitoring
+                            consecutive_failures = 0;
                         }
                         Err(_) => {
                             // Continue monitoring despite error
