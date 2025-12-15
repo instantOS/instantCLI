@@ -44,10 +44,17 @@ impl ScratchpadProvider for KWin {
 
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
         let mut windows = Vec::new();
-        
+
         // Get list of running processes that could be scratchpad terminals
-        let common_terminals = ["kitty", "alacritty", "wezterm", "foot", "gnome-terminal", "konsole"];
-        
+        let common_terminals = [
+            "kitty",
+            "alacritty",
+            "wezterm",
+            "foot",
+            "gnome-terminal",
+            "konsole",
+        ];
+
         for terminal in &common_terminals {
             if let Ok(output) = Command::new("pgrep")
                 .args(["-f", &format!("{}.*scratchpad_", terminal)])
@@ -78,7 +85,7 @@ impl ScratchpadProvider for KWin {
                 }
             }
         }
-        
+
         Ok(windows)
     }
 
@@ -165,17 +172,20 @@ impl KWin {
             "--class ".to_string(),
             "-c ".to_string(),
         ];
-        
+
         for pattern in patterns {
             if let Some(idx) = cmd_line.find(&pattern) {
                 let after_class = &cmd_line[idx + pattern.len()..];
                 // Extract the next word/argument
-                let name_end = after_class.find(&[' ', '\n', '\t'][..])
+                let name_end = after_class
+                    .find(&[' ', '\n', '\t'][..])
                     .unwrap_or(after_class.len());
                 let potential_name = &after_class[..name_end];
-                
+
                 // Only return if it looks like a scratchpad name
-                if potential_name.starts_with("scratchpad_") || potential_name.contains("scratchpad") {
+                if potential_name.starts_with("scratchpad_")
+                    || potential_name.contains("scratchpad")
+                {
                     let name = potential_name.replace("scratchpad_", "");
                     if !name.is_empty() {
                         return Some(name);
@@ -183,10 +193,10 @@ impl KWin {
                 }
             }
         }
-        
+
         None
     }
-    
+
     /// Check if a window is visible by checking if the process is running and not minimized
     fn is_window_visible_by_process(&self, pid: u32) -> Result<bool> {
         // For now, assume if the process is running, it's potentially visible
@@ -194,12 +204,16 @@ impl KWin {
         let output = Command::new("ps")
             .args(["-p", &pid.to_string(), "-o", "stat="])
             .output()?;
-        
+
         if output.status.success() {
             let stat = String::from_utf8_lossy(&output.stdout);
             // Process state: 'R' = running, 'S' = sleeping, 'T' = stopped/traced, 'Z' = zombie
             // Assume running/sleeping processes are visible
-            Ok(stat.trim().chars().next().map_or(false, |c| c == 'R' || c == 'S'))
+            Ok(stat
+                .trim()
+                .chars()
+                .next()
+                .map_or(false, |c| c == 'R' || c == 'S'))
         } else {
             Ok(false)
         }

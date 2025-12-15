@@ -337,7 +337,12 @@ impl MenuServer {
 
                 let mut consecutive_failures = 0;
                 // Require multiple consecutive failures for KWin to handle flaky visibility reporting
-                let max_failures = if matches!(compositor, crate::common::compositor::CompositorType::KWin) { 5 } else { 1 };
+                let max_failures =
+                    if matches!(compositor, crate::common::compositor::CompositorType::KWin) {
+                        5
+                    } else {
+                        1
+                    };
 
                 while monitoring_active_clone.load(Ordering::SeqCst) {
                     match compositor.provider().is_visible(&config) {
