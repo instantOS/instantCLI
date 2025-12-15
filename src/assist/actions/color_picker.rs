@@ -191,12 +191,12 @@ fn pick_color_with_fallbacks(display_server: &DisplayServer) -> Result<Option<St
         return pick_color_kde();
     } else {
         // Try hyprpicker for wlroots compositors
-        if let Ok(output) = Command::new("hyprpicker").output() {
-            if output.status.success() {
-                let color = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !color.is_empty() {
-                    return Ok(Some(color));
-                }
+        if let Ok(output) = Command::new("hyprpicker").output()
+            && output.status.success()
+        {
+            let color = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !color.is_empty() {
+                return Ok(Some(color));
             }
         }
     }

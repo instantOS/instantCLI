@@ -85,27 +85,26 @@ impl ScratchpadProvider for KWin {
             if let Ok(output) = Command::new("pgrep")
                 .args(["-f", &format!("{}.*scratchpad_", terminal)])
                 .output()
+                && output.status.success()
             {
-                if output.status.success() {
-                    let pids = String::from_utf8_lossy(&output.stdout);
-                    for pid_line in pids.lines() {
-                        if let Ok(pid) = pid_line.trim().parse::<u32>() {
-                            // Get command line for this process to extract the class
-                            if let Ok(cmd_output) = Command::new("ps")
-                                .args(["-p", &pid.to_string(), "-o", "command="])
-                                .output()
-                            {
-                                let cmd_line = String::from_utf8_lossy(&cmd_output.stdout);
-                                // Extract scratchpad name from class flag
-                                if let Some(name) = self.extract_scratchpad_name(&cmd_line) {
-                                    windows.push(ScratchpadWindowInfo {
-                                        name: name.clone(),
-                                        window_class: format!("scratchpad_{}", name),
-                                        title: format!("Scratchpad: {}", name),
-                                        // Mark as visible if running, but note this is a fallback
-                                        visible: true,
-                                    });
-                                }
+                let pids = String::from_utf8_lossy(&output.stdout);
+                for pid_line in pids.lines() {
+                    if let Ok(pid) = pid_line.trim().parse::<u32>() {
+                        // Get command line for this process to extract the class
+                        if let Ok(cmd_output) = Command::new("ps")
+                            .args(["-p", &pid.to_string(), "-o", "command="])
+                            .output()
+                        {
+                            let cmd_line = String::from_utf8_lossy(&cmd_output.stdout);
+                            // Extract scratchpad name from class flag
+                            if let Some(name) = self.extract_scratchpad_name(&cmd_line) {
+                                windows.push(ScratchpadWindowInfo {
+                                    name: name.clone(),
+                                    window_class: format!("scratchpad_{}", name),
+                                    title: format!("Scratchpad: {}", name),
+                                    // Mark as visible if running, but note this is a fallback
+                                    visible: true,
+                                });
                             }
                         }
                     }
@@ -230,18 +229,18 @@ impl KWin {
                     break;
                 }
 
-                if let Ok(l) = line {
-                    if l.contains("string \"[{") {
-                        // This looks like our JSON array
-                        // dbus-monitor output format for string is: string "..."
-                        // We need to extract the content inside quotes and unescape it
-                        if let Some(start_idx) = l.find("string \"") {
-                            let content = &l[start_idx + 8..];
-                            if content.ends_with('"') {
-                                json_str = content[..content.len() - 1].to_string();
-                                found = true;
-                                break;
-                            }
+                if let Ok(l) = line
+                    && l.contains("string \"[{")
+                {
+                    // This looks like our JSON array
+                    // dbus-monitor output format for string is: string "..."
+                    // We need to extract the content inside quotes and unescape it
+                    if let Some(start_idx) = l.find("string \"") {
+                        let content = &l[start_idx + 8..];
+                        if content.ends_with('"') {
+                            json_str = content[..content.len() - 1].to_string();
+                            found = true;
+                            break;
                         }
                     }
                 }
@@ -326,7 +325,7 @@ impl KWin {
     fn extract_scratchpad_name(&self, cmd_line: &str) -> Option<String> {
         // Look for patterns like "--class scratchpad_name" or "--class instantscratchpad"
         let patterns = [
-            format!("--class scratchpad_"),
+            "--class scratchpad_".to_string(),
             "--class ".to_string(),
             "-c ".to_string(),
         ];
@@ -372,7 +371,7 @@ impl KWin {
                 .trim()
                 .chars()
                 .next()
-                .map_or(false, |c| c == 'R' || c == 'S'))
+                .is_some_and(|c| c == 'R' || c == 'S'))
         } else {
             Ok(false)
         }

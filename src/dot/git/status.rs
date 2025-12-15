@@ -481,6 +481,9 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
                     suggestions.push(format!(
                         "Use '{bin} dot add' to save your modifications to repositories"
                     ));
+                    suggestions.push(format!(
+                        "Use '{bin} dot reset <path>' to discard local changes"
+                    ));
                 }
                 if outdated_count > 0 {
                     suggestions.push(format!(
@@ -526,6 +529,7 @@ fn show_action_suggestions(modified_count: usize, outdated_count: usize, clean_c
                 if modified_count > 0 {
                     println!("  Use '{bin} dot apply' to apply changes from repositories");
                     println!("  Use '{bin} dot add' to save your modifications to repositories");
+                    println!("  Use '{bin} dot reset <path>' to discard local changes");
                 }
                 if outdated_count > 0 {
                     println!(
