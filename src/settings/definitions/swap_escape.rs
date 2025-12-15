@@ -130,39 +130,81 @@ fn apply_swap_escape_setting(ctx: &mut SettingsContext, enabled: bool) -> Result
             )
         })?;
 
-        // Apply the configuration using qdbus
-        let result = std::process::Command::new("qdbus")
-            .args([
-                "org.kde.keyboard",
-                "/Layouts",
-                "org.kde.Keyboard.Layouts.setLayout",
-                "0",
-            ])
-            .status();
+        // Apply the configuration by restarting KDE keyboard daemon
+        // Try multiple methods to reload the configuration
+        let mut applied_successfully = false;
 
-        match result {
-            Ok(status) if status.success() => {
-                ctx.notify(
-                    "Swap Escape/Caps Lock",
-                    if enabled {
-                        "Escape and Caps Lock keys swapped"
-                    } else {
-                        "Escape and Caps Lock keys restored to normal"
-                    },
-                );
+        // Method 1: Try to restart kxkb daemon (KDE 5)
+        if let Ok(_) = std::process::Command::new("killall")
+            .args(["-USR1", "kxkb"])
+            .status()
+        {
+            applied_successfully = true;
+        }
+
+        // Method 2: Try kwriteconfig6 to force reapply (KDE 6)
+        if !applied_successfully {
+            if let Ok(_) = std::process::Command::new("kwriteconfig6")
+                .args([
+                    "--file", "kxkbrc", "--group", "Layout", "--key", "Use", "--type", "bool",
+                    "true",
+                ])
+                .status()
+            {
+                applied_successfully = true;
             }
-            Ok(_) => {
-                ctx.emit_info(
-                    "settings.keyboard.swap_escape.kwin_apply_failed",
-                    "KDE configuration updated, but requires restart or manual reapply.\n\nSystem Settings → Input Devices → Keyboard → Advanced → Caps Lock behavior",
-                );
+        }
+
+        // Method 3: Try kwriteconfig5 as fallback (KDE 5)
+        if !applied_successfully {
+            if let Ok(_) = std::process::Command::new("kwriteconfig5")
+                .args([
+                    "--file", "kxkbrc", "--group", "Layout", "--key", "Use", "--type", "bool",
+                    "true",
+                ])
+                .status()
+            {
+                applied_successfully = true;
             }
-            Err(e) => {
-                ctx.emit_info(
-                    "settings.keyboard.swap_escape.kwin_dbus_failed",
-                    &format!("KDE configuration updated, but failed to notify system: {e}\n\nRestart or apply manually through System Settings → Input Devices → Keyboard → Advanced"),
-                );
+        }
+
+        // Method 4: Try using qdbus to trigger layout reload
+        if !applied_successfully {
+            if std::process::Command::new("qdbus")
+                .args([
+                    "org.kde.keyboard",
+                    "/Layouts",
+                    "org.kde.KeyboardLayouts.switchToNextLayout",
+                ])
+                .status()
+                .is_ok_and(|s| s.success())
+            {
+                // Switch back to original layout
+                let _ = std::process::Command::new("qdbus")
+                    .args([
+                        "org.kde.keyboard",
+                        "/Layouts",
+                        "org.kde.KeyboardLayouts.switchToPreviousLayout",
+                    ])
+                    .status();
+                applied_successfully = true;
             }
+        }
+
+        if applied_successfully {
+            ctx.notify(
+                "Swap Escape/Caps Lock",
+                if enabled {
+                    "Escape and Caps Lock keys swapped"
+                } else {
+                    "Escape and Caps Lock keys restored to normal"
+                },
+            );
+        } else {
+            ctx.emit_info(
+                "settings.keyboard.swap_escape.kwin_apply_failed",
+                "KDE configuration updated, but requires restart or manual reapply.\n\nSystem Settings → Input Devices → Keyboard → Advanced → Caps Lock behavior\n\nOr restart the keyboard daemon by logging out and back in.",
+            );
         }
     } else {
         let result = if enabled {

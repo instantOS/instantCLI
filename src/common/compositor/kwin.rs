@@ -80,7 +80,7 @@ impl ScratchpadProvider for KWin {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let id_str = stdout.lines().last().unwrap_or("").trim();
         let id_parts: Vec<&str> = id_str.split_whitespace().collect();
-        
+
         let id = if id_parts.len() >= 2 && id_parts[0] == "int32" {
             id_parts[1]
         } else {
@@ -88,20 +88,20 @@ impl ScratchpadProvider for KWin {
         };
 
         let script_obj_path = format!("/Scripting/Script{}", id);
-        
-        // Since we can't easily get return values from dbus-send, 
+
+        // Since we can't easily get return values from dbus-send,
         // fall back to process-based detection for now
         Ok(Vec::new())
     }
 
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
         let class = config.window_class();
-        
+
         // First try using KWin scripting to check for window (more reliable)
         if let Ok(()) = self.check_window_via_script(&class) {
             return Ok(true);
         }
-        
+
         // Fallback to pgrep
         let output = Command::new("pgrep").arg("-f").arg(&class).output()?;
 
@@ -110,7 +110,7 @@ impl ScratchpadProvider for KWin {
 
     fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool> {
         let class = config.window_class();
-        
+
         // Use KWin scripting to check visibility
         let script_content = format!(
             r#"
@@ -152,7 +152,7 @@ impl ScratchpadProvider for KWin {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let id_str = stdout.lines().last().unwrap_or("").trim();
         let id_parts: Vec<&str> = id_str.split_whitespace().collect();
-        
+
         let id = if id_parts.len() >= 2 && id_parts[0] == "int32" {
             id_parts[1]
         } else {
@@ -160,7 +160,7 @@ impl ScratchpadProvider for KWin {
         };
 
         let script_obj_path = format!("/Scripting/Script{}", id);
-        
+
         // For now, return false as we can't easily get return values
         // This will be improved when we have better communication
         Ok(false)
