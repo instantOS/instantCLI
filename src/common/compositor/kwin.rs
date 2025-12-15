@@ -10,34 +10,33 @@ pub struct KWin;
 
 impl ScratchpadProvider for KWin {
     fn show(&self, config: &ScratchpadConfig) -> Result<()> {
-        // Try to show the window first
-        let window_found = self.run_script_and_check_found(config, "show")?;
+        // Try to show window first (fast if exists)
+        self.run_script(config, "show")?;
 
-        // If window wasn't found, create it
-        if !window_found {
+        // Check if window exists - if not, create it
+        // We do this check AFTER trying to show to optimize for the common case
+        if !self.is_window_running(config)? {
             super::create_terminal_process(config)?;
-            // Give terminal time to initialize and register with KWin
-            std::thread::sleep(std::time::Duration::from_millis(800));
-            // Show the newly created window
+            std::thread::sleep(std::time::Duration::from_millis(700));
             self.run_script(config, "show")?;
         }
         Ok(())
     }
 
     fn hide(&self, config: &ScratchpadConfig) -> Result<()> {
+        // Hide doesn't need to check if window exists
         self.run_script(config, "hide")
     }
 
     fn toggle(&self, config: &ScratchpadConfig) -> Result<()> {
-        // Try to toggle the window first
-        let window_found = self.run_script_and_check_found(config, "toggle")?;
+        // Try to toggle window first (fast if exists)
+        self.run_script(config, "toggle")?;
 
-        // If window wasn't found, create it and show it
-        if !window_found {
+        // Check if window exists - if not, create it
+        // We do this check AFTER trying to toggle to optimize for the common case
+        if !self.is_window_running(config)? {
             super::create_terminal_process(config)?;
-            // Give terminal time to initialize and register with KWin
-            std::thread::sleep(std::time::Duration::from_millis(800));
-            // Show the newly created window
+            std::thread::sleep(std::time::Duration::from_millis(700));
             self.run_script(config, "show")?;
         }
         Ok(())
@@ -108,13 +107,13 @@ impl ScratchpadProvider for KWin {
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
         let class = config.window_class();
 
-        // First try using KWin scripting to check for window (more reliable)
-        if let Ok(()) = self.check_window_via_script(&class) {
-            return Ok(true);
-        }
-
-        // Fallback to pgrep
-        let output = Command::new("pgrep").arg("-f").arg(&class).output()?;
+        // Use terminal process check - faster than KWin scripting
+        // Look for the terminal process with our specific class
+        let terminal_cmd = config.terminal.command();
+        let output = Command::new("pgrep")
+            .arg("-f")
+            .arg(&format!("{}.*{}", terminal_cmd, class))
+            .output()?;
 
         Ok(output.status.success())
     }
@@ -180,89 +179,6 @@ impl ScratchpadProvider for KWin {
 }
 
 impl KWin {
-    /// Check if a window with the given class exists using KWin scripting
-    fn check_window_via_script(&self, target_class: &str) -> Result<()> {
-        let script_content = format!(
-            r#"
-            (function() {{
-                const clients = workspace.windowList();
-                for (let i = 0; i < clients.length; i++) {{
-                    const client = clients[i];
-                    if (client.resourceClass === "{target_class}") {{
-                        return true;
-                    }}
-                }}
-                return false;
-            }})();
-            "#
-        );
-
-        let mut temp_file = Builder::new()
-            .prefix("kwin-check-")
-            .suffix(".js")
-            .tempfile()?;
-
-        write!(temp_file, "{}", script_content)?;
-        let path = temp_file.path().to_str().context("Invalid path")?;
-
-        let output = Command::new("dbus-send")
-            .args([
-                "--session",
-                "--print-reply",
-                "--dest=org.kde.KWin",
-                "/Scripting",
-                "org.kde.kwin.Scripting.loadScript",
-                &format!("string:{}", path),
-            ])
-            .output()?;
-
-        if !output.status.success() {
-            return Err(anyhow::anyhow!(
-                "Failed to load check script: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let id_str = stdout.lines().last().unwrap_or("").trim();
-        let id_parts: Vec<&str> = id_str.split_whitespace().collect();
-        let id = if id_parts.len() >= 2 && id_parts[0] == "int32" {
-            id_parts[1]
-        } else {
-            return Err(anyhow::anyhow!(
-                "Unexpected response from loadScript: {}",
-                stdout
-            ));
-        };
-
-        let script_obj_path = format!("/Scripting/Script{}", id);
-        let output = Command::new("dbus-send")
-            .args([
-                "--session",
-                "--dest=org.kde.KWin",
-                &script_obj_path,
-                "org.kde.kwin.Script.run",
-            ])
-            .output()?;
-
-        // Cleanup
-        let _ = Command::new("dbus-send")
-            .args([
-                "--session",
-                "--dest=org.kde.KWin",
-                &script_obj_path,
-                "org.kde.kwin.Script.stop",
-            ])
-            .output();
-
-        // If script runs without error, window exists
-        if output.status.success() {
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Window not found"))
-        }
-    }
-
     fn run_script(&self, config: &ScratchpadConfig, action: &str) -> Result<()> {
         let class = config.window_class();
         let width_pct = config.width_pct as f64 / 100.0;
@@ -354,10 +270,6 @@ impl KWin {
             .context("Failed to execute dbus-send to load script")?;
 
         if !output.status.success() {
-            eprintln!(
-                "DEBUG: loadScript failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
             return Err(anyhow::anyhow!(
                 "Failed to load KWin script: {}",
                 String::from_utf8_lossy(&output.stderr)
@@ -368,7 +280,6 @@ impl KWin {
         // method return time=... sender=... -> destination=... serial=... reply_serial=...
         //    int32 4
         let stdout = String::from_utf8_lossy(&output.stdout);
-        eprintln!("DEBUG: loadScript output: {}", stdout);
         let id_str = stdout.lines().last().unwrap_or("").trim();
         // Extract number
         let id_parts: Vec<&str> = id_str.split_whitespace().collect();
@@ -383,8 +294,7 @@ impl KWin {
 
         // Run script
         let script_obj_path = format!("/Scripting/Script{}", id);
-        eprintln!("DEBUG: Running script at path: {}", script_obj_path);
-        let run_output = Command::new("dbus-send")
+        Command::new("dbus-send")
             .args([
                 "--session",
                 "--print-reply",
@@ -394,18 +304,6 @@ impl KWin {
             ])
             .output()
             .context("Failed to run KWin script")?;
-
-        eprintln!("DEBUG: Script run status: {}", run_output.status);
-        eprintln!(
-            "DEBUG: Script run output: {}",
-            String::from_utf8_lossy(&run_output.stdout)
-        );
-        if !run_output.stderr.is_empty() {
-            eprintln!(
-                "DEBUG: Script run stderr: {}",
-                String::from_utf8_lossy(&run_output.stderr)
-            );
-        }
 
         // Cleanup: Stop/Unload script?
         let _ = Command::new("dbus-send")
@@ -418,29 +316,5 @@ impl KWin {
             .output();
 
         Ok(())
-    }
-
-    /// Run script and check if the window was found
-    /// Returns true if window was found and operated on, false otherwise
-    fn run_script_and_check_found(&self, config: &ScratchpadConfig, action: &str) -> Result<bool> {
-        self.run_script(config, action)?;
-
-        // Check journalctl for the WINDOW_FOUND/WINDOW_NOT_FOUND message
-        // This is a simple approach - wait a bit and check logs
-        std::thread::sleep(std::time::Duration::from_millis(100));
-
-        let output = Command::new("journalctl")
-            .args([
-                "--user",
-                "-u",
-                "plasma-kwin_wayland.service",
-                "--since",
-                "1 second ago",
-                "--no-pager",
-            ])
-            .output()?;
-
-        let log_output = String::from_utf8_lossy(&output.stdout);
-        Ok(log_output.contains("WINDOW_FOUND"))
     }
 }
