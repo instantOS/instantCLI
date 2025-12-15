@@ -112,7 +112,7 @@ impl ScratchpadProvider for KWin {
         let terminal_cmd = config.terminal.command();
         let output = Command::new("pgrep")
             .arg("-f")
-            .arg(&format!("{}.*{}", terminal_cmd, class))
+            .arg(format!("{}.*{}", terminal_cmd, class))
             .output()?;
 
         Ok(output.status.success())

@@ -157,34 +157,32 @@ fn apply_swap_escape_setting_impl(
             }
 
             // Method 2: Try kwriteconfig6 to force reapply (KDE 6)
-            if !applied_successfully {
-                if let Ok(_) = std::process::Command::new("kwriteconfig6")
+            if !applied_successfully
+                && let Ok(_) = std::process::Command::new("kwriteconfig6")
                     .args([
                         "--file", "kxkbrc", "--group", "Layout", "--key", "Use", "--type", "bool",
                         "true",
                     ])
                     .status()
-                {
-                    applied_successfully = true;
-                }
+            {
+                applied_successfully = true;
             }
 
             // Method 3: Try kwriteconfig5 as fallback (KDE 5)
-            if !applied_successfully {
-                if let Ok(_) = std::process::Command::new("kwriteconfig5")
+            if !applied_successfully
+                && let Ok(_) = std::process::Command::new("kwriteconfig5")
                     .args([
                         "--file", "kxkbrc", "--group", "Layout", "--key", "Use", "--type", "bool",
                         "true",
                     ])
                     .status()
-                {
-                    applied_successfully = true;
-                }
+            {
+                applied_successfully = true;
             }
 
             // Method 4: Try using qdbus to trigger layout reload
-            if !applied_successfully {
-                if std::process::Command::new("qdbus")
+            if !applied_successfully
+                && std::process::Command::new("qdbus")
                     .args([
                         "org.kde.keyboard",
                         "/Layouts",
@@ -192,17 +190,16 @@ fn apply_swap_escape_setting_impl(
                     ])
                     .status()
                     .is_ok_and(|s| s.success())
-                {
-                    // Switch back to original layout
-                    let _ = std::process::Command::new("qdbus")
-                        .args([
-                            "org.kde.keyboard",
-                            "/Layouts",
-                            "org.kde.KeyboardLayouts.switchToPreviousLayout",
-                        ])
-                        .status();
-                    applied_successfully = true;
-                }
+            {
+                // Switch back to original layout
+                let _ = std::process::Command::new("qdbus")
+                    .args([
+                        "org.kde.keyboard",
+                        "/Layouts",
+                        "org.kde.KeyboardLayouts.switchToPreviousLayout",
+                    ])
+                    .status();
+                applied_successfully = true;
             }
 
             if applied_successfully {
