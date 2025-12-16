@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 /// InstantWM scratchpad provider
-/// 
+///
 /// Uses instantWM's native IPC mechanism via xsetroot and the existing
 /// scratchpad commands (showscratchpad, hidescratchpad, scratchpadstatus)
 pub struct InstantWM;
@@ -28,8 +28,6 @@ impl ScratchpadProvider for InstantWM {
     }
 
     fn toggle(&self, config: &ScratchpadConfig) -> Result<()> {
-        let window_class = config.window_class();
-        
         if !self.is_window_running(config)? {
             // Create the window first
             self.create_and_wait(config)?;
@@ -49,11 +47,11 @@ impl ScratchpadProvider for InstantWM {
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
         let status = get_scratchpad_status()?;
         let is_visible = status;
-        
+
         // For now, instantWM supports one scratchpad per monitor
         // We'll check if the default scratchpad is running
         let mut windows = Vec::new();
-        
+
         // Try to detect the default scratchpad
         if self.is_default_scratchpad_running()? {
             windows.push(ScratchpadWindowInfo {
@@ -63,7 +61,7 @@ impl ScratchpadProvider for InstantWM {
                 visible: is_visible,
             });
         }
-        
+
         Ok(windows)
     }
 
@@ -71,7 +69,7 @@ impl ScratchpadProvider for InstantWM {
         // For instantWM, we use the window class to detect if it's running
         // via xwininfo or similar tools
         let window_class = config.window_class();
-        
+
         // Use xwininfo to check if a window with this class exists
         let output = Command::new("xwininfo")
             .args(["-tree", "-root"])
@@ -120,7 +118,7 @@ impl InstantWM {
 
         Err(anyhow::anyhow!("Terminal window did not appear"))
     }
-    
+
     fn is_default_scratchpad_running(&self) -> Result<bool> {
         // Check if the default instantWM scratchpad is running
         let output = Command::new("xwininfo")

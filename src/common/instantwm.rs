@@ -232,9 +232,21 @@ mod tests {
 
     #[test]
     fn test_scratchpad_command_ids() {
-        assert_eq!(InstantWmScratchpadCommand::Show.command_id(), "showscratchpad");
-        assert_eq!(InstantWmScratchpadCommand::Hide.command_id(), "hidescratchpad");
-        assert_eq!(InstantWmScratchpadCommand::Toggle.command_id(), "togglescratchpad");
-        assert_eq!(InstantWmScratchpadCommand::Status.command_id(), "scratchpadstatus");
+        assert_eq!(
+            InstantWmScratchpadCommand::Show.command_id(),
+            "showscratchpad"
+        );
+        assert_eq!(
+            InstantWmScratchpadCommand::Hide.command_id(),
+            "hidescratchpad"
+        );
+        assert_eq!(
+            InstantWmScratchpadCommand::Toggle.command_id(),
+            "togglescratchpad"
+        );
+        assert_eq!(
+            InstantWmScratchpadCommand::Status.command_id(),
+            "scratchpadstatus"
+        );
     }
 }
