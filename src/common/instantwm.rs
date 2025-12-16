@@ -18,11 +18,36 @@ pub enum InstantWmSetting {
     // StatusBar,
 }
 
+/// Represents scratchpad commands in instantWM
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstantWmScratchpadCommand {
+    /// Show the scratchpad
+    Show,
+    /// Hide the scratchpad
+    Hide,
+    /// Toggle scratchpad visibility
+    Toggle,
+    /// Get scratchpad status
+    Status,
+}
+
 impl InstantWmSetting {
     /// Get the control string identifier used in xsetroot commands
     fn control_id(&self) -> &'static str {
         match self {
             InstantWmSetting::Animated => "animated",
+        }
+    }
+}
+
+impl InstantWmScratchpadCommand {
+    /// Get the command string used in xsetroot commands
+    fn command_id(&self) -> &'static str {
+        match self {
+            InstantWmScratchpadCommand::Show => "showscratchpad",
+            InstantWmScratchpadCommand::Hide => "hidescratchpad",
+            InstantWmScratchpadCommand::Toggle => "togglescratchpad",
+            InstantWmScratchpadCommand::Status => "scratchpadstatus",
         }
     }
 }
@@ -95,6 +120,27 @@ impl InstantWmController {
         }
     }
 
+    /// Apply a scratchpad command to instantWM
+    ///
+    /// This sends a scratchpad command to instantWM via xsetroot.
+    pub fn apply_scratchpad(&self, command: InstantWmScratchpadCommand) -> Result<()> {
+        let control_string = format!("c;:;{}", command.command_id());
+
+        let status = Command::new("xsetroot")
+            .args(["-name", &control_string])
+            .status()
+            .context("Failed to execute xsetroot")?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "xsetroot command failed with exit code {}",
+                status.code().unwrap_or(-1)
+            )
+        }
+    }
+
     /// Enable animations in instantWM
     pub fn enable_animations(&self) -> Result<()> {
         self.apply(InstantWmSetting::Animated, ControlAction::Enable)
@@ -118,6 +164,48 @@ impl InstantWmController {
             self.disable_animations()
         }
     }
+
+    /// Show the scratchpad
+    pub fn show_scratchpad(&self) -> Result<()> {
+        self.apply_scratchpad(InstantWmScratchpadCommand::Show)
+    }
+
+    /// Hide the scratchpad
+    pub fn hide_scratchpad(&self) -> Result<()> {
+        self.apply_scratchpad(InstantWmScratchpadCommand::Hide)
+    }
+
+    /// Toggle scratchpad visibility
+    pub fn toggle_scratchpad(&self) -> Result<()> {
+        self.apply_scratchpad(InstantWmScratchpadCommand::Toggle)
+    }
+
+    /// Get scratchpad status
+    pub fn get_scratchpad_status(&self) -> Result<bool> {
+        self.apply_scratchpad(InstantWmScratchpadCommand::Status)?;
+
+        // Wait for the response in WM_NAME
+        for attempt in 0..20 {
+            if let Ok(output) = Command::new("xprop")
+                .args(["-root", "-notype", "WM_NAME"])
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if let Some(captures) = stdout.strip_prefix("WM_NAME = ") {
+                        let value = captures.trim().trim_matches('"');
+                        if let Some(status_str) = value.strip_prefix("ipc:scratchpad:") {
+                            return Ok(status_str == "1");
+                        }
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+
+        // If we couldn't get the status, assume it's hidden
+        Ok(false)
+    }
 }
 
 impl Default for InstantWmController {
@@ -140,5 +228,13 @@ mod tests {
     #[test]
     fn test_setting_control_ids() {
         assert_eq!(InstantWmSetting::Animated.control_id(), "animated");
+    }
+
+    #[test]
+    fn test_scratchpad_command_ids() {
+        assert_eq!(InstantWmScratchpadCommand::Show.command_id(), "showscratchpad");
+        assert_eq!(InstantWmScratchpadCommand::Hide.command_id(), "hidescratchpad");
+        assert_eq!(InstantWmScratchpadCommand::Toggle.command_id(), "togglescratchpad");
+        assert_eq!(InstantWmScratchpadCommand::Status.command_id(), "scratchpadstatus");
     }
 }

@@ -9,6 +9,7 @@ pub mod fallback;
 pub mod gnome;
 pub mod hyprland;
 pub mod i3;
+pub mod instantwm;
 pub mod kwin;
 pub mod sway;
 
@@ -162,7 +163,7 @@ impl CompositorType {
         match self {
             CompositorType::I3 => Box::new(i3::I3),
             CompositorType::Dwm => Box::new(fallback::Fallback),
-            CompositorType::InstantWM => Box::new(fallback::Fallback), // TODO: Add InstantWM scratchpad support if needed
+            CompositorType::InstantWM => Box::new(instantwm::InstantWM),
             CompositorType::Sway => Box::new(sway::Sway),
             CompositorType::Hyprland => Box::new(hyprland::Hyprland),
             CompositorType::KWin => Box::new(kwin::KWin),
