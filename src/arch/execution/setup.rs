@@ -61,6 +61,7 @@ pub async fn setup_instantos(
 
     setup_backlight_udev_rule(executor)?;
     enable_services(executor, context)?;
+    super::config::configure_environment(executor)?;
 
     Ok(())
 }

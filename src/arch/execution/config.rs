@@ -67,12 +67,37 @@ pub async fn install_config(context: &InstallContext, executor: &CommandExecutor
     configure_locale(context, executor)?;
     configure_network(context, executor)?;
     configure_users(context, executor)?;
+    configure_environment(executor)?;
     configure_vconsole(context, executor)?;
     configure_sudo(context, executor)?;
     configure_mkinitcpio(context, executor)?;
     if !context.get_answer_bool(QuestionId::MinimalMode) {
         configure_plymouth(context, executor)?;
     }
+
+    Ok(())
+}
+
+/// Configure global environment variables
+pub fn configure_environment(executor: &CommandExecutor) -> Result<()> {
+    println!("Configuring global environment variables...");
+
+    if executor.dry_run {
+        println!("[DRY RUN] Creating /etc/profile.d/instantos.sh");
+        return Ok(());
+    }
+
+    // Ensure directory exists
+    std::fs::create_dir_all("/etc/profile.d")?;
+
+    let content = r#"# Global environment variables for instantOS
+export PAGER=less
+export EDITOR=$(which nvim)
+export XDG_MENU_PREFIX=gnome-
+export _JAVA_AWT_WM_NONREPARENTING=1
+"#;
+
+    std::fs::write("/etc/profile.d/instantos.sh", content)?;
 
     Ok(())
 }
