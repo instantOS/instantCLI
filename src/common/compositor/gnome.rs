@@ -142,4 +142,8 @@ impl ScratchpadProvider for Gnome {
             Ok(false)
         }
     }
+
+    fn supports_scratchpad(&self) -> bool {
+        true
+    }
 }

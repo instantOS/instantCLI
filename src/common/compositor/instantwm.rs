@@ -99,6 +99,10 @@ impl ScratchpadProvider for InstantWM {
         // Direct hide command without checking if window exists
         send_instantwm_command("hidescratchpad", "")
     }
+
+    fn supports_scratchpad(&self) -> bool {
+        true
+    }
 }
 
 impl InstantWM {

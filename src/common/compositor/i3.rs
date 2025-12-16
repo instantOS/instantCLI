@@ -48,6 +48,10 @@ impl ScratchpadProvider for I3 {
     fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
         hide_scratchpad(&config.window_class())
     }
+
+    fn supports_scratchpad(&self) -> bool {
+        true
+    }
 }
 
 impl I3 {

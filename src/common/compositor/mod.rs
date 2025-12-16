@@ -48,6 +48,10 @@ pub trait ScratchpadProvider: Send + Sync {
     fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
         self.hide(config)
     }
+    /// Check if this provider supports scratchpad functionality
+    fn supports_scratchpad(&self) -> bool {
+        false
+    }
 }
 
 /// Information about a scratchpad window
@@ -218,18 +222,7 @@ impl CompositorType {
         }
     }
 
-    /// Check if the compositor supports scratchpad functionality
-    pub fn supports_scratchpad(&self) -> bool {
-        match self {
-            CompositorType::Sway | CompositorType::Hyprland | CompositorType::Gnome => true,
-            CompositorType::KWin => {
-                // KWin supports scratchpads on Wayland
-                DisplayServer::detect() == DisplayServer::Wayland
-            }
-            CompositorType::Other(_) => false,
-            _ => false,
-        }
-    }
+
 
     /// Check if the compositor is X11-based
     #[allow(dead_code)]

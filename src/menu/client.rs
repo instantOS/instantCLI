@@ -32,7 +32,7 @@ impl MenuTransport {
         }
 
         let compositor = CompositorType::detect();
-        if compositor.supports_scratchpad() {
+        if compositor.provider().supports_scratchpad() {
             MenuTransport::ScratchpadServer
         } else {
             MenuTransport::KittyTransient
