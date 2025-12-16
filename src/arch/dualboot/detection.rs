@@ -6,7 +6,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::io::Write;
 use std::process::Command;
 
 /// Format bytes as human-readable size
@@ -1230,6 +1229,8 @@ fn parse_btrfs_used(output: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
 
     #[test]

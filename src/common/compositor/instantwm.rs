@@ -7,70 +7,56 @@ use std::time::Duration;
 
 /// InstantWM scratchpad provider
 ///
-/// Uses instantWM's native IPC mechanism via xsetroot and the existing
-/// scratchpad commands (showscratchpad, hidescratchpad, scratchpadstatus)
+/// Uses instantWM's native IPC mechanism via xsetroot with named scratchpads.
+/// Commands: makescratchpad, showscratchpad, hidescratchpad, togglescratchpad, scratchpadstatus
+/// All commands take a scratchpad name parameter.
 pub struct InstantWM;
 
 impl ScratchpadProvider for InstantWM {
     fn show(&self, config: &ScratchpadConfig) -> Result<()> {
-        if !self.is_window_running(config)? {
-            self.create_and_wait(config)?;
-        }
-        self.show_unchecked(config)
+        send_instantwm_command("showscratchpad", &config.name)
     }
 
     fn hide(&self, config: &ScratchpadConfig) -> Result<()> {
-        if !self.is_window_running(config)? {
-            // Window doesn't exist, nothing to hide
-            return Ok(());
-        }
-        self.hide_unchecked(config)
+        send_instantwm_command("hidescratchpad", &config.name)
     }
 
     fn toggle(&self, config: &ScratchpadConfig) -> Result<()> {
-        if !self.is_window_running(config)? {
-            // Create the window first
-            self.create_and_wait(config)?;
-            // Show it
-            self.show_unchecked(config)?;
-        } else {
-            // Window exists, check visibility and toggle
-            if self.is_visible(config)? {
-                self.hide_unchecked(config)?;
-            } else {
-                self.show_unchecked(config)?;
-            }
-        }
-        Ok(())
+        send_instantwm_command("togglescratchpad", &config.name)
     }
 
     fn get_all_windows(&self) -> Result<Vec<ScratchpadWindowInfo>> {
-        let status = get_scratchpad_status()?;
-        let is_visible = status;
+        // Check for scratchpad windows by scanning for windows with "scratchpad_" prefix
+        let output = Command::new("xwininfo")
+            .args(["-tree", "-root"])
+            .output()
+            .context("Failed to execute xwininfo")?;
 
-        // For now, instantWM supports one scratchpad per monitor
-        // We'll check if the default scratchpad is running
         let mut windows = Vec::new();
 
-        // Try to detect the default scratchpad
-        if self.is_default_scratchpad_running()? {
-            windows.push(ScratchpadWindowInfo {
-                name: "instantscratchpad".to_string(),
-                window_class: "scratchpad_instantscratchpad".to_string(),
-                title: "instantscratchpad".to_string(),
-                visible: is_visible,
-            });
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // Parse xwininfo output to find scratchpad windows
+            for line in stdout.lines() {
+                if let Some(name) = extract_scratchpad_name(line) {
+                    // Check visibility for this scratchpad
+                    let visible = get_scratchpad_status_for_name(&name).unwrap_or(false);
+                    windows.push(ScratchpadWindowInfo {
+                        name: name.clone(),
+                        window_class: format!("scratchpad_{}", name),
+                        title: name.clone(),
+                        visible,
+                    });
+                }
+            }
         }
 
         Ok(windows)
     }
 
     fn is_window_running(&self, config: &ScratchpadConfig) -> Result<bool> {
-        // For instantWM, we use the window class to detect if it's running
-        // via xwininfo or similar tools
         let window_class = config.window_class();
 
-        // Use xwininfo to check if a window with this class exists
         let output = Command::new("xwininfo")
             .args(["-tree", "-root"])
             .output()
@@ -78,26 +64,22 @@ impl ScratchpadProvider for InstantWM {
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            Ok(stdout.contains(&window_class) || stdout.contains(&config.name))
+            Ok(stdout.contains(&window_class))
         } else {
-            // Fallback: assume it's running if we can't determine
             Ok(false)
         }
     }
 
-    fn is_visible(&self, _config: &ScratchpadConfig) -> Result<bool> {
-        // Use instantWM's scratchpad status command
-        get_scratchpad_status()
+    fn is_visible(&self, config: &ScratchpadConfig) -> Result<bool> {
+        get_scratchpad_status_for_name(&config.name)
     }
 
-    fn show_unchecked(&self, _config: &ScratchpadConfig) -> Result<()> {
-        // Direct show command without checking if window exists
-        send_instantwm_command("showscratchpad", "")
+    fn show_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        send_instantwm_command("showscratchpad", &config.name)
     }
 
-    fn hide_unchecked(&self, _config: &ScratchpadConfig) -> Result<()> {
-        // Direct hide command without checking if window exists
-        send_instantwm_command("hidescratchpad", "")
+    fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
+        send_instantwm_command("hidescratchpad", &config.name)
     }
 
     fn supports_scratchpad(&self) -> bool {
@@ -106,36 +88,27 @@ impl ScratchpadProvider for InstantWM {
 }
 
 impl InstantWM {
-    fn create_and_wait(&self, config: &ScratchpadConfig) -> Result<()> {
-        super::create_terminal_process(config)?;
-
-        // Wait for window to appear
-        let mut attempts = 0;
-        while attempts < 30 {
-            if self.is_window_running(config)? {
-                return Ok(());
-            }
-            thread::sleep(Duration::from_millis(200));
-            attempts += 1;
-        }
-
-        Err(anyhow::anyhow!("Terminal window did not appear"))
+    /// Register a window with class scratchpad_<name> as a scratchpad
+    pub fn make_scratchpad(name: &str) -> Result<()> {
+        send_instantwm_command("makescratchpad", name)
     }
+}
 
-    fn is_default_scratchpad_running(&self) -> Result<bool> {
-        // Check if the default instantWM scratchpad is running
-        let output = Command::new("xwininfo")
-            .args(["-tree", "-root"])
-            .output()
-            .context("Failed to execute xwininfo")?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            Ok(stdout.contains("instantscratchpad"))
-        } else {
-            Ok(false)
+/// Extract scratchpad name from xwininfo line if it contains a scratchpad window
+fn extract_scratchpad_name(line: &str) -> Option<String> {
+    // Look for "scratchpad_" in the window class/name
+    if let Some(pos) = line.find("scratchpad_") {
+        let rest = &line[pos + 11..]; // Skip "scratchpad_"
+        // Extract the name until whitespace or special chars
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        if !name.is_empty() {
+            return Some(name);
         }
     }
+    None
 }
 
 /// Send a command to instantWM via xsetroot
@@ -161,11 +134,10 @@ fn send_instantwm_command(command: &str, args: &str) -> Result<()> {
     }
 }
 
-/// Get scratchpad status from instantWM
+/// Get scratchpad status from instantWM for a specific named scratchpad
 /// Returns true if scratchpad is visible, false if hidden
-pub fn get_scratchpad_status() -> Result<bool> {
-    // Send status query command
-    send_instantwm_command("scratchpadstatus", "")?;
+pub fn get_scratchpad_status_for_name(name: &str) -> Result<bool> {
+    send_instantwm_command("scratchpadstatus", name)?;
 
     // Wait for the response in WM_NAME
     for _attempt in 0..20 {
@@ -190,45 +162,29 @@ pub fn get_scratchpad_status() -> Result<bool> {
     Ok(false)
 }
 
-/// Get scratchpad status using instantwmctl if available
-pub fn get_scratchpad_status_via_ctl() -> Result<bool> {
-    let output = Command::new("instantwmctl")
-        .arg("scratchpadstatus")
-        .output()
-        .context("Failed to execute instantwmctl");
-
-    match output {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if let Some(status_line) = stdout.lines().next() {
-                if let Some(status_str) = status_line.strip_prefix("scratchpad:") {
-                    return Ok(status_str == "1");
-                }
-            }
-            Ok(false)
-        }
-        _ => {
-            // Fallback to direct xprop method
-            get_scratchpad_status()
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_command_formatting() {
-        let cmd = send_instantwm_command("showscratchpad", "");
-        assert!(cmd.is_ok() || cmd.is_err()); // We can't test actual execution without instantWM running
+    fn test_extract_scratchpad_name() {
+        assert_eq!(
+            extract_scratchpad_name("     0x2000001 \"scratchpad_test\": (\"kitty\" \"kitty\")"),
+            Some("test".to_string())
+        );
+        assert_eq!(
+            extract_scratchpad_name("window class scratchpad_frank something"),
+            Some("frank".to_string())
+        );
+        assert_eq!(extract_scratchpad_name("no scratchpad here"), None);
+        assert_eq!(extract_scratchpad_name("scratchpad_ empty"), None);
     }
 
     #[test]
-    fn test_status_parsing() {
-        // This would require mocking xprop output for proper testing
-        // For now, just ensure the function exists and has the right signature
-        let result = get_scratchpad_status();
-        assert!(result.is_ok() || result.is_err());
+    fn test_command_formatting() {
+        // We can't test actual execution without instantWM running
+        // Just ensure the function has the right signature
+        let cmd = send_instantwm_command("showscratchpad", "test");
+        assert!(cmd.is_ok() || cmd.is_err());
     }
 }

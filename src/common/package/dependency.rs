@@ -280,14 +280,6 @@ impl InstallResult {
     pub fn is_available(&self) -> bool {
         matches!(self, Self::AlreadyInstalled | Self::Installed)
     }
-
-    pub fn is_declined(&self) -> bool {
-        matches!(self, Self::Declined)
-    }
-
-    pub fn is_failed(&self) -> bool {
-        matches!(self, Self::Failed { .. } | Self::NotAvailable { .. })
-    }
 }
 
 #[cfg(test)]
