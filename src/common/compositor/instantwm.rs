@@ -103,7 +103,6 @@ impl ScratchpadProvider for InstantWM {
 
 impl InstantWM {
     fn create_and_wait(&self, config: &ScratchpadConfig) -> Result<()> {
-        let window_class = config.window_class();
         super::create_terminal_process(config)?;
 
         // Wait for window to appear
@@ -165,7 +164,7 @@ pub fn get_scratchpad_status() -> Result<bool> {
     send_instantwm_command("scratchpadstatus", "")?;
 
     // Wait for the response in WM_NAME
-    for attempt in 0..20 {
+    for _attempt in 0..20 {
         if let Ok(output) = Command::new("xprop")
             .args(["-root", "-notype", "WM_NAME"])
             .output()

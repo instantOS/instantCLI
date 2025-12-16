@@ -185,7 +185,7 @@ impl InstantWmController {
         self.apply_scratchpad(InstantWmScratchpadCommand::Status)?;
 
         // Wait for the response in WM_NAME
-        for attempt in 0..20 {
+        for _attempt in 0..20 {
             if let Ok(output) = Command::new("xprop")
                 .args(["-root", "-notype", "WM_NAME"])
                 .output()
