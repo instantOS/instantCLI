@@ -90,12 +90,26 @@ pub fn configure_environment(executor: &CommandExecutor) -> Result<()> {
     // Ensure directory exists
     std::fs::create_dir_all("/etc/profile.d")?;
 
-    let content = r#"# Global environment variables for instantOS
+    // Resolve EDITOR at install time
+    let editor = if std::path::Path::new("/usr/bin/nvim").exists() {
+        "/usr/bin/nvim"
+    } else if std::path::Path::new("/usr/bin/vim").exists() {
+        "/usr/bin/vim"
+    } else if std::path::Path::new("/usr/bin/nano").exists() {
+        "/usr/bin/nano"
+    } else {
+        "vi"
+    };
+
+    let content = format!(
+        r#"# Global environment variables for instantOS
 export PAGER=less
-export EDITOR=$(which nvim)
+export EDITOR={}
 export XDG_MENU_PREFIX=gnome-
 export _JAVA_AWT_WM_NONREPARENTING=1
-"#;
+"#,
+        editor
+    );
 
     std::fs::write("/etc/profile.d/instantos.sh", content)?;
 
