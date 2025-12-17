@@ -63,6 +63,7 @@ pub enum ArchCommands {
     },
 }
 
+//TODO: this function is way too long, refactor, and ifn needed extract new mldules
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
     use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
@@ -201,6 +202,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             Ok(())
         }
         ArchCommands::Ask { id, output_config } => {
+            //TODO: extract this into a separate (or multiiple) function
             if let Some(id) = id {
                 // Ask a single question
                 // Escalate if the question requires root (e.g. Disk)
@@ -332,6 +334,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             }
         }
         ArchCommands::Install => {
+            //TODO: extract this into a separate function
             // Check architecture
             let system_info = crate::arch::engine::SystemInfo::detect();
 
@@ -451,6 +454,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         }
         ArchCommands::Dualboot { command } => match command {
             DualbootCommands::Info => {
+                //TODO: extract into a separate function or multiple
                 use crate::arch::dualboot::{check_all_disks_feasibility, display_disks};
                 use crate::ui::nerd_font::NerdFont;
 
@@ -584,6 +588,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
         },
 
         ArchCommands::Finished => {
+            //TODO: extract functions
             use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
             use crate::ui::nerd_font::NerdFont;
 

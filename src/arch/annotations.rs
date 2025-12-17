@@ -1,6 +1,8 @@
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use std::collections::HashMap;
 
+//TODO: document: this provides human readable annotations for 
+//values which might not be trivial to gunderstand for new users
 #[derive(Debug, Clone)]
 pub struct AnnotatedValue<T> {
     pub value: T,
