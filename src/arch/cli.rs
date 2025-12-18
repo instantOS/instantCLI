@@ -4,6 +4,445 @@ use colored::Colorize;
 
 const DEFAULT_QUESTIONS_FILE: &str = "/etc/instant/questions.toml";
 
+/// Handle the Ask command - either ask a single question or run the full questionnaire
+async fn handle_ask_command(
+    id: Option<crate::arch::engine::QuestionId>,
+    output_config: Option<std::path::PathBuf>,
+    questions: Vec<Box<dyn crate::arch::engine::Question>>,
+) -> Result<()> {
+    use crate::arch::engine::QuestionEngine;
+    use crate::common::distro::is_live_iso;
+
+    if let Some(id) = id {
+        // Ask a single question
+        // Escalate if the question requires root (e.g. Disk)
+        if matches!(id, crate::arch::engine::QuestionId::Disk) {
+            ensure_root()?;
+        }
+
+        let question = questions
+            .into_iter()
+            .find(|q| q.id() == id)
+            .ok_or_else(|| anyhow::anyhow!("Question not found"))?;
+
+        let engine = QuestionEngine::new(vec![question]);
+
+        // Initialize data providers so questions that need data (like MirrorRegion) work
+        engine.initialize_providers();
+
+        // Run the engine with just this single question
+        let context = engine.run().await?;
+
+        if let Some(answer) = context.get_answer(&id) {
+            println!("Answer: {}", answer);
+        }
+        Ok(())
+    } else {
+        // Ask all questions (formerly Install logic)
+        // Installation requires root privileges
+        ensure_root()?;
+
+        println!("Starting Arch Linux installation wizard...");
+
+        // Perform system checks
+        let system_info = crate::arch::engine::SystemInfo::detect();
+
+        if !system_info.internet_connected {
+            eprintln!(
+                "Error: No internet connection detected. Arch installation requires internet."
+            );
+            return Ok(());
+        }
+
+        // Check if running on live ISO and handle dependencies
+        if is_live_iso() {
+            println!("Detected Arch Linux Live ISO environment.");
+
+            let dependencies = &[
+                &crate::common::deps::FZF,
+                &crate::common::deps::GIT,
+                &crate::common::deps::LIBGIT2,
+                &crate::common::deps::GUM,
+                &crate::common::deps::CFDISK,
+            ];
+
+            // Collect all missing packages first
+            let mut missing_packages = Vec::new();
+            for dep in dependencies {
+                if !dep.is_installed()
+                    && let Some(pkg) = dep
+                        .packages
+                        .iter()
+                        .find(|p| p.manager == crate::common::package::PackageManager::Pacman)
+                {
+                    missing_packages.push(pkg.package_name);
+                    println!("Will install missing dependency: {}...", dep.name);
+                }
+            }
+
+            // Install all missing packages in one pacman call
+            if !missing_packages.is_empty() {
+                println!("Installing {} missing packages...", missing_packages.len());
+
+                let executor = crate::arch::execution::CommandExecutor::new(false, None);
+                if let Err(e) =
+                    crate::arch::execution::pacman::install(&missing_packages, &executor)
+                {
+                    eprintln!("Warning: Failed to install some packages: {}", e);
+                } else {
+                    println!("Successfully installed {} packages", missing_packages.len());
+                }
+            }
+        }
+
+        println!("System Checks:");
+        println!("  Boot Mode: {}", system_info.boot_mode);
+        println!("  Internet: {}", system_info.internet_connected);
+        println!("  AMD CPU: {}", system_info.has_amd_cpu);
+        println!("  Intel CPU: {}", system_info.has_intel_cpu);
+        println!("  GPUs: {:?}", system_info.gpus);
+        println!("  Virtual Machine: {:?}", system_info.vm_type);
+
+        let mut engine = QuestionEngine::new(questions);
+        engine.context.system_info = system_info;
+
+        // Initialize data providers
+        engine.initialize_providers();
+
+        let context = engine.run().await?;
+
+        println!("Installation configuration complete!");
+        println!(
+            "Hostname: {}",
+            context
+                .get_answer(&crate::arch::engine::QuestionId::Hostname)
+                .map_or("<not set>".to_string(), |v| v.clone())
+        );
+        println!(
+            "Username: {}",
+            context
+                .get_answer(&crate::arch::engine::QuestionId::Username)
+                .map_or("<not set>".to_string(), |v| v.clone())
+        );
+
+        let toml_content = context.to_toml()?;
+
+        let config_path =
+            output_config.unwrap_or_else(|| std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE));
+
+        // Ensure parent directory exists
+        if let Some(parent) = config_path.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // Write to file
+        std::fs::write(&config_path, &toml_content)?;
+        println!("\nConfiguration saved to: {}", config_path.display());
+
+        Ok(())
+    }
+}
+
+/// Handle the Install command - orchestrates the full installation process
+async fn handle_install_command(_debug: bool) -> Result<()> {
+    // Check architecture
+    let system_info = crate::arch::engine::SystemInfo::detect();
+
+    // Check distro
+    if !system_info.distro.contains("Arch") && !system_info.distro.contains("instantOS") {
+        eprintln!(
+            "{} {}",
+            "Error:".red().bold(),
+            format!(
+                "Arch Linux installation is only supported on Arch Linux or instantOS. Detected distro: {}",
+                system_info.distro
+            ).red()
+        );
+        return Ok(());
+    }
+
+    if system_info.architecture != "x86_64" {
+        eprintln!(
+            "{} {}",
+            "Error:".red().bold(),
+            format!(
+                "Arch Linux installation is only supported on x86_64 architecture. Detected architecture: {}",
+                system_info.architecture
+            ).red()
+        );
+        return Ok(());
+    }
+
+    // Mark start time
+    let mut state = crate::arch::execution::state::InstallState::load()?;
+    state.mark_start();
+    state.save()?;
+
+    // 1. Ask questions
+    Box::pin(handle_arch_command(
+        ArchCommands::Ask {
+            id: None,
+            output_config: None,
+        },
+        _debug,
+    ))
+    .await?;
+
+    // 2. Execute
+    let exec_result = Box::pin(handle_arch_command(
+        ArchCommands::Exec {
+            step: None,
+            questions_file: std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE),
+            dry_run: false,
+        },
+        _debug,
+    ))
+    .await;
+
+    if let Err(_) = exec_result {
+        // Try to upload logs if forced or requested
+        if let Ok(context) = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE) {
+            crate::arch::logging::process_log_upload(&context);
+        } else if std::path::Path::new("/etc/instantos/uploadlogs").exists() {
+            println!("Uploading installation logs (forced by /etc/instantos/uploadlogs)...");
+            let log_path = std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
+            if let Err(e) = crate::arch::logging::upload_logs(&log_path) {
+                eprintln!("Failed to upload logs: {}", e);
+            }
+        }
+    }
+
+    exec_result?;
+
+    // 3. Finished
+    Box::pin(handle_arch_command(ArchCommands::Finished, _debug)).await?;
+
+    Ok(())
+}
+
+/// Handle dual boot info display
+async fn handle_dualboot_info() -> Result<()> {
+    use crate::arch::dualboot::{check_all_disks_feasibility, display_disks};
+    use crate::ui::nerd_font::NerdFont;
+
+    println!();
+    println!(
+        "  {} {}",
+        NerdFont::HardDrive.to_string().bright_cyan(),
+        "Dual Boot Detection".bright_white().bold()
+    );
+    println!("  {}", "─".repeat(50).bright_black());
+    println!();
+
+    match check_all_disks_feasibility() {
+        Ok((disks, feasibility_results)) => {
+            let mut any_feasible = false;
+
+            // Show feasibility summary first
+            println!("  {}", "Feasibility Summary:".bold());
+            for (disk, feasibility) in &feasibility_results {
+                if feasibility.feasible {
+                    any_feasible = true;
+                    // Show different message depending on whether feasibility
+                    // comes from resizable partitions or unpartitioned space
+                    if feasibility.feasible_partitions.is_empty() {
+                        // Feasible due to unpartitioned space
+                        println!(
+                            "    {} {} - {}",
+                            NerdFont::Check.to_string().green().bold(),
+                            disk.bright_white(),
+                            "FEASIBLE".green().bold(),
+                        );
+                        if let Some(reason) = &feasibility.reason {
+                            println!(
+                                "      {} {}",
+                                NerdFont::ArrowPointer.to_string().dimmed(),
+                                reason.green()
+                            );
+                        }
+                    } else {
+                        // Feasible due to resizable partitions
+                        println!(
+                            "    {} {} - {} {}",
+                            NerdFont::Check.to_string().green().bold(),
+                            disk.bright_white(),
+                            "FEASIBLE".green().bold(),
+                            format!(
+                                "({} partition(s) can be resized)",
+                                feasibility.feasible_partitions.len()
+                            )
+                            .dimmed()
+                        );
+                        for part in &feasibility.feasible_partitions {
+                            println!(
+                                "      {} {}",
+                                NerdFont::ArrowPointer.to_string().dimmed(),
+                                part.cyan()
+                            );
+                        }
+                    }
+                } else {
+                    println!(
+                        "    {} {} - {}",
+                        NerdFont::Cross.to_string().red().bold(),
+                        disk.bright_white(),
+                        "NOT FEASIBLE".red().bold()
+                    );
+                    if let Some(reason) = &feasibility.reason {
+                        println!(
+                            "      {} {}",
+                            NerdFont::ArrowPointer.to_string().dimmed(),
+                            reason.dimmed()
+                        );
+                    }
+                }
+            }
+
+            println!();
+
+            if any_feasible {
+                println!(
+                    "  {} {}",
+                    NerdFont::Check.to_string().green().bold(),
+                    "Dual boot is POSSIBLE on this system".green().bold()
+                );
+                println!(
+                    "  {} The installer will offer dual boot options",
+                    NerdFont::ArrowPointer.to_string().dimmed()
+                );
+            } else {
+                println!(
+                    "  {} {}",
+                    NerdFont::Cross.to_string().red().bold(),
+                    "Dual boot is NOT POSSIBLE on this system".red().bold()
+                );
+                println!(
+                    "  {} The installer will NOT offer dual boot options",
+                    NerdFont::ArrowPointer.to_string().dimmed()
+                );
+            }
+
+            println!();
+            println!("  {}", "Detailed Disk Information:".bold());
+            println!("  {}", "─".repeat(50).bright_black());
+            println!();
+
+            // Show detailed disk information
+            if disks.is_empty() {
+                println!(
+                    "  {} No disks detected. Are you running as root?",
+                    NerdFont::Warning.to_string().yellow()
+                );
+            } else {
+                display_disks(&disks);
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "  {} Failed to check feasibility: {}",
+                NerdFont::Cross.to_string().red(),
+                e
+            );
+            eprintln!(
+                "  {} Try running with sudo",
+                NerdFont::ArrowPointer.to_string().dimmed()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle the installation finished menu
+async fn handle_finished_command() -> Result<()> {
+    use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+    use crate::ui::nerd_font::NerdFont;
+
+    #[derive(Clone)]
+    enum FinishedMenuOption {
+        Reboot,
+        Shutdown,
+        Continue,
+    }
+
+    impl FzfSelectable for FinishedMenuOption {
+        fn fzf_display_text(&self) -> String {
+            match self {
+                FinishedMenuOption::Reboot => format!("{} Reboot", NerdFont::Reboot),
+                FinishedMenuOption::Shutdown => format!("{} Shutdown", NerdFont::PowerOff),
+                FinishedMenuOption::Continue => {
+                    format!("{} Continue in Live Session", NerdFont::Continue)
+                }
+            }
+        }
+    }
+
+    let state = crate::arch::execution::state::InstallState::load()?;
+
+    // Check if we should upload logs
+    if let Ok(context) = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE) {
+        crate::arch::logging::process_log_upload(&context);
+    }
+
+    println!("\n{}", "Installation Finished!".green().bold());
+
+    if let Some(start_time) = state.start_time {
+        let duration = chrono::Utc::now() - start_time;
+        let hours = duration.num_hours();
+        let minutes = duration.num_minutes() % 60;
+        let seconds = duration.num_seconds() % 60;
+        println!("Duration: {:02}:{:02}:{:02}", hours, minutes, seconds);
+    }
+
+    // Calculate storage used (approximate)
+    if let Ok(output) = std::process::Command::new("df")
+        .arg("-h")
+        .arg("/mnt")
+        .output()
+    {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        if let Some(line) = output_str.lines().nth(1) {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 3 {
+                println!("Storage Used: {}", parts[2]);
+            }
+        }
+    }
+
+    println!();
+
+    let options = vec![
+        FinishedMenuOption::Reboot,
+        FinishedMenuOption::Shutdown,
+        FinishedMenuOption::Continue,
+    ];
+
+    let result = FzfWrapper::builder()
+        .header("Installation complete. What would you like to do?")
+        .select(options)?;
+
+    match result {
+        FzfResult::Selected(option) => match option {
+            FinishedMenuOption::Reboot => {
+                println!("Rebooting...");
+                std::process::Command::new("reboot").spawn()?;
+            }
+            FinishedMenuOption::Shutdown => {
+                println!("Shutting down...");
+                std::process::Command::new("poweroff").spawn()?;
+            }
+            FinishedMenuOption::Continue => {
+                println!("Exiting to live session...");
+            }
+        },
+        _ => println!("Exiting..."),
+    }
+
+    Ok(())
+}
+
 #[derive(Subcommand, Debug, Clone)]
 pub enum DualbootCommands {
     /// Show information about existing operating systems and partitions
@@ -64,7 +503,6 @@ pub enum ArchCommands {
 }
 
 pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<()> {
-    use crate::arch::engine::QuestionEngine;
     use crate::arch::questions::{
         BooleanQuestion, DiskQuestion, DualBootPartitionQuestion, DualBootSizeQuestion,
         EncryptionPasswordQuestion, EspPartitionValidator, HostnameQuestion, KernelQuestion,
@@ -201,216 +639,9 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             Ok(())
         }
         ArchCommands::Ask { id, output_config } => {
-            if let Some(id) = id {
-                // Ask a single question
-                // Escalate if the question requires root (e.g. Disk)
-                if matches!(id, crate::arch::engine::QuestionId::Disk) {
-                    ensure_root()?;
-                }
-
-                let question = questions
-                    .into_iter()
-                    .find(|q| q.id() == id)
-                    .ok_or_else(|| anyhow::anyhow!("Question not found"))?;
-
-                let engine = QuestionEngine::new(vec![question]);
-
-                // Initialize data providers so questions that need data (like MirrorRegion) work
-                engine.initialize_providers();
-
-                // Run the engine with just this single question
-                let context = engine.run().await?;
-
-                if let Some(answer) = context.get_answer(&id) {
-                    println!("Answer: {}", answer);
-                }
-                Ok(())
-            } else {
-                // Ask all questions (formerly Install logic)
-                // Installation requires root privileges
-                ensure_root()?;
-
-                println!("Starting Arch Linux installation wizard...");
-
-                // Perform system checks
-                let system_info = crate::arch::engine::SystemInfo::detect();
-
-                if !system_info.internet_connected {
-                    eprintln!(
-                        "Error: No internet connection detected. Arch installation requires internet."
-                    );
-                    return Ok(());
-                }
-
-                // Check if running on live ISO and handle dependencies
-                if is_live_iso() {
-                    println!("Detected Arch Linux Live ISO environment.");
-
-                    let dependencies = &[
-                        &crate::common::deps::FZF,
-                        &crate::common::deps::GIT,
-                        &crate::common::deps::LIBGIT2,
-                        &crate::common::deps::GUM,
-                        &crate::common::deps::CFDISK,
-                    ];
-
-                    // Collect all missing packages first
-                    let mut missing_packages = Vec::new();
-                    for dep in dependencies {
-                        if !dep.is_installed()
-                            && let Some(pkg) = dep.packages.iter().find(|p| {
-                                p.manager == crate::common::package::PackageManager::Pacman
-                            })
-                        {
-                            missing_packages.push(pkg.package_name);
-                            println!("Will install missing dependency: {}...", dep.name);
-                        }
-                    }
-
-                    // Install all missing packages in one pacman call
-                    if !missing_packages.is_empty() {
-                        println!("Installing {} missing packages...", missing_packages.len());
-
-                        let executor = crate::arch::execution::CommandExecutor::new(false, None);
-                        if let Err(e) =
-                            crate::arch::execution::pacman::install(&missing_packages, &executor)
-                        {
-                            eprintln!("Warning: Failed to install some packages: {}", e);
-                        } else {
-                            println!("Successfully installed {} packages", missing_packages.len());
-                        }
-                    }
-                }
-
-                println!("System Checks:");
-                println!("  Boot Mode: {}", system_info.boot_mode);
-                println!("  Internet: {}", system_info.internet_connected);
-                println!("  AMD CPU: {}", system_info.has_amd_cpu);
-                println!("  Intel CPU: {}", system_info.has_intel_cpu);
-                println!("  GPUs: {:?}", system_info.gpus);
-                println!("  Virtual Machine: {:?}", system_info.vm_type);
-
-                let mut engine = QuestionEngine::new(questions);
-                engine.context.system_info = system_info;
-
-                // Initialize data providers
-                engine.initialize_providers();
-
-                let context = engine.run().await?;
-
-                println!("Installation configuration complete!");
-                println!(
-                    "Hostname: {}",
-                    context
-                        .get_answer(&crate::arch::engine::QuestionId::Hostname)
-                        .map_or("<not set>".to_string(), |v| v.clone())
-                );
-                println!(
-                    "Username: {}",
-                    context
-                        .get_answer(&crate::arch::engine::QuestionId::Username)
-                        .map_or("<not set>".to_string(), |v| v.clone())
-                );
-
-                let toml_content = context.to_toml()?;
-
-                let config_path = output_config
-                    .unwrap_or_else(|| std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE));
-
-                // Ensure parent directory exists
-                if let Some(parent) = config_path.parent()
-                    && !parent.exists()
-                {
-                    std::fs::create_dir_all(parent)?;
-                }
-
-                // Write to file
-                std::fs::write(&config_path, &toml_content)?;
-                println!("\nConfiguration saved to: {}", config_path.display());
-
-                Ok(())
-            }
+            handle_ask_command(id, output_config, questions).await
         }
-        ArchCommands::Install => {
-            // Check architecture
-            let system_info = crate::arch::engine::SystemInfo::detect();
-
-            // Check distro
-            if !system_info.distro.contains("Arch") && !system_info.distro.contains("instantOS") {
-                eprintln!(
-                    "{} {}",
-                    "Error:".red().bold(),
-                    format!(
-                        "Arch Linux installation is only supported on Arch Linux or instantOS. Detected distro: {}",
-                        system_info.distro
-                    ).red()
-                );
-                return Ok(());
-            }
-
-            if system_info.architecture != "x86_64" {
-                eprintln!(
-                    "{} {}",
-                    "Error:".red().bold(),
-                    format!(
-                        "Arch Linux installation is only supported on x86_64 architecture. Detected architecture: {}",
-                        system_info.architecture
-                    ).red()
-                );
-                return Ok(());
-            }
-
-            // Mark start time
-            let mut state = crate::arch::execution::state::InstallState::load()?;
-            state.mark_start();
-            state.save()?;
-
-            // 1. Ask questions
-            Box::pin(handle_arch_command(
-                ArchCommands::Ask {
-                    id: None,
-                    output_config: None,
-                },
-                _debug,
-            ))
-            .await?;
-
-            // 2. Execute
-            let exec_result = Box::pin(handle_arch_command(
-                ArchCommands::Exec {
-                    step: None,
-                    questions_file: std::path::PathBuf::from(DEFAULT_QUESTIONS_FILE),
-                    dry_run: false,
-                },
-                _debug,
-            ))
-            .await;
-
-            if let Err(_) = exec_result {
-                // Try to upload logs if forced or requested
-                if let Ok(context) =
-                    crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE)
-                {
-                    crate::arch::logging::process_log_upload(&context);
-                } else if std::path::Path::new("/etc/instantos/uploadlogs").exists() {
-                    println!(
-                        "Uploading installation logs (forced by /etc/instantos/uploadlogs)..."
-                    );
-                    let log_path =
-                        std::path::PathBuf::from(crate::arch::execution::paths::LOG_FILE);
-                    if let Err(e) = crate::arch::logging::upload_logs(&log_path) {
-                        eprintln!("Failed to upload logs: {}", e);
-                    }
-                }
-            }
-
-            exec_result?;
-
-            // 3. Finished
-            Box::pin(handle_arch_command(ArchCommands::Finished, _debug)).await?;
-
-            Ok(())
-        }
+        ArchCommands::Install => handle_install_command(_debug).await,
         ArchCommands::Exec {
             step,
             questions_file,
@@ -450,225 +681,10 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
             Ok(())
         }
         ArchCommands::Dualboot { command } => match command {
-            DualbootCommands::Info => {
-                use crate::arch::dualboot::{check_all_disks_feasibility, display_disks};
-                use crate::ui::nerd_font::NerdFont;
-
-                println!();
-                println!(
-                    "  {} {}",
-                    NerdFont::HardDrive.to_string().bright_cyan(),
-                    "Dual Boot Detection".bright_white().bold()
-                );
-                println!("  {}", "─".repeat(50).bright_black());
-                println!();
-
-                match check_all_disks_feasibility() {
-                    Ok((disks, feasibility_results)) => {
-                        let mut any_feasible = false;
-
-                        // Show feasibility summary first
-                        println!("  {}", "Feasibility Summary:".bold());
-                        for (disk, feasibility) in &feasibility_results {
-                            if feasibility.feasible {
-                                any_feasible = true;
-                                // Show different message depending on whether feasibility
-                                // comes from resizable partitions or unpartitioned space
-                                if feasibility.feasible_partitions.is_empty() {
-                                    // Feasible due to unpartitioned space
-                                    println!(
-                                        "    {} {} - {}",
-                                        NerdFont::Check.to_string().green().bold(),
-                                        disk.bright_white(),
-                                        "FEASIBLE".green().bold(),
-                                    );
-                                    if let Some(reason) = &feasibility.reason {
-                                        println!(
-                                            "      {} {}",
-                                            NerdFont::ArrowPointer.to_string().dimmed(),
-                                            reason.green()
-                                        );
-                                    }
-                                } else {
-                                    // Feasible due to resizable partitions
-                                    println!(
-                                        "    {} {} - {} {}",
-                                        NerdFont::Check.to_string().green().bold(),
-                                        disk.bright_white(),
-                                        "FEASIBLE".green().bold(),
-                                        format!(
-                                            "({} partition(s) can be resized)",
-                                            feasibility.feasible_partitions.len()
-                                        )
-                                        .dimmed()
-                                    );
-                                    for part in &feasibility.feasible_partitions {
-                                        println!(
-                                            "      {} {}",
-                                            NerdFont::ArrowPointer.to_string().dimmed(),
-                                            part.cyan()
-                                        );
-                                    }
-                                }
-                            } else {
-                                println!(
-                                    "    {} {} - {}",
-                                    NerdFont::Cross.to_string().red().bold(),
-                                    disk.bright_white(),
-                                    "NOT FEASIBLE".red().bold()
-                                );
-                                if let Some(reason) = &feasibility.reason {
-                                    println!(
-                                        "      {} {}",
-                                        NerdFont::ArrowPointer.to_string().dimmed(),
-                                        reason.dimmed()
-                                    );
-                                }
-                            }
-                        }
-
-                        println!();
-
-                        if any_feasible {
-                            println!(
-                                "  {} {}",
-                                NerdFont::Check.to_string().green().bold(),
-                                "Dual boot is POSSIBLE on this system".green().bold()
-                            );
-                            println!(
-                                "  {} The installer will offer dual boot options",
-                                NerdFont::ArrowPointer.to_string().dimmed()
-                            );
-                        } else {
-                            println!(
-                                "  {} {}",
-                                NerdFont::Cross.to_string().red().bold(),
-                                "Dual boot is NOT POSSIBLE on this system".red().bold()
-                            );
-                            println!(
-                                "  {} The installer will NOT offer dual boot options",
-                                NerdFont::ArrowPointer.to_string().dimmed()
-                            );
-                        }
-
-                        println!();
-                        println!("  {}", "Detailed Disk Information:".bold());
-                        println!("  {}", "─".repeat(50).bright_black());
-                        println!();
-
-                        // Show detailed disk information
-                        if disks.is_empty() {
-                            println!(
-                                "  {} No disks detected. Are you running as root?",
-                                NerdFont::Warning.to_string().yellow()
-                            );
-                        } else {
-                            display_disks(&disks);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "  {} Failed to check feasibility: {}",
-                            NerdFont::Cross.to_string().red(),
-                            e
-                        );
-                        eprintln!(
-                            "  {} Try running with sudo",
-                            NerdFont::ArrowPointer.to_string().dimmed()
-                        );
-                    }
-                }
-
-                Ok(())
-            }
+            DualbootCommands::Info => handle_dualboot_info().await,
         },
 
-        ArchCommands::Finished => {
-            use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
-            use crate::ui::nerd_font::NerdFont;
-
-            #[derive(Clone)]
-            enum FinishedMenuOption {
-                Reboot,
-                Shutdown,
-                Continue,
-            }
-
-            impl FzfSelectable for FinishedMenuOption {
-                fn fzf_display_text(&self) -> String {
-                    match self {
-                        FinishedMenuOption::Reboot => format!("{} Reboot", NerdFont::Reboot),
-                        FinishedMenuOption::Shutdown => format!("{} Shutdown", NerdFont::PowerOff),
-                        FinishedMenuOption::Continue => {
-                            format!("{} Continue in Live Session", NerdFont::Continue)
-                        }
-                    }
-                }
-            }
-
-            let state = crate::arch::execution::state::InstallState::load()?;
-
-            // Check if we should upload logs
-            if let Ok(context) = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE) {
-                crate::arch::logging::process_log_upload(&context);
-            }
-
-            println!("\n{}", "Installation Finished!".green().bold());
-
-            if let Some(start_time) = state.start_time {
-                let duration = chrono::Utc::now() - start_time;
-                let hours = duration.num_hours();
-                let minutes = duration.num_minutes() % 60;
-                let seconds = duration.num_seconds() % 60;
-                println!("Duration: {:02}:{:02}:{:02}", hours, minutes, seconds);
-            }
-
-            // Calculate storage used (approximate)
-            if let Ok(output) = std::process::Command::new("df")
-                .arg("-h")
-                .arg("/mnt")
-                .output()
-            {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                if let Some(line) = output_str.lines().nth(1) {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() >= 3 {
-                        println!("Storage Used: {}", parts[2]);
-                    }
-                }
-            }
-
-            println!();
-
-            let options = vec![
-                FinishedMenuOption::Reboot,
-                FinishedMenuOption::Shutdown,
-                FinishedMenuOption::Continue,
-            ];
-
-            let result = FzfWrapper::builder()
-                .header("Installation complete. What would you like to do?")
-                .select(options)?;
-
-            match result {
-                FzfResult::Selected(option) => match option {
-                    FinishedMenuOption::Reboot => {
-                        println!("Rebooting...");
-                        std::process::Command::new("reboot").spawn()?;
-                    }
-                    FinishedMenuOption::Shutdown => {
-                        println!("Shutting down...");
-                        std::process::Command::new("poweroff").spawn()?;
-                    }
-                    FinishedMenuOption::Continue => {
-                        println!("Exiting to live session...");
-                    }
-                },
-                _ => println!("Exiting..."),
-            }
-
-            Ok(())
-        }
+        ArchCommands::Finished => handle_finished_command().await,
         ArchCommands::Setup { user, dry_run } => {
             // Check if running on live CD
             if is_live_iso() {

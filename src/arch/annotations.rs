@@ -1,6 +1,35 @@
+//! # Annotations Module
+//!
+//! This module provides human-readable annotations for values which might not be
+//! trivial to understand for new users. It enhances user experience by adding
+//! descriptive context to technical values like locale codes, keymap names, etc.
+//!
+//! ## Features
+//!
+//! - **AnnotatedValue<T>**: A wrapper that adds optional annotations to any value
+//! - **AnnotationProvider trait**: Allows custom annotation logic for different value types
+//! - **Built-in providers**: Pre-configured annotations for locales and keymaps
+//! - **FZF integration**: Seamless integration with the fuzzy finder UI
+//! - **Sorting support**: Prioritizes annotated values in UI listings
+//!
+//! ## Examples
+//!
+//! ```rust
+//! // Create annotated values
+//! let locale = AnnotatedValue::new(
+//!     "de_DE.UTF-8".to_string(),
+//!     Some("German (Germany)".to_string())
+//! );
+//!
+//! // Annotate a list of values
+//! let items = vec!["us", "de-latin1", "uk"];
+//! let annotated = annotate_list(Some(&KeymapAnnotationProvider), items);
+//!
+//! // Display in FZF: "German - de-latin1", "English (US) - us", "English (UK) - uk"
+//! ```
+
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use std::collections::HashMap;
-
 #[derive(Debug, Clone)]
 pub struct AnnotatedValue<T> {
     pub value: T,
