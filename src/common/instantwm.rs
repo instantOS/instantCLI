@@ -21,6 +21,8 @@ pub enum InstantWmSetting {
 /// Represents scratchpad commands in instantWM
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstantWmScratchpadCommand {
+    /// Make a window a scratchpad
+    Make,
     /// Show the scratchpad
     Show,
     /// Hide the scratchpad
@@ -44,6 +46,7 @@ impl InstantWmScratchpadCommand {
     /// Get the command string used in xsetroot commands
     fn command_id(&self) -> &'static str {
         match self {
+            InstantWmScratchpadCommand::Make => "makescratchpad",
             InstantWmScratchpadCommand::Show => "showscratchpad",
             InstantWmScratchpadCommand::Hide => "hidescratchpad",
             InstantWmScratchpadCommand::Toggle => "togglescratchpad",
@@ -122,9 +125,13 @@ impl InstantWmController {
 
     /// Apply a scratchpad command to instantWM
     ///
-    /// This sends a scratchpad command to instantWM via xsetroot.
-    pub fn apply_scratchpad(&self, command: InstantWmScratchpadCommand) -> Result<()> {
-        let control_string = format!("c;:;{}", command.command_id());
+    /// This sends a scratchpad command to instantWM via xsetroot with a name.
+    pub fn apply_scratchpad(&self, command: InstantWmScratchpadCommand, name: &str) -> Result<()> {
+        let control_string = if name.is_empty() {
+            format!("c;:;{}", command.command_id())
+        } else {
+            format!("c;:;{};{}", command.command_id(), name)
+        };
 
         let status = Command::new("xsetroot")
             .args(["-name", &control_string])
@@ -165,24 +172,24 @@ impl InstantWmController {
         }
     }
 
-    /// Show the scratchpad
-    pub fn show_scratchpad(&self) -> Result<()> {
-        self.apply_scratchpad(InstantWmScratchpadCommand::Show)
+    /// Show a named scratchpad
+    pub fn show_scratchpad(&self, name: &str) -> Result<()> {
+        self.apply_scratchpad(InstantWmScratchpadCommand::Show, name)
     }
 
-    /// Hide the scratchpad
-    pub fn hide_scratchpad(&self) -> Result<()> {
-        self.apply_scratchpad(InstantWmScratchpadCommand::Hide)
+    /// Hide a named scratchpad
+    pub fn hide_scratchpad(&self, name: &str) -> Result<()> {
+        self.apply_scratchpad(InstantWmScratchpadCommand::Hide, name)
     }
 
-    /// Toggle scratchpad visibility
-    pub fn toggle_scratchpad(&self) -> Result<()> {
-        self.apply_scratchpad(InstantWmScratchpadCommand::Toggle)
+    /// Toggle a named scratchpad visibility
+    pub fn toggle_scratchpad(&self, name: &str) -> Result<()> {
+        self.apply_scratchpad(InstantWmScratchpadCommand::Toggle, name)
     }
 
-    /// Get scratchpad status
-    pub fn get_scratchpad_status(&self) -> Result<bool> {
-        self.apply_scratchpad(InstantWmScratchpadCommand::Status)?;
+    /// Get named scratchpad status
+    pub fn get_scratchpad_status(&self, name: &str) -> Result<bool> {
+        self.apply_scratchpad(InstantWmScratchpadCommand::Status, name)?;
 
         // Wait for the response in WM_NAME
         for _attempt in 0..20 {
@@ -205,6 +212,11 @@ impl InstantWmController {
 
         // If we couldn't get the status, assume it's hidden
         Ok(false)
+    }
+
+    /// Make a window with class scratchpad_<name> into a scratchpad
+    pub fn make_scratchpad(&self, name: &str) -> Result<()> {
+        self.apply_scratchpad(InstantWmScratchpadCommand::Make, name)
     }
 }
 
@@ -232,6 +244,10 @@ mod tests {
 
     #[test]
     fn test_scratchpad_command_ids() {
+        assert_eq!(
+            InstantWmScratchpadCommand::Make.command_id(),
+            "makescratchpad"
+        );
         assert_eq!(
             InstantWmScratchpadCommand::Show.command_id(),
             "showscratchpad"
