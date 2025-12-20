@@ -435,6 +435,8 @@ where
             "--input-border=none",
             "--preview-border=left",
             "--pointer=▌",
+            // Search behavior
+            "--ignore-case", // Case-insensitive search
             // Catppuccin Mocha color scheme
             "--color=bg:#1e1e2e",         // Base - main background
             "--color=bg+:#313244",        // Surface0 - highlighted item bg
