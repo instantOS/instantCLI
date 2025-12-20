@@ -16,8 +16,16 @@ pub enum DisplayServer {
 impl DisplayServer {
     /// Detect the current display server type
     pub fn detect() -> Self {
+        Self::detect_from_env(|k| env::var(k))
+    }
+
+    /// Detect display server using provided environment variable lookup function
+    pub fn detect_from_env<F>(env_var: F) -> Self
+    where
+        F: Fn(&str) -> Result<String, env::VarError>,
+    {
         // Check XDG_SESSION_TYPE first (most reliable)
-        if let Ok(session_type) = env::var("XDG_SESSION_TYPE") {
+        if let Ok(session_type) = env_var("XDG_SESSION_TYPE") {
             match session_type.to_lowercase().as_str() {
                 "wayland" => return DisplayServer::Wayland,
                 "x11" => return DisplayServer::X11,
@@ -26,12 +34,12 @@ impl DisplayServer {
         }
 
         // Check WAYLAND_DISPLAY environment variable
-        if env::var("WAYLAND_DISPLAY").is_ok() {
+        if env_var("WAYLAND_DISPLAY").is_ok() {
             return DisplayServer::Wayland;
         }
 
         // Check DISPLAY environment variable
-        if env::var("DISPLAY").is_ok() {
+        if env_var("DISPLAY").is_ok() {
             return DisplayServer::X11;
         }
 
@@ -91,22 +99,6 @@ impl DisplayServer {
         false
     }
 
-    /// Check if the display server is Wayland
-    pub fn is_wayland(&self) -> bool {
-        matches!(self, DisplayServer::Wayland)
-    }
-
-    /// Check if the display server is X11
-    pub fn is_x11(&self) -> bool {
-        matches!(self, DisplayServer::X11)
-    }
-
-    /// Check if the display server is unknown/unsupported
-    #[allow(dead_code)]
-    pub fn is_unknown(&self) -> bool {
-        matches!(self, DisplayServer::Unknown)
-    }
-
     /// Get the appropriate clipboard command for the display server
     pub fn get_clipboard_command(&self) -> (&'static str, Vec<&'static str>) {
         match self {
@@ -126,11 +118,6 @@ impl DisplayServer {
         }
     }
 
-    /// Check if the current session is a desktop session
-    #[allow(dead_code)]
-    pub fn is_desktop_session(&self) -> bool {
-        !self.is_unknown()
-    }
 }
 
 impl std::fmt::Display for DisplayServer {
@@ -169,23 +156,23 @@ mod tests {
 
     #[test]
     fn test_wayland_detection() {
-        assert!(DisplayServer::Wayland.is_wayland());
-        assert!(!DisplayServer::Wayland.is_x11());
-        assert!(!DisplayServer::Wayland.is_unknown());
+        assert!(matches!(DisplayServer::Wayland, DisplayServer::Wayland));
+        assert!(!matches!(DisplayServer::Wayland, DisplayServer::X11));
+        assert!(!matches!(DisplayServer::Wayland, DisplayServer::Unknown));
     }
 
     #[test]
     fn test_x11_detection() {
-        assert!(DisplayServer::X11.is_x11());
-        assert!(!DisplayServer::X11.is_wayland());
-        assert!(!DisplayServer::X11.is_unknown());
+        assert!(matches!(DisplayServer::X11, DisplayServer::X11));
+        assert!(!matches!(DisplayServer::X11, DisplayServer::Wayland));
+        assert!(!matches!(DisplayServer::X11, DisplayServer::Unknown));
     }
 
     #[test]
     fn test_unknown_detection() {
-        assert!(DisplayServer::Unknown.is_unknown());
-        assert!(!DisplayServer::Unknown.is_wayland());
-        assert!(!DisplayServer::Unknown.is_x11());
+        assert!(matches!(DisplayServer::Unknown, DisplayServer::Unknown));
+        assert!(!matches!(DisplayServer::Unknown, DisplayServer::Wayland));
+        assert!(!matches!(DisplayServer::Unknown, DisplayServer::X11));
     }
 
     #[test]
@@ -210,8 +197,8 @@ mod tests {
 
     #[test]
     fn test_desktop_session() {
-        assert!(DisplayServer::Wayland.is_desktop_session());
-        assert!(DisplayServer::X11.is_desktop_session());
-        assert!(!DisplayServer::Unknown.is_desktop_session());
+        assert!(!matches!(DisplayServer::Wayland, DisplayServer::Unknown));
+        assert!(!matches!(DisplayServer::X11, DisplayServer::Unknown));
+        assert!(matches!(DisplayServer::Unknown, DisplayServer::Unknown));
     }
 }

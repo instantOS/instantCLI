@@ -146,7 +146,7 @@ async fn ensure_polkit_agent(debug: bool) {
     use crate::common::display_server::DisplayServer;
 
     // Skip if not a desktop session
-    if !DisplayServer::detect().is_desktop_session() {
+    if matches!(DisplayServer::detect(), DisplayServer::Unknown) {
         if debug {
             println!("Not running in a desktop session, skipping polkit agent setup");
         }

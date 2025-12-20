@@ -13,7 +13,7 @@ pub fn screenshot_annotate() -> Result<()> {
 
     let display_server = DisplayServer::detect();
 
-    if display_server.is_wayland() {
+    if matches!(display_server, DisplayServer::Wayland) {
         let flameshot_running = Command::new("pgrep")
             .arg("flameshot")
             .output()
@@ -81,7 +81,7 @@ pub fn screenshot_to_clipboard_fullscreen() -> Result<()> {
 
 /// Capture fullscreen screenshot to memory (as PNG bytes)
 fn capture_fullscreen_to_memory(display_server: &DisplayServer) -> Result<Vec<u8>> {
-    if display_server.is_wayland() {
+    if matches!(*display_server, DisplayServer::Wayland) {
         // For Wayland, use grim with no geometry (fullscreen)
         let grim_output = Command::new("grim")
             .arg("-")
@@ -93,7 +93,7 @@ fn capture_fullscreen_to_memory(display_server: &DisplayServer) -> Result<Vec<u8
         }
 
         Ok(grim_output.stdout)
-    } else if display_server.is_x11() {
+    } else if matches!(*display_server, DisplayServer::X11) {
         // Check if picom is running and add small delay (similar to old instantassist)
         let picom_running = Command::new("pgrep")
             .arg("picom")
@@ -214,7 +214,7 @@ pub fn fullscreen_screenshot() -> Result<()> {
     let pictures_dir = paths::pictures_dir().context("Failed to determine pictures directory")?;
     let output_path = pictures_dir.join(&filename);
 
-    if display_server.is_wayland() {
+    if matches!(display_server, DisplayServer::Wayland) {
         // Use grim for Wayland
         let status = Command::new("grim")
             .arg(output_path.to_str().context("Invalid path encoding")?)
@@ -224,7 +224,7 @@ pub fn fullscreen_screenshot() -> Result<()> {
         if !status.success() {
             anyhow::bail!("Failed to capture fullscreen screenshot with grim");
         }
-    } else if display_server.is_x11() {
+    } else if matches!(display_server, DisplayServer::X11) {
         // Check if picom is running and add small delay
         let picom_running = Command::new("pgrep")
             .arg("picom")
