@@ -196,14 +196,13 @@ impl InstantWmController {
             if let Ok(output) = Command::new("xprop")
                 .args(["-root", "-notype", "WM_NAME"])
                 .output()
+                && output.status.success()
             {
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    if let Some(captures) = stdout.strip_prefix("WM_NAME = ") {
-                        let value = captures.trim().trim_matches('"');
-                        if let Some(status_str) = value.strip_prefix("ipc:scratchpad:") {
-                            return Ok(status_str == "1");
-                        }
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if let Some(captures) = stdout.strip_prefix("WM_NAME = ") {
+                    let value = captures.trim().trim_matches('"');
+                    if let Some(status_str) = value.strip_prefix("ipc:scratchpad:") {
+                        return Ok(status_str == "1");
                     }
                 }
             }

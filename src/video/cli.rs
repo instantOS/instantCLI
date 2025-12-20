@@ -16,6 +16,15 @@ pub enum VideoCommands {
     Stats(StatsArgs),
     /// Process audio using Auphonic
     Auphonic(AuphonicArgs),
+    /// Setup video tools (Auphonic API key, WhisperX)
+    Setup(SetupArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct SetupArgs {
+    /// Force setup even if already configured
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Args, Debug, Clone)]

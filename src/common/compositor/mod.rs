@@ -222,8 +222,6 @@ impl CompositorType {
         }
     }
 
-
-
     /// Check if the compositor is X11-based
     #[allow(dead_code)]
     pub fn is_x11(&self) -> bool {
