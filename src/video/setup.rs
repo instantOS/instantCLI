@@ -79,7 +79,7 @@ async fn setup_auphonic(force: bool) -> Result<()> {
     }
 
     // Ask for API key
-    let prompt = "Enter your Auphonic API key (from https://auphonic.com/api/user/):";
+    let prompt = "Enter your Auphonic API key (from https://auphonic.com/accounts/settings/):";
     let api_key = match FzfWrapper::input(prompt) {
         Ok(input) => input.trim().to_string(),
         Err(e) => {
