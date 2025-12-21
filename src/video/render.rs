@@ -18,14 +18,14 @@ use super::video_planner::{
     StandalonePlan, TimelinePlan, TimelinePlanItem, align_plan_with_subtitles, plan_timeline,
 };
 
-//TODO: this function is way too long and needs to be broken up
-pub fn handle_render(args: RenderArgs) -> Result<()> {
-    macro_rules! log {
-        ($level:expr, $code:expr, $($arg:tt)*) => {
-            emit($level, $code, &format!($($arg)*), None);
-        };
-    }
+macro_rules! log {
+    ($level:expr, $code:expr, $($arg:tt)*) => {{
+        let message = format!($($arg)*);
+        emit($level, $code, &message, None);
+    }};
+}
 
+pub fn handle_render(args: RenderArgs) -> Result<()> {
     let pre_cache_only = args.precache_titlecards;
     let dry_run = args.dry_run;
 
@@ -36,6 +36,102 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
     );
 
     let markdown_path = canonicalize_existing(&args.markdown)?;
+    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+
+    let document = load_video_document(&markdown_path)?;
+    let cues = load_transcript_cues(&document.metadata, markdown_dir)?;
+    let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
+
+    let video_path = resolve_source_video_path(&document.metadata, markdown_dir)?;
+    let audio_path = resolve_audio_path(&video_path)?;
+
+    let output_path = if pre_cache_only {
+        None
+    } else {
+        Some(resolve_output_path(&args, &video_path, markdown_dir)?)
+    };
+
+    if let Some(output_path) = &output_path {
+        prepare_output_destination(output_path, &args, &video_path)?;
+    }
+
+    log!(
+        Level::Info,
+        "video.render.probe",
+        "Probing source video dimensions"
+    );
+    let (video_width, video_height) = probe_video_dimensions(&video_path)?;
+
+    let generator = TitleCardGenerator::new(video_width, video_height)?;
+
+    log!(
+        Level::Info,
+        "video.render.timeline.build",
+        "Building render timeline (may generate title cards)"
+    );
+    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &video_path, markdown_dir)?;
+
+    report_timeline_stats(&stats);
+
+    if pre_cache_only {
+        emit(
+            Level::Success,
+            "video.render.precache_only",
+            "Prepared title cards and overlays in cache; skipping final render",
+            None,
+        );
+        return Ok(());
+    }
+
+    let Some(output_path) = output_path else {
+        bail!("Output path is required when not pre-caching");
+    };
+
+    let video_config = VideoConfig::load()?;
+    let pipeline = RenderPipeline::new(
+        output_path.clone(),
+        nle_timeline,
+        video_width,
+        video_height,
+        video_config,
+        audio_path,
+    );
+
+    log!(
+        Level::Info,
+        "video.render.ffmpeg",
+        "Preparing ffmpeg pipeline"
+    );
+
+    if dry_run {
+        pipeline.print_command()?;
+        emit(
+            Level::Info,
+            "video.render.dry_run",
+            "Dry run completed - ffmpeg command printed above",
+            None,
+        );
+        return Ok(());
+    }
+
+    log!(
+        Level::Info,
+        "video.render.execute",
+        "Starting ffmpeg render"
+    );
+    pipeline.execute()?;
+
+    emit(
+        Level::Success,
+        "video.render.success",
+        &format!("Rendered edited timeline to {}", output_path.display()),
+        None,
+    );
+
+    Ok(())
+}
+
+fn load_video_document(markdown_path: &Path) -> Result<super::document::VideoDocument> {
     log!(
         Level::Info,
         "video.render.markdown.read",
@@ -43,7 +139,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         markdown_path.display()
     );
 
-    let markdown_contents = fs::read_to_string(&markdown_path)
+    let markdown_contents = fs::read_to_string(markdown_path)
         .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
 
     log!(
@@ -51,11 +147,16 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         "video.render.markdown.parse",
         "Parsing markdown into video edit instructions"
     );
-    let document = parse_video_document(&markdown_contents, &markdown_path)?;
+    parse_video_document(&markdown_contents, markdown_path)
+}
 
-    let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
-    let transcript_path = resolve_transcript_path(&document.metadata, markdown_dir)?;
+fn load_transcript_cues(
+    metadata: &VideoMetadata,
+    markdown_dir: &Path,
+) -> Result<Vec<super::srt::SrtCue>> {
+    let transcript_path = resolve_transcript_path(metadata, markdown_dir)?;
     let transcript_path = canonicalize_existing(&transcript_path)?;
+
     log!(
         Level::Info,
         "video.render.transcript.read",
@@ -75,17 +176,23 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         "video.render.transcript.parse",
         "Parsing transcript cues"
     );
-    let cues = parse_srt(&transcript_contents)?;
+    parse_srt(&transcript_contents)
+}
 
+fn build_timeline_plan(
+    document: &super::document::VideoDocument,
+    cues: &[super::srt::SrtCue],
+    markdown_path: &Path,
+) -> Result<TimelinePlan> {
     log!(
         Level::Info,
         "video.render.plan",
         "Planning timeline (selecting clips, overlays, cards)"
     );
-    let mut plan = plan_timeline(&document)?;
+    let mut plan = plan_timeline(document)?;
 
     if plan.items.is_empty() {
-        anyhow::bail!(
+        bail!(
             "No renderable blocks found in {}. Ensure the markdown contains timestamp code spans or headings.",
             markdown_path.display()
         );
@@ -96,10 +203,15 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         "video.render.plan.align",
         "Aligning planned segments with transcript timing"
     );
-    align_plan_with_subtitles(&mut plan, &cues)?;
+    align_plan_with_subtitles(&mut plan, cues)?;
 
-    let video_path = resolve_video_path(&document.metadata, markdown_dir)?;
+    Ok(plan)
+}
+
+fn resolve_source_video_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
+    let video_path = resolve_video_path(metadata, markdown_dir)?;
     let video_path = canonicalize_existing(&video_path)?;
+
     log!(
         Level::Info,
         "video.render.video",
@@ -107,20 +219,24 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         video_path.display()
     );
 
-    // Resolve Auphonic processed audio
+    Ok(video_path)
+}
+
+fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
     log!(
         Level::Info,
         "video.render.video.hash",
         "Computing hash for cache lookup"
     );
-    let video_hash = super::utils::compute_file_hash(&video_path)?;
+
+    let video_hash = super::utils::compute_file_hash(video_path)?;
     let directories = VideoDirectories::new()?;
     let project_paths = directories.project_paths(&video_hash);
     let auphonic_processed_path = project_paths
         .transcript_dir()
         .join(format!("{}_auphonic_processed.mp3", video_hash));
 
-    let audio_path = if auphonic_processed_path.exists() {
+    if auphonic_processed_path.exists() {
         emit(
             Level::Info,
             "video.render.audio",
@@ -130,7 +246,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
             ),
             None,
         );
-        auphonic_processed_path
+        Ok(auphonic_processed_path)
     } else {
         emit(
             Level::Warn,
@@ -138,63 +254,47 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
             "Auphonic processed audio not found. Using original video audio.",
             None,
         );
-        video_path.clone()
-    };
+        Ok(video_path.to_path_buf())
+    }
+}
 
-    let output_path = if pre_cache_only {
-        None
-    } else {
-        Some(resolve_output_path(&args, &video_path, markdown_dir)?)
-    };
+fn prepare_output_destination(
+    output_path: &Path,
+    args: &RenderArgs,
+    video_path: &Path,
+) -> Result<()> {
+    if output_path == video_path {
+        bail!(
+            "Output path {} would overwrite the source video",
+            output_path.display()
+        );
+    }
 
-    if let Some(output_path) = &output_path {
-        if output_path == &video_path {
-            return Err(anyhow!(
-                "Output path {} would overwrite the source video",
-                output_path.display()
-            ));
-        }
-
-        if output_path.exists() {
-            if args.force {
-                fs::remove_file(output_path).with_context(|| {
-                    format!(
-                        "Failed to remove existing output file {} before overwrite",
-                        output_path.display()
-                    )
-                })?;
-            } else {
-                anyhow::bail!(
-                    "Output file {} already exists. Use --force to overwrite.",
+    if output_path.exists() {
+        if args.force {
+            fs::remove_file(output_path).with_context(|| {
+                format!(
+                    "Failed to remove existing output file {} before overwrite",
                     output_path.display()
-                );
-            }
-        }
-
-        if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!("Failed to create output directory {}", parent.display())
+                )
             })?;
+        } else {
+            bail!(
+                "Output file {} already exists. Use --force to overwrite.",
+                output_path.display()
+            );
         }
     }
 
-    log!(
-        Level::Info,
-        "video.render.probe",
-        "Probing source video dimensions"
-    );
-    let (video_width, video_height) = probe_video_dimensions(&video_path)?;
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create output directory {}", parent.display()))?;
+    }
 
-    let generator = TitleCardGenerator::new(video_width, video_height)?;
+    Ok(())
+}
 
-    log!(
-        Level::Info,
-        "video.render.timeline.build",
-        "Building render timeline (may generate title cards)"
-    );
-    // Build NLE timeline from the plan
-    let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &video_path, markdown_dir)?;
-
+fn report_timeline_stats(stats: &TimelineStats) {
     if stats.standalone_count > 0 {
         emit(
             Level::Info,
@@ -230,63 +330,6 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
             None,
         );
     }
-
-    if pre_cache_only {
-        emit(
-            Level::Success,
-            "video.render.precache_only",
-            "Prepared title cards and overlays in cache; skipping final render",
-            None,
-        );
-        return Ok(());
-    }
-
-    let output_path = output_path.expect("output path is required when not pre-caching");
-
-    let video_config = VideoConfig::load()?;
-
-    let pipeline = RenderPipeline::new(
-        output_path.clone(),
-        nle_timeline,
-        video_width,
-        video_height,
-        video_config,
-        audio_path,
-    );
-
-    log!(
-        Level::Info,
-        "video.render.ffmpeg",
-        "Preparing ffmpeg pipeline"
-    );
-
-    if dry_run {
-        pipeline.print_command()?;
-        emit(
-            Level::Info,
-            "video.render.dry_run",
-            "Dry run completed - ffmpeg command printed above",
-            None,
-        );
-        return Ok(());
-    }
-
-    log!(
-        Level::Info,
-        "video.render.execute",
-        "Starting ffmpeg render"
-    );
-
-    pipeline.execute()?;
-
-    emit(
-        Level::Success,
-        "video.render.success",
-        &format!("Rendered edited timeline to {}", output_path.display()),
-        None,
-    );
-
-    Ok(())
 }
 
 pub(super) fn resolve_video_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
@@ -397,111 +440,159 @@ struct TimelineStats {
 }
 
 /// Build an NLE timeline from the timeline plan
-//TODO: this is very long, consider breaking it up
 fn build_nle_timeline(
     plan: TimelinePlan,
     generator: &TitleCardGenerator,
     source_video: &Path,
     markdown_dir: &Path,
 ) -> Result<(Timeline, TimelineStats)> {
-    let mut timeline = Timeline::new();
-    let mut current_time = 0.0;
-    let mut music_resolver = MusicResolver::new(markdown_dir);
-    let mut active_music: Option<ActiveMusic> = None;
-
-    for item in plan.items {
-        match item {
-            TimelinePlanItem::Clip(clip_plan) => {
-                let duration = clip_plan.end - clip_plan.start;
-
-                // Add the main video clip segment (not muted - uses dialogue audio)
-                let segment = Segment::new_video_subset(
-                    current_time,
-                    duration,
-                    clip_plan.start,
-                    source_video.to_path_buf(),
-                    None,
-                    false, // Not muted - use dialogue audio
-                );
-                timeline.add_segment(segment);
-
-                // If there's an overlay, add it as an image segment at the same time
-                if let Some(overlay_plan) = clip_plan.overlay {
-                    let asset = generator.markdown_card(&overlay_plan.markdown)?;
-                    let overlay_segment = Segment::new_image(
-                        current_time,
-                        duration,
-                        asset.image_path.clone(),
-                        Some(Transform::with_scale(0.8)), // Default overlay scale
-                    );
-                    timeline.add_segment(overlay_segment);
-                }
-
-                current_time += duration;
-            }
-            TimelinePlanItem::Standalone(standalone_plan) => match standalone_plan {
-                StandalonePlan::Heading { level, text, .. } => {
-                    let heading_level = level.max(1);
-                    let hashes = "#".repeat(heading_level as usize);
-                    let markdown_content = format!("{hashes} {}\n", text.trim());
-                    let asset = generator.markdown_card(&markdown_content)?;
-                    let video_path = generator.ensure_video_for_duration(&asset, 2.0)?;
-
-                    // Title cards are pre-rendered videos, treat as video segments
-                    // Muted - no dialogue audio during title cards
-                    let segment = Segment::new_video_subset(
-                        current_time,
-                        2.0,
-                        0.0, // Start from beginning of title card video
-                        video_path,
-                        None,
-                        true, // Muted - no dialogue audio
-                    );
-                    timeline.add_segment(segment);
-                    current_time += 2.0;
-                }
-                StandalonePlan::Pause { markdown, .. } => {
-                    let asset = generator.markdown_card(&markdown)?;
-                    let video_path = generator.ensure_video_for_duration(&asset, 5.0)?;
-
-                    // Pause cards are pre-rendered videos
-                    // Muted - no dialogue audio during pause cards
-                    let segment = Segment::new_video_subset(
-                        current_time,
-                        5.0,
-                        0.0, // Start from beginning of pause card video
-                        video_path,
-                        None,
-                        true, // Muted - no dialogue audio
-                    );
-                    timeline.add_segment(segment);
-                    current_time += 5.0;
-                }
-            },
-            TimelinePlanItem::Music(music_plan) => {
-                finalize_music_segment(&mut timeline, &mut active_music, current_time);
-                let resolved = music_resolver.resolve(&music_plan.directive)?;
-                if let Some(path) = resolved {
-                    active_music = Some(ActiveMusic {
-                        path,
-                        start_time: current_time,
-                    });
-                } else {
-                    active_music = None;
-                }
-            }
-        }
-    }
-
-    finalize_music_segment(&mut timeline, &mut active_music, current_time);
-
     let stats = TimelineStats {
         standalone_count: plan.standalone_count,
         overlay_count: plan.overlay_count,
         ignored_count: plan.ignored_count,
     };
 
-    Ok((timeline, stats))
+    let mut state = TimelineBuildState::new(markdown_dir);
+
+    for item in plan.items {
+        state.apply_plan_item(item, generator, source_video)?;
+    }
+
+    state.finalize();
+
+    Ok((state.timeline, stats))
+}
+
+struct TimelineBuildState {
+    timeline: Timeline,
+    current_time: f64,
+    music_resolver: MusicResolver,
+    active_music: Option<ActiveMusic>,
+}
+
+impl TimelineBuildState {
+    fn new(markdown_dir: &Path) -> Self {
+        Self {
+            timeline: Timeline::new(),
+            current_time: 0.0,
+            music_resolver: MusicResolver::new(markdown_dir),
+            active_music: None,
+        }
+    }
+
+    fn apply_plan_item(
+        &mut self,
+        item: TimelinePlanItem,
+        generator: &TitleCardGenerator,
+        source_video: &Path,
+    ) -> Result<()> {
+        match item {
+            TimelinePlanItem::Clip(clip_plan) => self.add_clip(clip_plan, generator, source_video),
+            TimelinePlanItem::Standalone(standalone_plan) => {
+                self.add_standalone(standalone_plan, generator)
+            }
+            TimelinePlanItem::Music(music_plan) => self.add_music_directive(music_plan),
+        }
+    }
+
+    fn add_clip(
+        &mut self,
+        clip_plan: super::video_planner::ClipPlan,
+        generator: &TitleCardGenerator,
+        source_video: &Path,
+    ) -> Result<()> {
+        let duration = clip_plan.end - clip_plan.start;
+
+        let segment = Segment::new_video_subset(
+            self.current_time,
+            duration,
+            clip_plan.start,
+            source_video.to_path_buf(),
+            None,
+            false,
+        );
+        self.timeline.add_segment(segment);
+
+        if let Some(overlay_plan) = clip_plan.overlay {
+            self.add_overlay(&overlay_plan.markdown, duration, generator)?;
+        }
+
+        self.current_time += duration;
+        Ok(())
+    }
+
+    fn add_overlay(
+        &mut self,
+        markdown: &str,
+        duration: f64,
+        generator: &TitleCardGenerator,
+    ) -> Result<()> {
+        let asset = generator.markdown_card(markdown)?;
+        let overlay_segment = Segment::new_image(
+            self.current_time,
+            duration,
+            asset.image_path.clone(),
+            Some(Transform::with_scale(0.8)),
+        );
+        self.timeline.add_segment(overlay_segment);
+        Ok(())
+    }
+
+    fn add_standalone(
+        &mut self,
+        standalone_plan: StandalonePlan,
+        generator: &TitleCardGenerator,
+    ) -> Result<()> {
+        match standalone_plan {
+            StandalonePlan::Heading { level, text, .. } => {
+                let heading_level = level.max(1);
+                let hashes = "#".repeat(heading_level as usize);
+                let markdown_content = format!("{hashes} {}\n", text.trim());
+                self.add_standalone_card(&markdown_content, 2.0, generator)
+            }
+            StandalonePlan::Pause { markdown, .. } => {
+                self.add_standalone_card(&markdown, 5.0, generator)
+            }
+        }
+    }
+
+    fn add_standalone_card(
+        &mut self,
+        markdown: &str,
+        duration: f64,
+        generator: &TitleCardGenerator,
+    ) -> Result<()> {
+        let asset = generator.markdown_card(markdown)?;
+        let video_path = generator.ensure_video_for_duration(&asset, duration)?;
+
+        let segment =
+            Segment::new_video_subset(self.current_time, duration, 0.0, video_path, None, true);
+        self.timeline.add_segment(segment);
+        self.current_time += duration;
+        Ok(())
+    }
+
+    fn add_music_directive(&mut self, music_plan: super::video_planner::MusicPlan) -> Result<()> {
+        finalize_music_segment(
+            &mut self.timeline,
+            &mut self.active_music,
+            self.current_time,
+        );
+        let resolved = self.music_resolver.resolve(&music_plan.directive)?;
+        self.active_music = resolved.map(|path| ActiveMusic {
+            path,
+            start_time: self.current_time,
+        });
+        Ok(())
+    }
+
+    fn finalize(&mut self) {
+        finalize_music_segment(
+            &mut self.timeline,
+            &mut self.active_music,
+            self.current_time,
+        );
+    }
 }
 
 struct ActiveMusic {
@@ -866,54 +957,81 @@ impl RenderPipeline {
         Ok(())
     }
 
-    //TODO: check if this has multiple responsibilities
     fn build_music_filters(
         &self,
         filters: &mut Vec<String>,
         music_segments: &[&Segment],
         source_map: &std::collections::HashMap<PathBuf, usize>,
     ) -> Result<String> {
+        let music_volume = f64::from(self.config.music_volume());
+        let labels =
+            self.collect_music_segment_labels(filters, music_segments, source_map, music_volume)?;
+        self.mix_music_labels(filters, labels)
+    }
+
+    fn collect_music_segment_labels(
+        &self,
+        filters: &mut Vec<String>,
+        music_segments: &[&Segment],
+        source_map: &std::collections::HashMap<PathBuf, usize>,
+        music_volume: f64,
+    ) -> Result<Vec<String>> {
         let mut labels = Vec::new();
-        let music_volume = self.config.music_volume();
 
         for (idx, segment) in music_segments.iter().enumerate() {
             if segment.duration <= 0.0 {
                 continue;
             }
 
-            if let SegmentData::Music { audio_source } = &segment.data {
-                let input_index = source_map.get(audio_source).ok_or_else(|| {
-                    anyhow!(
-                        "No ffmpeg input available for background music {}",
-                        audio_source.display()
-                    )
-                })?;
+            let SegmentData::Music { audio_source } = &segment.data else {
+                continue;
+            };
 
-                let label = format!("music_{idx}");
-                let duration_str = format_time(segment.duration);
-                let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
+            let input_index = source_map.get(audio_source).ok_or_else(|| {
+                anyhow!(
+                    "No ffmpeg input available for background music {}",
+                    audio_source.display()
+                )
+            })?;
 
-                filters.push(format!(
-                    "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay},volume={volume}[{label}]",
-                    input = input_index,
-                    duration = duration_str,
-                    delay = delay_ms,
-                    volume = format!("{:.6}", music_volume),
-                    label = label,
-                ));
-
-                labels.push(label);
-            }
+            let label = format!("music_{idx}");
+            self.push_single_music_filter(filters, segment, *input_index, music_volume, &label);
+            labels.push(label);
         }
 
+        Ok(labels)
+    }
+
+    fn push_single_music_filter(
+        &self,
+        filters: &mut Vec<String>,
+        segment: &Segment,
+        input_index: usize,
+        music_volume: f64,
+        label: &str,
+    ) {
+        let duration_str = format_time(segment.duration);
+        let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
+
+        filters.push(format!(
+            "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay},volume={volume}[{label}]",
+            input = input_index,
+            duration = duration_str,
+            delay = delay_ms,
+            volume = format!("{:.6}", music_volume),
+            label = label,
+        ));
+    }
+
+    fn mix_music_labels(&self, filters: &mut Vec<String>, labels: Vec<String>) -> Result<String> {
         match labels.as_slice() {
             [] => bail!("No music segments available to build audio filters"),
             [label] => Ok(label.to_string()),
             _ => {
-                let mut inputs = String::new();
-                for label in &labels {
-                    inputs.push_str(&format!("[{label}]"));
-                }
+                let inputs = labels
+                    .iter()
+                    .map(|label| format!("[{label}]"))
+                    .collect::<String>();
                 let output_label = "music_mix".to_string();
                 filters.push(format!(
                     "{inputs}amix=inputs={count}:normalize=0:dropout_transition=0[{output}]",

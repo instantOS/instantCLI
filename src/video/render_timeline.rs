@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn test_timeline_creation() {
-        let mut timeline = Timeline::new();
+        let timeline = Timeline::new();
         assert_eq!(timeline.segments.len(), 0);
         assert_eq!(timeline.total_duration(), 0.0);
     }
