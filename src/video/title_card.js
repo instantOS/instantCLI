@@ -72,4 +72,36 @@ window.addEventListener('load', () => {
             body.style.fontSize = currentScale + '%';
         }
     }
+
+    // 3. Code Block Headers
+    const pres = content.querySelectorAll('pre');
+    pres.forEach(pre => {
+        // Determine container (Pandoc's div.sourceCode or we wrap it)
+        let container = pre.parentElement;
+        if (!container.classList.contains('sourceCode')) {
+            container = document.createElement('div');
+            container.classList.add('code-window');
+            pre.parentNode.insertBefore(container, pre);
+            container.appendChild(pre);
+        }
+
+        // Determine language from classes
+        let lang = 'CODE';
+        const classSources = [pre, pre.querySelector('code')].filter(Boolean);
+        for (const el of classSources) {
+            for (const cls of el.classList) {
+                if (cls !== 'sourceCode' && cls !== 'numberSource' && cls.length > 1) {
+                    lang = cls.toUpperCase();
+                    break;
+                }
+            }
+            if (lang !== 'CODE') break;
+        }
+
+        // Create and insert header
+        const header = document.createElement('div');
+        header.classList.add('code-header');
+        header.innerText = lang;
+        container.insertBefore(header, pre);
+    });
 });
