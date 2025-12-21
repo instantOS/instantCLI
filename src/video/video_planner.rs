@@ -13,7 +13,6 @@
 use anyhow::{Result, anyhow};
 
 use crate::video::srt::SrtCue;
-use crate::video::utils::duration_to_tenths;
 
 use super::document::{DocumentBlock, MusicDirective, SegmentKind, VideoDocument};
 
@@ -194,7 +193,7 @@ fn align_dialogue_clips_to_cues(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Res
             continue;
         }
 
-        let match_idx = find_matching_cue(cues, &clip.text, clip.start).ok_or_else(|| {
+        let match_idx = find_best_overlapping_cue(cues, clip.start, clip.end).ok_or_else(|| {
             anyhow!(
                 "Unable to locate subtitle entry for segment `{}` at line {}",
                 clip.text,
@@ -369,41 +368,52 @@ impl SilenceRun {
     }
 }
 
-fn find_matching_cue(cues: &[SrtCue], text: &str, approx_start: f64) -> Option<usize> {
-    let target_text = normalize_text(text);
-    let target_tenths = seconds_to_tenths(approx_start);
+fn find_best_overlapping_cue(cues: &[SrtCue], clip_start: f64, clip_end: f64) -> Option<usize> {
+    let clip_duration = (clip_end - clip_start).max(0.0);
+    if cues.is_empty() || clip_duration <= 0.0 {
+        return None;
+    }
+
+    let mut best_idx: Option<usize> = None;
+    let mut best_overlap = 0.0f64;
+    let mut best_distance = f64::INFINITY;
 
     for (idx, cue) in cues.iter().enumerate() {
-        if normalize_text(&cue.text) != target_text {
+        let cue_start = cue.start.as_secs_f64();
+        let cue_end = cue.end.as_secs_f64();
+
+        let overlap = overlap_seconds(clip_start, clip_end, cue_start, cue_end);
+        if overlap <= 0.0 {
             continue;
         }
 
-        let cue_tenths = duration_to_tenths(cue.start) as i64;
-        if (cue_tenths - target_tenths).abs() <= 1 {
-            return Some(idx);
+        let distance = (cue_start - clip_start).abs();
+        if overlap > best_overlap || (overlap == best_overlap && distance < best_distance) {
+            best_overlap = overlap;
+            best_distance = distance;
+            best_idx = Some(idx);
         }
     }
 
-    None
+    if best_overlap / clip_duration < 0.01 {
+        return None;
+    }
+
+    best_idx
 }
 
-fn normalize_text(text: &str) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .replace(['\u{2018}', '\u{2019}', '\u{201B}', '\u{201A}'], "'") // Normalize various apostrophe/quote characters
-        .replace(['\u{201C}', '\u{201D}', '\u{201E}', '\u{201F}'], "\"") // Normalize various quote characters
-}
-
-fn seconds_to_tenths(value: f64) -> i64 {
-    (value * 10.0).round() as i64
+fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
+    let start = a_start.max(b_start);
+    let end = a_end.min(b_end);
+    (end - start).max(0.0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::video::document::parse_video_document;
-    use crate::video::srt::SrtCue;
+use crate::video::srt::SrtCue;
+
     use std::path::Path;
     use std::time::Duration;
 
@@ -459,6 +469,43 @@ mod tests {
         assert!((clip_segments[0].end - 0.95).abs() < 1e-6);
         assert!((clip_segments[1].start - 1.2).abs() < 1e-6);
         assert!((clip_segments[1].end - 2.45).abs() < 1e-6);
+    }
+
+    #[test]
+    fn aligns_using_time_overlap_not_text() {
+        let markdown = "`00:00:00.0-00:00:01.0` hello\n`00:00:01.0-00:00:02.0` world\n";
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let mut plan = plan_timeline(&document).unwrap();
+
+        let cues = vec![
+            SrtCue {
+                start: Duration::from_millis(0),
+                end: Duration::from_millis(1100),
+                text: "completely different".to_string(),
+            },
+            SrtCue {
+                start: Duration::from_millis(1100),
+                end: Duration::from_millis(2000),
+                text: "also different".to_string(),
+            },
+        ];
+
+        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+
+        let clip_segments: Vec<_> = plan
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                TimelinePlanItem::Clip(clip) if clip.kind != SegmentKind::Silence => Some(clip),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(clip_segments.len(), 2);
+        assert!((clip_segments[0].start - 0.0).abs() < 1e-6);
+        assert!((clip_segments[0].end - 1.1).abs() < 1e-6);
+        assert!((clip_segments[1].start - 1.1).abs() < 1e-6);
+        assert!((clip_segments[1].end - 2.0).abs() < 1e-6);
     }
 
     #[test]
