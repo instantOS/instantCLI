@@ -1049,7 +1049,7 @@ fn format_time(value: f64) -> String {
     format!("{value:.6}")
 }
 
-fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
+pub(super) fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
     let output = Command::new("ffprobe")
         .arg("-v")
         .arg("error")

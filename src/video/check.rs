@@ -7,7 +7,7 @@ use crate::ui::prelude::{Level, emit};
 
 use super::cli::CheckArgs;
 use super::document::parse_video_document;
-use super::render::resolve_transcript_path;
+use super::render::{probe_video_dimensions, resolve_transcript_path, resolve_video_path};
 use super::srt::parse_srt;
 use super::utils::canonicalize_existing;
 use super::video_planner::{TimelinePlanItem, align_plan_with_subtitles, plan_timeline};
@@ -26,6 +26,10 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     let document = parse_video_document(&markdown_contents, &markdown_path)?;
 
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
+
+    let video_path = resolve_video_path(&document.metadata, markdown_dir)?;
+    let video_path = canonicalize_existing(&video_path)?;
+    let (video_width, video_height) = probe_video_dimensions(&video_path)?;
 
     let transcript_path = resolve_transcript_path(&document.metadata, markdown_dir)?;
     let transcript_path = canonicalize_existing(&transcript_path)?;
@@ -65,7 +69,10 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     log!(
         Level::Info,
         "video.check.inputs",
-        "Transcript: {} ({} cue(s))",
+        "Video: {} ({}x{})\nTranscript: {} ({} cue(s))",
+        video_path.display(),
+        video_width,
+        video_height,
         transcript_path.display(),
         cues.len()
     );
