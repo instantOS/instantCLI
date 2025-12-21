@@ -19,25 +19,68 @@ use super::title_card::TitleCardGenerator;
 use super::utils::canonicalize_existing;
 
 pub fn handle_render(args: RenderArgs) -> Result<()> {
+    macro_rules! log {
+        ($level:expr, $code:expr, $($arg:tt)*) => {
+            emit($level, $code, &format!($($arg)*), None);
+        };
+    }
+
     let pre_cache_only = args.precache_titlecards;
     let dry_run = args.dry_run;
+
+    log!(
+        Level::Info,
+        "video.render.start",
+        "Preparing render (reading markdown, transcript, and assets)"
+    );
+
     let markdown_path = canonicalize_existing(&args.markdown)?;
+    log!(
+        Level::Info,
+        "video.render.markdown.read",
+        "Reading markdown from {}",
+        markdown_path.display()
+    );
+
     let markdown_contents = fs::read_to_string(&markdown_path)
         .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
 
+    log!(
+        Level::Info,
+        "video.render.markdown.parse",
+        "Parsing markdown into video edit instructions"
+    );
     let document = parse_video_document(&markdown_contents, &markdown_path)?;
 
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
     let transcript_path = resolve_transcript_path(&document.metadata, markdown_dir)?;
     let transcript_path = canonicalize_existing(&transcript_path)?;
+    log!(
+        Level::Info,
+        "video.render.transcript.read",
+        "Reading transcript from {}",
+        transcript_path.display()
+    );
+
     let transcript_contents = fs::read_to_string(&transcript_path).with_context(|| {
         format!(
             "Failed to read transcript file {}",
             transcript_path.display()
         )
     })?;
+
+    log!(
+        Level::Info,
+        "video.render.transcript.parse",
+        "Parsing transcript cues"
+    );
     let cues = parse_srt(&transcript_contents)?;
 
+    log!(
+        Level::Info,
+        "video.render.plan",
+        "Planning timeline (selecting clips, overlays, cards)"
+    );
     let mut plan = plan_timeline(&document)?;
 
     if plan.items.is_empty() {
@@ -47,11 +90,28 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         );
     }
 
+    log!(
+        Level::Info,
+        "video.render.plan.align",
+        "Aligning planned segments with transcript timing"
+    );
     align_plan_with_subtitles(&mut plan, &cues)?;
+
     let video_path = resolve_video_path(&document.metadata, markdown_dir)?;
     let video_path = canonicalize_existing(&video_path)?;
+    log!(
+        Level::Info,
+        "video.render.video",
+        "Using source video {}",
+        video_path.display()
+    );
 
     // Resolve Auphonic processed audio
+    log!(
+        Level::Info,
+        "video.render.video.hash",
+        "Computing hash for cache lookup"
+    );
     let video_hash = super::utils::compute_file_hash(&video_path)?;
     let directories = VideoDirectories::new()?;
     let project_paths = directories.project_paths(&video_hash);
@@ -117,9 +177,16 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         }
     }
 
+    log!(Level::Info, "video.render.probe", "Probing source video dimensions");
     let (video_width, video_height) = probe_video_dimensions(&video_path)?;
+
     let generator = TitleCardGenerator::new(video_width, video_height)?;
 
+    log!(
+        Level::Info,
+        "video.render.timeline.build",
+        "Building render timeline (may generate title cards)"
+    );
     // Build NLE timeline from the plan
     let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &video_path, markdown_dir)?;
 
@@ -182,6 +249,8 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         audio_path,
     );
 
+    log!(Level::Info, "video.render.ffmpeg", "Preparing ffmpeg pipeline");
+
     if dry_run {
         pipeline.print_command()?;
         emit(
@@ -192,6 +261,8 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         );
         return Ok(());
     }
+
+    log!(Level::Info, "video.render.execute", "Starting ffmpeg render");
 
     pipeline.execute()?;
 
