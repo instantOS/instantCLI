@@ -1,5 +1,19 @@
 :root {
   color-scheme: dark;
+  --bg-color: #09090b;
+  --bg-gradient-start: #1a1b26;
+  --bg-gradient-end: #000000;
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --accent-color: #818cf8;
+  --accent-glow: rgba(129, 140, 248, 0.25);
+  --code-bg: rgba(255, 255, 255, 0.05);
+  --border-color: rgba(255, 255, 255, 0.1);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  
+  /* Initial font-size multiplier */
+  --base-size: 100%;
 }
 
 * {
@@ -15,228 +29,228 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #0f0f0f;
-  color: #f8f8f8;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: radial-gradient(circle at center, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
   line-height: 1.6;
-  padding: 4rem;
+  padding: 6rem;
   overflow: hidden;
+  font-size: var(--base-size); /* This will be manipulated by JS */
 }
 
+/* Base Wrapper */
 .content {
   position: relative;
   z-index: 1;
   width: 100%;
-  height: 100%;
+  max-width: 1600px;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
+  /* Default text align center for direct text, but overridden by elements */
+  text-align: center; 
+  /* Ensure padding doesn't push it out */
+  padding: 1em;
 }
 
-/* Dynamic sizing based on content length */
-.content:has(h1:only-child) h1,
-.content:has(h2:only-child) h2,
-.content:has(h3:only-child) h3 {
-  font-size: clamp(4rem, 12vw, 10rem);
-}
+/* =========================================
+   Standard Typography (em-based scaling)
+   ========================================= */
 
-.content:has(p:only-child) p {
-  font-size: clamp(2.5rem, 6vw, 5rem);
-}
-
-/* Headings */
 h1, h2, h3, h4, h5, h6 {
-  margin: 0 0 1.5rem 0;
-  padding: 0;
-  line-height: 1.2;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: #ffffff;
+  text-align: center;
+  width: 100%;
 }
 
-h1 { font-size: clamp(4rem, 10vw, 9rem); }
-h2 { font-size: clamp(3.5rem, 8vw, 7rem); }
-h3 { font-size: clamp(3rem, 7vw, 6rem); }
-h4 { font-size: clamp(2.5rem, 6vw, 5rem); }
-h5 { font-size: clamp(2rem, 5vw, 4rem); }
-h6 { font-size: clamp(1.75rem, 4.5vw, 3.5rem); }
+h1 {
+  font-size: 4em; /* Relative to body font-size */
+  font-weight: 800;
+  line-height: 1.1;
+  background: linear-gradient(to bottom right, #ffffff 30%, #a5b4fc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0.1em 0.4em var(--accent-glow);
+  margin-bottom: 0.5em;
+}
 
-/* Paragraphs */
+h2 {
+  font-size: 2.5em;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.75em;
+}
+
+h3 { font-size: 2em; margin-bottom: 0.5em; }
+h4 { font-size: 1.75em; margin-bottom: 0.5em; }
+h5 { font-size: 1.5em; margin-bottom: 0.5em; }
+h6 { font-size: 1.25em; margin-bottom: 0.5em; }
+
 p {
-  font-size: clamp(2rem, 4.5vw, 4rem);
-  line-height: 1.5;
-  margin: 0 0 1.5rem 0;
-  color: #e5e5e5;
+  font-size: 1.5em;
+  line-height: 1.6;
+  margin-bottom: 1em;
+  color: var(--text-secondary);
   max-width: 90%;
-  margin-left: auto;
-  margin-right: auto;
+  text-align: left;
 }
 
-/* Blockquotes */
-blockquote {
-  border-left: 4px solid #3b82f6;
-  padding: 1.5rem 2rem;
-  margin: 2rem auto;
-  font-size: clamp(2rem, 5vw, 4.5rem);
-  font-style: italic;
-  color: #d1d5db;
-  background: rgba(59, 130, 246, 0.05);
-  border-radius: 0 8px 8px 0;
-  max-width: 85%;
-}
-
-blockquote p {
-  margin: 0;
-  color: inherit;
-  max-width: 100%;
-}
-
-/* Code */
-code {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 0.2em 0.6em;
-  border-radius: 4px;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  font-size: 0.9em;
-  color: #60a5fa;
-}
-
+/* Code Blocks */
 pre {
   background: rgba(0, 0, 0, 0.4);
-  padding: 2rem;
-  border-radius: 8px;
+  padding: 2em;
+  border-radius: 1em;
   overflow-x: auto;
-  margin: 2rem auto;
-  max-width: 90%;
+  margin: 1.5em auto;
+  max-width: 95%;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1em 2em rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
 }
 
 pre code {
-  background: none;
-  padding: 0;
-  font-size: clamp(1.5rem, 3vw, 2.5rem);
-  color: #93c5fd;
+  font-size: 1.25em;
+  color: #c7d2fe;
+}
+
+code {
+  background: var(--code-bg);
+  padding: 0.1em 0.3em;
+  border-radius: 0.3em;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: #a5b4fc;
+  border: 1px solid var(--border-color);
 }
 
 /* Lists */
 ul, ol {
   text-align: left;
-  font-size: clamp(2rem, 4vw, 3.5rem);
+  font-size: 1.5em;
   line-height: 1.6;
-  margin: 2rem auto;
-  max-width: 75%;
-  color: #e5e5e5;
+  margin: 1.5em auto;
+  max-width: 80%;
+  color: var(--text-secondary);
 }
 
 li {
-  margin: 1rem 0;
-  padding-left: 0.5rem;
+  margin: 0.5em 0;
+  padding-left: 0.5em;
 }
 
-ul li::marker {
-  color: #3b82f6;
-}
+ul li::marker { color: var(--accent-color); }
+ol li::marker { color: var(--accent-color); font-weight: 700; }
 
-ol li::marker {
-  color: #3b82f6;
-  font-weight: 600;
-}
-
-/* Text styling */
-strong, b {
-  font-weight: 700;
-  color: #ffffff;
-}
-
-em, i {
+blockquote {
+  border-left: 0.25em solid var(--accent-color);
+  background: linear-gradient(90deg, var(--accent-glow) 0%, transparent 100%);
+  padding: 1em 2em;
+  margin: 1.5em auto;
+  font-size: 1.75em;
   font-style: italic;
-  color: #d1d5db;
+  color: #e5e7eb;
+  border-radius: 0 0.5em 0.5em 0;
+  max-width: 90%;
+  text-align: left;
 }
 
-/* Links */
-a {
-  color: #60a5fa;
-  text-decoration: none;
-  border-bottom: 2px solid #3b82f6;
-  transition: color 0.3s;
+/* =========================================
+   Layout Variants
+   ========================================= */
+
+/* --- HERO LAYOUT (Few words, massive impact) --- */
+body.layout-hero .content {
+  transform: scale(1.2); /* Slight zoom */
 }
 
-a:hover {
-  color: #93c5fd;
+body.layout-hero h1 {
+  font-size: 6em; /* Even larger */
+  margin-bottom: 0.25em;
+  letter-spacing: -0.04em;
 }
 
-/* Horizontal rule */
-hr {
-  border: none;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #3b82f6, transparent);
-  margin: 3rem auto;
-  width: 60%;
+body.layout-hero h2 {
+  font-size: 3em;
+  font-weight: 300;
+  letter-spacing: 0.05em;
+  opacity: 0.9;
+}
+
+body.layout-hero p {
+  font-size: 2em;
+  max-width: 80%;
+  opacity: 0.8;
+}
+
+/* --- DENSE LAYOUT (Code, lots of text) --- */
+body.layout-dense {
+  /* JS will likely scale down the font-size percentage too, 
+     but we can adjust spacing here */
+}
+
+body.layout-dense .content {
+  max-width: 1800px; /* Use more width */
+  justify-content: flex-start; /* Start from top if needed, or keep centered */
+  padding-top: 4rem;
+}
+
+body.layout-dense h1 {
+  font-size: 3em; /* Smaller headers */
+  margin-bottom: 0.5em;
+}
+
+body.layout-dense h2 {
+  font-size: 2em;
+  margin-bottom: 0.5em;
+}
+
+body.layout-dense p {
+  font-size: 1.25em;
+  margin-bottom: 0.75em;
+  max-width: 95%; /* Wider paragraphs */
+}
+
+body.layout-dense pre {
+  padding: 1.5em;
+  margin: 1em auto;
+}
+
+body.layout-dense pre code {
+  font-size: 1em;
 }
 
 /* Tables */
 table {
-  margin: 2rem auto;
-  border-collapse: collapse;
-  font-size: clamp(1.5rem, 3vw, 2.5rem);
-  max-width: 90%;
+  margin: 2em auto;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 1.25em;
+  max-width: 95%;
+  border-radius: 0.5em;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  background: rgba(0,0,0,0.2);
 }
 
 th, td {
-  padding: 1rem 1.5rem;
+  padding: 0.75em 1.25em;
   text-align: left;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--border-color);
 }
 
 th {
-  background: rgba(59, 130, 246, 0.2);
-  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
   font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.9em;
 }
 
-td {
-  background: rgba(0, 0, 0, 0.2);
-  color: #e5e5e5;
+/* LaTeX Math */
+.katex-display {
+  font-size: 2.5em !important;
+  margin: 1.5em 0 !important;
+  color: var(--text-primary);
 }
-
-/* Responsive adjustments for content density */
-@container (max-width: 800px) {
-  body {
-    padding: 2rem;
-  }
-  
-  h1 { font-size: clamp(3rem, 8vw, 7rem); }
-  h2 { font-size: clamp(2.5rem, 7vw, 6rem); }
-  h3 { font-size: clamp(2rem, 6vw, 5rem); }
-  
-  p {
-    font-size: clamp(1.5rem, 4vw, 3rem);
-  }
-}
-
-/* Content length adaptations */
-.content:has(> *:nth-child(n+5)) h1,
-.content:has(> *:nth-child(n+5)) h2,
-.content:has(> *:nth-child(n+5)) h3 {
-  font-size: clamp(2.5rem, 6vw, 5rem);
-  margin-bottom: 1rem;
-}
-
-.content:has(> *:nth-child(n+5)) p {
-  font-size: clamp(1.5rem, 3.5vw, 3rem);
-  margin-bottom: 1rem;
-}
-
-.content:has(> *:nth-child(n+8)) h1,
-.content:has(> *:nth-child(n+8)) h2,
-.content:has(> *:nth-child(n+8)) h3 {
-  font-size: clamp(2rem, 5vw, 4rem);
-  margin-bottom: 0.75rem;
-}
-
-.content:has(> *:nth-child(n+8)) p {
-  font-size: clamp(1.25rem, 3vw, 2.5rem);
-  margin-bottom: 0.75rem;
-}
-

@@ -91,15 +91,21 @@ pub async fn process_with_auphonic(
         };
 
         // Determine upload input (extract audio if video)
-        let is_audio = input_path.extension()
+        let is_audio = input_path
+            .extension()
             .and_then(|e| e.to_str())
-            .map(|e| ["mp3", "wav", "flac", "m4a", "ogg", "aac", "wma", "aiff"].contains(&e.to_lowercase().as_str()))
+            .map(|e| {
+                ["mp3", "wav", "flac", "m4a", "ogg", "aac", "wma", "aiff"]
+                    .contains(&e.to_lowercase().as_str())
+            })
             .unwrap_or(false);
 
         let upload_input_path = if is_audio {
             input_path.to_path_buf()
         } else {
-            let extracted_audio_path = project_paths.transcript_dir().join(format!("{}_extracted.mp3", input_hash));
+            let extracted_audio_path = project_paths
+                .transcript_dir()
+                .join(format!("{}_extracted.mp3", input_hash));
             if !extracted_audio_path.exists() || force {
                 emit(
                     Level::Info,
@@ -115,7 +121,8 @@ pub async fn process_with_auphonic(
         let title = input_path.file_stem().unwrap_or_default().to_string_lossy();
 
         // Start production
-        let production_uuid = start_production(&client, &api_key, &preset_uuid, &upload_input_path, &title).await?;
+        let production_uuid =
+            start_production(&client, &api_key, &preset_uuid, &upload_input_path, &title).await?;
 
         // Poll status
         wait_for_production(&client, &api_key, &production_uuid).await?;
@@ -432,7 +439,6 @@ async fn start_production(
         .text("title", title.to_string())
         .text("action", "start")
         .part("input_file", file_part);
-
 
     emit(
         Level::Info,

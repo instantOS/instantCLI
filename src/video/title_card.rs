@@ -7,8 +7,9 @@ use anyhow::{Context, Result};
 use dirs::cache_dir;
 use sha2::{Digest, Sha256};
 
-const CSS_VERSION_TOKEN: &str = "3";
+const CSS_VERSION_TOKEN: &str = "6";
 const DEFAULT_CSS: &str = include_str!("title_card.css");
+const DEFAULT_JS: &str = include_str!("title_card.js");
 
 pub struct TitleCardGenerator {
     cache_dir: PathBuf,
@@ -44,7 +45,6 @@ impl TitleCardGenerator {
         })
     }
 
-
     pub fn markdown_card(&self, markdown_content: &str) -> Result<TitleCardAsset> {
         let cache_key = self.build_markdown_cache_key(markdown_content);
         let card_dir = self.cache_dir.join(&cache_key);
@@ -63,6 +63,7 @@ impl TitleCardGenerator {
             })?;
             self.write_css(&css_path)?;
             self.run_pandoc(&markdown_path, &html_path, &css_path)?;
+            self.post_process_html(&html_path)?;
             self.capture_screenshot(&html_path, &image_path)?;
         }
 
@@ -71,7 +72,6 @@ impl TitleCardGenerator {
             image_path,
         })
     }
-
 
     pub fn generate_image_from_markdown(
         &self,
@@ -117,7 +117,6 @@ impl TitleCardGenerator {
         Ok(())
     }
 
-
     fn build_markdown_cache_key(&self, markdown_content: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.width.to_le_bytes());
@@ -126,7 +125,6 @@ impl TitleCardGenerator {
         hasher.update(markdown_content.as_bytes());
         format!("{:x}", hasher.finalize())
     }
-
 
     fn write_css(&self, path: &Path) -> Result<()> {
         let mut file = fs::File::create(path)
@@ -152,6 +150,36 @@ impl TitleCardGenerator {
         }
 
         Ok(())
+    }
+
+    fn post_process_html(&self, html_path: &Path) -> Result<()> {
+        let content = fs::read_to_string(html_path)
+            .with_context(|| format!("Failed to read HTML for post-processing at {}", html_path.display()))?;
+
+        // Simple string finding to inject wrapper and script
+        // We assume pandoc's output structure (<body>...</body>)
+        let body_start = content.find("<body>").map(|i| i + 6).unwrap_or(0);
+        let body_end = content.rfind("</body>").unwrap_or(content.len());
+
+        let before_body = &content[..body_start];
+        let body_content = &content[body_start..body_end];
+        let after_body = &content[body_end..];
+
+        let script = format!(
+            "<script>{}</script>",
+            DEFAULT_JS
+        );
+
+        let new_content = format!(
+            "{}<div class=\"content\">{}</div>{}_{}",
+            before_body,
+            body_content,
+            script,
+            after_body
+        );
+
+        fs::write(html_path, new_content)
+            .with_context(|| format!("Failed to write post-processed HTML to {}", html_path.display()))
     }
 
     fn capture_screenshot(&self, html: &Path, image: &Path) -> Result<()> {
