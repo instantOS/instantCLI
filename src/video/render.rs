@@ -10,9 +10,9 @@ use super::cli::RenderArgs;
 use super::config::{VideoConfig, VideoDirectories};
 use super::document::{VideoMetadata, VideoMetadataVideo, parse_video_document};
 use super::music::MusicResolver;
-use super::nle_timeline::{Segment, SegmentData, Timeline, Transform};
+use super::render_timeline::{Segment, SegmentData, Timeline, Transform};
 use super::srt::parse_srt;
-use super::timeline::{
+use super::video_planner::{
     StandalonePlan, TimelinePlan, TimelinePlanItem, align_plan_with_subtitles, plan_timeline,
 };
 use super::title_card::TitleCardGenerator;

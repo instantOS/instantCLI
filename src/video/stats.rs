@@ -8,7 +8,7 @@ use crate::ui::prelude::{Level, emit};
 use super::cli::StatsArgs;
 use super::document::parse_video_document;
 use super::render::resolve_video_path;
-use super::timeline::plan_timeline;
+use super::video_planner::plan_timeline;
 use super::utils::canonicalize_existing;
 
 pub fn handle_stats(args: StatsArgs) -> Result<()> {

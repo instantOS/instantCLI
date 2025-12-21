@@ -1,3 +1,19 @@
+//! Render Timeline Module
+//!
+//! This module defines the concrete timeline structure used for actual video rendering.
+//! It represents a non-linear editor style timeline where segments are arranged
+//! in sequence with precise timing and content data.
+//!
+//! The render timeline is the final output of the video planning pipeline:
+//! 1. Markdown document → Video plan (video_planner module)
+//! 2. Video plan → Render timeline (this module)
+//! 3. Render timeline → Final video output
+//!
+//! Each segment contains:
+//! - Start time and duration in the final video
+//! - Content data (video clips, images, audio)
+//! - Optional transforms (scale, rotate, position)
+
 use std::path::PathBuf;
 
 /// Non-linear editor style timeline structure

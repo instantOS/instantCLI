@@ -9,7 +9,7 @@ use super::cli::CheckArgs;
 use super::document::parse_video_document;
 use super::render::resolve_transcript_path;
 use super::srt::parse_srt;
-use super::timeline::{TimelinePlanItem, align_plan_with_subtitles, plan_timeline};
+use super::video_planner::{TimelinePlanItem, align_plan_with_subtitles, plan_timeline};
 use super::utils::canonicalize_existing;
 
 pub fn handle_check(args: CheckArgs) -> Result<()> {
@@ -104,14 +104,14 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     Ok(())
 }
 
-fn plan_duration_seconds(plan: &super::timeline::TimelinePlan) -> f64 {
+fn plan_duration_seconds(plan: &super::video_planner::TimelinePlan) -> f64 {
     plan.items
         .iter()
         .map(|item| match item {
             TimelinePlanItem::Clip(clip) => (clip.end - clip.start).max(0.0),
             TimelinePlanItem::Standalone(standalone) => match standalone {
-                super::timeline::StandalonePlan::Heading { .. } => 2.0,
-                super::timeline::StandalonePlan::Pause { .. } => 5.0,
+                super::video_planner::StandalonePlan::Heading { .. } => 2.0,
+                super::video_planner::StandalonePlan::Pause { .. } => 5.0,
             },
             TimelinePlanItem::Music(_) => 0.0,
         })

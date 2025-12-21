@@ -1,3 +1,15 @@
+//! Video Planning Module
+//!
+//! This module parses markdown documents and creates abstract video segment plans.
+//! It handles the transformation from markdown format with timestamps into a structured
+//! timeline plan that can be used for video rendering.
+//!
+//! The planning phase includes:
+//! - Parsing markdown blocks into video segments
+//! - Aligning segments with subtitle cues for precise timing
+//! - Managing overlays, pauses, and music directives
+//! - Creating a high-level plan before actual video rendering
+
 use anyhow::{Result, anyhow};
 
 use crate::video::srt::SrtCue;
