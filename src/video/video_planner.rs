@@ -412,7 +412,7 @@ fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::video::document::parse_video_document;
-use crate::video::srt::SrtCue;
+    use crate::video::srt::SrtCue;
 
     use std::path::Path;
     use std::time::Duration;

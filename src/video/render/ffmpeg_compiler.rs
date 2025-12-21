@@ -149,11 +149,17 @@ impl FfmpegCompiler {
             return Ok(false);
         }
 
-        let mut sorted_video_segments = video_segments.to_vec();
-        sorted_video_segments.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
-
+        // Preserve the timeline-provided order; that is the user-authored edit order.
         let mut concat_inputs = String::new();
-        for (idx, segment) in sorted_video_segments.iter().enumerate() {
+        let mut concat_count = 0usize;
+
+        for segment in video_segments.iter().copied() {
+            if segment.duration <= 0.0 {
+                continue;
+            }
+
+            let idx = concat_count;
+            concat_count += 1;
             let SegmentData::VideoSubset {
                 start_time,
                 source_video,
@@ -209,7 +215,7 @@ impl FfmpegCompiler {
         filters.push(format!(
             "{inputs}concat=n={count}:v=1:a=1[concat_v][concat_a]",
             inputs = concat_inputs,
-            count = sorted_video_segments.len()
+            count = concat_count
         ));
 
         Ok(true)
@@ -437,5 +443,70 @@ mod tests {
             )
             .unwrap();
         assert_eq!(output.args.last().unwrap(), "out.mp4");
+    }
+
+    #[test]
+    fn concat_order_respects_timeline_order() {
+        let compiler = FfmpegCompiler::new(1920, 1080, VideoConfig::default());
+
+        // Deliberately add segments whose *source* start times are out-of-order.
+        // The user expects their authored order to be preserved.
+        let mut timeline = Timeline::new();
+        timeline.add_segment(Segment::new_video_subset(
+            0.0,
+            1.0,
+            5.0,
+            PathBuf::from("video.mp4"),
+            None,
+            false,
+        ));
+        timeline.add_segment(Segment::new_video_subset(
+            1.0,
+            1.0,
+            1.0,
+            PathBuf::from("video.mp4"),
+            None,
+            false,
+        ));
+        timeline.add_segment(Segment::new_video_subset(
+            2.0,
+            1.0,
+            3.0,
+            PathBuf::from("video.mp4"),
+            None,
+            false,
+        ));
+
+        let output = compiler
+            .compile(
+                PathBuf::from("out.mp4"),
+                &timeline,
+                PathBuf::from("audio.mp4"),
+            )
+            .unwrap();
+
+        let filter_complex_idx = output
+            .args
+            .iter()
+            .position(|arg| arg == "-filter_complex")
+            .unwrap();
+        let filter_complex = &output.args[filter_complex_idx + 1];
+
+        let concat_pos = filter_complex
+            .find("concat=n=3:v=1:a=1[concat_v][concat_a]")
+            .unwrap();
+        let before_concat = &filter_complex[..concat_pos];
+
+        let pos_v0 = before_concat.find("[v0]").unwrap();
+        let pos_v1 = before_concat.find("[v1]").unwrap();
+        let pos_v2 = before_concat.find("[v2]").unwrap();
+        assert!(pos_v0 < pos_v1);
+        assert!(pos_v1 < pos_v2);
+
+        let pos_start_5 = before_concat.find("trim=start=5.000000").unwrap();
+        let pos_start_1 = before_concat.find("trim=start=1.000000").unwrap();
+        let pos_start_3 = before_concat.find("trim=start=3.000000").unwrap();
+        assert!(pos_start_5 < pos_start_1);
+        assert!(pos_start_1 < pos_start_3);
     }
 }
