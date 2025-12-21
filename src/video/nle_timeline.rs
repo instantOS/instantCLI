@@ -1,5 +1,8 @@
-use anyhow::Result;
-use std::path::PathBuf;
+use super::timeline::TimelinePlan;
+use super::utils::compute_file_hash;
+use crate::ui::prelude::{Level, emit};
+use anyhow::Context;
+use std::path::{Path, PathBuf};
 
 /// Non-linear editor style timeline structure
 /// This represents a sequence of segments that will be rendered in order

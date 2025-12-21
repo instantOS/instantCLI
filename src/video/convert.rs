@@ -13,6 +13,12 @@ use super::transcribe::handle_transcribe;
 use super::utils::{canonicalize_existing, compute_file_hash};
 
 pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
+    emit(
+        Level::Info,
+        "video.convert.start",
+        &format!("Analyzing video {}...", args.video.display()),
+        None,
+    );
     let video_path = canonicalize_existing(&args.video)?;
     let video_hash = compute_file_hash(&video_path)?;
 
@@ -64,14 +70,44 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
             video_path.clone()
         };
 
+        emit(
+            Level::Info,
+            "video.convert.transcribe",
+            "Transcribing audio (this may take a while)...",
+            None,
+        );
+
         handle_transcribe(TranscribeArgs {
-            video: audio_source,
+            video: audio_source.clone(),
             compute_type: "int8".to_string(),
             device: "cpu".to_string(),
             model: None,
             vad_method: "silero".to_string(),
             force: false,
         })?;
+
+        // If we transcribed a processed audio file (different from video_path),
+        // the transcript will be stored under the audio file's hash.
+        // We need to move it to the video project's transcript path.
+        if audio_source != video_path {
+            let audio_hash = compute_file_hash(&audio_source)?;
+            let audio_project_paths = directories.project_paths(&audio_hash);
+            let generated_transcript = audio_project_paths.transcript_cache_path();
+
+            if generated_transcript.exists() {
+                emit(
+                    Level::Debug,
+                    "video.convert.relocate",
+                    &format!(
+                        "Moving transcript from {} to {}",
+                        generated_transcript.display(),
+                        cached_transcript_path.display()
+                    ),
+                    None,
+                );
+                copy_transcript(generated_transcript, &cached_transcript_path)?;
+            }
+        }
     }
 
     let transcript_path = cached_transcript_path.clone();

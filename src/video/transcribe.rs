@@ -12,6 +12,12 @@ use super::utils::{canonicalize_existing, compute_file_hash, extension_or_defaul
 
 pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
     let video_path = canonicalize_existing(&args.video)?;
+    emit(
+        Level::Info,
+        "video.transcribe.start",
+        &format!("Starting transcription for {}...", video_path.display()),
+        None,
+    );
     let video_hash = compute_file_hash(&video_path)?;
 
     let directories = VideoDirectories::new()?;
