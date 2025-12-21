@@ -4,6 +4,7 @@ use super::auphonic;
 use super::cli::VideoCommands;
 use super::convert;
 use super::render;
+use super::setup;
 use super::stats;
 use super::titlecard;
 use super::transcribe;
@@ -16,5 +17,6 @@ pub async fn handle_video_command(command: VideoCommands, _debug: bool) -> Resul
         VideoCommands::Titlecard(args) => titlecard::handle_titlecard(args),
         VideoCommands::Stats(args) => stats::handle_stats(args),
         VideoCommands::Auphonic(args) => auphonic::handle_auphonic(args).await,
+        VideoCommands::Setup(args) => setup::handle_setup(args).await,
     }
 }

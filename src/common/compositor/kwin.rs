@@ -159,6 +159,12 @@ impl ScratchpadProvider for KWin {
 
         Ok(false)
     }
+
+    fn supports_scratchpad(&self) -> bool {
+        // KWin only supports scratchpad on Wayland
+        use crate::common::display_server::DisplayServer;
+        DisplayServer::detect() == DisplayServer::Wayland
+    }
 }
 
 impl KWin {

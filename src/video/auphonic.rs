@@ -15,6 +15,29 @@ use crate::ui::prelude::{Level, emit};
 
 const BASE_URL: &str = "https://auphonic.com/api";
 
+pub(crate) async fn verify_api_key(client: &Client, api_key: &str) -> Result<()> {
+    let url = format!("{}/presets.json", BASE_URL);
+    let resp = client
+        .get(&url)
+        .header(AUTHORIZATION, format!("bearer {}", api_key))
+        .send()
+        .await
+        .context("Failed to connect to Auphonic API")?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Auphonic API error ({}): {}", status, text);
+    }
+
+    let _json: serde_json::Value = resp
+        .json()
+        .await
+        .context("Failed to parse Auphonic response")?;
+
+    Ok(())
+}
+
 pub async fn handle_auphonic(args: AuphonicArgs) -> Result<()> {
     let input_path = canonicalize_existing(&args.input_file)?;
 

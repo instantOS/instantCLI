@@ -9,6 +9,7 @@ pub mod fallback;
 pub mod gnome;
 pub mod hyprland;
 pub mod i3;
+pub mod instantwm;
 pub mod kwin;
 pub mod sway;
 
@@ -46,6 +47,10 @@ pub trait ScratchpadProvider: Send + Sync {
     /// Hide the scratchpad without checking if it exists (optimistic)
     fn hide_unchecked(&self, config: &ScratchpadConfig) -> Result<()> {
         self.hide(config)
+    }
+    /// Check if this provider supports scratchpad functionality
+    fn supports_scratchpad(&self) -> bool {
+        false
     }
 }
 
@@ -162,7 +167,7 @@ impl CompositorType {
         match self {
             CompositorType::I3 => Box::new(i3::I3),
             CompositorType::Dwm => Box::new(fallback::Fallback),
-            CompositorType::InstantWM => Box::new(fallback::Fallback), // TODO: Add InstantWM scratchpad support if needed
+            CompositorType::InstantWM => Box::new(instantwm::InstantWM),
             CompositorType::Sway => Box::new(sway::Sway),
             CompositorType::Hyprland => Box::new(hyprland::Hyprland),
             CompositorType::KWin => Box::new(kwin::KWin),
@@ -213,19 +218,6 @@ impl CompositorType {
             CompositorType::KWin => DisplayServer::detect() == DisplayServer::Wayland,
             CompositorType::Gnome => DisplayServer::detect() == DisplayServer::Wayland,
             CompositorType::Other(name) => name.to_lowercase().contains("wayland"),
-            _ => false,
-        }
-    }
-
-    /// Check if the compositor supports scratchpad functionality
-    pub fn supports_scratchpad(&self) -> bool {
-        match self {
-            CompositorType::Sway | CompositorType::Hyprland | CompositorType::Gnome => true,
-            CompositorType::KWin => {
-                // KWin supports scratchpads on Wayland
-                DisplayServer::detect() == DisplayServer::Wayland
-            }
-            CompositorType::Other(_) => false,
             _ => false,
         }
     }

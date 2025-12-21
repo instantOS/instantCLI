@@ -62,6 +62,10 @@ impl ScratchpadProvider for Hyprland {
         let workspace_name = config.workspace_name();
         hide_special_workspace(&workspace_name)
     }
+
+    fn supports_scratchpad(&self) -> bool {
+        true
+    }
 }
 
 impl Hyprland {
