@@ -59,6 +59,10 @@ pub struct TranscribeArgs {
     #[arg(long)]
     pub model: Option<String>,
 
+    /// VAD method for voice activity detection (e.g. silero, audit)
+    #[arg(long, default_value = "silero")]
+    pub vad_method: String,
+
     /// Re-generate transcript even if cached
     #[arg(long)]
     pub force: bool,

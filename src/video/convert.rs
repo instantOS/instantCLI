@@ -69,6 +69,7 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
             compute_type: "int8".to_string(),
             device: "cpu".to_string(),
             model: None,
+            vad_method: "silero".to_string(),
             force: false,
         })?;
     }

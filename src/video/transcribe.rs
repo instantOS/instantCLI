@@ -79,6 +79,8 @@ fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -
         OsString::from("srt"),
         OsString::from("--output_dir"),
         output_dir.as_os_str().to_os_string(),
+        OsString::from("--vad_method"),
+        OsString::from(args.vad_method.clone()),
         OsString::from("--compute_type"),
         OsString::from(args.compute_type.clone()),
         OsString::from("--device"),
