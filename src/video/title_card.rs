@@ -130,7 +130,15 @@ impl TitleCardGenerator {
         let mut file = fs::File::create(path)
             .with_context(|| format!("Failed to create CSS file at {}", path.display()))?;
         file.write_all(DEFAULT_CSS.as_bytes())
-            .with_context(|| format!("Failed to write CSS to {}", path.display()))
+            .with_context(|| format!("Failed to write CSS to {}", path.display()))?;
+
+        // Append explicit dimensions to ensure full coverage (fixing grey bar issues in headless mode)
+        let dimensions_css = format!(
+            "\nbody {{ width: {}px; height: {}px; }}\n",
+            self.width, self.height
+        );
+        file.write_all(dimensions_css.as_bytes())
+            .with_context(|| format!("Failed to append dimensions to CSS at {}", path.display()))
     }
 
     fn run_pandoc(&self, markdown: &Path, html: &Path, css: &Path) -> Result<()> {
@@ -184,13 +192,28 @@ impl TitleCardGenerator {
 
     fn capture_screenshot(&self, html: &Path, image: &Path) -> Result<()> {
         let file_url = format!("file://{}", html.display());
-        let window_arg = format!("--window-size={},{}", self.width, self.height);
-        let screenshot_arg = format!("--screenshot={}", image.display());
+        
+        // WORKAROUND: Chromium's "new" headless mode has a known issue where the viewport 
+        // height often renders smaller than the window height, leaving a "grey bar" or artifacts 
+        // at the bottom (likely due to reserved UI space). 
+        // Since --headless=old is removed in this version, we use a robust workaround:
+        // 1. Set the window height significantly larger than the target (target + 200px).
+        // 2. Render the screenshot.
+        // 3. Crop the result back to the exact target dimensions using ffmpeg.
+        let padding = 200;
+        let padded_height = self.height + padding;
+        let window_arg = format!("--window-size={},{}", self.width, padded_height);
+
+        // Use a temporary path for the raw (oversized) screenshot.
+        // Chromium defaults to PNG, which is lossless for this intermediate step.
+        let raw_image = image.with_extension("raw.png");
+        let screenshot_arg = format!("--screenshot={}", raw_image.display());
 
         let status = Command::new("chromium")
             .arg("--headless")
             .arg("--disable-gpu")
             .arg("--no-sandbox")
+            .arg("--hide-scrollbars") // Helpful to reduce other artifacts
             .arg(window_arg)
             .arg(screenshot_arg)
             .arg(file_url)
@@ -199,6 +222,29 @@ impl TitleCardGenerator {
 
         if !status.success() {
             anyhow::bail!("chromium exited with status {:?}", status.code());
+        }
+
+        // Crop to exact dimensions
+        let crop_filter = format!("crop={}:{}:0:0", self.width, self.height);
+        let status = Command::new("ffmpeg")
+            .arg("-y")
+            .arg("-v")
+            .arg("error") // Reduce noise
+            .arg("-i")
+            .arg(&raw_image)
+            .arg("-vf")
+            .arg(crop_filter)
+            .arg(image)
+            .status()
+            .with_context(|| "Failed to spawn ffmpeg for screenshot cropping")?;
+
+        // Clean up the raw artifact
+        if raw_image.exists() {
+            let _ = fs::remove_file(raw_image);
+        }
+
+        if !status.success() {
+            anyhow::bail!("ffmpeg cropping exited with status {:?}", status.code());
         }
 
         Ok(())
