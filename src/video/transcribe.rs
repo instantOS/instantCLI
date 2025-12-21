@@ -91,6 +91,21 @@ fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -
         OsString::from(args.compute_type.clone()),
         OsString::from("--device"),
         OsString::from(args.device.clone()),
+        // Improved alignment quality parameters for CPU processing
+        OsString::from("--align_model"),
+        OsString::from("WAV2VEC2_ASR_LARGE_LV60K_960H"), // Best alignment model for accurate word-level timestamps
+        OsString::from("--batch_size"),
+        OsString::from("4"), // Smaller batch size optimized for CPU (vs 16 for GPU)
+        OsString::from("--segment_resolution"),
+        OsString::from("sentence"), // Sentence-level segmentation for better subtitle timing
+        OsString::from("--beam_size"),
+        OsString::from("5"), // Beam search for higher transcription accuracy
+        OsString::from("--patience"),
+        OsString::from("1.0"), // Beam search patience for thorough exploration
+        OsString::from("--max_line_width"),
+        OsString::from("42"), // Optimal characters per subtitle line
+        OsString::from("--threads"),
+        OsString::from("8"), // CPU thread optimization
     ];
 
     if let Some(model) = &args.model {

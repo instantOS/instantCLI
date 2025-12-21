@@ -69,7 +69,7 @@ pub struct TranscribeArgs {
     #[arg(long)]
     pub model: Option<String>,
 
-    /// VAD method for voice activity detection (e.g. silero, audit)
+    /// VAD method for voice activity detection (e.g. silero, pyannote, audit)
     #[arg(long, default_value = "silero")]
     pub vad_method: String,
 
