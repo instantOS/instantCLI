@@ -326,13 +326,14 @@ fn build_nle_timeline(
             TimelinePlanItem::Clip(clip_plan) => {
                 let duration = clip_plan.end - clip_plan.start;
 
-                // Add the main video clip segment
+                // Add the main video clip segment (not muted - uses dialogue audio)
                 let segment = Segment::new_video_subset(
                     current_time,
                     duration,
                     clip_plan.start,
                     source_video.to_path_buf(),
                     None,
+                    false, // Not muted - use dialogue audio
                 );
                 timeline.add_segment(segment);
 
@@ -359,12 +360,14 @@ fn build_nle_timeline(
                     let video_path = generator.ensure_video_for_duration(&asset, 2.0)?;
 
                     // Title cards are pre-rendered videos, treat as video segments
+                    // Muted - no dialogue audio during title cards
                     let segment = Segment::new_video_subset(
                         current_time,
                         2.0,
                         0.0, // Start from beginning of title card video
                         video_path,
                         None,
+                        true, // Muted - no dialogue audio
                     );
                     timeline.add_segment(segment);
                     current_time += 2.0;
@@ -374,12 +377,14 @@ fn build_nle_timeline(
                     let video_path = generator.ensure_video_for_duration(&asset, 5.0)?;
 
                     // Pause cards are pre-rendered videos
+                    // Muted - no dialogue audio during pause cards
                     let segment = Segment::new_video_subset(
                         current_time,
                         5.0,
                         0.0, // Start from beginning of pause card video
                         video_path,
                         None,
+                        true, // Muted - no dialogue audio
                     );
                     timeline.add_segment(segment);
                     current_time += 5.0;
@@ -606,6 +611,7 @@ impl RenderPipeline {
             if let SegmentData::VideoSubset {
                 start_time,
                 source_video,
+                mute_audio,
                 ..
             } = &segment.data
             {
@@ -624,14 +630,24 @@ impl RenderPipeline {
                     video = video_label,
                 ));
 
-                // Trim audio segment from the separate audio source
-                filters.push(format!(
-                    "[{input}:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio}]",
-                    input = audio_input_index,
-                    start = format_time(*start_time),
-                    end = format_time(end_time),
-                    audio = audio_label,
-                ));
+                // Handle audio: silence for muted segments (title cards), dialogue for regular clips
+                if *mute_audio {
+                    // Generate silence for this segment's duration
+                    filters.push(format!(
+                        "anullsrc=r=48000:cl=stereo,atrim=duration={dur}[{audio}]",
+                        dur = format_time(segment.duration),
+                        audio = audio_label,
+                    ));
+                } else {
+                    // Trim audio segment from the separate audio source
+                    filters.push(format!(
+                        "[{input}:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio}]",
+                        input = audio_input_index,
+                        start = format_time(*start_time),
+                        end = format_time(end_time),
+                        audio = audio_label,
+                    ));
+                }
 
                 concat_inputs.push_str(&format!(
                     "[{video}][{audio}]",

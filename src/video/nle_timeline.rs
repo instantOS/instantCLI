@@ -29,6 +29,8 @@ pub enum SegmentData {
         source_video: PathBuf,
         /// Optional transform to apply to this video segment
         transform: Option<Transform>,
+        /// If true, no dialogue audio should be played for this segment (e.g., title cards)
+        mute_audio: bool,
     },
     /// A static image with optional transform
     Image {
@@ -103,6 +105,7 @@ impl Segment {
         source_start: f64,
         source_video: PathBuf,
         transform: Option<Transform>,
+        mute_audio: bool,
     ) -> Self {
         Segment {
             start_time,
@@ -111,6 +114,7 @@ impl Segment {
                 start_time: source_start,
                 source_video,
                 transform,
+                mute_audio,
             },
         }
     }
@@ -230,7 +234,7 @@ mod tests {
     #[test]
     fn test_add_segment() {
         let mut timeline = Timeline::new();
-        let segment = Segment::new_video_subset(0.0, 10.0, 5.0, PathBuf::from("test.mp4"), None);
+        let segment = Segment::new_video_subset(0.0, 10.0, 5.0, PathBuf::from("test.mp4"), None, false);
         timeline.add_segment(segment);
         assert_eq!(timeline.segments.len(), 1);
         assert_eq!(timeline.total_duration(), 10.0);
@@ -245,6 +249,7 @@ mod tests {
             0.0,
             PathBuf::from("test.mp4"),
             None,
+            false,
         ));
         timeline.add_segment(Segment::new_video_subset(
             10.0,
@@ -252,6 +257,7 @@ mod tests {
             10.0,
             PathBuf::from("test.mp4"),
             None,
+            false,
         ));
         timeline.add_segment(Segment::new_video_subset(
             20.0,
@@ -259,6 +265,7 @@ mod tests {
             20.0,
             PathBuf::from("test.mp4"),
             None,
+            false,
         ));
 
         let segments = timeline.segments_in_range(5.0, 12.0);
