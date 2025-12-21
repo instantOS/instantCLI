@@ -45,7 +45,12 @@ pub fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
         .arg("csv=s=x:p=0")
         .arg(video_path)
         .output()
-        .with_context(|| format!("Failed to probe video dimensions for {}", video_path.display()))?;
+        .with_context(|| {
+            format!(
+                "Failed to probe video dimensions for {}",
+                video_path.display()
+            )
+        })?;
 
     if !output.status.success() {
         anyhow::bail!(
@@ -60,12 +65,12 @@ pub fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
     let value = stdout.trim();
     let mut parts = value.split('x');
 
-    let width_str = parts
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("ffprobe did not return width for {}", video_path.display()))?;
-    let height_str = parts
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("ffprobe did not return height for {}", video_path.display()))?;
+    let width_str = parts.next().ok_or_else(|| {
+        anyhow::anyhow!("ffprobe did not return width for {}", video_path.display())
+    })?;
+    let height_str = parts.next().ok_or_else(|| {
+        anyhow::anyhow!("ffprobe did not return height for {}", video_path.display())
+    })?;
 
     let width: u32 = width_str.parse().with_context(|| {
         format!(
@@ -109,16 +114,18 @@ pub fn extract_audio_to_mp3(input: &Path, output: &Path) -> Result<()> {
         })?;
 
     if !status.success() {
-        anyhow::bail!(
-            "ffmpeg failed to extract audio from {}",
-            input.display()
-        );
+        anyhow::bail!("ffmpeg failed to extract audio from {}", input.display());
     }
 
     Ok(())
 }
 
-pub fn trim_audio_mp3(input: &Path, output: &Path, start_seconds: f64, end_seconds: f64) -> Result<()> {
+pub fn trim_audio_mp3(
+    input: &Path,
+    output: &Path,
+    start_seconds: f64,
+    end_seconds: f64,
+) -> Result<()> {
     let status = Command::new("ffmpeg")
         .args([
             "-y",
@@ -135,7 +142,12 @@ pub fn trim_audio_mp3(input: &Path, output: &Path, start_seconds: f64, end_secon
             &output.to_string_lossy(),
         ])
         .status()
-        .with_context(|| format!("Failed to run ffmpeg to trim audio from {}", input.display()))?;
+        .with_context(|| {
+            format!(
+                "Failed to run ffmpeg to trim audio from {}",
+                input.display()
+            )
+        })?;
 
     if !status.success() {
         anyhow::bail!("ffmpeg failed to trim audio from {}", input.display());

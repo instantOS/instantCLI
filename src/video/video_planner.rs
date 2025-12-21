@@ -194,14 +194,13 @@ fn align_dialogue_clips_to_cues(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Res
             continue;
         }
 
-        let match_idx =
-            find_matching_cue(cues, &clip.text, clip.start).ok_or_else(|| {
-                anyhow!(
-                    "Unable to locate subtitle entry for segment `{}` at line {}",
-                    clip.text,
-                    clip.line
-                )
-            })?;
+        let match_idx = find_matching_cue(cues, &clip.text, clip.start).ok_or_else(|| {
+            anyhow!(
+                "Unable to locate subtitle entry for segment `{}` at line {}",
+                clip.text,
+                clip.line
+            )
+        })?;
 
         let cue = &cues[match_idx];
         clip.start = cue.start.as_secs_f64();
@@ -370,11 +369,7 @@ impl SilenceRun {
     }
 }
 
-fn find_matching_cue(
-    cues: &[SrtCue],
-    text: &str,
-    approx_start: f64,
-) -> Option<usize> {
+fn find_matching_cue(cues: &[SrtCue], text: &str, approx_start: f64) -> Option<usize> {
     let target_text = normalize_text(text);
     let target_tenths = seconds_to_tenths(approx_start);
 
@@ -396,8 +391,8 @@ fn normalize_text(text: &str) -> String {
     text.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
-        .replace(['\u{2018}', '\u{2019}', '\u{201B}', '\u{201A}'], "'")  // Normalize various apostrophe/quote characters
-        .replace(['\u{201C}', '\u{201D}', '\u{201E}', '\u{201F}'], "\"")  // Normalize various quote characters
+        .replace(['\u{2018}', '\u{2019}', '\u{201B}', '\u{201A}'], "'") // Normalize various apostrophe/quote characters
+        .replace(['\u{201C}', '\u{201D}', '\u{201E}', '\u{201F}'], "\"") // Normalize various quote characters
 }
 
 fn seconds_to_tenths(value: f64) -> i64 {

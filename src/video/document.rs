@@ -5,6 +5,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Deserialize;
 
+use super::markdown_utils::split_frontmatter;
+
 #[derive(Debug)]
 pub struct VideoDocument {
     pub metadata: VideoMetadata,
@@ -100,7 +102,7 @@ impl TimeRange {
 }
 
 pub fn parse_video_document(content: &str, source_path: &Path) -> Result<VideoDocument> {
-    let (front_matter, body, body_offset) = split_front_matter(content)?;
+    let (front_matter, body, body_offset) = split_frontmatter(content)?;
 
     let metadata = parse_metadata(front_matter, source_path)?;
 
@@ -319,37 +321,6 @@ fn is_music_code_block(info: &str) -> bool {
         .next()
         .map(|lang| lang.eq_ignore_ascii_case("music"))
         .unwrap_or(false)
-}
-
-fn split_front_matter(content: &str) -> Result<(Option<&str>, &str, usize)> {
-    if !(content.starts_with("---\n") || content.starts_with("---\r\n")) {
-        return Ok((None, content, 0));
-    }
-
-    let first_newline = content
-        .find('\n')
-        .ok_or_else(|| anyhow!("Front matter start delimiter without newline"))?;
-    let mut cursor = first_newline + 1;
-    let front_start = cursor;
-
-    while cursor <= content.len() {
-        let next_newline = content[cursor..].find('\n');
-        let line_end = match next_newline {
-            Some(offset) => cursor + offset + 1,
-            None => content.len(),
-        };
-        let line = &content[cursor..line_end];
-
-        if line.trim_end_matches(['\r', '\n']) == "---" {
-            let front = &content[front_start..cursor];
-            let body_start = line_end;
-            return Ok((Some(front), &content[body_start..], body_start));
-        }
-
-        cursor = line_end;
-    }
-
-    Err(anyhow!("Closing front matter delimiter '---' not found"))
 }
 
 fn count_newlines(text: &str) -> usize {

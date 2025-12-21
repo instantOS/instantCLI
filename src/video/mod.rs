@@ -5,7 +5,9 @@ pub mod commands;
 mod config;
 mod convert;
 mod document;
+mod ffmpeg;
 mod markdown;
+mod markdown_utils;
 mod music;
 pub mod render;
 mod render_timeline;
@@ -15,7 +17,6 @@ pub mod stats;
 mod titlecard;
 mod transcribe;
 mod utils;
-mod ffmpeg;
 mod video_planner;
 
 pub use cli::VideoCommands;

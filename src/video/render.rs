@@ -2,7 +2,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::ui::prelude::{Level, emit};
@@ -226,7 +225,10 @@ pub(super) fn build_timeline_plan(
     Ok(plan)
 }
 
-pub(super) fn resolve_source_video_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
+pub(super) fn resolve_source_video_path(
+    metadata: &VideoMetadata,
+    markdown_dir: &Path,
+) -> Result<PathBuf> {
     let video_path = resolve_video_path(metadata, markdown_dir)?;
     let video_path = canonicalize_existing(&video_path)?;
 
@@ -1172,4 +1174,3 @@ impl RenderPipeline {
 fn format_time(value: f64) -> String {
     format!("{value:.6}")
 }
-

@@ -7,7 +7,7 @@ use crate::ui::prelude::{Level, emit};
 use super::cli::CheckArgs;
 use super::ffmpeg::probe_video_dimensions;
 use super::render::{
-    load_video_document, load_transcript_cues, resolve_source_video_path, build_timeline_plan,
+    build_timeline_plan, load_transcript_cues, load_video_document, resolve_source_video_path,
     resolve_transcript_path,
 };
 use super::utils::canonicalize_existing;

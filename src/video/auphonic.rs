@@ -205,9 +205,8 @@ fn trim_auphonic_jingles(
         return Ok(());
     }
 
-    let original_duration =
-        probe_duration_seconds(original_audio_path)
-            .context("Failed to get original audio duration")?;
+    let original_duration = probe_duration_seconds(original_audio_path)
+        .context("Failed to get original audio duration")?;
     let raw_duration =
         probe_duration_seconds(raw_cache_path).context("Failed to get raw Auphonic duration")?;
 
@@ -691,4 +690,3 @@ async fn download_result(
         anyhow::bail!("Failed to download file: {}", resp.status());
     }
 }
-
