@@ -217,80 +217,6 @@ impl SegmentData {
     }
 }
 
-/// Conversion module for converting from old timeline structures to NLE timeline
-pub mod conversion {
-    use super::*;
-
-    /// Represents a materialized timeline item from the old system
-    /// This is a simplified version that captures what we need for conversion
-    pub struct OldTimelineItem {
-        pub kind: OldTimelineItemKind,
-    }
-
-    pub enum OldTimelineItemKind {
-        Clip {
-            start: f64,
-            end: f64,
-            source_video: PathBuf,
-            overlay: Option<PathBuf>,
-        },
-        TitleCard {
-            path: PathBuf,
-            duration: f64,
-        },
-    }
-
-    /// Convert a list of old timeline items to a new NLE Timeline
-    pub fn convert_to_nle_timeline(items: Vec<OldTimelineItem>) -> Result<Timeline> {
-        let mut timeline = Timeline::new();
-        let mut current_time = 0.0;
-
-        for item in items {
-            match item.kind {
-                OldTimelineItemKind::Clip {
-                    start,
-                    end,
-                    source_video,
-                    overlay,
-                } => {
-                    let duration = end - start;
-
-                    // Add the video clip segment
-                    let segment = Segment::new_video_subset(
-                        current_time,
-                        duration,
-                        start,
-                        source_video.clone(),
-                        None,
-                    );
-                    timeline.add_segment(segment);
-
-                    // If there's an overlay, add it as an image segment at the same time
-                    if let Some(overlay_path) = overlay {
-                        let overlay_segment = Segment::new_image(
-                            current_time,
-                            duration,
-                            overlay_path,
-                            Some(Transform::with_scale(0.8)), // Default overlay scale
-                        );
-                        timeline.add_segment(overlay_segment);
-                    }
-
-                    current_time += duration;
-                }
-                OldTimelineItemKind::TitleCard { path, duration } => {
-                    // Title cards are treated as image segments
-                    let segment = Segment::new_image(current_time, duration, path, None);
-                    timeline.add_segment(segment);
-                    current_time += duration;
-                }
-            }
-        }
-
-        Ok(timeline)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,31 +273,5 @@ mod tests {
 
         let transform = Transform::with_scale(1.5);
         assert!(!transform.is_identity());
-    }
-
-    #[test]
-    fn test_conversion() {
-        use conversion::*;
-
-        let items = vec![
-            OldTimelineItem {
-                kind: OldTimelineItemKind::Clip {
-                    start: 0.0,
-                    end: 10.0,
-                    source_video: PathBuf::from("video.mp4"),
-                    overlay: None,
-                },
-            },
-            OldTimelineItem {
-                kind: OldTimelineItemKind::TitleCard {
-                    path: PathBuf::from("title.png"),
-                    duration: 2.0,
-                },
-            },
-        ];
-
-        let timeline = convert_to_nle_timeline(items).unwrap();
-        assert_eq!(timeline.segments.len(), 2);
-        assert_eq!(timeline.total_duration(), 12.0);
     }
 }
