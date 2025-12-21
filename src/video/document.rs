@@ -146,137 +146,177 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
     }
 }
 
-//TODO: this is a big function, consider breaking it up
 fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<DocumentBlock>> {
-    let mut blocks = Vec::new();
-    let mut paragraph: Option<ParagraphState> = None;
-    let mut heading: Option<HeadingState> = None;
-    let mut code_block: Option<CodeBlockState> = None;
-
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_FOOTNOTES;
 
     let line_map = LineMap::new(body);
+    let mut state = BodyParserState::new(base_line_offset, &line_map);
 
     for (event, range) in Parser::new_ext(body, options).into_offset_iter() {
+        state.process_event(event, range)?;
+    }
+
+    Ok(state.into_blocks())
+}
+
+/// Encapsulates the mutable state while parsing the markdown body.
+struct BodyParserState<'a> {
+    blocks: Vec<DocumentBlock>,
+    paragraph: Option<ParagraphState>,
+    heading: Option<HeadingState>,
+    code_block: Option<CodeBlockState>,
+    base_line_offset: usize,
+    line_map: &'a LineMap,
+}
+
+impl<'a> BodyParserState<'a> {
+    fn new(base_line_offset: usize, line_map: &'a LineMap) -> Self {
+        Self {
+            blocks: Vec::new(),
+            paragraph: None,
+            heading: None,
+            code_block: None,
+            base_line_offset,
+            line_map,
+        }
+    }
+
+    fn process_event(&mut self, event: Event, range: std::ops::Range<usize>) -> Result<()> {
         match event {
             Event::Start(Tag::Paragraph) => {
-                paragraph = Some(ParagraphState::new(range.start));
+                self.paragraph = Some(ParagraphState::new(range.start));
             }
             Event::End(TagEnd::Paragraph) => {
-                if let Some(state) = paragraph.take() {
-                    let mut paragraph_blocks =
-                        state.into_document_blocks(base_line_offset, &line_map)?;
-                    blocks.append(&mut paragraph_blocks);
-                }
+                self.flush_paragraph()?;
             }
             Event::Start(Tag::Heading { level, .. }) => {
-                let numeric_level = match level {
-                    HeadingLevel::H1 => 1,
-                    HeadingLevel::H2 => 2,
-                    HeadingLevel::H3 => 3,
-                    HeadingLevel::H4 => 4,
-                    HeadingLevel::H5 => 5,
-                    HeadingLevel::H6 => 6,
-                };
-                heading = Some(HeadingState::new(numeric_level, range.start));
+                self.heading = Some(HeadingState::new(heading_level_to_u32(level), range.start));
             }
             Event::End(TagEnd::Heading(_)) => {
-                if let Some(state) = heading.take() {
-                    let line = base_line_offset + line_map.line_number(state.start_byte);
-                    blocks.push(DocumentBlock::Heading(state.into_block(line)));
-                }
+                self.flush_heading();
             }
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
-                if info
-                    .split(|c: char| c.is_whitespace())
-                    .next()
-                    .map(|lang| lang.eq_ignore_ascii_case("music"))
-                    .unwrap_or(false)
-                {
-                    code_block = Some(CodeBlockState::music(range.start));
+                if is_music_code_block(&info) {
+                    self.code_block = Some(CodeBlockState::music(range.start));
                 }
             }
             Event::End(TagEnd::CodeBlock) => {
-                if let Some(state) = code_block.take() {
-                    let line = base_line_offset + line_map.line_number(state.start_byte);
-                    let directive = state.into_music_directive(line)?;
-                    blocks.push(DocumentBlock::Music(MusicBlock { directive, line }));
-                }
+                self.flush_code_block()?;
             }
             Event::Text(text) => {
-                let text_string = text.into_string();
-                if let Some(state) = paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::text(range.start, text_string.clone()));
-                }
-                if let Some(state) = heading.as_mut() {
-                    state.push_text(text_string.clone());
-                }
-                if let Some(state) = code_block.as_mut() {
-                    state.push_text(text_string);
-                }
+                self.handle_text(text.into_string(), range.start);
             }
             Event::Code(code) => {
-                if let Some(state) = paragraph.as_mut() {
+                if let Some(state) = self.paragraph.as_mut() {
                     state.push_fragment(InlineFragment::code(range.start, code.into_string()));
                 }
             }
             Event::SoftBreak => {
-                if let Some(state) = paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::soft_break(range.start));
-                }
-                if let Some(state) = heading.as_mut() {
-                    state.push_text(" ".to_string());
-                }
-                if let Some(state) = code_block.as_mut() {
-                    state.push_newline();
-                }
+                self.handle_break(range.start, false);
             }
             Event::HardBreak => {
-                if let Some(state) = paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::hard_break(range.start));
-                }
-                if let Some(state) = heading.as_mut() {
-                    state.push_text(" ".to_string());
-                }
-                if let Some(state) = code_block.as_mut() {
-                    state.push_newline();
-                }
+                self.handle_break(range.start, true);
             }
             Event::Html(text) => {
-                if let Some(state) = paragraph.as_mut() {
+                if let Some(state) = self.paragraph.as_mut() {
                     state.push_fragment(InlineFragment::html(range.start, text.into_string()));
                 }
             }
             Event::FootnoteReference(reference) => {
-                if let Some(state) = paragraph.as_mut() {
+                if let Some(state) = self.paragraph.as_mut() {
                     state.push_fragment(InlineFragment::text(range.start, reference.into_string()));
                 }
             }
             Event::Rule => {
-                // Flush any in-progress paragraph before recording the separator
-                if let Some(state) = paragraph.take() {
-                    let mut paragraph_blocks =
-                        state.into_document_blocks(base_line_offset, &line_map)?;
-                    blocks.append(&mut paragraph_blocks);
-                }
-                // Record heading if we somehow encountered a rule mid-heading
-                if let Some(state) = heading.take() {
-                    let line = base_line_offset + line_map.line_number(state.start_byte);
-                    blocks.push(DocumentBlock::Heading(state.into_block(line)));
-                }
-
-                let line = base_line_offset + line_map.line_number(range.start);
-                blocks.push(DocumentBlock::Separator(SeparatorBlock { line }));
+                self.flush_paragraph()?;
+                self.flush_heading();
+                let line = self.base_line_offset + self.line_map.line_number(range.start);
+                self.blocks.push(DocumentBlock::Separator(SeparatorBlock { line }));
             }
             _ => {}
         }
+        Ok(())
     }
 
-    Ok(blocks)
+    fn flush_paragraph(&mut self) -> Result<()> {
+        if let Some(state) = self.paragraph.take() {
+            let mut paragraph_blocks =
+                state.into_document_blocks(self.base_line_offset, self.line_map)?;
+            self.blocks.append(&mut paragraph_blocks);
+        }
+        Ok(())
+    }
+
+    fn flush_heading(&mut self) {
+        if let Some(state) = self.heading.take() {
+            let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
+            self.blocks.push(DocumentBlock::Heading(state.into_block(line)));
+        }
+    }
+
+    fn flush_code_block(&mut self) -> Result<()> {
+        if let Some(state) = self.code_block.take() {
+            let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
+            let directive = state.into_music_directive(line)?;
+            self.blocks.push(DocumentBlock::Music(MusicBlock { directive, line }));
+        }
+        Ok(())
+    }
+
+    fn handle_text(&mut self, text: String, start: usize) {
+        if let Some(state) = self.paragraph.as_mut() {
+            state.push_fragment(InlineFragment::text(start, text.clone()));
+        }
+        if let Some(state) = self.heading.as_mut() {
+            state.push_text(text.clone());
+        }
+        if let Some(state) = self.code_block.as_mut() {
+            state.push_text(text);
+        }
+    }
+
+    fn handle_break(&mut self, start: usize, hard: bool) {
+        if let Some(state) = self.paragraph.as_mut() {
+            if hard {
+                state.push_fragment(InlineFragment::hard_break(start));
+            } else {
+                state.push_fragment(InlineFragment::soft_break(start));
+            }
+        }
+        if let Some(state) = self.heading.as_mut() {
+            state.push_text(" ".to_string());
+        }
+        if let Some(state) = self.code_block.as_mut() {
+            state.push_newline();
+        }
+    }
+
+    fn into_blocks(self) -> Vec<DocumentBlock> {
+        self.blocks
+    }
 }
+
+fn heading_level_to_u32(level: HeadingLevel) -> u32 {
+    match level {
+        HeadingLevel::H1 => 1,
+        HeadingLevel::H2 => 2,
+        HeadingLevel::H3 => 3,
+        HeadingLevel::H4 => 4,
+        HeadingLevel::H5 => 5,
+        HeadingLevel::H6 => 6,
+    }
+}
+
+fn is_music_code_block(info: &str) -> bool {
+    info.split(|c: char| c.is_whitespace())
+        .next()
+        .map(|lang| lang.eq_ignore_ascii_case("music"))
+        .unwrap_or(false)
+}
+
 
 fn split_front_matter(content: &str) -> Result<(Option<&str>, &str, usize)> {
     if !(content.starts_with("---\n") || content.starts_with("---\r\n")) {
