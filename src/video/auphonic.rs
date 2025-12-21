@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::multipart::{Form, Part};
-use serde_json::json;
 use serde::Deserialize;
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -62,7 +62,11 @@ pub async fn get_user_info(client: &Client, api_key: &str) -> Result<UserInfo> {
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        anyhow::bail!("Auphonic API error while fetching user info ({}): {}", status, text);
+        anyhow::bail!(
+            "Auphonic API error while fetching user info ({}): {}",
+            status,
+            text
+        );
     }
 
     let user_response: UserResponse = resp

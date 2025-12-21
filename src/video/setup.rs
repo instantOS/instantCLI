@@ -9,6 +9,54 @@ use super::auphonic;
 use super::cli::SetupArgs;
 use super::config::VideoConfig;
 
+/// Checks account type and updates config accordingly
+async fn check_and_update_auphonic_config(
+    client: &Client,
+    api_key: &str,
+    config: &mut VideoConfig,
+) -> Result<()> {
+    emit(
+        Level::Info,
+        "video.setup.auphonic",
+        "Checking account type...",
+        None,
+    );
+    match auphonic::get_user_info(client, api_key).await {
+        Ok(user_info) => {
+            if auphonic::is_free_account(&user_info) {
+                emit(
+                    Level::Warn,
+                    "video.setup.auphonic",
+                    "Free account detected. Auphonic will be disabled by default to avoid jingle insertion. You can enable it manually in the config if needed.",
+                    None,
+                );
+                config.auphonic_enabled = false;
+            } else {
+                emit(
+                    Level::Success,
+                    "video.setup.auphonic",
+                    "Premium account detected. Auphonic will remain enabled.",
+                    None,
+                );
+                config.auphonic_enabled = true;
+            }
+            config.save()?;
+        }
+        Err(e) => {
+            emit(
+                Level::Warn,
+                "video.setup.auphonic",
+                &format!(
+                    "Failed to check account type ({}). Current setting will be maintained.",
+                    e
+                ),
+                None,
+            );
+        }
+    }
+    Ok(())
+}
+
 pub async fn handle_setup(args: SetupArgs) -> Result<()> {
     emit(
         Level::Info,
@@ -56,6 +104,48 @@ async fn setup_auphonic(force: bool) -> Result<()> {
                         "Auphonic API key is valid.",
                         None,
                     );
+
+                    // Check account type for existing valid keys
+                    emit(
+                        Level::Info,
+                        "video.setup.auphonic",
+                        "Checking account type...",
+                        None,
+                    );
+                    match auphonic::get_user_info(&client, api_key).await {
+                        Ok(user_info) => {
+                            if auphonic::is_free_account(&user_info) {
+                                emit(
+                                    Level::Warn,
+                                    "video.setup.auphonic",
+                                    "Free account detected. Auphonic will be disabled by default to avoid jingle insertion. You can enable it manually in the config if needed.",
+                                    None,
+                                );
+                                config.auphonic_enabled = false;
+                                config.save()?;
+                            } else {
+                                emit(
+                                    Level::Success,
+                                    "video.setup.auphonic",
+                                    "Premium account detected. Auphonic will remain enabled.",
+                                    None,
+                                );
+                                config.auphonic_enabled = true;
+                                config.save()?;
+                            }
+                        }
+                        Err(e) => {
+                            emit(
+                                Level::Warn,
+                                "video.setup.auphonic",
+                                &format!(
+                                    "Failed to check account type ({}). Current setting will be maintained.",
+                                    e
+                                ),
+                                None,
+                            );
+                        }
+                    }
                     return Ok(());
                 }
                 Err(e) => {
@@ -107,43 +197,8 @@ async fn setup_auphonic(force: bool) -> Result<()> {
         None,
     );
 
-    // Check account type
-    emit(
-        Level::Info,
-        "video.setup.auphonic",
-        "Checking account type...",
-        None,
-    );
-    match auphonic::get_user_info(&client, &api_key).await {
-        Ok(user_info) => {
-            if auphonic::is_free_account(&user_info) {
-                emit(
-                    Level::Warn,
-                    "video.setup.auphonic",
-                    "Free account detected. Auphonic will be disabled by default to avoid jingle insertion. You can enable it manually in the config if needed.",
-                    None,
-                );
-                config.auphonic_enabled = false;
-            } else {
-                emit(
-                    Level::Success,
-                    "video.setup.auphonic",
-                    "Premium account detected. Auphonic will be enabled.",
-                    None,
-                );
-                config.auphonic_enabled = true;
-            }
-        }
-        Err(e) => {
-            emit(
-                Level::Warn,
-                "video.setup.auphonic",
-                &format!("Failed to check account type ({}). Auphonic will remain enabled by default.", e),
-                None,
-            );
-            // Keep default enabled state if we can't check
-        }
-    }
+    // Check account type and update config
+    check_and_update_auphonic_config(&client, &api_key, &mut config).await?;
 
     // Save
     config.auphonic_api_key = Some(api_key);
