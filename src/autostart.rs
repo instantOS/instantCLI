@@ -93,7 +93,8 @@ pub async fn run(debug: bool) -> Result<()> {
     if debug {
         println!("Running assist setup");
     }
-    if let Err(e) = assist::dispatch_assist_command(debug, Some(AssistCommands::Setup { wm: None }))
+    if let Err(e) =
+        assist::dispatch_assist_command(debug, false, Some(AssistCommands::Setup { wm: None }))
         && debug
     {
         eprintln!("Assist setup failed: {}", e);

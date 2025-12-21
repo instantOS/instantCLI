@@ -22,7 +22,7 @@ pub fn strip_yaml_frontmatter(content: &str) -> &str {
 
     let mut cursor = first_newline + 1;
 
-    while cursor <= content.len() {
+    while cursor < content.len() {
         let next_newline = content[cursor..].find('\n');
         let line_end = match next_newline {
             Some(offset) => cursor + offset + 1,
@@ -64,7 +64,7 @@ pub fn split_frontmatter(content: &str) -> Result<(Option<&str>, &str, usize)> {
     let mut cursor = first_newline + 1;
     let front_start = cursor;
 
-    while cursor <= content.len() {
+    while cursor < content.len() {
         let next_newline = content[cursor..].find('\n');
         let line_end = match next_newline {
             Some(offset) => cursor + offset + 1,

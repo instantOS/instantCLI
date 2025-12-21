@@ -46,7 +46,10 @@ impl FfmpegCompiler {
             .get(&audio_source)
             .ok_or_else(|| anyhow!("Audio source must be present in ffmpeg input map"))?;
 
-        let filter_complex = self.build_filter_complex(timeline, &source_map, audio_input_index)?;
+        let total_duration = timeline.total_duration();
+
+        let filter_complex =
+            self.build_filter_complex(timeline, &source_map, audio_input_index, total_duration)?;
         args.push("-filter_complex".to_string());
         args.push(filter_complex);
 
@@ -105,6 +108,7 @@ impl FfmpegCompiler {
         timeline: &Timeline,
         source_map: &HashMap<PathBuf, usize>,
         audio_input_index: usize,
+        total_duration: f64,
     ) -> Result<String> {
         let mut filters: Vec<String> = Vec::new();
 
@@ -123,7 +127,13 @@ impl FfmpegCompiler {
             self.apply_overlays(&mut filters, &overlay_segments, source_map)?;
         }
 
-        self.build_audio_mix_filters(&mut filters, &music_segments, source_map, has_base_track)?;
+        self.build_audio_mix_filters(
+            &mut filters,
+            &music_segments,
+            source_map,
+            has_base_track,
+            total_duration,
+        )?;
 
         Ok(filters.join("; "))
     }
@@ -189,7 +199,11 @@ impl FfmpegCompiler {
                 ));
             }
 
-            concat_inputs.push_str(&format!("[{video}][{audio}]", video = video_label, audio = audio_label));
+            concat_inputs.push_str(&format!(
+                "[{video}][{audio}]",
+                video = video_label,
+                audio = audio_label
+            ));
         }
 
         filters.push(format!(
@@ -238,7 +252,8 @@ impl FfmpegCompiler {
                 overlay = overlay_label,
             ));
 
-            let enable_condition = format!("between(t,{},{})", segment.start_time, segment.end_time());
+            let enable_condition =
+                format!("between(t,{},{})", segment.start_time, segment.end_time());
 
             filters.push(format!(
                 "[{video}][{overlay}]overlay=x=(W-w)/2:y=(H-h)/2:enable='{condition}'[{output}]",
@@ -261,6 +276,7 @@ impl FfmpegCompiler {
         music_segments: &[&Segment],
         source_map: &HashMap<PathBuf, usize>,
         has_base_track: bool,
+        total_duration: f64,
     ) -> Result<()> {
         let mut audio_label: Option<String> = None;
 
@@ -289,7 +305,7 @@ impl FfmpegCompiler {
         let final_audio = if let Some(label) = audio_label {
             label
         } else {
-            let duration = format_time(timeline_duration_seconds);
+            let duration = format_time(total_duration);
             filters.push(format!(
                 "anullsrc=r=48000:cl=stereo,atrim=duration={duration}[a_silence]",
             ));
@@ -405,24 +421,20 @@ fn format_time(value: f64) -> String {
     format!("{value:.6}")
 }
 
-fn timeline_duration_seconds(segments: &[&Segment]) -> f64 {
-    segments
-        .iter()
-        .map(|segment| segment.end_time())
-        .fold(0.0, |acc, value| acc.max(value))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn compiler_includes_output_path_in_args() {
-        let config = VideoConfig::load().unwrap_or_else(|_| VideoConfig::default());
-        let compiler = FfmpegCompiler::new(1920, 1080, config);
+        let compiler = FfmpegCompiler::new(1920, 1080, VideoConfig::default());
         let timeline = Timeline::new();
         let output = compiler
-            .compile(PathBuf::from("out.mp4"), &timeline, PathBuf::from("audio.mp4"))
+            .compile(
+                PathBuf::from("out.mp4"),
+                &timeline,
+                PathBuf::from("audio.mp4"),
+            )
             .unwrap();
         assert_eq!(output.args.last().unwrap(), "out.mp4");
     }

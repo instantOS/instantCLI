@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::Subcommand;
 use std::fs::File;
 use std::io::{self, Write};
+use std::process::{Command, Stdio};
 
 use crate::common::compositor::CompositorType;
 use crate::menu::client;
@@ -56,9 +57,13 @@ pub enum AssistCommands {
 }
 
 /// Handle assist command
-pub fn dispatch_assist_command(_debug: bool, command: Option<AssistCommands>) -> Result<()> {
+pub fn dispatch_assist_command(
+    _debug: bool,
+    use_instantmenu: bool,
+    command: Option<AssistCommands>,
+) -> Result<()> {
     match command {
-        None => run_assist_selector(),
+        None => run_assist_selector(use_instantmenu),
         Some(AssistCommands::List) => list_assists(),
         Some(AssistCommands::MouseSet { value }) => super::actions::mouse::set_mouse_speed(value),
         Some(AssistCommands::BrightnessSet { value }) => {
@@ -163,7 +168,7 @@ fn list_assists() -> Result<()> {
     Ok(())
 }
 
-fn run_assist_selector() -> Result<()> {
+fn run_assist_selector(use_instantmenu: bool) -> Result<()> {
     let assists = registry::ASSISTS;
 
     if assists.is_empty() {
@@ -174,7 +179,12 @@ fn run_assist_selector() -> Result<()> {
     // Build chord specifications from the tree structure
     let chord_specs = build_chord_specs(assists);
 
-    // Show chord menu
+    // If explicitly requested, use the instantmenu frontend.
+    if use_instantmenu {
+        return run_assist_selector_instantmenu(chord_specs);
+    }
+
+    // Default: use instantmenu server scratchpad + TUI chord navigator
     let client = client::MenuClient::new();
     client.show()?;
     client.ensure_server_running()?;
@@ -194,6 +204,54 @@ fn run_assist_selector() -> Result<()> {
             Err(e)
         }
     }
+}
+
+fn run_assist_selector_instantmenu(chord_specs: Vec<String>) -> Result<()> {
+    // instantmenu expects dmenu-style input text. We provide "key:description".
+    let input = chord_specs
+        .iter()
+        .filter_map(|spec| spec.split_once(':'))
+        .map(|(key, description)| format!("{key}:{description}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let output = Command::new("instantmenu")
+        .args(["-i", "-p", "instantASSIST", "-n", "-h", "32", "-F", "-ct"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("Failed to spawn instantmenu")
+        .and_then(|mut child| {
+            if let Some(stdin) = child.stdin.as_mut() {
+                stdin
+                    .write_all(input.as_bytes())
+                    .context("Failed to write instantmenu input")?;
+            }
+            child
+                .wait_with_output()
+                .context("Failed to wait for instantmenu")
+        })?;
+
+    // Cancelled or closed: do nothing.
+    if !output.status.success() {
+        return Ok(());
+    }
+
+    let selection = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if selection.is_empty() {
+        return Ok(());
+    }
+
+    let selected_key = selection
+        .split_once(':')
+        .map(|(k, _)| k.trim())
+        .unwrap_or(selection.trim())
+        .to_string();
+
+    let action = registry::find_action(&selected_key)
+        .ok_or_else(|| anyhow::anyhow!("Assist not found for key: {}", selected_key))?;
+
+    execute_assist(action, &selected_key)
 }
 
 /// Build chord specifications from the assist tree structure

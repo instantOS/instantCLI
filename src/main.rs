@@ -142,6 +142,9 @@ enum Commands {
     },
     /// Quick assist actions
     Assist {
+        /// Use `instantmenu` instead of the built-in chord UI
+        #[arg(long = "instantmenu")]
+        instantmenu: bool,
         #[command(subcommand)]
         command: Option<assist::AssistCommands>,
     },
@@ -259,9 +262,12 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             let exit_code = launch::handle_launch_command(*list).await?;
             std::process::exit(exit_code);
         }
-        Some(Commands::Assist { command }) => {
+        Some(Commands::Assist {
+            instantmenu,
+            command,
+        }) => {
             execute_with_error_handling(
-                assist::dispatch_assist_command(cli.debug, command.clone()),
+                assist::dispatch_assist_command(cli.debug, *instantmenu, command.clone()),
                 "Error handling assist command",
                 None,
             )?;
