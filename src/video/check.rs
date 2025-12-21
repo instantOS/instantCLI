@@ -12,6 +12,7 @@ use super::srt::parse_srt;
 use super::utils::canonicalize_existing;
 use super::video_planner::{TimelinePlanItem, align_plan_with_subtitles, plan_timeline};
 
+//TODO: break this function into smaller pieces
 pub fn handle_check(args: CheckArgs) -> Result<()> {
     macro_rules! log {
         ($level:expr, $code:expr, $($arg:tt)*) => {

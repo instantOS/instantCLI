@@ -73,6 +73,8 @@ pub fn init(format: OutputFormat, color: bool) {
 pub mod nerd_font;
 pub use nerd_font::NerdFont;
 
+pub mod catppuccin;
+
 // Separator characters (not in nerd_font crate)
 pub const SEPARATOR_HEAVY: &str = "━";
 pub const SEPARATOR_LIGHT: &str = "─";

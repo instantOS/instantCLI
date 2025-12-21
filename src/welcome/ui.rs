@@ -1,9 +1,7 @@
 //! UI components for welcome application
 
 use crate::menu_utils::{FzfPreview, FzfSelectable};
-use crate::settings::context::{
-    colors, format_icon_colored, hex_to_ansi_fg, select_one_with_style,
-};
+use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg, select_one_with_style};
 use crate::ui::prelude::*;
 use anyhow::Result;
 
@@ -74,7 +72,6 @@ impl FzfSelectable for WelcomeItem {
         let surface = hex_to_ansi_fg(colors::SURFACE1);
         let blue = hex_to_ansi_fg(colors::BLUE);
         let mauve = hex_to_ansi_fg(colors::MAUVE);
-        let peach = hex_to_ansi_fg(colors::PEACH);
         let red = hex_to_ansi_fg(colors::RED);
 
         let lines = match self {
