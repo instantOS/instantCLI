@@ -1,0 +1,429 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use anyhow::{Result, anyhow, bail};
+
+use crate::video::config::VideoConfig;
+use crate::video::render_timeline::{Segment, SegmentData, Timeline};
+
+#[derive(Debug, Clone)]
+pub struct FfmpegCompileOutput {
+    pub args: Vec<String>,
+}
+
+pub struct FfmpegCompiler {
+    target_width: u32,
+    target_height: u32,
+    config: VideoConfig,
+}
+
+impl FfmpegCompiler {
+    pub fn new(target_width: u32, target_height: u32, config: VideoConfig) -> Self {
+        Self {
+            target_width,
+            target_height,
+            config,
+        }
+    }
+
+    pub fn compile(
+        &self,
+        output: PathBuf,
+        timeline: &Timeline,
+        audio_source: PathBuf,
+    ) -> Result<FfmpegCompileOutput> {
+        let mut args = Vec::new();
+
+        let (source_map, source_order) = self.build_input_source_map(timeline, &audio_source);
+
+        // Add all input files in the order they were discovered
+        for source in &source_order {
+            args.push("-i".to_string());
+            args.push(source.to_string_lossy().into_owned());
+        }
+
+        let audio_input_index = *source_map
+            .get(&audio_source)
+            .ok_or_else(|| anyhow!("Audio source must be present in ffmpeg input map"))?;
+
+        let filter_complex = self.build_filter_complex(timeline, &source_map, audio_input_index)?;
+        args.push("-filter_complex".to_string());
+        args.push(filter_complex);
+
+        args.push("-map".to_string());
+        args.push("[outv]".to_string());
+        args.push("-map".to_string());
+        args.push("[outa]".to_string());
+
+        // Encoding settings
+        args.push("-c:v".to_string());
+        args.push("libx264".to_string());
+        args.push("-preset".to_string());
+        args.push("medium".to_string());
+        args.push("-crf".to_string());
+        args.push("18".to_string());
+        args.push("-c:a".to_string());
+        args.push("aac".to_string());
+        args.push("-b:a".to_string());
+        args.push("192k".to_string());
+        args.push("-movflags".to_string());
+        args.push("+faststart".to_string());
+        args.push(output.to_string_lossy().into_owned());
+
+        Ok(FfmpegCompileOutput { args })
+    }
+
+    fn build_input_source_map(
+        &self,
+        timeline: &Timeline,
+        audio_source: &PathBuf,
+    ) -> (HashMap<PathBuf, usize>, Vec<PathBuf>) {
+        let mut source_map: HashMap<PathBuf, usize> = HashMap::new();
+        let mut source_order: Vec<PathBuf> = Vec::new();
+        let mut next_index = 0;
+
+        for segment in &timeline.segments {
+            if let Some(source) = segment.data.source_path()
+                && !source_map.contains_key(source)
+            {
+                source_map.insert(source.clone(), next_index);
+                source_order.push(source.clone());
+                next_index += 1;
+            }
+        }
+
+        if !source_map.contains_key(audio_source) {
+            source_map.insert(audio_source.clone(), next_index);
+            source_order.push(audio_source.clone());
+        }
+
+        (source_map, source_order)
+    }
+
+    fn build_filter_complex(
+        &self,
+        timeline: &Timeline,
+        source_map: &HashMap<PathBuf, usize>,
+        audio_input_index: usize,
+    ) -> Result<String> {
+        let mut filters: Vec<String> = Vec::new();
+
+        let (video_segments, overlay_segments, music_segments) = categorize_segments(timeline);
+
+        let has_base_track = self.build_base_track_filters(
+            &mut filters,
+            &video_segments,
+            source_map,
+            audio_input_index,
+        )?;
+
+        if overlay_segments.is_empty() {
+            filters.push("[concat_v]copy[outv]".to_string());
+        } else {
+            self.apply_overlays(&mut filters, &overlay_segments, source_map)?;
+        }
+
+        self.build_audio_mix_filters(&mut filters, &music_segments, source_map, has_base_track)?;
+
+        Ok(filters.join("; "))
+    }
+
+    fn build_base_track_filters(
+        &self,
+        filters: &mut Vec<String>,
+        video_segments: &[&Segment],
+        source_map: &HashMap<PathBuf, usize>,
+        audio_input_index: usize,
+    ) -> Result<bool> {
+        if video_segments.is_empty() {
+            return Ok(false);
+        }
+
+        let mut sorted_video_segments = video_segments.to_vec();
+        sorted_video_segments.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
+
+        let mut concat_inputs = String::new();
+        for (idx, segment) in sorted_video_segments.iter().enumerate() {
+            let SegmentData::VideoSubset {
+                start_time,
+                source_video,
+                mute_audio,
+                ..
+            } = &segment.data
+            else {
+                continue;
+            };
+
+            let input_index = source_map.get(source_video).ok_or_else(|| {
+                anyhow!(
+                    "No ffmpeg input available for source video {}",
+                    source_video.display()
+                )
+            })?;
+
+            let video_label = format!("v{idx}");
+            let audio_label = format!("a{idx}");
+            let end_time = start_time + segment.duration;
+
+            filters.push(format!(
+                "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{video}]",
+                input = input_index,
+                start = format_time(*start_time),
+                end = format_time(end_time),
+                video = video_label,
+            ));
+
+            if *mute_audio {
+                filters.push(format!(
+                    "anullsrc=r=48000:cl=stereo,atrim=duration={dur}[{audio}]",
+                    dur = format_time(segment.duration),
+                    audio = audio_label,
+                ));
+            } else {
+                filters.push(format!(
+                    "[{input}:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{audio}]",
+                    input = audio_input_index,
+                    start = format_time(*start_time),
+                    end = format_time(end_time),
+                    audio = audio_label,
+                ));
+            }
+
+            concat_inputs.push_str(&format!("[{video}][{audio}]", video = video_label, audio = audio_label));
+        }
+
+        filters.push(format!(
+            "{inputs}concat=n={count}:v=1:a=1[concat_v][concat_a]",
+            inputs = concat_inputs,
+            count = sorted_video_segments.len()
+        ));
+
+        Ok(true)
+    }
+
+    fn apply_overlays(
+        &self,
+        filters: &mut Vec<String>,
+        overlay_segments: &[&Segment],
+        source_map: &HashMap<PathBuf, usize>,
+    ) -> Result<()> {
+        let mut current_video_label = "concat_v".to_string();
+
+        for (idx, segment) in overlay_segments.iter().enumerate() {
+            let SegmentData::Image {
+                source_image,
+                transform,
+            } = &segment.data
+            else {
+                continue;
+            };
+
+            let input_index = source_map.get(source_image).ok_or_else(|| {
+                anyhow!(
+                    "No ffmpeg input available for overlay image {}",
+                    source_image.display()
+                )
+            })?;
+
+            let overlay_label = format!("overlay_{idx}");
+            let output_label = format!("overlaid_{idx}");
+
+            let scale_factor = transform.as_ref().and_then(|t| t.scale).unwrap_or(0.8);
+
+            filters.push(format!(
+                "[{input}:v]scale=w=ceil({width}*{scale}/2)*2:h=-1:flags=lanczos,setsar=1,format=rgba[{overlay}]",
+                input = input_index,
+                width = self.target_width,
+                scale = scale_factor,
+                overlay = overlay_label,
+            ));
+
+            let enable_condition = format!("between(t,{},{})", segment.start_time, segment.end_time());
+
+            filters.push(format!(
+                "[{video}][{overlay}]overlay=x=(W-w)/2:y=(H-h)/2:enable='{condition}'[{output}]",
+                video = current_video_label,
+                overlay = overlay_label,
+                condition = enable_condition,
+                output = output_label,
+            ));
+
+            current_video_label = output_label;
+        }
+
+        filters.push(format!("[{}]copy[outv]", current_video_label));
+        Ok(())
+    }
+
+    fn build_audio_mix_filters(
+        &self,
+        filters: &mut Vec<String>,
+        music_segments: &[&Segment],
+        source_map: &HashMap<PathBuf, usize>,
+        has_base_track: bool,
+    ) -> Result<()> {
+        let mut audio_label: Option<String> = None;
+
+        if has_base_track {
+            filters.push("[concat_a]anull[a_base]".to_string());
+            audio_label = Some("a_base".to_string());
+        }
+
+        if !music_segments.is_empty() {
+            let music_label = self.build_music_filters(filters, music_segments, source_map)?;
+            audio_label = Some(match audio_label {
+                Some(base) => {
+                    let mixed = "a_mix".to_string();
+                    filters.push(format!(
+                        "[{base}][{music}]amix=inputs=2:normalize=0:dropout_transition=0[{mixed}]",
+                        base = base,
+                        music = music_label,
+                        mixed = mixed,
+                    ));
+                    mixed
+                }
+                None => music_label,
+            });
+        }
+
+        let final_audio = if let Some(label) = audio_label {
+            label
+        } else {
+            let duration = format_time(timeline_duration_seconds);
+            filters.push(format!(
+                "anullsrc=r=48000:cl=stereo,atrim=duration={duration}[a_silence]",
+            ));
+            "a_silence".to_string()
+        };
+
+        filters.push(format!("[{label}]anull[outa]", label = final_audio));
+        Ok(())
+    }
+
+    fn build_music_filters(
+        &self,
+        filters: &mut Vec<String>,
+        music_segments: &[&Segment],
+        source_map: &HashMap<PathBuf, usize>,
+    ) -> Result<String> {
+        let music_volume = f64::from(self.config.music_volume());
+        let labels =
+            collect_music_segment_labels(filters, music_segments, source_map, music_volume)?;
+        mix_music_labels(filters, labels)
+    }
+}
+
+fn categorize_segments(timeline: &Timeline) -> (Vec<&Segment>, Vec<&Segment>, Vec<&Segment>) {
+    let mut video = Vec::new();
+    let mut overlay = Vec::new();
+    let mut music = Vec::new();
+
+    for segment in &timeline.segments {
+        match &segment.data {
+            SegmentData::VideoSubset { .. } => video.push(segment),
+            SegmentData::Image { .. } => overlay.push(segment),
+            SegmentData::Music { .. } => music.push(segment),
+        }
+    }
+    (video, overlay, music)
+}
+
+fn collect_music_segment_labels(
+    filters: &mut Vec<String>,
+    music_segments: &[&Segment],
+    source_map: &HashMap<PathBuf, usize>,
+    music_volume: f64,
+) -> Result<Vec<String>> {
+    let mut labels = Vec::new();
+
+    for (idx, segment) in music_segments.iter().enumerate() {
+        if segment.duration <= 0.0 {
+            continue;
+        }
+
+        let SegmentData::Music { audio_source } = &segment.data else {
+            continue;
+        };
+
+        let input_index = source_map.get(audio_source).ok_or_else(|| {
+            anyhow!(
+                "No ffmpeg input available for background music {}",
+                audio_source.display()
+            )
+        })?;
+
+        let label = format!("music_{idx}");
+        push_single_music_filter(filters, segment, *input_index, music_volume, &label);
+        labels.push(label);
+    }
+
+    Ok(labels)
+}
+
+fn push_single_music_filter(
+    filters: &mut Vec<String>,
+    segment: &Segment,
+    input_index: usize,
+    music_volume: f64,
+    label: &str,
+) {
+    let duration_str = format_time(segment.duration);
+    let delay_ms = ((segment.start_time * 1000.0).round()).max(0.0) as u64;
+
+    filters.push(format!(
+        "[{input}:a]atrim=start=0:end={duration},asetpts=PTS-STARTPTS,apad=pad_dur={duration},atrim=duration={duration},aresample=async=1:first_pts=0,adelay={delay}|{delay},volume={volume}[{label}]",
+        input = input_index,
+        duration = duration_str,
+        delay = delay_ms,
+        volume = format!("{:.6}", music_volume),
+        label = label,
+    ));
+}
+
+fn mix_music_labels(filters: &mut Vec<String>, labels: Vec<String>) -> Result<String> {
+    match labels.as_slice() {
+        [] => bail!("No music segments available to build audio filters"),
+        [label] => Ok(label.to_string()),
+        _ => {
+            let inputs = labels
+                .iter()
+                .map(|label| format!("[{label}]"))
+                .collect::<String>();
+            let output_label = "music_mix".to_string();
+            filters.push(format!(
+                "{inputs}amix=inputs={count}:normalize=0:dropout_transition=0[{output}]",
+                inputs = inputs,
+                count = labels.len(),
+                output = output_label,
+            ));
+            Ok(output_label)
+        }
+    }
+}
+
+fn format_time(value: f64) -> String {
+    format!("{value:.6}")
+}
+
+fn timeline_duration_seconds(segments: &[&Segment]) -> f64 {
+    segments
+        .iter()
+        .map(|segment| segment.end_time())
+        .fold(0.0, |acc, value| acc.max(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compiler_includes_output_path_in_args() {
+        let config = VideoConfig::load().unwrap_or_else(|_| VideoConfig::default());
+        let compiler = FfmpegCompiler::new(1920, 1080, config);
+        let timeline = Timeline::new();
+        let output = compiler
+            .compile(PathBuf::from("out.mp4"), &timeline, PathBuf::from("audio.mp4"))
+            .unwrap();
+        assert_eq!(output.args.last().unwrap(), "out.mp4");
+    }
+}
