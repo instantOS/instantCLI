@@ -105,7 +105,8 @@ pub fn parse_video_document(content: &str, source_path: &Path) -> Result<VideoDo
     let metadata = parse_metadata(front_matter, source_path)?;
 
     let line_offset = count_newlines(&content[..body_offset]);
-    let blocks = parse_body_blocks(body, line_offset)?;
+    let body = strip_html_comments(body);
+    let blocks = parse_body_blocks(&body, line_offset)?;
 
     Ok(VideoDocument { metadata, blocks })
 }
@@ -351,6 +352,31 @@ fn split_front_matter(content: &str) -> Result<(Option<&str>, &str, usize)> {
 
 fn count_newlines(text: &str) -> usize {
     text.bytes().filter(|b| *b == b'\n').count()
+}
+
+fn strip_html_comments(input: &str) -> String {
+    // pulldown-cmark emits HTML comments as `Event::Html`, which we currently ignore.
+    // That means comment-contained timestamps can still be parsed from nested events.
+    // Strip them up-front so commented sections behave like deleted lines.
+    let mut output = String::with_capacity(input.len());
+
+    let mut cursor = 0usize;
+    while let Some(start_rel) = input[cursor..].find("<!--") {
+        let start = cursor + start_rel;
+        output.push_str(&input[cursor..start]);
+
+        let after_start = start + "<!--".len();
+        if let Some(end_rel) = input[after_start..].find("-->") {
+            let end = after_start + end_rel + "-->".len();
+            cursor = end;
+        } else {
+            // Unclosed comment: drop the remainder.
+            return output;
+        }
+    }
+
+    output.push_str(&input[cursor..]);
+    output
 }
 
 struct ParagraphState {
@@ -781,6 +807,30 @@ with `00:01.0-00:02.0` embedded timestamp
                 assert_eq!(segment.text, "Second segment");
             }
             other => panic!("Expected second block to be Segment, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn strips_comment_wrapped_timestamp_lines_before_parsing() {
+        let markdown = r#"`00:00.0-00:04.0` Keep this
+
+<!--
+`00:04.0-00:08.0` Drop this whole clip
+`00:08.0-00:12.0` Drop this too
+-->
+
+`00:12.0-00:16.0` Keep this too"#;
+
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+
+        assert_eq!(document.blocks.len(), 2);
+        match &document.blocks[0] {
+            DocumentBlock::Segment(segment) => assert_eq!(segment.text, "Keep this"),
+            other => panic!("Expected Segment, got {:?}", other),
+        }
+        match &document.blocks[1] {
+            DocumentBlock::Segment(segment) => assert_eq!(segment.text, "Keep this too"),
+            other => panic!("Expected Segment, got {:?}", other),
         }
     }
 }
