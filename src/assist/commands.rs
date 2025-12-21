@@ -205,7 +205,6 @@ fn run_assist_selector(use_instantmenu: bool) -> Result<()> {
     }
 }
 
-
 /// Build chord specifications from the assist tree structure
 fn build_chord_specs(entries: &[registry::AssistEntry]) -> Vec<String> {
     let mut specs = Vec::new();
