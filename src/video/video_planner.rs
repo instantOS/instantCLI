@@ -181,6 +181,9 @@ struct ClipTimeUpdate {
     end: f64,
 }
 
+const DEFAULT_DIALOGUE_PADDING_SECONDS: f64 = 0.08;
+const DEFAULT_PADDING_GUARD_SECONDS: f64 = 0.01;
+
 fn align_dialogue_clips_to_cues(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Result<Vec<usize>> {
     let mut dialogue_indices: Vec<usize> = Vec::new();
 
@@ -201,9 +204,15 @@ fn align_dialogue_clips_to_cues(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Res
             )
         })?;
 
-        let cue = &cues[match_idx];
-        clip.start = cue.start.as_secs_f64();
-        clip.end = cue.end.as_secs_f64();
+        let (start, end) = padded_cue_bounds(
+            cues,
+            match_idx,
+            DEFAULT_DIALOGUE_PADDING_SECONDS,
+            DEFAULT_PADDING_GUARD_SECONDS,
+        );
+
+        clip.start = start;
+        clip.end = end;
         dialogue_indices.push(idx);
     }
 
@@ -368,6 +377,37 @@ impl SilenceRun {
     }
 }
 
+fn padded_cue_bounds(
+    cues: &[SrtCue],
+    cue_idx: usize,
+    padding_seconds: f64,
+    guard_seconds: f64,
+) -> (f64, f64) {
+    let cue = &cues[cue_idx];
+
+    let cue_start = cue.start.as_secs_f64();
+    let cue_end = cue.end.as_secs_f64();
+
+    let mut padded_start = (cue_start - padding_seconds).max(0.0);
+    let mut padded_end = cue_end + padding_seconds;
+
+    if cue_idx > 0 {
+        let prev_end = cues[cue_idx - 1].end.as_secs_f64();
+        padded_start = padded_start.max(prev_end + guard_seconds);
+    }
+
+    if cue_idx + 1 < cues.len() {
+        let next_start = cues[cue_idx + 1].start.as_secs_f64();
+        padded_end = padded_end.min(next_start - guard_seconds);
+    }
+
+    if padded_end <= padded_start {
+        (cue_start, cue_end)
+    } else {
+        (padded_start, padded_end)
+    }
+}
+
 fn find_best_overlapping_cue(cues: &[SrtCue], clip_start: f64, clip_end: f64) -> Option<usize> {
     let clip_duration = (clip_end - clip_start).max(0.0);
     if cues.is_empty() || clip_duration <= 0.0 {
@@ -465,10 +505,14 @@ mod tests {
             .collect();
 
         assert_eq!(clip_segments.len(), 2);
+
         assert!((clip_segments[0].start - 0.0).abs() < 1e-6);
-        assert!((clip_segments[0].end - 0.95).abs() < 1e-6);
-        assert!((clip_segments[1].start - 1.2).abs() < 1e-6);
-        assert!((clip_segments[1].end - 2.45).abs() < 1e-6);
+        // End is the padded cue end, clamped to the next cue start minus guard.
+        assert!((clip_segments[0].end - 1.03).abs() < 1e-6);
+
+        // Start is the padded cue start, clamped to the previous cue end plus guard.
+        assert!((clip_segments[1].start - 1.12).abs() < 1e-6);
+        assert!((clip_segments[1].end - 2.53).abs() < 1e-6);
     }
 
     #[test]
@@ -502,10 +546,58 @@ mod tests {
             .collect();
 
         assert_eq!(clip_segments.len(), 2);
+
+        // Clip 0 has no previous cue to clamp against.
         assert!((clip_segments[0].start - 0.0).abs() < 1e-6);
-        assert!((clip_segments[0].end - 1.1).abs() < 1e-6);
-        assert!((clip_segments[1].start - 1.1).abs() < 1e-6);
-        assert!((clip_segments[1].end - 2.0).abs() < 1e-6);
+        // Clip 0 is clamped to the next cue start minus guard.
+        assert!((clip_segments[0].end - 1.09).abs() < 1e-6);
+
+        // Clip 1 is clamped to the previous cue end plus guard.
+        assert!((clip_segments[1].start - 1.11).abs() < 1e-6);
+        // Clip 1 has no next cue to clamp against.
+        assert!((clip_segments[1].end - 2.08).abs() < 1e-6);
+    }
+
+    #[test]
+    fn padding_never_overlaps_neighbor_cues() {
+        let markdown = "`00:00:01.0-00:00:02.0` mid\n";
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let mut plan = plan_timeline(&document).unwrap();
+
+        // Cues are tightly packed with a 20ms gap.
+        let cues = vec![
+            SrtCue {
+                start: Duration::from_millis(0),
+                end: Duration::from_millis(1000),
+                text: "first".to_string(),
+            },
+            SrtCue {
+                start: Duration::from_millis(1020),
+                end: Duration::from_millis(2000),
+                text: "mid".to_string(),
+            },
+            SrtCue {
+                start: Duration::from_millis(2020),
+                end: Duration::from_millis(3000),
+                text: "last".to_string(),
+            },
+        ];
+
+        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+
+        let clip = plan
+            .items
+            .iter()
+            .find_map(|item| match item {
+                TimelinePlanItem::Clip(clip) if clip.kind != SegmentKind::Silence => Some(clip),
+                _ => None,
+            })
+            .unwrap();
+
+        // Start is clamped to prev_end + guard.
+        assert!((clip.start - 1.01).abs() < 1e-6);
+        // End is clamped to next_start - guard.
+        assert!((clip.end - 2.01).abs() < 1e-6);
     }
 
     #[test]
@@ -551,7 +643,10 @@ mod tests {
         assert!((second_clip.start - second_silence.end).abs() < 1e-6);
         assert!((second_silence.start - first_silence.end).abs() < 1e-6);
 
-        let expected_gap = 6.789 - 1.234;
+        // Expected gap accounts for per-cue padding + guard.
+        // Intro ends at cue1 end + padding; outro starts at cue2 start - padding.
+        let expected_gap =
+            (6.789 - DEFAULT_DIALOGUE_PADDING_SECONDS) - (1.234 + DEFAULT_DIALOGUE_PADDING_SECONDS);
         let actual_gap = (second_clip.start - first_clip.end).max(0.0);
         assert!((expected_gap - actual_gap).abs() < 1e-6);
     }
@@ -595,9 +690,9 @@ mod tests {
             _ => panic!("expected outro"),
         };
 
-        // Intro/outro are aligned to cues...
-        assert!((intro.end - 1.0).abs() < 1e-6);
-        assert!((outro.start - 50.0).abs() < 1e-6);
+        // Intro/outro are aligned to cues with padding.
+        assert!((intro.end - 1.08).abs() < 1e-6);
+        assert!((outro.start - 49.92).abs() < 1e-6);
 
         // ...but silence remains based on authored timestamps (not stretched to fill 49s).
         assert!((silence1.start - 1.0).abs() < 1e-6);
