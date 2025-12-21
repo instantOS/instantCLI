@@ -1,19 +1,18 @@
-use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::Result;
 
 use crate::ui::prelude::{Level, emit};
 
 use super::cli::CheckArgs;
-use super::document::parse_video_document;
 use super::ffmpeg::probe_video_dimensions;
-use super::render::{resolve_transcript_path, resolve_video_path};
-use super::srt::parse_srt;
+use super::render::{
+    load_video_document, load_transcript_cues, resolve_source_video_path, build_timeline_plan,
+    resolve_transcript_path,
+};
 use super::utils::canonicalize_existing;
-use super::video_planner::{TimelinePlanItem, align_plan_with_subtitles, plan_timeline};
+use super::video_planner::TimelinePlanItem;
 
-//TODO: break this function into smaller pieces
 pub fn handle_check(args: CheckArgs) -> Result<()> {
     macro_rules! log {
         ($level:expr, $code:expr, $($arg:tt)*) => {
@@ -22,44 +21,29 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     }
 
     let markdown_path = canonicalize_existing(&args.markdown)?;
-    let markdown_contents = fs::read_to_string(&markdown_path)
-        .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
-
-    let document = parse_video_document(&markdown_contents, &markdown_path)?;
-
     let markdown_dir = markdown_path.parent().unwrap_or_else(|| Path::new("."));
 
-    let video_path = resolve_video_path(&document.metadata, markdown_dir)?;
-    let video_path = canonicalize_existing(&video_path)?;
+    // Load video document using shared helper
+    let document = load_video_document(&markdown_path)?;
+
+    // Load transcript cues using shared helper
+    let cues = load_transcript_cues(&document.metadata, markdown_dir)?;
+
+    // Build timeline plan using shared helper
+    let plan = build_timeline_plan(&document, &cues, &markdown_path)?;
+
+    // Resolve video path using shared helper
+    let video_path = resolve_source_video_path(&document.metadata, markdown_dir)?;
     let (video_width, video_height) = probe_video_dimensions(&video_path)?;
 
+    // Get transcript path for logging
     let transcript_path = resolve_transcript_path(&document.metadata, markdown_dir)?;
     let transcript_path = canonicalize_existing(&transcript_path)?;
-    let transcript_contents = fs::read_to_string(&transcript_path).with_context(|| {
-        format!(
-            "Failed to read transcript file {}",
-            transcript_path.display()
-        )
-    })?;
-
-    let cues = parse_srt(&transcript_contents)?;
-
-    let mut plan = plan_timeline(&document)?;
-
-    if plan.items.is_empty() {
-        return Err(anyhow!(
-            "No renderable blocks found in {}. Ensure the markdown contains timestamp code spans or headings.",
-            markdown_path.display()
-        ));
-    }
-
-    let unsupported_blocks = plan.ignored_count;
-
-    align_plan_with_subtitles(&mut plan, &cues)?;
 
     let duration_seconds = plan_duration_seconds(&plan);
     let duration_pretty = format_duration(duration_seconds);
     let pause_count = plan.standalone_count.saturating_sub(plan.heading_count);
+    let unsupported_blocks = plan.ignored_count;
 
     log!(
         Level::Success,

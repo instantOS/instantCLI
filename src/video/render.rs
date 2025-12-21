@@ -149,7 +149,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
     Ok(())
 }
 
-fn load_video_document(markdown_path: &Path) -> Result<super::document::VideoDocument> {
+pub(super) fn load_video_document(markdown_path: &Path) -> Result<super::document::VideoDocument> {
     log!(
         Level::Info,
         "video.render.markdown.read",
@@ -168,7 +168,7 @@ fn load_video_document(markdown_path: &Path) -> Result<super::document::VideoDoc
     parse_video_document(&markdown_contents, markdown_path)
 }
 
-fn load_transcript_cues(
+pub(super) fn load_transcript_cues(
     metadata: &VideoMetadata,
     markdown_dir: &Path,
 ) -> Result<Vec<super::srt::SrtCue>> {
@@ -197,7 +197,7 @@ fn load_transcript_cues(
     parse_srt(&transcript_contents)
 }
 
-fn build_timeline_plan(
+pub(super) fn build_timeline_plan(
     document: &super::document::VideoDocument,
     cues: &[super::srt::SrtCue],
     markdown_path: &Path,
@@ -226,7 +226,7 @@ fn build_timeline_plan(
     Ok(plan)
 }
 
-fn resolve_source_video_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
+pub(super) fn resolve_source_video_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
     let video_path = resolve_video_path(metadata, markdown_dir)?;
     let video_path = canonicalize_existing(&video_path)?;
 
