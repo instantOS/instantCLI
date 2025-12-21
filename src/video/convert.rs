@@ -12,7 +12,6 @@ use super::srt::parse_srt;
 use super::transcribe::handle_transcribe;
 use super::utils::{canonicalize_existing, compute_file_hash};
 
-//TODO: this is a big function, consider breaking it up
 pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
     emit(
         Level::Info,
@@ -28,10 +27,6 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
     project_paths.ensure_directories()?;
 
     let output_path = determine_output_path(args.out_file.clone(), &video_path)?;
-    let markdown_dir = output_path.parent().unwrap_or_else(|| Path::new("."));
-    let subtitle_dir = markdown_dir.join("insvideodata");
-    let subtitle_output_path = subtitle_dir.join(format!("{video_hash}.srt"));
-    let relative_subtitle_path = Path::new("./insvideodata").join(format!("{video_hash}.srt"));
 
     if output_path.exists() && !args.force {
         anyhow::bail!(
@@ -40,89 +35,171 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
         );
     }
 
+    // Step 1: Ensure we have a transcript
+    let transcript_path = ensure_transcript(
+        &video_path,
+        &directories,
+        &project_paths,
+        args.transcript.as_ref(),
+        args.no_auphonic,
+        args.force,
+    )
+    .await?;
+
+    // Step 2: Generate markdown output
+    generate_markdown_output(
+        &video_path,
+        &video_hash,
+        &transcript_path,
+        &output_path,
+        &project_paths,
+    )?;
+
+    emit(
+        Level::Success,
+        "video.convert.success",
+        &format!("Generated markdown at {}", output_path.display()),
+        None,
+    );
+
+    Ok(())
+}
+
+/// Ensures a transcript exists for the video, generating one if needed.
+/// Returns the path to the transcript file.
+async fn ensure_transcript(
+    video_path: &Path,
+    directories: &VideoDirectories,
+    project_paths: &VideoProjectPaths,
+    provided_transcript: Option<&PathBuf>,
+    no_auphonic: bool,
+    force: bool,
+) -> Result<PathBuf> {
     let cached_transcript_path = project_paths.transcript_cache_path().to_path_buf();
 
-    if let Some(provided) = &args.transcript {
+    // If user provided a transcript, use it
+    if let Some(provided) = provided_transcript {
         let provided_path = canonicalize_existing(provided)?;
         copy_transcript(&provided_path, &cached_transcript_path)?;
-    } else if !cached_transcript_path.exists() {
-        let config = VideoConfig::load()?;
-        let auphonic_enabled = config.auphonic_enabled && !args.no_auphonic;
-
-        let audio_source = if auphonic_enabled {
-            // Process with Auphonic first
-            // We don't have CLI args for api_key/preset here, so we rely on config
-            match process_with_auphonic(&video_path, args.force, None, None).await {
-                Ok(path) => path,
-                Err(e) => {
-                    emit(
-                        Level::Warn,
-                        "video.convert.auphonic_failed",
-                        &format!(
-                            "Auphonic processing failed: {}. Falling back to original video.",
-                            e
-                        ),
-                        None,
-                    );
-                    video_path.clone()
-                }
-            }
-        } else {
-            video_path.clone()
-        };
-
-        emit(
-            Level::Info,
-            "video.convert.transcribe",
-            "Transcribing audio (this may take a while)...",
-            None,
-        );
-
-        handle_transcribe(TranscribeArgs {
-            video: audio_source.clone(),
-            compute_type: "int8".to_string(),
-            device: "cpu".to_string(),
-            model: None,
-            vad_method: "silero".to_string(),
-            force: false,
-        })?;
-
-        // If we transcribed a processed audio file (different from video_path),
-        // the transcript will be stored under the audio file's hash.
-        // We need to move it to the video project's transcript path.
-        if audio_source != video_path {
-            let audio_hash = compute_file_hash(&audio_source)?;
-            let audio_project_paths = directories.project_paths(&audio_hash);
-            let generated_transcript = audio_project_paths.transcript_cache_path();
-
-            if generated_transcript.exists() {
-                emit(
-                    Level::Debug,
-                    "video.convert.relocate",
-                    &format!(
-                        "Moving transcript from {} to {}",
-                        generated_transcript.display(),
-                        cached_transcript_path.display()
-                    ),
-                    None,
-                );
-                copy_transcript(generated_transcript, &cached_transcript_path)?;
-            }
-        }
+        return Ok(cached_transcript_path);
     }
 
-    let transcript_path = cached_transcript_path.clone();
+    // If transcript already cached, use it
+    if cached_transcript_path.exists() {
+        return Ok(cached_transcript_path);
+    }
 
-    if !transcript_path.exists() {
+    // Generate transcript
+    let audio_source = get_audio_source(video_path, no_auphonic, force).await?;
+
+    emit(
+        Level::Info,
+        "video.convert.transcribe",
+        "Transcribing audio (this may take a while)...",
+        None,
+    );
+
+    handle_transcribe(TranscribeArgs {
+        video: audio_source.clone(),
+        compute_type: "int8".to_string(),
+        device: "cpu".to_string(),
+        model: None,
+        vad_method: "silero".to_string(),
+        force: false,
+    })?;
+
+    // If we transcribed processed audio, relocate transcript to video's cache
+    relocate_transcript_if_needed(
+        video_path,
+        &audio_source,
+        directories,
+        &cached_transcript_path,
+    )?;
+
+    if !cached_transcript_path.exists() {
         anyhow::bail!(
             "Transcript not found at {} even after attempting transcription.",
-            transcript_path.display()
+            cached_transcript_path.display()
         );
     }
 
-    copy_transcript(&transcript_path, &subtitle_output_path)?;
+    Ok(cached_transcript_path)
+}
 
-    let transcript_contents = fs::read_to_string(&transcript_path)
+/// Gets the audio source for transcription (possibly Auphonic-processed).
+async fn get_audio_source(video_path: &Path, no_auphonic: bool, force: bool) -> Result<PathBuf> {
+    let config = VideoConfig::load()?;
+    let auphonic_enabled = config.auphonic_enabled && !no_auphonic;
+
+    if !auphonic_enabled {
+        return Ok(video_path.to_path_buf());
+    }
+
+    match process_with_auphonic(video_path, force, None, None).await {
+        Ok(path) => Ok(path),
+        Err(e) => {
+            emit(
+                Level::Warn,
+                "video.convert.auphonic_failed",
+                &format!(
+                    "Auphonic processing failed: {}. Falling back to original video.",
+                    e
+                ),
+                None,
+            );
+            Ok(video_path.to_path_buf())
+        }
+    }
+}
+
+/// Relocates transcript from audio's cache to video's cache if needed.
+fn relocate_transcript_if_needed(
+    video_path: &Path,
+    audio_source: &Path,
+    directories: &VideoDirectories,
+    cached_transcript_path: &Path,
+) -> Result<()> {
+    if audio_source == video_path {
+        return Ok(());
+    }
+
+    let audio_hash = compute_file_hash(audio_source)?;
+    let audio_project_paths = directories.project_paths(&audio_hash);
+    let generated_transcript = audio_project_paths.transcript_cache_path();
+
+    if generated_transcript.exists() {
+        emit(
+            Level::Debug,
+            "video.convert.relocate",
+            &format!(
+                "Moving transcript from {} to {}",
+                generated_transcript.display(),
+                cached_transcript_path.display()
+            ),
+            None,
+        );
+        copy_transcript(generated_transcript, cached_transcript_path)?;
+    }
+
+    Ok(())
+}
+
+/// Generates the markdown output file from a transcript.
+fn generate_markdown_output(
+    video_path: &Path,
+    video_hash: &str,
+    transcript_path: &Path,
+    output_path: &Path,
+    project_paths: &VideoProjectPaths,
+) -> Result<()> {
+    let markdown_dir = output_path.parent().unwrap_or_else(|| Path::new("."));
+    let subtitle_dir = markdown_dir.join("insvideodata");
+    let subtitle_output_path = subtitle_dir.join(format!("{video_hash}.srt"));
+    let relative_subtitle_path = Path::new("./insvideodata").join(format!("{video_hash}.srt"));
+
+    copy_transcript(transcript_path, &subtitle_output_path)?;
+
+    let transcript_contents = fs::read_to_string(transcript_path)
         .with_context(|| format!("Failed to read transcript at {}", transcript_path.display()))?;
 
     let cues = parse_srt(&transcript_contents)?;
@@ -133,9 +210,9 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
         .context("Video file name is not valid UTF-8")?;
 
     let metadata = MarkdownMetadata {
-        video_hash: video_hash.as_str(),
+        video_hash,
         video_name: video_name.as_str(),
-        video_source: &video_path,
+        video_source: video_path,
         transcript_source: &relative_subtitle_path,
     };
 
@@ -146,23 +223,17 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
             .with_context(|| format!("Failed to create output directory {}", parent.display()))?;
     }
 
-    fs::write(&output_path, markdown.as_bytes())
+    fs::write(output_path, markdown.as_bytes())
         .with_context(|| format!("Failed to write markdown file to {}", output_path.display()))?;
 
     write_metadata_file(
-        &project_paths,
-        &video_hash,
-        &video_path,
+        project_paths,
+        video_hash,
+        video_path,
         &subtitle_output_path,
-        &output_path,
+        output_path,
     )?;
 
-    emit(
-        Level::Success,
-        "video.convert.success",
-        &format!("Generated markdown at {}", output_path.display()),
-        None,
-    );
     emit(
         Level::Info,
         "video.convert.subtitles",
@@ -172,6 +243,7 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
 
     Ok(())
 }
+
 fn copy_transcript(src: &Path, dest: &Path) -> Result<()> {
     if src == dest {
         return Ok(());
