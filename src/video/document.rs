@@ -146,6 +146,7 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
     }
 }
 
+//TODO: this is a big function, consider breaking it up
 fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<DocumentBlock>> {
     let mut blocks = Vec::new();
     let mut paragraph: Option<ParagraphState> = None;

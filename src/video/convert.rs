@@ -12,6 +12,7 @@ use super::srt::parse_srt;
 use super::transcribe::handle_transcribe;
 use super::utils::{canonicalize_existing, compute_file_hash};
 
+//TODO: this is a big function, consider breaking it up
 pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
     emit(
         Level::Info,

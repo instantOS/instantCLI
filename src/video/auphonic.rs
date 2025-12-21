@@ -65,15 +65,46 @@ pub async fn process_with_auphonic(
     let project_paths = directories.project_paths(&input_hash);
     project_paths.ensure_directories()?;
 
-    let raw_cache_file_name = format!("{}_auphonic_raw.mp3", input_hash);
-    let raw_cache_path = project_paths.transcript_dir().join(&raw_cache_file_name);
-
-    let processed_cache_file_name = format!("{}_auphonic_processed.mp3", input_hash);
+    let raw_cache_path = project_paths
+        .transcript_dir()
+        .join(format!("{}_auphonic_raw.mp3", input_hash));
     let processed_cache_path = project_paths
         .transcript_dir()
-        .join(&processed_cache_file_name);
+        .join(format!("{}_auphonic_processed.mp3", input_hash));
 
-    // Determine if input is audio or video (extract audio if video)
+    // Step 1: Ensure we have audio to upload (extract from video if needed)
+    let upload_input_path = ensure_audio_for_upload(input_path, &project_paths, &input_hash, force)?;
+
+    // Step 2: Fetch raw Auphonic result (upload, process, download)
+    fetch_raw_auphonic_result(
+        input_path,
+        &upload_input_path,
+        &raw_cache_path,
+        api_key_arg,
+        preset_arg,
+        force,
+    )
+    .await?;
+
+    // Step 3: Trim jingles from Auphonic output
+    trim_auphonic_jingles(
+        &upload_input_path,
+        &raw_cache_path,
+        &processed_cache_path,
+        force,
+    )?;
+
+    Ok(processed_cache_path)
+}
+
+/// Ensures we have an audio file to upload to Auphonic.
+/// If the input is a video, extracts audio to a cached MP3 file.
+fn ensure_audio_for_upload(
+    input_path: &Path,
+    project_paths: &super::config::VideoProjectPaths,
+    input_hash: &str,
+    force: bool,
+) -> Result<std::path::PathBuf> {
     let is_audio = input_path
         .extension()
         .and_then(|e| e.to_str())
@@ -83,55 +114,37 @@ pub async fn process_with_auphonic(
         })
         .unwrap_or(false);
 
+    if is_audio {
+        return Ok(input_path.to_path_buf());
+    }
+
     let extracted_audio_path = project_paths
         .transcript_dir()
         .join(format!("{}_extracted.mp3", input_hash));
 
-    // Ensure extracted audio exists if input is video
-    let upload_input_path = if is_audio {
-        input_path.to_path_buf()
-    } else {
-        if !extracted_audio_path.exists() || force {
-            emit(
-                Level::Info,
-                "video.auphonic.extract",
-                &format!("Extracting audio from {}...", input_path.display()),
-                None,
-            );
-            extract_audio(input_path, &extracted_audio_path)?;
-        }
-        extracted_audio_path.clone()
-    };
+    if !extracted_audio_path.exists() || force {
+        emit(
+            Level::Info,
+            "video.auphonic.extract",
+            &format!("Extracting audio from {}...", input_path.display()),
+            None,
+        );
+        extract_audio(input_path, &extracted_audio_path)?;
+    }
 
-    // Step 1: Ensure raw Auphonic result exists
-    if !raw_cache_path.exists() || force {
-        // Load config
-        let config = VideoConfig::load()?;
-        let api_key = api_key_arg
-            .or(config.auphonic_api_key)
-            .context("Auphonic API key not found. Please provide it via --api-key or in ~/.config/instant/video.toml")?;
+    Ok(extracted_audio_path)
+}
 
-        let client = Client::new();
-
-        // Get or create preset
-        let preset_uuid = if let Some(uuid) = preset_arg.or(config.auphonic_preset_uuid) {
-            uuid
-        } else {
-            create_or_get_preset(&client, &api_key).await?
-        };
-
-        let title = input_path.file_stem().unwrap_or_default().to_string_lossy();
-
-        // Start production
-        let production_uuid =
-            start_production(&client, &api_key, &preset_uuid, &upload_input_path, &title).await?;
-
-        // Poll status
-        wait_for_production(&client, &api_key, &production_uuid).await?;
-
-        // Download result
-        download_result(&client, &api_key, &production_uuid, &raw_cache_path).await?;
-    } else {
+/// Fetches the raw Auphonic result, uploading and processing if not cached.
+async fn fetch_raw_auphonic_result(
+    input_path: &Path,
+    upload_input_path: &Path,
+    raw_cache_path: &Path,
+    api_key_arg: Option<String>,
+    preset_arg: Option<String>,
+    force: bool,
+) -> Result<()> {
+    if raw_cache_path.exists() && !force {
         emit(
             Level::Info,
             "video.auphonic.cached",
@@ -141,68 +154,42 @@ pub async fn process_with_auphonic(
             ),
             None,
         );
+        return Ok(());
     }
 
-    // Step 2: Process/Trim the raw result to remove Auphonic free tier jingles
-    // We re-process if the processed file doesn't exist OR if force is enabled
-    if !processed_cache_path.exists() || force {
-        // Compare against the extracted/uploaded audio, not the original video
-        // This ensures accurate duration comparison
-        let original_duration =
-            get_duration(&upload_input_path).context("Failed to get original audio duration")?;
-        let raw_duration = get_duration(&raw_cache_path).context("Failed to get raw Auphonic duration")?;
+    let config = VideoConfig::load()?;
+    let api_key = api_key_arg
+        .or(config.auphonic_api_key)
+        .context("Auphonic API key not found. Please provide it via --api-key or in ~/.config/instant/video.toml")?;
 
-        emit(
-            Level::Debug,
-            "video.auphonic.duration",
-            &format!(
-                "Original audio: {:.2}s, Auphonic output: {:.2}s, Diff: {:.2}s",
-                original_duration, raw_duration, raw_duration - original_duration
-            ),
-            None,
-        );
+    let client = Client::new();
 
-        if raw_duration > original_duration {
-            let diff = raw_duration - original_duration;
-            // Auphonic free tier jingles are ~1-2s each at start and end
-            // Use 0.5s threshold to catch smaller jingles reliably
-            if diff > 0.5 {
-                let cut = diff / 2.0;
-                emit(
-                    Level::Info,
-                    "video.auphonic.trim",
-                    &format!(
-                        "Detected jingles (duration diff: {:.2}s). Trimming {:.2}s from start and end...",
-                        diff, cut
-                    ),
-                    None,
-                );
+    let preset_uuid = match preset_arg.or(config.auphonic_preset_uuid) {
+        Some(uuid) => uuid,
+        None => create_or_get_preset(&client, &api_key).await?,
+    };
 
-                let start = cut;
-                let end = raw_duration - cut;
+    let title = input_path.file_stem().unwrap_or_default().to_string_lossy();
 
-                trim_audio(&raw_cache_path, &processed_cache_path, start, end)?;
-            } else {
-                // Just copy if no significant difference
-                emit(
-                    Level::Debug,
-                    "video.auphonic.no_trim",
-                    &format!("Duration diff {:.2}s below threshold, no trimming needed", diff),
-                    None,
-                );
-                fs::copy(&raw_cache_path, &processed_cache_path)?;
-            }
-        } else {
-            // Raw is shorter or equal, just copy
-            emit(
-                Level::Debug,
-                "video.auphonic.no_trim",
-                "Auphonic output not longer than original, no trimming needed",
-                None,
-            );
-            fs::copy(&raw_cache_path, &processed_cache_path)?;
-        }
-    } else {
+    let production_uuid =
+        start_production(&client, &api_key, &preset_uuid, upload_input_path, &title).await?;
+
+    wait_for_production(&client, &api_key, &production_uuid).await?;
+
+    download_result(&client, &api_key, &production_uuid, raw_cache_path).await?;
+
+    Ok(())
+}
+
+/// Trims Auphonic free tier jingles from the raw result.
+/// Auphonic adds ~1-2s jingles at start and end on the free tier.
+fn trim_auphonic_jingles(
+    original_audio_path: &Path,
+    raw_cache_path: &Path,
+    processed_cache_path: &Path,
+    force: bool,
+) -> Result<()> {
+    if processed_cache_path.exists() && !force {
         emit(
             Level::Info,
             "video.auphonic.cached",
@@ -212,10 +199,74 @@ pub async fn process_with_auphonic(
             ),
             None,
         );
+        return Ok(());
     }
 
-    Ok(processed_cache_path)
+    let original_duration =
+        get_duration(original_audio_path).context("Failed to get original audio duration")?;
+    let raw_duration =
+        get_duration(raw_cache_path).context("Failed to get raw Auphonic duration")?;
+
+    emit(
+        Level::Debug,
+        "video.auphonic.duration",
+        &format!(
+            "Original audio: {:.2}s, Auphonic output: {:.2}s, Diff: {:.2}s",
+            original_duration,
+            raw_duration,
+            raw_duration - original_duration
+        ),
+        None,
+    );
+
+    // Check if Auphonic added jingles (output longer than input)
+    if raw_duration <= original_duration {
+        emit(
+            Level::Debug,
+            "video.auphonic.no_trim",
+            "Auphonic output not longer than original, no trimming needed",
+            None,
+        );
+        fs::copy(raw_cache_path, processed_cache_path)?;
+        return Ok(());
+    }
+
+    let diff = raw_duration - original_duration;
+
+    // Auphonic free tier jingles are ~1-2s each at start and end
+    // Use 0.5s threshold to catch smaller jingles reliably
+    if diff <= 0.5 {
+        emit(
+            Level::Debug,
+            "video.auphonic.no_trim",
+            &format!(
+                "Duration diff {:.2}s below threshold, no trimming needed",
+                diff
+            ),
+            None,
+        );
+        fs::copy(raw_cache_path, processed_cache_path)?;
+        return Ok(());
+    }
+
+    let cut = diff / 2.0;
+    emit(
+        Level::Info,
+        "video.auphonic.trim",
+        &format!(
+            "Detected jingles (duration diff: {:.2}s). Trimming {:.2}s from start and end...",
+            diff, cut
+        ),
+        None,
+    );
+
+    let start = cut;
+    let end = raw_duration - cut;
+    trim_audio(raw_cache_path, processed_cache_path, start, end)?;
+
+    Ok(())
 }
+
 
 fn copy_to_output(cache_path: &Path, input_path: &Path) -> Result<()> {
     let output_dir = input_path.parent().unwrap_or_else(|| Path::new("."));
