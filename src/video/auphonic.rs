@@ -3,6 +3,7 @@ use reqwest::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::multipart::{Form, Part};
 use serde_json::json;
+use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -16,6 +17,61 @@ use crate::ui::prelude::{Level, emit};
 use super::ffmpeg::{extract_audio_to_mp3, probe_duration_seconds, trim_audio_mp3};
 
 const BASE_URL: &str = "https://auphonic.com/api";
+
+#[derive(Debug, Deserialize)]
+pub struct UserInfo {
+    pub username: String,
+    pub user_id: String,
+    pub date_joined: String,
+    pub email: String,
+    pub credits: f64,
+    pub onetime_credits: f64,
+    pub recurring_credits: f64,
+    pub recharge_date: String,
+    pub recharge_recurring_credits: f64,
+    pub notification_email: bool,
+    pub error_email: bool,
+    pub warning_email: bool,
+    pub low_credits_email: bool,
+    pub low_credits_threshold: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct UserResponse {
+    data: UserInfo,
+}
+
+/// Checks if the account is a free account based on credits information
+/// Free accounts have 2 hours of recurring credits per month
+pub fn is_free_account(user_info: &UserInfo) -> bool {
+    // Free accounts have exactly 2.0 recurring credits and no additional features
+    // We also check if they have no one-time credits beyond the minimum
+    user_info.recharge_recurring_credits <= 2.0 && user_info.onetime_credits <= 1.0
+}
+
+/// Gets user account information from Auphonic API
+pub async fn get_user_info(client: &Client, api_key: &str) -> Result<UserInfo> {
+    let url = format!("{}/user.json", BASE_URL);
+    let resp = client
+        .get(&url)
+        .header(AUTHORIZATION, format!("bearer {}", api_key))
+        .send()
+        .await
+        .context("Failed to connect to Auphonic API for user info")?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Auphonic API error while fetching user info ({}): {}", status, text);
+    }
+
+    let user_response: UserResponse = resp
+        .json()
+        .await
+        .context("Failed to parse Auphonic user info response")?;
+
+    Ok(user_response.data)
+}
 
 pub(crate) async fn verify_api_key(client: &Client, api_key: &str) -> Result<()> {
     let url = format!("{}/presets.json", BASE_URL);
