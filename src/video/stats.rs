@@ -8,8 +8,8 @@ use crate::ui::prelude::{Level, emit};
 use super::cli::StatsArgs;
 use super::document::parse_video_document;
 use super::render::resolve_video_path;
-use super::video_planner::plan_timeline;
 use super::utils::canonicalize_existing;
+use super::video_planner::plan_timeline;
 
 pub fn handle_stats(args: StatsArgs) -> Result<()> {
     let markdown_path = canonicalize_existing(&args.markdown)?;

@@ -7,6 +7,8 @@ use anyhow::{Context, Result};
 use dirs::cache_dir;
 use sha2::{Digest, Sha256};
 
+pub mod cli;
+
 const CSS_VERSION_TOKEN: &str = "6";
 const DEFAULT_CSS: &str = include_str!("title_card.css");
 const DEFAULT_JS: &str = include_str!("title_card.js");

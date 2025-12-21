@@ -12,12 +12,13 @@ use super::document::{VideoMetadata, VideoMetadataVideo, parse_video_document};
 use super::music::MusicResolver;
 use super::render_timeline::{Segment, SegmentData, Timeline, Transform};
 use super::srt::parse_srt;
+use super::titlecard::TitleCardGenerator;
+use super::utils::canonicalize_existing;
 use super::video_planner::{
     StandalonePlan, TimelinePlan, TimelinePlanItem, align_plan_with_subtitles, plan_timeline,
 };
-use super::title_card::TitleCardGenerator;
-use super::utils::canonicalize_existing;
 
+//TODO: this function is way too long and needs to be broken up
 pub fn handle_render(args: RenderArgs) -> Result<()> {
     macro_rules! log {
         ($level:expr, $code:expr, $($arg:tt)*) => {
@@ -396,6 +397,7 @@ struct TimelineStats {
 }
 
 /// Build an NLE timeline from the timeline plan
+//TODO: this is very long, consider breaking it up
 fn build_nle_timeline(
     plan: TimelinePlan,
     generator: &TitleCardGenerator,
@@ -864,6 +866,7 @@ impl RenderPipeline {
         Ok(())
     }
 
+    //TODO: check if this has multiple responsibilities
     fn build_music_filters(
         &self,
         filters: &mut Vec<String>,

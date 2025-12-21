@@ -2,8 +2,8 @@ use std::fs;
 
 use anyhow::{Context, Result};
 
-use super::cli::TitlecardArgs;
-use super::title_card::TitleCardGenerator;
+use super::super::cli::TitlecardArgs;
+use super::TitleCardGenerator;
 
 pub fn handle_titlecard(args: TitlecardArgs) -> Result<()> {
     let markdown_path = args.markdown.canonicalize().with_context(|| {

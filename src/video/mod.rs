@@ -7,16 +7,15 @@ mod convert;
 mod document;
 mod markdown;
 mod music;
-mod render_timeline;
 pub mod render;
+mod render_timeline;
 pub mod setup;
 pub mod srt;
 pub mod stats;
-mod video_planner;
-mod title_card;
 mod titlecard;
 mod transcribe;
 mod utils;
+mod video_planner;
 
 pub use cli::VideoCommands;
 pub use commands::handle_video_command;

@@ -9,8 +9,8 @@ use super::cli::CheckArgs;
 use super::document::parse_video_document;
 use super::render::resolve_transcript_path;
 use super::srt::parse_srt;
-use super::video_planner::{TimelinePlanItem, align_plan_with_subtitles, plan_timeline};
 use super::utils::canonicalize_existing;
+use super::video_planner::{TimelinePlanItem, align_plan_with_subtitles, plan_timeline};
 
 pub fn handle_check(args: CheckArgs) -> Result<()> {
     macro_rules! log {
