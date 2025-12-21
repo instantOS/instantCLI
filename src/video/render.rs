@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::ui::prelude::{Level, emit};
@@ -9,6 +10,7 @@ use crate::ui::prelude::{Level, emit};
 use super::cli::RenderArgs;
 use super::config::{VideoConfig, VideoDirectories};
 use super::document::{VideoMetadata, VideoMetadataVideo, parse_video_document};
+use super::ffmpeg::probe_video_dimensions;
 use super::music::MusicResolver;
 use super::render_timeline::{Segment, SegmentData, Timeline, Transform};
 use super::srt::parse_srt;
@@ -1171,53 +1173,3 @@ fn format_time(value: f64) -> String {
     format!("{value:.6}")
 }
 
-pub(super) fn probe_video_dimensions(video_path: &Path) -> Result<(u32, u32)> {
-    let output = Command::new("ffprobe")
-        .arg("-v")
-        .arg("error")
-        .arg("-select_streams")
-        .arg("v:0")
-        .arg("-show_entries")
-        .arg("stream=width,height")
-        .arg("-of")
-        .arg("csv=s=x:p=0")
-        .arg(video_path)
-        .output()
-        .with_context(|| "Failed to probe video dimensions with ffprobe")?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "ffprobe exited with status {:?} while probing {}",
-            output.status.code(),
-            video_path.display()
-        );
-    }
-
-    let stdout = String::from_utf8(output.stdout)
-        .context("ffprobe returned non-UTF8 output for video dimensions")?;
-    let value = stdout.trim();
-    let mut parts = value.split('x');
-    let width_str = parts
-        .next()
-        .ok_or_else(|| anyhow!("ffprobe did not return width for {}", video_path.display()))?;
-    let height_str = parts
-        .next()
-        .ok_or_else(|| anyhow!("ffprobe did not return height for {}", video_path.display()))?;
-
-    let width: u32 = width_str.parse().with_context(|| {
-        format!(
-            "Unable to parse ffprobe width '{}' for {}",
-            width_str,
-            video_path.display()
-        )
-    })?;
-    let height: u32 = height_str.parse().with_context(|| {
-        format!(
-            "Unable to parse ffprobe height '{}' for {}",
-            height_str,
-            video_path.display()
-        )
-    })?;
-
-    Ok((width, height))
-}

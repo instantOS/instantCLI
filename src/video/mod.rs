@@ -15,6 +15,7 @@ pub mod stats;
 mod titlecard;
 mod transcribe;
 mod utils;
+mod ffmpeg;
 mod video_planner;
 
 pub use cli::VideoCommands;

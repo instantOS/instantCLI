@@ -7,7 +7,8 @@ use crate::ui::prelude::{Level, emit};
 
 use super::cli::CheckArgs;
 use super::document::parse_video_document;
-use super::render::{probe_video_dimensions, resolve_transcript_path, resolve_video_path};
+use super::ffmpeg::probe_video_dimensions;
+use super::render::{resolve_transcript_path, resolve_video_path};
 use super::srt::parse_srt;
 use super::utils::canonicalize_existing;
 use super::video_planner::{TimelinePlanItem, align_plan_with_subtitles, plan_timeline};

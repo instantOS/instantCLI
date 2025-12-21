@@ -13,6 +13,8 @@ use super::config::{VideoConfig, VideoDirectories};
 use super::utils::{canonicalize_existing, compute_file_hash};
 use crate::ui::prelude::{Level, emit};
 
+use super::ffmpeg::{extract_audio_to_mp3, probe_duration_seconds, trim_audio_mp3};
+
 const BASE_URL: &str = "https://auphonic.com/api";
 
 pub(crate) async fn verify_api_key(client: &Client, api_key: &str) -> Result<()> {
@@ -130,7 +132,7 @@ fn ensure_audio_for_upload(
             &format!("Extracting audio from {}...", input_path.display()),
             None,
         );
-        extract_audio(input_path, &extracted_audio_path)?;
+        extract_audio_to_mp3(input_path, &extracted_audio_path)?;
     }
 
     Ok(extracted_audio_path)
@@ -204,9 +206,10 @@ fn trim_auphonic_jingles(
     }
 
     let original_duration =
-        get_duration(original_audio_path).context("Failed to get original audio duration")?;
+        probe_duration_seconds(original_audio_path)
+            .context("Failed to get original audio duration")?;
     let raw_duration =
-        get_duration(raw_cache_path).context("Failed to get raw Auphonic duration")?;
+        probe_duration_seconds(raw_cache_path).context("Failed to get raw Auphonic duration")?;
 
     emit(
         Level::Debug,
@@ -263,7 +266,7 @@ fn trim_auphonic_jingles(
 
     let start = cut;
     let end = raw_duration - cut;
-    trim_audio(raw_cache_path, processed_cache_path, start, end)?;
+    trim_audio_mp3(raw_cache_path, processed_cache_path, start, end)?;
 
     Ok(())
 }
@@ -689,84 +692,3 @@ async fn download_result(
     }
 }
 
-fn get_duration(path: &Path) -> Result<f64> {
-    let output = std::process::Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-        ])
-        .arg(path)
-        .output()
-        .context("Failed to run ffprobe")?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "ffprobe failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    let duration_str = String::from_utf8_lossy(&output.stdout);
-    let duration: f64 = duration_str
-        .trim()
-        .parse()
-        .context("Failed to parse duration")?;
-    Ok(duration)
-}
-
-fn extract_audio(input: &Path, output: &Path) -> Result<()> {
-    let status = std::process::Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-i",
-            &input.to_string_lossy(),
-            "-vn",
-            "-map",
-            "0:a:0",
-            "-c:a",
-            "libmp3lame",
-            "-q:a",
-            "2",
-            &output.to_string_lossy(),
-        ])
-        .status()
-        .context("Failed to run ffmpeg for audio extraction")?;
-
-    if !status.success() {
-        anyhow::bail!("ffmpeg failed to extract audio");
-    }
-    Ok(())
-}
-
-fn trim_audio(input: &Path, output: &Path, start: f64, end: f64) -> Result<()> {
-    // ffmpeg -i input -ss start -to end -c:a libmp3lame -q:a 2 output
-    // Removing -c copy to ensure precision, using high quality VBR MP3
-    let output_str = output.to_string_lossy();
-
-    let status = std::process::Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-i",
-            &input.to_string_lossy(),
-            "-ss",
-            &format!("{}", start),
-            "-to",
-            &format!("{}", end),
-            "-c:a",
-            "libmp3lame",
-            "-q:a",
-            "2",
-            &output_str,
-        ])
-        .status()
-        .context("Failed to run ffmpeg")?;
-
-    if !status.success() {
-        anyhow::bail!("ffmpeg failed to trim audio");
-    }
-    Ok(())
-}
