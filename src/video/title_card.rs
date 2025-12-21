@@ -44,27 +44,6 @@ impl TitleCardGenerator {
         })
     }
 
-    pub fn heading_card(&self, level: u32, text: &str) -> Result<TitleCardAsset> {
-        let cache_key = self.build_cache_key(level, text);
-        let card_dir = self.cache_dir.join(&cache_key);
-        let markdown_path = card_dir.join("input.md");
-        let css_path = card_dir.join("title.css");
-        let html_path = card_dir.join("title.html");
-        let image_path = card_dir.join("title.png");
-
-        self.ensure_card_dir(&card_dir)?;
-        if !image_path.exists() {
-            self.write_markdown(&markdown_path, level, text)?;
-            self.write_css(&css_path)?;
-            self.run_pandoc(&markdown_path, &html_path, &css_path)?;
-            self.capture_screenshot(&html_path, &image_path)?;
-        }
-
-        Ok(TitleCardAsset {
-            card_dir,
-            image_path,
-        })
-    }
 
     pub fn markdown_card(&self, markdown_content: &str) -> Result<TitleCardAsset> {
         let cache_key = self.build_markdown_cache_key(markdown_content);
@@ -93,10 +72,6 @@ impl TitleCardGenerator {
         })
     }
 
-    pub fn generate_image(&self, level: u32, text: &str, output_path: &Path) -> Result<()> {
-        let asset = self.heading_card(level, text)?;
-        self.copy_image(&asset.image_path, output_path)
-    }
 
     pub fn generate_image_from_markdown(
         &self,
@@ -142,15 +117,6 @@ impl TitleCardGenerator {
         Ok(())
     }
 
-    fn build_cache_key(&self, level: u32, text: &str) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(level.to_le_bytes());
-        hasher.update(self.width.to_le_bytes());
-        hasher.update(self.height.to_le_bytes());
-        hasher.update(CSS_VERSION_TOKEN.as_bytes());
-        hasher.update(text.as_bytes());
-        format!("{:x}", hasher.finalize())
-    }
 
     fn build_markdown_cache_key(&self, markdown_content: &str) -> String {
         let mut hasher = Sha256::new();
@@ -161,13 +127,6 @@ impl TitleCardGenerator {
         format!("{:x}", hasher.finalize())
     }
 
-    fn write_markdown(&self, path: &Path, level: u32, text: &str) -> Result<()> {
-        let heading_level = level.max(1);
-        let hashes = "#".repeat(heading_level as usize);
-        let content = format!("{hashes} {}\n", text.trim());
-        fs::write(path, content.as_bytes())
-            .with_context(|| format!("Failed to write title card markdown to {}", path.display()))
-    }
 
     fn write_css(&self, path: &Path) -> Result<()> {
         let mut file = fs::File::create(path)

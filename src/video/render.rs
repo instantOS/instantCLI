@@ -352,7 +352,10 @@ fn build_nle_timeline(
             }
             TimelinePlanItem::Standalone(standalone_plan) => match standalone_plan {
                 StandalonePlan::Heading { level, text, .. } => {
-                    let asset = generator.heading_card(level, &text)?;
+                    let heading_level = level.max(1);
+                    let hashes = "#".repeat(heading_level as usize);
+                    let markdown_content = format!("{hashes} {}\n", text.trim());
+                    let asset = generator.markdown_card(&markdown_content)?;
                     let video_path = generator.ensure_video_for_duration(&asset, 2.0)?;
 
                     // Title cards are pre-rendered videos, treat as video segments
