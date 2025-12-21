@@ -229,24 +229,31 @@ pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Re
             let actual_gap = (next_start - prev_end).max(0.0);
 
             if approximate_total > 0.0 && actual_gap > 0.0 {
-                let mut current = prev_end;
-                let mut run_updates: Vec<(usize, f64, f64)> = Vec::new();
-                for inner_idx in run_start..run_end {
-                    if let Some(TimelinePlanItem::Clip(run_clip)) = plan.items.get(inner_idx) {
-                        let approx_duration = run_clip.end - run_clip.start;
-                        if approx_duration <= 0.0 {
-                            continue;
+                let stretch_ratio = actual_gap / approximate_total;
+
+                // If the gap is wildly different from the authored silence duration,
+                // assume the user intentionally cut intermediate content (e.g. by
+                // commenting out blocks) and keep the silence timestamps as-authored.
+                if stretch_ratio <= 2.5 {
+                    let mut current = prev_end;
+                    let mut run_updates: Vec<(usize, f64, f64)> = Vec::new();
+                    for inner_idx in run_start..run_end {
+                        if let Some(TimelinePlanItem::Clip(run_clip)) = plan.items.get(inner_idx) {
+                            let approx_duration = run_clip.end - run_clip.start;
+                            if approx_duration <= 0.0 {
+                                continue;
+                            }
+                            let fraction = approx_duration / approximate_total;
+                            let actual_duration = actual_gap * fraction;
+                            run_updates.push((inner_idx, current, current + actual_duration));
+                            current += actual_duration;
                         }
-                        let fraction = approx_duration / approximate_total;
-                        let actual_duration = actual_gap * fraction;
-                        run_updates.push((inner_idx, current, current + actual_duration));
-                        current += actual_duration;
                     }
+                    if let Some(last) = run_updates.last_mut() {
+                        last.2 = next_start;
+                    }
+                    silence_updates.extend(run_updates);
                 }
-                if let Some(last) = run_updates.last_mut() {
-                    last.2 = next_start;
-                }
-                silence_updates.extend(run_updates);
             }
         }
 
@@ -402,5 +409,55 @@ mod tests {
         let expected_gap = 6.789 - 1.234;
         let actual_gap = (second_clip.start - first_clip.end).max(0.0);
         assert!((expected_gap - actual_gap).abs() < 1e-6);
+    }
+
+    #[test]
+    fn does_not_stretch_silence_when_gap_is_huge() {
+        let markdown = "`00:00:00.0-00:00:01.0` intro\n`00:00:01.0-00:00:02.0` SILENCE\n`00:00:02.0-00:00:03.0` SILENCE\n`00:00:50.0-00:00:51.0` outro\n";
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let mut plan = plan_timeline(&document).unwrap();
+
+        let cues = vec![
+            SrtCue {
+                start: Duration::from_millis(0),
+                end: Duration::from_millis(1000),
+                text: "intro".to_string(),
+            },
+            SrtCue {
+                start: Duration::from_millis(50_000),
+                end: Duration::from_millis(51_000),
+                text: "outro".to_string(),
+            },
+        ];
+
+        align_plan_with_subtitles(&mut plan, &cues).unwrap();
+
+        let mut iter = plan.items.iter();
+        let intro = match iter.next() {
+            Some(TimelinePlanItem::Clip(clip)) => clip,
+            _ => panic!("expected intro"),
+        };
+        let silence1 = match iter.next() {
+            Some(TimelinePlanItem::Clip(clip)) => clip,
+            _ => panic!("expected silence1"),
+        };
+        let silence2 = match iter.next() {
+            Some(TimelinePlanItem::Clip(clip)) => clip,
+            _ => panic!("expected silence2"),
+        };
+        let outro = match iter.next() {
+            Some(TimelinePlanItem::Clip(clip)) => clip,
+            _ => panic!("expected outro"),
+        };
+
+        // Intro/outro are aligned to cues...
+        assert!((intro.end - 1.0).abs() < 1e-6);
+        assert!((outro.start - 50.0).abs() < 1e-6);
+
+        // ...but silence remains based on authored timestamps (not stretched to fill 49s).
+        assert!((silence1.start - 1.0).abs() < 1e-6);
+        assert!((silence1.end - 2.0).abs() < 1e-6);
+        assert!((silence2.start - 2.0).abs() < 1e-6);
+        assert!((silence2.end - 3.0).abs() < 1e-6);
     }
 }

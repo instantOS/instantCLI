@@ -13,6 +13,12 @@ use super::timeline::{TimelinePlanItem, align_plan_with_subtitles, plan_timeline
 use super::utils::canonicalize_existing;
 
 pub fn handle_check(args: CheckArgs) -> Result<()> {
+    macro_rules! log {
+        ($level:expr, $code:expr, $($arg:tt)*) => {
+            emit($level, $code, &format!($($arg)*), None);
+        };
+    }
+
     let markdown_path = canonicalize_existing(&args.markdown)?;
     let markdown_contents = fs::read_to_string(&markdown_path)
         .with_context(|| format!("Failed to read markdown file {}", markdown_path.display()))?;
@@ -42,49 +48,52 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     align_plan_with_subtitles(&mut plan, &cues)?;
 
     let duration_seconds = plan_duration_seconds(&plan);
+    let duration_pretty = format_duration(duration_seconds);
+    let pause_count = plan.standalone_count.saturating_sub(plan.heading_count);
 
-    emit(
+    log!(
         Level::Success,
         "video.check.valid",
-        &format!("{} is valid video markdown", markdown_path.display()),
-        None,
+        "{} is valid video markdown",
+        markdown_path.display()
     );
 
-    emit(
+    log!(
+        Level::Info,
+        "video.check.inputs",
+        "Transcript: {} ({} cue(s))",
+        transcript_path.display(),
+        cues.len()
+    );
+
+    log!(
         Level::Info,
         "video.check.duration",
-        &format!("Planned output duration: {}", format_duration(duration_seconds)),
-        None,
+        "Planned output duration: {duration_pretty} (~{seconds:.1}s)",
+        seconds = duration_seconds
     );
 
-    emit(
+    log!(
         Level::Info,
         "video.check.counts",
-        &format!(
-            "Segments: {segments}, Headings: {headings}, Title cards: {titlecards}, Overlays: {overlays}",
-            segments = plan.segment_count,
-            headings = plan.heading_count,
-            titlecards = plan.standalone_count,
-            overlays = plan.overlay_count,
-        ),
-        None,
+        "Clips: {segments}, Overlays: {overlays}, Heading cards: {headings}, Pause cards: {pauses}",
+        segments = plan.segment_count,
+        overlays = plan.overlay_count,
+        headings = plan.heading_count,
+        pauses = pause_count,
     );
 
     if unsupported_blocks == 0 {
-        emit(
+        log!(
             Level::Success,
             "video.check.supported",
-            "All markdown blocks are supported",
-            None,
+            "All markdown blocks are supported"
         );
     } else {
-        emit(
+        log!(
             Level::Warn,
             "video.check.partial_support",
-            &format!(
-                "{unsupported_blocks} unsupported block(s) will be ignored during render",
-            ),
-            None,
+            "{unsupported_blocks} unsupported block(s) will be ignored during render",
         );
     }
 
@@ -94,14 +103,15 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
 fn plan_duration_seconds(plan: &super::timeline::TimelinePlan) -> f64 {
     plan.items
         .iter()
-        .filter_map(|item| match item {
-            TimelinePlanItem::Clip(clip) => Some((clip.end - clip.start).max(0.0)),
-            TimelinePlanItem::Standalone(_) => None,
-            TimelinePlanItem::Music(_) => None,
+        .map(|item| match item {
+            TimelinePlanItem::Clip(clip) => (clip.end - clip.start).max(0.0),
+            TimelinePlanItem::Standalone(standalone) => match standalone {
+                super::timeline::StandalonePlan::Heading { .. } => 2.0,
+                super::timeline::StandalonePlan::Pause { .. } => 5.0,
+            },
+            TimelinePlanItem::Music(_) => 0.0,
         })
         .sum::<f64>()
-        + (plan.standalone_count as f64) * 5.0
-        + (plan.heading_count as f64) * 2.0
 }
 
 fn format_duration(seconds: f64) -> String {
