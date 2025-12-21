@@ -104,7 +104,9 @@ fn plan_duration_seconds(plan: &super::video_planner::TimelinePlan) -> f64 {
             TimelinePlanItem::Clip(clip) => (clip.end - clip.start).max(0.0),
             TimelinePlanItem::Standalone(standalone) => match standalone {
                 super::video_planner::StandalonePlan::Heading { .. } => 2.0,
-                super::video_planner::StandalonePlan::Pause { .. } => 5.0,
+                super::video_planner::StandalonePlan::Pause {
+                    duration_seconds, ..
+                } => *duration_seconds,
             },
             TimelinePlanItem::Music(_) => 0.0,
         })

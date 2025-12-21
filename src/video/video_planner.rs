@@ -62,6 +62,7 @@ pub enum StandalonePlan {
     Pause {
         markdown: String,
         display_text: String,
+        duration_seconds: f64,
         line: usize,
     },
 }
@@ -80,6 +81,7 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
     let mut heading_count = 0usize;
     let mut segment_count = 0usize;
     let mut overlay_state: Option<OverlayPlan> = None;
+    let mut last_clip_item_idx: Option<usize> = None;
     let mut last_was_separator = false;
 
     for (idx, block) in document.blocks.iter().enumerate() {
@@ -93,6 +95,7 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
                     line: segment.line,
                     overlay: overlay_state.clone(),
                 }));
+                last_clip_item_idx = Some(items.len().saturating_sub(1));
                 segment_count += 1;
                 last_was_separator = false;
             }
@@ -136,16 +139,29 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
                     items.push(TimelinePlanItem::Standalone(StandalonePlan::Pause {
                         markdown: raw_description.to_string(),
                         display_text: trimmed.to_string(),
+                        duration_seconds: pause_duration_seconds(trimmed),
                         line: unhandled.line,
                     }));
                     standalone_count += 1;
                     overlay_state = None;
                     last_was_separator = false;
                 } else {
-                    overlay_state = Some(OverlayPlan {
+                    let overlay = OverlayPlan {
                         markdown: raw_description.to_string(),
                         line: unhandled.line,
-                    });
+                    };
+
+                    // Slides start being shown during the *immediately previous* segment.
+                    // Slides stop when encountering either a `---` separator or the next slide.
+                    // With our per-clip overlay model, this means we need to set the overlay
+                    // on the last clip retroactively, and carry it forward for subsequent clips.
+                    if let Some(last_idx) = last_clip_item_idx
+                        && let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx)
+                    {
+                        clip.overlay = Some(overlay.clone());
+                    }
+
+                    overlay_state = Some(overlay);
                     overlay_count += 1;
                     last_was_separator = false;
                 }
@@ -186,6 +202,21 @@ struct ClipTimeUpdate {
 
 const DEFAULT_DIALOGUE_PADDING_SECONDS: f64 = 0.08;
 const DEFAULT_PADDING_GUARD_SECONDS: f64 = 0.01;
+
+const DEFAULT_PAUSE_MIN_SECONDS: f64 = 5.0;
+const DEFAULT_PAUSE_MAX_SECONDS: f64 = 20.0;
+const DEFAULT_PAUSE_READING_WPM: f64 = 180.0;
+
+fn pause_duration_seconds(display_text: &str) -> f64 {
+    let words = display_text.split_whitespace().count() as f64;
+    if words <= 0.0 {
+        return DEFAULT_PAUSE_MIN_SECONDS;
+    }
+
+    let words_per_second = DEFAULT_PAUSE_READING_WPM / 60.0;
+    let seconds = words / words_per_second;
+    seconds.clamp(DEFAULT_PAUSE_MIN_SECONDS, DEFAULT_PAUSE_MAX_SECONDS)
+}
 
 fn align_dialogue_clips_to_cues(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Result<Vec<usize>> {
     let mut dialogue_clips: Vec<(usize, f64, f64, usize, String)> = Vec::new();
@@ -726,6 +757,96 @@ mod tests {
                 .iter()
                 .any(|item| matches!(item, TimelinePlanItem::Clip(_)))
         );
+    }
+
+    #[test]
+    fn slide_applies_to_immediately_previous_clip_and_clears_on_separator() {
+        let markdown = concat!(
+            "`00:00:00.0-00:00:01.0` first\n",
+            "slide 1\n\n",
+            "---\n\n",
+            "`00:00:01.0-00:00:02.0` second\n",
+        );
+
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let plan = plan_timeline(&document).unwrap();
+
+        let clips: Vec<_> = plan
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                TimelinePlanItem::Clip(clip) => Some(clip),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(clips.len(), 2);
+        assert!(clips[0].overlay.is_some());
+        assert!(clips[1].overlay.is_none());
+
+        let overlay = clips[0].overlay.as_ref().unwrap();
+        assert_eq!(overlay.markdown.trim(), "slide 1");
+    }
+
+    #[test]
+    fn slide_changes_on_next_slide_block() {
+        let markdown = concat!(
+            "`00:00:00.0-00:00:01.0` first\n",
+            "slide 1\n\n",
+            "slide 2\n\n",
+            "`00:00:01.0-00:00:02.0` second\n",
+        );
+
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let plan = plan_timeline(&document).unwrap();
+
+        let clips: Vec<_> = plan
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                TimelinePlanItem::Clip(clip) => Some(clip),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(clips.len(), 2);
+
+        let overlay_first = clips[0].overlay.as_ref().unwrap();
+        assert_eq!(overlay_first.markdown.trim(), "slide 2");
+
+        let overlay_second = clips[1].overlay.as_ref().unwrap();
+        assert_eq!(overlay_second.markdown.trim(), "slide 2");
+    }
+
+    #[test]
+    fn pause_duration_scales_with_word_count() {
+        let markdown = concat!(
+            "`00:00:00.0-00:00:01.0` first\n\n",
+            "---\n\n",
+            "short\n\n",
+            "---\n\n",
+            "`00:00:01.0-00:00:02.0` second\n",
+        );
+
+        let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
+        let plan = plan_timeline(&document).unwrap();
+
+        let pauses: Vec<_> = plan
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                TimelinePlanItem::Standalone(StandalonePlan::Pause { duration_seconds, .. }) => {
+                    Some(*duration_seconds)
+                }
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(pauses.len(), 1);
+        assert!((pauses[0] - DEFAULT_PAUSE_MIN_SECONDS).abs() < 1e-9);
+
+        let long = "word ".repeat(500);
+        assert!((pause_duration_seconds(&long) - DEFAULT_PAUSE_MAX_SECONDS).abs() < 1e-9);
     }
 
     #[test]

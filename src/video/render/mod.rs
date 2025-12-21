@@ -490,9 +490,11 @@ impl TimelineBuildState {
                 let markdown_content = format!("{hashes} {}\n", text.trim());
                 self.add_standalone_card(&markdown_content, 2.0, generator)
             }
-            StandalonePlan::Pause { markdown, .. } => {
-                self.add_standalone_card(&markdown, 5.0, generator)
-            }
+            StandalonePlan::Pause {
+                markdown,
+                duration_seconds,
+                ..
+            } => self.add_standalone_card(&markdown, duration_seconds, generator),
         }
     }
 
