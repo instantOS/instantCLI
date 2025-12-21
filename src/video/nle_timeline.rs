@@ -234,7 +234,8 @@ mod tests {
     #[test]
     fn test_add_segment() {
         let mut timeline = Timeline::new();
-        let segment = Segment::new_video_subset(0.0, 10.0, 5.0, PathBuf::from("test.mp4"), None, false);
+        let segment =
+            Segment::new_video_subset(0.0, 10.0, 5.0, PathBuf::from("test.mp4"), None, false);
         timeline.add_segment(segment);
         assert_eq!(timeline.segments.len(), 1);
         assert_eq!(timeline.total_duration(), 10.0);

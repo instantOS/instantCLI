@@ -235,7 +235,8 @@ impl<'a> BodyParserState<'a> {
                 self.flush_paragraph()?;
                 self.flush_heading();
                 let line = self.base_line_offset + self.line_map.line_number(range.start);
-                self.blocks.push(DocumentBlock::Separator(SeparatorBlock { line }));
+                self.blocks
+                    .push(DocumentBlock::Separator(SeparatorBlock { line }));
             }
             _ => {}
         }
@@ -254,7 +255,8 @@ impl<'a> BodyParserState<'a> {
     fn flush_heading(&mut self) {
         if let Some(state) = self.heading.take() {
             let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
-            self.blocks.push(DocumentBlock::Heading(state.into_block(line)));
+            self.blocks
+                .push(DocumentBlock::Heading(state.into_block(line)));
         }
     }
 
@@ -262,7 +264,8 @@ impl<'a> BodyParserState<'a> {
         if let Some(state) = self.code_block.take() {
             let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
             let directive = state.into_music_directive(line)?;
-            self.blocks.push(DocumentBlock::Music(MusicBlock { directive, line }));
+            self.blocks
+                .push(DocumentBlock::Music(MusicBlock { directive, line }));
         }
         Ok(())
     }
@@ -317,7 +320,6 @@ fn is_music_code_block(info: &str) -> bool {
         .map(|lang| lang.eq_ignore_ascii_case("music"))
         .unwrap_or(false)
 }
-
 
 fn split_front_matter(content: &str) -> Result<(Option<&str>, &str, usize)> {
     if !(content.starts_with("---\n") || content.starts_with("---\r\n")) {

@@ -167,8 +167,12 @@ impl TitleCardGenerator {
     }
 
     fn post_process_html(&self, html_path: &Path) -> Result<()> {
-        let content = fs::read_to_string(html_path)
-            .with_context(|| format!("Failed to read HTML for post-processing at {}", html_path.display()))?;
+        let content = fs::read_to_string(html_path).with_context(|| {
+            format!(
+                "Failed to read HTML for post-processing at {}",
+                html_path.display()
+            )
+        })?;
 
         // Simple string finding to inject wrapper and script
         // We assume pandoc's output structure (<body>...</body>)
@@ -179,26 +183,24 @@ impl TitleCardGenerator {
         let body_content = &content[body_start..body_end];
         let after_body = &content[body_end..];
 
-        let script = format!(
-            "<script>{}</script>",
-            DEFAULT_JS
-        );
+        let script = format!("<script>{}</script>", DEFAULT_JS);
 
         let new_content = format!(
             "{}<div class=\"content\">{}</div>{}_{}",
-            before_body,
-            body_content,
-            script,
-            after_body
+            before_body, body_content, script, after_body
         );
 
-        fs::write(html_path, new_content)
-            .with_context(|| format!("Failed to write post-processed HTML to {}", html_path.display()))
+        fs::write(html_path, new_content).with_context(|| {
+            format!(
+                "Failed to write post-processed HTML to {}",
+                html_path.display()
+            )
+        })
     }
 
     fn capture_screenshot(&self, html: &Path, image: &Path) -> Result<()> {
         let file_url = format!("file://{}", html.display());
-        
+
         let (window_height, use_cropping) = if HEADLESS_BUG_PADDING > 0 {
             (self.height + HEADLESS_BUG_PADDING, true)
         } else {
@@ -214,7 +216,7 @@ impl TitleCardGenerator {
         } else {
             image.to_path_buf()
         };
-        
+
         let screenshot_arg = format!("--screenshot={}", capture_target.display());
 
         let status = Command::new("chromium")

@@ -73,7 +73,8 @@ pub async fn process_with_auphonic(
         .join(format!("{}_auphonic_processed.mp3", input_hash));
 
     // Step 1: Ensure we have audio to upload (extract from video if needed)
-    let upload_input_path = ensure_audio_for_upload(input_path, &project_paths, &input_hash, force)?;
+    let upload_input_path =
+        ensure_audio_for_upload(input_path, &project_paths, &input_hash, force)?;
 
     // Step 2: Fetch raw Auphonic result (upload, process, download)
     fetch_raw_auphonic_result(
@@ -266,7 +267,6 @@ fn trim_auphonic_jingles(
 
     Ok(())
 }
-
 
 fn copy_to_output(cache_path: &Path, input_path: &Path) -> Result<()> {
     let output_dir = input_path.parent().unwrap_or_else(|| Path::new("."));

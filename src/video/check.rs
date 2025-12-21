@@ -29,8 +29,12 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
 
     let transcript_path = resolve_transcript_path(&document.metadata, markdown_dir)?;
     let transcript_path = canonicalize_existing(&transcript_path)?;
-    let transcript_contents = fs::read_to_string(&transcript_path)
-        .with_context(|| format!("Failed to read transcript file {}", transcript_path.display()))?;
+    let transcript_contents = fs::read_to_string(&transcript_path).with_context(|| {
+        format!(
+            "Failed to read transcript file {}",
+            transcript_path.display()
+        )
+    })?;
 
     let cues = parse_srt(&transcript_contents)?;
 

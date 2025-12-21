@@ -150,124 +150,214 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
 }
 
 pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Result<()> {
-    let mut cue_index = 0usize;
-    let mut dialogue_indices: Vec<usize> = Vec::new();
-
-    for (idx, item) in plan.items.iter_mut().enumerate() {
-        if let TimelinePlanItem::Clip(clip) = item {
-            if clip.kind == SegmentKind::Silence {
-                continue;
-            }
-
-            let match_idx =
-                find_matching_cue(cues, &clip.text, clip.start, cue_index).ok_or_else(|| {
-                    anyhow!(
-                        "Unable to locate subtitle entry for segment `{}` at line {}",
-                        clip.text,
-                        clip.line
-                    )
-                })?;
-
-            let cue = &cues[match_idx];
-            clip.start = cue.start.as_secs_f64();
-            clip.end = cue.end.as_secs_f64();
-            cue_index = match_idx + 1;
-            dialogue_indices.push(idx);
-        }
-    }
-
+    let dialogue_indices = align_dialogue_clips_to_cues(plan, cues)?;
     if dialogue_indices.is_empty() {
         return Ok(());
     }
 
-    let mut silence_updates: Vec<(usize, f64, f64)> = Vec::new();
+    let silence_updates = collect_silence_time_updates(&plan.items, &dialogue_indices);
+    apply_clip_time_updates(plan, silence_updates);
+
+    Ok(())
+}
+
+const MAX_SILENCE_STRETCH_RATIO: f64 = 2.5;
+
+#[derive(Debug, Clone, Copy)]
+struct ClipTimeUpdate {
+    idx: usize,
+    start: f64,
+    end: f64,
+}
+
+fn align_dialogue_clips_to_cues(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Result<Vec<usize>> {
+    let mut cue_index = 0usize;
+    let mut dialogue_indices: Vec<usize> = Vec::new();
+
+    for (idx, item) in plan.items.iter_mut().enumerate() {
+        let TimelinePlanItem::Clip(clip) = item else {
+            continue;
+        };
+
+        if clip.kind == SegmentKind::Silence {
+            continue;
+        }
+
+        let match_idx =
+            find_matching_cue(cues, &clip.text, clip.start, cue_index).ok_or_else(|| {
+                anyhow!(
+                    "Unable to locate subtitle entry for segment `{}` at line {}",
+                    clip.text,
+                    clip.line
+                )
+            })?;
+
+        let cue = &cues[match_idx];
+        clip.start = cue.start.as_secs_f64();
+        clip.end = cue.end.as_secs_f64();
+        cue_index = match_idx + 1;
+        dialogue_indices.push(idx);
+    }
+
+    Ok(dialogue_indices)
+}
+
+fn collect_silence_time_updates(
+    items: &[TimelinePlanItem],
+    dialogue_indices: &[usize],
+) -> Vec<ClipTimeUpdate> {
+    let mut updates = Vec::new();
+
     let mut idx = 0usize;
-    while idx < plan.items.len() {
-        let Some(TimelinePlanItem::Clip(clip)) = plan.items.get(idx) else {
+    while idx < items.len() {
+        let Some(silence_run) = SilenceRun::from_items(items, idx) else {
             idx += 1;
             continue;
         };
 
-        if clip.kind != SegmentKind::Silence {
-            idx += 1;
+        idx = silence_run.end_idx;
+
+        let Some((previous_dialogue_idx, next_dialogue_idx)) =
+            silence_run.surrounding_dialogue(dialogue_indices)
+        else {
             continue;
+        };
+
+        let Some(prev_end) = clip_end(items, previous_dialogue_idx) else {
+            continue;
+        };
+        let Some(next_start) = clip_start(items, next_dialogue_idx) else {
+            continue;
+        };
+
+        if let Some(run_updates) = silence_run.redistribute(items, prev_end, next_start) {
+            updates.extend(run_updates);
+        }
+    }
+
+    updates
+}
+
+fn apply_clip_time_updates(plan: &mut TimelinePlan, updates: Vec<ClipTimeUpdate>) {
+    for update in updates {
+        if let Some(TimelinePlanItem::Clip(clip)) = plan.items.get_mut(update.idx) {
+            clip.start = update.start;
+            clip.end = update.end.max(update.start);
+        }
+    }
+}
+
+fn clip_start(items: &[TimelinePlanItem], idx: usize) -> Option<f64> {
+    match items.get(idx) {
+        Some(TimelinePlanItem::Clip(clip)) => Some(clip.start),
+        _ => None,
+    }
+}
+
+fn clip_end(items: &[TimelinePlanItem], idx: usize) -> Option<f64> {
+    match items.get(idx) {
+        Some(TimelinePlanItem::Clip(clip)) => Some(clip.end),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SilenceRun {
+    start_idx: usize,
+    end_idx: usize,
+    approximate_total: f64,
+}
+
+impl SilenceRun {
+    fn from_items(items: &[TimelinePlanItem], start_idx: usize) -> Option<Self> {
+        let Some(TimelinePlanItem::Clip(clip)) = items.get(start_idx) else {
+            return None;
+        };
+
+        if clip.kind != SegmentKind::Silence {
+            return None;
         }
 
-        let run_start = idx;
-        let mut run_end = idx;
+        let mut end_idx = start_idx;
         let mut approximate_total = 0.0f64;
 
-        while run_end < plan.items.len() {
-            match plan.items.get(run_end) {
+        while end_idx < items.len() {
+            match items.get(end_idx) {
                 Some(TimelinePlanItem::Clip(run_clip)) if run_clip.kind == SegmentKind::Silence => {
                     approximate_total += run_clip.end - run_clip.start;
-                    run_end += 1;
+                    end_idx += 1;
                 }
                 _ => break,
             }
         }
 
+        Some(Self {
+            start_idx,
+            end_idx,
+            approximate_total,
+        })
+    }
+
+    fn surrounding_dialogue(self, dialogue_indices: &[usize]) -> Option<(usize, usize)> {
         let previous_dialogue_idx = dialogue_indices
             .iter()
             .rev()
-            .find(|&&dialogue_idx| dialogue_idx < run_start)
-            .copied();
+            .find(|&&dialogue_idx| dialogue_idx < self.start_idx)
+            .copied()?;
+
         let next_dialogue_idx = dialogue_indices
             .iter()
-            .find(|&&dialogue_idx| dialogue_idx >= run_end)
-            .copied();
+            .find(|&&dialogue_idx| dialogue_idx >= self.end_idx)
+            .copied()?;
 
-        if let (Some(prev_idx), Some(next_idx)) = (previous_dialogue_idx, next_dialogue_idx) {
-            let prev_end = match plan.items.get(prev_idx) {
-                Some(TimelinePlanItem::Clip(prev_clip)) => prev_clip.end,
-                _ => 0.0,
+        Some((previous_dialogue_idx, next_dialogue_idx))
+    }
+
+    fn redistribute(
+        self,
+        items: &[TimelinePlanItem],
+        prev_end: f64,
+        next_start: f64,
+    ) -> Option<Vec<ClipTimeUpdate>> {
+        let actual_gap = (next_start - prev_end).max(0.0);
+        if self.approximate_total <= 0.0 || actual_gap <= 0.0 {
+            return None;
+        }
+
+        let stretch_ratio = actual_gap / self.approximate_total;
+        if stretch_ratio > MAX_SILENCE_STRETCH_RATIO {
+            return None;
+        }
+
+        let mut updates = Vec::new();
+        let mut current = prev_end;
+
+        for idx in self.start_idx..self.end_idx {
+            let Some(TimelinePlanItem::Clip(run_clip)) = items.get(idx) else {
+                continue;
             };
-            let next_start = match plan.items.get(next_idx) {
-                Some(TimelinePlanItem::Clip(next_clip)) => next_clip.start,
-                _ => prev_end,
-            };
-            let actual_gap = (next_start - prev_end).max(0.0);
 
-            if approximate_total > 0.0 && actual_gap > 0.0 {
-                let stretch_ratio = actual_gap / approximate_total;
-
-                // If the gap is wildly different from the authored silence duration,
-                // assume the user intentionally cut intermediate content (e.g. by
-                // commenting out blocks) and keep the silence timestamps as-authored.
-                if stretch_ratio <= 2.5 {
-                    let mut current = prev_end;
-                    let mut run_updates: Vec<(usize, f64, f64)> = Vec::new();
-                    for inner_idx in run_start..run_end {
-                        if let Some(TimelinePlanItem::Clip(run_clip)) = plan.items.get(inner_idx) {
-                            let approx_duration = run_clip.end - run_clip.start;
-                            if approx_duration <= 0.0 {
-                                continue;
-                            }
-                            let fraction = approx_duration / approximate_total;
-                            let actual_duration = actual_gap * fraction;
-                            run_updates.push((inner_idx, current, current + actual_duration));
-                            current += actual_duration;
-                        }
-                    }
-                    if let Some(last) = run_updates.last_mut() {
-                        last.2 = next_start;
-                    }
-                    silence_updates.extend(run_updates);
-                }
+            let approx_duration = run_clip.end - run_clip.start;
+            if approx_duration <= 0.0 {
+                continue;
             }
+
+            let fraction = approx_duration / self.approximate_total;
+            let actual_duration = actual_gap * fraction;
+            updates.push(ClipTimeUpdate {
+                idx,
+                start: current,
+                end: current + actual_duration,
+            });
+            current += actual_duration;
         }
 
-        idx = run_end;
-    }
-
-    for (segment_idx, start, end) in silence_updates {
-        if let Some(TimelinePlanItem::Clip(clip)) = plan.items.get_mut(segment_idx) {
-            clip.start = start;
-            clip.end = end.max(start);
+        if let Some(last) = updates.last_mut() {
+            last.end = next_start;
         }
-    }
 
-    Ok(())
+        Some(updates)
+    }
 }
 
 fn find_matching_cue(

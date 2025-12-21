@@ -177,7 +177,11 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         }
     }
 
-    log!(Level::Info, "video.render.probe", "Probing source video dimensions");
+    log!(
+        Level::Info,
+        "video.render.probe",
+        "Probing source video dimensions"
+    );
     let (video_width, video_height) = probe_video_dimensions(&video_path)?;
 
     let generator = TitleCardGenerator::new(video_width, video_height)?;
@@ -249,7 +253,11 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         audio_path,
     );
 
-    log!(Level::Info, "video.render.ffmpeg", "Preparing ffmpeg pipeline");
+    log!(
+        Level::Info,
+        "video.render.ffmpeg",
+        "Preparing ffmpeg pipeline"
+    );
 
     if dry_run {
         pipeline.print_command()?;
@@ -262,7 +270,11 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
         return Ok(());
     }
 
-    log!(Level::Info, "video.render.execute", "Starting ffmpeg render");
+    log!(
+        Level::Info,
+        "video.render.execute",
+        "Starting ffmpeg render"
+    );
 
     pipeline.execute()?;
 
@@ -300,7 +312,10 @@ pub(super) fn resolve_video_path(metadata: &VideoMetadata, markdown_dir: &Path) 
     ))
 }
 
-pub(super) fn resolve_transcript_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
+pub(super) fn resolve_transcript_path(
+    metadata: &VideoMetadata,
+    markdown_dir: &Path,
+) -> Result<PathBuf> {
     let transcript_meta = metadata
         .transcript
         .as_ref()
