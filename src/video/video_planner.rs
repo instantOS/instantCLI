@@ -183,7 +183,6 @@ struct ClipTimeUpdate {
 }
 
 fn align_dialogue_clips_to_cues(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Result<Vec<usize>> {
-    let mut cue_index = 0usize;
     let mut dialogue_indices: Vec<usize> = Vec::new();
 
     for (idx, item) in plan.items.iter_mut().enumerate() {
@@ -196,7 +195,7 @@ fn align_dialogue_clips_to_cues(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Res
         }
 
         let match_idx =
-            find_matching_cue(cues, &clip.text, clip.start, cue_index).ok_or_else(|| {
+            find_matching_cue(cues, &clip.text, clip.start).ok_or_else(|| {
                 anyhow!(
                     "Unable to locate subtitle entry for segment `{}` at line {}",
                     clip.text,
@@ -207,7 +206,6 @@ fn align_dialogue_clips_to_cues(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Res
         let cue = &cues[match_idx];
         clip.start = cue.start.as_secs_f64();
         clip.end = cue.end.as_secs_f64();
-        cue_index = match_idx + 1;
         dialogue_indices.push(idx);
     }
 
@@ -376,12 +374,11 @@ fn find_matching_cue(
     cues: &[SrtCue],
     text: &str,
     approx_start: f64,
-    start_index: usize,
 ) -> Option<usize> {
     let target_text = normalize_text(text);
     let target_tenths = seconds_to_tenths(approx_start);
 
-    for (idx, cue) in cues.iter().enumerate().skip(start_index) {
+    for (idx, cue) in cues.iter().enumerate() {
         if normalize_text(&cue.text) != target_text {
             continue;
         }
@@ -396,7 +393,11 @@ fn find_matching_cue(
 }
 
 fn normalize_text(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace(['\u{2018}', '\u{2019}', '\u{201B}', '\u{201A}'], "'")  // Normalize various apostrophe/quote characters
+        .replace(['\u{201C}', '\u{201D}', '\u{201E}', '\u{201F}'], "\"")  // Normalize various quote characters
 }
 
 fn seconds_to_tenths(value: f64) -> i64 {
