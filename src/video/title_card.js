@@ -17,21 +17,59 @@ window.addEventListener('load', () => {
     }
     
     // "Dense" condition: Lots of text or code
-    if (textLength > 1000 || (codeBlocks > 0 && textLength > 600)) {
+    // Trigger earlier to switch to space-saving layout
+    if (textLength > 500 || (codeBlocks > 0 && textLength > 300)) {
         body.classList.add('layout-dense');
     }
 
     // 2. Auto-scaling logic
     let currentScale = 100;
-    const minScale = 40;
+    const minScale = 20;
+    const maxScale = 300; // Allow growing up to 3x base size
     
-    // Allow layout to settle
-    // We check if content height exceeds viewport height
-    // body has height: 100vh and overflow: hidden in CSS
-    // So we check scrollHeight vs clientHeight
+    function checkOverflow() {
+        // Vertical overflow
+        if (body.scrollHeight > body.clientHeight || content.scrollHeight > body.clientHeight) {
+            return true;
+        }
+        
+        // Horizontal overflow (global)
+        if (body.scrollWidth > body.clientWidth) {
+            return true;
+        }
+
+        // Horizontal overflow (code blocks)
+        // Code blocks usually don't wrap, so we must check if they need scrolling.
+        // For a static title card, scrolling = cut off content.
+        const pres = content.querySelectorAll('pre');
+        for (const pre of pres) {
+            if (pre.scrollWidth > pre.clientWidth) {
+                return true;
+            }
+        }
+
+        return false;
+    }
     
-    while ((body.scrollHeight > body.clientHeight || content.scrollHeight > body.clientHeight) && currentScale > minScale) {
-        currentScale -= 2;
-        body.style.fontSize = currentScale + '%';
+    // Initial check
+    if (checkOverflow()) {
+        // Shrink mode
+        while (checkOverflow() && currentScale > minScale) {
+            currentScale -= 5;
+            body.style.fontSize = currentScale + '%';
+        }
+    } else {
+        // Grow mode
+        // We grow until it overflows, then step back
+        while (!checkOverflow() && currentScale < maxScale) {
+            currentScale += 5;
+            body.style.fontSize = currentScale + '%';
+        }
+        
+        // If we caused an overflow, step back one unit to make it fit again
+        if (checkOverflow()) {
+            currentScale -= 5;
+            body.style.fontSize = currentScale + '%';
+        }
     }
 });

@@ -11,6 +11,10 @@ const CSS_VERSION_TOKEN: &str = "6";
 const DEFAULT_CSS: &str = include_str!("title_card.css");
 const DEFAULT_JS: &str = include_str!("title_card.js");
 
+// Workaround for Chromium "new" headless mode viewport bug (grey bar artifacts).
+// Set to 0 to disable the workaround (oversize rendering + cropping) once Chromium fixes the issue.
+const HEADLESS_BUG_PADDING: u32 = 200;
+
 pub struct TitleCardGenerator {
     cache_dir: PathBuf,
     width: u32,
@@ -132,7 +136,9 @@ impl TitleCardGenerator {
         file.write_all(DEFAULT_CSS.as_bytes())
             .with_context(|| format!("Failed to write CSS to {}", path.display()))?;
 
-        // Append explicit dimensions to ensure full coverage (fixing grey bar issues in headless mode)
+        // Append explicit dimensions to ensure full coverage.
+        // This is part of the workaround for headless viewport issues: we force the content
+        // to exactly fill the requested resolution, even if the window is padded.
         let dimensions_css = format!(
             "\nbody {{ width: {}px; height: {}px; }}\n",
             self.width, self.height
@@ -193,27 +199,31 @@ impl TitleCardGenerator {
     fn capture_screenshot(&self, html: &Path, image: &Path) -> Result<()> {
         let file_url = format!("file://{}", html.display());
         
-        // WORKAROUND: Chromium's "new" headless mode has a known issue where the viewport 
-        // height often renders smaller than the window height, leaving a "grey bar" or artifacts 
-        // at the bottom (likely due to reserved UI space). 
-        // Since --headless=old is removed in this version, we use a robust workaround:
-        // 1. Set the window height significantly larger than the target (target + 200px).
-        // 2. Render the screenshot.
-        // 3. Crop the result back to the exact target dimensions using ffmpeg.
-        let padding = 200;
-        let padded_height = self.height + padding;
-        let window_arg = format!("--window-size={},{}", self.width, padded_height);
+        let (window_height, use_cropping) = if HEADLESS_BUG_PADDING > 0 {
+            (self.height + HEADLESS_BUG_PADDING, true)
+        } else {
+            (self.height, false)
+        };
 
-        // Use a temporary path for the raw (oversized) screenshot.
-        // Chromium defaults to PNG, which is lossless for this intermediate step.
-        let raw_image = image.with_extension("raw.png");
-        let screenshot_arg = format!("--screenshot={}", raw_image.display());
+        let window_arg = format!("--window-size={},{}", self.width, window_height);
+
+        // If cropping, use a temporary path for the raw screenshot.
+        // Otherwise, write directly to the final image path.
+        let capture_target = if use_cropping {
+            image.with_extension("raw.png")
+        } else {
+            image.to_path_buf()
+        };
+        
+        let screenshot_arg = format!("--screenshot={}", capture_target.display());
 
         let status = Command::new("chromium")
             .arg("--headless")
             .arg("--disable-gpu")
             .arg("--no-sandbox")
-            .arg("--hide-scrollbars") // Helpful to reduce other artifacts
+            .arg("--hide-scrollbars")
+            .arg("--force-device-scale-factor=1")
+            .arg("--default-browser-site-isolation-level=none")
             .arg(window_arg)
             .arg(screenshot_arg)
             .arg(file_url)
@@ -224,27 +234,30 @@ impl TitleCardGenerator {
             anyhow::bail!("chromium exited with status {:?}", status.code());
         }
 
-        // Crop to exact dimensions
-        let crop_filter = format!("crop={}:{}:0:0", self.width, self.height);
-        let status = Command::new("ffmpeg")
-            .arg("-y")
-            .arg("-v")
-            .arg("error") // Reduce noise
-            .arg("-i")
-            .arg(&raw_image)
-            .arg("-vf")
-            .arg(crop_filter)
-            .arg(image)
-            .status()
-            .with_context(|| "Failed to spawn ffmpeg for screenshot cropping")?;
+        if use_cropping {
+            // Crop the screenshot to the exact requested dimensions.
+            // This removes the extra padding and any chrome UI artifacts (grey bar).
+            let crop_filter = format!("crop={}:{}:0:0", self.width, self.height);
+            let status = Command::new("ffmpeg")
+                .arg("-y")
+                .arg("-v")
+                .arg("error")
+                .arg("-i")
+                .arg(&capture_target)
+                .arg("-vf")
+                .arg(crop_filter)
+                .arg(image)
+                .status()
+                .with_context(|| "Failed to spawn ffmpeg for screenshot cropping")?;
 
-        // Clean up the raw artifact
-        if raw_image.exists() {
-            let _ = fs::remove_file(raw_image);
-        }
+            // Cleanup raw image
+            if capture_target.exists() {
+                let _ = fs::remove_file(capture_target);
+            }
 
-        if !status.success() {
-            anyhow::bail!("ffmpeg cropping exited with status {:?}", status.code());
+            if !status.success() {
+                anyhow::bail!("ffmpeg cropping exited with status {:?}", status.code());
+            }
         }
 
         Ok(())

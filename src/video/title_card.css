@@ -1,18 +1,53 @@
 :root {
+  /* Catppuccin Mocha Theme */
   color-scheme: dark;
-  --bg-color: #09090b;
-  --bg-gradient-start: #1a1b26;
-  --bg-gradient-end: #000000;
-  --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --accent-color: #818cf8;
-  --accent-glow: rgba(129, 140, 248, 0.25);
-  --code-bg: rgba(255, 255, 255, 0.05);
-  --border-color: rgba(255, 255, 255, 0.1);
+  
+  --ctp-rosewater: #f5e0dc;
+  --ctp-flamingo: #f2cdcd;
+  --ctp-pink: #f5c2e7;
+  --ctp-mauve: #cba6f7;
+  --ctp-red: #f38ba8;
+  --ctp-maroon: #eba0ac;
+  --ctp-peach: #fab387;
+  --ctp-yellow: #f9e2af;
+  --ctp-green: #a6e3a1;
+  --ctp-teal: #94e2d5;
+  --ctp-sky: #89dceb;
+  --ctp-sapphire: #74c7ec;
+  --ctp-blue: #89b4fa;
+  --ctp-lavender: #b4befe;
+  --ctp-text: #cdd6f4;
+  --ctp-subtext1: #bac2de;
+  --ctp-subtext0: #a6adc8;
+  --ctp-overlay2: #9399b2;
+  --ctp-overlay1: #7f849c;
+  --ctp-overlay0: #6c7086;
+  --ctp-surface2: #585b70;
+  --ctp-surface1: #45475a;
+  --ctp-surface0: #313244;
+  --ctp-base: #1e1e2e;
+  --ctp-mantle: #181825;
+  --ctp-crust: #11111b;
+
+  /* Semantic Mappings */
+  --bg-color: var(--ctp-base);
+  --bg-gradient-start: var(--ctp-base);
+  --bg-gradient-end: var(--ctp-mantle);
+  
+  --text-main: var(--ctp-text);
+  --text-muted: var(--ctp-subtext1);
+  --text-dim: var(--ctp-overlay2);
+  
+  --accent-primary: var(--ctp-mauve);
+  --accent-secondary: var(--ctp-blue);
+  --accent-tertiary: var(--ctp-pink);
+  
+  --code-bg: var(--ctp-mantle);
+  --border-color: var(--ctp-surface0);
+  
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   
-  /* Initial font-size multiplier */
   --base-size: 100%;
 }
 
@@ -29,228 +64,288 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at center, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
-  color: var(--text-primary);
+  background: linear-gradient(135deg, var(--ctp-base) 0%, var(--ctp-mantle) 100%);
+  color: var(--text-main);
   font-family: var(--font-sans);
-  line-height: 1.6;
-  padding: 6rem;
+  line-height: 1.3;
+  padding: 3rem;
   overflow: hidden;
-  font-size: var(--base-size); /* This will be manipulated by JS */
+  font-size: var(--base-size);
 }
 
 /* Base Wrapper */
 .content {
   position: relative;
-  z-index: 1;
-  width: 100%;
+  z-index: 10;
+  width: 75%;
   max-width: 1600px;
   max-height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  /* Default text align center for direct text, but overridden by elements */
-  text-align: center; 
-  /* Ensure padding doesn't push it out */
-  padding: 1em;
+  text-align: left;
 }
 
 /* =========================================
-   Standard Typography (em-based scaling)
+   Typography
    ========================================= */
 
 h1, h2, h3, h4, h5, h6 {
   text-align: center;
   width: 100%;
+  letter-spacing: -0.02em;
 }
 
 h1 {
-  font-size: 4em; /* Relative to body font-size */
+  font-size: 5em;
   font-weight: 800;
   line-height: 1.1;
-  background: linear-gradient(to bottom right, #ffffff 30%, #a5b4fc 100%);
+  /* Catppuccin Mauve to Pink Gradient */
+  background: linear-gradient(to bottom right, var(--ctp-mauve) 20%, var(--ctp-pink) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  text-shadow: 0 0.1em 0.4em var(--accent-glow);
-  margin-bottom: 0.5em;
+  margin-bottom: 0.3em;
+  filter: drop-shadow(0 0 20px rgba(203, 166, 247, 0.2));
 }
 
 h2 {
-  font-size: 2.5em;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 0.75em;
+  font-size: 3.8em;
+  font-weight: 700;
+  line-height: 1.2;
+  /* Complementary Lavender to Sapphire Gradient */
+  background: linear-gradient(to bottom right, var(--ctp-lavender) 30%, var(--ctp-sapphire) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.5em;
+  opacity: 0.95;
 }
 
-h3 { font-size: 2em; margin-bottom: 0.5em; }
-h4 { font-size: 1.75em; margin-bottom: 0.5em; }
-h5 { font-size: 1.5em; margin-bottom: 0.5em; }
-h6 { font-size: 1.25em; margin-bottom: 0.5em; }
+h3 { font-size: 2.8em; margin-bottom: 0.4em; color: var(--ctp-blue); }
+h4 { font-size: 2.2em; margin-bottom: 0.4em; color: var(--ctp-sapphire); }
 
 p {
-  font-size: 1.5em;
-  line-height: 1.6;
-  margin-bottom: 1em;
-  color: var(--text-secondary);
-  max-width: 90%;
-  text-align: left;
+  font-size: 2.5em;
+  line-height: 1.4;
+  margin-bottom: 0.8em;
+  color: var(--ctp-subtext1);
+  width: 100%;
 }
 
-/* Code Blocks */
+/* =========================================
+   Code Blocks (Catppuccin Syntax Highlighting)
+   ========================================= */
+
 pre {
-  background: rgba(0, 0, 0, 0.4);
-  padding: 2em;
-  border-radius: 1em;
-  overflow-x: auto;
-  margin: 1.5em auto;
-  max-width: 95%;
+  background: var(--ctp-mantle);
   border: 1px solid var(--border-color);
-  box-shadow: 0 1em 2em rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(10px);
+  border-radius: 0.6em;
+  padding: 3.5rem 2rem 2rem 2rem; 
+  margin: 1.5em 0;
+  width: 100%;
+  position: relative;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+/* Force transparent backgrounds on lines and spans to avoid artifacts */
+code span, .sourceLine {
+  background-color: transparent !important;
+}
+
+/* Reset line styles */
+.sourceLine {
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* Clean anchors */
+code a {
+  border: none !important;
+  text-decoration: none !important;
+  color: inherit !important;
+}
+
+/* Terminal Header */
+pre::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2.5rem;
+  background: var(--ctp-crust);
+  border-bottom: 1px solid var(--border-color);
+  background-image: 
+    radial-gradient(circle, var(--ctp-red) 0.4em, transparent 0.45em),
+    radial-gradient(circle, var(--ctp-yellow) 0.4em, transparent 0.45em),
+    radial-gradient(circle, var(--ctp-green) 0.4em, transparent 0.45em);
+  background-size: 4em 100%;
+  background-position: 1.5em center, 3em center, 4.5em center;
+  background-repeat: no-repeat;
 }
 
 pre code {
-  font-size: 1.25em;
-  color: #c7d2fe;
-}
-
-code {
-  background: var(--code-bg);
-  padding: 0.1em 0.3em;
-  border-radius: 0.3em;
   font-family: var(--font-mono);
-  font-size: 0.9em;
-  color: #a5b4fc;
-  border: 1px solid var(--border-color);
+  font-size: 1.1em;
+  color: var(--ctp-text);
+  line-height: 1.5;
+  
+  /* Reset inline code styles to prevent "box inside box" artifacts */
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
 }
 
-/* Lists */
+/* --- Pandoc Syntax Highlighting Classes --- */
+.kw { color: var(--ctp-mauve) !important; font-weight: bold !important; } /* Keyword */
+.dt { color: var(--ctp-yellow) !important; } /* DataType */
+.dv { color: var(--ctp-peach) !important; }  /* DecVal */
+.bn { color: var(--ctp-peach) !important; }  /* BaseN */
+.fl { color: var(--ctp-peach) !important; }  /* Float */
+.ch { color: var(--ctp-green) !important; }  /* Char */
+.st { color: var(--ctp-green) !important; }  /* String */
+.co { color: var(--ctp-overlay0) !important; font-style: italic !important; } /* Comment */
+.ot { color: var(--ctp-mauve) !important; }  /* Other */
+.al { color: var(--ctp-red) !important; font-weight: bold !important; } /* Alert */
+.fu { color: var(--ctp-blue) !important; }   /* Function */
+.er { color: var(--ctp-red) !important; font-weight: bold !important; } /* Error */
+.wa { color: var(--ctp-yellow) !important; font-weight: bold !important; } /* Warning */
+.cf { color: var(--ctp-mauve) !important; font-weight: bold !important; } /* ControlFlow */
+.op { color: var(--ctp-sky) !important; }    /* Operator */
+.bu { color: var(--ctp-blue) !important; }   /* BuiltIn */
+.ex { color: var(--ctp-blue) !important; }   /* Extension */
+.pp { color: var(--ctp-flamingo) !important; } /* Preprocessor */
+.at { color: var(--ctp-rosewater) !important; } /* Attribute */
+.do { color: var(--ctp-overlay0) !important; font-style: italic !important; } /* Documentation */
+.an { color: var(--ctp-pink) !important; }   /* Annotation */
+.cv { color: var(--ctp-pink) !important; }   /* CommentVar */
+.va { color: var(--ctp-text) !important; }   /* Variable */
+.vs { color: var(--ctp-green) !important; }  /* VerbatimString */
+.sc { color: var(--ctp-pink) !important; }   /* SpecialChar */
+.ss { color: var(--ctp-green) !important; }  /* SpecialString */
+.im { color: var(--ctp-mauve) !important; }  /* Import */
+
+/* Inline Code */
+code {
+  font-family: var(--font-mono);
+  background: var(--ctp-surface0);
+  color: var(--ctp-peach);
+  padding: 0.1em 0.3em;
+  border-radius: 0.25em;
+  border: 1px solid var(--ctp-surface1);
+  font-size: 0.9em;
+}
+
+/* =========================================
+   Elements
+   ========================================= */
+
 ul, ol {
-  text-align: left;
-  font-size: 1.5em;
-  line-height: 1.6;
-  margin: 1.5em auto;
-  max-width: 80%;
-  color: var(--text-secondary);
+  font-size: 2.5em;
+  line-height: 1.4;
+  margin: 1em 0;
+  padding-left: 1.5em;
+  color: var(--ctp-subtext1);
 }
 
 li {
-  margin: 0.5em 0;
+  margin-bottom: 0.5em;
   padding-left: 0.5em;
 }
 
-ul li::marker { color: var(--accent-color); }
-ol li::marker { color: var(--accent-color); font-weight: 700; }
+ul li::marker { color: var(--ctp-teal); font-size: 0.8em; }
+ol li::marker { color: var(--ctp-teal); font-weight: 700; font-family: var(--font-mono); }
 
 blockquote {
-  border-left: 0.25em solid var(--accent-color);
-  background: linear-gradient(90deg, var(--accent-glow) 0%, transparent 100%);
-  padding: 1em 2em;
-  margin: 1.5em auto;
-  font-size: 1.75em;
+  border-left: 0.2em solid var(--ctp-mauve);
+  background: linear-gradient(90deg, rgba(203, 166, 247, 0.1) 0%, transparent 100%);
+  padding: 1em 1.5em;
+  margin: 1.5em 0;
+  font-size: 2.5em;
   font-style: italic;
-  color: #e5e7eb;
+  color: var(--ctp-text);
   border-radius: 0 0.5em 0.5em 0;
-  max-width: 90%;
-  text-align: left;
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 2em 0;
+  font-size: 2em;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5em;
+  overflow: hidden;
+}
+
+th {
+  background: var(--ctp-surface0);
+  color: var(--ctp-mauve);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.8em;
+  border-bottom: 1px solid var(--border-color);
+}
+
+td {
+  padding: 0.8em;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--ctp-subtext1);
 }
 
 /* =========================================
    Layout Variants
    ========================================= */
 
-/* --- HERO LAYOUT (Few words, massive impact) --- */
+/* Hero Layout */
 body.layout-hero .content {
-  transform: scale(1.2); /* Slight zoom */
+  transform: scale(1.1);
+  text-align: center;
+  align-items: center;
 }
 
 body.layout-hero h1 {
-  font-size: 6em; /* Even larger */
-  margin-bottom: 0.25em;
-  letter-spacing: -0.04em;
+  font-size: 8.5em;
+  margin-bottom: 0.15em;
+  background: linear-gradient(to bottom, var(--ctp-text) 40%, var(--ctp-mauve) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 body.layout-hero h2 {
-  font-size: 3em;
-  font-weight: 300;
-  letter-spacing: 0.05em;
-  opacity: 0.9;
+  font-size: 5.5em;
+  margin-bottom: 0.3em;
+  background: linear-gradient(to bottom, var(--ctp-subtext1) 40%, var(--ctp-lavender) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 body.layout-hero p {
-  font-size: 2em;
-  max-width: 80%;
-  opacity: 0.8;
+  font-size: 4em;
+  text-align: center;
+  color: var(--ctp-subtext0);
+  max-width: 90%;
 }
 
-/* --- DENSE LAYOUT (Code, lots of text) --- */
+/* Dense Layout */
 body.layout-dense {
-  /* JS will likely scale down the font-size percentage too, 
-     but we can adjust spacing here */
+  padding: 1.5rem;
 }
 
 body.layout-dense .content {
-  max-width: 1800px; /* Use more width */
-  justify-content: flex-start; /* Start from top if needed, or keep centered */
-  padding-top: 4rem;
+  width: 80%;
+  justify-content: center;
+  padding-top: 1rem;
 }
 
-body.layout-dense h1 {
-  font-size: 3em; /* Smaller headers */
-  margin-bottom: 0.5em;
-}
-
-body.layout-dense h2 {
-  font-size: 2em;
-  margin-bottom: 0.5em;
-}
-
-body.layout-dense p {
-  font-size: 1.25em;
-  margin-bottom: 0.75em;
-  max-width: 95%; /* Wider paragraphs */
-}
-
-body.layout-dense pre {
-  padding: 1.5em;
-  margin: 1em auto;
-}
-
-body.layout-dense pre code {
-  font-size: 1em;
-}
-
-/* Tables */
-table {
-  margin: 2em auto;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 1.25em;
-  max-width: 95%;
-  border-radius: 0.5em;
-  overflow: hidden;
-  border: 1px solid var(--border-color);
-  background: rgba(0,0,0,0.2);
-}
-
-th, td {
-  padding: 0.75em 1.25em;
-  text-align: left;
-  border-bottom: 1px solid var(--border-color);
-}
-
-th {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-primary);
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: 0.9em;
-}
-
-/* LaTeX Math */
-.katex-display {
-  font-size: 2.5em !important;
-  margin: 1.5em 0 !important;
-  color: var(--text-primary);
-}
+body.layout-dense h1 { margin-bottom: 0.2em; }
+body.layout-dense h2 { margin-bottom: 0.3em; }
+body.layout-dense p { margin-bottom: 0.5em; font-size: 2.2em; }
+body.layout-dense pre { padding-top: 3rem; margin: 1em 0; }
