@@ -13,6 +13,22 @@ use super::music::MusicResolver;
 use super::render_timeline::{Segment, SegmentData, Timeline, Transform};
 use super::srt::parse_srt;
 use super::titlecard::TitleCardGenerator;
+
+trait TitleCardProvider {
+    fn overlay_image(&self, markdown: &str) -> Result<PathBuf>;
+    fn standalone_video(&self, markdown: &str, duration: f64) -> Result<PathBuf>;
+}
+
+impl TitleCardProvider for TitleCardGenerator {
+    fn overlay_image(&self, markdown: &str) -> Result<PathBuf> {
+        Ok(self.markdown_card(markdown)?.image_path)
+    }
+
+    fn standalone_video(&self, markdown: &str, duration: f64) -> Result<PathBuf> {
+        let asset = self.markdown_card(markdown)?;
+        self.ensure_video_for_duration(&asset, duration)
+    }
+}
 use super::utils::canonicalize_existing;
 use super::video_planner::{
     StandalonePlan, TimelinePlan, TimelinePlanItem, align_plan_with_subtitles, plan_timeline,
@@ -442,7 +458,7 @@ struct TimelineStats {
 /// Build an NLE timeline from the timeline plan
 fn build_nle_timeline(
     plan: TimelinePlan,
-    generator: &TitleCardGenerator,
+    generator: &dyn TitleCardProvider,
     source_video: &Path,
     markdown_dir: &Path,
 ) -> Result<(Timeline, TimelineStats)> {
@@ -483,7 +499,7 @@ impl TimelineBuildState {
     fn apply_plan_item(
         &mut self,
         item: TimelinePlanItem,
-        generator: &TitleCardGenerator,
+        generator: &dyn TitleCardProvider,
         source_video: &Path,
     ) -> Result<()> {
         match item {
@@ -498,7 +514,7 @@ impl TimelineBuildState {
     fn add_clip(
         &mut self,
         clip_plan: super::video_planner::ClipPlan,
-        generator: &TitleCardGenerator,
+        generator: &dyn TitleCardProvider,
         source_video: &Path,
     ) -> Result<()> {
         let duration = clip_plan.end - clip_plan.start;
@@ -525,13 +541,13 @@ impl TimelineBuildState {
         &mut self,
         markdown: &str,
         duration: f64,
-        generator: &TitleCardGenerator,
+        generator: &dyn TitleCardProvider,
     ) -> Result<()> {
-        let asset = generator.markdown_card(markdown)?;
+        let image_path = generator.overlay_image(markdown)?;
         let overlay_segment = Segment::new_image(
             self.current_time,
             duration,
-            asset.image_path.clone(),
+            image_path,
             Some(Transform::with_scale(0.8)),
         );
         self.timeline.add_segment(overlay_segment);
@@ -541,7 +557,7 @@ impl TimelineBuildState {
     fn add_standalone(
         &mut self,
         standalone_plan: StandalonePlan,
-        generator: &TitleCardGenerator,
+        generator: &dyn TitleCardProvider,
     ) -> Result<()> {
         match standalone_plan {
             StandalonePlan::Heading { level, text, .. } => {
@@ -560,10 +576,9 @@ impl TimelineBuildState {
         &mut self,
         markdown: &str,
         duration: f64,
-        generator: &TitleCardGenerator,
+        generator: &dyn TitleCardProvider,
     ) -> Result<()> {
-        let asset = generator.markdown_card(markdown)?;
-        let video_path = generator.ensure_video_for_duration(&asset, duration)?;
+        let video_path = generator.standalone_video(markdown, duration)?;
 
         let segment =
             Segment::new_video_subset(self.current_time, duration, 0.0, video_path, None, true);
@@ -610,6 +625,113 @@ fn finalize_music_segment(
     {
         let duration = end_time - state.start_time;
         timeline.add_segment(Segment::new_music(state.start_time, duration, state.path));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::video::document::SegmentKind;
+    use crate::video::video_planner::ClipPlan;
+    use std::path::Path;
+
+    struct StubTitleCards;
+
+    impl TitleCardProvider for StubTitleCards {
+        fn overlay_image(&self, _markdown: &str) -> Result<PathBuf> {
+            anyhow::bail!("unexpected overlay title card generation")
+        }
+
+        fn standalone_video(&self, _markdown: &str, _duration: f64) -> Result<PathBuf> {
+            Ok(PathBuf::from("card.mp4"))
+        }
+    }
+
+    #[test]
+    fn inserts_heading_title_cards_between_clip_segments() {
+        let source_video = Path::new("source.mp4");
+        let markdown_dir = Path::new(".");
+
+        let plan = TimelinePlan {
+            items: vec![
+                TimelinePlanItem::Clip(ClipPlan {
+                    start: 0.0,
+                    end: 12.0,
+                    kind: SegmentKind::Dialogue,
+                    text: "hello world".to_string(),
+                    line: 1,
+                    overlay: None,
+                }),
+                TimelinePlanItem::Standalone(StandalonePlan::Heading {
+                    level: 1,
+                    text: "title card".to_string(),
+                    line: 2,
+                }),
+                TimelinePlanItem::Clip(ClipPlan {
+                    start: 12.0,
+                    end: 20.0,
+                    kind: SegmentKind::Dialogue,
+                    text: "this is a test".to_string(),
+                    line: 3,
+                    overlay: None,
+                }),
+            ],
+            standalone_count: 1,
+            overlay_count: 0,
+            ignored_count: 0,
+            heading_count: 1,
+            segment_count: 2,
+        };
+
+        let (timeline, _stats) =
+            build_nle_timeline(plan, &StubTitleCards, source_video, markdown_dir).unwrap();
+
+        assert_eq!(timeline.segments.len(), 3);
+
+        let SegmentData::VideoSubset {
+            start_time: clip1_source_start,
+            source_video: clip1_source,
+            mute_audio: clip1_mute,
+            ..
+        } = &timeline.segments[0].data
+        else {
+            panic!("expected first segment to be a video subset")
+        };
+        assert!((timeline.segments[0].start_time - 0.0).abs() < 1e-6);
+        assert!((timeline.segments[0].duration - 12.0).abs() < 1e-6);
+        assert!((*clip1_source_start - 0.0).abs() < 1e-6);
+        assert_eq!(clip1_source, &PathBuf::from("source.mp4"));
+        assert!(!clip1_mute);
+
+        let SegmentData::VideoSubset {
+            start_time: card_source_start,
+            source_video: card_source,
+            mute_audio: card_mute,
+            ..
+        } = &timeline.segments[1].data
+        else {
+            panic!("expected second segment to be a video subset")
+        };
+        assert!((timeline.segments[1].start_time - 12.0).abs() < 1e-6);
+        assert!((timeline.segments[1].duration - 2.0).abs() < 1e-6);
+        assert!((*card_source_start - 0.0).abs() < 1e-6);
+        assert_eq!(card_source, &PathBuf::from("card.mp4"));
+        assert!(*card_mute);
+
+        let SegmentData::VideoSubset {
+            start_time: clip2_source_start,
+            source_video: clip2_source,
+            mute_audio: clip2_mute,
+            ..
+        } = &timeline.segments[2].data
+        else {
+            panic!("expected third segment to be a video subset")
+        };
+        assert!((timeline.segments[2].start_time - 14.0).abs() < 1e-6);
+        assert!((timeline.segments[2].duration - 8.0).abs() < 1e-6);
+        assert!((*clip2_source_start - 12.0).abs() < 1e-6);
+        assert_eq!(clip2_source, &PathBuf::from("source.mp4"));
+        assert!(!clip2_mute);
     }
 }
 
