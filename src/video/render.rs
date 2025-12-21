@@ -300,7 +300,7 @@ pub(super) fn resolve_video_path(metadata: &VideoMetadata, markdown_dir: &Path) 
     ))
 }
 
-fn resolve_transcript_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
+pub(super) fn resolve_transcript_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
     let transcript_meta = metadata
         .transcript
         .as_ref()

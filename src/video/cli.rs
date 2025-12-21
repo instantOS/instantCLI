@@ -11,7 +11,8 @@ pub enum VideoCommands {
     Render(RenderArgs),
     /// Generate a title card image from a markdown file
     Titlecard(TitlecardArgs),
-    /// Display statistics about how a markdown file will be rendered
+    /// Validate a video markdown file and summarize the planned output
+    Check(CheckArgs),
     /// Display statistics about how a markdown file will be rendered
     Stats(StatsArgs),
     /// Process audio using Auphonic
@@ -109,6 +110,13 @@ pub struct TitlecardArgs {
     /// Optional output path; defaults to <markdownfilename>.jpg
     #[arg(short = 'o', long = "out-file", value_hint = ValueHint::FilePath)]
     pub out_file: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct CheckArgs {
+    /// Markdown file describing the edited timeline
+    #[arg(value_hint = ValueHint::FilePath)]
+    pub markdown: PathBuf,
 }
 
 #[derive(Args, Debug, Clone)]
