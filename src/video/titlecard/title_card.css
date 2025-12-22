@@ -492,65 +492,40 @@ body.layout-quote blockquote {
   line-height: 1.5;
   text-align: center;
   color: var(--ctp-text);
-  padding: 1.5em 2em;
+  padding: 1.5em 2.5em;
   margin: 0;
-  border: none;
-  background: linear-gradient(135deg,
-      rgba(203, 166, 247, 0.08) 0%,
-      rgba(180, 190, 254, 0.05) 50%,
-      rgba(137, 180, 250, 0.08) 100%);
-  border-radius: 1.5em;
-  box-shadow:
-    0 0 60px rgba(203, 166, 247, 0.15),
-    inset 0 0 80px rgba(203, 166, 247, 0.03);
+  border-left: 0.15em solid var(--ctp-mauve);
+  background: linear-gradient(90deg, rgba(203, 166, 247, 0.1) 0%, transparent 50%);
+  border-radius: 0 1em 1em 0;
 }
 
 /* Decorative quote marks */
 body.layout-quote blockquote::before,
 body.layout-quote blockquote::after {
   font-family: Georgia, serif;
-  font-size: 4em;
+  font-size: 5em;
   font-style: normal;
   line-height: 1;
   position: absolute;
-  opacity: 0.4;
+  color: var(--ctp-mauve);
+  opacity: 0.3;
 }
 
 body.layout-quote blockquote::before {
   content: '"';
-  top: 0.1em;
-  left: 0.2em;
-  background: linear-gradient(180deg, var(--ctp-mauve), var(--ctp-lavender));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  top: -0.1em;
+  left: 0.3em;
 }
 
 body.layout-quote blockquote::after {
   content: '"';
-  bottom: -0.1em;
-  right: 0.2em;
-  background: linear-gradient(180deg, var(--ctp-lavender), var(--ctp-blue));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  bottom: -0.3em;
+  right: 0.3em;
 }
 
-/* Accent bar at bottom */
+/* Quote text */
 body.layout-quote blockquote p {
   margin: 0;
-  position: relative;
-}
-
-body.layout-quote blockquote p::after {
-  content: '';
-  display: block;
-  width: 120px;
-  height: 4px;
-  margin: 0.8em auto 0;
-  background: linear-gradient(90deg, var(--ctp-mauve), var(--ctp-lavender), var(--ctp-blue));
-  border-radius: 2px;
-  opacity: 0.7;
 }
 
 /* Image Layout */

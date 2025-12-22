@@ -210,6 +210,12 @@ impl<'a> BodyParserState<'a> {
             Event::End(TagEnd::CodeBlock) => {
                 self.flush_code_block()?;
             }
+            Event::Start(Tag::BlockQuote(_)) => {
+                self.blockquote = Some(BlockquoteState::new(range.start));
+            }
+            Event::End(TagEnd::BlockQuote(_)) => {
+                self.flush_blockquote();
+            }
             Event::Text(text) => {
                 self.handle_text(text.into_string(), range.start);
             }
@@ -273,8 +279,29 @@ impl<'a> BodyParserState<'a> {
         Ok(())
     }
 
+    fn flush_blockquote(&mut self) {
+        if let Some(state) = self.blockquote.take() {
+            let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
+            // Re-wrap content with `> ` prefix so it renders as <blockquote> in Pandoc
+            let markdown = state
+                .content
+                .lines()
+                .map(|line| format!("> {}", line))
+                .collect::<Vec<_>>()
+                .join("\n");
+            if !markdown.trim().is_empty() {
+                self.blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
+                    description: markdown,
+                    line,
+                }));
+            }
+        }
+    }
+
     fn handle_text(&mut self, text: String, start: usize) {
-        if let Some(state) = self.paragraph.as_mut() {
+        if let Some(state) = self.blockquote.as_mut() {
+            state.push_text(text.clone());
+        } else if let Some(state) = self.paragraph.as_mut() {
             state.push_fragment(InlineFragment::text(start, text.clone()));
         }
         if let Some(state) = self.heading.as_mut() {
@@ -286,7 +313,9 @@ impl<'a> BodyParserState<'a> {
     }
 
     fn handle_break(&mut self, start: usize, hard: bool) {
-        if let Some(state) = self.paragraph.as_mut() {
+        if let Some(state) = self.blockquote.as_mut() {
+            state.push_newline();
+        } else if let Some(state) = self.paragraph.as_mut() {
             if hard {
                 state.push_fragment(InlineFragment::hard_break(start));
             } else {
@@ -460,6 +489,28 @@ impl HeadingState {
             text: self.text.trim().to_string(),
             line,
         }
+    }
+}
+
+struct BlockquoteState {
+    start_byte: usize,
+    content: String,
+}
+
+impl BlockquoteState {
+    fn new(start: usize) -> Self {
+        Self {
+            start_byte: start,
+            content: String::new(),
+        }
+    }
+
+    fn push_text(&mut self, text: String) {
+        self.content.push_str(&text);
+    }
+
+    fn push_newline(&mut self) {
+        self.content.push('\n');
     }
 }
 

@@ -13,8 +13,10 @@ window.addEventListener('load', () => {
     const images = content.querySelectorAll('img, figure').length;
     const textLength = content.innerText.length;
 
-    // "Quote" condition: Has blockquote content
-    if (blockquotes > 0 && codeBlocks === 0) {
+    // "Quote" condition: Slide is ONLY a blockquote (no other content outside the blockquote)
+    // Note: Pandoc wraps blockquote text in <p>, so we only count <p> tags NOT inside blockquote
+    const paragraphsOutsideBlockquote = content.querySelectorAll('p:not(blockquote p)').length;
+    if (blockquotes > 0 && paragraphsOutsideBlockquote === 0 && headings === 0 && codeBlocks === 0 && listItems === 0 && images === 0) {
         body.classList.add('layout-quote');
     }
 

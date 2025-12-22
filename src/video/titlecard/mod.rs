@@ -190,7 +190,7 @@ impl TitleCardGenerator {
         let script = format!("<script>{}</script>", DEFAULT_JS);
 
         let new_content = format!(
-            "{}<div class=\"content\">{}</div>{}_{}",
+            "{}<div class=\"content\">{}</div>{}{}",
             before_body, body_content, script, after_body
         );
 
