@@ -194,10 +194,10 @@ impl TimelinePlanner {
     /// Merge pending content into an overlay and apply to the last clip.
     fn flush_pending_as_overlay(&mut self) {
         if let Some(overlay) = self.merge_pending() {
-            if let Some(last_idx) = self.last_clip_idx {
-                if let Some(TimelinePlanItem::Clip(clip)) = self.items.get_mut(last_idx) {
-                    clip.overlay = Some(overlay.clone());
-                }
+            if let Some(last_idx) = self.last_clip_idx
+                && let Some(TimelinePlanItem::Clip(clip)) = self.items.get_mut(last_idx)
+            {
+                clip.overlay = Some(overlay.clone());
             }
             self.overlay_state = Some(overlay);
             self.stats.overlay_count += 1;
@@ -896,7 +896,6 @@ mod tests {
         assert_eq!(overlay_second.markdown.trim(), "slide 1\n\nslide 2");
     }
 
-
     #[test]
     fn pause_duration_scales_with_word_count() {
         let markdown = concat!(
@@ -914,9 +913,9 @@ mod tests {
             .items
             .iter()
             .filter_map(|item| match item {
-                TimelinePlanItem::Standalone(StandalonePlan::Pause { duration_seconds, .. }) => {
-                    Some(*duration_seconds)
-                }
+                TimelinePlanItem::Standalone(StandalonePlan::Pause {
+                    duration_seconds, ..
+                }) => Some(*duration_seconds),
                 _ => None,
             })
             .collect();

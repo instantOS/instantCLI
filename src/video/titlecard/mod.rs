@@ -9,7 +9,8 @@ use sha2::{Digest, Sha256};
 
 pub mod cli;
 
-const CSS_VERSION_TOKEN: &str = "6";
+const CSS_VERSION_TOKEN: &str = "7";
+const JS_VERSION_TOKEN: &str = "2";
 const DEFAULT_CSS: &str = include_str!("title_card.css");
 const DEFAULT_JS: &str = include_str!("title_card.js");
 
@@ -128,6 +129,7 @@ impl TitleCardGenerator {
         hasher.update(self.width.to_le_bytes());
         hasher.update(self.height.to_le_bytes());
         hasher.update(CSS_VERSION_TOKEN.as_bytes());
+        hasher.update(JS_VERSION_TOKEN.as_bytes());
         hasher.update(markdown_content.as_bytes());
         format!("{:x}", hasher.finalize())
     }
