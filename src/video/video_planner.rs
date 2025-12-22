@@ -74,151 +74,185 @@ pub struct MusicPlan {
 }
 
 pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
-    let mut items = Vec::new();
-    let mut standalone_count = 0usize;
-    let mut overlay_count = 0usize;
-    let mut ignored_count = 0usize;
-    let mut heading_count = 0usize;
-    let mut segment_count = 0usize;
-    let mut overlay_state: Option<OverlayPlan> = None;
-    let mut last_clip_item_idx: Option<usize> = None;
-    // Track whether we're in a "separator region" - after a separator, before any segment.
-    // Content in a separator region that ends with another separator becomes a pause.
-    let mut in_separator_region = false;
-    // Accumulator for merging consecutive unhandled blocks into a single slide/overlay
-    let mut pending_content: Vec<(String, usize)> = Vec::new();
+    let mut planner = TimelinePlanner::new();
+    planner.process_document(document);
+    Ok(planner.into_plan())
+}
 
-    /// Merge pending content into a single OverlayPlan, clearing the accumulator.
-    fn flush_pending(pending: &mut Vec<(String, usize)>) -> Option<OverlayPlan> {
-        if pending.is_empty() {
+/// State machine for building a timeline plan from document blocks.
+struct TimelinePlanner {
+    items: Vec<TimelinePlanItem>,
+    stats: PlanStats,
+    /// Current overlay to apply to upcoming segments.
+    overlay_state: Option<OverlayPlan>,
+    /// Index of the last clip added (for retroactive overlay application).
+    last_clip_idx: Option<usize>,
+    /// True if we're after a separator and before any segment (pause region).
+    in_separator_region: bool,
+    /// Accumulator for merging consecutive unhandled blocks.
+    pending_content: Vec<(String, usize)>,
+}
+
+#[derive(Default)]
+struct PlanStats {
+    standalone_count: usize,
+    overlay_count: usize,
+    ignored_count: usize,
+    heading_count: usize,
+    segment_count: usize,
+}
+
+impl TimelinePlanner {
+    fn new() -> Self {
+        Self {
+            items: Vec::new(),
+            stats: PlanStats::default(),
+            overlay_state: None,
+            last_clip_idx: None,
+            in_separator_region: false,
+            pending_content: Vec::new(),
+        }
+    }
+
+    fn process_document(&mut self, document: &VideoDocument) {
+        for block in &document.blocks {
+            match block {
+                DocumentBlock::Segment(segment) => self.handle_segment(segment),
+                DocumentBlock::Heading(heading) => self.handle_heading(heading),
+                DocumentBlock::Separator(_) => self.handle_separator(),
+                DocumentBlock::Music(music) => self.handle_music(music),
+                DocumentBlock::Unhandled(unhandled) => self.handle_unhandled(unhandled),
+            }
+        }
+        self.final_flush();
+    }
+
+    fn handle_segment(&mut self, segment: &super::document::SegmentBlock) {
+        // Flush pending content as overlay before processing segment
+        self.flush_pending_as_overlay();
+
+        self.items.push(TimelinePlanItem::Clip(ClipPlan {
+            start: segment.range.start_seconds(),
+            end: segment.range.end_seconds(),
+            kind: segment.kind,
+            text: segment.text.clone(),
+            line: segment.line,
+            overlay: self.overlay_state.clone(),
+        }));
+        self.last_clip_idx = Some(self.items.len() - 1);
+        self.stats.segment_count += 1;
+        self.in_separator_region = false;
+    }
+
+    fn handle_heading(&mut self, heading: &super::document::HeadingBlock) {
+        self.items
+            .push(TimelinePlanItem::Standalone(StandalonePlan::Heading {
+                level: heading.level,
+                text: heading.text.clone(),
+                line: heading.line,
+            }));
+        self.stats.standalone_count += 1;
+        self.stats.heading_count += 1;
+        // Headings don't exit separator region
+    }
+
+    fn handle_separator(&mut self) {
+        if !self.pending_content.is_empty() {
+            if self.in_separator_region {
+                self.flush_pending_as_pause();
+            } else {
+                self.flush_pending_as_overlay();
+            }
+        }
+        self.overlay_state = None;
+        self.in_separator_region = true;
+    }
+
+    fn handle_music(&mut self, music: &super::document::MusicBlock) {
+        self.items.push(TimelinePlanItem::Music(MusicPlan {
+            directive: music.directive.clone(),
+            line: music.line,
+        }));
+        // Music blocks don't exit separator region
+    }
+
+    fn handle_unhandled(&mut self, unhandled: &super::document::UnhandledBlock) {
+        let trimmed = unhandled.description.trim();
+        if trimmed.is_empty() {
+            self.stats.ignored_count += 1;
+            return;
+        }
+        self.pending_content
+            .push((unhandled.description.clone(), unhandled.line));
+    }
+
+    fn final_flush(&mut self) {
+        // Any remaining pending content becomes an overlay for the last clip
+        self.flush_pending_as_overlay();
+    }
+
+    /// Merge pending content into an overlay and apply to the last clip.
+    fn flush_pending_as_overlay(&mut self) {
+        if let Some(overlay) = self.merge_pending() {
+            if let Some(last_idx) = self.last_clip_idx {
+                if let Some(TimelinePlanItem::Clip(clip)) = self.items.get_mut(last_idx) {
+                    clip.overlay = Some(overlay.clone());
+                }
+            }
+            self.overlay_state = Some(overlay);
+            self.stats.overlay_count += 1;
+        }
+    }
+
+    /// Merge pending content into a standalone pause.
+    fn flush_pending_as_pause(&mut self) {
+        let merged = self.merge_pending_text();
+        if merged.is_empty() {
+            return;
+        }
+        let trimmed = merged.trim();
+        let line = self.pending_content.first().map(|(_, l)| *l).unwrap_or(0);
+        self.items
+            .push(TimelinePlanItem::Standalone(StandalonePlan::Pause {
+                markdown: merged.clone(),
+                display_text: trimmed.to_string(),
+                duration_seconds: pause_duration_seconds(trimmed),
+                line,
+            }));
+        self.stats.standalone_count += 1;
+        self.pending_content.clear();
+    }
+
+    /// Merge and clear pending content, returning an OverlayPlan if non-empty.
+    fn merge_pending(&mut self) -> Option<OverlayPlan> {
+        if self.pending_content.is_empty() {
             return None;
         }
-        let line = pending[0].1;
-        let markdown = pending
-            .iter()
-            .map(|(s, _)| s.as_str())
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        pending.clear();
+        let line = self.pending_content[0].1;
+        let markdown = self.merge_pending_text();
+        self.pending_content.clear();
         Some(OverlayPlan { markdown, line })
     }
 
-    for (_idx, block) in document.blocks.iter().enumerate() {
-        match block {
-            DocumentBlock::Segment(segment) => {
-                // Flush any pending content before processing segment
-                if !pending_content.is_empty() {
-                    if let Some(overlay) = flush_pending(&mut pending_content) {
-                        // Apply to previous clip retroactively
-                        if let Some(last_idx) = last_clip_item_idx {
-                            if let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx) {
-                                clip.overlay = Some(overlay.clone());
-                            }
-                        }
-                        overlay_state = Some(overlay);
-                        overlay_count += 1;
-                    }
-                }
-
-                items.push(TimelinePlanItem::Clip(ClipPlan {
-                    start: segment.range.start_seconds(),
-                    end: segment.range.end_seconds(),
-                    kind: segment.kind,
-                    text: segment.text.clone(),
-                    line: segment.line,
-                    overlay: overlay_state.clone(),
-                }));
-                last_clip_item_idx = Some(items.len().saturating_sub(1));
-                segment_count += 1;
-                in_separator_region = false;
-            }
-            DocumentBlock::Heading(heading) => {
-                items.push(TimelinePlanItem::Standalone(StandalonePlan::Heading {
-                    level: heading.level,
-                    text: heading.text.clone(),
-                    line: heading.line,
-                }));
-                standalone_count += 1;
-                heading_count += 1;
-                // Headings don't exit separator region - they can appear between separators
-            }
-            DocumentBlock::Separator(_) => {
-                // Flush pending content - if in separator region, it becomes a pause
-                if !pending_content.is_empty() {
-                    if in_separator_region {
-                        // Between separators → standalone pause
-                        let merged = pending_content
-                            .iter()
-                            .map(|(s, _)| s.as_str())
-                            .collect::<Vec<_>>()
-                            .join("\n\n");
-                        let trimmed = merged.trim();
-                        if !trimmed.is_empty() {
-                            items.push(TimelinePlanItem::Standalone(StandalonePlan::Pause {
-                                markdown: merged.clone(),
-                                display_text: trimmed.to_string(),
-                                duration_seconds: pause_duration_seconds(trimmed),
-                                line: pending_content[0].1,
-                            }));
-                            standalone_count += 1;
-                        }
-                    } else {
-                        // Before separator but after segment → apply to previous clip as overlay
-                        if let Some(overlay) = flush_pending(&mut pending_content) {
-                            if let Some(last_idx) = last_clip_item_idx {
-                                if let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx)
-                                {
-                                    clip.overlay = Some(overlay.clone());
-                                }
-                            }
-                            overlay_state = Some(overlay);
-                            overlay_count += 1;
-                        }
-                    }
-                    pending_content.clear();
-                }
-                overlay_state = None;
-                in_separator_region = true;
-            }
-            DocumentBlock::Music(music) => {
-                items.push(TimelinePlanItem::Music(MusicPlan {
-                    directive: music.directive.clone(),
-                    line: music.line,
-                }));
-                // Music blocks don't exit separator region
-            }
-            DocumentBlock::Unhandled(unhandled) => {
-                let raw_description = unhandled.description.as_str();
-                let trimmed = raw_description.trim();
-                if trimmed.is_empty() {
-                    ignored_count += 1;
-                    continue;
-                }
-
-                // Accumulate for merging - the flush will determine if it's pause or overlay
-                pending_content.push((raw_description.to_string(), unhandled.line));
-            }
-        }
+    /// Join pending content with paragraph breaks.
+    fn merge_pending_text(&self) -> String {
+        self.pending_content
+            .iter()
+            .map(|(s, _)| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n")
     }
 
-    // Final flush: any remaining pending content becomes an overlay for the last clip
-    if let Some(overlay) = flush_pending(&mut pending_content) {
-        if let Some(last_idx) = last_clip_item_idx {
-            if let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx) {
-                clip.overlay = Some(overlay.clone());
-            }
+    fn into_plan(self) -> TimelinePlan {
+        TimelinePlan {
+            items: self.items,
+            standalone_count: self.stats.standalone_count,
+            overlay_count: self.stats.overlay_count,
+            ignored_count: self.stats.ignored_count,
+            heading_count: self.stats.heading_count,
+            segment_count: self.stats.segment_count,
         }
-        overlay_count += 1;
     }
-
-    Ok(TimelinePlan {
-        items,
-        standalone_count,
-        overlay_count,
-        ignored_count,
-        heading_count,
-        segment_count,
-    })
 }
 
 pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Result<()> {
