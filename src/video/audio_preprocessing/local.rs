@@ -50,6 +50,8 @@ impl LocalPreprocessor {
                 "-vn",
                 "-map",
                 "0:a:0",
+                "-ac",
+                "1", // Downmix to mono
                 "-c:a",
                 "pcm_s16le",
                 "-ar",
@@ -124,23 +126,32 @@ impl LocalPreprocessor {
     }
 
     /// Run ffmpeg-normalize for loudness normalization
+    /// Uses dynamic compression for consistent speech levels + YouTube loudness target
     fn run_normalize(input: &Path, output: &Path) -> Result<()> {
         emit(
             Level::Info,
             "video.preprocess.normalize",
-            "Running loudness normalization...",
+            "Running loudness normalization with compression...",
             None,
         );
 
+        // Dynamic normalization: compresses audio to reduce volume fluctuations
+        // Good for speech where mic distance varies
         let status = Command::new("uvx")
             .args([
                 "ffmpeg-normalize",
                 &input.to_string_lossy(),
-                "--preset",
-                "podcast",
+                "-nt",
+                "ebu",  // EBU R128 normalization
+                "-t",
+                "-14",  // YouTube target: -14 LUFS
+                "-tp",
+                "-1",   // True peak: -1 dBTP
+                "-lrt",
+                "7",    // Loudness range target: 7 LU (triggers compression)
                 "-o",
                 &output.to_string_lossy(),
-                "-f", // Force overwrite
+                "-f",   // Force overwrite
             ])
             .status()
             .context("Failed to run ffmpeg-normalize")?;
