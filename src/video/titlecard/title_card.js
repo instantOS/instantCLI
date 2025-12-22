@@ -20,8 +20,12 @@ window.addEventListener('load', () => {
         body.classList.add('layout-quote');
     }
 
-    // "Image" condition: Single image/figure only
-    if (images === 1 && paragraphs === 0 && headings === 0 && codeBlocks === 0 && blockquotes === 0) {
+    // "Image" condition: Single image/figure only (Pandoc may wrap images in <p> or <figure>)
+    const allParagraphsAreImages = Array.from(content.querySelectorAll('p')).every(p => {
+        const childNodes = Array.from(p.childNodes).filter(n => n.nodeType !== 3 || n.textContent.trim() !== '');
+        return childNodes.length === 1 && childNodes[0].tagName === 'IMG';
+    });
+    if (images === 1 && headings === 0 && codeBlocks === 0 && blockquotes === 0 && listItems === 0 && (paragraphs === 0 || allParagraphsAreImages)) {
         body.classList.add('layout-image');
     }
 
