@@ -15,9 +15,9 @@ pub enum VideoCommands {
     Check(CheckArgs),
     /// Display statistics about how a markdown file will be rendered
     Stats(StatsArgs),
-    /// Process audio using Auphonic
-    Auphonic(AuphonicArgs),
-    /// Setup video tools (Auphonic API key, WhisperX)
+    /// Process audio with the configured preprocessor (local or auphonic)
+    Preprocess(PreprocessArgs),
+    /// Setup video tools (local preprocessor, Auphonic, WhisperX)
     Setup(SetupArgs),
 }
 
@@ -46,9 +46,13 @@ pub struct ConvertArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Disable Auphonic audio processing
+    /// Skip audio preprocessing entirely
     #[arg(long)]
-    pub no_auphonic: bool,
+    pub no_preprocess: bool,
+
+    /// Override preprocessor type (local, auphonic, none)
+    #[arg(long)]
+    pub preprocessor: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -127,20 +131,24 @@ pub struct StatsArgs {
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct AuphonicArgs {
+pub struct PreprocessArgs {
     /// Source video or audio file to process
     #[arg(value_hint = ValueHint::FilePath)]
     pub input_file: PathBuf,
 
-    /// Auphonic Preset UUID (overrides config)
-    #[arg(long)]
-    pub preset: Option<String>,
-
-    /// Auphonic API key (overrides config)
-    #[arg(long)]
-    pub api_key: Option<String>,
+    /// Preprocessor backend: local, auphonic, none
+    #[arg(long, default_value = "local")]
+    pub backend: String,
 
     /// Force reprocessing even if cached
     #[arg(long)]
     pub force: bool,
+
+    /// Auphonic Preset UUID (only for auphonic backend)
+    #[arg(long)]
+    pub preset: Option<String>,
+
+    /// Auphonic API key (only for auphonic backend)
+    #[arg(long)]
+    pub api_key: Option<String>,
 }

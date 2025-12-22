@@ -5,7 +5,7 @@ use reqwest::Client;
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::{Level, emit};
 
-use super::auphonic;
+use super::audio_preprocessing::auphonic;
 use super::cli::SetupArgs;
 use super::config::VideoConfig;
 
@@ -27,18 +27,16 @@ async fn check_and_update_auphonic_config(
                 emit(
                     Level::Warn,
                     "video.setup.auphonic",
-                    "Free account detected. Auphonic will be disabled by default to avoid jingle insertion. You can enable it manually in the config if needed.",
+                    "Free account detected. Consider using local preprocessor to avoid jingle insertion.",
                     None,
                 );
-                config.auphonic_enabled = false;
             } else {
                 emit(
                     Level::Success,
                     "video.setup.auphonic",
-                    "Premium account detected. Auphonic will remain enabled.",
+                    "Premium account detected.",
                     None,
                 );
-                config.auphonic_enabled = true;
             }
             config.save()?;
         }
@@ -65,6 +63,7 @@ pub async fn handle_setup(args: SetupArgs) -> Result<()> {
         None,
     );
 
+    setup_local_preprocessor(args.force)?;
     setup_auphonic(args.force).await?;
     setup_whisperx(args.force)?;
 
@@ -74,6 +73,119 @@ pub async fn handle_setup(args: SetupArgs) -> Result<()> {
         "Video tools setup completed successfully.",
         None,
     );
+    Ok(())
+}
+
+fn setup_local_preprocessor(_force: bool) -> Result<()> {
+    emit(
+        Level::Info,
+        "video.setup.local",
+        "Checking local preprocessor dependencies...",
+        None,
+    );
+
+    // Check uvx
+    if cmd!("which", "uvx").run().is_err() {
+        emit(
+            Level::Warn,
+            "video.setup.local",
+            "uvx is not installed. Local preprocessing requires uvx. Install with: curl -LsSf https://astral.sh/uv/install.sh | sh",
+            None,
+        );
+        return Ok(());
+    }
+
+    // Check ffmpeg
+    if cmd!("which", "ffmpeg").run().is_err() {
+        emit(
+            Level::Warn,
+            "video.setup.local",
+            "ffmpeg is not installed. Local preprocessing requires ffmpeg.",
+            None,
+        );
+        return Ok(());
+    }
+
+    emit(
+        Level::Info,
+        "video.setup.local",
+        "Verifying DeepFilterNet availability (this may download dependencies)...",
+        None,
+    );
+
+    // Try running DeepFilterNet --version to trigger download/cache
+    let dfn_result = cmd!(
+        "uvx",
+        "--python",
+        "3.10",
+        "--from",
+        "deepfilternet",
+        "--with",
+        "torch<2.1",
+        "--with",
+        "torchaudio<2.1",
+        "deepFilter",
+        "--version"
+    )
+    .stderr_to_stdout()
+    .run();
+
+    if let Err(e) = dfn_result {
+        emit(
+            Level::Warn,
+            "video.setup.local",
+            &format!(
+                "DeepFilterNet check failed: {}. It may still work at runtime.",
+                e
+            ),
+            None,
+        );
+    } else {
+        emit(
+            Level::Success,
+            "video.setup.local",
+            "DeepFilterNet is available.",
+            None,
+        );
+    }
+
+    emit(
+        Level::Info,
+        "video.setup.local",
+        "Verifying ffmpeg-normalize availability...",
+        None,
+    );
+
+    let normalize_result = cmd!("uvx", "ffmpeg-normalize", "--version")
+        .stderr_to_stdout()
+        .run();
+
+    if let Err(e) = normalize_result {
+        emit(
+            Level::Warn,
+            "video.setup.local",
+            &format!(
+                "ffmpeg-normalize check failed: {}. It may still work at runtime.",
+                e
+            ),
+            None,
+        );
+    } else {
+        emit(
+            Level::Success,
+            "video.setup.local",
+            "ffmpeg-normalize is available.",
+            None,
+        );
+    }
+
+    emit(
+        Level::Success,
+        "video.setup.local",
+        "Local preprocessor dependencies checked.",
+        None,
+    );
+
     Ok(())
 }
 
@@ -118,20 +230,16 @@ async fn setup_auphonic(force: bool) -> Result<()> {
                                 emit(
                                     Level::Warn,
                                     "video.setup.auphonic",
-                                    "Free account detected. Auphonic will be disabled by default to avoid jingle insertion. You can enable it manually in the config if needed.",
+                                    "Free account detected. Consider using local preprocessor (default) to avoid jingle insertion.",
                                     None,
                                 );
-                                config.auphonic_enabled = false;
-                                config.save()?;
                             } else {
                                 emit(
                                     Level::Success,
                                     "video.setup.auphonic",
-                                    "Premium account detected. Auphonic will remain enabled.",
+                                    "Premium account detected. You can use 'preprocessor = \"auphonic\"' in config.",
                                     None,
                                 );
-                                config.auphonic_enabled = true;
-                                config.save()?;
                             }
                         }
                         Err(e) => {

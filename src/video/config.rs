@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 
 use crate::common::paths;
 
+pub use super::audio_preprocessing::PreprocessorType;
+
 pub struct VideoDirectories {
     data_root: PathBuf,
     cache_root: PathBuf,
@@ -67,18 +69,22 @@ pub struct VideoProjectPaths {
 #[serde(default)]
 pub struct VideoConfig {
     pub music_volume: f32,
+    /// Which audio preprocessor to use (local, auphonic, or none)
+    #[serde(default)]
+    pub preprocessor: PreprocessorType,
+    /// Auphonic API key (only used when preprocessor = auphonic)
     pub auphonic_api_key: Option<String>,
+    /// Auphonic preset UUID (only used when preprocessor = auphonic)
     pub auphonic_preset_uuid: Option<String>,
-    pub auphonic_enabled: bool,
 }
 
 impl Default for VideoConfig {
     fn default() -> Self {
         Self {
             music_volume: Self::DEFAULT_MUSIC_VOLUME,
+            preprocessor: PreprocessorType::default(),
             auphonic_api_key: None,
             auphonic_preset_uuid: None,
-            auphonic_enabled: true,
         }
     }
 }

@@ -1,4 +1,4 @@
-pub mod auphonic;
+pub mod audio_preprocessing;
 pub mod check;
 pub mod cli;
 pub mod commands;

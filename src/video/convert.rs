@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ui::prelude::{Level, emit};
 
-use super::auphonic::process_with_auphonic;
+use super::audio_preprocessing::{PreprocessorType, create_preprocessor, parse_preprocessor_type};
 use super::cli::{ConvertArgs, TranscribeArgs};
 use super::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
 use super::markdown::{MarkdownMetadata, build_markdown};
@@ -41,8 +41,7 @@ pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
         &directories,
         &project_paths,
         args.transcript.as_ref(),
-        args.no_auphonic,
-        args.force,
+        &args,
     )
     .await?;
 
@@ -72,8 +71,7 @@ async fn ensure_transcript(
     directories: &VideoDirectories,
     project_paths: &VideoProjectPaths,
     provided_transcript: Option<&PathBuf>,
-    no_auphonic: bool,
-    force: bool,
+    args: &ConvertArgs,
 ) -> Result<PathBuf> {
     let cached_transcript_path = project_paths.transcript_cache_path().to_path_buf();
 
@@ -90,7 +88,7 @@ async fn ensure_transcript(
     }
 
     // Generate transcript
-    let audio_source = get_audio_source(video_path, no_auphonic, force).await?;
+    let audio_source = get_audio_source(video_path, args).await?;
 
     emit(
         Level::Info,
@@ -126,23 +124,49 @@ async fn ensure_transcript(
     Ok(cached_transcript_path)
 }
 
-/// Gets the audio source for transcription (possibly Auphonic-processed).
-async fn get_audio_source(video_path: &Path, no_auphonic: bool, force: bool) -> Result<PathBuf> {
-    let config = VideoConfig::load()?;
-    let auphonic_enabled = config.auphonic_enabled && !no_auphonic;
-
-    if !auphonic_enabled {
+/// Gets the audio source for transcription using the configured preprocessor.
+async fn get_audio_source(video_path: &Path, args: &ConvertArgs) -> Result<PathBuf> {
+    // Skip preprocessing entirely if requested
+    if args.no_preprocess {
         return Ok(video_path.to_path_buf());
     }
 
-    match process_with_auphonic(video_path, force, None, None).await {
-        Ok(path) => Ok(path),
+    let config = VideoConfig::load()?;
+
+    // Determine preprocessor type: CLI flag > config
+    let preprocessor_type = match &args.preprocessor {
+        Some(s) => parse_preprocessor_type(s)?,
+        None => config.preprocessor.clone(),
+    };
+
+    // Skip if preprocessor is None
+    if preprocessor_type == PreprocessorType::None {
+        return Ok(video_path.to_path_buf());
+    }
+
+    let preprocessor = create_preprocessor(&preprocessor_type, &config);
+
+    if !preprocessor.is_available() {
+        emit(
+            Level::Warn,
+            "video.convert.preprocessor_unavailable",
+            &format!(
+                "Preprocessor '{}' is not available. Falling back to original video.",
+                preprocessor.name()
+            ),
+            None,
+        );
+        return Ok(video_path.to_path_buf());
+    }
+
+    match preprocessor.process(video_path, args.force).await {
+        Ok(result) => Ok(result.output_path),
         Err(e) => {
             emit(
                 Level::Warn,
-                "video.convert.auphonic_failed",
+                "video.convert.preprocess_failed",
                 &format!(
-                    "Auphonic processing failed: {}. Falling back to original video.",
+                    "Audio preprocessing failed: {}. Falling back to original video.",
                     e
                 ),
                 None,

@@ -161,7 +161,7 @@ impl TitleCardGenerator {
             .arg(html)
             .arg("--standalone")
             .arg("--katex")
-            .arg("--highlight-style=pygments")  // Use pygments style which outputs clean CSS classes
+            .arg("--highlight-style=pygments") // Use pygments style which outputs clean CSS classes
             .arg("--css")
             .arg(css)
             .status()
