@@ -132,8 +132,6 @@ impl LocalPreprocessor {
             None,
         );
 
-        let output_dir = output.parent().unwrap_or_else(|| Path::new("."));
-
         let status = Command::new("uvx")
             .args([
                 "ffmpeg-normalize",
@@ -142,8 +140,6 @@ impl LocalPreprocessor {
                 "podcast",
                 "-o",
                 &output.to_string_lossy(),
-                "-of",
-                &output_dir.to_string_lossy(),
                 "-f", // Force overwrite
             ])
             .status()
@@ -192,8 +188,8 @@ impl AudioPreprocessor for LocalPreprocessor {
 
         let cache_dir = project_paths.transcript_dir();
 
-        // Final output path
-        let processed_cache_path = cache_dir.join(format!("{}_local_processed.mp3", input_hash));
+        // Final output path (WAV to avoid lossy transcoding - encoding happens at render)
+        let processed_cache_path = cache_dir.join(format!("{}_local_processed.wav", input_hash));
 
         // Check cache
         if processed_cache_path.exists() && !force {

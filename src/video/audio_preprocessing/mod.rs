@@ -104,10 +104,15 @@ pub async fn handle_preprocess(args: super::cli::PreprocessArgs) -> Result<()> {
 
     let result = preprocessor.process(&input_path, args.force).await?;
 
-    // Copy to output location next to input
+    // Copy to output location next to input, preserving the processed file's extension
     let output_dir = input_path.parent().unwrap_or_else(|| Path::new("."));
     let input_stem = input_path.file_stem().unwrap_or_default();
-    let output_filename = format!("{}_processed.mp3", input_stem.to_string_lossy());
+    let output_ext = result
+        .output_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("wav");
+    let output_filename = format!("{}_processed.{}", input_stem.to_string_lossy(), output_ext);
     let output_path = output_dir.join(output_filename);
 
     if result.output_path != output_path {
