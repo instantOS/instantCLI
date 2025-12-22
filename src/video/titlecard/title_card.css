@@ -336,6 +336,34 @@ body.layout-hero p {
   max-width: 90%;
 }
 
+/* Quote Layout */
+body.layout-quote .content {
+  max-width: 80%;
+  text-align: center;
+}
+
+body.layout-quote blockquote {
+  font-size: 3.5em;
+  border-left-width: 0.3em;
+  text-align: left;
+  margin: 0 auto;
+}
+
+/* Image Layout */
+body.layout-image .content {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+}
+
+body.layout-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  margin: 0 auto;
+  display: block;
+}
+
 /* Dense Layout */
 body.layout-dense {
   padding: 1.5rem;

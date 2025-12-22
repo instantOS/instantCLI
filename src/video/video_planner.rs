@@ -82,7 +82,9 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
     let mut segment_count = 0usize;
     let mut overlay_state: Option<OverlayPlan> = None;
     let mut last_clip_item_idx: Option<usize> = None;
-    let mut last_was_separator = false;
+    // Track whether we're in a "separator region" - after a separator, before any segment.
+    // Content in a separator region that ends with another separator becomes a pause.
+    let mut in_separator_region = false;
     // Accumulator for merging consecutive unhandled blocks into a single slide/overlay
     let mut pending_content: Vec<(String, usize)> = Vec::new();
 
@@ -101,19 +103,21 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
         Some(OverlayPlan { markdown, line })
     }
 
-    for (idx, block) in document.blocks.iter().enumerate() {
+    for (_idx, block) in document.blocks.iter().enumerate() {
         match block {
             DocumentBlock::Segment(segment) => {
                 // Flush any pending content before processing segment
-                if let Some(overlay) = flush_pending(&mut pending_content) {
-                    // Apply to previous clip retroactively
-                    if let Some(last_idx) = last_clip_item_idx {
-                        if let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx) {
-                            clip.overlay = Some(overlay.clone());
+                if !pending_content.is_empty() {
+                    if let Some(overlay) = flush_pending(&mut pending_content) {
+                        // Apply to previous clip retroactively
+                        if let Some(last_idx) = last_clip_item_idx {
+                            if let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx) {
+                                clip.overlay = Some(overlay.clone());
+                            }
                         }
+                        overlay_state = Some(overlay);
+                        overlay_count += 1;
                     }
-                    overlay_state = Some(overlay);
-                    overlay_count += 1;
                 }
 
                 items.push(TimelinePlanItem::Clip(ClipPlan {
@@ -126,7 +130,7 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
                 }));
                 last_clip_item_idx = Some(items.len().saturating_sub(1));
                 segment_count += 1;
-                last_was_separator = false;
+                in_separator_region = false;
             }
             DocumentBlock::Heading(heading) => {
                 items.push(TimelinePlanItem::Standalone(StandalonePlan::Heading {
@@ -136,12 +140,12 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
                 }));
                 standalone_count += 1;
                 heading_count += 1;
-                last_was_separator = false;
+                // Headings don't exit separator region - they can appear between separators
             }
             DocumentBlock::Separator(_) => {
-                // Flush pending content - if between separators, it becomes a pause
+                // Flush pending content - if in separator region, it becomes a pause
                 if !pending_content.is_empty() {
-                    if last_was_separator {
+                    if in_separator_region {
                         // Between separators → standalone pause
                         let merged = pending_content
                             .iter()
@@ -159,7 +163,7 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
                             standalone_count += 1;
                         }
                     } else {
-                        // Before separator but after segment → apply to previous clip
+                        // Before separator but after segment → apply to previous clip as overlay
                         if let Some(overlay) = flush_pending(&mut pending_content) {
                             if let Some(last_idx) = last_clip_item_idx {
                                 if let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx)
@@ -174,46 +178,25 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
                     pending_content.clear();
                 }
                 overlay_state = None;
-                last_was_separator = true;
+                in_separator_region = true;
             }
             DocumentBlock::Music(music) => {
                 items.push(TimelinePlanItem::Music(MusicPlan {
                     directive: music.directive.clone(),
                     line: music.line,
                 }));
-                last_was_separator = false;
+                // Music blocks don't exit separator region
             }
             DocumentBlock::Unhandled(unhandled) => {
                 let raw_description = unhandled.description.as_str();
                 let trimmed = raw_description.trim();
                 if trimmed.is_empty() {
                     ignored_count += 1;
-                    // Don't reset last_was_separator for empty blocks
                     continue;
                 }
 
-                let next_is_separator = document
-                    .blocks
-                    .get(idx + 1)
-                    .map(|next| matches!(next, DocumentBlock::Separator(_)))
-                    .unwrap_or(false);
-
-                if last_was_separator && next_is_separator {
-                    // Content between two separators becomes a standalone pause
-                    items.push(TimelinePlanItem::Standalone(StandalonePlan::Pause {
-                        markdown: raw_description.to_string(),
-                        display_text: trimmed.to_string(),
-                        duration_seconds: pause_duration_seconds(trimmed),
-                        line: unhandled.line,
-                    }));
-                    standalone_count += 1;
-                    overlay_state = None;
-                    last_was_separator = false;
-                } else {
-                    // Accumulate for merging into a single overlay
-                    pending_content.push((raw_description.to_string(), unhandled.line));
-                    last_was_separator = false;
-                }
+                // Accumulate for merging - the flush will determine if it's pause or overlay
+                pending_content.push((raw_description.to_string(), unhandled.line));
             }
         }
     }
