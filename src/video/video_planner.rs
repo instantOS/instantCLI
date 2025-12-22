@@ -669,11 +669,37 @@ fn add_edge(graph: &mut [Vec<McmfEdge>], from: usize, to: usize, cap: i64, cost:
     });
 }
 
-//TODO: this function is way too long, refactor
 fn assign_cues_max_overlap(
     dialogue_clips: &[(usize, f64, f64, usize, String)],
     cues: &[TranscriptCue],
 ) -> Result<Vec<(usize, usize)>> {
+    validate_alignment_inputs(dialogue_clips, cues)?;
+
+    let clip_count = dialogue_clips.len();
+    let cue_count = cues.len();
+
+    let mut graph_builder = AssignmentGraphBuilder::new(clip_count, cue_count);
+    graph_builder.build_base_edges();
+    graph_builder.add_overlap_options(dialogue_clips, cues);
+
+    let (flow, _cost) = min_cost_max_flow(
+        &mut graph_builder.graph,
+        graph_builder.source,
+        graph_builder.sink,
+        clip_count as i64,
+    );
+
+    if flow < clip_count as i64 {
+        diagnose_alignment_failure(dialogue_clips, cues)?;
+    }
+
+    graph_builder.extract_assignments(dialogue_clips)
+}
+
+fn validate_alignment_inputs(
+    dialogue_clips: &[(usize, f64, f64, usize, String)],
+    cues: &[TranscriptCue],
+) -> Result<()> {
     if cues.is_empty() {
         bail!("Unable to align subtitles: no subtitle cues available");
     }
@@ -688,128 +714,181 @@ fn assign_cues_max_overlap(
             clip_count
         );
     }
+    Ok(())
+}
 
-    let source = 0usize;
-    let clip_offset = 1usize;
-    let cue_offset = clip_offset + clip_count;
-    let sink = cue_offset + cue_count;
-    let node_count = sink + 1;
-    let mut graph: Vec<Vec<McmfEdge>> = vec![Vec::new(); node_count];
+struct AssignmentGraphBuilder {
+    graph: Vec<Vec<McmfEdge>>,
+    source: usize,
+    sink: usize,
+    clip_offset: usize,
+    cue_offset: usize,
+    cue_count: usize,
+}
 
-    for clip_idx in 0..clip_count {
-        add_edge(&mut graph, source, clip_offset + clip_idx, 1, 0);
+impl AssignmentGraphBuilder {
+    fn new(clip_count: usize, cue_count: usize) -> Self {
+        let source = 0usize;
+        let clip_offset = 1usize;
+        let cue_offset = clip_offset + clip_count;
+        let sink = cue_offset + cue_count;
+        let node_count = sink + 1;
+        let graph = vec![Vec::new(); node_count];
+
+        Self {
+            graph,
+            source,
+            sink,
+            clip_offset,
+            cue_offset,
+            cue_count,
+        }
     }
 
-    for cue_idx in 0..cue_count {
-        add_edge(&mut graph, cue_offset + cue_idx, sink, 1, 0);
-    }
-
-    for (clip_idx, (_timeline_idx, clip_start, clip_end, _line, _text)) in
-        dialogue_clips.iter().enumerate()
-    {
-        let clip_duration = (clip_end - clip_start).max(0.0);
-        if clip_duration <= 0.0 {
-            continue;
+    fn build_base_edges(&mut self) {
+        // Edges from Source -> Clips
+        let clip_count = self.cue_offset - self.clip_offset;
+        for clip_idx in 0..clip_count {
+            add_edge(
+                &mut self.graph,
+                self.source,
+                self.clip_offset + clip_idx,
+                1,
+                0,
+            );
         }
 
-        for (cue_idx, cue) in cues.iter().enumerate() {
+        // Edges from Cues -> Sink
+        for cue_idx in 0..self.cue_count {
+            add_edge(
+                &mut self.graph,
+                self.cue_offset + cue_idx,
+                self.sink,
+                1,
+                0,
+            );
+        }
+    }
+
+    fn add_overlap_options(
+        &mut self,
+        dialogue_clips: &[(usize, f64, f64, usize, String)],
+        cues: &[TranscriptCue],
+    ) {
+        for (clip_idx, (_timeline_idx, clip_start, clip_end, _line, _text)) in
+            dialogue_clips.iter().enumerate()
+        {
+            let clip_duration = (clip_end - clip_start).max(0.0);
+            if clip_duration <= 0.0 {
+                continue;
+            }
+
+            for (cue_idx, cue) in cues.iter().enumerate() {
+                let cue_start = cue.start.as_secs_f64();
+                let cue_end = cue.end.as_secs_f64();
+                let overlap = overlap_seconds(*clip_start, *clip_end, cue_start, cue_end);
+                
+                if overlap <= 0.0 {
+                    continue;
+                }
+
+                if overlap / clip_duration < 0.01 {
+                    continue;
+                }
+
+                // Convert to integer cost: maximize overlap, then prefer closer starts.
+                // Costs are negated because the solver minimizes total cost.
+                let overlap_cost = -(overlap * 1_000_000.0).round() as i64;
+                let distance = (cue_start - *clip_start).abs();
+                let distance_cost = (distance * 1_000.0).round() as i64;
+
+                let cost = overlap_cost + distance_cost;
+                add_edge(
+                    &mut self.graph,
+                    self.clip_offset + clip_idx,
+                    self.cue_offset + cue_idx,
+                    1,
+                    cost,
+                );
+            }
+        }
+    }
+
+    fn extract_assignments(
+        &self,
+        dialogue_clips: &[(usize, f64, f64, usize, String)],
+    ) -> Result<Vec<(usize, usize)>> {
+        let clip_count = dialogue_clips.len();
+        let mut result: Vec<(usize, usize)> = Vec::with_capacity(clip_count);
+
+        for clip_idx in 0..clip_count {
+            let clip_node = self.clip_offset + clip_idx;
+            let timeline_idx = dialogue_clips[clip_idx].0;
+
+            let mut matched: Option<usize> = None;
+            for edge in &self.graph[clip_node] {
+                let is_to_cue = edge.to >= self.cue_offset && edge.to < self.cue_offset + self.cue_count;
+                if !is_to_cue {
+                    continue;
+                }
+
+                // If we sent 1 unit of flow along clip->cue, then forward edge cap is now 0.
+                if edge.cap == 0 {
+                    matched = Some(edge.to - self.cue_offset);
+                    break;
+                }
+            }
+
+            let Some(cue_idx) = matched else {
+                bail!(
+                    "Unable to align subtitles: missing cue assignment for segment index {}",
+                    timeline_idx
+                );
+            };
+
+            result.push((timeline_idx, cue_idx));
+        }
+
+        Ok(result)
+    }
+}
+
+fn diagnose_alignment_failure(
+    dialogue_clips: &[(usize, f64, f64, usize, String)],
+    cues: &[TranscriptCue],
+) -> Result<()> {
+    // Find a useful error pointing to the first clip with no candidate cues.
+    for (_timeline_idx, clip_start, clip_end, line, text) in dialogue_clips {
+        let clip_duration = (clip_end - clip_start).max(0.0);
+        if clip_duration <= 0.0 {
+            bail!("Invalid segment duration for `{}` at line {}", text, line);
+        }
+
+        let mut has_candidate = false;
+        for cue in cues {
             let cue_start = cue.start.as_secs_f64();
             let cue_end = cue.end.as_secs_f64();
             let overlap = overlap_seconds(*clip_start, *clip_end, cue_start, cue_end);
             if overlap <= 0.0 {
                 continue;
             }
-
             if overlap / clip_duration < 0.01 {
                 continue;
             }
-
-            // Convert to integer cost: maximize overlap, then prefer closer starts.
-            // Costs are negated because the solver minimizes total cost.
-            let overlap_cost = -(overlap * 1_000_000.0).round() as i64;
-            let distance = (cue_start - *clip_start).abs();
-            let distance_cost = (distance * 1_000.0).round() as i64;
-
-            let cost = overlap_cost + distance_cost;
-            add_edge(
-                &mut graph,
-                clip_offset + clip_idx,
-                cue_offset + cue_idx,
-                1,
-                cost,
-            );
-        }
-    }
-
-    let (flow, _cost) = min_cost_max_flow(&mut graph, source, sink, clip_count as i64);
-    if flow < clip_count as i64 {
-        // Find a useful error pointing to the first clip with no candidate cues.
-        for (timeline_idx, clip_start, clip_end, line, text) in dialogue_clips {
-            let clip_duration = (clip_end - clip_start).max(0.0);
-            if clip_duration <= 0.0 {
-                bail!("Invalid segment duration for `{}` at line {}", text, line);
-            }
-
-            let mut has_candidate = false;
-            for cue in cues {
-                let cue_start = cue.start.as_secs_f64();
-                let cue_end = cue.end.as_secs_f64();
-                let overlap = overlap_seconds(*clip_start, *clip_end, cue_start, cue_end);
-                if overlap <= 0.0 {
-                    continue;
-                }
-                if overlap / clip_duration < 0.01 {
-                    continue;
-                }
-                has_candidate = true;
-                break;
-            }
-
-            if !has_candidate {
-                bail!(
-                    "Unable to locate subtitle entry for segment `{}` at line {}",
-                    text,
-                    line
-                );
-            }
-
-            let _ = timeline_idx;
+            has_candidate = true;
+            break;
         }
 
-        bail!("Unable to align subtitles: could not assign unique cues to every segment");
-    }
-
-    let mut result: Vec<(usize, usize)> = Vec::with_capacity(clip_count);
-
-    for clip_idx in 0..clip_count {
-        let clip_node = clip_offset + clip_idx;
-        let timeline_idx = dialogue_clips[clip_idx].0;
-
-        let mut matched: Option<usize> = None;
-        for edge in &graph[clip_node] {
-            let is_to_cue = edge.to >= cue_offset && edge.to < cue_offset + cue_count;
-            if !is_to_cue {
-                continue;
-            }
-
-            // If we sent 1 unit of flow along clip->cue, then forward edge cap is now 0.
-            if edge.cap == 0 {
-                matched = Some(edge.to - cue_offset);
-                break;
-            }
-        }
-
-        let Some(cue_idx) = matched else {
+        if !has_candidate {
             bail!(
-                "Unable to align subtitles: missing cue assignment for segment index {}",
-                timeline_idx
+                "Unable to locate subtitle entry for segment `{}` at line {}",
+                text,
+                line
             );
-        };
-
-        result.push((timeline_idx, cue_idx));
+        }
     }
 
-    Ok(result)
+    bail!("Unable to align subtitles: could not assign unique cues to every segment");
 }
 
 fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
