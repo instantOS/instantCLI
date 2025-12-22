@@ -82,7 +82,7 @@ fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -
         OsString::from("whisperx"),
         hashed_video.as_os_str().to_os_string(),
         OsString::from("--output_format"),
-        OsString::from("srt"),
+        OsString::from("json"),
         OsString::from("--output_dir"),
         output_dir.as_os_str().to_os_string(),
         OsString::from("--vad_method"),
@@ -97,7 +97,7 @@ fn run_whisperx(hashed_video: &Path, output_dir: &Path, args: &TranscribeArgs) -
         OsString::from("--batch_size"),
         OsString::from("4"), // Smaller batch size optimized for CPU (vs 16 for GPU)
         OsString::from("--segment_resolution"),
-        OsString::from("sentence"), // Sentence-level segmentation for better subtitle timing
+        OsString::from("chunk"), // Sentence-level segmentation for better subtitle timing
         OsString::from("--beam_size"),
         OsString::from("5"), // Beam search for higher transcription accuracy
         OsString::from("--patience"),
