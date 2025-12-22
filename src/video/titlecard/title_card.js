@@ -10,22 +10,26 @@ window.addEventListener('load', () => {
     const codeBlocks = content.querySelectorAll('pre').length;
     const listItems = content.querySelectorAll('li').length;
     const blockquotes = content.querySelectorAll('blockquote').length;
-    const images = content.querySelectorAll('img, figure').length;
+    const figures = content.querySelectorAll('figure').length;
+    const imgElements = content.querySelectorAll('img').length;
     const textLength = content.innerText.length;
 
     // "Quote" condition: Slide is ONLY a blockquote (no other content outside the blockquote)
     // Note: Pandoc wraps blockquote text in <p>, so we only count <p> tags NOT inside blockquote
     const paragraphsOutsideBlockquote = content.querySelectorAll('p:not(blockquote p)').length;
-    if (blockquotes > 0 && paragraphsOutsideBlockquote === 0 && headings === 0 && codeBlocks === 0 && listItems === 0 && images === 0) {
+    if (blockquotes > 0 && paragraphsOutsideBlockquote === 0 && headings === 0 && codeBlocks === 0 && listItems === 0 && imgElements === 0) {
         body.classList.add('layout-quote');
     }
 
-    // "Image" condition: Single image/figure only (Pandoc may wrap images in <p> or <figure>)
-    const allParagraphsAreImages = Array.from(content.querySelectorAll('p')).every(p => {
+    // "Image" condition: Single image/figure only (Pandoc wraps images in <figure> or <p>)
+    const allParagraphsAreImages = paragraphs > 0 && Array.from(content.querySelectorAll('p')).every(p => {
         const childNodes = Array.from(p.childNodes).filter(n => n.nodeType !== 3 || n.textContent.trim() !== '');
         return childNodes.length === 1 && childNodes[0].tagName === 'IMG';
     });
-    if (images === 1 && headings === 0 && codeBlocks === 0 && blockquotes === 0 && listItems === 0 && (paragraphs === 0 || allParagraphsAreImages)) {
+    // Image layout: single figure with image, OR single img in paragraph, with no other content
+    const isSingleFigure = figures === 1 && paragraphsOutsideBlockquote === 0 && headings === 0 && codeBlocks === 0 && blockquotes === 0 && listItems === 0;
+    const isSingleImageParagraph = imgElements === 1 && figures === 0 && headings === 0 && codeBlocks === 0 && blockquotes === 0 && listItems === 0 && allParagraphsAreImages;
+    if (isSingleFigure || isSingleImageParagraph) {
         body.classList.add('layout-image');
     }
 
