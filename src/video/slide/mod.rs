@@ -90,11 +90,7 @@ impl SlideGenerator {
         self.copy_image(&asset.image_path, output_path)
     }
 
-    pub fn ensure_video_for_duration(
-        &self,
-        asset: &SlideAsset,
-        duration: f64,
-    ) -> Result<PathBuf> {
+    pub fn ensure_video_for_duration(&self, asset: &SlideAsset, duration: f64) -> Result<PathBuf> {
         let sanitized = (duration * 1000.0).round() as u64;
         let video_path = asset.slide_dir.join(format!("slide_{sanitized}.mp4"));
         if video_path.exists() {

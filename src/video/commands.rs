@@ -6,8 +6,8 @@ use super::cli::VideoCommands;
 use super::convert;
 use super::render;
 use super::setup;
-use super::stats;
 use super::slide;
+use super::stats;
 use super::transcribe;
 
 pub async fn handle_video_command(command: VideoCommands, _debug: bool) -> Result<()> {

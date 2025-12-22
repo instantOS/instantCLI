@@ -94,6 +94,9 @@ impl LocalPreprocessor {
                 "torchaudio<2.1",
                 "deepFilter",
                 &input.to_string_lossy(),
+                "--atten-lim",
+                "80",   // More aggressive noise attenuation (higher = more reduction)
+                "--pf", // Enable post-filter for additional noise reduction
                 "--output-dir",
                 &output_dir.to_string_lossy(),
             ])
@@ -104,9 +107,9 @@ impl LocalPreprocessor {
             anyhow::bail!("DeepFilterNet failed to process {}", input.display());
         }
 
-        // DeepFilterNet outputs to <output_dir>/<input_stem>_DeepFilterNet3.wav
+        // DeepFilterNet outputs to <output_dir>/<input_stem>_DeepFilterNet3_pf.wav when --pf is used
         let input_stem = input.file_stem().unwrap_or_default().to_string_lossy();
-        let output_path = output_dir.join(format!("{}_DeepFilterNet3.wav", input_stem));
+        let output_path = output_dir.join(format!("{}_DeepFilterNet3_pf.wav", input_stem));
 
         if !output_path.exists() {
             anyhow::bail!(
@@ -137,6 +140,7 @@ impl LocalPreprocessor {
 
         // Dynamic normalization: compresses audio to reduce volume fluctuations
         // Good for speech where mic distance varies
+        // Using louder target for spoken content + more compression for consistency
         let status = Command::new("uvx")
             .args([
                 "ffmpeg-normalize",
@@ -144,11 +148,11 @@ impl LocalPreprocessor {
                 "-nt",
                 "ebu", // EBU R128 normalization
                 "-t",
-                "-14", // YouTube target: -14 LUFS
+                "-12", // Louder target for speech: -12 LUFS (was -14)
                 "-tp",
                 "-1", // True peak: -1 dBTP
                 "-lrt",
-                "7", // Loudness range target: 7 LU (triggers compression)
+                "3", // Even more compression: 3 LU (was 4) for very consistent volume
                 "-o",
                 &output.to_string_lossy(),
                 "-f", // Force overwrite

@@ -62,7 +62,7 @@ window.addEventListener('load', () => {
 
         // Horizontal overflow (code blocks)
         // Code blocks usually don't wrap, so we must check if they need scrolling.
-        // For a static title card, scrolling = cut off content.
+        // For a static slide, scrolling = cut off content.
         const pres = content.querySelectorAll('pre');
         for (const pre of pres) {
             if (pre.scrollWidth > pre.clientWidth) {
