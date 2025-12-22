@@ -14,7 +14,7 @@ pub mod render;
 mod render_timeline;
 pub mod setup;
 pub mod stats;
-mod titlecard;
+mod slide;
 mod transcribe;
 pub mod transcript;
 mod utils;
