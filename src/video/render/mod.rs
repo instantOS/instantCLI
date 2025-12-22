@@ -273,9 +273,26 @@ fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
     let video_hash = super::utils::compute_file_hash(video_path)?;
     let directories = VideoDirectories::new()?;
     let project_paths = directories.project_paths(&video_hash);
-    let auphonic_processed_path = project_paths
-        .transcript_dir()
-        .join(format!("{}_auphonic_processed.mp3", video_hash));
+    let transcript_dir = project_paths.transcript_dir();
+
+    // Check for local preprocessed file (WAV) - Preferred
+    let local_processed_path = transcript_dir.join(format!("{}_local_processed.wav", video_hash));
+    if local_processed_path.exists() {
+        emit(
+            Level::Info,
+            "video.render.audio",
+            &format!(
+                "Using local preprocessed audio: {}",
+                local_processed_path.display()
+            ),
+            None,
+        );
+        return Ok(local_processed_path);
+    }
+
+    // Check for Auphonic processed file (MP3) - Legacy/Alternative
+    let auphonic_processed_path =
+        transcript_dir.join(format!("{}_auphonic_processed.mp3", video_hash));
 
     if auphonic_processed_path.exists() {
         emit(
@@ -292,7 +309,7 @@ fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
         emit(
             Level::Warn,
             "video.render.audio",
-            "Auphonic processed audio not found. Using original video audio.",
+            "No preprocessed audio found (local or Auphonic). Using original video audio.",
             None,
         );
         Ok(video_path.to_path_buf())
