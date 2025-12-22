@@ -33,9 +33,18 @@ pub fn handle_titlecard(args: TitlecardArgs) -> Result<()> {
     // Use default 1920x1080 resolution for title cards
     let generator = TitleCardGenerator::new(1920, 1080)?;
 
-    generator.generate_image_from_markdown(content, &output_path)?;
+    let asset = generator.markdown_card(content)?;
 
-    println!("Title card generated: {}", output_path.display());
+    if asset.was_cached {
+        println!("Using cached title card: {}", asset.image_path.display());
+    } else {
+        println!("Generated new title card: {}", asset.image_path.display());
+    }
+
+    fs::copy(&asset.image_path, &output_path)
+        .with_context(|| format!("Failed to copy title card to {}", output_path.display()))?;
+
+    println!("Title card saved to: {}", output_path.display());
 
     Ok(())
 }

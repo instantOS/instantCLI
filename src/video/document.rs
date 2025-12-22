@@ -216,6 +216,20 @@ impl<'a> BodyParserState<'a> {
             Event::End(TagEnd::BlockQuote(_)) => {
                 self.flush_blockquote();
             }
+            Event::Start(Tag::Image {
+                dest_url, title, ..
+            }) => {
+                // Capture the image markdown syntax to preserve it for Pandoc
+                if let Some(state) = self.paragraph.as_mut() {
+                    state.set_pending_image(dest_url.into_string(), title.into_string());
+                }
+            }
+            Event::End(TagEnd::Image) => {
+                // Flush the pending image with its alt text
+                if let Some(state) = self.paragraph.as_mut() {
+                    state.flush_pending_image(range.start);
+                }
+            }
             Event::Text(text) => {
                 self.handle_text(text.into_string(), range.start);
             }
@@ -302,7 +316,12 @@ impl<'a> BodyParserState<'a> {
         if let Some(state) = self.blockquote.as_mut() {
             state.push_text(text.clone());
         } else if let Some(state) = self.paragraph.as_mut() {
-            state.push_fragment(InlineFragment::text(start, text.clone()));
+            // If inside an image tag, accumulate as alt text; otherwise add as text fragment
+            if state.is_inside_image() {
+                state.push_image_alt(&text);
+            } else {
+                state.push_fragment(InlineFragment::text(start, text.clone()));
+            }
         }
         if let Some(state) = self.heading.as_mut() {
             state.push_text(text.clone());
@@ -385,6 +404,10 @@ fn strip_html_comments(input: &str) -> String {
 struct ParagraphState {
     start_byte: usize,
     fragments: Vec<InlineFragment>,
+    /// Pending image to be flushed when we encounter the end tag
+    pending_image: Option<(String, String)>, // (url, title)
+    /// Alt text accumulated while inside an image tag
+    pending_image_alt: String,
 }
 
 impl ParagraphState {
@@ -392,11 +415,34 @@ impl ParagraphState {
         Self {
             start_byte: start,
             fragments: Vec::new(),
+            pending_image: None,
+            pending_image_alt: String::new(),
         }
     }
 
     fn push_fragment(&mut self, fragment: InlineFragment) {
         self.fragments.push(fragment);
+    }
+
+    fn set_pending_image(&mut self, url: String, title: String) {
+        self.pending_image = Some((url, title));
+        self.pending_image_alt.clear();
+    }
+
+    fn push_image_alt(&mut self, text: &str) {
+        self.pending_image_alt.push_str(text);
+    }
+
+    fn flush_pending_image(&mut self, start: usize) {
+        if let Some((url, title)) = self.pending_image.take() {
+            let alt = std::mem::take(&mut self.pending_image_alt);
+            self.fragments
+                .push(InlineFragment::image(start, url, alt, title));
+        }
+    }
+
+    fn is_inside_image(&self) -> bool {
+        self.pending_image.is_some()
     }
 
     fn into_document_blocks(
@@ -599,6 +645,13 @@ impl InlineFragment {
         }
     }
 
+    fn image(start: usize, url: String, alt: String, title: String) -> Self {
+        Self {
+            start_byte: start,
+            kind: InlineFragmentKind::Image { url, alt, title },
+        }
+    }
+
     fn render_many(fragments: &[InlineFragment]) -> String {
         let mut output = String::new();
         for fragment in fragments {
@@ -608,6 +661,14 @@ impl InlineFragment {
                 InlineFragmentKind::SoftBreak => output.push(' '),
                 InlineFragmentKind::HardBreak => output.push('\n'),
                 InlineFragmentKind::Html(html) => output.push_str(html),
+                InlineFragmentKind::Image { url, alt, title } => {
+                    // Reconstruct markdown image syntax
+                    if title.is_empty() {
+                        output.push_str(&format!("![{}]({})", alt, url));
+                    } else {
+                        output.push_str(&format!("![{}]({} \"{}\")", alt, url, title));
+                    }
+                }
             }
         }
         output
@@ -620,6 +681,11 @@ enum InlineFragmentKind {
     SoftBreak,
     HardBreak,
     Html(String),
+    Image {
+        url: String,
+        alt: String,
+        title: String,
+    },
 }
 
 fn parse_time_range(input: &str) -> Result<TimeRange> {

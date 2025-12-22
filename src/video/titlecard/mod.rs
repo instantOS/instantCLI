@@ -26,6 +26,7 @@ pub struct TitleCardGenerator {
 pub struct TitleCardAsset {
     card_dir: PathBuf,
     pub image_path: PathBuf,
+    pub was_cached: bool,
 }
 
 impl TitleCardGenerator {
@@ -59,7 +60,8 @@ impl TitleCardGenerator {
         let image_path = card_dir.join("title.png");
 
         self.ensure_card_dir(&card_dir)?;
-        if !image_path.exists() {
+        let was_cached = image_path.exists();
+        if !was_cached {
             fs::write(&markdown_path, markdown_content.as_bytes()).with_context(|| {
                 format!(
                     "Failed to write title card markdown to {}",
@@ -75,6 +77,7 @@ impl TitleCardGenerator {
         Ok(TitleCardAsset {
             card_dir,
             image_path,
+            was_cached,
         })
     }
 
