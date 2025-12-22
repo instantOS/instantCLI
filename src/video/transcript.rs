@@ -87,6 +87,7 @@ pub fn parse_whisper_json(json_str: &str) -> Result<Vec<TranscriptCue>> {
         cues.push(create_cue_from_cluster(&current_cluster));
     }
 
+    cues.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
     Ok(cues)
 }
 

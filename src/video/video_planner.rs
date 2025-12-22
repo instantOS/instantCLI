@@ -277,7 +277,7 @@ struct ClipTimeUpdate {
 }
 
 const DEFAULT_DIALOGUE_PADDING_SECONDS: f64 = 0.08;
-const DEFAULT_PADDING_GUARD_SECONDS: f64 = 0.01;
+const DEFAULT_PADDING_GUARD_SECONDS: f64 = 0.0;
 
 const DEFAULT_PAUSE_MIN_SECONDS: f64 = 5.0;
 const DEFAULT_PAUSE_MAX_SECONDS: f64 = 20.0;
@@ -513,16 +513,21 @@ fn padded_cue_bounds(
 
     if cue_idx > 0 {
         let prev_end = cues[cue_idx - 1].end.as_secs_f64();
-        padded_start = padded_start.max(prev_end + guard_seconds);
+        // Clamp to midpoint of gap to avoid double-playing the gap (or overlap logic)
+        let gap_mid = (prev_end + cue_start) / 2.0;
+        padded_start = padded_start.max(gap_mid + guard_seconds);
     }
 
     if cue_idx + 1 < cues.len() {
         let next_start = cues[cue_idx + 1].start.as_secs_f64();
-        padded_end = padded_end.min(next_start - guard_seconds);
+        // Clamp to midpoint of gap
+        let gap_mid = (cue_end + next_start) / 2.0;
+        padded_end = padded_end.min(gap_mid - guard_seconds);
     }
 
     if padded_end <= padded_start {
-        (cue_start, cue_end)
+        // If we have no space, collapse to zero length to avoid overlapping neighbors
+        (padded_start, padded_start)
     } else {
         (padded_start, padded_end)
     }
@@ -664,6 +669,7 @@ fn add_edge(graph: &mut [Vec<McmfEdge>], from: usize, to: usize, cap: i64, cost:
     });
 }
 
+//TODO: this function is way too long, refactor
 fn assign_cues_max_overlap(
     dialogue_clips: &[(usize, f64, f64, usize, String)],
     cues: &[TranscriptCue],
@@ -1006,10 +1012,10 @@ mod tests {
         // Clip 0 has no previous cue to clamp against.
         assert!((clip_segments[0].start - 0.0).abs() < 1e-6);
         // Clip 0 is clamped to the next cue start minus guard.
-        assert!((clip_segments[0].end - 1.09).abs() < 1e-6);
+        assert!((clip_segments[0].end - 1.1).abs() < 1e-6);
 
         // Clip 1 is clamped to the previous cue end plus guard.
-        assert!((clip_segments[1].start - 1.11).abs() < 1e-6);
+        assert!((clip_segments[1].start - 1.1).abs() < 1e-6);
         // Clip 1 has no next cue to clamp against.
         assert!((clip_segments[1].end - 2.08).abs() < 1e-6);
     }
