@@ -83,10 +83,39 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
     let mut overlay_state: Option<OverlayPlan> = None;
     let mut last_clip_item_idx: Option<usize> = None;
     let mut last_was_separator = false;
+    // Accumulator for merging consecutive unhandled blocks into a single slide/overlay
+    let mut pending_content: Vec<(String, usize)> = Vec::new();
+
+    /// Merge pending content into a single OverlayPlan, clearing the accumulator.
+    fn flush_pending(pending: &mut Vec<(String, usize)>) -> Option<OverlayPlan> {
+        if pending.is_empty() {
+            return None;
+        }
+        let line = pending[0].1;
+        let markdown = pending
+            .iter()
+            .map(|(s, _)| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        pending.clear();
+        Some(OverlayPlan { markdown, line })
+    }
 
     for (idx, block) in document.blocks.iter().enumerate() {
         match block {
             DocumentBlock::Segment(segment) => {
+                // Flush any pending content before processing segment
+                if let Some(overlay) = flush_pending(&mut pending_content) {
+                    // Apply to previous clip retroactively
+                    if let Some(last_idx) = last_clip_item_idx {
+                        if let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx) {
+                            clip.overlay = Some(overlay.clone());
+                        }
+                    }
+                    overlay_state = Some(overlay);
+                    overlay_count += 1;
+                }
+
                 items.push(TimelinePlanItem::Clip(ClipPlan {
                     start: segment.range.start_seconds(),
                     end: segment.range.end_seconds(),
@@ -110,6 +139,40 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
                 last_was_separator = false;
             }
             DocumentBlock::Separator(_) => {
+                // Flush pending content - if between separators, it becomes a pause
+                if !pending_content.is_empty() {
+                    if last_was_separator {
+                        // Between separators → standalone pause
+                        let merged = pending_content
+                            .iter()
+                            .map(|(s, _)| s.as_str())
+                            .collect::<Vec<_>>()
+                            .join("\n\n");
+                        let trimmed = merged.trim();
+                        if !trimmed.is_empty() {
+                            items.push(TimelinePlanItem::Standalone(StandalonePlan::Pause {
+                                markdown: merged.clone(),
+                                display_text: trimmed.to_string(),
+                                duration_seconds: pause_duration_seconds(trimmed),
+                                line: pending_content[0].1,
+                            }));
+                            standalone_count += 1;
+                        }
+                    } else {
+                        // Before separator but after segment → apply to previous clip
+                        if let Some(overlay) = flush_pending(&mut pending_content) {
+                            if let Some(last_idx) = last_clip_item_idx {
+                                if let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx)
+                                {
+                                    clip.overlay = Some(overlay.clone());
+                                }
+                            }
+                            overlay_state = Some(overlay);
+                            overlay_count += 1;
+                        }
+                    }
+                    pending_content.clear();
+                }
                 overlay_state = None;
                 last_was_separator = true;
             }
@@ -125,7 +188,7 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
                 let trimmed = raw_description.trim();
                 if trimmed.is_empty() {
                     ignored_count += 1;
-                    last_was_separator = false;
+                    // Don't reset last_was_separator for empty blocks
                     continue;
                 }
 
@@ -136,6 +199,7 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
                     .unwrap_or(false);
 
                 if last_was_separator && next_is_separator {
+                    // Content between two separators becomes a standalone pause
                     items.push(TimelinePlanItem::Standalone(StandalonePlan::Pause {
                         markdown: raw_description.to_string(),
                         display_text: trimmed.to_string(),
@@ -146,27 +210,22 @@ pub fn plan_timeline(document: &VideoDocument) -> Result<TimelinePlan> {
                     overlay_state = None;
                     last_was_separator = false;
                 } else {
-                    let overlay = OverlayPlan {
-                        markdown: raw_description.to_string(),
-                        line: unhandled.line,
-                    };
-
-                    // Slides start being shown during the *immediately previous* segment.
-                    // Slides stop when encountering either a `---` separator or the next slide.
-                    // With our per-clip overlay model, this means we need to set the overlay
-                    // on the last clip retroactively, and carry it forward for subsequent clips.
-                    if let Some(last_idx) = last_clip_item_idx
-                        && let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx)
-                    {
-                        clip.overlay = Some(overlay.clone());
-                    }
-
-                    overlay_state = Some(overlay);
-                    overlay_count += 1;
+                    // Accumulate for merging into a single overlay
+                    pending_content.push((raw_description.to_string(), unhandled.line));
                     last_was_separator = false;
                 }
             }
         }
+    }
+
+    // Final flush: any remaining pending content becomes an overlay for the last clip
+    if let Some(overlay) = flush_pending(&mut pending_content) {
+        if let Some(last_idx) = last_clip_item_idx {
+            if let Some(TimelinePlanItem::Clip(clip)) = items.get_mut(last_idx) {
+                clip.overlay = Some(overlay.clone());
+            }
+        }
+        overlay_count += 1;
     }
 
     Ok(TimelinePlan {
@@ -789,7 +848,7 @@ mod tests {
     }
 
     #[test]
-    fn slide_changes_on_next_slide_block() {
+    fn consecutive_slides_merge_into_single_overlay() {
         let markdown = concat!(
             "`00:00:00.0-00:00:01.0` first\n",
             "slide 1\n\n",
@@ -811,12 +870,15 @@ mod tests {
 
         assert_eq!(clips.len(), 2);
 
+        // Consecutive paragraphs merge into a single overlay with \n\n separator
         let overlay_first = clips[0].overlay.as_ref().unwrap();
-        assert_eq!(overlay_first.markdown.trim(), "slide 2");
+        assert_eq!(overlay_first.markdown.trim(), "slide 1\n\nslide 2");
 
+        // Overlay carries forward to the next segment
         let overlay_second = clips[1].overlay.as_ref().unwrap();
-        assert_eq!(overlay_second.markdown.trim(), "slide 2");
+        assert_eq!(overlay_second.markdown.trim(), "slide 1\n\nslide 2");
     }
+
 
     #[test]
     fn pause_duration_scales_with_word_count() {
