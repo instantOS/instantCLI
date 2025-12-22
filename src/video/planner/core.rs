@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::video::document::{DocumentBlock, MusicDirective, SegmentKind, VideoDocument};
+use anyhow::Result;
 
 #[derive(Debug, Clone)]
 pub struct TimelinePlan {
@@ -237,11 +237,11 @@ impl TimelinePlanner {
     }
 }
 
-const DEFAULT_PAUSE_MIN_SECONDS: f64 = 5.0;
-const DEFAULT_PAUSE_MAX_SECONDS: f64 = 20.0;
-const DEFAULT_PAUSE_READING_WPM: f64 = 180.0;
+pub const DEFAULT_PAUSE_MIN_SECONDS: f64 = 5.0;
+pub const DEFAULT_PAUSE_MAX_SECONDS: f64 = 20.0;
+pub const DEFAULT_PAUSE_READING_WPM: f64 = 180.0;
 
-fn pause_duration_seconds(display_text: &str) -> f64 {
+pub fn pause_duration_seconds(display_text: &str) -> f64 {
     let words = display_text.split_whitespace().count() as f64;
     if words <= 0.0 {
         return DEFAULT_PAUSE_MIN_SECONDS;

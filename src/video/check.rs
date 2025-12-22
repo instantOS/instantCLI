@@ -6,12 +6,12 @@ use crate::ui::prelude::{Level, emit};
 
 use super::cli::CheckArgs;
 use super::ffmpeg::probe_video_dimensions;
+use super::planner::TimelinePlanItem;
 use super::render::{
     build_timeline_plan, load_transcript_cues, load_video_document, resolve_source_video_path,
     resolve_transcript_path,
 };
 use super::utils::canonicalize_existing;
-use super::video_planner::TimelinePlanItem;
 
 pub fn handle_check(args: CheckArgs) -> Result<()> {
     macro_rules! log {
@@ -97,14 +97,14 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     Ok(())
 }
 
-fn plan_duration_seconds(plan: &super::video_planner::TimelinePlan) -> f64 {
+fn plan_duration_seconds(plan: &super::planner::TimelinePlan) -> f64 {
     plan.items
         .iter()
         .map(|item| match item {
             TimelinePlanItem::Clip(clip) => (clip.end - clip.start).max(0.0),
             TimelinePlanItem::Standalone(standalone) => match standalone {
-                super::video_planner::StandalonePlan::Heading { .. } => 2.0,
-                super::video_planner::StandalonePlan::Pause {
+                super::planner::StandalonePlan::Heading { .. } => 2.0,
+                super::planner::StandalonePlan::Pause {
                     duration_seconds, ..
                 } => *duration_seconds,
             },

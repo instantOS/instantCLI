@@ -9,6 +9,7 @@ mod ffmpeg;
 mod markdown;
 mod markdown_utils;
 mod music;
+pub mod planner;
 pub mod render;
 mod render_timeline;
 pub mod setup;
@@ -17,7 +18,6 @@ mod titlecard;
 mod transcribe;
 pub mod transcript;
 mod utils;
-mod video_planner;
 
 pub use cli::VideoCommands;
 pub use commands::handle_video_command;

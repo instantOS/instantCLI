@@ -41,10 +41,10 @@ impl TitleCardProvider for TitleCardGenerator {
         self.ensure_video_for_duration(&asset, duration)
     }
 }
-use super::utils::canonicalize_existing;
-use super::video_planner::{
+use super::planner::{
     StandalonePlan, TimelinePlan, TimelinePlanItem, align_plan_with_subtitles, plan_timeline,
 };
+use super::utils::canonicalize_existing;
 
 macro_rules! log {
     ($level:expr, $code:expr, $($arg:tt)*) => {{
@@ -454,7 +454,7 @@ impl TimelineBuildState {
 
     fn add_clip(
         &mut self,
-        clip_plan: super::video_planner::ClipPlan,
+        clip_plan: super::planner::ClipPlan,
         generator: &dyn TitleCardProvider,
         source_video: &Path,
     ) -> Result<()> {
@@ -530,7 +530,7 @@ impl TimelineBuildState {
         Ok(())
     }
 
-    fn add_music_directive(&mut self, music_plan: super::video_planner::MusicPlan) -> Result<()> {
+    fn add_music_directive(&mut self, music_plan: super::planner::MusicPlan) -> Result<()> {
         finalize_music_segment(
             &mut self.timeline,
             &mut self.active_music,
@@ -575,8 +575,8 @@ fn finalize_music_segment(
 mod tests {
     use super::*;
     use crate::video::document::SegmentKind;
+    use crate::video::planner::ClipPlan;
     use crate::video::render_timeline::SegmentData;
-    use crate::video::video_planner::ClipPlan;
     use std::path::Path;
 
     struct StubTitleCards;

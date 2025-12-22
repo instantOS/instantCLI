@@ -5,7 +5,7 @@
 //! in sequence with precise timing and content data.
 //!
 //! The render timeline is the final output of the video planning pipeline:
-//! 1. Markdown document → Video plan (video_planner module)
+//! 1. Markdown document → Video plan (planner module)
 //! 2. Video plan → Render timeline (this module)
 //! 3. Render timeline → Final video output
 //!
