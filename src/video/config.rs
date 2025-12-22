@@ -148,7 +148,9 @@ impl VideoProjectPaths {
     fn resolve(mut self) -> Self {
         self.markdown_path = self.project_dir.join(self.markdown_path);
         self.metadata_path = self.project_dir.join(self.metadata_path);
-        self.transcript_cache_file = self.transcript_dir.join(format!("{}.json", self.video_hash));
+        self.transcript_cache_file = self
+            .transcript_dir
+            .join(format!("{}.json", self.video_hash));
         self
     }
 

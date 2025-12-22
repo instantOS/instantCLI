@@ -23,8 +23,8 @@ use self::services::{
 use super::ffmpeg::probe_video_dimensions;
 
 use super::render_timeline::{Segment, Timeline, Transform};
-use super::srt::parse_srt;
 use super::titlecard::TitleCardGenerator;
+use super::transcript::parse_whisper_json;
 
 trait TitleCardProvider {
     fn overlay_image(&self, markdown: &str) -> Result<PathBuf>;
@@ -191,7 +191,7 @@ pub(super) fn load_video_document(markdown_path: &Path) -> Result<super::documen
 pub(super) fn load_transcript_cues(
     metadata: &VideoMetadata,
     markdown_dir: &Path,
-) -> Result<Vec<super::srt::SrtCue>> {
+) -> Result<Vec<super::transcript::TranscriptCue>> {
     let transcript_path = paths::resolve_transcript_path(metadata, markdown_dir)?;
     let transcript_path = canonicalize_existing(&transcript_path)?;
 
@@ -214,12 +214,12 @@ pub(super) fn load_transcript_cues(
         "video.render.transcript.parse",
         "Parsing transcript cues"
     );
-    parse_srt(&transcript_contents)
+    parse_whisper_json(&transcript_contents)
 }
 
 pub(super) fn build_timeline_plan(
     document: &super::document::VideoDocument,
-    cues: &[super::srt::SrtCue],
+    cues: &[super::transcript::TranscriptCue],
     markdown_path: &Path,
 ) -> Result<TimelinePlan> {
     log!(

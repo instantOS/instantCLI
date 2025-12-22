@@ -142,16 +142,16 @@ impl LocalPreprocessor {
                 "ffmpeg-normalize",
                 &input.to_string_lossy(),
                 "-nt",
-                "ebu",  // EBU R128 normalization
+                "ebu", // EBU R128 normalization
                 "-t",
-                "-14",  // YouTube target: -14 LUFS
+                "-14", // YouTube target: -14 LUFS
                 "-tp",
-                "-1",   // True peak: -1 dBTP
+                "-1", // True peak: -1 dBTP
                 "-lrt",
-                "7",    // Loudness range target: 7 LU (triggers compression)
+                "7", // Loudness range target: 7 LU (triggers compression)
                 "-o",
                 &output.to_string_lossy(),
-                "-f",   // Force overwrite
+                "-f", // Force overwrite
             ])
             .status()
             .context("Failed to run ffmpeg-normalize")?;

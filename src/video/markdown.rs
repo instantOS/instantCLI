@@ -1,4 +1,4 @@
-use crate::video::srt::SrtCue;
+use crate::video::transcript::TranscriptCue;
 use crate::video::utils::duration_to_tenths;
 use chrono::Utc;
 use std::path::Path;
@@ -11,7 +11,7 @@ pub struct MarkdownMetadata<'a> {
     pub transcript_source: &'a Path,
 }
 
-pub fn build_markdown(cues: &[SrtCue], metadata: &MarkdownMetadata<'_>) -> String {
+pub fn build_markdown(cues: &[TranscriptCue], metadata: &MarkdownMetadata<'_>) -> String {
     let mut lines = Vec::with_capacity(cues.len() * 2);
     let mut previous_end = Duration::from_secs(0);
 
@@ -94,8 +94,8 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    fn cue(start: u64, end: u64, text: &str) -> SrtCue {
-        SrtCue {
+    fn cue(start: u64, end: u64, text: &str) -> TranscriptCue {
+        TranscriptCue {
             start: Duration::from_millis(start),
             end: Duration::from_millis(end),
             text: text.to_string(),

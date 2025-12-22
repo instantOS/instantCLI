@@ -40,8 +40,8 @@ const MAX_CLUSTER_SIZE: usize = 10;
 const PAUSE_THRESHOLD_SECONDS: f64 = 0.6;
 
 pub fn parse_whisper_json(json_str: &str) -> Result<Vec<TranscriptCue>> {
-    let output: WhisperOutput = serde_json::from_str(json_str)
-        .context("Failed to parse WhisperX JSON output")?;
+    let output: WhisperOutput =
+        serde_json::from_str(json_str).context("Failed to parse WhisperX JSON output")?;
 
     let mut cues = Vec::new();
     let mut current_cluster: Vec<WhisperWord> = Vec::new();
@@ -65,7 +65,7 @@ pub fn parse_whisper_json(json_str: &str) -> Result<Vec<TranscriptCue>> {
 
     for word in all_words {
         let mut flush = false;
-        
+
         if let Some(last) = current_cluster.last() {
             let pause = word.start - last.end;
             if pause > PAUSE_THRESHOLD_SECONDS {
@@ -75,11 +75,9 @@ pub fn parse_whisper_json(json_str: &str) -> Result<Vec<TranscriptCue>> {
             }
         }
 
-        if flush {
-            if !current_cluster.is_empty() {
-                cues.push(create_cue_from_cluster(&current_cluster));
-                current_cluster.clear();
-            }
+        if flush && !current_cluster.is_empty() {
+            cues.push(create_cue_from_cluster(&current_cluster));
+            current_cluster.clear();
         }
 
         current_cluster.push(word);
@@ -95,7 +93,7 @@ pub fn parse_whisper_json(json_str: &str) -> Result<Vec<TranscriptCue>> {
 fn create_cue_from_cluster(cluster: &[WhisperWord]) -> TranscriptCue {
     let start = cluster.first().map(|w| w.start).unwrap_or(0.0);
     let end = cluster.last().map(|w| w.end).unwrap_or(0.0);
-    
+
     let text = cluster
         .iter()
         .map(|w| w.word.as_str())
@@ -109,101 +107,104 @@ fn create_cue_from_cluster(cluster: &[WhisperWord]) -> TranscriptCue {
     }
 }
 
-// Keep the SRT parser for backward compatibility or direct SRT usage
-pub fn parse_srt(input: &str) -> Result<Vec<TranscriptCue>> {
-    let mut cues = Vec::new();
-    let mut lines = input.lines().peekable();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    while let Some(line) = lines.next() {
-        let index_line = line.trim();
-        if index_line.is_empty() {
-            continue;
+    #[test]
+    fn test_parse_whisper_json_clustering() {
+        let json = r#"
+        {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 2.0,
+                    "text": "Hello world.",
+                    "words": [
+                        {"word": "Hello", "start": 0.0, "end": 0.5, "score": 0.9},
+                        {"word": "world", "start": 0.6, "end": 1.0, "score": 0.8}
+                    ]
+                },
+                {
+                    "start": 2.0,
+                    "end": 4.0,
+                    "text": " Next phrase.",
+                    "words": [
+                        {"word": "Next", "start": 2.5, "end": 3.0, "score": 0.7},
+                        {"word": "phrase", "start": 3.1, "end": 3.5, "score": 0.6}
+                    ]
+                }
+            ]
         }
+        "#;
 
-        let _ = index_line.parse::<usize>();
+        let cues = parse_whisper_json(json).expect("parse json");
 
-        let times = lines
-            .next()
-            .map(str::trim)
-            .context("SRT cue is missing a timestamp line")?;
+        // With default threshold (0.6s) and max cluster size (10):
+        // "Hello" (0.0-0.5)
+        // "world" (0.6-1.0) -> gap 0.1s < 0.6s -> same cluster
+        // "Next" (2.5-3.0) -> gap 1.5s > 0.6s -> new cluster
+        // "phrase" (3.1-3.5) -> gap 0.1s < 0.6s -> same cluster
 
-        let (start_raw, end_raw) = times
-            .split_once("-->")
-            .map(|(a, b)| (a.trim(), b.trim()))
-            .context("SRT cue timestamp line must contain '-->'")?;
+        assert_eq!(cues.len(), 2);
 
-        let start = parse_timestamp(start_raw)
-            .with_context(|| format!("Failed to parse SRT start timestamp '{start_raw}'"))?;
-        let end = parse_timestamp(end_raw)
-            .with_context(|| format!("Failed to parse SRT end timestamp '{end_raw}'"))?;
+        assert_eq!(cues[0].text, "Hello world");
+        assert_eq!(cues[0].start.as_secs_f64(), 0.0);
+        assert_eq!(cues[0].end.as_secs_f64(), 1.0);
 
-        if end < start {
-            anyhow::bail!("SRT cue ends before it starts: {start_raw} --> {end_raw}");
-        }
-
-        let mut text_lines = Vec::new();
-        while let Some(next) = lines.peek() {
-            if next.trim().is_empty() {
-                break;
-            }
-            text_lines.push(lines.next().unwrap().trim().to_string());
-        }
-
-        while let Some(next) = lines.peek() {
-            if next.trim().is_empty() {
-                lines.next();
-            } else {
-                break;
-            }
-        }
-
-        cues.push(TranscriptCue {
-            start,
-            end,
-            text: text_lines.join(" "),
-        });
+        assert_eq!(cues[1].text, "Next phrase");
+        assert_eq!(cues[1].start.as_secs_f64(), 2.5);
+        assert_eq!(cues[1].end.as_secs_f64(), 3.5);
     }
 
-    cues.sort_by_key(|cue| cue.start);
-    Ok(cues)
-}
+    #[test]
+    fn test_long_pause_splitting() {
+        let json = r#"
+        {
+            "segments": [{
+                "words": [
+                    {"word": "Word1", "start": 0.0, "end": 0.5},
+                    {"word": "Word2", "start": 2.0, "end": 2.5}, 
+                    {"word": "Word3", "start": 3.0, "end": 3.5}
+                ]
+            }]
+        }
+        "#;
+        // Word1 end=0.5, Word2 start=2.0 -> gap 1.5 > 0.6 -> Split (new cluster starts at Word2)
+        // Cluster 1: Word1
 
-fn parse_timestamp(value: &str) -> Result<Duration> {
-    let cleaned = value.trim().replace(',', ".");
-    let mut parts = cleaned.split('.');
-    let time_part = parts
-        .next()
-        .context("Timestamp is missing time component (HH:MM:SS)")?;
-    let fractional_part = parts.next().unwrap_or("0");
+        // Word2 end=2.5, Word3 start=3.0 -> gap 0.5 < 0.6 -> Cluster
+        // Cluster 2: Word2 Word3
 
-    let mut hms = time_part.split(':');
-    let hours = hms
-        .next()
-        .context("Timestamp missing hours")?
-        .parse::<u64>()
-        .context("Invalid hours in timestamp")?;
-    let minutes = hms
-        .next()
-        .context("Timestamp missing minutes")?
-        .parse::<u64>()
-        .context("Invalid minutes in timestamp")?;
-    let seconds = hms
-        .next()
-        .context("Timestamp missing seconds")?
-        .parse::<u64>()
-        .context("Invalid seconds in timestamp")?;
-
-    let mut millis_str = fractional_part.to_string();
-    if millis_str.len() < 3 {
-        millis_str.push_str(&"0".repeat(3 - millis_str.len()));
+        let cues = parse_whisper_json(json).expect("parse json");
+        assert_eq!(cues.len(), 2);
+        assert_eq!(cues[0].text, "Word1");
+        assert_eq!(cues[1].text, "Word2 Word3");
+        assert_eq!(cues[1].start.as_secs_f64(), 2.0);
+        assert_eq!(cues[1].end.as_secs_f64(), 3.5);
     }
-    let millis = millis_str
-        .chars()
-        .take(3)
-        .collect::<String>()
-        .parse::<u64>()
-        .context("Invalid millisecond component in timestamp")?;
 
-    let total_seconds = hours * 3600 + minutes * 60 + seconds;
-    Ok(Duration::from_secs(total_seconds) + Duration::from_millis(millis))
+    #[test]
+    fn test_max_cluster_size() {
+        // Create 12 words with short gaps
+        let mut words = Vec::new();
+        for i in 0..12 {
+            words.push(format!(
+                r#"{{"word": "w{}", "start": {}, "end": {}}}"#,
+                i,
+                i as f64,
+                i as f64 + 0.5
+            ));
+        }
+        let json = format!(
+            r#"{{ "segments": [ {{ "words": [{}] }} ] }}"#,
+            words.join(",")
+        );
+
+        let cues = parse_whisper_json(&json).expect("parse json");
+        // Should split after 10 words
+        assert_eq!(cues.len(), 2);
+        assert_eq!(cues[0].text.matches(' ').count() + 1, 10); // 10 words
+        assert_eq!(cues[1].text.matches(' ').count() + 1, 2); // 2 words
+    }
 }

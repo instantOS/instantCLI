@@ -8,8 +8,8 @@ use super::audio_preprocessing::{PreprocessorType, create_preprocessor, parse_pr
 use super::cli::{ConvertArgs, TranscribeArgs};
 use super::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
 use super::markdown::{MarkdownMetadata, build_markdown};
-use super::srt::parse_srt;
 use super::transcribe::handle_transcribe;
+use super::transcript::parse_whisper_json;
 use super::utils::{canonicalize_existing, compute_file_hash};
 
 pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
@@ -218,15 +218,15 @@ fn generate_markdown_output(
 ) -> Result<()> {
     let markdown_dir = output_path.parent().unwrap_or_else(|| Path::new("."));
     let subtitle_dir = markdown_dir.join("insvideodata");
-    let subtitle_output_path = subtitle_dir.join(format!("{video_hash}.srt"));
-    let relative_subtitle_path = Path::new("./insvideodata").join(format!("{video_hash}.srt"));
+    let subtitle_output_path = subtitle_dir.join(format!("{video_hash}.json"));
+    let relative_subtitle_path = Path::new("./insvideodata").join(format!("{video_hash}.json"));
 
     copy_transcript(transcript_path, &subtitle_output_path)?;
 
     let transcript_contents = fs::read_to_string(transcript_path)
         .with_context(|| format!("Failed to read transcript at {}", transcript_path.display()))?;
 
-    let cues = parse_srt(&transcript_contents)?;
+    let cues = parse_whisper_json(&transcript_contents)?;
 
     let video_name = video_path
         .file_name()

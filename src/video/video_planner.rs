@@ -15,7 +15,7 @@ use anyhow::{Result, bail};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-use crate::video::srt::SrtCue;
+use crate::video::transcript::TranscriptCue;
 
 use super::document::{DocumentBlock, MusicDirective, SegmentKind, VideoDocument};
 
@@ -255,7 +255,7 @@ impl TimelinePlanner {
     }
 }
 
-pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Result<()> {
+pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[TranscriptCue]) -> Result<()> {
     let dialogue_indices = align_dialogue_clips_to_cues(plan, cues)?;
     if dialogue_indices.is_empty() {
         return Ok(());
@@ -294,7 +294,10 @@ fn pause_duration_seconds(display_text: &str) -> f64 {
     seconds.clamp(DEFAULT_PAUSE_MIN_SECONDS, DEFAULT_PAUSE_MAX_SECONDS)
 }
 
-fn align_dialogue_clips_to_cues(plan: &mut TimelinePlan, cues: &[SrtCue]) -> Result<Vec<usize>> {
+fn align_dialogue_clips_to_cues(
+    plan: &mut TimelinePlan,
+    cues: &[TranscriptCue],
+) -> Result<Vec<usize>> {
     let mut dialogue_clips: Vec<(usize, f64, f64, usize, String)> = Vec::new();
 
     for (idx, item) in plan.items.iter().enumerate() {
@@ -495,7 +498,7 @@ impl SilenceRun {
 }
 
 fn padded_cue_bounds(
-    cues: &[SrtCue],
+    cues: &[TranscriptCue],
     cue_idx: usize,
     padding_seconds: f64,
     guard_seconds: f64,
@@ -663,7 +666,7 @@ fn add_edge(graph: &mut [Vec<McmfEdge>], from: usize, to: usize, cap: i64, cost:
 
 fn assign_cues_max_overlap(
     dialogue_clips: &[(usize, f64, f64, usize, String)],
-    cues: &[SrtCue],
+    cues: &[TranscriptCue],
 ) -> Result<Vec<(usize, usize)>> {
     if cues.is_empty() {
         bail!("Unable to align subtitles: no subtitle cues available");
@@ -813,7 +816,7 @@ fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::video::document::parse_video_document;
-    use crate::video::srt::SrtCue;
+    use crate::video::transcript::TranscriptCue;
 
     use std::path::Path;
     use std::time::Duration;
@@ -934,12 +937,12 @@ mod tests {
         let mut plan = plan_timeline(&document).unwrap();
 
         let cues = vec![
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(950),
                 text: "first".to_string(),
             },
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(1200),
                 end: Duration::from_millis(2450),
                 text: "second".to_string(),
@@ -975,12 +978,12 @@ mod tests {
         let mut plan = plan_timeline(&document).unwrap();
 
         let cues = vec![
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1100),
                 text: "completely different".to_string(),
             },
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(1100),
                 end: Duration::from_millis(2000),
                 text: "also different".to_string(),
@@ -1019,17 +1022,17 @@ mod tests {
 
         // Cues are tightly packed with a 20ms gap.
         let cues = vec![
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1000),
                 text: "first".to_string(),
             },
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(1020),
                 end: Duration::from_millis(2000),
                 text: "mid".to_string(),
             },
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(2020),
                 end: Duration::from_millis(3000),
                 text: "third".to_string(),
@@ -1065,7 +1068,7 @@ mod tests {
         let document = parse_video_document(markdown, Path::new("test.md")).unwrap();
         let mut plan = plan_timeline(&document).unwrap();
 
-        let cues = vec![SrtCue {
+        let cues = vec![TranscriptCue {
             start: Duration::from_millis(0),
             end: Duration::from_millis(1000),
             text: "only".to_string(),
@@ -1095,27 +1098,27 @@ mod tests {
         let mut plan = plan_timeline(&document).unwrap();
 
         let cues = vec![
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(866),
                 end: Duration::from_millis(7274),
                 text: "Hello".to_string(),
             },
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(9677),
                 end: Duration::from_millis(11559),
                 text: "I do not want".to_string(),
             },
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(14403),
                 end: Duration::from_millis(16005),
                 text: "A big pile".to_string(),
             },
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(19189),
                 end: Duration::from_millis(20730),
                 text: "Goodbye".to_string(),
             },
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(20791),
                 end: Duration::from_millis(26898),
                 text: "No, you don't say".to_string(),
@@ -1178,12 +1181,12 @@ mod tests {
         let mut plan = plan_timeline(&document).unwrap();
 
         let cues = vec![
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1234),
                 text: "intro".to_string(),
             },
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(6789),
                 end: Duration::from_millis(8000),
                 text: "outro".to_string(),
@@ -1229,12 +1232,12 @@ mod tests {
         let mut plan = plan_timeline(&document).unwrap();
 
         let cues = vec![
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1000),
                 text: "intro".to_string(),
             },
-            SrtCue {
+            TranscriptCue {
                 start: Duration::from_millis(50_000),
                 end: Duration::from_millis(51_000),
                 text: "outro".to_string(),
