@@ -361,6 +361,26 @@ pre code {
 
 /* Import */
 
+/* Constant (Some, None, true, false, etc) */
+.cn {
+  color: var(--ctp-peach) !important;
+}
+
+/* Information */
+.in {
+  color: var(--ctp-blue) !important;
+}
+
+/* Region Marker */
+.re {
+  color: var(--ctp-overlay1) !important;
+}
+
+/* Catch-all: override any remaining Pandoc default colors */
+pre code span {
+  background: transparent !important;
+}
+
 /* Inline Code */
 code {
   font-family: var(--font-mono);
