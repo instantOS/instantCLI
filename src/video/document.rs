@@ -165,12 +165,12 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
     Ok(state.into_blocks())
 }
 
-/// Encapsulates the mutable state while parsing the markdown body.
 struct BodyParserState<'a> {
     blocks: Vec<DocumentBlock>,
     paragraph: Option<ParagraphState>,
     heading: Option<HeadingState>,
     code_block: Option<CodeBlockState>,
+    blockquote: Option<BlockquoteState>,
     base_line_offset: usize,
     line_map: &'a LineMap,
 }
@@ -182,6 +182,7 @@ impl<'a> BodyParserState<'a> {
             paragraph: None,
             heading: None,
             code_block: None,
+            blockquote: None,
             base_line_offset,
             line_map,
         }

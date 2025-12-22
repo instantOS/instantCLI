@@ -1,7 +1,7 @@
 :root {
   /* Catppuccin Mocha Theme */
   color-scheme: dark;
-  
+
   --ctp-rosewater: #f5e0dc;
   --ctp-flamingo: #f2cdcd;
   --ctp-pink: #f5c2e7;
@@ -33,21 +33,21 @@
   --bg-color: var(--ctp-base);
   --bg-gradient-start: var(--ctp-base);
   --bg-gradient-end: var(--ctp-mantle);
-  
+
   --text-main: var(--ctp-text);
   --text-muted: var(--ctp-subtext1);
   --text-dim: var(--ctp-overlay2);
-  
+
   --accent-primary: var(--ctp-mauve);
   --accent-secondary: var(--ctp-blue);
   --accent-tertiary: var(--ctp-pink);
-  
+
   --code-bg: var(--ctp-mantle);
   --border-color: var(--ctp-surface0);
-  
+
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  
+
   --base-size: 100%;
 }
 
@@ -91,7 +91,12 @@ body {
    Typography
    ========================================= */
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   text-align: center;
   width: 100%;
   letter-spacing: -0.02em;
@@ -123,8 +128,17 @@ h2 {
   opacity: 0.95;
 }
 
-h3 { font-size: 2.8em; margin-bottom: 0.4em; color: var(--ctp-blue); }
-h4 { font-size: 2.2em; margin-bottom: 0.4em; color: var(--ctp-sapphire); }
+h3 {
+  font-size: 2.8em;
+  margin-bottom: 0.4em;
+  color: var(--ctp-blue);
+}
+
+h4 {
+  font-size: 2.2em;
+  margin-bottom: 0.4em;
+  color: var(--ctp-sapphire);
+}
 
 p {
   font-size: 2.5em;
@@ -139,7 +153,8 @@ p {
    ========================================= */
 
 /* The Window Container */
-div.sourceCode, div.code-window {
+div.sourceCode,
+div.code-window {
   background: var(--ctp-mantle);
   border: 1px solid var(--border-color);
   border-radius: 0.6em;
@@ -161,7 +176,7 @@ div.sourceCode, div.code-window {
   display: flex;
   align-items: center;
   padding: 0 1.5em;
-  
+
   color: var(--ctp-overlay2);
   font-family: var(--font-mono);
   font-size: 0.8em;
@@ -192,7 +207,7 @@ pre code {
   font-size: 1.1em;
   color: var(--ctp-text);
   line-height: 1.5;
-  
+
   /* Reset inline code styles to prevent "box inside box" artifacts */
   background: transparent !important;
   border: none !important;
@@ -203,33 +218,148 @@ pre code {
 }
 
 /* --- Pandoc Syntax Highlighting Classes --- */
-.kw { color: var(--ctp-mauve) !important; font-weight: bold !important; } /* Keyword */
-.dt { color: var(--ctp-yellow) !important; } /* DataType */
-.dv { color: var(--ctp-peach) !important; }  /* DecVal */
-.bn { color: var(--ctp-peach) !important; }  /* BaseN */
-.fl { color: var(--ctp-peach) !important; }  /* Float */
-.ch { color: var(--ctp-green) !important; }  /* Char */
-.st { color: var(--ctp-green) !important; }  /* String */
-.co { color: var(--ctp-overlay0) !important; font-style: italic !important; } /* Comment */
-.ot { color: var(--ctp-mauve) !important; }  /* Other */
-.al { color: var(--ctp-red) !important; font-weight: bold !important; } /* Alert */
-.fu { color: var(--ctp-blue) !important; }   /* Function */
-.er { color: var(--ctp-red) !important; font-weight: bold !important; } /* Error */
-.wa { color: var(--ctp-yellow) !important; font-weight: bold !important; } /* Warning */
-.cf { color: var(--ctp-mauve) !important; font-weight: bold !important; } /* ControlFlow */
-.op { color: var(--ctp-sky) !important; }    /* Operator */
-.bu { color: var(--ctp-blue) !important; }   /* BuiltIn */
-.ex { color: var(--ctp-blue) !important; }   /* Extension */
-.pp { color: var(--ctp-flamingo) !important; } /* Preprocessor */
-.at { color: var(--ctp-rosewater) !important; } /* Attribute */
-.do { color: var(--ctp-overlay0) !important; font-style: italic !important; } /* Documentation */
-.an { color: var(--ctp-pink) !important; }   /* Annotation */
-.cv { color: var(--ctp-pink) !important; }   /* CommentVar */
-.va { color: var(--ctp-text) !important; }   /* Variable */
-.vs { color: var(--ctp-green) !important; }  /* VerbatimString */
-.sc { color: var(--ctp-pink) !important; }   /* SpecialChar */
-.ss { color: var(--ctp-green) !important; }  /* SpecialString */
-.im { color: var(--ctp-mauve) !important; }  /* Import */
+.kw {
+  color: var(--ctp-mauve) !important;
+  font-weight: bold !important;
+}
+
+/* Keyword */
+.dt {
+  color: var(--ctp-yellow) !important;
+}
+
+/* DataType */
+.dv {
+  color: var(--ctp-peach) !important;
+}
+
+/* DecVal */
+.bn {
+  color: var(--ctp-peach) !important;
+}
+
+/* BaseN */
+.fl {
+  color: var(--ctp-peach) !important;
+}
+
+/* Float */
+.ch {
+  color: var(--ctp-green) !important;
+}
+
+/* Char */
+.st {
+  color: var(--ctp-green) !important;
+}
+
+/* String */
+.co {
+  color: var(--ctp-overlay0) !important;
+  font-style: italic !important;
+}
+
+/* Comment */
+.ot {
+  color: var(--ctp-mauve) !important;
+}
+
+/* Other */
+.al {
+  color: var(--ctp-red) !important;
+  font-weight: bold !important;
+}
+
+/* Alert */
+.fu {
+  color: var(--ctp-blue) !important;
+}
+
+/* Function */
+.er {
+  color: var(--ctp-red) !important;
+  font-weight: bold !important;
+}
+
+/* Error */
+.wa {
+  color: var(--ctp-yellow) !important;
+  font-weight: bold !important;
+}
+
+/* Warning */
+.cf {
+  color: var(--ctp-mauve) !important;
+  font-weight: bold !important;
+}
+
+/* ControlFlow */
+.op {
+  color: var(--ctp-sky) !important;
+}
+
+/* Operator */
+.bu {
+  color: var(--ctp-blue) !important;
+}
+
+/* BuiltIn */
+.ex {
+  color: var(--ctp-blue) !important;
+}
+
+/* Extension */
+.pp {
+  color: var(--ctp-flamingo) !important;
+}
+
+/* Preprocessor */
+.at {
+  color: var(--ctp-rosewater) !important;
+}
+
+/* Attribute */
+.do {
+  color: var(--ctp-overlay0) !important;
+  font-style: italic !important;
+}
+
+/* Documentation */
+.an {
+  color: var(--ctp-pink) !important;
+}
+
+/* Annotation */
+.cv {
+  color: var(--ctp-pink) !important;
+}
+
+/* CommentVar */
+.va {
+  color: var(--ctp-text) !important;
+}
+
+/* Variable */
+.vs {
+  color: var(--ctp-green) !important;
+}
+
+/* VerbatimString */
+.sc {
+  color: var(--ctp-pink) !important;
+}
+
+/* SpecialChar */
+.ss {
+  color: var(--ctp-green) !important;
+}
+
+/* SpecialString */
+.im {
+  color: var(--ctp-mauve) !important;
+}
+
+/* Import */
 
 /* Inline Code */
 code {
@@ -246,7 +376,8 @@ code {
    Elements
    ========================================= */
 
-ul, ol {
+ul,
+ol {
   font-size: 2.5em;
   line-height: 1.4;
   margin: 1em 0;
@@ -259,8 +390,16 @@ li {
   padding-left: 0.5em;
 }
 
-ul li::marker { color: var(--ctp-teal); font-size: 0.8em; }
-ol li::marker { color: var(--ctp-teal); font-weight: 700; font-family: var(--font-mono); }
+ul li::marker {
+  color: var(--ctp-teal);
+  font-size: 0.8em;
+}
+
+ol li::marker {
+  color: var(--ctp-teal);
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
 
 blockquote {
   border-left: 0.2em solid var(--ctp-mauve);
@@ -336,17 +475,82 @@ body.layout-hero p {
   max-width: 90%;
 }
 
-/* Quote Layout */
+/* Quote Layout - Modern, fancy Catppuccin design */
 body.layout-quote .content {
-  max-width: 80%;
-  text-align: center;
+  max-width: 85%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 body.layout-quote blockquote {
-  font-size: 3.5em;
-  border-left-width: 0.3em;
-  text-align: left;
-  margin: 0 auto;
+  position: relative;
+  font-size: 3.2em;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--ctp-text);
+  padding: 1.5em 2em;
+  margin: 0;
+  border: none;
+  background: linear-gradient(135deg,
+      rgba(203, 166, 247, 0.08) 0%,
+      rgba(180, 190, 254, 0.05) 50%,
+      rgba(137, 180, 250, 0.08) 100%);
+  border-radius: 1.5em;
+  box-shadow:
+    0 0 60px rgba(203, 166, 247, 0.15),
+    inset 0 0 80px rgba(203, 166, 247, 0.03);
+}
+
+/* Decorative quote marks */
+body.layout-quote blockquote::before,
+body.layout-quote blockquote::after {
+  font-family: Georgia, serif;
+  font-size: 4em;
+  font-style: normal;
+  line-height: 1;
+  position: absolute;
+  opacity: 0.4;
+}
+
+body.layout-quote blockquote::before {
+  content: '"';
+  top: 0.1em;
+  left: 0.2em;
+  background: linear-gradient(180deg, var(--ctp-mauve), var(--ctp-lavender));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+body.layout-quote blockquote::after {
+  content: '"';
+  bottom: -0.1em;
+  right: 0.2em;
+  background: linear-gradient(180deg, var(--ctp-lavender), var(--ctp-blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Accent bar at bottom */
+body.layout-quote blockquote p {
+  margin: 0;
+  position: relative;
+}
+
+body.layout-quote blockquote p::after {
+  content: '';
+  display: block;
+  width: 120px;
+  height: 4px;
+  margin: 0.8em auto 0;
+  background: linear-gradient(90deg, var(--ctp-mauve), var(--ctp-lavender), var(--ctp-blue));
+  border-radius: 2px;
+  opacity: 0.7;
 }
 
 /* Image Layout */
@@ -375,7 +579,20 @@ body.layout-dense .content {
   padding-top: 1rem;
 }
 
-body.layout-dense h1 { margin-bottom: 0.2em; }
-body.layout-dense h2 { margin-bottom: 0.3em; }
-body.layout-dense p { margin-bottom: 0.5em; font-size: 2.2em; }
-body.layout-dense pre { padding-top: 3rem; margin: 1em 0; }
+body.layout-dense h1 {
+  margin-bottom: 0.2em;
+}
+
+body.layout-dense h2 {
+  margin-bottom: 0.3em;
+}
+
+body.layout-dense p {
+  margin-bottom: 0.5em;
+  font-size: 2.2em;
+}
+
+body.layout-dense pre {
+  padding-top: 3rem;
+  margin: 1em 0;
+}
