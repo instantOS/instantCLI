@@ -77,9 +77,9 @@ pub fn handle_stats(args: StatsArgs) -> Result<()> {
         Level::Info,
         "video.stats.counts",
         &format!(
-            "Segments: {segments}, Title cards: {titlecards}, Heading cards: {headings}, Overlays: {overlays}",
+            "Segments: {segments}, Standalone slides: {slides}, Heading slides: {headings}, Overlay slides: {overlays}",
             segments = plan.segment_count,
-            titlecards = plan.standalone_count,
+            slides = plan.standalone_count,
             headings = plan.heading_count,
             overlays = plan.overlay_count,
         ),

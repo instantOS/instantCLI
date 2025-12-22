@@ -73,7 +73,7 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     log!(
         Level::Info,
         "video.check.counts",
-        "Clips: {segments}, Overlays: {overlays}, Heading cards: {headings}, Pause cards: {pauses}",
+        "Clips: {segments}, Overlay slides: {overlays}, Heading slides: {headings}, Pause slides: {pauses}",
         segments = plan.segment_count,
         overlays = plan.overlay_count,
         headings = plan.heading_count,

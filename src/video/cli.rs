@@ -9,8 +9,8 @@ pub enum VideoCommands {
     Transcribe(TranscribeArgs),
     /// Render a video according to edits in a markdown file
     Render(RenderArgs),
-    /// Generate a title card image from a markdown file
-    Titlecard(TitlecardArgs),
+    /// Generate a slide image from a markdown file
+    Slide(SlideArgs),
     /// Validate a video markdown file and summarize the planned output
     Check(CheckArgs),
     /// Display statistics about how a markdown file will be rendered
@@ -96,9 +96,9 @@ pub struct RenderArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Pre-cache title cards without rendering the final video
-    #[arg(long = "precache-titlecards")]
-    pub precache_titlecards: bool,
+    /// Pre-cache slides without rendering the final video
+    #[arg(long = "precache-slides")]
+    pub precache_slides: bool,
 
     /// Show the ffmpeg command that would be executed without running it
     #[arg(long)]
@@ -106,8 +106,8 @@ pub struct RenderArgs {
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct TitlecardArgs {
-    /// Markdown file containing the title card text
+pub struct SlideArgs {
+    /// Markdown file containing the slide text
     #[arg(value_hint = ValueHint::FilePath)]
     pub markdown: PathBuf,
 

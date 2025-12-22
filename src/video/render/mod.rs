@@ -23,21 +23,21 @@ use self::services::{
 use super::ffmpeg::probe_video_dimensions;
 
 use super::render_timeline::{Segment, Timeline, Transform};
-use super::titlecard::TitleCardGenerator;
+use super::slide::SlideGenerator;
 use super::transcript::parse_whisper_json;
 
-trait TitleCardProvider {
-    fn overlay_image(&self, markdown: &str) -> Result<PathBuf>;
-    fn standalone_video(&self, markdown: &str, duration: f64) -> Result<PathBuf>;
+trait SlideProvider {
+    fn overlay_slide_image(&self, markdown: &str) -> Result<PathBuf>;
+    fn standalone_slide_video(&self, markdown: &str, duration: f64) -> Result<PathBuf>;
 }
 
-impl TitleCardProvider for TitleCardGenerator {
-    fn overlay_image(&self, markdown: &str) -> Result<PathBuf> {
-        Ok(self.markdown_card(markdown)?.image_path)
+impl SlideProvider for SlideGenerator {
+    fn overlay_slide_image(&self, markdown: &str) -> Result<PathBuf> {
+        Ok(self.markdown_slide(markdown)?.image_path)
     }
 
-    fn standalone_video(&self, markdown: &str, duration: f64) -> Result<PathBuf> {
-        let asset = self.markdown_card(markdown)?;
+    fn standalone_slide_video(&self, markdown: &str, duration: f64) -> Result<PathBuf> {
+        let asset = self.markdown_slide(markdown)?;
         self.ensure_video_for_duration(&asset, duration)
     }
 }
@@ -59,7 +59,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
 }
 
 fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> Result<()> {
-    let pre_cache_only = args.precache_titlecards;
+    let pre_cache_only = args.precache_slides;
     let dry_run = args.dry_run;
 
     log!(
@@ -99,12 +99,12 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     );
     let (video_width, video_height) = probe_video_dimensions(&video_path)?;
 
-    let generator = TitleCardGenerator::new(video_width, video_height)?;
+    let generator = SlideGenerator::new(video_width, video_height)?;
 
     log!(
         Level::Info,
         "video.render.timeline.build",
-        "Building render timeline (may generate title cards)"
+        "Building render timeline (may generate slides)"
     );
     let (nle_timeline, stats) = build_nle_timeline(plan, &generator, &video_path, markdown_dir)?;
 
@@ -114,7 +114,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         emit(
             Level::Success,
             "video.render.precache_only",
-            "Prepared title cards and overlays in cache; skipping final render",
+            "Prepared slides in cache; skipping final render",
             None,
         );
         return Ok(());
@@ -356,9 +356,9 @@ fn report_timeline_stats(stats: &TimelineStats) {
     if stats.standalone_count > 0 {
         emit(
             Level::Info,
-            "video.render.title_cards",
+            "video.render.slides.standalone",
             &format!(
-                "Generated {count} title card(s)",
+                "Generated {count} standalone slide(s)",
                 count = stats.standalone_count
             ),
             None,
@@ -368,9 +368,9 @@ fn report_timeline_stats(stats: &TimelineStats) {
     if stats.overlay_count > 0 {
         emit(
             Level::Info,
-            "video.render.title_card_overlays",
+            "video.render.slides.overlay",
             &format!(
-                "Applied {count} overlay title card(s)",
+                "Applied {count} overlay slide(s)",
                 count = stats.overlay_count
             ),
             None,
@@ -399,7 +399,7 @@ struct TimelineStats {
 /// Build an NLE timeline from the timeline plan
 fn build_nle_timeline(
     plan: TimelinePlan,
-    generator: &dyn TitleCardProvider,
+    generator: &dyn SlideProvider,
     source_video: &Path,
     markdown_dir: &Path,
 ) -> Result<(Timeline, TimelineStats)> {
@@ -440,7 +440,7 @@ impl TimelineBuildState {
     fn apply_plan_item(
         &mut self,
         item: TimelinePlanItem,
-        generator: &dyn TitleCardProvider,
+        generator: &dyn SlideProvider,
         source_video: &Path,
     ) -> Result<()> {
         match item {
@@ -455,7 +455,7 @@ impl TimelineBuildState {
     fn add_clip(
         &mut self,
         clip_plan: super::planner::ClipPlan,
-        generator: &dyn TitleCardProvider,
+        generator: &dyn SlideProvider,
         source_video: &Path,
     ) -> Result<()> {
         let duration = clip_plan.end - clip_plan.start;
@@ -482,9 +482,9 @@ impl TimelineBuildState {
         &mut self,
         markdown: &str,
         duration: f64,
-        generator: &dyn TitleCardProvider,
+        generator: &dyn SlideProvider,
     ) -> Result<()> {
-        let image_path = generator.overlay_image(markdown)?;
+        let image_path = generator.overlay_slide_image(markdown)?;
         let overlay_segment = Segment::new_image(
             self.current_time,
             duration,
@@ -498,30 +498,30 @@ impl TimelineBuildState {
     fn add_standalone(
         &mut self,
         standalone_plan: StandalonePlan,
-        generator: &dyn TitleCardProvider,
+        generator: &dyn SlideProvider,
     ) -> Result<()> {
         match standalone_plan {
             StandalonePlan::Heading { level, text, .. } => {
                 let heading_level = level.max(1);
                 let hashes = "#".repeat(heading_level as usize);
                 let markdown_content = format!("{hashes} {}\n", text.trim());
-                self.add_standalone_card(&markdown_content, 2.0, generator)
+                self.add_standalone_slide(&markdown_content, 2.0, generator)
             }
             StandalonePlan::Pause {
                 markdown,
                 duration_seconds,
                 ..
-            } => self.add_standalone_card(&markdown, duration_seconds, generator),
+            } => self.add_standalone_slide(&markdown, duration_seconds, generator),
         }
     }
 
-    fn add_standalone_card(
+    fn add_standalone_slide(
         &mut self,
         markdown: &str,
         duration: f64,
-        generator: &dyn TitleCardProvider,
+        generator: &dyn SlideProvider,
     ) -> Result<()> {
-        let video_path = generator.standalone_video(markdown, duration)?;
+        let video_path = generator.standalone_slide_video(markdown, duration)?;
 
         let segment =
             Segment::new_video_subset(self.current_time, duration, 0.0, video_path, None, true);
@@ -579,20 +579,20 @@ mod tests {
     use crate::video::render_timeline::SegmentData;
     use std::path::Path;
 
-    struct StubTitleCards;
+    struct StubSlides;
 
-    impl TitleCardProvider for StubTitleCards {
-        fn overlay_image(&self, _markdown: &str) -> Result<PathBuf> {
-            anyhow::bail!("unexpected overlay title card generation")
+    impl SlideProvider for StubSlides {
+        fn overlay_slide_image(&self, _markdown: &str) -> Result<PathBuf> {
+            anyhow::bail!("unexpected overlay slide generation")
         }
 
-        fn standalone_video(&self, _markdown: &str, _duration: f64) -> Result<PathBuf> {
+        fn standalone_slide_video(&self, _markdown: &str, _duration: f64) -> Result<PathBuf> {
             Ok(PathBuf::from("card.mp4"))
         }
     }
 
     #[test]
-    fn inserts_heading_title_cards_between_clip_segments() {
+    fn inserts_heading_slides_between_clip_segments() {
         let source_video = Path::new("source.mp4");
         let markdown_dir = Path::new(".");
 
@@ -628,7 +628,7 @@ mod tests {
         };
 
         let (timeline, _stats) =
-            build_nle_timeline(plan, &StubTitleCards, source_video, markdown_dir).unwrap();
+            build_nle_timeline(plan, &StubSlides, source_video, markdown_dir).unwrap();
 
         assert_eq!(timeline.segments.len(), 3);
 

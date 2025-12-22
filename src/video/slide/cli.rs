@@ -2,11 +2,11 @@ use std::fs;
 
 use anyhow::{Context, Result};
 
-use super::super::cli::TitlecardArgs;
+use super::super::cli::SlideArgs;
 use super::super::markdown_utils::strip_yaml_frontmatter;
-use super::TitleCardGenerator;
+use super::SlideGenerator;
 
-pub fn handle_titlecard(args: TitlecardArgs) -> Result<()> {
+pub fn handle_slide(args: SlideArgs) -> Result<()> {
     let markdown_path = args.markdown.canonicalize().with_context(|| {
         format!(
             "Failed to resolve markdown path {}",
@@ -30,21 +30,21 @@ pub fn handle_titlecard(args: TitlecardArgs) -> Result<()> {
         path
     };
 
-    // Use default 1920x1080 resolution for title cards
-    let generator = TitleCardGenerator::new(1920, 1080)?;
+    // Use default 1920x1080 resolution for slides
+    let generator = SlideGenerator::new(1920, 1080)?;
 
-    let asset = generator.markdown_card(content)?;
+    let asset = generator.markdown_slide(content)?;
 
     if asset.was_cached {
-        println!("Using cached title card: {}", asset.image_path.display());
+        println!("Using cached slide: {}", asset.image_path.display());
     } else {
-        println!("Generated new title card: {}", asset.image_path.display());
+        println!("Generated new slide: {}", asset.image_path.display());
     }
 
     fs::copy(&asset.image_path, &output_path)
-        .with_context(|| format!("Failed to copy title card to {}", output_path.display()))?;
+        .with_context(|| format!("Failed to copy slide to {}", output_path.display()))?;
 
-    println!("Title card saved to: {}", output_path.display());
+    println!("Slide saved to: {}", output_path.display());
 
     Ok(())
 }

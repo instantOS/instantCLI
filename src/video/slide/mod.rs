@@ -9,37 +9,37 @@ use sha2::{Digest, Sha256};
 
 pub mod cli;
 
-const DEFAULT_CSS: &str = include_str!("title_card.css");
-const DEFAULT_JS: &str = include_str!("title_card.js");
+const DEFAULT_CSS: &str = include_str!("slide.css");
+const DEFAULT_JS: &str = include_str!("slide.js");
 
 // Workaround for Chromium "new" headless mode viewport bug (grey bar artifacts).
 // Set to 0 to disable the workaround (oversize rendering + cropping) once Chromium fixes the issue.
 const HEADLESS_BUG_PADDING: u32 = 200;
 
-pub struct TitleCardGenerator {
+pub struct SlideGenerator {
     cache_dir: PathBuf,
     width: u32,
     height: u32,
 }
 
 #[derive(Debug, Clone)]
-pub struct TitleCardAsset {
-    card_dir: PathBuf,
+pub struct SlideAsset {
+    slide_dir: PathBuf,
     pub image_path: PathBuf,
     pub was_cached: bool,
 }
 
-impl TitleCardGenerator {
+impl SlideGenerator {
     pub fn new(width: u32, height: u32) -> Result<Self> {
         let cache_root = cache_dir()
-            .context("Unable to determine cache directory for title cards")?
+            .context("Unable to determine cache directory for slides")?
             .join("instant")
             .join("video")
-            .join("title_cards");
+            .join("slides");
 
         fs::create_dir_all(&cache_root).with_context(|| {
             format!(
-                "Failed to create title card cache directory at {}",
+                "Failed to create slide cache directory at {}",
                 cache_root.display()
             )
         })?;
@@ -51,20 +51,20 @@ impl TitleCardGenerator {
         })
     }
 
-    pub fn markdown_card(&self, markdown_content: &str) -> Result<TitleCardAsset> {
+    pub fn markdown_slide(&self, markdown_content: &str) -> Result<SlideAsset> {
         let cache_key = self.build_markdown_cache_key(markdown_content);
-        let card_dir = self.cache_dir.join(&cache_key);
-        let markdown_path = card_dir.join("input.md");
-        let css_path = card_dir.join("title.css");
-        let html_path = card_dir.join("title.html");
-        let image_path = card_dir.join("title.png");
+        let slide_dir = self.cache_dir.join(&cache_key);
+        let markdown_path = slide_dir.join("input.md");
+        let css_path = slide_dir.join("slide.css");
+        let html_path = slide_dir.join("slide.html");
+        let image_path = slide_dir.join("slide.png");
 
-        self.ensure_card_dir(&card_dir)?;
+        self.ensure_slide_dir(&slide_dir)?;
         let was_cached = image_path.exists();
         if !was_cached {
             fs::write(&markdown_path, markdown_content.as_bytes()).with_context(|| {
                 format!(
-                    "Failed to write title card markdown to {}",
+                    "Failed to write slide markdown to {}",
                     markdown_path.display()
                 )
             })?;
@@ -74,8 +74,8 @@ impl TitleCardGenerator {
             self.capture_screenshot(&html_path, &image_path)?;
         }
 
-        Ok(TitleCardAsset {
-            card_dir,
+        Ok(SlideAsset {
+            slide_dir,
             image_path,
             was_cached,
         })
@@ -86,17 +86,17 @@ impl TitleCardGenerator {
         markdown_content: &str,
         output_path: &Path,
     ) -> Result<()> {
-        let asset = self.markdown_card(markdown_content)?;
+        let asset = self.markdown_slide(markdown_content)?;
         self.copy_image(&asset.image_path, output_path)
     }
 
     pub fn ensure_video_for_duration(
         &self,
-        asset: &TitleCardAsset,
+        asset: &SlideAsset,
         duration: f64,
     ) -> Result<PathBuf> {
         let sanitized = (duration * 1000.0).round() as u64;
-        let video_path = asset.card_dir.join(format!("title_{sanitized}.mp4"));
+        let video_path = asset.slide_dir.join(format!("slide_{sanitized}.mp4"));
         if video_path.exists() {
             return Ok(video_path);
         }
@@ -105,11 +105,11 @@ impl TitleCardGenerator {
         Ok(video_path)
     }
 
-    fn ensure_card_dir(&self, card_dir: &Path) -> Result<()> {
-        fs::create_dir_all(card_dir).with_context(|| {
+    fn ensure_slide_dir(&self, slide_dir: &Path) -> Result<()> {
+        fs::create_dir_all(slide_dir).with_context(|| {
             format!(
-                "Failed to create title card cache entry at {}",
-                card_dir.display()
+                "Failed to create slide cache entry at {}",
+                slide_dir.display()
             )
         })
     }
@@ -117,7 +117,7 @@ impl TitleCardGenerator {
     fn copy_image(&self, source: &Path, dest: &Path) -> Result<()> {
         fs::copy(source, dest).with_context(|| {
             format!(
-                "Failed to copy title card image from {} to {}",
+                "Failed to copy slide image from {} to {}",
                 source.display(),
                 dest.display()
             )
@@ -165,7 +165,7 @@ impl TitleCardGenerator {
             .arg("--css")
             .arg(css)
             .status()
-            .with_context(|| "Failed to spawn pandoc for title card rendering")?;
+            .with_context(|| "Failed to spawn pandoc for slide rendering")?;
 
         if !status.success() {
             anyhow::bail!("pandoc exited with status {:?}", status.code());
@@ -238,7 +238,7 @@ impl TitleCardGenerator {
             .arg(screenshot_arg)
             .arg(file_url)
             .status()
-            .with_context(|| "Failed to spawn chromium for title card screenshot")?;
+            .with_context(|| "Failed to spawn chromium for slide screenshot")?;
 
         if !status.success() {
             anyhow::bail!("chromium exited with status {:?}", status.code());
@@ -302,7 +302,7 @@ impl TitleCardGenerator {
             .arg("192k")
             .arg(video)
             .status()
-            .with_context(|| "Failed to spawn ffmpeg for title card video generation")?;
+            .with_context(|| "Failed to spawn ffmpeg for slide video generation")?;
 
         if !status.success() {
             anyhow::bail!("ffmpeg exited with status {:?}", status.code());
