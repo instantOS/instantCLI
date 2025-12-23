@@ -406,23 +406,19 @@ fn toggle_autostart() -> Result<()> {
 }
 
 fn install_instantos(debug: bool) -> Result<()> {
-    use std::process::Command;
-
     if debug {
         emit(
             Level::Debug,
             "welcome.install.launch",
-            "Launching instantOS installation",
+            "Launching instantOS installation in terminal",
             None,
         );
     }
 
-    let current_exe = std::env::current_exe()?;
-
-    Command::new(&current_exe)
+    crate::common::terminal::TerminalLauncher::new("ins")
         .arg("arch")
         .arg("ask")
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("Failed to launch installation: {}", e))
+        .class("ins-install")
+        .title("instantOS Installation")
+        .launch()
 }
