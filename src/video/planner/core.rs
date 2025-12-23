@@ -101,7 +101,7 @@ impl TimelinePlanner {
             match block {
                 DocumentBlock::Segment(segment) => self.handle_segment(segment),
                 DocumentBlock::Heading(heading) => self.handle_heading(heading),
-                DocumentBlock::Separator(_) => self.handle_separator(),
+                DocumentBlock::Separator => self.handle_separator(),
                 DocumentBlock::Music(music) => self.handle_music(music),
                 DocumentBlock::Unhandled(unhandled) => self.handle_unhandled(unhandled),
             }

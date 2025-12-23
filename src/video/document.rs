@@ -17,7 +17,6 @@ pub struct VideoDocument {
 pub struct VideoMetadata {
     pub video: Option<VideoMetadataVideo>,
     pub transcript: Option<VideoMetadataTranscript>,
-    pub generated_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,7 +35,7 @@ pub struct VideoMetadataTranscript {
 pub enum DocumentBlock {
     Segment(SegmentBlock),
     Heading(HeadingBlock),
-    Separator(SeparatorBlock),
+    Separator,
     Unhandled(UnhandledBlock),
     Music(MusicBlock),
 }
@@ -68,10 +67,7 @@ pub struct UnhandledBlock {
     pub line: usize,
 }
 
-#[derive(Debug)]
-pub struct SeparatorBlock {
-    pub line: usize,
-}
+
 
 #[derive(Debug, Clone)]
 pub enum MusicDirective {
@@ -119,7 +115,6 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
             return Ok(VideoMetadata {
                 video: None,
                 transcript: None,
-                generated_at: None,
             });
         }
         let parsed: FrontMatter = serde_yaml::from_str(fm).with_context(|| {
@@ -138,13 +133,11 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
             transcript: parsed.transcript.map(|transcript| VideoMetadataTranscript {
                 source: transcript.source.map(PathBuf::from),
             }),
-            generated_at: parsed.generated_at,
         })
     } else {
         Ok(VideoMetadata {
             video: None,
             transcript: None,
-            generated_at: None,
         })
     }
 }
@@ -257,9 +250,7 @@ impl<'a> BodyParserState<'a> {
             Event::Rule => {
                 self.flush_paragraph()?;
                 self.flush_heading();
-                let line = self.base_line_offset + self.line_map.line_number(range.start);
-                self.blocks
-                    .push(DocumentBlock::Separator(SeparatorBlock { line }));
+                self.blocks.push(DocumentBlock::Separator);
             }
             _ => {}
         }
