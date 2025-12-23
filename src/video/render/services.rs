@@ -28,9 +28,6 @@ impl FfmpegRunner for SystemFfmpegRunner {
     }
 }
 
-pub trait Transcriber {
-    fn transcribe(&self, input: &Path, output_dir: &Path) -> Result<()>;
-}
 
 pub trait MusicSourceResolver {
     fn resolve(&mut self, directive: &MusicDirective) -> Result<Option<std::path::PathBuf>>;
