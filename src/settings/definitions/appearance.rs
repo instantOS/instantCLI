@@ -567,10 +567,22 @@ impl Setting for ResetGtk {
         if matches!(confirmation, crate::menu_utils::ConfirmResult::Yes) {
             // 1. Reset GSettings
             let _ = Command::new("timeout")
-                .args(["10s", "gsettings", "reset", "org.gnome.desktop.interface", "gtk-theme"])
+                .args([
+                    "10s",
+                    "gsettings",
+                    "reset",
+                    "org.gnome.desktop.interface",
+                    "gtk-theme",
+                ])
                 .status();
             let _ = Command::new("timeout")
-                .args(["10s", "gsettings", "reset", "org.gnome.desktop.interface", "icon-theme"])
+                .args([
+                    "10s",
+                    "gsettings",
+                    "reset",
+                    "org.gnome.desktop.interface",
+                    "icon-theme",
+                ])
                 .status();
 
             // 2. Remove configuration files
@@ -679,7 +691,14 @@ impl Setting for ResetQt {
 fn apply_gtk_theme_changes(ctx: &mut SettingsContext, theme: &str) {
     // 1. Apply to GSettings (Wayland/Sway primary)
     let status = Command::new("timeout")
-        .args(["10s", "gsettings", "set", "org.gnome.desktop.interface", "gtk-theme", theme])
+        .args([
+            "10s",
+            "gsettings",
+            "set",
+            "org.gnome.desktop.interface",
+            "gtk-theme",
+            theme,
+        ])
         .status();
 
     match status {
@@ -796,7 +815,13 @@ fn theme_exists(theme_name: &str) -> bool {
 /// Get the current GTK theme name
 fn get_current_gtk_theme() -> Result<String> {
     let output = Command::new("timeout")
-        .args(["2s", "gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"])
+        .args([
+            "2s",
+            "gsettings",
+            "get",
+            "org.gnome.desktop.interface",
+            "gtk-theme",
+        ])
         .output()
         .context("Failed to query current GTK theme")?;
 
@@ -812,7 +837,14 @@ fn get_current_gtk_theme() -> Result<String> {
 /// Set the GTK theme
 fn set_gtk_theme(theme_name: &str) -> Result<()> {
     let status = Command::new("timeout")
-        .args(["10s", "gsettings", "set", "org.gnome.desktop.interface", "gtk-theme", theme_name])
+        .args([
+            "10s",
+            "gsettings",
+            "set",
+            "org.gnome.desktop.interface",
+            "gtk-theme",
+            theme_name,
+        ])
         .status()
         .context("Failed to set GTK theme")?;
 
@@ -843,7 +875,13 @@ fn icon_theme_exists(theme_name: &str) -> bool {
 /// Get the current icon theme name
 fn get_current_icon_theme() -> Result<String> {
     let output = Command::new("timeout")
-        .args(["2s", "gsettings", "get", "org.gnome.desktop.interface", "icon-theme"])
+        .args([
+            "2s",
+            "gsettings",
+            "get",
+            "org.gnome.desktop.interface",
+            "icon-theme",
+        ])
         .output()
         .context("Failed to query current icon theme")?;
 
@@ -859,7 +897,14 @@ fn get_current_icon_theme() -> Result<String> {
 /// Set the icon theme
 fn set_icon_theme(theme_name: &str) -> Result<()> {
     let status = Command::new("timeout")
-        .args(["10s", "gsettings", "set", "org.gnome.desktop.interface", "icon-theme", theme_name])
+        .args([
+            "10s",
+            "gsettings",
+            "set",
+            "org.gnome.desktop.interface",
+            "icon-theme",
+            theme_name,
+        ])
         .status()
         .context("Failed to set icon theme")?;
 
@@ -953,7 +998,14 @@ fn apply_gtk4_overrides(theme_name: &str) -> Result<()> {
 fn apply_icon_theme_changes(ctx: &mut SettingsContext, theme: &str) {
     // 1. Apply to GSettings (Wayland/Sway primary)
     let status = Command::new("timeout")
-        .args(["10s", "gsettings", "set", "org.gnome.desktop.interface", "icon-theme", theme])
+        .args([
+            "10s",
+            "gsettings",
+            "set",
+            "org.gnome.desktop.interface",
+            "icon-theme",
+            theme,
+        ])
         .status();
 
     match status {
@@ -1189,7 +1241,13 @@ where
 /// Check if the system is currently in dark mode by querying gsettings color-scheme.
 fn is_dark_mode() -> Result<bool> {
     let output = Command::new("timeout")
-        .args(["2s", "gsettings", "get", "org.gnome.desktop.interface", "color-scheme"])
+        .args([
+            "2s",
+            "gsettings",
+            "get",
+            "org.gnome.desktop.interface",
+            "color-scheme",
+        ])
         .output()
         .context("Failed to query gsettings color-scheme")?;
 
@@ -1204,7 +1262,14 @@ fn set_color_scheme(prefer_dark: bool) -> Result<()> {
         "default"
     };
     let status = Command::new("timeout")
-        .args(["10s", "gsettings", "set", "org.gnome.desktop.interface", "color-scheme", scheme])
+        .args([
+            "10s",
+            "gsettings",
+            "set",
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            scheme,
+        ])
         .status()
         .context("Failed to set gsettings color-scheme")?;
 

@@ -8,6 +8,7 @@ use anyhow::Result;
 /// Welcome menu items
 #[derive(Clone, Debug)]
 pub enum WelcomeItem {
+    InstallInstantOS,
     ConfigureNetwork,
     OpenWebsite,
     OpenSettings,
@@ -34,6 +35,10 @@ fn get_autostart_state() -> bool {
 impl FzfSelectable for WelcomeItem {
     fn fzf_display_text(&self) -> String {
         match self {
+            WelcomeItem::InstallInstantOS => format!(
+                "{} Install instantOS",
+                format_icon_colored(NerdFont::Package, colors::GREEN)
+            ),
             WelcomeItem::ConfigureNetwork => format!(
                 "{} Configure Network",
                 format_icon_colored(NerdFont::Wifi, colors::RED)
@@ -73,8 +78,23 @@ impl FzfSelectable for WelcomeItem {
         let blue = hex_to_ansi_fg(colors::BLUE);
         let mauve = hex_to_ansi_fg(colors::MAUVE);
         let red = hex_to_ansi_fg(colors::RED);
+        let green = hex_to_ansi_fg(colors::GREEN);
 
         let lines = match self {
+            WelcomeItem::InstallInstantOS => vec![
+                String::new(),
+                format!(
+                    "{green}{}  Install instantOS{reset}",
+                    char::from(NerdFont::Package)
+                ),
+                format!("{surface}───────────────────────────────────{reset}"),
+                String::new(),
+                format!("{text}Launch the instantOS installation wizard{reset}"),
+                format!("{text}to install instantOS on this system.{reset}"),
+                String::new(),
+                format!("{subtext}This will guide you through disk setup,{reset}"),
+                format!("{subtext}partitioning, and system installation.{reset}"),
+            ],
             WelcomeItem::ConfigureNetwork => vec![
                 String::new(),
                 format!("{red}{}  Network Setup{reset}", char::from(NerdFont::Wifi)),
@@ -152,15 +172,32 @@ impl FzfSelectable for WelcomeItem {
     }
 }
 
-pub fn run_welcome_ui(debug: bool) -> Result<()> {
+pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
     if debug {
         emit(Level::Debug, "welcome.start", "Starting welcome UI", None);
+    }
+
+    // Detect live Arch ISO session
+    let is_live_session = force_live || crate::common::distro::is_live_iso();
+
+    if debug && is_live_session {
+        emit(
+            Level::Debug,
+            "welcome.live_session",
+            "Live ISO session detected",
+            None,
+        );
     }
 
     loop {
         let has_internet = crate::common::network::check_internet();
 
         let mut items = Vec::new();
+
+        // Add Install instantOS option for live sessions
+        if is_live_session {
+            items.push(WelcomeItem::InstallInstantOS);
+        }
 
         if !has_internet {
             items.push(WelcomeItem::ConfigureNetwork);
@@ -172,6 +209,20 @@ pub fn run_welcome_ui(debug: bool) -> Result<()> {
         items.push(WelcomeItem::Close);
 
         match select_one_with_style(items)? {
+            Some(WelcomeItem::InstallInstantOS) => {
+                if let Err(e) = install_instantos(debug) {
+                    emit(
+                        Level::Error,
+                        "welcome.install.error",
+                        &format!(
+                            "{} Failed to launch installation: {}",
+                            char::from(NerdFont::Warning),
+                            e
+                        ),
+                        None,
+                    );
+                }
+            }
             Some(WelcomeItem::ConfigureNetwork) => {
                 if let Err(e) = configure_network(debug) {
                     emit(
@@ -352,4 +403,26 @@ fn toggle_autostart() -> Result<()> {
     store.save()?;
 
     Ok(())
+}
+
+fn install_instantos(debug: bool) -> Result<()> {
+    use std::process::Command;
+
+    if debug {
+        emit(
+            Level::Debug,
+            "welcome.install.launch",
+            "Launching instantOS installation",
+            None,
+        );
+    }
+
+    let current_exe = std::env::current_exe()?;
+
+    Command::new(&current_exe)
+        .arg("arch")
+        .arg("ask")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to launch installation: {}", e))
 }

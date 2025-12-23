@@ -131,7 +131,7 @@ pub async fn run(debug: bool) -> Result<()> {
         if debug {
             println!("Launching welcome app");
         }
-        if let Err(e) = crate::welcome::commands::handle_welcome_command(&None, true, debug)
+        if let Err(e) = crate::welcome::commands::handle_welcome_command(&None, true, false, debug)
             && debug
         {
             eprintln!("Failed to launch welcome app: {}", e);

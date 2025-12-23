@@ -208,6 +208,9 @@ enum Commands {
         /// Open welcome app in a GUI terminal window (uses kitty)
         #[arg(long = "gui")]
         gui: bool,
+        /// Force live session mode (shows instantOS installation option)
+        #[arg(long = "force-live")]
+        force_live: bool,
     },
 }
 
@@ -354,9 +357,13 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                 None,
             )?;
         }
-        Some(Commands::Welcome { command, gui }) => {
+        Some(Commands::Welcome {
+            command,
+            gui,
+            force_live,
+        }) => {
             execute_with_error_handling(
-                welcome::handle_welcome_command(command, *gui, cli.debug),
+                welcome::handle_welcome_command(command, *gui, *force_live, cli.debug),
                 "Error running welcome",
                 None,
             )?;
