@@ -7,7 +7,7 @@ use clap::Subcommand;
 use std::io::Write;
 
 use crate::common::compositor::CompositorType;
-use crate::common::compositor::config::SwayConfigManager;
+use crate::common::compositor::config::{WmConfigManager, WindowManager};
 use crate::ui::prelude::*;
 
 #[derive(Subcommand, Debug, Clone)]
@@ -16,35 +16,61 @@ pub enum SetupCommands {
     ///
     /// This command:
     /// - Exports assist keybinds to the shared config file
+    /// - Configures cursor theme
     /// - Adds an include to your main sway config
     /// - Reloads Sway to apply changes
     Sway,
+
+    /// Set up i3 window manager integration
+    ///
+    /// This command:
+    /// - Exports assist keybinds to the shared config file
+    /// - Adds an include to your main i3 config
+    /// - Reloads i3 to apply changes
+    I3,
 }
 
 /// Handle setup command dispatch
 pub fn handle_setup_command(command: SetupCommands) -> Result<()> {
     match command {
         SetupCommands::Sway => setup_sway(),
+        SetupCommands::I3 => setup_i3(),
     }
 }
 
 /// Set up Sway window manager integration
 pub fn setup_sway() -> Result<()> {
+    setup_wm(WindowManager::Sway)
+}
+
+/// Set up i3 window manager integration
+pub fn setup_i3() -> Result<()> {
+    setup_wm(WindowManager::I3)
+}
+
+/// Generic window manager setup
+fn setup_wm(wm: WindowManager) -> Result<()> {
     let compositor = CompositorType::detect();
-    if !matches!(compositor, CompositorType::Sway) {
+    let expected_compositor = match wm {
+        WindowManager::Sway => CompositorType::Sway,
+        WindowManager::I3 => CompositorType::I3,
+    };
+
+    if compositor != expected_compositor {
         emit(
             Level::Warn,
-            "setup.sway.wrong_compositor",
+            &format!("setup.{}.wrong_compositor", wm.name()),
             &format!(
-                "{} Current compositor is {}, not Sway. Setup will proceed but may not work correctly.",
+                "{} Current compositor is {}, not {}. Setup will proceed but may not work correctly.",
                 char::from(NerdFont::Warning),
-                compositor.name()
+                compositor.name(),
+                wm.name()
             ),
             None,
         );
     }
 
-    let manager = SwayConfigManager::new();
+    let manager = WmConfigManager::new(wm);
 
     // Generate the full expected config content
     let expected_content = generate_sway_config()?;

@@ -1,7 +1,7 @@
-//! Sway configuration file manager
+//! Window manager configuration file manager
 //!
-//! This module provides utilities for managing a shared Sway configuration file
-//! that instantCLI uses for sway integration.
+//! This module provides utilities for managing shared Sway/i3 configuration files
+//! that instantCLI uses for WM integration.
 
 use anyhow::{Context, Result};
 use std::collections::hash_map::DefaultHasher;
@@ -9,39 +9,81 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
-/// Marker for the integration block in the main sway config
+/// Marker for the integration block in the main config
 const INTEGRATION_MARKER_START: &str = "# BEGIN instantCLI integration (managed automatically)";
 const INTEGRATION_MARKER_END: &str = "# END instantCLI integration";
 
-/// Manager for the shared Sway configuration file.
-///
-/// This manages the `~/.config/sway/instant` file which is included from the
-/// main sway config. Multiple components can write to different sections of
-/// this file without interfering with each other.
-pub struct SwayConfigManager {
-    /// Path to the shared instant config file
-    config_path: PathBuf,
-    /// Path to the main sway config file
-    main_config_path: PathBuf,
+/// Supported window managers
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum WindowManager {
+    Sway,
+    I3,
 }
 
-impl Default for SwayConfigManager {
-    fn default() -> Self {
-        Self::new()
+impl WindowManager {
+    /// Get the config directory name
+    pub fn config_dir_name(&self) -> &'static str {
+        match self {
+            WindowManager::Sway => "sway",
+            WindowManager::I3 => "i3",
+        }
+    }
+
+    /// Get the display name
+    pub fn name(&self) -> &'static str {
+        match self {
+            WindowManager::Sway => "Sway",
+            WindowManager::I3 => "i3",
+        }
+    }
+
+    /// Get the reload command
+    pub fn reload_command(&self) -> &'static str {
+        match self {
+            WindowManager::Sway => "swaymsg",
+            WindowManager::I3 => "i3-msg",
+        }
+    }
+
+    /// Whether this WM supports cursor theme in config
+    pub fn supports_cursor_theme(&self) -> bool {
+        match self {
+            WindowManager::Sway => true,
+            WindowManager::I3 => false, // X11 uses XCURSOR_THEME env var
+        }
     }
 }
 
-impl SwayConfigManager {
-    /// Create a new SwayConfigManager with default paths.
-    pub fn new() -> Self {
+/// Manager for the shared WM configuration file.
+///
+/// This manages the `~/.config/{sway,i3}/instant` file which is included from the
+/// main WM config.
+pub struct WmConfigManager {
+    /// Which window manager
+    wm: WindowManager,
+    /// Path to the shared instant config file
+    config_path: PathBuf,
+    /// Path to the main WM config file
+    main_config_path: PathBuf,
+}
+
+impl WmConfigManager {
+    /// Create a new WmConfigManager for the given window manager.
+    pub fn new(wm: WindowManager) -> Self {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
-            .join("sway");
+            .join(wm.config_dir_name());
 
         Self {
+            wm,
             config_path: config_dir.join("instant"),
             main_config_path: config_dir.join("config"),
         }
+    }
+
+    /// Get the window manager type.
+    pub fn wm(&self) -> WindowManager {
+        self.wm
     }
 
     /// Get the path to the shared config file.
@@ -94,14 +136,16 @@ impl SwayConfigManager {
         Ok(content.contains(INTEGRATION_MARKER_START))
     }
 
-    /// Ensure the config file is included in the main sway config.
+    /// Ensure the config file is included in the main WM config.
     ///
     /// Returns `true` if the include was added, `false` if it already existed.
     pub fn ensure_included_in_main_config(&self) -> Result<bool> {
         if !self.main_config_path.exists() {
             anyhow::bail!(
-                "Sway config not found at {}\nPlease ensure Sway is installed and configured.",
-                self.main_config_path.display()
+                "{} config not found at {}\nPlease ensure {} is installed and configured.",
+                self.wm.name(),
+                self.main_config_path.display(),
+                self.wm.name()
             );
         }
 
@@ -135,24 +179,25 @@ impl SwayConfigManager {
         Ok(true)
     }
 
-    /// Reload Sway configuration.
+    /// Reload WM configuration.
     pub fn reload(&self) -> Result<()> {
-        let status = std::process::Command::new("swaymsg")
+        let cmd = self.wm.reload_command();
+        let status = std::process::Command::new(cmd)
             .arg("reload")
             .status()
-            .context("Failed to run swaymsg reload")?;
+            .with_context(|| format!("Failed to run {} reload", cmd))?;
 
         if !status.success() {
-            anyhow::bail!("swaymsg reload returned non-zero exit code");
+            anyhow::bail!("{} reload returned non-zero exit code", cmd);
         }
 
         Ok(())
     }
 
-    /// Reload Sway configuration only if the config has changed.
+    /// Reload WM configuration only if the config has changed.
     ///
     /// Pass the hash from before making changes. If the current hash differs,
-    /// Sway will be reloaded.
+    /// WM will be reloaded.
     pub fn reload_if_changed(&self, initial_hash: u64) -> Result<bool> {
         let current_hash = self.hash_config()?;
         if current_hash != initial_hash {
@@ -170,11 +215,12 @@ mod tests {
     use std::io::Write;
     use tempfile::TempDir;
 
-    fn create_test_manager(temp_dir: &TempDir) -> SwayConfigManager {
-        let config_dir = temp_dir.path().join("sway");
+    fn create_test_manager(temp_dir: &TempDir, wm: WindowManager) -> WmConfigManager {
+        let config_dir = temp_dir.path().join(wm.config_dir_name());
         fs::create_dir_all(&config_dir).unwrap();
 
-        SwayConfigManager {
+        WmConfigManager {
+            wm,
             config_path: config_dir.join("instant"),
             main_config_path: config_dir.join("config"),
         }
@@ -183,7 +229,7 @@ mod tests {
     #[test]
     fn test_write_full_config() {
         let temp_dir = TempDir::new().unwrap();
-        let manager = create_test_manager(&temp_dir);
+        let manager = create_test_manager(&temp_dir, WindowManager::Sway);
 
         manager.write_full_config("test content").unwrap();
 
@@ -194,7 +240,7 @@ mod tests {
     #[test]
     fn test_hash_config() {
         let temp_dir = TempDir::new().unwrap();
-        let manager = create_test_manager(&temp_dir);
+        let manager = create_test_manager(&temp_dir, WindowManager::I3);
 
         // Non-existent file returns 0
         assert_eq!(manager.hash_config().unwrap(), 0);
@@ -217,7 +263,7 @@ mod tests {
     #[test]
     fn test_ensure_included_in_main_config() {
         let temp_dir = TempDir::new().unwrap();
-        let manager = create_test_manager(&temp_dir);
+        let manager = create_test_manager(&temp_dir, WindowManager::Sway);
 
         // Create main config
         let mut main_config = fs::File::create(&manager.main_config_path).unwrap();
