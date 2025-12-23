@@ -18,6 +18,7 @@ mod restic;
 mod scratchpad;
 mod self_update;
 mod settings;
+mod setup;
 mod ui;
 mod update;
 mod video;
@@ -158,6 +159,11 @@ enum Commands {
         #[command(subcommand)]
         command: ScratchpadCommand,
     },
+    /// Set up instantOS integrations (window managers, system config)
+    Setup {
+        #[command(subcommand)]
+        command: setup::SetupCommands,
+    },
     /// Desktop settings and preferences
     Settings {
         #[command(subcommand)]
@@ -286,6 +292,13 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             let compositor = common::compositor::CompositorType::detect();
             let exit_code = command.clone().run(&compositor, cli.debug)?;
             std::process::exit(exit_code);
+        }
+        Some(Commands::Setup { command }) => {
+            execute_with_error_handling(
+                setup::handle_setup_command(command.clone()),
+                "Error running setup",
+                None,
+            )?;
         }
         Some(Commands::Settings {
             command,

@@ -3,7 +3,6 @@ use clap::Subcommand;
 use std::fs::File;
 use std::io::{self, Write};
 
-use crate::common::compositor::CompositorType;
 use crate::menu::client;
 use crate::ui::prelude::*;
 
@@ -34,12 +33,6 @@ pub enum AssistCommands {
         /// Window manager format (sway or i3)
         #[arg(long, default_value = "sway")]
         format: String,
-    },
-    /// Set up Window Manager integration (export config and add include to main config)
-    Setup {
-        /// Window manager to setup (sway or i3). Auto-detected if not specified.
-        #[arg(long)]
-        wm: Option<String>,
     },
     #[command(hide = true)]
     /// Set mouse speed (internal use for slider)
@@ -102,30 +95,6 @@ pub fn dispatch_assist_command(
             output_path,
             format,
         }) => export_wm_config(output_path, &format),
-        Some(AssistCommands::Setup { wm }) => {
-            let compositor = CompositorType::detect();
-            let wm_name = match wm {
-                Some(name) => name,
-                None => match compositor {
-                    CompositorType::I3 => "i3".to_string(),
-                    CompositorType::Sway => "sway".to_string(),
-                    _ => {
-                        emit(
-                            Level::Info,
-                            "assist.setup.unsupported",
-                            &format!(
-                                "{} {} is not supported by assist setup (only i3 and sway are supported)",
-                                char::from(NerdFont::Info),
-                                compositor.name()
-                            ),
-                            None,
-                        );
-                        return Ok(());
-                    }
-                },
-            };
-            setup_wm_integration(&wm_name)
-        }
     }
 }
 
@@ -400,177 +369,6 @@ fn export_wm_config(output_path: Option<std::path::PathBuf>, wm_name: &str) -> R
 
     if let Some(path) = output_path {
         println!("{} config written to: {}", wm_name, path.display());
-    }
-
-    Ok(())
-}
-
-/// Set up Window Manager integration by exporting config and adding include to main config
-fn setup_wm_integration(wm_name: &str) -> Result<()> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::fs;
-    use std::hash::{Hash, Hasher};
-
-    // Helper to compute hash of a file
-    fn hash_file(path: &std::path::Path) -> Result<u64> {
-        if !path.exists() {
-            return Ok(0); // Return 0 for non-existent files
-        }
-        let content =
-            fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
-        let mut hasher = DefaultHasher::new();
-        content.hash(&mut hasher);
-        Ok(hasher.finish())
-    }
-
-    // Determine paths
-    let config_dir = dirs::config_dir().context("Unable to determine user config directory")?;
-    let wm_config_dir = config_dir.join(wm_name);
-    let main_config_path = wm_config_dir.join("config");
-    let instantassist_config_path = wm_config_dir.join("instantassist");
-
-    // Ensure wm config directory exists
-    fs::create_dir_all(&wm_config_dir)
-        .with_context(|| format!("Failed to create directory: {}", wm_config_dir.display()))?;
-
-    // Check if main config exists
-    if !main_config_path.exists() {
-        anyhow::bail!(
-            "{} config not found at {}\nPlease ensure {} is installed and configured.",
-            wm_name,
-            main_config_path.display(),
-            wm_name
-        );
-    }
-
-    // Compute initial hashes
-    let initial_main_hash = hash_file(&main_config_path)?;
-    let initial_assist_hash = hash_file(&instantassist_config_path)?;
-
-    // Export the assist config
-    export_wm_config(Some(instantassist_config_path.clone()), wm_name)?;
-
-    // Read the main config
-    let config_content = fs::read_to_string(&main_config_path)
-        .with_context(|| format!("Failed to read {}", main_config_path.display()))?;
-
-    // Check if already included
-    const MARKER_START: &str = "# BEGIN instantCLI assists integration (managed automatically)";
-    const MARKER_END: &str = "# END instantCLI assists integration";
-
-    if !config_content.contains(MARKER_START) {
-        // Add include line with markers (use tilde notation for home directory)
-        let home_dir = dirs::home_dir().context("Unable to determine home directory")?;
-        let relative_path = instantassist_config_path
-            .strip_prefix(&home_dir)
-            .ok()
-            .map(|p| format!("~/{}", p.display()))
-            .unwrap_or_else(|| instantassist_config_path.display().to_string());
-
-        let include_line = format!("include {}", relative_path);
-        let integration_block = format!("\n{}\n{}\n{}\n", MARKER_START, include_line, MARKER_END);
-
-        let new_config_content = format!("{}{}", config_content, integration_block);
-
-        // Write back the config
-        fs::write(&main_config_path, new_config_content)
-            .with_context(|| format!("Failed to write {}", main_config_path.display()))?;
-    }
-
-    // Compute final hashes
-    let final_main_hash = hash_file(&main_config_path)?;
-    let final_assist_hash = hash_file(&instantassist_config_path)?;
-
-    // Check if anything changed
-    let main_changed = initial_main_hash != final_main_hash;
-    let assist_changed = initial_assist_hash != final_assist_hash;
-
-    if main_changed || assist_changed {
-        emit(
-            Level::Success,
-            "assist.setup.updated",
-            &format!("{} {} config updated", char::from(NerdFont::Check), wm_name),
-            None,
-        );
-        emit(
-            Level::Info,
-            "assist.setup.config",
-            &format!("  Config file: {}", instantassist_config_path.display()),
-            None,
-        );
-        emit(
-            Level::Info,
-            "assist.setup.main",
-            &format!("  Main config: {}", main_config_path.display()),
-            None,
-        );
-
-        // Reload wm
-        let reload_cmd = if wm_name == "sway" {
-            "swaymsg"
-        } else {
-            "i3-msg"
-        };
-        match std::process::Command::new(reload_cmd)
-            .arg("reload")
-            .status()
-        {
-            Ok(status) if status.success() => {
-                emit(
-                    Level::Success,
-                    "assist.setup.reloaded",
-                    &format!(
-                        "{} {} configuration reloaded",
-                        char::from(NerdFont::Sync),
-                        wm_name
-                    ),
-                    None,
-                );
-            }
-            Ok(_) => {
-                emit(
-                    Level::Warn,
-                    "assist.setup.reload_failed",
-                    &format!(
-                        "{} Failed to reload {} ({} returned non-zero exit code)",
-                        char::from(NerdFont::Warning),
-                        wm_name,
-                        reload_cmd
-                    ),
-                    None,
-                );
-            }
-            Err(e) => {
-                emit(
-                    Level::Warn,
-                    "assist.setup.reload_error",
-                    &format!(
-                        "{} Could not run {}: {}",
-                        char::from(NerdFont::Warning),
-                        reload_cmd,
-                        e
-                    ),
-                    None,
-                );
-            }
-        }
-    } else {
-        emit(
-            Level::Info,
-            "assist.setup.unchanged",
-            &format!(
-                "{} {} config unchanged, skipping reload",
-                char::from(NerdFont::Check),
-                wm_name
-            ),
-            None,
-        );
-        emit(
-            Level::Info,
-            "assist.setup.config",
-            &format!("  Config file: {}", instantassist_config_path.display()),
-            None,
-        );
     }
 
     Ok(())

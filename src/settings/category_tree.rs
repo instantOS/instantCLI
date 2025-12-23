@@ -56,6 +56,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&brightness::Brightness),
             CategoryNode::setting(&appearance::Animations),
             CategoryNode::setting(&appearance::DarkMode),
+            CategoryNode::setting(&appearance::CursorTheme),
             CategoryNode::group("Wallpaper")
                 .child(CategoryNode::setting(&appearance::SetWallpaper))
                 .child(CategoryNode::setting(&appearance::RandomWallpaper))

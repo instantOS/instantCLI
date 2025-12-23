@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::process::Command;
 
+pub mod config;
 pub mod fallback;
 pub mod gnome;
 pub mod hyprland;

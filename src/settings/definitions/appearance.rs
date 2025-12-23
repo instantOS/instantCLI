@@ -1191,6 +1191,155 @@ fn rgb_to_hex(rgb: &str) -> Option<String> {
 }
 
 // ============================================================================
+// Cursor Theme
+// ============================================================================
+
+pub struct CursorTheme;
+
+impl Setting for CursorTheme {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("appearance.cursor_theme")
+            .title("Cursor Theme")
+            .icon(NerdFont::Mouse)
+            .summary("Select and apply a cursor theme for Sway.\n\nUpdates gsettings cursor-theme setting.\nOnly supported on Sway.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let compositor = CompositorType::detect();
+        if !matches!(compositor, CompositorType::Sway) {
+            ctx.emit_unsupported(
+                "settings.appearance.cursor_theme.unsupported",
+                &format!(
+                    "Cursor theme configuration is only supported on Sway. Detected: {}",
+                    compositor.name()
+                ),
+            );
+            return Ok(());
+        }
+
+        loop {
+            let themes = list_cursor_themes()?;
+
+            let mut options: Vec<String> = Vec::new();
+
+            for theme in &themes {
+                options.push(theme.clone());
+            }
+
+            if themes.is_empty() {
+                ctx.emit_info(
+                    "settings.appearance.cursor_theme.no_themes",
+                    "No cursor themes found. Install cursor themes from your package manager.",
+                );
+                return Ok(());
+            }
+
+            let selected = FzfWrapper::builder()
+                .prompt("Select Cursor Theme")
+                .header("Choose a cursor theme to apply globally")
+                .select(options)?;
+
+            match selected {
+                crate::menu_utils::FzfResult::Selected(selection) => {
+                    apply_cursor_theme_changes(ctx, &selection);
+                    return Ok(());
+                }
+                _ => {
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
+fn list_cursor_themes() -> Result<Vec<String>> {
+    let mut themes = std::collections::HashSet::new();
+    let dirs = [
+        dirs::home_dir().map(|p| p.join(".icons")),
+        dirs::data_local_dir().map(|p| p.join("icons")),
+        Some(std::path::PathBuf::from("/usr/share/icons")),
+    ];
+
+    for dir in dirs.into_iter().flatten() {
+        if !dir.exists() {
+            continue;
+        }
+
+        for entry in walkdir::WalkDir::new(dir)
+            .min_depth(1)
+            .max_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_type().is_dir() {
+                let path = entry.path();
+                if let Some(name) = entry.file_name().to_str() {
+                    if is_cursor_theme(path) {
+                        themes.insert(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result: Vec<String> = themes.into_iter().collect();
+    result.sort();
+    Ok(result)
+}
+
+fn is_cursor_theme(path: &std::path::Path) -> bool {
+    path.join("cursors").exists()
+}
+
+fn apply_cursor_theme_changes(ctx: &mut SettingsContext, theme: &str) {
+    let status = Command::new("timeout")
+        .args([
+            "10s",
+            "gsettings",
+            "set",
+            "org.gnome.desktop.interface",
+            "cursor-theme",
+            theme,
+        ])
+        .status();
+
+    match status {
+        Ok(exit) if exit.success() => {
+            let message = format!(
+                "Applied '{}'\n\nTo apply to Sway itself (not just GTK apps):\n1. Add 'set $env SWAY_CURSOR_THEME {}' to ~/.config/sway/config\n2. Reload with 'swaymsg reload' or restart Sway",
+                theme, theme
+            );
+            FzfWrapper::builder()
+                .message(&message)
+                .title("Cursor Theme Applied")
+                .show_message()
+                .ok();
+        }
+        Ok(exit) => {
+            ctx.emit_failure(
+                "settings.appearance.cursor_theme.gsettings_failed",
+                &format!(
+                    "GSettings failed with exit code {}",
+                    exit.code().unwrap_or(-1)
+                ),
+            );
+        }
+        Err(e) => {
+            ctx.emit_failure(
+                "settings.appearance.cursor_theme.gsettings_error",
+                &format!("Failed to execute gsettings: {e}"),
+            );
+        }
+    }
+}
+
+// ============================================================================
 // Dark Mode
 // ============================================================================
 
