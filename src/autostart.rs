@@ -1,4 +1,4 @@
-use crate::assist::{self, AssistCommands};
+use crate::common::compositor::CompositorType;
 use crate::common::paths;
 use crate::common::systemd;
 use crate::dot::commands::DotCommands;
@@ -90,14 +90,16 @@ pub async fn run(debug: bool) -> Result<()> {
         eprintln!("Failed to apply settings: {}", e);
     }
 
-    if debug {
-        println!("Running assist setup");
-    }
-    if let Err(e) =
-        assist::dispatch_assist_command(debug, false, Some(AssistCommands::Setup { wm: None }))
-        && debug
-    {
-        eprintln!("Assist setup failed: {}", e);
+    // Only run sway setup if running on Sway
+    if matches!(CompositorType::detect(), CompositorType::Sway) {
+        if debug {
+            println!("Running sway setup");
+        }
+        if let Err(e) = crate::setup::setup_sway() && debug {
+            eprintln!("Sway setup failed: {}", e);
+        }
+    } else if debug {
+        println!("Not running Sway, skipping sway setup");
     }
 
     if crate::common::network::check_internet() {

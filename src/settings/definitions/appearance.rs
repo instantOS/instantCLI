@@ -1298,6 +1298,17 @@ fn is_cursor_theme(path: &std::path::Path) -> bool {
 }
 
 fn apply_cursor_theme_changes(ctx: &mut SettingsContext, theme: &str) {
+    // 1. Write to sway config for Sway's native cursor
+    if let Err(e) = write_cursor_to_sway_config(theme) {
+        ctx.emit_failure(
+            "settings.appearance.cursor_theme.sway_config_error",
+            &format!("Failed to update sway config: {e}"),
+        );
+    } else {
+        ctx.notify("Cursor Theme", &format!("Applied '{}' to Sway config", theme));
+    }
+
+    // 2. Apply to GSettings (for GTK apps)
     let status = Command::new("timeout")
         .args([
             "10s",
@@ -1311,15 +1322,7 @@ fn apply_cursor_theme_changes(ctx: &mut SettingsContext, theme: &str) {
 
     match status {
         Ok(exit) if exit.success() => {
-            let message = format!(
-                "Applied '{}'\n\nTo apply to Sway itself (not just GTK apps):\n1. Add 'set $env SWAY_CURSOR_THEME {}' to ~/.config/sway/config\n2. Reload with 'swaymsg reload' or restart Sway",
-                theme, theme
-            );
-            FzfWrapper::builder()
-                .message(&message)
-                .title("Cursor Theme Applied")
-                .show_message()
-                .ok();
+            ctx.notify("Cursor Theme", &format!("Applied '{}' to GSettings", theme));
         }
         Ok(exit) => {
             ctx.emit_failure(
@@ -1338,6 +1341,24 @@ fn apply_cursor_theme_changes(ctx: &mut SettingsContext, theme: &str) {
         }
     }
 }
+
+/// Write cursor theme to the shared sway config file.
+fn write_cursor_to_sway_config(theme: &str) -> anyhow::Result<()> {
+    use crate::common::compositor::config::SwayConfigManager;
+
+    let manager = SwayConfigManager::new();
+
+    // Write the cursor theme section
+    // Syntax: seat <name> xcursor_theme <theme> [<size>]
+    let content = format!("seat * xcursor_theme {}", theme);
+    manager.write_section("cursor_theme", &content)?;
+
+    // Reload sway to apply changes
+    manager.reload()?;
+
+    Ok(())
+}
+
 
 // ============================================================================
 // Dark Mode

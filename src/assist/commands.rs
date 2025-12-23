@@ -4,7 +4,6 @@ use std::fs::File;
 use std::io::{self, Write};
 
 use crate::menu::client;
-use crate::ui::prelude::*;
 
 use super::execute::{execute_assist, install_dependencies_for_assist};
 use super::registry;
