@@ -497,8 +497,8 @@ fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) -> R
     println!("Configuring Plymouth...");
 
     if executor.dry_run {
-        println!("[DRY RUN] Setting Plymouth theme to spinner");
-        println!("[DRY RUN] plymouth-set-default-theme -R spinner");
+        println!("[DRY RUN] Setting Plymouth theme to instantos");
+        println!("[DRY RUN] plymouth-set-default-theme -R instantos");
         return Ok(());
     }
 
@@ -511,7 +511,7 @@ fn configure_plymouth(context: &InstallContext, executor: &CommandExecutor) -> R
     // Note: If encryption is used, the Plymouth theme will not be visible during the
     // password prompt because the theme files are on the encrypted partition.
     let config_content = r#"[Daemon]
-Theme=spinner
+Theme=instantos
 ShowDelay=0
 "#;
 
@@ -519,7 +519,7 @@ ShowDelay=0
 
     // Set the theme and rebuild initramfs
     let mut cmd = Command::new("plymouth-set-default-theme");
-    cmd.arg("-R").arg("spinner");
+    cmd.arg("-R").arg("instantos");
     executor.run(&mut cmd)?;
 
     Ok(())
