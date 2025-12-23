@@ -246,7 +246,7 @@ impl FzfSelectable for SettingItem {
             SettingState::Command => {
                 format!(
                     "{} {}",
-                    format_icon_colored(NerdFont::ExternalLink, icon_color),
+                    format_icon_colored(meta.icon, icon_color),
                     meta.title
                 )
             }
@@ -328,11 +328,7 @@ impl FzfSelectable for SearchItem {
                 format!("{} {}", format_icon_colored(meta.icon, icon_color), path)
             }
             SettingState::Command => {
-                format!(
-                    "{} {}",
-                    format_icon_colored(NerdFont::ExternalLink, icon_color),
-                    path
-                )
+                format!("{} {}", format_icon_colored(meta.icon, icon_color), path)
             }
         }
     }
