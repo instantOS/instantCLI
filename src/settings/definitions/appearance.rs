@@ -1279,10 +1279,10 @@ fn list_cursor_themes() -> Result<Vec<String>> {
         {
             if entry.file_type().is_dir() {
                 let path = entry.path();
-                if let Some(name) = entry.file_name().to_str() {
-                    if is_cursor_theme(path) {
-                        themes.insert(name.to_string());
-                    }
+                if let Some(name) = entry.file_name().to_str()
+                    && is_cursor_theme(path)
+                {
+                    themes.insert(name.to_string());
                 }
             }
         }
@@ -1298,17 +1298,7 @@ fn is_cursor_theme(path: &std::path::Path) -> bool {
 }
 
 fn apply_cursor_theme_changes(ctx: &mut SettingsContext, theme: &str) {
-    // 1. Write to sway config for Sway's native cursor
-    if let Err(e) = write_cursor_to_sway_config(theme) {
-        ctx.emit_failure(
-            "settings.appearance.cursor_theme.sway_config_error",
-            &format!("Failed to update sway config: {e}"),
-        );
-    } else {
-        ctx.notify("Cursor Theme", &format!("Applied '{}' to Sway config", theme));
-    }
-
-    // 2. Apply to GSettings (for GTK apps)
+    // 1. Apply to GSettings first (for GTK apps) - setup_sway reads from gsettings
     let status = Command::new("timeout")
         .args([
             "10s",
@@ -1340,25 +1330,15 @@ fn apply_cursor_theme_changes(ctx: &mut SettingsContext, theme: &str) {
             );
         }
     }
+
+    // 2. Regenerate sway config (reads cursor theme from gsettings)
+    if let Err(e) = crate::setup::setup_sway() {
+        ctx.emit_failure(
+            "settings.appearance.cursor_theme.sway_config_error",
+            &format!("Failed to update sway config: {e}"),
+        );
+    }
 }
-
-/// Write cursor theme to the shared sway config file.
-fn write_cursor_to_sway_config(theme: &str) -> anyhow::Result<()> {
-    use crate::common::compositor::config::SwayConfigManager;
-
-    let manager = SwayConfigManager::new();
-
-    // Write the cursor theme section
-    // Syntax: seat <name> xcursor_theme <theme> [<size>]
-    let content = format!("seat * xcursor_theme {}", theme);
-    manager.write_section("cursor_theme", &content)?;
-
-    // Reload sway to apply changes
-    manager.reload()?;
-
-    Ok(())
-}
-
 
 // ============================================================================
 // Dark Mode

@@ -5,4 +5,4 @@
 
 mod commands;
 
-pub use commands::{handle_setup_command, setup_sway, SetupCommands};
+pub use commands::{SetupCommands, handle_setup_command, setup_sway};

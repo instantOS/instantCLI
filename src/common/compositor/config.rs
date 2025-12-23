@@ -1,23 +1,13 @@
 //! Sway configuration file manager
 //!
 //! This module provides utilities for managing a shared Sway configuration file
-//! that multiple components of instantCLI can write to. The file uses marker-based
-//! sections to allow independent updates of different configuration areas.
+//! that instantCLI uses for sway integration.
 
 use anyhow::{Context, Result};
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-
-/// Marker prefix for section start
-const SECTION_START_PREFIX: &str = "# --- BEGIN ";
-/// Marker suffix for section start
-const SECTION_START_SUFFIX: &str = " ---";
-/// Marker prefix for section end
-const SECTION_END_PREFIX: &str = "# --- END ";
-/// Marker suffix for section end
-const SECTION_END_SUFFIX: &str = " ---";
 
 /// Marker for the integration block in the main sway config
 const INTEGRATION_MARKER_START: &str = "# BEGIN instantCLI integration (managed automatically)";
@@ -80,8 +70,8 @@ impl SwayConfigManager {
             .with_context(|| format!("Failed to read {}", self.config_path.display()))
     }
 
-    /// Write the config file contents.
-    fn write_config(&self, content: &str) -> Result<()> {
+    /// Write the full config file contents, replacing any existing content.
+    pub fn write_full_config(&self, content: &str) -> Result<()> {
         // Ensure parent directory exists
         if let Some(parent) = self.config_path.parent() {
             fs::create_dir_all(parent)
@@ -90,86 +80,6 @@ impl SwayConfigManager {
 
         fs::write(&self.config_path, content)
             .with_context(|| format!("Failed to write {}", self.config_path.display()))
-    }
-
-    /// Write or update a section in the config file.
-    ///
-    /// The section is identified by name and wrapped in markers:
-    /// ```text
-    /// # --- BEGIN section_name ---
-    /// <content>
-    /// # --- END section_name ---
-    /// ```
-    ///
-    /// If the section already exists, it is replaced. Otherwise, it is appended.
-    pub fn write_section(&self, section_name: &str, content: &str) -> Result<()> {
-        let current = self.read_config()?;
-
-        let start_marker = format!(
-            "{}{}{}",
-            SECTION_START_PREFIX, section_name, SECTION_START_SUFFIX
-        );
-        let end_marker = format!(
-            "{}{}{}",
-            SECTION_END_PREFIX, section_name, SECTION_END_SUFFIX
-        );
-
-        // Build the new section
-        let trimmed_content = content.trim();
-        let new_section = format!("{}\n{}\n{}\n", start_marker, trimmed_content, end_marker);
-
-        let new_content = if current.contains(&start_marker) {
-            // Replace existing section
-            let mut result = String::new();
-            let mut in_section = false;
-            let mut replaced = false;
-
-            for line in current.lines() {
-                if line.trim() == start_marker.trim() {
-                    in_section = true;
-                    if !replaced {
-                        result.push_str(&new_section);
-                        replaced = true;
-                    }
-                    continue;
-                }
-
-                if line.trim() == end_marker.trim() {
-                    in_section = false;
-                    continue;
-                }
-
-                if !in_section {
-                    result.push_str(line);
-                    result.push('\n');
-                }
-            }
-
-            result
-        } else {
-            // Append new section
-            let mut result = current;
-            if !result.is_empty() && !result.ends_with('\n') {
-                result.push('\n');
-            }
-            if !result.is_empty() {
-                result.push('\n');
-            }
-            result.push_str(&new_section);
-            result
-        };
-
-        // Ensure file starts with header comment
-        let final_content = if !new_content.starts_with("# instantCLI sway configuration") {
-            format!(
-                "# instantCLI sway configuration\n# This file is managed by instantCLI. Manual edits may be overwritten.\n\n{}",
-                new_content
-            )
-        } else {
-            new_content
-        };
-
-        self.write_config(&final_content)
     }
 
     /// Check if the config file is included in the main sway config.
@@ -271,46 +181,37 @@ mod tests {
     }
 
     #[test]
-    fn test_write_section_new_file() {
+    fn test_write_full_config() {
         let temp_dir = TempDir::new().unwrap();
         let manager = create_test_manager(&temp_dir);
 
-        manager.write_section("test", "content here").unwrap();
+        manager.write_full_config("test content").unwrap();
 
         let content = fs::read_to_string(&manager.config_path).unwrap();
-        assert!(content.contains("# --- BEGIN test ---"));
-        assert!(content.contains("content here"));
-        assert!(content.contains("# --- END test ---"));
+        assert_eq!(content, "test content");
     }
 
     #[test]
-    fn test_write_section_replace() {
+    fn test_hash_config() {
         let temp_dir = TempDir::new().unwrap();
         let manager = create_test_manager(&temp_dir);
 
-        manager.write_section("test", "original").unwrap();
-        manager.write_section("test", "updated").unwrap();
+        // Non-existent file returns 0
+        assert_eq!(manager.hash_config().unwrap(), 0);
 
-        let content = fs::read_to_string(&manager.config_path).unwrap();
-        assert!(content.contains("updated"));
-        assert!(!content.contains("original"));
-        // Should only have one section
-        assert_eq!(content.matches("# --- BEGIN test ---").count(), 1);
-    }
+        // Write content and verify hash changes
+        manager.write_full_config("content").unwrap();
+        let hash1 = manager.hash_config().unwrap();
+        assert_ne!(hash1, 0);
 
-    #[test]
-    fn test_write_multiple_sections() {
-        let temp_dir = TempDir::new().unwrap();
-        let manager = create_test_manager(&temp_dir);
+        // Same content = same hash
+        let hash2 = manager.hash_config().unwrap();
+        assert_eq!(hash1, hash2);
 
-        manager.write_section("section1", "content1").unwrap();
-        manager.write_section("section2", "content2").unwrap();
-
-        let content = fs::read_to_string(&manager.config_path).unwrap();
-        assert!(content.contains("# --- BEGIN section1 ---"));
-        assert!(content.contains("content1"));
-        assert!(content.contains("# --- BEGIN section2 ---"));
-        assert!(content.contains("content2"));
+        // Different content = different hash
+        manager.write_full_config("different").unwrap();
+        let hash3 = manager.hash_config().unwrap();
+        assert_ne!(hash1, hash3);
     }
 
     #[test]

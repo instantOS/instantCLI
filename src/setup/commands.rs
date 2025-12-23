@@ -6,8 +6,8 @@ use anyhow::{Context, Result};
 use clap::Subcommand;
 use std::io::Write;
 
-use crate::common::compositor::config::SwayConfigManager;
 use crate::common::compositor::CompositorType;
+use crate::common::compositor::config::SwayConfigManager;
 use crate::ui::prelude::*;
 
 #[derive(Subcommand, Debug, Clone)]
@@ -45,22 +45,18 @@ pub fn setup_sway() -> Result<()> {
     }
 
     let manager = SwayConfigManager::new();
-    let initial_hash = manager.hash_config().unwrap_or(0);
 
-    // Export assist keybinds
-    let keybinds = export_assist_keybinds()?;
-    manager
-        .write_section("assist", &keybinds)
-        .context("Failed to write assist keybinds to config")?;
+    // Generate the full expected config content
+    let expected_content = generate_sway_config()?;
 
-    // Refresh cursor theme with correct syntax (in case old syntax was used)
-    if let Ok(theme) = get_current_cursor_theme() {
-        if !theme.is_empty() {
-            let content = format!("seat * xcursor_theme {}", theme);
-            manager
-                .write_section("cursor_theme", &content)
-                .context("Failed to write cursor theme to config")?;
-        }
+    // Compare hash of expected content with what's on disk
+    let disk_hash = manager.hash_config().unwrap_or(0);
+    let expected_hash = hash_string(&expected_content);
+    let config_changed = disk_hash != expected_hash;
+
+    // Write if changed
+    if config_changed {
+        manager.write_full_config(&expected_content)?;
     }
 
     // Ensure include exists in main config
@@ -80,9 +76,6 @@ pub fn setup_sway() -> Result<()> {
             false
         }
     };
-
-    // Check if anything changed
-    let config_changed = manager.hash_config().unwrap_or(0) != initial_hash;
 
     if config_changed || include_added {
         emit(
@@ -104,10 +97,7 @@ pub fn setup_sway() -> Result<()> {
                 emit(
                     Level::Success,
                     "setup.sway.reloaded",
-                    &format!(
-                        "{} Sway configuration reloaded",
-                        char::from(NerdFont::Sync)
-                    ),
+                    &format!("{} Sway configuration reloaded", char::from(NerdFont::Sync)),
                     None,
                 );
             }
@@ -143,6 +133,50 @@ pub fn setup_sway() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Generate the full sway config content.
+fn generate_sway_config() -> Result<String> {
+    use std::fmt::Write;
+
+    let mut content = String::new();
+
+    // Header
+    writeln!(content, "# instantCLI sway configuration")?;
+    writeln!(
+        content,
+        "# This file is managed by instantCLI. Manual edits may be overwritten."
+    )?;
+    writeln!(content)?;
+
+    // Cursor theme section
+    if let Ok(theme) = get_current_cursor_theme()
+        && !theme.is_empty()
+    {
+        writeln!(content, "# --- BEGIN cursor_theme ---")?;
+        writeln!(content, "seat * xcursor_theme {}", theme)?;
+        writeln!(content, "# --- END cursor_theme ---")?;
+        writeln!(content)?;
+    }
+
+    // Assist keybinds section
+    writeln!(content, "# --- BEGIN assist ---")?;
+    let keybinds = export_assist_keybinds()?;
+    write!(content, "{}", keybinds.trim())?;
+    writeln!(content)?;
+    writeln!(content, "# --- END assist ---")?;
+
+    Ok(content)
+}
+
+/// Hash a string for comparison.
+fn hash_string(s: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Export assist keybinds to a string for inclusion in sway config.

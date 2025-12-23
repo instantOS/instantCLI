@@ -95,7 +95,9 @@ pub async fn run(debug: bool) -> Result<()> {
         if debug {
             println!("Running sway setup");
         }
-        if let Err(e) = crate::setup::setup_sway() && debug {
+        if let Err(e) = crate::setup::setup_sway()
+            && debug
+        {
             eprintln!("Sway setup failed: {}", e);
         }
     } else if debug {
