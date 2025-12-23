@@ -53,6 +53,16 @@ pub fn setup_sway() -> Result<()> {
         .write_section("assist", &keybinds)
         .context("Failed to write assist keybinds to config")?;
 
+    // Refresh cursor theme with correct syntax (in case old syntax was used)
+    if let Ok(theme) = get_current_cursor_theme() {
+        if !theme.is_empty() {
+            let content = format!("seat * xcursor_theme {}", theme);
+            manager
+                .write_section("cursor_theme", &content)
+                .context("Failed to write cursor theme to config")?;
+        }
+    }
+
     // Ensure include exists in main config
     let include_added = match manager.ensure_included_in_main_config() {
         Ok(added) => added,
@@ -279,4 +289,20 @@ fn generate_modes<W: Write>(
     }
 
     Ok(())
+}
+
+/// Get the current cursor theme from gsettings.
+fn get_current_cursor_theme() -> Result<String> {
+    let output = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "cursor-theme"])
+        .output()
+        .context("Failed to query cursor theme from gsettings")?;
+
+    let theme = String::from_utf8_lossy(&output.stdout);
+    // Remove quotes and whitespace
+    Ok(theme
+        .trim()
+        .trim_matches('\'')
+        .trim_matches('"')
+        .to_string())
 }
