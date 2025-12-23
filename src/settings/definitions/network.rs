@@ -3,8 +3,8 @@
 //! IP info, speed test, and connection management.
 
 use anyhow::{Context, Result};
-use std::process::{Command, Stdio};
 use duct::cmd;
+use std::process::{Command, Stdio};
 
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{CHROMIUM, NM_CONNECTION_EDITOR, NMTUI};
@@ -136,7 +136,39 @@ impl Setting for EditConnectionsTui {
             "settings.command.launching",
             "Launching Edit Connections...",
         );
+
+        // nmtui (via libnewt) only supports standard ANSI color names.
+        // We use a "soft mono" theme: Light Gray text on Black background with Blue accents.
+        // This avoids the harshness of bright white and the oversaturation of default blue,
+        // while blending better with dark terminal themes like Catppuccin.
+        let newt_colors = concat!(
+            "root=lightgray,black ",
+            "border=blue,black ",
+            "window=lightgray,black ",
+            "shadow=black,black ",
+            "title=blue,black ",
+            "button=black,lightgray ",
+            "actbutton=black,blue ",
+            "checkbox=blue,black ",
+            "actcheckbox=black,blue ",
+            "entry=lightgray,black ",
+            "label=lightgray,black ",
+            "listbox=lightgray,black ",
+            "actlistbox=black,blue ",
+            "sellistbox=lightgray,black ",
+            "actsellistbox=black,blue ",
+            "textbox=lightgray,black ",
+            "acttextbox=lightgray,black ",
+            "helpline=lightgray,black ",
+            "roottext=lightgray,black ",
+            "emptyscale=black,black ",
+            "fullscale=blue,blue ",
+            "disentry=gray,black ",
+            "compactbutton=black,lightgray"
+        );
+
         cmd!("nmtui")
+            .env("NEWT_COLORS", newt_colors)
             .run()
             .context("running nmtui")?;
         ctx.emit_success("settings.command.completed", "Exited Edit Connections");
