@@ -73,6 +73,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         Category::Network => vec![
             CategoryNode::setting(&network::IpInfo),
             CategoryNode::setting(&network::SpeedTest),
+            CategoryNode::setting(&network::EditConnectionsTui),
             CategoryNode::setting(&network::EditConnections),
         ],
         Category::Bluetooth => vec![

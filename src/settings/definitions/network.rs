@@ -4,9 +4,10 @@
 
 use anyhow::{Context, Result};
 use std::process::{Command, Stdio};
+use duct::cmd;
 
 use crate::settings::context::SettingsContext;
-use crate::settings::deps::{CHROMIUM, NM_CONNECTION_EDITOR};
+use crate::settings::deps::{CHROMIUM, NM_CONNECTION_EDITOR, NMTUI};
 use crate::settings::network;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
@@ -83,7 +84,7 @@ impl Setting for EditConnections {
     fn metadata(&self) -> SettingMetadata {
         SettingMetadata::builder()
             .id("network.edit_connections")
-            .title("Edit Connections")
+            .title("Edit Connection (Advanced)")
             .icon(NerdFont::Settings)
             .summary("Manage WiFi, Ethernet, VPN, and other network connections.\n\nConfigure connection settings, passwords, and advanced options.")
             .requirements(vec![&NM_CONNECTION_EDITOR])
@@ -105,6 +106,40 @@ impl Setting for EditConnections {
             .spawn()
             .context("launching nm-connection-editor")?;
         ctx.emit_success("settings.command.completed", "Launched Edit Connections");
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Edit Connections (TUI app)
+// ============================================================================
+
+pub struct EditConnectionsTui;
+
+impl Setting for EditConnectionsTui {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("network.edit_connections_tui")
+            .title("Edit Connections")
+            .icon(NerdFont::Settings)
+            .summary("Manage network connections using the terminal interface.")
+            .requirements(vec![&NMTUI])
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Command
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        ctx.emit_info(
+            "settings.command.launching",
+            "Launching Edit Connections...",
+        );
+        cmd!("nmtui")
+            .run()
+            .context("running nmtui")?;
+        ctx.emit_success("settings.command.completed", "Exited Edit Connections");
         Ok(())
     }
 }

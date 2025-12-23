@@ -155,6 +155,16 @@ pub static NM_CONNECTION_EDITOR: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("nm-connection-editor")],
 };
 
+pub static NMTUI: Dependency = Dependency {
+    name: "Network Manager TUI",
+    description: Some("NetworkManager Text User Interface"),
+    packages: &[
+        PackageDefinition::new("networkmanager", PackageManager::Pacman),
+        PackageDefinition::new("network-manager", PackageManager::Apt),
+    ],
+    tests: &[InstallTest::WhichSucceeds("nmtui")],
+};
+
 // =============================================================================
 // Appearance (appearance.rs)
 // =============================================================================
