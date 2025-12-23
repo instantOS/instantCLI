@@ -33,6 +33,7 @@ struct WhisperWord {
     start: f64,
     end: f64,
     #[serde(default)]
+    #[allow(dead_code)]
     score: f64,
 }
 

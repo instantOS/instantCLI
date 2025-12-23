@@ -66,11 +66,6 @@ impl DiskInfo {
             .iter()
             .find(|p| p.is_efi && p.size_bytes >= MIN_ESP_SIZE)
     }
-
-    /// Check if this disk has an EFI partition (any size)
-    pub fn has_esp(&self) -> bool {
-        self.partitions.iter().any(|p| p.is_efi)
-    }
 }
 
 /// Partition table type
@@ -275,8 +270,6 @@ fn get_largest_free_region(device: &str, disk_size_bytes: Option<u64>) -> Option
 pub struct FreeRegion {
     /// Start sector
     pub start: u64,
-    /// End sector
-    pub end: u64,
     /// Number of sectors
     pub sectors: u64,
     /// Size in bytes
@@ -376,7 +369,6 @@ fn calculate_free_regions_from_json(
             if gap_sectors > 2048 {
                 regions.push(FreeRegion {
                     start: current_sector,
-                    end: partition.start - 1,
                     sectors: gap_sectors,
                     size_bytes: gap_sectors * sector_size,
                 });
@@ -393,7 +385,6 @@ fn calculate_free_regions_from_json(
         if gap_sectors > 2048 {
             regions.push(FreeRegion {
                 start: current_sector,
-                end: last_lba,
                 sectors: gap_sectors,
                 size_bytes: gap_sectors * sector_size,
             });

@@ -276,7 +276,6 @@ impl AudioPreprocessor for AuphonicPreprocessor {
             );
             return Ok(PreprocessResult {
                 output_path: processed_cache_path,
-                cached: true,
             });
         }
 
@@ -328,7 +327,6 @@ impl AudioPreprocessor for AuphonicPreprocessor {
 
         Ok(PreprocessResult {
             output_path: processed_cache_path,
-            cached: false,
         })
     }
 

@@ -32,7 +32,7 @@ fn align_dialogue_clips_to_cues(
     plan: &mut TimelinePlan,
     cues: &[TranscriptCue],
 ) -> Result<Vec<usize>> {
-    let mut dialogue_clips: Vec<(usize, f64, f64, usize, String)> = Vec::new();
+    let mut dialogue_clips: Vec<(usize, f64, f64, String)> = Vec::new();
 
     for (idx, item) in plan.items.iter().enumerate() {
         let TimelinePlanItem::Clip(clip) = item else {
@@ -43,7 +43,7 @@ fn align_dialogue_clips_to_cues(
             continue;
         }
 
-        dialogue_clips.push((idx, clip.start, clip.end, clip.line, clip.text.clone()));
+        dialogue_clips.push((idx, clip.start, clip.end, clip.text.clone()));
     }
 
     if dialogue_clips.is_empty() {
@@ -268,7 +268,7 @@ fn padded_cue_bounds(
 }
 
 fn assign_cues_max_overlap(
-    dialogue_clips: &[(usize, f64, f64, usize, String)],
+    dialogue_clips: &[(usize, f64, f64, String)],
     cues: &[TranscriptCue],
 ) -> Result<Vec<(usize, usize)>> {
     validate_alignment_inputs(dialogue_clips, cues)?;
@@ -295,7 +295,7 @@ fn assign_cues_max_overlap(
 }
 
 fn validate_alignment_inputs(
-    dialogue_clips: &[(usize, f64, f64, usize, String)],
+    dialogue_clips: &[(usize, f64, f64, String)],
     cues: &[TranscriptCue],
 ) -> Result<()> {
     if cues.is_empty() {
@@ -364,10 +364,10 @@ impl AssignmentGraphBuilder {
 
     fn add_overlap_options(
         &mut self,
-        dialogue_clips: &[(usize, f64, f64, usize, String)],
+        dialogue_clips: &[(usize, f64, f64, String)],
         cues: &[TranscriptCue],
     ) {
-        for (clip_idx, (_timeline_idx, clip_start, clip_end, _line, _text)) in
+        for (clip_idx, (_timeline_idx, clip_start, clip_end, _text)) in
             dialogue_clips.iter().enumerate()
         {
             let clip_duration = (clip_end - clip_start).max(0.0);
@@ -408,7 +408,7 @@ impl AssignmentGraphBuilder {
 
     fn extract_assignments(
         &self,
-        dialogue_clips: &[(usize, f64, f64, usize, String)],
+        dialogue_clips: &[(usize, f64, f64, String)],
     ) -> Result<Vec<(usize, usize)>> {
         let clip_count = dialogue_clips.len();
         let mut result: Vec<(usize, usize)> = Vec::with_capacity(clip_count);
@@ -446,14 +446,14 @@ impl AssignmentGraphBuilder {
 }
 
 fn diagnose_alignment_failure(
-    dialogue_clips: &[(usize, f64, f64, usize, String)],
+    dialogue_clips: &[(usize, f64, f64, String)],
     cues: &[TranscriptCue],
 ) -> Result<()> {
     // Find a useful error pointing to the first clip with no candidate cues.
-    for (_timeline_idx, clip_start, clip_end, line, text) in dialogue_clips {
+    for (_timeline_idx, clip_start, clip_end, text) in dialogue_clips {
         let clip_duration = (clip_end - clip_start).max(0.0);
         if clip_duration <= 0.0 {
-            bail!("Invalid segment duration for `{}` at line {}", text, line);
+            bail!("Invalid segment duration for `{}`", text);
         }
 
         let mut has_candidate = false;
@@ -473,9 +473,8 @@ fn diagnose_alignment_failure(
 
         if !has_candidate {
             bail!(
-                "Unable to locate subtitle entry for segment `{}` at line {}",
-                text,
-                line
+                "Unable to locate subtitle entry for segment `{}`",
+                text
             );
         }
     }

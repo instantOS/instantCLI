@@ -32,9 +32,6 @@ pub enum OperatingSystem {
     Unknown(String),
 }
 
-/// Type alias for backward compatibility
-pub type Distro = OperatingSystem;
-
 impl OperatingSystem {
     /// Detect the current operating system from /etc/os-release
     pub fn detect() -> Self {

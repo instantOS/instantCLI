@@ -15,12 +15,8 @@ pub struct ResizeStatus {
     pub resize_detected: bool,
     /// Current partition size in bytes (if partition still exists)
     pub current_partition_size: Option<u64>,
-    /// Current unpartitioned space on the disk
-    pub current_unpartitioned_bytes: u64,
     /// How much space was freed compared to original (0 if none)
     pub space_freed_bytes: u64,
-    /// Whether there's enough free space for Linux installation
-    pub has_sufficient_space: bool,
     /// Human-readable message describing the status
     pub message: String,
 }
@@ -53,17 +49,6 @@ pub struct ResizeVerifier {
 }
 
 impl ResizeVerifier {
-    /// Create a new resize verifier from current disk state
-    pub fn new(disk: &DiskInfo, partition: &PartitionInfo) -> Self {
-        Self {
-            disk_path: disk.device.clone(),
-            partition_path: partition.device.clone(),
-            original_partition_size: partition.size_bytes,
-            original_unpartitioned_bytes: disk.unpartitioned_space_bytes,
-            target_partition_size: None,
-        }
-    }
-
     /// Create a new resize verifier with a target size
     pub fn with_target(
         disk: &DiskInfo,
@@ -90,9 +75,7 @@ impl ResizeVerifier {
             return Ok(ResizeStatus {
                 resize_detected: false,
                 current_partition_size: None,
-                current_unpartitioned_bytes: 0,
                 space_freed_bytes: 0,
-                has_sufficient_space: false,
                 message: format!("Disk {} not found", self.disk_path),
             });
         };
@@ -163,9 +146,7 @@ impl ResizeVerifier {
         Ok(ResizeStatus {
             resize_detected,
             current_partition_size,
-            current_unpartitioned_bytes: current_unpartitioned,
             space_freed_bytes,
-            has_sufficient_space,
             message,
         })
     }
@@ -174,16 +155,6 @@ impl ResizeVerifier {
     pub async fn check_async(&self) -> Result<ResizeStatus> {
         let verifier = self.clone();
         tokio::task::spawn_blocking(move || verifier.check()).await?
-    }
-
-    /// Get human-readable original partition size
-    pub fn original_partition_human(&self) -> String {
-        format_size(self.original_partition_size)
-    }
-
-    /// Get human-readable target partition size (if set)
-    pub fn target_partition_human(&self) -> Option<String> {
-        self.target_partition_size.map(format_size)
     }
 }
 
@@ -196,9 +167,7 @@ mod tests {
         let status = ResizeStatus {
             resize_detected: true,
             current_partition_size: Some(50 * 1024 * 1024 * 1024), // 50 GB
-            current_unpartitioned_bytes: 20 * 1024 * 1024 * 1024,  // 20 GB
             space_freed_bytes: 20 * 1024 * 1024 * 1024,            // 20 GB
-            has_sufficient_space: true,
             message: "Test".to_string(),
         };
 

@@ -51,20 +51,17 @@ pub struct SegmentBlock {
     pub range: TimeRange,
     pub text: String,
     pub kind: SegmentKind,
-    pub line: usize,
 }
 
 #[derive(Debug)]
 pub struct HeadingBlock {
     pub level: u32,
     pub text: String,
-    pub line: usize,
 }
 
 #[derive(Debug)]
 pub struct UnhandledBlock {
     pub description: String,
-    pub line: usize,
 }
 
 
@@ -78,7 +75,6 @@ pub enum MusicDirective {
 #[derive(Debug)]
 pub struct MusicBlock {
     pub directive: MusicDirective,
-    pub line: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -268,9 +264,8 @@ impl<'a> BodyParserState<'a> {
 
     fn flush_heading(&mut self) {
         if let Some(state) = self.heading.take() {
-            let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
             self.blocks
-                .push(DocumentBlock::Heading(state.into_block(line)));
+                .push(DocumentBlock::Heading(state.into_block()));
         }
     }
 
@@ -279,14 +274,13 @@ impl<'a> BodyParserState<'a> {
             let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
             let directive = state.into_music_directive(line)?;
             self.blocks
-                .push(DocumentBlock::Music(MusicBlock { directive, line }));
+                .push(DocumentBlock::Music(MusicBlock { directive }));
         }
         Ok(())
     }
 
     fn flush_blockquote(&mut self) {
         if let Some(state) = self.blockquote.take() {
-            let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
             // Re-wrap content with `> ` prefix so it renders as <blockquote> in Pandoc
             let markdown = state
                 .content
@@ -297,7 +291,6 @@ impl<'a> BodyParserState<'a> {
             if !markdown.trim().is_empty() {
                 self.blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
                     description: markdown,
-                    line,
                 }));
             }
         }
@@ -479,7 +472,6 @@ impl ParagraphState {
                         range,
                         text,
                         kind,
-                        line,
                     }));
                 }
                 _ => leftover_text.push(fragment),
@@ -490,10 +482,8 @@ impl ParagraphState {
             .trim()
             .to_string();
         if !leftover_content.is_empty() {
-            let line = base_line_offset + line_map.line_number(self.start_byte);
             blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
                 description: leftover_content,
-                line,
             }));
         }
 
@@ -520,11 +510,10 @@ impl HeadingState {
         self.text.push_str(&text);
     }
 
-    fn into_block(self, line: usize) -> HeadingBlock {
+    fn into_block(self) -> HeadingBlock {
         HeadingBlock {
             level: self.level,
             text: self.text.trim().to_string(),
-            line,
         }
     }
 }
@@ -775,7 +764,6 @@ mod tests {
                 assert!((segment.range.start_seconds() - 0.0).abs() < f64::EPSILON);
                 assert!((segment.range.end_seconds() - 1.0).abs() < f64::EPSILON);
                 assert_eq!(segment.text, "first line");
-                assert_eq!(segment.line, 1);
             }
             other => panic!("Expected first block to be Segment, got {:?}", other),
         }
@@ -785,7 +773,6 @@ mod tests {
                 assert!((segment.range.start_seconds() - 1.5).abs() < f64::EPSILON);
                 assert!((segment.range.end_seconds() - 2.0).abs() < f64::EPSILON);
                 assert_eq!(segment.text, "second line");
-                assert_eq!(segment.line, 2);
             }
             other => panic!("Expected second block to be Segment, got {:?}", other),
         }
@@ -939,8 +926,6 @@ impl LineMap {
 struct FrontMatter {
     video: Option<FrontMatterVideo>,
     transcript: Option<FrontMatterTranscript>,
-    #[serde(rename = "generated_at")]
-    generated_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

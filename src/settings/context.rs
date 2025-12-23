@@ -4,7 +4,6 @@ use anyhow::{Result, bail};
 use duct::cmd;
 use sudo::RunningAs;
 
-use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::*;
 
@@ -182,10 +181,6 @@ impl SettingsContext {
         } else {
             Ok(self.store.bool(key))
         }
-    }
-
-    pub fn ensure_dependencies(&mut self, deps: &[&'static Dependency]) -> Result<InstallResult> {
-        ensure_all(deps)
     }
 
     pub fn persist(&mut self) -> Result<()> {
