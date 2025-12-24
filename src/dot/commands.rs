@@ -88,6 +88,15 @@ pub enum DotCommands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Set or view which repository/subdirectory a dotfile is sourced from
+    Alternative {
+        /// Path to the dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+        /// Remove the override for this file (use default priority)
+        #[arg(long)]
+        reset: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -272,6 +281,9 @@ pub fn handle_dot_command(
         }
         DotCommands::Git { args } => {
             super::git_run_any(&config, args, debug)?;
+        }
+        DotCommands::Alternative { path, reset } => {
+            super::operations::alternative::handle_alternative(&config, path, *reset)?;
         }
     }
 

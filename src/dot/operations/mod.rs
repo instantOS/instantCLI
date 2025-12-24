@@ -1,4 +1,5 @@
 pub mod add;
+pub mod alternative;
 pub mod apply;
 pub mod git_commands;
 pub mod reset;
