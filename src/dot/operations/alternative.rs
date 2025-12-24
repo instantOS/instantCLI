@@ -107,31 +107,45 @@ pub fn handle_alternative(config: &Config, path: &str, reset: bool, create: bool
         })
         .collect();
 
+    // Check if current file is modified by user BEFORE showing picker
+    // If target matches ANY source, it's safe to switch (came from a repo)
+    let db = crate::dot::db::Database::new(config.database_path().to_path_buf())?;
+
+    if target_path.exists() {
+        let target_hash = crate::dot::dotfile::Dotfile::compute_hash(&target_path)?;
+        let mut matches_any_source = false;
+
+        for item in &items {
+            if let Ok(source_hash) =
+                crate::dot::dotfile::Dotfile::compute_hash(&item.source.source_path)
+            {
+                if target_hash == source_hash {
+                    matches_any_source = true;
+                    break;
+                }
+            }
+        }
+
+        if !matches_any_source {
+            emit(
+                Level::Error,
+                "dot.alternative.modified",
+                &format!(
+                    "{} Cannot switch source for {} - file has been modified.\n  Use 'ins dot reset {}' to discard changes first.",
+                    char::from(NerdFont::CrossCircle),
+                    display_path.yellow(),
+                    display_path
+                ),
+                None,
+            );
+            return Ok(());
+        }
+    }
+
     // Show picker
     let prompt = format!("Select source for {}: ", display_path);
     match FzfWrapper::builder().prompt(prompt).select(items)? {
         FzfResult::Selected(item) => {
-            // Check if current file is modified - don't switch to avoid losing user changes
-            let db = crate::dot::db::Database::new(config.database_path().to_path_buf())?;
-            let all_dotfiles = crate::dot::get_all_dotfiles(config, &db)?;
-            if let Some(current_dotfile) = all_dotfiles.get(&target_path) {
-                let status = crate::dot::git::status::get_dotfile_status(current_dotfile, &db);
-                if matches!(status, crate::dot::git::status::DotFileStatus::Modified) {
-                    emit(
-                        Level::Error,
-                        "dot.alternative.modified",
-                        &format!(
-                            "{} Cannot switch source for {} - file has been modified.\n  Use 'ins dot reset {}' to discard changes first.",
-                            char::from(NerdFont::CrossCircle),
-                            display_path.yellow(),
-                            display_path
-                        ),
-                        None,
-                    );
-                    return Ok(());
-                }
-            }
-
             // Set the override
             let mut overrides = OverrideConfig::load()?;
 
