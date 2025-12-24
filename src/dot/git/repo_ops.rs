@@ -57,7 +57,13 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
         ));
     }
 
-    let depth = config.clone_depth;
+    // Shallow clone doesn't work with local paths
+    let is_local_path = std::path::Path::new(&repo.url).exists();
+    let depth = if is_local_path {
+        None
+    } else {
+        Some(config.clone_depth as i32)
+    };
 
     let pb = common::progress::create_spinner(format!("Cloning {}...", repo.url));
 
@@ -65,7 +71,7 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
         &repo.url,
         &target,
         repo.branch.as_deref(),
-        Some(depth as i32),
+        depth,
     )
     .context("Failed to clone repository")?;
 
