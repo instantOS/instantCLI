@@ -257,7 +257,7 @@ pub fn handle_dot_command(
             super::update_all(&config, debug, &db, !*no_apply)?;
         }
         DotCommands::Status { path, all } => {
-            super::status_all(&config, debug, path.as_deref(), &db, *all)?;
+            super::status_all(&config, path.as_deref(), &db, *all)?;
         }
         DotCommands::Init {
             name,
@@ -268,7 +268,7 @@ pub fn handle_dot_command(
             super::meta::handle_init_command(&mut config, &cwd, name.as_deref(), *non_interactive)?;
         }
         DotCommands::Diff { path } => {
-            super::diff_all(&config, debug, path.as_deref(), &db)?;
+            super::diff_all(&config, path.as_deref(), &db)?;
         }
         DotCommands::Ignore { command } => {
             handle_ignore_command(&mut config, command, config_path)?;

@@ -9,7 +9,6 @@ use std::process::Command;
 
 pub fn diff_all(
     cfg: &config::Config,
-    _debug: bool,
     path: Option<&str>,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
@@ -83,7 +82,7 @@ fn diff_directory(
             tilde_path,
             format!("{}: {}", repo_name, dotfile_dir).dimmed()
         );
-        show_dotfile_diff(dotfile, &repo_name, &dotfile_dir)?;
+        show_dotfile_diff(dotfile)?;
         println!();
     }
 
@@ -117,7 +116,7 @@ fn diff_file(
             DotFileStatus::Modified | DotFileStatus::Outdated => {
                 let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
                 let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
-                show_dotfile_diff(dotfile, &repo_name, &dotfile_dir)?;
+                show_dotfile_diff(dotfile)?;
             }
         }
     } else {
@@ -164,11 +163,7 @@ pub fn show_all_diffs(
                 tilde_path,
                 format!("{}: {}", file_info.repo_name, file_info.dotfile_dir).dimmed()
             );
-            show_dotfile_diff(
-                &file_info.dotfile,
-                &file_info.repo_name,
-                &file_info.dotfile_dir,
-            )?;
+            show_dotfile_diff(&file_info.dotfile)?;
             println!();
         }
     }
@@ -190,11 +185,7 @@ pub fn show_all_diffs(
                 tilde_path,
                 format!("{}: {}", file_info.repo_name, file_info.dotfile_dir).dimmed()
             );
-            show_dotfile_diff(
-                &file_info.dotfile,
-                &file_info.repo_name,
-                &file_info.dotfile_dir,
-            )?;
+            show_dotfile_diff(&file_info.dotfile)?;
             println!();
         }
     }
@@ -204,8 +195,6 @@ pub fn show_all_diffs(
 
 fn show_dotfile_diff(
     dotfile: &crate::dot::Dotfile,
-    _repo_name: &crate::dot::RepoName,
-    _dotfile_dir: &str,
 ) -> Result<()> {
     // Check if delta is available
     if Command::new("delta").arg("--help").output().is_ok() {
