@@ -259,6 +259,11 @@ pub fn categorize_files_and_get_summary<'a>(
         }
     }
 
+    // Sort files by path within each status category for better readability
+    for files in files_by_status.values_mut() {
+        files.sort_by(|a, b| a.target_path.cmp(&b.target_path));
+    }
+
     let summary = StatusSummary {
         total_files: all_dotfiles.len(),
         clean_count,
