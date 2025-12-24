@@ -149,13 +149,13 @@ pub fn handle_alternative(config: &Config, path: &str, reset: bool, create: bool
             // Set the override
             let mut overrides = OverrideConfig::load()?;
 
-            // Apply the new source version FIRST (before saving override)
-            // source_path already includes the full path to the file
+            // Use reset() to force-apply the new source version since we already
+            // verified the file is safe to switch (matches a known source)
             let new_dotfile = crate::dot::Dotfile {
                 source_path: item.source.source_path.clone(),
                 target_path: target_path.clone(),
             };
-            new_dotfile.apply(&db)?;
+            new_dotfile.reset(&db)?;
 
             // Only save override after successful apply
             overrides.set_override(

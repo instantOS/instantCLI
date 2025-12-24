@@ -143,9 +143,22 @@ pub fn show_single_file_status(
                     let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
                     let relative_path = path.strip_prefix(&home).unwrap_or(path);
                     let tilde_path = format!("~/{}", relative_path.display());
+
+                    let override_indicator = if let Ok(overrides) =
+                        crate::dot::override_config::OverrideConfig::load()
+                    {
+                        if overrides.get_override(path).is_some() {
+                            " [override]"
+                        } else {
+                            ""
+                        }
+                    } else {
+                        ""
+                    };
+
                     println!("  {} -> {}", tilde_path, status);
                     println!("    Source: {}", dotfile.source_path.display());
-                    println!("    Repo: {repo_name} ({dotfile_dir})");
+                    println!("    Repo: {repo_name} ({dotfile_dir}){override_indicator}");
                 }
             }
         }
@@ -189,13 +202,26 @@ pub fn show_single_file_status(
             if let Some(dotfile) = all_dotfiles.get(&target_path) {
                 let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
                 let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+
+                // Check for override
+                let override_indicator =
+                    if let Ok(overrides) = crate::dot::override_config::OverrideConfig::load() {
+                        if overrides.get_override(&target_path).is_some() {
+                            " [override]"
+                        } else {
+                            ""
+                        }
+                    } else {
+                        ""
+                    };
+
                 println!(
                     "{} -> {}",
                     target_path.display(),
                     get_dotfile_status(dotfile, db)
                 );
                 println!("  Source: {}", dotfile.source_path.display());
-                println!("  Repo: {repo_name} ({dotfile_dir})");
+                println!("  Repo: {repo_name} ({dotfile_dir}){override_indicator}");
             } else {
                 println!("{} -> not tracked", target_path.display());
             }
