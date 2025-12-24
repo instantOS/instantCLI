@@ -58,6 +58,18 @@ pub enum SubdirCommands {
         name: String,
         subdirs: Vec<String>,
     },
+    /// Enable a subdirectory
+    Enable {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: String,
+        subdir: String,
+    },
+    /// Disable a subdirectory
+    Disable {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: String,
+        subdir: String,
+    },
 }
 #[derive(Args, Debug, Clone)]
 pub struct CloneArgs {

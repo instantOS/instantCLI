@@ -288,7 +288,11 @@ pub fn handle_dot_command(
         DotCommands::Git { args } => {
             super::git_run_any(&config, args, debug)?;
         }
-        DotCommands::Alternative { path, reset, create } => {
+        DotCommands::Alternative {
+            path,
+            reset,
+            create,
+        } => {
             super::operations::alternative::handle_alternative(&config, path, *reset, *create)?;
         }
     }

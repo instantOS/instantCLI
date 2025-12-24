@@ -551,6 +551,8 @@ fn handle_subdir_command(
     match command {
         SubdirCommands::List { name, active } => list_subdirectories(config, db, name, *active),
         SubdirCommands::Set { name, subdirs } => set_subdirectories(config, name, subdirs),
+        SubdirCommands::Enable { name, subdir } => enable_subdirectory(config, db, name, subdir),
+        SubdirCommands::Disable { name, subdir } => disable_subdirectory(config, name, subdir),
     }
 }
 
@@ -639,4 +641,81 @@ fn set_read_only_status(config: &mut Config, name: &str, read_only: bool) -> Res
         }
     }
     Err(anyhow::anyhow!("Repository '{}' not found", name))
+}
+
+/// Enable a subdirectory for a repository
+fn enable_subdirectory(config: &mut Config, db: &Database, name: &str, subdir: &str) -> Result<()> {
+    // First verify the subdir exists in the repo's metadata
+    let local_repo = crate::dot::localrepo::LocalRepo::new(config, name.to_string())?;
+    if !local_repo.meta.dots_dirs.contains(&subdir.to_string()) {
+        return Err(anyhow::anyhow!(
+            "Subdirectory '{}' not found in repository '{}'. Available: {}",
+            subdir,
+            name,
+            local_repo.meta.dots_dirs.join(", ")
+        ));
+    }
+
+    // Get current active subdirs
+    let mut active = config.get_active_subdirs(name);
+
+    if active.contains(&subdir.to_string()) {
+        println!(
+            "{} Subdirectory '{}' is already enabled for '{}'",
+            char::from(NerdFont::Info),
+            subdir,
+            name
+        );
+        return Ok(());
+    }
+
+    active.push(subdir.to_string());
+    config.set_active_subdirs(name, active, None)?;
+
+    println!(
+        "{} Enabled subdirectory '{}' for repository '{}'",
+        char::from(NerdFont::Check).to_string().green(),
+        subdir,
+        name
+    );
+
+    // Apply to pick up new dotfiles
+    apply_all_repos(config, db)?;
+
+    Ok(())
+}
+
+/// Disable a subdirectory for a repository
+fn disable_subdirectory(config: &mut Config, name: &str, subdir: &str) -> Result<()> {
+    let mut active = config.get_active_subdirs(name);
+
+    if !active.contains(&subdir.to_string()) {
+        println!(
+            "{} Subdirectory '{}' is not enabled for '{}'",
+            char::from(NerdFont::Info),
+            subdir,
+            name
+        );
+        return Ok(());
+    }
+
+    active.retain(|s| s != subdir);
+
+    if active.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Cannot disable '{}' - at least one subdirectory must remain active",
+            subdir
+        ));
+    }
+
+    config.set_active_subdirs(name, active, None)?;
+
+    println!(
+        "{} Disabled subdirectory '{}' for repository '{}'",
+        char::from(NerdFont::Check).to_string().green(),
+        subdir,
+        name
+    );
+
+    Ok(())
 }

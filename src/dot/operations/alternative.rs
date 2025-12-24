@@ -99,7 +99,11 @@ pub fn handle_alternative(config: &Config, path: &str, reset: bool, create: bool
             let is_current = current_override
                 .map(|o| o.source_repo == source.repo_name && o.source_subdir == source.subdir_name)
                 .unwrap_or(false);
-            SourceSelectItem { source, is_current, exists: true }
+            SourceSelectItem {
+                source,
+                is_current,
+                exists: true,
+            }
         })
         .collect();
 
@@ -156,7 +160,7 @@ fn handle_create(
     existing_sources: &[DotfileSource],
 ) -> Result<()> {
     use crate::dot::db::Database;
-    
+
     // Get all available repos/subdirs
     let all_destinations = get_all_destinations(config)?;
 
@@ -177,9 +181,9 @@ fn handle_create(
     let items: Vec<SourceSelectItem> = all_destinations
         .into_iter()
         .map(|dest| {
-            let exists = existing_sources.iter().any(|s| {
-                s.repo_name == dest.repo_name && s.subdir_name == dest.subdir_name
-            });
+            let exists = existing_sources
+                .iter()
+                .any(|s| s.repo_name == dest.repo_name && s.subdir_name == dest.subdir_name);
             SourceSelectItem {
                 source: dest,
                 is_current: false,

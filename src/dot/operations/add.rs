@@ -192,7 +192,11 @@ pub fn add_dotfile(
 }
 
 /// Add a file with a destination picker (for --choose flag)
-fn add_with_destination_picker(config: &Config, db: &Database, target_path: &PathBuf) -> Result<()> {
+fn add_with_destination_picker(
+    config: &Config,
+    db: &Database,
+    target_path: &PathBuf,
+) -> Result<()> {
     use super::alternative::{add_to_destination, get_all_destinations};
     use crate::dot::override_config::{DotfileSource, find_all_sources};
 
@@ -229,7 +233,10 @@ fn add_with_destination_picker(config: &Config, db: &Database, target_path: &Pat
     impl crate::menu_utils::FzfSelectable for DestItem {
         fn fzf_display_text(&self) -> String {
             let status = if self.exists { " [exists]" } else { "" };
-            format!("{} / {}{}", self.source.repo_name, self.source.subdir_name, status)
+            format!(
+                "{} / {}{}",
+                self.source.repo_name, self.source.subdir_name, status
+            )
         }
         fn fzf_key(&self) -> String {
             format!("{}:{}", self.source.repo_name, self.source.subdir_name)
@@ -239,10 +246,13 @@ fn add_with_destination_picker(config: &Config, db: &Database, target_path: &Pat
     let items: Vec<DestItem> = all_destinations
         .into_iter()
         .map(|dest| {
-            let exists = existing_sources.iter().any(|s| {
-                s.repo_name == dest.repo_name && s.subdir_name == dest.subdir_name
-            });
-            DestItem { source: dest, exists }
+            let exists = existing_sources
+                .iter()
+                .any(|s| s.repo_name == dest.repo_name && s.subdir_name == dest.subdir_name);
+            DestItem {
+                source: dest,
+                exists,
+            }
         })
         .collect();
 
