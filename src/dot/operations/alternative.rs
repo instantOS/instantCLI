@@ -148,13 +148,15 @@ pub fn handle_alternative(config: &Config, path: &str, reset: bool, create: bool
     Ok(())
 }
 
-/// Handle --create flag: show all repos/subdirs, create file if needed
+/// Handle --create flag: add file to a chosen repo/subdir
 fn handle_create(
     config: &Config,
     target_path: &PathBuf,
     display_path: &str,
     existing_sources: &[DotfileSource],
 ) -> Result<()> {
+    use crate::dot::db::Database;
+    
     // Get all available repos/subdirs
     let all_destinations = get_all_destinations(config)?;
 
@@ -211,8 +213,17 @@ fn handle_create(
                     None,
                 );
             } else {
-                // Copy the file to the new destination
-                copy_to_destination(config, target_path, display_path, &item.source)?;
+                // Use add_to_destination which handles file copying and DB registration
+                let db = Database::new(config.database_path().to_path_buf())?;
+                add_to_destination(config, &db, target_path, &item.source)?;
+
+                // Set override to use this new source
+                let mut overrides = OverrideConfig::load()?;
+                overrides.set_override(
+                    target_path.clone(),
+                    item.source.repo_name.clone(),
+                    item.source.subdir_name.clone(),
+                )?;
             }
         }
         FzfResult::Cancelled => {
@@ -232,8 +243,8 @@ fn handle_create(
     Ok(())
 }
 
-/// Get all available repo/subdir destinations
-fn get_all_destinations(config: &Config) -> Result<Vec<DotfileSource>> {
+/// Get all available repo/subdir destinations (exported for use by add command)
+pub fn get_all_destinations(config: &Config) -> Result<Vec<DotfileSource>> {
     let mut destinations = Vec::new();
 
     for repo_config in &config.repos {
@@ -253,13 +264,14 @@ fn get_all_destinations(config: &Config) -> Result<Vec<DotfileSource>> {
     Ok(destinations)
 }
 
-/// Copy target file to a new destination repo/subdir
-fn copy_to_destination(
+/// Add a file to a specific destination (shared by both alternative and add commands)
+pub fn add_to_destination(
     config: &Config,
+    db: &crate::dot::db::Database,
     target_path: &PathBuf,
-    display_path: &str,
     dest: &DotfileSource,
 ) -> Result<()> {
+    use crate::dot::dotfile::Dotfile;
     use std::fs;
 
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
@@ -271,34 +283,36 @@ fn copy_to_destination(
         fs::create_dir_all(parent)?;
     }
 
-    // Copy the file
-    if target_path.exists() {
-        fs::copy(target_path, &dest_path)?;
-    } else {
-        // Create empty file if target doesn't exist
-        fs::File::create(&dest_path)?;
+    // Use Dotfile to copy and register in DB
+    let dotfile = Dotfile {
+        source_path: dest_path.clone(),
+        target_path: target_path.clone(),
+    };
+    dotfile.create_source_from_target(db)?;
+
+    // Automatically stage the new file
+    let repo_path = config.repos_path().join(&dest.repo_name);
+    if let Err(e) = crate::dot::git::repo_ops::git_add(&repo_path, &dest_path, false) {
+        eprintln!(
+            "{} Failed to stage file: {}",
+            char::from(NerdFont::Warning).to_string().yellow(),
+            e
+        );
     }
 
+    let relative_display = relative.display().to_string();
     emit(
         Level::Success,
-        "dot.alternative.created",
+        "dot.add.created",
         &format!(
-            "{} Added {} to {} / {}",
+            "{} Added ~/{} to {} / {}",
             char::from(NerdFont::Check),
-            display_path.cyan(),
+            relative_display.green(),
             dest.repo_name.green(),
             dest.subdir_name.green()
         ),
         None,
     );
-
-    // Set override to use this new source
-    let mut overrides = OverrideConfig::load()?;
-    overrides.set_override(
-        target_path.clone(),
-        dest.repo_name.clone(),
-        dest.subdir_name.clone(),
-    )?;
 
     Ok(())
 }

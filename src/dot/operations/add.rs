@@ -130,16 +130,23 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
 /// - For untracked files: Prompt to add them to a repository
 /// - For directories without --all: Only update tracked files
 /// - For directories with --all: Update tracked files AND add untracked files
+/// - With --choose: Pick which repo/subdir to add the file to
 pub fn add_dotfile(
     config: &Config,
     db: &Database,
     path: &str,
     add_all: bool,
+    choose: bool,
     debug: bool,
 ) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db)?;
     let target_path = resolve_dotfile_path(path)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
+
+    // Handle --choose flag for single files
+    if choose && target_path.is_file() {
+        return add_with_destination_picker(config, db, &target_path);
+    }
 
     // Get tracked dotfiles within the specified path
     let tracked_dotfiles = filter_dotfiles_by_path(&all_dotfiles, &target_path);
@@ -180,6 +187,98 @@ pub fn add_dotfile(
 
     db.cleanup_hashes(config.hash_cleanup_days)?;
     print_directory_add_summary(&stats);
+
+    Ok(())
+}
+
+/// Add a file with a destination picker (for --choose flag)
+fn add_with_destination_picker(config: &Config, db: &Database, target_path: &PathBuf) -> Result<()> {
+    use super::alternative::{add_to_destination, get_all_destinations};
+    use crate::dot::override_config::{DotfileSource, find_all_sources};
+
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let display_path = target_path
+        .strip_prefix(&home)
+        .map(|p| format!("~/{}", p.display()))
+        .unwrap_or_else(|_| target_path.display().to_string());
+
+    // Find existing sources for this file
+    let existing_sources = find_all_sources(config, target_path)?;
+    let all_destinations = get_all_destinations(config)?;
+
+    if all_destinations.is_empty() {
+        emit(
+            Level::Warn,
+            "dot.add.no_repos",
+            &format!(
+                "{} No writable repositories configured",
+                char::from(NerdFont::Warning)
+            ),
+            None,
+        );
+        return Ok(());
+    }
+
+    // Build selection items, marking which ones already have the file
+    #[derive(Clone)]
+    struct DestItem {
+        source: DotfileSource,
+        exists: bool,
+    }
+
+    impl crate::menu_utils::FzfSelectable for DestItem {
+        fn fzf_display_text(&self) -> String {
+            let status = if self.exists { " [exists]" } else { "" };
+            format!("{} / {}{}", self.source.repo_name, self.source.subdir_name, status)
+        }
+        fn fzf_key(&self) -> String {
+            format!("{}:{}", self.source.repo_name, self.source.subdir_name)
+        }
+    }
+
+    let items: Vec<DestItem> = all_destinations
+        .into_iter()
+        .map(|dest| {
+            let exists = existing_sources.iter().any(|s| {
+                s.repo_name == dest.repo_name && s.subdir_name == dest.subdir_name
+            });
+            DestItem { source: dest, exists }
+        })
+        .collect();
+
+    let prompt = format!("Select destination for {}: ", display_path);
+    match FzfWrapper::builder().prompt(prompt).select(items)? {
+        FzfResult::Selected(item) => {
+            if item.exists {
+                emit(
+                    Level::Info,
+                    "dot.add.already_exists",
+                    &format!(
+                        "{} {} already exists in {} / {}",
+                        char::from(NerdFont::Info),
+                        display_path.cyan(),
+                        item.source.repo_name.green(),
+                        item.source.subdir_name.green()
+                    ),
+                    None,
+                );
+            } else {
+                add_to_destination(config, db, target_path, &item.source)?;
+            }
+        }
+        FzfResult::Cancelled => {
+            emit(
+                Level::Info,
+                "dot.add.cancelled",
+                &format!("{} Selection cancelled", char::from(NerdFont::Info)),
+                None,
+            );
+        }
+        FzfResult::Error(e) => {
+            return Err(anyhow::anyhow!("Selection error: {}", e));
+        }
+        _ => {}
+    }
 
     Ok(())
 }
