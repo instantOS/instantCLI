@@ -165,7 +165,7 @@ pub fn add_dotfile(
         add_untracked_files(&untracked_files, config, db, &mut stats, debug)?;
     } else if target_path.is_file() && tracked_dotfiles.is_empty() {
         // Single untracked file - prompt to add it
-        let repo_path = add_new_file(config, db, &target_path, debug)?;
+        let repo_path = add_new_file(config, db, &target_path)?;
         stats.added_count += 1;
         stats.modified_repos.insert(repo_path);
     } else if tracked_dotfiles.is_empty() {
@@ -284,7 +284,10 @@ fn add_with_destination_picker(config: &Config, db: &Database, target_path: &Pat
 }
 
 /// Add a new untracked file and return the repo path
-fn add_new_file(config: &Config, db: &Database, full_path: &Path, debug: bool) -> Result<PathBuf> {
+fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<PathBuf> {
+    use super::alternative::add_to_destination;
+    use crate::dot::override_config::DotfileSource;
+
     // Repository selection
     let repo_config = select_repo(config)?;
     let local_repo = LocalRepo::new(config, repo_config.name.clone())?;
@@ -292,47 +295,20 @@ fn add_new_file(config: &Config, db: &Database, full_path: &Path, debug: bool) -
     // dots_dir selection
     let chosen_dir = select_dots_dir(&local_repo)?;
 
-    // Construct destination path inside the repo
+    // Build destination info
     let repo_base = local_repo.local_path(config)?;
-    let dest_base = repo_base.join(&chosen_dir.path);
-
-    // Compute relative path from home and final destination
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let relative = full_path.strip_prefix(&home).unwrap_or(full_path);
-    let dest_path = dest_base.join(relative);
-
-    // Use Dotfile methods to perform the copy and DB registration
-    let dotfile = Dotfile {
-        source_path: dest_path.clone(),
-        target_path: full_path.to_path_buf(),
+    let dest = DotfileSource {
+        repo_name: repo_config.name.clone(),
+        subdir_name: chosen_dir
+            .path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string()),
+        source_path: chosen_dir.path.clone(),
     };
 
-    dotfile.create_source_from_target(db)?;
-
-    // Automatically stage the new file
-    if let Err(e) = crate::dot::git::repo_ops::git_add(&repo_base, &dest_path, debug) {
-        // Just warn if git add fails, don't fail the whole operation
-        eprintln!(
-            "{} Failed to stage file: {}",
-            char::from(NerdFont::Warning).to_string().yellow(),
-            e
-        );
-    }
-
-    let chosen_dir_name = chosen_dir
-        .path
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| chosen_dir.path.display().to_string());
-
-    let relative_display = relative.display().to_string();
-    println!(
-        "{} Added ~/{} to repo '{}' in directory '{}'",
-        char::from(NerdFont::Check),
-        relative_display.green(),
-        local_repo.name,
-        chosen_dir_name
-    );
+    // Use shared add function
+    add_to_destination(config, db, &full_path.to_path_buf(), &dest)?;
 
     Ok(repo_base)
 }
@@ -465,7 +441,7 @@ fn add_untracked_files(
     );
 
     for file_path in file_paths {
-        let repo_path = add_new_file(config, db, file_path, debug)?;
+        let repo_path = add_new_file(config, db, file_path)?;
         stats.added_count += 1;
         stats.modified_repos.insert(repo_path);
     }
