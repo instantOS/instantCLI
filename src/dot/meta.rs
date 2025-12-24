@@ -376,51 +376,64 @@ fn handle_existing_git_repo(
         // Standard instantCLI repo
         init_repo(current_dir, name, non_interactive)?;
     } else {
-        // Auto-detect for Yadm/Stow compatibility
+        // External repo - no instantdots.toml, need to configure
+        println!(
+            "{} No instantdots.toml found - configuring repository",
+            char::from(NerdFont::Info)
+        );
+        println!();
+
         let default_name = current_dir
             .file_name()
             .and_then(|os| os.to_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| "dotfiles".to_string());
 
-        let repo_name = name
+        let default_name = name
             .filter(|s| !s.trim().is_empty())
             .map(|s| s.trim().to_string())
             .unwrap_or(default_name);
 
-        // Check for common dotfile roots
-        let dots_dirs =
-            if current_dir.join(".config").exists() || current_dir.join("config").exists() {
-                vec![".".to_string()]
-            } else {
-                // Default to root as best effort
-                vec![".".to_string()]
-            };
+        // Gather metadata interactively (same as standard repos)
+        let inputs = gather_repo_inputs(&default_name, non_interactive)?;
+
+        // Prompt for dots directory (default: dots)
+        let dots_dir = if non_interactive {
+            "dots".to_string()
+        } else {
+            FzfWrapper::input("Dotfiles directory [dots]: ")
+                .map(|s| {
+                    let trimmed = s.trim();
+                    if trimmed.is_empty() {
+                        "dots".to_string()
+                    } else {
+                        trimmed.to_string()
+                    }
+                })
+                .unwrap_or_else(|_| "dots".to_string())
+        };
+
+        let dots_dirs = vec![dots_dir];
 
         let metadata = RepoMetaData {
-            name: repo_name.clone(),
-            author: None,
-            description: None,
-            read_only: None,
+            name: inputs.name.clone(),
+            author: inputs.author.clone(),
+            description: inputs.description.clone(),
+            read_only: if inputs.read_only { Some(true) } else { None },
             dots_dirs: dots_dirs.clone(),
         };
 
         let repo_config = config::Repo {
             url: current_dir.to_string_lossy().to_string(),
-            name: repo_name,
+            name: inputs.name.clone(),
             branch: None,
             active_subdirectories: dots_dirs,
             enabled: true,
-            read_only: false,
+            read_only: inputs.read_only,
             metadata: Some(metadata),
         };
 
         config.add_repo(repo_config, None)?;
-
-        println!(
-            "{} Detected external dotfile repository (Yadm/Stow compatible)",
-            char::from(NerdFont::Info)
-        );
     }
 
     Ok(Some(InitOutcome::InitializedInPlace {

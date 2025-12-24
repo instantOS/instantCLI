@@ -228,6 +228,37 @@ pub fn clone_repository(
                 None,
             );
 
+            // Check if this is a yadm/stow style repo (no instantdots.toml)
+            let toml_path = path.join("instantdots.toml");
+            if !toml_path.exists() {
+                // Yadm/Stow style - dotfiles at root
+                emit(
+                    Level::Info,
+                    "dot.repo.clone.external",
+                    &format!(
+                        "{} Detected external dotfile repository (Yadm/Stow compatible)",
+                        char::from(NerdFont::Info)
+                    ),
+                    None,
+                );
+
+                // Update the repo config to use "." as dots_dir and set metadata
+                for repo in &mut config.repos {
+                    if repo.name == repo_name {
+                        repo.active_subdirectories = vec![".".to_string()];
+                        repo.metadata = Some(crate::dot::types::RepoMetaData {
+                            name: repo_name.clone(),
+                            author: None,
+                            description: None,
+                            read_only: if read_only_flag { Some(true) } else { None },
+                            dots_dirs: vec![".".to_string()],
+                        });
+                        break;
+                    }
+                }
+                config.save(None)?;
+            }
+
             // Apply the repository immediately after adding
             emit(
                 Level::Info,
