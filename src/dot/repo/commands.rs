@@ -167,6 +167,87 @@ fn list_repositories(config: &Config, db: &Database) -> Result<()> {
     Ok(())
 }
 
+/// Resolve repository name from provided name, metadata, or URL
+fn resolve_repo_name(url: &str, name: Option<&str>) -> String {
+    name.map(|s| s.to_string())
+        .or_else(|| {
+            // For local paths, try to read name from instantdots.toml
+            let path = std::path::Path::new(url);
+            if path.exists() {
+                let canonical = path.canonicalize().ok()?;
+                crate::dot::meta::read_meta(&canonical)
+                    .ok()
+                    .map(|meta| meta.name)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| extract_repo_name(url))
+}
+
+/// Configure an external (yadm/stow) repository after cloning
+fn configure_external_repo(
+    config: &mut Config,
+    repo_name: &str,
+    read_only: bool,
+) -> Result<()> {
+    emit(
+        Level::Info,
+        "dot.repo.clone.external",
+        &format!(
+            "{} Detected external dotfile repository (Yadm/Stow compatible)",
+            char::from(NerdFont::Info)
+        ),
+        None,
+    );
+
+    for repo in &mut config.repos {
+        if repo.name == repo_name {
+            repo.active_subdirectories = vec![".".to_string()];
+            repo.metadata = Some(crate::dot::types::RepoMetaData {
+                name: repo_name.to_string(),
+                author: None,
+                description: None,
+                read_only: if read_only { Some(true) } else { None },
+                dots_dirs: vec![".".to_string()],
+            });
+            break;
+        }
+    }
+    config.save(None)
+}
+
+/// Check if repository metadata requests read-only mode and update config
+fn handle_read_only_metadata(
+    config: &mut Config,
+    db: &Database,
+    repo_name: &str,
+) -> Result<()> {
+    if let Ok(local_repo) = crate::dot::repo::RepositoryManager::new(config, db)
+        .get_repository_info(repo_name)
+    {
+        if let Some(true) = local_repo.meta.read_only {
+            emit(
+                Level::Info,
+                "dot.repo.clone.read_only",
+                &format!(
+                    "{} Repository requested read-only mode. Marking as read-only.",
+                    char::from(NerdFont::Info)
+                ),
+                None,
+            );
+            for repo in &mut config.repos {
+                if repo.name == repo_name {
+                    repo.read_only = true;
+                    break;
+                }
+            }
+            config.save(None)?;
+        }
+    }
+    Ok(())
+}
+
 /// Clone a new repository
 pub fn clone_repository(
     config: &mut Config,
@@ -184,23 +265,8 @@ pub fn clone_repository(
         ));
     }
 
-    let repo_name = name
-        .map(|s| s.to_string())
-        .or_else(|| {
-            // For local paths, try to read name from instantdots.toml
-            let path = std::path::Path::new(url);
-            if path.exists() {
-                let canonical = path.canonicalize().ok()?;
-                crate::dot::meta::read_meta(&canonical)
-                    .ok()
-                    .map(|meta| meta.name)
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| extract_repo_name(url));
+    let repo_name = resolve_repo_name(url, name);
 
-    // Create the repo config
     let repo_config = crate::dot::config::Repo {
         url: url.to_string(),
         name: repo_name.clone(),
@@ -211,14 +277,13 @@ pub fn clone_repository(
         metadata: None,
     };
 
-    // Add the repo to config
     config.add_repo(repo_config.clone(), None)?;
 
     emit(
         Level::Success,
         "dot.repo.clone.added",
         &format!(
-            "{} Cloned repository '{}' from {}",
+            "{} Cloning repository '{}' from {}",
             char::from(NerdFont::Check),
             repo_name,
             url
@@ -226,7 +291,6 @@ pub fn clone_repository(
         None,
     );
 
-    // Clone the repository
     match git_clone_repo(config, repo_config, debug) {
         Ok(path) => {
             emit(
@@ -240,38 +304,12 @@ pub fn clone_repository(
                 None,
             );
 
-            // Check if this is a yadm/stow style repo (no instantdots.toml)
-            let toml_path = path.join("instantdots.toml");
-            if !toml_path.exists() {
-                // Yadm/Stow style - dotfiles at root
-                emit(
-                    Level::Info,
-                    "dot.repo.clone.external",
-                    &format!(
-                        "{} Detected external dotfile repository (Yadm/Stow compatible)",
-                        char::from(NerdFont::Info)
-                    ),
-                    None,
-                );
-
-                // Update the repo config to use "." as dots_dir and set metadata
-                for repo in &mut config.repos {
-                    if repo.name == repo_name {
-                        repo.active_subdirectories = vec![".".to_string()];
-                        repo.metadata = Some(crate::dot::types::RepoMetaData {
-                            name: repo_name.clone(),
-                            author: None,
-                            description: None,
-                            read_only: if read_only_flag { Some(true) } else { None },
-                            dots_dirs: vec![".".to_string()],
-                        });
-                        break;
-                    }
-                }
-                config.save(None)?;
+            // Detect and configure external (yadm/stow) repos
+            if !path.join("instantdots.toml").exists() {
+                configure_external_repo(config, &repo_name, read_only_flag)?;
             }
 
-            // Apply the repository immediately after adding
+            // Apply dotfiles
             emit(
                 Level::Info,
                 "dot.repo.clone.apply",
@@ -293,30 +331,9 @@ pub fn clone_repository(
                 );
             }
 
-            // Check metadata for read-only request
-            if !read_only_flag
-                && !force_write_flag
-                && let Ok(local_repo) = crate::dot::repo::RepositoryManager::new(config, db)
-                    .get_repository_info(&repo_name)
-                && let Some(true) = local_repo.meta.read_only
-            {
-                emit(
-                    Level::Info,
-                    "dot.repo.clone.read_only",
-                    &format!(
-                        "{} Repository requested read-only mode. Marking as read-only.",
-                        char::from(NerdFont::Info)
-                    ),
-                    None,
-                );
-                // Update config to set read_only to true
-                for repo in &mut config.repos {
-                    if repo.name == repo_name {
-                        repo.read_only = true;
-                        break;
-                    }
-                }
-                config.save(None)?;
+            // Handle read-only metadata request
+            if !read_only_flag && !force_write_flag {
+                handle_read_only_metadata(config, db, &repo_name)?;
             }
         }
         Err(e) => {
@@ -329,7 +346,6 @@ pub fn clone_repository(
                 ),
                 None,
             );
-            // Remove from config since clone failed
             config.remove_repo(&repo_name, None)?;
             return Err(e);
         }
