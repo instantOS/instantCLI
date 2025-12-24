@@ -103,6 +103,7 @@ struct RepoInputs {
     author: Option<String>,
     description: Option<String>,
     read_only: bool,
+    dots_dir: String,
 }
 
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
@@ -117,6 +118,7 @@ fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoI
             author: None,
             description: None,
             read_only: false,
+            dots_dir: "dots".to_string(),
         });
     }
 
@@ -155,11 +157,23 @@ fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoI
 
     let read_only = matches!(FzfWrapper::confirm("Read-only?"), Ok(ConfirmResult::Yes));
 
+    let dots_dir = FzfWrapper::input("Dotfiles directory [dots]: ")
+        .map(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                "dots".to_string()
+            } else {
+                trimmed.to_string()
+            }
+        })
+        .unwrap_or_else(|_| "dots".to_string());
+
     Ok(RepoInputs {
         name,
         author,
         description,
         read_only,
+        dots_dir,
     })
 }
 
@@ -183,7 +197,7 @@ fn write_instantdots_toml(repo_path: &Path, inputs: &RepoInputs) -> Result<()> {
         author: inputs.author.clone(),
         description: inputs.description.clone(),
         read_only: if inputs.read_only { Some(true) } else { None },
-        dots_dirs: vec!["dots".to_string()],
+        dots_dirs: vec![inputs.dots_dir.clone()],
     };
 
     let toml = toml::to_string_pretty(&meta).context("serializing instantdots.toml")?;
@@ -344,7 +358,7 @@ pub fn init_or_create_default_repo(
     name: Option<&str>,
     non_interactive: bool,
 ) -> Result<InitOutcome> {
-    if let Some(outcome) = handle_existing_git_repo(config, current_dir, name, non_interactive)? {
+    if let Some(outcome) = handle_existing_git_repo(current_dir, name, non_interactive)? {
         return Ok(outcome);
     }
 
@@ -356,7 +370,6 @@ pub fn init_or_create_default_repo(
 }
 
 fn handle_existing_git_repo(
-    config: &mut Config,
     current_dir: &Path,
     name: Option<&str>,
     non_interactive: bool,
@@ -371,86 +384,9 @@ fn handle_existing_git_repo(
         println!();
     }
 
-    let toml_path = current_dir.join("instantdots.toml");
-    if toml_path.exists() {
-        // Standard instantCLI repo
-        init_repo(current_dir, name, non_interactive)?;
-    } else {
-        // External repo - no instantdots.toml, need to configure
-        let default_name = current_dir
-            .file_name()
-            .and_then(|os| os.to_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "dotfiles".to_string());
-
-        let default_name = name
-            .filter(|s| !s.trim().is_empty())
-            .map(|s| s.trim().to_string())
-            .unwrap_or(default_name);
-
-        // Check if repo already exists BEFORE prompting
-        if config.repos.iter().any(|r| r.name == default_name) {
-            anyhow::bail!(
-                "Repository '{}' already exists. Use a different name or remove the existing one first.",
-                default_name
-            );
-        }
-
-        println!(
-            "{} No instantdots.toml found - configuring repository",
-            char::from(NerdFont::Info)
-        );
-        println!();
-
-        // Gather metadata interactively (same as standard repos)
-        let inputs = gather_repo_inputs(&default_name, non_interactive)?;
-
-        // Check again in case user entered an existing name
-        if config.repos.iter().any(|r| r.name == inputs.name) {
-            anyhow::bail!(
-                "Repository '{}' already exists. Use a different name or remove the existing one first.",
-                inputs.name
-            );
-        }
-
-        // Prompt for dots directory (default: dots)
-        let dots_dir = if non_interactive {
-            "dots".to_string()
-        } else {
-            FzfWrapper::input("Dotfiles directory [dots]: ")
-                .map(|s| {
-                    let trimmed = s.trim();
-                    if trimmed.is_empty() {
-                        "dots".to_string()
-                    } else {
-                        trimmed.to_string()
-                    }
-                })
-                .unwrap_or_else(|_| "dots".to_string())
-        };
-
-        let dots_dirs = vec![dots_dir];
-
-        let metadata = RepoMetaData {
-            name: inputs.name.clone(),
-            author: inputs.author.clone(),
-            description: inputs.description.clone(),
-            read_only: if inputs.read_only { Some(true) } else { None },
-            dots_dirs: dots_dirs.clone(),
-        };
-
-        let repo_config = config::Repo {
-            url: current_dir.to_string_lossy().to_string(),
-            name: inputs.name.clone(),
-            branch: None,
-            active_subdirectories: dots_dirs,
-            enabled: true,
-            read_only: inputs.read_only,
-            metadata: Some(metadata),
-        };
-
-        config.add_repo(repo_config, None)?;
-    }
+    // Just create instantdots.toml - don't add to global config
+    // User should clone/add the repo separately if they want it tracked
+    init_repo(current_dir, name, non_interactive)?;
 
     Ok(Some(InitOutcome::InitializedInPlace {
         path: current_dir.to_path_buf(),
