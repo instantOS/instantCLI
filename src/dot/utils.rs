@@ -178,6 +178,11 @@ pub fn get_all_dotfiles(config: &Config, db: &Database) -> Result<HashMap<PathBu
     // Filter out ignored paths
     merged.retain(|target_path, _| !config.is_path_ignored(target_path));
 
+    // Apply user-defined source overrides
+    if let Ok(overrides) = crate::dot::override_config::OverrideConfig::load() {
+        let _ = crate::dot::override_config::apply_overrides(&mut merged, &overrides, config);
+    }
+
     Ok(merged)
 }
 
