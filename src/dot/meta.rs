@@ -377,12 +377,6 @@ fn handle_existing_git_repo(
         init_repo(current_dir, name, non_interactive)?;
     } else {
         // External repo - no instantdots.toml, need to configure
-        println!(
-            "{} No instantdots.toml found - configuring repository",
-            char::from(NerdFont::Info)
-        );
-        println!();
-
         let default_name = current_dir
             .file_name()
             .and_then(|os| os.to_str())
@@ -394,8 +388,30 @@ fn handle_existing_git_repo(
             .map(|s| s.trim().to_string())
             .unwrap_or(default_name);
 
+        // Check if repo already exists BEFORE prompting
+        if config.repos.iter().any(|r| r.name == default_name) {
+            anyhow::bail!(
+                "Repository '{}' already exists. Use a different name or remove the existing one first.",
+                default_name
+            );
+        }
+
+        println!(
+            "{} No instantdots.toml found - configuring repository",
+            char::from(NerdFont::Info)
+        );
+        println!();
+
         // Gather metadata interactively (same as standard repos)
         let inputs = gather_repo_inputs(&default_name, non_interactive)?;
+
+        // Check again in case user entered an existing name
+        if config.repos.iter().any(|r| r.name == inputs.name) {
+            anyhow::bail!(
+                "Repository '{}' already exists. Use a different name or remove the existing one first.",
+                inputs.name
+            );
+        }
 
         // Prompt for dots directory (default: dots)
         let dots_dir = if non_interactive {
