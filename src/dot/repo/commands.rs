@@ -186,6 +186,18 @@ pub fn clone_repository(
 
     let repo_name = name
         .map(|s| s.to_string())
+        .or_else(|| {
+            // For local paths, try to read name from instantdots.toml
+            let path = std::path::Path::new(url);
+            if path.exists() {
+                let canonical = path.canonicalize().ok()?;
+                crate::dot::meta::read_meta(&canonical)
+                    .ok()
+                    .map(|meta| meta.name)
+            } else {
+                None
+            }
+        })
         .unwrap_or_else(|| extract_repo_name(url));
 
     // Create the repo config
