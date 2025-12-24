@@ -124,10 +124,7 @@ impl LocalRepo {
 
     /// Convert a target path (in home directory) to source path (in repo)
     #[allow(dead_code)]
-    pub fn target_to_source(
-        &self,
-        target_path: &Path,
-    ) -> Result<Option<PathBuf>> {
+    pub fn target_to_source(&self, target_path: &Path) -> Result<Option<PathBuf>> {
         let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
         let relative = target_path.strip_prefix(&home).unwrap_or(target_path);
 

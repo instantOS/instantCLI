@@ -193,9 +193,7 @@ pub fn show_all_diffs(
     Ok(())
 }
 
-fn show_dotfile_diff(
-    dotfile: &crate::dot::Dotfile,
-) -> Result<()> {
+fn show_dotfile_diff(dotfile: &crate::dot::Dotfile) -> Result<()> {
     // Check if delta is available
     if Command::new("delta").arg("--help").output().is_ok() {
         show_delta_diff(dotfile)?;
