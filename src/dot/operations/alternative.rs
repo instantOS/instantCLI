@@ -13,7 +13,8 @@ use crate::dot::utils::resolve_dotfile_path;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;
 
-/// Wrapper for DotfileSource to implement MenuSelectItem
+/// Wrapper for DotfileSource to implement FzfSelectable
+#[derive(Clone)]
 struct SourceSelectItem {
     source: DotfileSource,
     is_current: bool,

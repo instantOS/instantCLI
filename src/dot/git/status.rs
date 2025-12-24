@@ -47,6 +47,7 @@ pub struct FileInfo {
     pub dotfile: crate::dot::Dotfile,
     pub repo_name: crate::dot::RepoName,
     pub dotfile_dir: String,
+    pub is_overridden: bool,
 }
 
 /// Status summary statistics
@@ -235,16 +236,21 @@ pub fn categorize_files_and_get_summary<'a>(
     let mut modified_count = 0;
     let mut outdated_count = 0;
 
+    // Load override config to check for overridden files
+    let overrides = crate::dot::override_config::OverrideConfig::load().unwrap_or_default();
+
     for (target_path, dotfile) in all_dotfiles {
         let status = get_dotfile_status(dotfile, db);
         let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
         let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+        let is_overridden = overrides.has_override(target_path);
 
         let file_info = FileInfo {
             target_path: target_path.clone(),
             dotfile: dotfile.clone(),
             repo_name: repo_name.clone(),
             dotfile_dir: dotfile_dir.clone(),
+            is_overridden,
         };
 
         files_by_status
@@ -440,12 +446,14 @@ fn show_outdated_files(files: &[FileInfo], home: &PathBuf) {
             .strip_prefix(home)
             .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
+        let override_indicator = if file_info.is_overridden { " [override]" } else { "" };
         println!(
-            "  {} -> {} ({}: {})",
+            "  {} -> {} ({}: {}{})",
             tilde_path,
             "outdated".blue(),
             file_info.repo_name,
-            file_info.dotfile_dir
+            file_info.dotfile_dir,
+            override_indicator.magenta()
         );
     }
     println!();
@@ -460,12 +468,14 @@ fn show_clean_files(files: &[FileInfo], home: &PathBuf) {
             .strip_prefix(home)
             .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
+        let override_indicator = if file_info.is_overridden { " [override]" } else { "" };
         println!(
-            "  {} -> {} ({}: {})",
+            "  {} -> {} ({}: {}{})",
             tilde_path,
             "clean".green(),
             file_info.repo_name,
-            file_info.dotfile_dir
+            file_info.dotfile_dir,
+            override_indicator.magenta()
         );
     }
     println!();
