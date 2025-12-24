@@ -155,8 +155,7 @@ impl TimelinePlanner {
             self.stats.ignored_count += 1;
             return;
         }
-        self.pending_content
-            .push(unhandled.description.clone());
+        self.pending_content.push(unhandled.description.clone());
     }
 
     fn final_flush(&mut self) {

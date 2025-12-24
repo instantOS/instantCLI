@@ -229,7 +229,50 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>, non_interactive: bool) ->
         .map(|s| s.trim().to_string())
         .unwrap_or(default_name);
 
-    let inputs = gather_repo_inputs(&default_name, non_interactive)?;
+    let mut inputs = gather_repo_inputs(&default_name, non_interactive)?;
+
+    // Check if dots_dir exists, offer to create or rename
+    if !non_interactive {
+        loop {
+            let dots_path = repo_path.join(&inputs.dots_dir);
+            if dots_path.exists() {
+                break;
+            }
+
+            println!(
+                "{} Directory '{}' does not exist",
+                char::from(NerdFont::Warning),
+                inputs.dots_dir
+            );
+
+            match FzfWrapper::confirm(&format!("Create '{}'?", inputs.dots_dir)) {
+                Ok(ConfirmResult::Yes) => {
+                    fs::create_dir_all(&dots_path)
+                        .with_context(|| format!("creating directory {}", dots_path.display()))?;
+                    println!(
+                        "{} Created directory '{}'",
+                        char::from(NerdFont::Check),
+                        inputs.dots_dir
+                    );
+                    break;
+                }
+                _ => {
+                    // Let user enter a different name
+                    inputs.dots_dir = FzfWrapper::input("Dotfiles directory [dots]: ")
+                        .map(|s| {
+                            let trimmed = s.trim();
+                            if trimmed.is_empty() {
+                                "dots".to_string()
+                            } else {
+                                trimmed.to_string()
+                            }
+                        })
+                        .unwrap_or_else(|_| "dots".to_string());
+                }
+            }
+        }
+    }
+
     write_instantdots_toml(repo_path, &inputs)?;
     Ok(())
 }

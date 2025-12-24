@@ -472,10 +472,7 @@ fn diagnose_alignment_failure(
         }
 
         if !has_candidate {
-            bail!(
-                "Unable to locate subtitle entry for segment `{}`",
-                text
-            );
+            bail!("Unable to locate subtitle entry for segment `{}`", text);
         }
     }
 

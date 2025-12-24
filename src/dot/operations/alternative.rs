@@ -8,7 +8,7 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 use crate::dot::config::Config;
-use crate::dot::override_config::{find_all_sources, DotfileSource, OverrideConfig};
+use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
 use crate::dot::utils::resolve_dotfile_path;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::prelude::*;

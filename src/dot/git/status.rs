@@ -426,7 +426,11 @@ fn show_modified_files(files: &[FileInfo], home: &PathBuf) {
             .strip_prefix(home)
             .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
-        let override_indicator = if file_info.is_overridden { " [override]" } else { "" };
+        let override_indicator = if file_info.is_overridden {
+            " [override]"
+        } else {
+            ""
+        };
         println!(
             "  {} -> {} ({}: {}{})",
             tilde_path,
@@ -448,7 +452,11 @@ fn show_outdated_files(files: &[FileInfo], home: &PathBuf) {
             .strip_prefix(home)
             .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
-        let override_indicator = if file_info.is_overridden { " [override]" } else { "" };
+        let override_indicator = if file_info.is_overridden {
+            " [override]"
+        } else {
+            ""
+        };
         println!(
             "  {} -> {} ({}: {}{})",
             tilde_path,
@@ -470,7 +478,11 @@ fn show_clean_files(files: &[FileInfo], home: &PathBuf) {
             .strip_prefix(home)
             .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
-        let override_indicator = if file_info.is_overridden { " [override]" } else { "" };
+        let override_indicator = if file_info.is_overridden {
+            " [override]"
+        } else {
+            ""
+        };
         println!(
             "  {} -> {} ({}: {}{})",
             tilde_path,

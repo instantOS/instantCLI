@@ -64,8 +64,6 @@ pub struct UnhandledBlock {
     pub description: String,
 }
 
-
-
 #[derive(Debug, Clone)]
 pub enum MusicDirective {
     None,
@@ -264,8 +262,7 @@ impl<'a> BodyParserState<'a> {
 
     fn flush_heading(&mut self) {
         if let Some(state) = self.heading.take() {
-            self.blocks
-                .push(DocumentBlock::Heading(state.into_block()));
+            self.blocks.push(DocumentBlock::Heading(state.into_block()));
         }
     }
 
@@ -468,11 +465,7 @@ impl ParagraphState {
                     } else {
                         SegmentKind::Dialogue
                     };
-                    blocks.push(DocumentBlock::Segment(SegmentBlock {
-                        range,
-                        text,
-                        kind,
-                    }));
+                    blocks.push(DocumentBlock::Segment(SegmentBlock { range, text, kind }));
                 }
                 _ => leftover_text.push(fragment),
             }

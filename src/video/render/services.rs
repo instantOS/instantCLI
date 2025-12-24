@@ -28,7 +28,6 @@ impl FfmpegRunner for SystemFfmpegRunner {
     }
 }
 
-
 pub trait MusicSourceResolver {
     fn resolve(&mut self, directive: &MusicDirective) -> Result<Option<std::path::PathBuf>>;
 }

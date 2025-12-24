@@ -7,7 +7,7 @@ use clap::Subcommand;
 use std::io::Write;
 
 use crate::common::compositor::CompositorType;
-use crate::common::compositor::config::{WmConfigManager, WindowManager};
+use crate::common::compositor::config::{WindowManager, WmConfigManager};
 use crate::ui::prelude::*;
 
 #[derive(Subcommand, Debug, Clone)]
