@@ -35,6 +35,9 @@ pub enum DotCommands {
         /// Recursively add all files in directory, including untracked ones
         #[arg(long)]
         all: bool,
+        /// Choose which repository/subdirectory to add the file to
+        #[arg(long)]
+        choose: bool,
     },
     /// Pull updates for all configured repos and apply changes
     Update {
@@ -96,6 +99,9 @@ pub enum DotCommands {
         /// Remove the override for this file (use default priority)
         #[arg(long)]
         reset: bool,
+        /// Create the file in a new repo/subdir if it doesn't exist there
+        #[arg(long)]
+        create: bool,
     },
 }
 
@@ -250,8 +256,8 @@ pub fn handle_dot_command(
         DotCommands::Apply => {
             super::apply_all(&config, &db)?;
         }
-        DotCommands::Add { path, all } => {
-            super::add_dotfile(&config, &db, path, *all, debug)?;
+        DotCommands::Add { path, all, choose } => {
+            super::add_dotfile(&config, &db, path, *all, *choose, debug)?;
         }
         DotCommands::Update { no_apply } => {
             super::update_all(&config, debug, &db, !*no_apply)?;
@@ -282,8 +288,8 @@ pub fn handle_dot_command(
         DotCommands::Git { args } => {
             super::git_run_any(&config, args, debug)?;
         }
-        DotCommands::Alternative { path, reset } => {
-            super::operations::alternative::handle_alternative(&config, path, *reset)?;
+        DotCommands::Alternative { path, reset, create } => {
+            super::operations::alternative::handle_alternative(&config, path, *reset, *create)?;
         }
     }
 

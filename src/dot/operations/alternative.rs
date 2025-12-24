@@ -18,14 +18,16 @@ use crate::ui::prelude::*;
 struct SourceSelectItem {
     source: DotfileSource,
     is_current: bool,
+    exists: bool,
 }
 
 impl FzfSelectable for SourceSelectItem {
     fn fzf_display_text(&self) -> String {
-        let indicator = if self.is_current { " (current)" } else { "" };
+        let current = if self.is_current { " (current)" } else { "" };
+        let status = if self.exists { "" } else { " [new]" };
         format!(
-            "{} / {}{}",
-            self.source.repo_name, self.source.subdir_name, indicator
+            "{} / {}{}{}",
+            self.source.repo_name, self.source.subdir_name, current, status
         )
     }
 
@@ -35,7 +37,7 @@ impl FzfSelectable for SourceSelectItem {
 }
 
 /// Handle the alternative command
-pub fn handle_alternative(config: &Config, path: &str, reset: bool) -> Result<()> {
+pub fn handle_alternative(config: &Config, path: &str, reset: bool, create: bool) -> Result<()> {
     let target_path = resolve_dotfile_path(path)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
     let display_path = target_path
@@ -51,12 +53,16 @@ pub fn handle_alternative(config: &Config, path: &str, reset: bool) -> Result<()
     // Find all sources for this file
     let sources = find_all_sources(config, &target_path)?;
 
+    if create {
+        return handle_create(config, &target_path, &display_path, &sources);
+    }
+
     if sources.is_empty() {
         emit(
             Level::Warn,
             "dot.alternative.not_found",
             &format!(
-                "{} No dotfile sources found for {}",
+                "{} No dotfile sources found for {}. Use --create to add it to a repo.",
                 char::from(NerdFont::Warning),
                 display_path.yellow()
             ),
@@ -93,7 +99,7 @@ pub fn handle_alternative(config: &Config, path: &str, reset: bool) -> Result<()
             let is_current = current_override
                 .map(|o| o.source_repo == source.repo_name && o.source_subdir == source.subdir_name)
                 .unwrap_or(false);
-            SourceSelectItem { source, is_current }
+            SourceSelectItem { source, is_current, exists: true }
         })
         .collect();
 
@@ -138,6 +144,161 @@ pub fn handle_alternative(config: &Config, path: &str, reset: bool) -> Result<()
         }
         _ => {}
     }
+
+    Ok(())
+}
+
+/// Handle --create flag: show all repos/subdirs, create file if needed
+fn handle_create(
+    config: &Config,
+    target_path: &PathBuf,
+    display_path: &str,
+    existing_sources: &[DotfileSource],
+) -> Result<()> {
+    // Get all available repos/subdirs
+    let all_destinations = get_all_destinations(config)?;
+
+    if all_destinations.is_empty() {
+        emit(
+            Level::Warn,
+            "dot.alternative.no_repos",
+            &format!(
+                "{} No writable repositories configured",
+                char::from(NerdFont::Warning)
+            ),
+            None,
+        );
+        return Ok(());
+    }
+
+    // Build selection items, marking which ones already have the file
+    let items: Vec<SourceSelectItem> = all_destinations
+        .into_iter()
+        .map(|dest| {
+            let exists = existing_sources.iter().any(|s| {
+                s.repo_name == dest.repo_name && s.subdir_name == dest.subdir_name
+            });
+            SourceSelectItem {
+                source: dest,
+                is_current: false,
+                exists,
+            }
+        })
+        .collect();
+
+    let prompt = format!("Select destination for {}: ", display_path);
+    match FzfWrapper::builder().prompt(prompt).select(items)? {
+        FzfResult::Selected(item) => {
+            if item.exists {
+                // Just set the override
+                let mut overrides = OverrideConfig::load()?;
+                overrides.set_override(
+                    target_path.clone(),
+                    item.source.repo_name.clone(),
+                    item.source.subdir_name.clone(),
+                )?;
+
+                emit(
+                    Level::Success,
+                    "dot.alternative.set",
+                    &format!(
+                        "{} {} will now be sourced from {} / {}",
+                        char::from(NerdFont::Check),
+                        display_path.cyan(),
+                        item.source.repo_name.green(),
+                        item.source.subdir_name.green()
+                    ),
+                    None,
+                );
+            } else {
+                // Copy the file to the new destination
+                copy_to_destination(config, target_path, display_path, &item.source)?;
+            }
+        }
+        FzfResult::Cancelled => {
+            emit(
+                Level::Info,
+                "dot.alternative.cancelled",
+                &format!("{} Selection cancelled", char::from(NerdFont::Info)),
+                None,
+            );
+        }
+        FzfResult::Error(e) => {
+            return Err(anyhow::anyhow!("Selection error: {}", e));
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+/// Get all available repo/subdir destinations
+fn get_all_destinations(config: &Config) -> Result<Vec<DotfileSource>> {
+    let mut destinations = Vec::new();
+
+    for repo_config in &config.repos {
+        if !repo_config.enabled || repo_config.read_only {
+            continue;
+        }
+
+        for subdir in &repo_config.active_subdirectories {
+            destinations.push(DotfileSource {
+                repo_name: repo_config.name.clone(),
+                subdir_name: subdir.clone(),
+                source_path: config.repos_path().join(&repo_config.name).join(subdir),
+            });
+        }
+    }
+
+    Ok(destinations)
+}
+
+/// Copy target file to a new destination repo/subdir
+fn copy_to_destination(
+    config: &Config,
+    target_path: &PathBuf,
+    display_path: &str,
+    dest: &DotfileSource,
+) -> Result<()> {
+    use std::fs;
+
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let relative = target_path.strip_prefix(&home).unwrap_or(target_path);
+    let dest_path = dest.source_path.join(relative);
+
+    // Ensure parent directory exists
+    if let Some(parent) = dest_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Copy the file
+    if target_path.exists() {
+        fs::copy(target_path, &dest_path)?;
+    } else {
+        // Create empty file if target doesn't exist
+        fs::File::create(&dest_path)?;
+    }
+
+    emit(
+        Level::Success,
+        "dot.alternative.created",
+        &format!(
+            "{} Added {} to {} / {}",
+            char::from(NerdFont::Check),
+            display_path.cyan(),
+            dest.repo_name.green(),
+            dest.subdir_name.green()
+        ),
+        None,
+    );
+
+    // Set override to use this new source
+    let mut overrides = OverrideConfig::load()?;
+    overrides.set_override(
+        target_path.clone(),
+        dest.repo_name.clone(),
+        dest.subdir_name.clone(),
+    )?;
 
     Ok(())
 }
