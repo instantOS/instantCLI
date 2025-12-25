@@ -117,6 +117,7 @@ impl PackageDefinition {
             PackageManager::Aur => format!("yay -S {}", self.package_name),
             PackageManager::Cargo => format!("cargo install {}", self.package_name),
             PackageManager::Snap => format!("snap install {}", self.package_name),
+            PackageManager::Pkg => format!("pkg install {}", self.package_name),
         }
     }
 }

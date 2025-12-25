@@ -514,7 +514,9 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
     use crate::common::distro::{OperatingSystem, is_live_iso};
 
     let os = OperatingSystem::detect();
-    if !os.is_arch_based() {
+
+    // Only warn about non-Arch distros for commands other than Info
+    if !os.is_arch_based() && !matches!(command, ArchCommands::Info) {
         eprintln!(
             "Warning: You appear to be running on {}, but this command is intended for Arch Linux.",
             os

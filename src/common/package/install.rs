@@ -27,6 +27,7 @@ pub fn install_packages(manager: PackageManager, packages: &[PackageToInstall]) 
         PackageManager::Aur => install_aur(&package_names),
         PackageManager::Cargo => install_cargo(&package_names),
         PackageManager::Snap => install_snap(&package_names),
+        PackageManager::Pkg => install_pkg(&package_names),
     }
 }
 
@@ -74,6 +75,18 @@ fn install_zypper(packages: &[&str]) -> Result<()> {
     cmd("sudo", &args)
         .run()
         .context("Failed to install packages with zypper")?;
+
+    Ok(())
+}
+
+/// Install packages using pkg (Termux).
+fn install_pkg(packages: &[&str]) -> Result<()> {
+    let mut args = vec!["install", "-y"];
+    args.extend(packages);
+
+    cmd("pkg", &args)
+        .run()
+        .context("Failed to install packages with pkg")?;
 
     Ok(())
 }

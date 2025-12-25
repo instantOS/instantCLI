@@ -19,6 +19,8 @@ pub enum PackageManager {
     Dnf,
     /// Zypper - OpenSUSE
     Zypper,
+    /// Pkg - Termux
+    Pkg,
 
     // =========================================================================
     // Cross-platform / secondary package managers (tried as fallback)
@@ -39,7 +41,10 @@ impl PackageManager {
     ///
     /// Native package managers are the primary package management system for a distribution.
     pub fn is_native(&self) -> bool {
-        matches!(self, Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper)
+        matches!(
+            self,
+            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper | Self::Pkg
+        )
     }
 
     /// Returns true if this is a cross-platform/fallback package manager.
@@ -59,7 +64,7 @@ impl PackageManager {
     pub fn priority(&self) -> u8 {
         match self {
             // Native package managers - highest priority (prebuilt packages)
-            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper => 0,
+            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper | Self::Pkg => 0,
             // Flatpak/Snap - prebuilt, sandboxed, low resource usage
             Self::Flatpak | Self::Snap => 1,
             // AUR - compiles from source, moderate resource usage
@@ -76,7 +81,7 @@ impl PackageManager {
     pub fn is_available(&self) -> bool {
         match self {
             // Native managers - delegate to OperatingSystem
-            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper => {
+            Self::Pacman | Self::Apt | Self::Dnf | Self::Zypper | Self::Pkg => {
                 OperatingSystem::detect().native_package_manager() == Some(*self)
             }
 
@@ -104,6 +109,7 @@ impl PackageManager {
             Self::Apt => ("sudo", &["apt", "install", "-y"]),
             Self::Dnf => ("sudo", &["dnf", "install", "-y"]),
             Self::Zypper => ("sudo", &["zypper", "install", "-y"]),
+            Self::Pkg => ("pkg", &["install", "-y"]),
             Self::Flatpak => ("flatpak", &["install", "-y", "flathub"]),
             Self::Aur => {
                 // Will be handled specially to use detected AUR helper
@@ -121,6 +127,7 @@ impl PackageManager {
             Self::Apt => "APT",
             Self::Dnf => "DNF",
             Self::Zypper => "Zypper",
+            Self::Pkg => "Pkg",
             Self::Flatpak => "Flatpak",
             Self::Aur => "AUR",
             Self::Cargo => "Cargo",

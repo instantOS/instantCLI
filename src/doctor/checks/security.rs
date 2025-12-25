@@ -54,6 +54,12 @@ impl DoctorCheck for PolkitAgentCheck {
 
     async fn execute(&self) -> CheckStatus {
         use crate::common::display_server::DisplayServer;
+        use crate::common::distro::OperatingSystem;
+
+        // Skip on Termux
+        if OperatingSystem::detect() == OperatingSystem::Termux {
+            return CheckStatus::Skipped("Not applicable on Termux".to_string());
+        }
 
         // Skip if not a desktop session
         if !DisplayServer::detect().is_desktop_session() {
