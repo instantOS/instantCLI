@@ -136,13 +136,20 @@ impl SwayDisplayProvider {
             .and_then(|v| v.as_array())
             .ok_or_else(|| anyhow::anyhow!("Missing modes array for {}", name))?;
 
-        // Parse and deduplicate modes
+        // Parse modes
         let mut modes: Vec<DisplayMode> = modes_json
             .iter()
             .filter_map(|mode| Self::parse_display_mode(mode).ok())
             .collect();
 
-        // Remove duplicates while preserving order
+        // Sort by resolution (descending), then refresh (descending) to group duplicates together
+        modes.sort_by(|a, b| {
+            b.resolution()
+                .cmp(&a.resolution())
+                .then(b.refresh.cmp(&a.refresh))
+        });
+
+        // Remove duplicates (only removes consecutive duplicates, so sort is required first)
         modes.dedup();
 
         Ok(modes)
