@@ -25,11 +25,6 @@ impl InstallableApp {
     pub fn is_installed(&self) -> bool {
         self.deps.iter().all(|dep| dep.is_installed())
     }
-
-    /// Get all dependencies for installation
-    pub fn dependencies(&self) -> Vec<&'static Dependency> {
-        self.deps.to_vec()
-    }
 }
 
 // =============================================================================

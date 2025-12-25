@@ -284,7 +284,7 @@ impl KeyChordNavigator {
         let node_description = self.current_node.description.clone();
         let items: Vec<ListItem> = self
             .current_node
-            .chords()
+            .chords
             .iter()
             .map(|chord| match &chord.child {
                 KeyChordChild::Node(node) => {

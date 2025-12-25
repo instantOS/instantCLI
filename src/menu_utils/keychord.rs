@@ -44,10 +44,6 @@ impl KeyChordNode {
     pub fn is_empty(&self) -> bool {
         self.chords.is_empty()
     }
-
-    pub fn chords(&self) -> &[KeyChord] {
-        &self.chords
-    }
 }
 
 #[derive(Clone, Debug)]
