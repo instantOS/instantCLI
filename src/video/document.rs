@@ -264,8 +264,7 @@ impl<'a> BodyParserState<'a> {
 
     fn flush_paragraph(&mut self) -> Result<()> {
         if let Some(state) = self.paragraph.take() {
-            let mut paragraph_blocks =
-                state.into_document_blocks(self.base_line_offset)?;
+            let mut paragraph_blocks = state.into_document_blocks(self.base_line_offset)?;
             self.blocks.append(&mut paragraph_blocks);
         }
         Ok(())
@@ -439,10 +438,7 @@ impl ParagraphState {
         self.pending_image.is_some()
     }
 
-    fn into_document_blocks(
-        self,
-        base_line_offset: usize,
-    ) -> Result<Vec<DocumentBlock>> {
+    fn into_document_blocks(self, base_line_offset: usize) -> Result<Vec<DocumentBlock>> {
         if self.fragments.is_empty() {
             return Ok(Vec::new());
         }

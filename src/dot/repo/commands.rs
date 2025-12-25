@@ -217,25 +217,24 @@ fn configure_external_repo(config: &mut Config, repo_name: &str, read_only: bool
 fn handle_read_only_metadata(config: &mut Config, db: &Database, repo_name: &str) -> Result<()> {
     if let Ok(local_repo) =
         crate::dot::repo::RepositoryManager::new(config, db).get_repository_info(repo_name)
+        && let Some(true) = local_repo.meta.read_only
     {
-        if let Some(true) = local_repo.meta.read_only {
-            emit(
-                Level::Info,
-                "dot.repo.clone.read_only",
-                &format!(
-                    "{} Repository requested read-only mode. Marking as read-only.",
-                    char::from(NerdFont::Info)
-                ),
-                None,
-            );
-            for repo in &mut config.repos {
-                if repo.name == repo_name {
-                    repo.read_only = true;
-                    break;
-                }
+        emit(
+            Level::Info,
+            "dot.repo.clone.read_only",
+            &format!(
+                "{} Repository requested read-only mode. Marking as read-only.",
+                char::from(NerdFont::Info)
+            ),
+            None,
+        );
+        for repo in &mut config.repos {
+            if repo.name == repo_name {
+                repo.read_only = true;
+                break;
             }
-            config.save(None)?;
         }
+        config.save(None)?;
     }
     Ok(())
 }

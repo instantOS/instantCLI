@@ -93,11 +93,7 @@ impl DoctorCheck for SwayDisplayCheck {
         for output in outputs {
             if !output.is_optimal() {
                 let optimal = output.optimal_mode();
-                println!(
-                    "Setting {} to {}...",
-                    output.name,
-                    optimal.display_format()
-                );
+                println!("Setting {} to {}...", output.name, optimal.display_format());
                 SwayDisplayProvider::set_output_mode(&output.name, &optimal).await?;
                 fixed += 1;
             }

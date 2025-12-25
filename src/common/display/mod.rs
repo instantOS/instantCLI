@@ -33,7 +33,12 @@ impl DisplayMode {
 
     /// Human-readable display format (e.g., "1920x1080 @ 60Hz")
     pub fn display_format(&self) -> String {
-        format!("{}x{} @ {:.0}Hz", self.width, self.height, self.refresh_hz())
+        format!(
+            "{}x{} @ {:.0}Hz",
+            self.width,
+            self.height,
+            self.refresh_hz()
+        )
     }
 }
 

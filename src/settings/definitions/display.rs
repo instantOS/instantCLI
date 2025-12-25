@@ -109,10 +109,7 @@ impl Setting for ConfigureDisplay {
 
         let selected_mode = FzfWrapper::builder()
             .prompt("Select Mode")
-            .header(&format!(
-                "Choose resolution/refresh for {}",
-                output.name
-            ))
+            .header(format!("Choose resolution/refresh for {}", output.name))
             .select(mode_options)?;
 
         let target_mode = match selected_mode {

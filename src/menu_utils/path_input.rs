@@ -132,7 +132,7 @@ impl PathInputBuilder {
             Ok(path) => Ok(path),
             Err(err) => {
                 eprintln!("Failed to launch file picker: {err}");
-                Ok(None)  // Signal to retry by returning None
+                Ok(None) // Signal to retry by returning None
             }
         }
     }
@@ -174,13 +174,13 @@ impl PathInputBuilder {
                     PathInputChoice::Picker => {
                         match self.run_picker()? {
                             Some(path) => return Ok(PathInputSelection::Picker(path)),
-                            None => continue,  // Error occurred, retry
+                            None => continue, // Error occurred, retry
                         }
                     }
                     PathInputChoice::WinePrefix => {
                         match self.run_picker()? {
                             Some(path) => return Ok(PathInputSelection::WinePrefix(path)),
-                            None => continue,  // Error occurred, retry
+                            None => continue, // Error occurred, retry
                         }
                     }
                 },

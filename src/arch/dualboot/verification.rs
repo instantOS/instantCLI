@@ -5,7 +5,6 @@
 
 use anyhow::Result;
 
-use super::MIN_LINUX_SIZE;
 use super::detection::{DiskInfo, PartitionInfo, detect_disks, format_size};
 
 /// Result of checking if a resize has been performed

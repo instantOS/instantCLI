@@ -194,9 +194,7 @@ impl FilePickerBuilder {
                     );
                     FzfWrapper::message(&message)?;
                 } else {
-                    FzfWrapper::message(
-                        "A file was selected. Please choose a directory instead.",
-                    )?;
+                    FzfWrapper::message("A file was selected. Please choose a directory instead.")?;
                 }
 
                 preselect = invalid_entries.into_iter().next();

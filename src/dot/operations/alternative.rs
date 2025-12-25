@@ -118,11 +118,10 @@ pub fn handle_alternative(config: &Config, path: &str, reset: bool, create: bool
         for item in &items {
             if let Ok(source_hash) =
                 crate::dot::dotfile::Dotfile::compute_hash(&item.source.source_path)
+                && target_hash == source_hash
             {
-                if target_hash == source_hash {
-                    matches_any_source = true;
-                    break;
-                }
+                matches_any_source = true;
+                break;
             }
         }
 
