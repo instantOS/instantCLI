@@ -614,13 +614,6 @@ impl FzfBuilder {
         self
     }
 
-    pub fn ok_text<S: Into<String>>(mut self, text: S) -> Self {
-        if let DialogType::Message { ok_text, .. } = &mut self.dialog_type {
-            *ok_text = text.into();
-        }
-        self
-    }
-
     pub fn title<S: Into<String>>(mut self, title: S) -> Self {
         if let DialogType::Message { title: target, .. } = &mut self.dialog_type {
             *target = Some(title.into());
@@ -833,14 +826,6 @@ impl FzfBuilder {
             return Err(anyhow::anyhow!("Builder not configured for message"));
         }
         self.execute_message()
-    }
-
-    pub fn show_selection<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
-        self.select(items)
-    }
-
-    pub fn show_password(self) -> Result<FzfResult<String>> {
-        self.password_dialog()
     }
 
     pub fn show_confirmation(self) -> Result<ConfirmResult> {
