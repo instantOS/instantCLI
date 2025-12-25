@@ -1,5 +1,6 @@
 pub mod compositor;
 pub mod deps;
+pub mod display;
 pub mod display_server;
 pub mod distro;
 pub mod git;

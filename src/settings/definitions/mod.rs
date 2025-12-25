@@ -10,6 +10,7 @@ pub mod appearance;
 pub mod apps;
 pub mod brightness;
 pub mod desktop;
+pub mod display;
 pub mod flatpak;
 pub mod keyboard;
 pub mod language;
@@ -26,3 +27,4 @@ pub mod wiremix;
 
 // Note: Settings are organized in category_tree.rs.
 // They don't need to be re-exported here.
+
