@@ -54,10 +54,6 @@ impl MkinitcpioConfig {
         })
     }
 
-    pub fn hooks(&self) -> &[String] {
-        &self.hooks
-    }
-
     pub fn ensure_hook(&mut self, hook: &str) {
         if !self.contains_hook(hook) {
             self.hooks.push(hook.to_string());
@@ -73,18 +69,6 @@ impl MkinitcpioConfig {
             if h == old {
                 *h = new.to_string();
             }
-        }
-    }
-
-    pub fn insert_after(&mut self, hook: &str, after: &str) {
-        if self.contains_hook(hook) {
-            self.remove_hook(hook);
-        }
-
-        if let Some(idx) = self.hooks.iter().position(|h| h == after) {
-            self.hooks.insert(idx + 1, hook.to_string());
-        } else {
-            self.hooks.push(hook.to_string());
         }
     }
 

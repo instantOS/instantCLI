@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use super::{Dependency, PackageDefinition, PackageManager};
-use crate::common::requirements::PackageStatus;
 use crate::menu_utils::FzfWrapper;
 
 /// A batch of packages to install, grouped by package manager.
@@ -133,9 +132,9 @@ impl InstallBatch {
     /// Execute the batched installation.
     ///
     /// Installs packages in priority order (native managers first, then Flatpak, etc.)
-    pub fn execute(&self) -> Result<PackageStatus> {
+    pub fn execute(&self) -> Result<()> {
         if self.is_empty() {
-            return Ok(PackageStatus::Installed);
+            return Ok(());
         }
 
         // Sort managers by priority
@@ -165,6 +164,6 @@ impl InstallBatch {
             super::install::install_packages(*manager, packages)?;
         }
 
-        Ok(PackageStatus::Installed)
+        Ok(())
     }
 }
