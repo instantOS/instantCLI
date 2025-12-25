@@ -117,6 +117,27 @@ impl PathInputBuilder {
             .unwrap_or_else(|| format!("{} Select a Wine prefix", char::from(NerdFont::Wine)))
     }
 
+    fn run_picker(&self) -> Result<Option<PathBuf>> {
+        let mut picker = MenuWrapper::file_picker().scope(self.scope);
+
+        if let Some(dir) = &self.start_dir {
+            picker = picker.start_dir(dir.clone());
+        }
+
+        if let Some(hint) = &self.picker_hint {
+            picker = picker.hint(hint.clone());
+        }
+
+        match picker.pick_one() {
+            Ok(path) => Ok(path),
+            Err(err) => {
+                eprintln!("Failed to launch file picker: {err}");
+                Ok(None)  // Signal to retry by returning None
+            }
+        }
+    }
+
+    //TODO: does this have multiple responsibilities? Refactor?
     pub fn choose(self) -> Result<PathInputSelection> {
         let mut options = vec![
             PathInputOption::new(self.manual_option_label.clone(), PathInputChoice::Manual),
@@ -151,44 +172,15 @@ impl PathInputBuilder {
                         return Ok(PathInputSelection::Manual(trimmed));
                     }
                     PathInputChoice::Picker => {
-                        let mut picker = MenuWrapper::file_picker().scope(self.scope);
-
-                        if let Some(dir) = &self.start_dir {
-                            picker = picker.start_dir(dir.clone());
-                        }
-
-                        if let Some(hint) = &self.picker_hint {
-                            picker = picker.hint(hint.clone());
-                        }
-
-                        match picker.pick_one() {
-                            Ok(Some(path)) => return Ok(PathInputSelection::Picker(path)),
-                            Ok(None) => return Ok(PathInputSelection::Cancelled),
-                            Err(err) => {
-                                eprintln!("Failed to launch file picker: {err}");
-                                continue;
-                            }
+                        match self.run_picker()? {
+                            Some(path) => return Ok(PathInputSelection::Picker(path)),
+                            None => continue,  // Error occurred, retry
                         }
                     }
                     PathInputChoice::WinePrefix => {
-                        // For wine prefix selection, we'll use the picker but with a hint about wine prefixes
-                        let mut picker = MenuWrapper::file_picker().scope(self.scope);
-
-                        if let Some(dir) = &self.start_dir {
-                            picker = picker.start_dir(dir.clone());
-                        }
-
-                        if let Some(hint) = &self.picker_hint {
-                            picker = picker.hint(hint.clone());
-                        }
-
-                        match picker.pick_one() {
-                            Ok(Some(path)) => return Ok(PathInputSelection::WinePrefix(path)),
-                            Ok(None) => return Ok(PathInputSelection::Cancelled),
-                            Err(err) => {
-                                eprintln!("Failed to launch file picker: {err}");
-                                continue;
-                            }
+                        match self.run_picker()? {
+                            Some(path) => return Ok(PathInputSelection::WinePrefix(path)),
+                            None => continue,  // Error occurred, retry
                         }
                     }
                 },

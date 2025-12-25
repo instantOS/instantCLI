@@ -300,16 +300,4 @@ impl MenuWrapper {
     pub fn file_picker() -> FilePickerBuilder {
         FilePickerBuilder::new()
     }
-
-    pub fn pick_file() -> Result<Option<PathBuf>> {
-        FilePickerBuilder::new().pick_one()
-    }
-
-    pub fn pick_files() -> Result<Vec<PathBuf>> {
-        match FilePickerBuilder::new().multi(true).pick()? {
-            FilePickerResult::MultiSelected(paths) => Ok(paths),
-            FilePickerResult::Selected(path) => Ok(vec![path]),
-            FilePickerResult::Cancelled => Ok(vec![]),
-        }
-    }
 }
