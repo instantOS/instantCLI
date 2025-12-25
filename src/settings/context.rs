@@ -215,7 +215,7 @@ impl SettingsContext {
 
     pub fn show_message(&self, message: &str) {
         // Best-effort; user feedback in TUI context
-        let _ = FzfWrapper::message_dialog(message);
+        let _ = FzfWrapper::message(message);
     }
 
     pub fn emit_success(&self, code: &str, message: &str) {

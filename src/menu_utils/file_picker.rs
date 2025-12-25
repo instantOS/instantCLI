@@ -192,9 +192,9 @@ impl FilePickerBuilder {
                         "`{}` is a file.\n\nPlease choose a directory instead.",
                         first_invalid.display()
                     );
-                    FzfWrapper::message_dialog(&message)?;
+                    FzfWrapper::message(&message)?;
                 } else {
-                    FzfWrapper::message_dialog(
+                    FzfWrapper::message(
                         "A file was selected. Please choose a directory instead.",
                     )?;
                 }

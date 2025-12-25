@@ -455,14 +455,6 @@ impl FzfWrapper {
         }
     }
 
-    pub fn select_many<T: FzfSelectable + Clone>(items: Vec<T>) -> Result<Vec<T>> {
-        match Self::builder().multi_select(true).select(items)? {
-            FzfResult::MultiSelected(items) => Ok(items),
-            FzfResult::Selected(item) => Ok(vec![item]),
-            _ => Ok(vec![]),
-        }
-    }
-
     pub fn input(prompt: &str) -> Result<String> {
         Self::builder().prompt(prompt).input().input_dialog()
     }
@@ -477,18 +469,6 @@ impl FzfWrapper {
 
     pub fn password(prompt: &str) -> Result<FzfResult<String>> {
         Self::builder().prompt(prompt).password().password_dialog()
-    }
-
-    pub fn password_dialog(prompt: &str) -> Result<FzfResult<String>> {
-        Self::builder().prompt(prompt).password().password_dialog()
-    }
-
-    pub fn message_dialog(message: &str) -> Result<()> {
-        Self::builder().message(message).message_dialog()
-    }
-
-    pub fn confirm_dialog(message: &str) -> Result<ConfirmResult> {
-        Self::builder().confirm(message).confirm_dialog()
     }
 }
 

@@ -676,7 +676,7 @@ impl QuestionEngine {
             message
         );
         // Show fatal error dialog
-        let _ = crate::menu_utils::FzfWrapper::message_dialog(&full_message);
+        let _ = crate::menu_utils::FzfWrapper::message(&full_message);
         std::process::exit(1);
     }
 

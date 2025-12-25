@@ -100,8 +100,6 @@ impl ResizeVerifier {
 
         let space_freed_bytes =
             current_unpartitioned.saturating_sub(self.original_unpartitioned_bytes);
-        // Use contiguous free space for feasibility, keep total unpartitioned for delta reporting
-        let has_sufficient_space = current_contiguous >= MIN_LINUX_SIZE;
 
         // Build message
         let message = if resize_detected {

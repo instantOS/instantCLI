@@ -34,7 +34,7 @@ pub fn show_path_diff(
     if target_path.is_dir() {
         diff_directory(target_path.as_path(), all_dotfiles, cfg, db)
     } else {
-        diff_file(&target_path, all_dotfiles, cfg, db)
+        diff_file(&target_path, all_dotfiles, db)
     }
 }
 
@@ -100,7 +100,6 @@ fn diff_directory(
 fn diff_file(
     target_path: &PathBuf,
     all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
-    cfg: &config::Config,
     db: &crate::dot::db::Database,
 ) -> Result<()> {
     if let Some(dotfile) = all_dotfiles.get(target_path) {
@@ -114,8 +113,6 @@ fn diff_file(
                 println!("{} {} is unmodified", "✓".green(), tilde_path.green());
             }
             DotFileStatus::Modified | DotFileStatus::Outdated => {
-                let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
-                let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
                 show_dotfile_diff(dotfile)?;
             }
         }

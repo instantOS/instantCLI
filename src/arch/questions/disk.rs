@@ -62,7 +62,7 @@ fn try_prepare_disk(device_name: &str) -> Result<bool> {
                 device_name, e
             );
             // Show the error via the menu UI so the user cannot miss it
-            let _ = FzfWrapper::message_dialog(&message);
+            let _ = FzfWrapper::message(&message);
             Ok(false)
         }
     }
