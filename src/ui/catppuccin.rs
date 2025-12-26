@@ -6,6 +6,7 @@ use crate::ui::NerdFont;
 /// Catppuccin Mocha color palette.
 ///
 /// Values are hex RGB strings in the `#RRGGBB` format.
+#[allow(dead_code)]
 pub mod colors {
     // Accent colors
     pub const ROSEWATER: &str = "#f5e0dc";

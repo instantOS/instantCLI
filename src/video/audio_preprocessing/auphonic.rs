@@ -25,6 +25,7 @@ use crate::video::utils::compute_file_hash;
 const BASE_URL: &str = "https://auphonic.com/api";
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct UserInfo {
     pub username: String,
     pub user_id: String,

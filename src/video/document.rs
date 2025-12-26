@@ -143,7 +143,7 @@ fn parse_body_blocks(body: &str, base_line_offset: usize) -> Result<Vec<Document
         | Options::ENABLE_FOOTNOTES;
 
     let line_map = LineMap::new(body);
-    let mut state = BodyParserState::new(base_line_offset, &line_map, body);
+    let mut state = BodyParserState::new(base_line_offset, &line_map);
 
     for (event, range) in Parser::new_ext(body, options).into_offset_iter() {
         state.process_event(event, range)?;
@@ -160,11 +160,10 @@ struct BodyParserState<'a> {
     blockquote: Option<BlockquoteState>,
     base_line_offset: usize,
     line_map: &'a LineMap,
-    body: &'a str,
 }
 
 impl<'a> BodyParserState<'a> {
-    fn new(base_line_offset: usize, line_map: &'a LineMap, body: &'a str) -> Self {
+    fn new(base_line_offset: usize, line_map: &'a LineMap) -> Self {
         Self {
             blocks: Vec::new(),
             paragraph: None,
@@ -173,7 +172,6 @@ impl<'a> BodyParserState<'a> {
             blockquote: None,
             base_line_offset,
             line_map,
-            body,
         }
     }
 
