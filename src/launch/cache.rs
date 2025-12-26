@@ -12,7 +12,6 @@ use crate::launch::types::LaunchItem;
 
 /// Application launcher cache for fast startup with background refresh
 pub struct LaunchCache {
-    cache_path: PathBuf,
     frecency_path: PathBuf,
     launch_items_path: PathBuf,
     frecency_sorted_path: PathBuf,
@@ -32,13 +31,11 @@ impl LaunchCache {
         // Ensure cache directory exists
         fs::create_dir_all(&cache_dir).context("Failed to create cache directory")?;
 
-        let cache_path = cache_dir.join("launch_cache");
         let frecency_path = cache_dir.join("frecency_store.json");
         let launch_items_path = cache_dir.join("launch_items_cache");
         let frecency_sorted_path = cache_dir.join("frecency_sorted_cache");
 
         Ok(Self {
-            cache_path,
             frecency_path,
             launch_items_path,
             frecency_sorted_path,
@@ -83,244 +80,12 @@ impl LaunchCache {
         Ok(items)
     }
 
-    /// Get applications with dmenu-style caching strategy (legacy PATH-only)
-    pub async fn get_applications(&mut self) -> Result<Vec<String>> {
-        // Check if cache is fresh
-        if self.is_cache_fresh()? {
-            // Use fresh cache with frecency sorting
-            let mut apps = self.read_cache()?;
-            self.sort_by_frecency(&mut apps)?;
-            Ok(apps)
-        } else {
-            // Cache is stale or doesn't exist
-            let stale_apps = self.read_cache().unwrap_or_default();
-
-            // Spawn background task to refresh cache
-            let cache_path = self.cache_path.clone();
-            task::spawn(async move {
-                if let Err(e) = Self::refresh_cache_background(cache_path).await {
-                    eprintln!("Warning: Failed to refresh application cache: {e}");
-                }
-            });
-
-            // Return stale cache immediately for fast startup
-            let mut apps = if stale_apps.is_empty() {
-                // If no stale cache, do a quick scan now
-                self.scan_path_directories()?
-            } else {
-                stale_apps
-            };
-
-            // Sort by frecency
-            self.sort_by_frecency(&mut apps)?;
-            Ok(apps)
-        }
-    }
-
-    /// Check if cache is fresh by comparing with PATH directory modification times
-    fn is_cache_fresh(&self) -> Result<bool> {
-        if !self.cache_path.exists() {
-            return Ok(false);
-        }
-
-        let cache_mtime = fs::metadata(&self.cache_path)?
-            .modified()
-            .unwrap_or(SystemTime::UNIX_EPOCH);
-
-        // Check if any PATH directory is newer than cache
-        let path_env = env::var("PATH").unwrap_or_default();
-        for path_dir in path_env.split(':') {
-            if path_dir.is_empty() {
-                continue;
-            }
-
-            let path = Path::new(path_dir);
-            if let Ok(metadata) = fs::metadata(path)
-                && let Ok(dir_mtime) = metadata.modified()
-                && dir_mtime > cache_mtime
-            {
-                return Ok(false); // Directory is newer than cache
-            }
-        }
-
-        Ok(true) // Cache is fresh
-    }
-
-    /// Read applications from cache file
-    fn read_cache(&self) -> Result<Vec<String>> {
-        if !self.cache_path.exists() {
-            return Ok(Vec::new());
-        }
-
-        let content = fs::read_to_string(&self.cache_path).context("Failed to read cache file")?;
-
-        let apps: Vec<String> = content
-            .lines()
-            .map(|line| line.trim().to_string())
-            .filter(|line| !line.is_empty())
-            .collect();
-
-        Ok(apps)
-    }
-
-    /// Background task to refresh cache
-    async fn refresh_cache_background(cache_path: PathBuf) -> Result<()> {
-        let apps = Self::scan_path_directories_static().await?;
-        Self::write_cache(&cache_path, &apps)?;
-        Ok(())
-    }
-
-    /// Scan PATH directories for executables
-    fn scan_path_directories(&self) -> Result<Vec<String>> {
-        let path_env = env::var("PATH").unwrap_or_default();
-        let mut executables = HashSet::new();
-
-        for path_dir in path_env.split(':') {
-            if path_dir.is_empty() {
-                continue;
-            }
-
-            let path = Path::new(path_dir);
-            if let Ok(entries) = fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    if let Ok(metadata) = entry.metadata()
-                        && metadata.is_file()
-                    {
-                        // Check if file is executable
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let permissions = metadata.permissions();
-                            if permissions.mode() & 0o111 != 0
-                                && let Some(name) = entry.file_name().to_str()
-                            {
-                                executables.insert(name.to_string());
-                            }
-                        }
-
-                        #[cfg(not(unix))]
-                        {
-                            if let Some(name) = entry.file_name().to_str() {
-                                executables.insert(name.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Sort alphabetically and convert to Vec
-        let mut apps: Vec<String> = executables.into_iter().collect();
-        apps.sort();
-
-        Ok(apps)
-    }
-
-    /// Static version of scan_path_directories for async context
-    async fn scan_path_directories_static() -> Result<Vec<String>> {
-        let path_env = env::var("PATH").unwrap_or_default();
-        let mut executables = HashSet::new();
-
-        for path_dir in path_env.split(':') {
-            if path_dir.is_empty() {
-                continue;
-            }
-
-            let path = Path::new(path_dir);
-            if let Ok(entries) = fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    if let Ok(metadata) = entry.metadata()
-                        && metadata.is_file()
-                    {
-                        // Check if file is executable
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let permissions = metadata.permissions();
-                            if permissions.mode() & 0o111 != 0
-                                && let Some(name) = entry.file_name().to_str()
-                            {
-                                executables.insert(name.to_string());
-                            }
-                        }
-
-                        #[cfg(not(unix))]
-                        {
-                            if let Some(name) = entry.file_name().to_str() {
-                                executables.insert(name.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Sort alphabetically and convert to Vec
-        let mut apps: Vec<String> = executables.into_iter().collect();
-        apps.sort();
-
-        Ok(apps)
-    }
-
-    /// Write applications to cache file
-    fn write_cache(cache_path: &Path, apps: &[String]) -> Result<()> {
-        let content = apps.join("\n");
-        fs::write(cache_path, content).context("Failed to write cache file")?;
-        Ok(())
-    }
-
     /// Get or initialize frecency store
     fn get_frecency_store(&mut self) -> Result<&mut FrecencyStore> {
         if self.frecency_store.is_none() {
             self.frecency_store = Some(read_store(&self.frecency_path).unwrap_or_default());
         }
         Ok(self.frecency_store.as_mut().unwrap())
-    }
-
-    /// Sort applications by frecency
-    fn sort_by_frecency(&mut self, apps: &mut Vec<String>) -> Result<()> {
-        let frecency_store = self.get_frecency_store()?;
-
-        // Get sorted items from frecency store
-        let sorted_items = frecency_store.sorted(SortMethod::Frecent);
-
-        // Create a set of frequently used apps for fast lookup
-        let frequent_apps: std::collections::HashSet<_> =
-            sorted_items.iter().map(|item| &item.item).collect();
-
-        // Sort apps: frequent apps first (in frecency order), then others alphabetically
-        apps.sort_by(|a, b| {
-            let a_is_frequent = frequent_apps.contains(a);
-            let b_is_frequent = frequent_apps.contains(b);
-
-            match (a_is_frequent, b_is_frequent) {
-                (true, true) => {
-                    // Both are frequent, sort by frecency order
-                    let a_index = sorted_items
-                        .iter()
-                        .position(|item| &item.item == a)
-                        .unwrap_or(0);
-                    let b_index = sorted_items
-                        .iter()
-                        .position(|item| &item.item == b)
-                        .unwrap_or(0);
-                    a_index.cmp(&b_index)
-                }
-                (true, false) => std::cmp::Ordering::Less, // Frequent apps come first
-                (false, true) => std::cmp::Ordering::Greater, // Infrequent apps come later
-                (false, false) => a.cmp(b),                // Both infrequent, sort alphabetically
-            }
-        });
-
-        Ok(())
-    }
-
-    /// Record application launch in frecency store
-    pub fn record_launch(&mut self, app_name: &str) -> Result<()> {
-        let frecency_store = self.get_frecency_store()?;
-        frecency_store.add(app_name);
-        self.save_frecency_store()?;
-        Ok(())
     }
 
     /// Save frecency store to disk
@@ -331,38 +96,6 @@ impl LaunchCache {
             self.frecency_store = Some(read_store(&self.frecency_path).unwrap_or_default());
         }
         Ok(())
-    }
-
-    /// Get frecency statistics for debugging
-    pub fn get_frecency_stats(&mut self) -> Result<String> {
-        let frecency_store = self.get_frecency_store()?;
-        let current_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
-
-        let mut stats = String::new();
-        stats.push_str(&format!(
-            "Frecency Store ({} items):\n",
-            frecency_store.items.len()
-        ));
-
-        for item in frecency_store.items.iter().take(10) {
-            let frecency = item.get_frecency(current_time);
-            stats.push_str(&format!(
-                "  {}: {:.2} (accessed {} times)\n",
-                item.item, frecency, item.num_accesses
-            ));
-        }
-
-        if frecency_store.items.len() > 10 {
-            stats.push_str(&format!(
-                "  ... and {} more\n",
-                frecency_store.items.len() - 10
-            ));
-        }
-
-        Ok(stats)
     }
 
     // === Desktop Support Methods ===
