@@ -60,64 +60,7 @@ pub fn handle_alternative(
     let sources = find_all_sources(config, &target_path)?;
 
     if list {
-        if sources.is_empty() {
-            emit(
-                Level::Info,
-                "dot.alternative.list.empty",
-                &format!(
-                    "{} No alternatives found for {}",
-                    char::from(NerdFont::Info),
-                    display_path.cyan()
-                ),
-                None,
-            );
-            return Ok(());
-        }
-
-        // Load overrides to identify current
-        let overrides = OverrideConfig::load()?;
-        let current_override = overrides.get_override(&target_path);
-        let last_source_index = sources.len() - 1;
-
-        emit(
-            Level::Info,
-            "dot.alternative.list.header",
-            &format!(
-                "{} Alternatives for {}:",
-                char::from(NerdFont::List),
-                display_path.cyan()
-            ),
-            None,
-        );
-
-        for (i, source) in sources.iter().enumerate() {
-            let is_override = current_override
-                .map(|o| o.source_repo == source.repo_name && o.source_subdir == source.subdir_name)
-                .unwrap_or(false);
-
-            let is_default = current_override.is_none() && i == last_source_index;
-
-            let status = if is_override {
-                " (current override)".yellow().to_string()
-            } else if is_default {
-                " (current default)".dimmed().to_string()
-            } else {
-                "".to_string()
-            };
-
-            emit(
-                Level::Info,
-                "dot.alternative.list.item",
-                &format!(
-                    "  • {} / {}{}",
-                    source.repo_name.green(),
-                    source.subdir_name.green(),
-                    status
-                ),
-                None,
-            );
-        }
-        return Ok(());
+        return handle_list(&target_path, &display_path, &sources);
     }
 
     if create {
@@ -176,76 +119,26 @@ pub fn handle_alternative(
 
     // Check if current file is modified by user BEFORE showing picker
     // If target matches ANY source, it's safe to switch (came from a repo)
-    let db = crate::dot::db::Database::new(config.database_path().to_path_buf())?;
-
-    if target_path.exists() {
-        let target_hash = crate::dot::dotfile::Dotfile::compute_hash(&target_path)?;
-        let mut matches_any_source = false;
-
-        for item in &items {
-            if let Ok(source_hash) =
-                crate::dot::dotfile::Dotfile::compute_hash(&item.source.source_path)
-                && target_hash == source_hash
-            {
-                matches_any_source = true;
-                break;
-            }
-        }
-
-        if !matches_any_source {
-            emit(
-                Level::Error,
-                "dot.alternative.modified",
-                &format!(
-                    "{} Cannot switch source for {} - file has been modified.\n  Use 'ins dot reset {}' to discard changes first.",
-                    char::from(NerdFont::CrossCircle),
-                    display_path.yellow(),
-                    display_path
-                ),
-                None,
-            );
-            return Ok(());
-        }
+    if !ensure_safe_to_switch(&target_path, &items)? {
+        emit(
+            Level::Error,
+            "dot.alternative.modified",
+            &format!(
+                "{} Cannot switch source for {} - file has been modified.\n  Use 'ins dot reset {}' to discard changes first.",
+                char::from(NerdFont::CrossCircle),
+                display_path.yellow(),
+                display_path
+            ),
+            None,
+        );
+        return Ok(());
     }
 
     // Show picker
     let prompt = format!("Select source for {}: ", display_path);
     match FzfWrapper::builder().prompt(prompt).select(items)? {
         FzfResult::Selected(item) => {
-            // Set the override
-            let mut overrides = OverrideConfig::load()?;
-
-            // Use reset() to force-apply the new source version since we already
-            // verified the file is safe to switch (matches a known source)
-            let new_dotfile = crate::dot::Dotfile {
-                source_path: item.source.source_path.clone(),
-                target_path: target_path.clone(),
-            };
-            new_dotfile.reset(&db)?;
-
-            // Only save override after successful apply
-            overrides.set_override(
-                target_path.clone(),
-                item.source.repo_name.clone(),
-                item.source.subdir_name.clone(),
-            )?;
-
-            emit(
-                Level::Success,
-                "dot.alternative.set",
-                &format!(
-                    "{} {} now sourced from {} / {} (applied)",
-                    char::from(NerdFont::Check),
-                    display_path.cyan(),
-                    item.source.repo_name.green(),
-                    item.source.subdir_name.green()
-                ),
-                Some(serde_json::json!({
-                    "target": display_path,
-                    "repo": item.source.repo_name,
-                    "subdir": item.source.subdir_name
-                })),
-            );
+            apply_alternative_selection(config, &target_path, &display_path, &item)?;
         }
         FzfResult::Cancelled => {
             emit(
@@ -260,6 +153,139 @@ pub fn handle_alternative(
         }
         _ => {}
     }
+
+    Ok(())
+}
+
+/// Handle --list flag
+fn handle_list(target_path: &PathBuf, display_path: &str, sources: &[DotfileSource]) -> Result<()> {
+    if sources.is_empty() {
+        emit(
+            Level::Info,
+            "dot.alternative.list.empty",
+            &format!(
+                "{} No alternatives found for {}",
+                char::from(NerdFont::Info),
+                display_path.cyan()
+            ),
+            None,
+        );
+        return Ok(());
+    }
+
+    // Load overrides to identify current
+    let overrides = OverrideConfig::load()?;
+    let current_override = overrides.get_override(target_path);
+    let last_source_index = sources.len() - 1;
+
+    emit(
+        Level::Info,
+        "dot.alternative.list.header",
+        &format!(
+            "{} Alternatives for {}:",
+            char::from(NerdFont::List),
+            display_path.cyan()
+        ),
+        None,
+    );
+
+    for (i, source) in sources.iter().enumerate() {
+        let is_override = current_override
+            .map(|o| o.source_repo == source.repo_name && o.source_subdir == source.subdir_name)
+            .unwrap_or(false);
+
+        let is_default = current_override.is_none() && i == last_source_index;
+
+        let status = if is_override {
+            " (current override)".yellow().to_string()
+        } else if is_default {
+            " (current default)".dimmed().to_string()
+        } else {
+            "".to_string()
+        };
+
+        emit(
+            Level::Info,
+            "dot.alternative.list.item",
+            &format!(
+                "  • {} / {}{}",
+                source.repo_name.green(),
+                source.subdir_name.green(),
+                status
+            ),
+            None,
+        );
+    }
+    Ok(())
+}
+
+/// Verify if it's safe to switch the dotfile source (target not modified by user)
+fn ensure_safe_to_switch(target_path: &PathBuf, items: &[SourceSelectItem]) -> Result<bool> {
+    if !target_path.exists() {
+        return Ok(true);
+    }
+
+    // Check if current file is modified by user
+    // If target matches ANY source, it's safe to switch (came from a repo)
+    // We don't need the DB here because we're comparing content hashes directly
+    // against all potential sources
+    let target_hash = crate::dot::dotfile::Dotfile::compute_hash(target_path)?;
+
+    for item in items {
+        if let Ok(source_hash) =
+            crate::dot::dotfile::Dotfile::compute_hash(&item.source.source_path)
+            && target_hash == source_hash
+        {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+/// Apply the selected alternative
+fn apply_alternative_selection(
+    config: &Config,
+    target_path: &PathBuf,
+    display_path: &str,
+    item: &SourceSelectItem,
+) -> Result<()> {
+    let db = crate::dot::db::Database::new(config.database_path().to_path_buf())?;
+
+    // Set the override
+    let mut overrides = OverrideConfig::load()?;
+
+    // Use reset() to force-apply the new source version since we already
+    // verified the file is safe to switch (matches a known source)
+    let new_dotfile = crate::dot::Dotfile {
+        source_path: item.source.source_path.clone(),
+        target_path: target_path.clone(),
+    };
+    new_dotfile.reset(&db)?;
+
+    // Only save override after successful apply
+    overrides.set_override(
+        target_path.clone(),
+        item.source.repo_name.clone(),
+        item.source.subdir_name.clone(),
+    )?;
+
+    emit(
+        Level::Success,
+        "dot.alternative.set",
+        &format!(
+            "{} {} now sourced from {} / {} (applied)",
+            char::from(NerdFont::Check),
+            display_path.cyan(),
+            item.source.repo_name.green(),
+            item.source.subdir_name.green()
+        ),
+        Some(serde_json::json!({
+            "target": display_path,
+            "repo": item.source.repo_name,
+            "subdir": item.source.subdir_name
+        })),
+    );
 
     Ok(())
 }
