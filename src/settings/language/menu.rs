@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::ui::prelude::*;
 
-use super::super::context::format_icon;
+use crate::ui::catppuccin::format_icon;
 use super::state::{LocaleEntry, LocaleState};
 
 #[derive(Clone)]

@@ -325,8 +325,3 @@ impl SettingsContext {
     //     Ok(())
     // }
 }
-
-pub use crate::ui::catppuccin::{
-    colors, format_back_icon, format_icon, format_icon_colored, format_search_icon, hex_to_ansi_fg,
-    select_one_with_style, select_one_with_style_at,
-};

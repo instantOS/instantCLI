@@ -6,7 +6,7 @@ use crate::menu_utils::FzfSelectable;
 use crate::settings::setting::{Category, Setting};
 use crate::ui::prelude::*;
 
-use super::super::context::{format_back_icon, format_icon_colored, format_search_icon};
+use crate::ui::catppuccin::{format_back_icon, format_icon_colored, format_search_icon};
 
 // ============================================================================
 // Category Display

@@ -7,7 +7,8 @@ use anyhow::{Context, Result};
 use crate::settings::setting::{Category, Setting};
 
 use super::super::commands::SettingsNavigation;
-use super::super::context::{SettingsContext, select_one_with_style_at};
+use super::super::context::SettingsContext;
+use crate::ui::catppuccin::select_one_with_style_at;
 use super::items::{CategoryItem, CategoryMenuItem, CategoryPageItem, SearchItem, SettingItem};
 
 pub fn run_settings_ui(

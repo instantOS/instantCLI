@@ -4,7 +4,8 @@ use anyhow::Result;
 
 use crate::menu_utils::{FzfResult, FzfWrapper};
 
-use super::super::context::{SettingsContext, select_one_with_style};
+use super::super::context::SettingsContext;
+use crate::ui::catppuccin::select_one_with_style;
 use super::menu_items::{
     GroupActionItem, GroupItem, GroupMenuItem, ManageMenuItem, UserActionItem,
 };
