@@ -37,7 +37,13 @@ impl FzfSelectable for SourceSelectItem {
 }
 
 /// Handle the alternative command
-pub fn handle_alternative(config: &Config, path: &str, reset: bool, create: bool) -> Result<()> {
+pub fn handle_alternative(
+    config: &Config,
+    path: &str,
+    reset: bool,
+    create: bool,
+    list: bool,
+) -> Result<()> {
     let target_path = resolve_dotfile_path(path)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
     let display_path = target_path
@@ -52,6 +58,67 @@ pub fn handle_alternative(config: &Config, path: &str, reset: bool, create: bool
 
     // Find all sources for this file
     let sources = find_all_sources(config, &target_path)?;
+
+    if list {
+        if sources.is_empty() {
+            emit(
+                Level::Info,
+                "dot.alternative.list.empty",
+                &format!(
+                    "{} No alternatives found for {}",
+                    char::from(NerdFont::Info),
+                    display_path.cyan()
+                ),
+                None,
+            );
+            return Ok(());
+        }
+
+        // Load overrides to identify current
+        let overrides = OverrideConfig::load()?;
+        let current_override = overrides.get_override(&target_path);
+        let last_source_index = sources.len() - 1;
+
+        emit(
+            Level::Info,
+            "dot.alternative.list.header",
+            &format!(
+                "{} Alternatives for {}:",
+                char::from(NerdFont::List),
+                display_path.cyan()
+            ),
+            None,
+        );
+
+        for (i, source) in sources.iter().enumerate() {
+            let is_override = current_override
+                .map(|o| o.source_repo == source.repo_name && o.source_subdir == source.subdir_name)
+                .unwrap_or(false);
+
+            let is_default = current_override.is_none() && i == last_source_index;
+
+            let status = if is_override {
+                " (current override)".yellow().to_string()
+            } else if is_default {
+                " (current default)".dimmed().to_string()
+            } else {
+                "".to_string()
+            };
+
+            emit(
+                Level::Info,
+                "dot.alternative.list.item",
+                &format!(
+                    "  • {} / {}{}",
+                    source.repo_name.green(),
+                    source.subdir_name.green(),
+                    status
+                ),
+                None,
+            );
+        }
+        return Ok(());
+    }
 
     if create {
         return handle_create(config, &target_path, &display_path, &sources);
