@@ -438,7 +438,7 @@ fn add_untracked_files(
     config: &Config,
     db: &Database,
     stats: &mut DirectoryAddStats,
-    debug: bool,
+    _debug: bool,
 ) -> Result<()> {
     if file_paths.is_empty() {
         return Ok(());

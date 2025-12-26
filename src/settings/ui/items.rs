@@ -76,7 +76,7 @@ pub struct SearchItem {
 
 impl FzfSelectable for SubCategoryItem {
     fn fzf_display_text(&self) -> String {
-        use super::super::context::colors;
+        use crate::ui::catppuccin::colors;
         let (icon, color) = match self.name.as_str() {
             "GTK" => (NerdFont::Palette, colors::TEAL),
             "Wallpaper" => (NerdFont::Image, colors::LAVENDER),
@@ -110,7 +110,7 @@ impl FzfSelectable for CategoryItem {
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        use super::super::context::{colors, hex_to_ansi_fg};
+        use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 
         let reset = "\x1b[0m";
         let mauve = hex_to_ansi_fg(colors::MAUVE);
@@ -182,7 +182,7 @@ impl FzfSelectable for CategoryMenuItem {
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match self {
             CategoryMenuItem::SearchAll => {
-                use super::super::context::{colors, hex_to_ansi_fg};
+                use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 
                 let reset = "\x1b[0m";
                 let mauve = hex_to_ansi_fg(colors::MAUVE);
