@@ -26,6 +26,7 @@ impl CheckRegistry {
         registry.register::<PacmanDbSyncCheck>("pacman-db-sync");
         registry.register::<SwayDisplayCheck>("sway-display");
         registry.register::<PolkitAgentCheck>("polkit-agent");
+        registry.register::<BatCheck>("bat-cache");
 
         registry
     }

@@ -16,6 +16,7 @@ pub mod network;
 pub mod security;
 pub mod storage;
 pub mod system;
+pub mod tools;
 
 // Re-export all check types for easy access
 pub use display::SwayDisplayCheck;
@@ -26,3 +27,4 @@ pub use storage::{
     PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck, YayCacheCheck,
 };
 pub use system::{PendingUpdatesCheck, SwapCheck};
+pub use tools::BatCheck;
