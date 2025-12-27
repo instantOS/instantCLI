@@ -7,6 +7,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.10](https://github.com/instantOS/instantCLI/compare/v0.10.9...v0.10.10) - 2025-12-27
+
+### Fixed
+
+- fix clip overlap
+- fix multiple transcodes
+- fix code highlighting CSS
+- fix image CSS
+- fix image?
+- fix block quotes
+- fix pause transitions
+- fix stuff?
+- fix assumption of chronological order
+- fix concatenation
+- fix silence handling
+- fix muted audio
+- fix auphonic detection
+- fix hashing
+- fix whisperx
+- fix swap escape not being used
+- fix KDE color picker
+- fix annoying message
+- fix KDE erratic behavior
+- fix kde scratchpad detection
+- fix kwin scratchpad
+- fix kwin scratchpad
+
+### Other
+
+- add bat check
+- more noise reduction
+- rename slides even more
+- rename title cards to slides
+- split planner
+- init splitting huge planner file
+- refactor video_planner
+- use json instead of srt
+- start migrating to json
+- make render use preprocessed audio
+- improve compression
+- new local preprocessor
+- add new plans
+- better titlecard cli
+- init better block quotes
+- improve cache invalidation
+- include JS version change
+- refactor timeline planning
+- better slide building
+- better video pause behavior
+- that escalated quickly
+- add padding
+- improve whisper?
+- time based matching
+- disable auphonic free on setup
+- skip auphonic when free
+- instantmenu rework
+- split out instantmenu version
+- support instantmenu ins assist
+- split render.rs
+- unify frontmatter handling
+- refactor check.rs
+- init ffmpeg module
+- refactor catppuccin
+- make check verify more
+- refactor render
+- move some files
+- rename mods
+- refactor timeline
+- add check command
+- more logging
+- strip html comments
+- recactor document
+- refactor convert.rs
+- refactor auphonic
+- better code blocks
+- better CSS
+- hacky fix
+- better title card handling
+- avoid uploading entire video to auphonic
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- Add videosetup plan
+- Merge branch 'dev' of github.com:instantOS/instantCLI into dev
+- ignore case in settings search
+- init setting up udev rules
+- clippy
+- even better post dep install menu
+- better post install terminal thing
+- Fix KWin scratchpad status and visibility checks
+- better messaging for vc assist
+- fmt
+- clippy
+- make kwin scratchpad faster
+- better messaging
+- swapescape fix
+- add swapescape to kde
+- more attempted fixes
+- enhance kwin script
+- add swapescape support to gnome
+- Refactor OperatingSystem to remove one-line wrapper functions
+- Merge branch 'main' into dev
+
 ## [0.10.9](https://github.com/instantOS/instantCLI/compare/v0.10.8...v0.10.9) - 2025-12-15
 
 ### Added
