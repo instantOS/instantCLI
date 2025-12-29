@@ -41,6 +41,11 @@ pub enum RepoCommands {
         #[arg(action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
         read_only: bool,
     },
+    /// Show git repository status (working directory and branch state)
+    Status {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
