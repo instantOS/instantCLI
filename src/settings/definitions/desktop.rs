@@ -8,10 +8,12 @@ use std::process::Command;
 use crate::common::compositor::CompositorType;
 use crate::menu_utils::FzfSelectable;
 use crate::settings::context::SettingsContext;
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, select_one_with_style_at};
 use crate::settings::deps::{BLUEMAN, PIPER};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::StringSettingKey;
+use crate::ui::catppuccin::{
+    colors, format_back_icon, format_icon_colored, select_one_with_style_at,
+};
 use crate::ui::prelude::*;
 
 // ============================================================================

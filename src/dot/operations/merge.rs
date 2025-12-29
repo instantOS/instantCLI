@@ -9,7 +9,7 @@ use colored::*;
 use std::process::Stdio;
 
 /// Merge a modified dotfile with its source using nvim diff
-pub fn merge_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
+pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db)?;
     let target_path = resolve_dotfile_path(path)?;
     let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
@@ -40,22 +40,23 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str) -> Result<()> {
 
         // Check if file is modified
         if dotfile.is_target_unmodified(db)? {
-            emit(
-                Level::Info,
-                "dot.merge.unmodified",
-                &format!(
-                    "{} File ~/{} is already up to date",
-                    char::from(NerdFont::Info),
-                    relative_path.display()
-                ),
-                None,
-            );
+            if verbose {
+                emit(
+                    Level::Info,
+                    "dot.merge.unmodified",
+                    &format!(
+                        "{} File ~/{} is already up to date",
+                        char::from(NerdFont::Info),
+                        relative_path.display()
+                    ),
+                    None,
+                );
+            }
             continue;
         }
 
         // Store original source hash for comparison after merge
-        let original_source_hash =
-            dotfile.get_file_hash(&dotfile.source_path, true, db)?;
+        let original_source_hash = dotfile.get_file_hash(&dotfile.source_path, true, db)?;
 
         emit(
             Level::Info,

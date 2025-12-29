@@ -5,7 +5,6 @@ use anyhow::Result;
 use crate::menu_utils::{FzfResult, FzfWrapper};
 
 use super::super::context::SettingsContext;
-use crate::ui::catppuccin::select_one_with_style;
 use super::menu_items::{
     GroupActionItem, GroupItem, GroupMenuItem, ManageMenuItem, UserActionItem,
 };
@@ -15,6 +14,7 @@ use super::utils::{
     add_user_to_group, change_user_shell, create_user, prompt_password_with_confirmation,
     remove_user_from_group, select_groups, select_shell, set_user_password, validate_username,
 };
+use crate::ui::catppuccin::select_one_with_style;
 
 /// Main entry point for user management
 pub fn manage_users(ctx: &mut SettingsContext) -> Result<()> {
