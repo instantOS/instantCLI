@@ -68,6 +68,12 @@ pub enum DotCommands {
         #[arg(value_hint = ValueHint::AnyPath)]
         path: Option<String>,
     },
+    /// Merge a modified dotfile with its source using nvim diff
+    Merge {
+        /// Path to the dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+    },
     /// Manage ignored paths
     Ignore {
         #[command(subcommand)]
@@ -275,6 +281,9 @@ pub fn handle_dot_command(
         }
         DotCommands::Diff { path } => {
             super::diff_all(&config, path.as_deref(), &db)?;
+        }
+        DotCommands::Merge { path } => {
+            super::operations::merge::merge_dotfile(&config, &db, path)?;
         }
         DotCommands::Ignore { command } => {
             handle_ignore_command(&mut config, command, config_path)?;
