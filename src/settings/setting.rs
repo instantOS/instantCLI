@@ -108,7 +108,7 @@ impl Category {
     }
 
     pub fn color(&self) -> &'static str {
-        use super::context::colors;
+        use crate::ui::catppuccin::colors;
         match self {
             Category::Install => colors::BLUE,
             Category::Network => colors::GREEN,

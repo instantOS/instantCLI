@@ -5,7 +5,7 @@
 use anyhow::Result;
 
 use crate::settings::context::SettingsContext;
-use crate::settings::context::colors;
+use crate::ui::catppuccin::colors;
 use crate::settings::defaultapps;
 use crate::settings::deps::XDG_UTILS;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};

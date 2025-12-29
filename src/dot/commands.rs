@@ -108,6 +108,9 @@ pub enum DotCommands {
         /// Create the file in a new repo/subdir if it doesn't exist there
         #[arg(long)]
         create: bool,
+        /// List available alternatives and exit
+        #[arg(long)]
+        list: bool,
     },
 }
 
@@ -301,8 +304,11 @@ pub fn handle_dot_command(
             path,
             reset,
             create,
+            list,
         } => {
-            super::operations::alternative::handle_alternative(&config, path, *reset, *create)?;
+            super::operations::alternative::handle_alternative(
+                &config, path, *reset, *create, *list,
+            )?;
         }
     }
 

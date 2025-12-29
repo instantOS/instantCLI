@@ -1,7 +1,7 @@
 use crate::menu_utils::{FzfPreview, FzfSelectable};
 use crate::ui::prelude::*;
 
-use super::super::context::format_icon;
+use crate::ui::catppuccin::format_icon;
 
 /// Menu item for the main user management screen
 #[derive(Clone)]
@@ -18,7 +18,7 @@ pub(super) enum ManageMenuItem {
 
 impl FzfSelectable for ManageMenuItem {
     fn fzf_display_text(&self) -> String {
-        use super::super::context::{colors, format_icon_colored};
+        use crate::ui::catppuccin::{colors, format_icon_colored};
 
         match self {
             ManageMenuItem::User { username, .. } => {
@@ -43,7 +43,7 @@ impl FzfSelectable for ManageMenuItem {
                 groups,
                 in_toml,
             } => {
-                use super::super::context::{colors, hex_to_ansi_fg};
+                use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 
                 let reset = "\x1b[0m";
                 let mauve = hex_to_ansi_fg(colors::MAUVE);
@@ -107,7 +107,7 @@ impl FzfSelectable for ManageMenuItem {
                 FzfPreview::Text(lines.join("\n"))
             }
             ManageMenuItem::Add => {
-                use super::super::context::{colors, hex_to_ansi_fg};
+                use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 
                 let reset = "\x1b[0m";
                 let mauve = hex_to_ansi_fg(colors::MAUVE);
