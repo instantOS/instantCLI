@@ -455,3 +455,49 @@ pub(crate) fn rgb_to_hex(rgb: &str) -> Option<String> {
     let b: u8 = caps.get(3)?.as_str().parse().ok()?;
     Some(format!("#{:02x}{:02x}{:02x}", r, g, b))
 }
+
+// ============================================================================
+// Dark Mode Helpers
+// ============================================================================
+
+/// Check if the system is currently in dark mode by querying gsettings color-scheme.
+pub(crate) fn is_dark_mode() -> Result<bool> {
+    let output = Command::new("timeout")
+        .args([
+            "2s",
+            "gsettings",
+            "get",
+            "org.gnome.desktop.interface",
+            "color-scheme",
+        ])
+        .output()
+        .context("Failed to query gsettings color-scheme")?;
+
+    Ok(String::from_utf8_lossy(&output.stdout).contains("prefer-dark"))
+}
+
+/// Set the gsettings color-scheme preference.
+pub(crate) fn set_color_scheme(prefer_dark: bool) -> Result<()> {
+    let scheme = if prefer_dark {
+        "prefer-dark"
+    } else {
+        "default"
+    };
+    let status = Command::new("timeout")
+        .args([
+            "10s",
+            "gsettings",
+            "set",
+            "org.gnome.desktop.interface",
+            "color-scheme",
+            scheme,
+        ])
+        .status()
+        .context("Failed to set gsettings color-scheme")?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        anyhow::bail!("gsettings returned non-zero exit code")
+    }
+}
