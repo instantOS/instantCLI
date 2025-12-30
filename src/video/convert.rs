@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, anyhow};
+use pathdiff;
 use std::fs;
 use std::path::{Path, PathBuf};
-use pathdiff;
 
 use crate::ui::prelude::{Level, emit};
 
@@ -235,8 +235,13 @@ fn generate_markdown_output(
         .context("Video file name is not valid UTF-8")?;
 
     // Compute relative path from markdown directory to video file
-    let relative_video_path = pathdiff::diff_paths(video_path, markdown_dir)
-        .ok_or_else(|| anyhow!("Failed to compute relative path from {} to {}", markdown_dir.display(), video_path.display()))?;
+    let relative_video_path = pathdiff::diff_paths(video_path, markdown_dir).ok_or_else(|| {
+        anyhow!(
+            "Failed to compute relative path from {} to {}",
+            markdown_dir.display(),
+            video_path.display()
+        )
+    })?;
 
     let metadata = MarkdownMetadata {
         video_hash,

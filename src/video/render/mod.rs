@@ -732,6 +732,30 @@ mod tests {
         assert_eq!(clip2_source, &PathBuf::from("source.mp4"));
         assert!(!clip2_mute);
     }
+
+    #[test]
+    fn test_render_mode_standard() {
+        let mode = RenderMode::Standard;
+        assert_eq!(mode.target_dimensions(1920, 1080), (1920, 1080));
+        assert_eq!(mode.output_suffix(), "_edit");
+        assert!(!mode.requires_padding());
+        assert_eq!(mode.vertical_offset_pct(), 0.5);
+    }
+
+    #[test]
+    fn test_render_mode_reels() {
+        let mode = RenderMode::Reels;
+        assert_eq!(mode.target_dimensions(1920, 1080), (1080, 1920));
+        assert_eq!(mode.output_suffix(), "_reels");
+        assert!(mode.requires_padding());
+        assert_eq!(mode.vertical_offset_pct(), 0.1);
+    }
+
+    #[test]
+    fn test_render_mode_default() {
+        let mode = RenderMode::default();
+        assert_eq!(mode, RenderMode::Standard);
+    }
 }
 
 /// The NLE-based render pipeline
@@ -782,8 +806,12 @@ impl<'a> RenderPipeline<'a> {
     }
 
     fn build_args(&self) -> Result<Vec<String>> {
-        let compiler =
-            FfmpegCompiler::new(self.render_mode, self.source_width, self.source_height, self.config.clone());
+        let compiler = FfmpegCompiler::new(
+            self.render_mode,
+            self.source_width,
+            self.source_height,
+            self.config.clone(),
+        );
         Ok(compiler
             .compile(
                 self.output.clone(),

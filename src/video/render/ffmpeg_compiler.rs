@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
 
+use super::RenderMode;
 use crate::video::config::VideoConfig;
 use crate::video::render_timeline::{Segment, SegmentData, Timeline};
-use super::RenderMode;
 
 #[derive(Debug, Clone)]
 pub struct FfmpegCompileOutput {
@@ -20,8 +20,14 @@ pub struct FfmpegCompiler {
 }
 
 impl FfmpegCompiler {
-    pub fn new(render_mode: RenderMode, source_width: u32, source_height: u32, config: VideoConfig) -> Self {
-        let (target_width, target_height) = render_mode.target_dimensions(source_width, source_height);
+    pub fn new(
+        render_mode: RenderMode,
+        source_width: u32,
+        source_height: u32,
+        config: VideoConfig,
+    ) -> Self {
+        let (target_width, target_height) =
+            render_mode.target_dimensions(source_width, source_height);
         Self {
             target_width,
             target_height,
@@ -218,7 +224,11 @@ impl FfmpegCompiler {
                 filters.push(padding_filter);
             } else {
                 // No padding needed, just copy the video
-                filters.push(format!("[{trimmed}]copy[{video}]", trimmed = trimmed_label, video = video_label));
+                filters.push(format!(
+                    "[{trimmed}]copy[{video}]",
+                    trimmed = trimmed_label,
+                    video = video_label
+                ));
             }
 
             if *mute_audio {
@@ -465,7 +475,8 @@ mod tests {
 
     #[test]
     fn compiler_includes_output_path_in_args() {
-        let compiler = FfmpegCompiler::new(1920, 1080, VideoConfig::default());
+        let compiler =
+            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default());
         let timeline = Timeline::new();
         let output = compiler
             .compile(
@@ -479,7 +490,8 @@ mod tests {
 
     #[test]
     fn concat_order_respects_timeline_order() {
-        let compiler = FfmpegCompiler::new(1920, 1080, VideoConfig::default());
+        let compiler =
+            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default());
 
         // Deliberately add segments whose *source* start times are out-of-order.
         // The user expects their authored order to be preserved.
@@ -540,5 +552,25 @@ mod tests {
         let pos_start_3 = before_concat.find("trim=start=3.000000").unwrap();
         assert!(pos_start_5 < pos_start_1);
         assert!(pos_start_1 < pos_start_3);
+    }
+
+    #[test]
+    fn test_reels_mode_generates_padding_filter() {
+        let compiler = FfmpegCompiler::new(RenderMode::Reels, 1920, 1080, VideoConfig::default());
+        let padding = compiler.build_padding_filter("v0_raw", "v0");
+        assert!(padding.is_some());
+
+        let filter = padding.unwrap();
+        assert!(filter.contains("scale=1080:-1"));
+        assert!(filter.contains("pad=1080:1920"));
+        assert!(filter.contains("(oh-ih)*0.1")); // 10% offset
+    }
+
+    #[test]
+    fn test_standard_mode_no_padding() {
+        let compiler =
+            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default());
+        let padding = compiler.build_padding_filter("v0_raw", "v0");
+        assert!(padding.is_none());
     }
 }

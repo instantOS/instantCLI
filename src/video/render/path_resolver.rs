@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 
+use super::RenderMode;
 use crate::video::config::VideoDirectories;
 use crate::video::document::{VideoMetadata, VideoMetadataVideo};
-use super::RenderMode;
 
 pub fn resolve_video_path(metadata: &VideoMetadata, markdown_dir: &Path) -> Result<PathBuf> {
     let video_meta: &VideoMetadataVideo = metadata
