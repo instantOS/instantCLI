@@ -103,6 +103,10 @@ pub struct RenderArgs {
     /// Show the ffmpeg command that would be executed without running it
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Render in Instagram Reels/TikTok format (9:16 vertical)
+    #[arg(long)]
+    pub reels: bool,
 }
 
 #[derive(Args, Debug, Clone)]
