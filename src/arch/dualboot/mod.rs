@@ -20,8 +20,8 @@ pub use display::display_disks;
 
 // From types module
 pub use types::{
-    format_size, DetectedOS, DiskInfo, DualBootFeasibility, FilesystemInfo, FreeRegion,
-    MIN_ESP_SIZE, OSType, PartitionInfo, PartitionTableType, ResizeInfo,
+    DetectedOS, DiskInfo, DualBootFeasibility, FilesystemInfo, FreeRegion, MIN_ESP_SIZE, OSType,
+    PartitionInfo, PartitionTableType, ResizeInfo, format_size,
 };
 
 // From verification module

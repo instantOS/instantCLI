@@ -1,5 +1,5 @@
-use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
 use crate::arch::dualboot::feasibility::check_disk_dualboot_feasibility;
+use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
@@ -196,9 +196,7 @@ impl Question for PartitioningMethodQuestion {
                 move || -> anyhow::Result<crate::arch::dualboot::DualBootFeasibility> {
                     let disks = crate::arch::dualboot::detect_disks()?;
                     if let Some(disk_info) = disks.iter().find(|d| d.device == disk_path_owned) {
-                        Ok(check_disk_dualboot_feasibility(
-                            disk_info,
-                        ))
+                        Ok(check_disk_dualboot_feasibility(disk_info))
                     } else {
                         Ok(crate::arch::dualboot::DualBootFeasibility {
                             feasible: false,

@@ -6,8 +6,10 @@
 use crate::arch::dualboot::feasibility;
 use crate::arch::dualboot::os_detection::detect_os_from_info;
 use crate::arch::dualboot::parsing;
-use crate::arch::dualboot::types::{DiskInfo, DualBootFeasibility, MIN_ESP_SIZE, PartitionTableType, ResizeInfo};
 use crate::arch::dualboot::types::format_size;
+use crate::arch::dualboot::types::{
+    DiskInfo, DualBootFeasibility, MIN_ESP_SIZE, PartitionTableType, ResizeInfo,
+};
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::process::Command;

@@ -9,10 +9,12 @@ mod install;
 mod package;
 mod setup;
 
-pub use clone::{clone_repository, ensure_workspace_dir, CloneError};
-pub use fuzzy::{select_package, select_repository, FzfError, GitHubRepoSelectItem, PackageSelectItem};
-pub use github::{fetch_instantos_repos, GitHubError, GitHubErrorKind, GitHubRepo};
-pub use install::{build_and_install_package, handle_install, PackageRepo};
+pub use clone::{CloneError, clone_repository, ensure_workspace_dir};
+pub use fuzzy::{
+    FzfError, GitHubRepoSelectItem, PackageSelectItem, select_package, select_repository,
+};
+pub use github::{GitHubError, GitHubErrorKind, GitHubRepo, fetch_instantos_repos};
+pub use install::{PackageRepo, build_and_install_package, handle_install};
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DevCommands {

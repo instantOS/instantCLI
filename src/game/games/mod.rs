@@ -3,4 +3,4 @@ pub mod manager;
 pub mod selection;
 pub mod validation;
 
-pub use manager::{GameManager, AddGameOptions};
+pub use manager::{AddGameOptions, GameManager};

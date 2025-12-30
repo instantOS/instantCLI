@@ -1,5 +1,5 @@
-use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
 use crate::arch::dualboot::feasibility::{check_disk_dualboot_feasibility, is_dualboot_feasible};
+use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu::slide::run_slider;
 use crate::menu_utils::{FzfWrapper, SliderConfig};
 use crate::ui::nerd_font::NerdFont;

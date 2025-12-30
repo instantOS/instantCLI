@@ -1,7 +1,7 @@
 use super::CommandExecutor;
-use crate::arch::dualboot::{DisksKey, PartitionTableType};
 use crate::arch::dualboot::parsing::get_free_regions;
 use crate::arch::dualboot::types::MIN_ESP_SIZE;
+use crate::arch::dualboot::{DisksKey, PartitionTableType};
 use crate::arch::engine::{
     BootMode, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext,
     QuestionId,
