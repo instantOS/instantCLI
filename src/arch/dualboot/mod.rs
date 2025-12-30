@@ -1,8 +1,23 @@
+// New modular structure
+pub mod types;
 pub mod detection;
+pub mod free_space;
+pub mod feasibility;
+pub mod os_detection;
+pub mod resize;
+pub mod parsing;
+
+// Legacy modules
 pub mod display;
 pub mod verification;
 
+// Re-exports
+pub use types::*;
 pub use detection::*;
+pub use free_space::*;
+pub use feasibility::*;
+pub use os_detection::*;
+pub use resize::*;
 pub use display::*;
 pub use verification::*;
 
