@@ -12,9 +12,10 @@ pub use self::path_resolver::{resolve_transcript_path, resolve_video_path};
 use crate::ui::prelude::{Level, emit};
 
 /// Rendering mode for the output video
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RenderMode {
     /// Standard rendering (same dimensions as source)
+    #[default]
     Standard,
     /// Instagram Reels/TikTok (9:16 vertical, 1080x1920)
     Reels,
@@ -48,12 +49,6 @@ impl RenderMode {
             RenderMode::Standard => 0.5,
             RenderMode::Reels => 0.1, // 10% from top
         }
-    }
-}
-
-impl Default for RenderMode {
-    fn default() -> Self {
-        RenderMode::Standard
     }
 }
 

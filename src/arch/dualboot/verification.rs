@@ -5,7 +5,8 @@
 
 use anyhow::Result;
 
-use super::detection::{DiskInfo, PartitionInfo, detect_disks, format_size};
+use super::detection::detect_disks;
+use super::types::{DiskInfo, PartitionInfo, format_size};
 
 /// Result of checking if a resize has been performed
 #[derive(Debug, Clone)]

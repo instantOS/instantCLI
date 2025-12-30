@@ -4,28 +4,13 @@
 //! partition layouts, and resize feasibility for dual boot configurations.
 
 use crate::arch::dualboot::feasibility;
-use crate::arch::dualboot::os_detection;
+use crate::arch::dualboot::os_detection::detect_os_from_info;
 use crate::arch::dualboot::parsing;
+use crate::arch::dualboot::types::{DiskInfo, DualBootFeasibility, MIN_ESP_SIZE, PartitionTableType, ResizeInfo};
+use crate::arch::dualboot::types::format_size;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::process::Command;
-
-// Re-export types from types.rs for backward compatibility
-pub use crate::arch::dualboot::types::{
-    DiskInfo, DualBootFeasibility, MIN_ESP_SIZE, PartitionInfo, PartitionTableType, ResizeInfo,
-    format_size,
-};
-
-// Re-export from parsing module for backward compatibility
-pub use parsing::get_free_regions;
-
-// Re-export from os_detection module for backward compatibility
-pub use os_detection::detect_os_from_info;
-
-// Re-export from feasibility module for backward compatibility
-pub use feasibility::{check_disk_dualboot_feasibility, is_dualboot_feasible};
-
-// Re-export get_resize_info from resize module for backward compatibility
 
 /// Detect all disks and their partitions
 pub fn detect_disks() -> Result<Vec<DiskInfo>> {

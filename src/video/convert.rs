@@ -1,5 +1,4 @@
 use anyhow::{Context, Result, anyhow};
-use pathdiff;
 use std::fs;
 use std::path::{Path, PathBuf};
 
