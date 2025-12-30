@@ -82,7 +82,7 @@ impl Game {
         if let Some(install) = installation {
             text.push_str(&format!(
                 "\n{} Installation:\n",
-                char::from(crate::ui::NerdFont::Folder)
+                char::from(crate::ui::nerd_font::NerdFont::Folder)
             ));
 
             let path_display = install
@@ -130,7 +130,7 @@ impl Game {
         } else {
             text.push_str(&format!(
                 "\n{} No installation data found\n",
-                char::from(crate::ui::NerdFont::Warning)
+                char::from(crate::ui::nerd_font::NerdFont::Warning)
             ));
         }
 

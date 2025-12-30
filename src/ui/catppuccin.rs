@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::menu_utils::FzfWrapper;
-use crate::ui::NerdFont;
+use crate::ui::nerd_font::NerdFont;
 
 /// Catppuccin Mocha color palette.
 ///

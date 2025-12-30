@@ -3,7 +3,7 @@ use crate::common::paths;
 use crate::dot::path_serde::TildePath;
 use crate::game::config::InstantGameConfig;
 use crate::menu_utils::FzfWrapper;
-use crate::ui::NerdFont;
+use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 use std::process::Command;
 

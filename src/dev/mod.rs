@@ -1,4 +1,4 @@
-use crate::ui::NerdFont;
+use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 use clap::Subcommand;
 
@@ -9,10 +9,10 @@ mod install;
 mod package;
 mod setup;
 
-pub use clone::*;
-pub use fuzzy::*;
-pub use github::*;
-pub use install::*;
+pub use clone::{clone_repository, ensure_workspace_dir, CloneError};
+pub use fuzzy::{select_package, select_repository, FzfError, GitHubRepoSelectItem, PackageSelectItem};
+pub use github::{fetch_instantos_repos, GitHubError, GitHubErrorKind, GitHubRepo};
+pub use install::{build_and_install_package, handle_install, PackageRepo};
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DevCommands {

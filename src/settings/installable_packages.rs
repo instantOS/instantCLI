@@ -582,7 +582,7 @@ pub static ARCHIVE_MANAGERS: &[InstallableApp] = &[
 // =============================================================================
 
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
-use crate::ui::NerdFont;
+use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 
 /// Wrapper for FZF display

@@ -1,6 +1,6 @@
 use crate::game::config::InstantGameConfig;
 use crate::game::restic::backup;
-use crate::ui::NerdFont;
+use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 
 /// Common validation utilities for game manager operations

@@ -71,7 +71,6 @@ pub fn init(format: OutputFormat, color: bool) {
 
 // Custom nerd font icons
 pub mod nerd_font;
-pub use nerd_font::NerdFont;
 
 pub mod catppuccin;
 
@@ -189,5 +188,6 @@ pub fn separator(light: bool) {
 }
 
 pub mod prelude {
-    pub use super::{Level, NerdFont, OutputFormat, emit, get_output_format, separator};
+    pub use super::nerd_font::NerdFont;
+    pub use super::{Level, OutputFormat, emit, get_output_format, separator};
 }
