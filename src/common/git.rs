@@ -246,15 +246,11 @@ pub fn compare_with_remote(repo: &Repository, branch_name: &str) -> Result<Branc
 
     match (ahead, behind) {
         (0, 0) => Ok(BranchSyncStatus::UpToDate),
-        (a, 0) => Ok(BranchSyncStatus::Ahead {
-            commits: a as usize,
-        }),
-        (0, b) => Ok(BranchSyncStatus::Behind {
-            commits: b as usize,
-        }),
+        (a, 0) => Ok(BranchSyncStatus::Ahead { commits: a }),
+        (0, b) => Ok(BranchSyncStatus::Behind { commits: b }),
         (a, b) => Ok(BranchSyncStatus::Diverged {
-            ahead: a as usize,
-            behind: b as usize,
+            ahead: a,
+            behind: b,
         }),
     }
 }

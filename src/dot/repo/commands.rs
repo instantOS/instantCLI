@@ -814,7 +814,7 @@ fn show_repository_status(config: &Config, db: &Database, name: Option<&str>) ->
         println!("  Working Directory:  {} {}", icon, status_text);
 
         // Branch sync status
-        let (icon, status_text) = match &repo_status.branch_sync {
+        let (icon, _status_text) = match &repo_status.branch_sync {
             crate::common::git::BranchSyncStatus::UpToDate => {
                 (char::from(NerdFont::Check), "Up-to-date".green())
             }

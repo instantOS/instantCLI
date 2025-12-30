@@ -1,4 +1,8 @@
 //! Parsing utilities for lsblk and sfdisk output
 
-// This module will contain parsing utilities and re-exports
-// Currently empty - will be populated in Phase 4
+mod lsblk;
+mod sfdisk;
+
+// Re-export public functions from submodules
+pub use lsblk::{is_efi_partition, parse_partition};
+pub use sfdisk::get_free_regions;

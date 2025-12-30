@@ -127,7 +127,7 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
 
         // Check if source file changed (user edited the repo version)
         if new_source_hash != original_source_hash {
-            let repo_name = get_repo_name_for_dotfile(&dotfile, config);
+            let repo_name = get_repo_name_for_dotfile(dotfile, config);
             let repo_path = config.repos_path().join(repo_name.as_str());
 
             emit(

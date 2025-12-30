@@ -1,16 +1,16 @@
 //! Partition resize logic for various filesystems
 
-mod ntfs;
-mod ext;
 mod btrfs;
+mod ext;
+mod ntfs;
 mod other;
 
 use crate::arch::dualboot::types::ResizeInfo;
 
 // Re-export public functions from submodules
-pub use ntfs::{get_ntfs_resize_info, parse_ntfs_min_size};
-pub use ext::{get_ext_resize_info, parse_dumpe2fs_field};
-pub use btrfs::{get_btrfs_resize_info, parse_btrfs_min_free, parse_btrfs_device_size, parse_btrfs_used};
+pub use btrfs::get_btrfs_resize_info;
+pub use ext::get_ext_resize_info;
+pub use ntfs::get_ntfs_resize_info;
 pub use other::get_other_resize_info;
 
 /// Get resize information for a partition based on filesystem type

@@ -1,24 +1,20 @@
 // New modular structure
-pub mod types;
 pub mod detection;
-pub mod free_space;
 pub mod feasibility;
+pub mod free_space;
 pub mod os_detection;
-pub mod resize;
 pub mod parsing;
+pub mod resize;
+pub mod types;
 
 // Legacy modules
 pub mod display;
 pub mod verification;
 
 // Re-exports
-pub use types::*;
 pub use detection::*;
-pub use free_space::*;
-pub use feasibility::*;
-pub use os_detection::*;
-pub use resize::*;
 pub use display::*;
+pub use types::*;
 pub use verification::*;
 
 /// Minimum required space for Linux installation in bytes (10 GB)
