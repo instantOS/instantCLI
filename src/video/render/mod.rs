@@ -124,6 +124,13 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     let video_path = resolve_source_video_path(&document.metadata, markdown_dir)?;
     let audio_path = resolve_audio_path(&video_path)?;
 
+    // Determine render mode from CLI args
+    let render_mode = if args.reels {
+        RenderMode::Reels
+    } else {
+        RenderMode::Standard
+    };
+
     let output_path = if pre_cache_only {
         None
     } else {
@@ -131,6 +138,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
             args.out_file.as_ref(),
             &video_path,
             markdown_dir,
+            render_mode,
         )?)
     };
 
@@ -145,7 +153,10 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     );
     let (video_width, video_height) = probe_video_dimensions(&video_path)?;
 
-    let generator = SlideGenerator::new(video_width, video_height)?;
+    // Use render mode to determine target dimensions
+    let (target_width, target_height) = render_mode.target_dimensions(video_width, video_height);
+
+    let generator = SlideGenerator::new(target_width, target_height)?;
 
     log!(
         Level::Info,
@@ -174,6 +185,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     let pipeline = RenderPipeline::new(
         output_path.clone(),
         nle_timeline,
+        render_mode,
         video_width,
         video_height,
         video_config,
@@ -726,8 +738,9 @@ mod tests {
 struct RenderPipeline<'a> {
     output: PathBuf,
     timeline: Timeline,
-    target_width: u32,
-    target_height: u32,
+    render_mode: RenderMode,
+    source_width: u32,
+    source_height: u32,
     config: VideoConfig,
     audio_source: PathBuf,
     runner: &'a dyn FfmpegRunner,
@@ -737,8 +750,9 @@ impl<'a> RenderPipeline<'a> {
     fn new(
         output: PathBuf,
         timeline: Timeline,
-        target_width: u32,
-        target_height: u32,
+        render_mode: RenderMode,
+        source_width: u32,
+        source_height: u32,
         config: VideoConfig,
         audio_source: PathBuf,
         runner: &'a dyn FfmpegRunner,
@@ -746,8 +760,9 @@ impl<'a> RenderPipeline<'a> {
         Self {
             output,
             timeline,
-            target_width,
-            target_height,
+            render_mode,
+            source_width,
+            source_height,
             config,
             audio_source,
             runner,
@@ -768,7 +783,7 @@ impl<'a> RenderPipeline<'a> {
 
     fn build_args(&self) -> Result<Vec<String>> {
         let compiler =
-            FfmpegCompiler::new(self.target_width, self.target_height, self.config.clone());
+            FfmpegCompiler::new(self.render_mode, self.source_width, self.source_height, self.config.clone());
         Ok(compiler
             .compile(
                 self.output.clone(),

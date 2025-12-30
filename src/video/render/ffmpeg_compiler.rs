@@ -5,6 +5,7 @@ use anyhow::{Result, anyhow, bail};
 
 use crate::video::config::VideoConfig;
 use crate::video::render_timeline::{Segment, SegmentData, Timeline};
+use super::RenderMode;
 
 #[derive(Debug, Clone)]
 pub struct FfmpegCompileOutput {
@@ -14,16 +15,37 @@ pub struct FfmpegCompileOutput {
 pub struct FfmpegCompiler {
     target_width: u32,
     target_height: u32,
+    render_mode: RenderMode,
     config: VideoConfig,
 }
 
 impl FfmpegCompiler {
-    pub fn new(target_width: u32, target_height: u32, config: VideoConfig) -> Self {
+    pub fn new(render_mode: RenderMode, source_width: u32, source_height: u32, config: VideoConfig) -> Self {
+        let (target_width, target_height) = render_mode.target_dimensions(source_width, source_height);
         Self {
             target_width,
             target_height,
+            render_mode,
             config,
         }
+    }
+
+    /// Build letterboxing/pillboxing filter chain when target != source aspect ratio
+    fn build_padding_filter(&self, input_label: &str, output_label: &str) -> Option<String> {
+        if !self.render_mode.requires_padding() {
+            return None;
+        }
+
+        let offset_pct = self.render_mode.vertical_offset_pct();
+
+        Some(format!(
+            "[{input}:v]scale={width}:-1:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)*{offset}:black[{output}]",
+            input = input_label,
+            width = self.target_width,
+            height = self.target_height,
+            offset = offset_pct,
+            output = output_label,
+        ))
     }
 
     pub fn compile(
@@ -181,13 +203,23 @@ impl FfmpegCompiler {
             let audio_label = format!("a{idx}");
             let end_time = start_time + segment.duration;
 
+            // Trim and set timing
+            let trimmed_label = format!("v{idx}_raw");
             filters.push(format!(
-                "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{video}]",
+                "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{trimmed}]",
                 input = input_index,
                 start = format_time(*start_time),
                 end = format_time(end_time),
-                video = video_label,
+                trimmed = trimmed_label,
             ));
+
+            // Apply letterboxing/pillboxing if needed
+            if let Some(padding_filter) = self.build_padding_filter(&trimmed_label, &video_label) {
+                filters.push(padding_filter);
+            } else {
+                // No padding needed, just copy the video
+                filters.push(format!("[{trimmed}]copy[{video}]", trimmed = trimmed_label, video = video_label));
+            }
 
             if *mute_audio {
                 filters.push(format!(
