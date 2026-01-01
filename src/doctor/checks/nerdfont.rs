@@ -47,6 +47,8 @@ const NERD_FONT_RANGES: &[(&str, u32, u32, usize)] = &[
     ("Octicons", 0xf400, 0xf532, 5),
     // Supplementary PUA-A (f0000 - fffff) - Material Design moved here in v3.0+
     ("Material Design", 0xf0001, 0xf1af0, 10),
+    // Known gap range where fallback commonly occurs (e.g. lazygit/starship issues)
+    ("Gap Range (e900)", 0xe900, 0xe905, 5),
 ];
 
 /// Fonts that are known to NOT be Nerd Fonts - these provide fallback glyphs
@@ -123,7 +125,7 @@ const NON_NERD_FONTS: &[&str] = &[
 const NERD_FONT_NAME: &str = "CaskaydiaCove Nerd Font";
 const NERD_FONT_ZIP_URL: &str =
     "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/CascadiaCode.zip";
-const FONTCONFIG_PRIORITY_FILENAME: &str = "10-nerd-font-priority.conf";
+const FONTCONFIG_PRIORITY_FILENAME: &str = "99-nerd-font-priority.conf";
 
 #[derive(Default)]
 pub struct NerdFontCheck;
@@ -270,7 +272,7 @@ impl NerdFontCheck {
         false
     }
 
-    /// Check if fontconfig priority is already configured
+    /// Check if fontconfig priority is already configured with strict mode
     async fn is_fontconfig_configured(fontconfig_dir: &Path) -> bool {
         let config_file = fontconfig_dir.join(FONTCONFIG_PRIORITY_FILENAME);
 
@@ -278,9 +280,10 @@ impl NerdFontCheck {
             return false;
         }
 
-        // Check if the config file contains our font configuration
+        // Check if the config file matches our new strict configuration
         if let Ok(content) = tokio::fs::read_to_string(&config_file).await {
-            return content.contains(NERD_FONT_NAME) || content.contains("CaskaydiaCove");
+            // Must contain key elements of our configuration
+            return content.contains(NERD_FONT_NAME) && content.contains("STRICT enforcement");
         }
 
         false
@@ -397,6 +400,7 @@ impl NerdFontCheck {
     ///
     /// This configuration specifically targets the Private Use Area (PUA) unicode ranges
     /// where Nerd Font icons live, without affecting regular text rendering (including Arabic).
+    /// Used STRICT assignment to prevent fallback to Arabic/CJK fonts for these ranges.
     fn generate_fontconfig_xml() -> String {
         format!(
             r#"<?xml version="1.0"?>
@@ -408,7 +412,7 @@ impl NerdFontCheck {
     in the Private Use Area (PUA) without affecting regular text.
   -->
 
-  <!-- Prefer Nerd Font for monospace -->
+  <!-- 1. General preference for monospace -->
   <alias>
     <family>monospace</family>
     <prefer>
@@ -417,32 +421,36 @@ impl NerdFontCheck {
   </alias>
 
   <!--
-    For PUA codepoints (where Nerd Font icons live), explicitly prefer the Nerd Font.
-    This prevents fallback to Arabic, CJK, or symbol fonts for these ranges:
+    2. STRICT enforcement for PUA ranges.
+    If a character is in the PUA ranges (where icons live), we FORCE the font family
+    to be our Nerd Font (assign, not prepend). This effectively disables fallback to
+    other fonts for these specific characters preventing random Arabic/CJK glyphs
+    from appearing. A missing icon (box) is better than a wrong one.
+
+    Ranges targeted:
     - BMP PUA: U+E000-U+F8FF (Powerline, Devicons, Codicons, Font Awesome, etc.)
     - Supplementary PUA-A: U+F0000-U+FFFFD (Material Design icons in v3.0+)
   -->
-  <match>
-    <test name="family" compare="contains">
-      <string>monospace</string>
-    </test>
-    <edit name="family" mode="prepend" binding="strong">
-      <string>{}</string>
-    </edit>
-  </match>
-
-  <!-- Ensure our Nerd Font is considered for symbol glyphs -->
   <match target="pattern">
-    <test qual="any" name="family">
-      <string>monospace</string>
+    <test name="charset" compare="contains">
+      <charset>
+        <range>
+          <int>0xE000</int>
+          <int>0xF8FF</int>
+        </range>
+        <range>
+          <int>0xF0000</int>
+          <int>0xFFFFD</int>
+        </range>
+      </charset>
     </test>
-    <edit name="family" mode="prepend" binding="strong">
+    <edit name="family" mode="assign" binding="strong">
       <string>{}</string>
     </edit>
   </match>
 </fontconfig>
 "#,
-            NERD_FONT_NAME, NERD_FONT_NAME, NERD_FONT_NAME, NERD_FONT_NAME
+            NERD_FONT_NAME, NERD_FONT_NAME, NERD_FONT_NAME
         )
     }
 
