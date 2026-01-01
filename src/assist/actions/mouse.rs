@@ -21,12 +21,11 @@ pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>>
                 .output()
                 .context("Failed to set mouse accel profile to flat")?;
         }
-        _ if compositor.is_x11() => {
-            // X11 doesn't need explicit accel profile setting for libinput
-        }
+        CompositorType::Gnome => {}
+        _ if compositor.is_x11() => {}
         _ => {
             anyhow::bail!(
-                "Mouse speed adjustment is only supported on Sway and X11. Detected: {}",
+                "Mouse speed adjustment is only supported on Sway, X11, and Gnome. Detected: {}",
                 compositor.name()
             );
         }
@@ -38,6 +37,7 @@ pub fn run_mouse_speed_slider(initial_value: Option<i64>) -> Result<Option<i64>>
         // Detect current speed based on compositor
         let current_speed = match compositor {
             CompositorType::Sway => get_sway_mouse_speed().unwrap_or(0.0),
+            CompositorType::Gnome => get_gnome_mouse_speed().unwrap_or(0.0),
             _ if compositor.is_x11() => get_x11_mouse_speed().unwrap_or(0.0),
             _ => 0.0,
         };
@@ -81,9 +81,6 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
 
     match compositor {
         CompositorType::Sway => {
-            // Apply to sway
-            // swaymsg input type:pointer pointer_accel <value>
-            // Need to pass as a single argument to avoid swaymsg interpreting negative values as options
             let sway_command = format!("input type:pointer pointer_accel {}", speed);
 
             Command::new("swaymsg")
@@ -91,12 +88,22 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
                 .output()
                 .context("Failed to set mouse speed")?;
         }
+        CompositorType::Gnome => {
+            Command::new("gsettings")
+                .args(["set", "org.gnome.desktop.peripherals.mouse", "speed", &speed.to_string()])
+                .output()
+                .context("Failed to set mouse speed")?;
+            Command::new("gsettings")
+                .args(["set", "org.gnome.desktop.peripherals.touchpad", "speed", &speed.to_string()])
+                .output()
+                .context("Failed to set touchpad speed")?;
+        }
         _ if compositor.is_x11() => {
             set_x11_mouse_speed(speed)?;
         }
         _ => {
             anyhow::bail!(
-                "Mouse speed adjustment is only supported on Sway and X11. Detected: {}",
+                "Mouse speed adjustment is only supported on Sway, X11, and Gnome. Detected: {}",
                 compositor.name()
             );
         }
@@ -213,4 +220,28 @@ fn set_x11_mouse_speed(speed: f64) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn get_gnome_mouse_speed() -> Result<f64> {
+    let output = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.peripherals.touchpad", "speed"])
+        .output()
+        .context("Failed to get GNOME touchpad speed")?;
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let speed = output_str.trim().parse::<f64>().unwrap_or(0.0);
+
+    if speed != 0.0 {
+        return Ok(speed);
+    }
+
+    let output = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.peripherals.mouse", "speed"])
+        .output()
+        .context("Failed to get GNOME mouse speed")?;
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let speed = output_str.trim().parse::<f64>().unwrap_or(0.0);
+
+    Ok(speed)
 }
