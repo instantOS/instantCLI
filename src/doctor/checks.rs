@@ -13,8 +13,8 @@ use crate::doctor::{CheckStatus, DoctorCheck, PrivilegeLevel};
 
 pub mod display;
 pub mod locale;
-pub mod network;
 pub mod nerdfont;
+pub mod network;
 pub mod security;
 pub mod storage;
 pub mod system;

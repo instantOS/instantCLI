@@ -20,13 +20,17 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 const COMMON_SYMBOLS: &[char] = &[
-    '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-    '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-    '', '', '', '', '',
+    '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+    '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
 ];
 
 const NERD_FONT_PATTERNS: &[&[&str]] = &[
-    &["caskaydia", "caskaydiacove", "caskaydia cove", "caskaydia mono"],
+    &[
+        "caskaydia",
+        "caskaydiacove",
+        "caskaydia cove",
+        "caskaydia mono",
+    ],
     &["jetbrainsmono", "jetbrains mono"],
     &["firacode", "fira code"],
     &["hacknerdfont", "hack nerd", "hack"],
@@ -165,7 +169,9 @@ impl DoctorCheck for NerdFontCheck {
         }
 
         let nerd_fonts = self.detect_nerd_fonts(&installed_fonts);
-        let current_font = self.get_current_monospace_font().unwrap_or_else(|| "system default".to_string());
+        let current_font = self
+            .get_current_monospace_font()
+            .unwrap_or_else(|| "system default".to_string());
         let coverage = self.check_coverage();
 
         let has_nerd_coverage = coverage.has_nerd_coverage;
@@ -192,12 +198,19 @@ impl DoctorCheck for NerdFontCheck {
                 ))
             }
         } else if has_nerd_coverage && !all_symbols_render {
+            let bad_fonts_str = if coverage.bad_fonts.is_empty() {
+                "unknown system fonts".to_string()
+            } else {
+                coverage.bad_fonts.join(", ")
+            };
+
             CheckStatus::Warning {
                 message: format!(
-                    "Nerd Font(s) detected ({}) but {} of {} symbols may not render correctly. Some glyphs may display as boxes or wrong characters (e.g. Chinese, Arabic).",
+                    "Nerd Font(s) detected ({}) but {} of {} symbols are not using them. They are rendering using: {}. This causes boxes or wrong characters.",
                     nerd_font_display,
-                    coverage.missing_count,
-                    coverage.total_checked
+                    coverage.missing_count + coverage.standard_coverage_count,
+                    coverage.total_checked,
+                    bad_fonts_str
                 ),
                 fixable: true,
             }
@@ -243,7 +256,9 @@ impl DoctorCheck for NerdFontCheck {
         println!("To fix Nerd Font issues, install a Nerd Font:");
         println!();
         println!("  # Option 1: Install from Ubuntu repositories");
-        println!("  sudo apt update && sudo apt install fonts-caskaydiacove fonts-jetbrains-mono fonts-firacode");
+        println!(
+            "  sudo apt update && sudo apt install fonts-caskaydiacove fonts-jetbrains-mono fonts-firacode"
+        );
         println!();
         println!("  # Option 2: Download from GitHub (more options)");
         println!("  # Visit: https://www.nerdfonts.com/font-downloads");
@@ -265,10 +280,7 @@ impl NerdFontCheck {
     fn get_installed_fonts(&self) -> Result<Vec<String>> {
         use std::process::Command;
 
-        let output = Command::new("fc-list")
-            .arg(":")
-            .arg("family")
-            .output()?;
+        let output = Command::new("fc-list").arg(":").arg("family").output()?;
 
         if !output.status.success() {
             anyhow::bail!("fc-list command failed");
@@ -286,10 +298,7 @@ impl NerdFontCheck {
     fn get_current_monospace_font(&self) -> Option<String> {
         use std::process::Command;
 
-        let output = Command::new("fc-match")
-            .arg("monospace")
-            .output()
-            .ok()?;
+        let output = Command::new("fc-match").arg("monospace").output().ok()?;
 
         if output.status.success() {
             let font = String::from_utf8_lossy(&output.stdout);
@@ -331,21 +340,27 @@ impl NerdFontCheck {
         let mut missing_count = 0;
         let mut fc_query_failed = false;
         let mut all_render = true;
+        let mut bad_fonts = std::collections::HashSet::new();
 
         let all_symbols: Vec<char> = COMMON_SYMBOLS.iter().copied().collect();
 
         for &glyph in &all_symbols {
             let codepoint = glyph as u32;
             match self.find_font_for_codepoint(codepoint) {
-                Some(font) if !self.is_standard_font(&font) => {
-                    nerd_coverage_count += 1;
-                }
-                Some(_) => {
-                    standard_coverage_count += 1;
-                    all_render = false;
+                Some(font) => {
+                    if self.is_nerd_font(&font) {
+                        nerd_coverage_count += 1;
+                    } else {
+                        standard_coverage_count += 1;
+                        all_render = false;
+                        bad_fonts.insert(font);
+                    }
                 }
                 None => {
-                    fc_query_failed = true;
+                    // Try to distinguish between "fc-match failed to run" and "no font found"
+                    // But find_font_for_codepoint returns None on error or empty output
+                    // For now, treat as missing/failure
+                    fc_query_failed = true; // technically match failed or returned nothing
                     missing_count += 1;
                     all_render = false;
                 }
@@ -353,7 +368,9 @@ impl NerdFontCheck {
         }
 
         let total_checked = all_symbols.len();
-        let has_nerd_coverage = nerd_coverage_count > total_checked / 2;
+        // Relaxed check: if we have significant nerd coverage, we assume it's "detected"
+        // even if some symbols fall back.
+        let has_nerd_coverage = nerd_coverage_count > total_checked / 3;
 
         CoverageResult {
             nerd_coverage_count,
@@ -363,16 +380,19 @@ impl NerdFontCheck {
             has_nerd_coverage,
             all_symbols_render: all_render,
             fc_query_failed,
+            bad_fonts: bad_fonts.into_iter().collect(),
         }
     }
 
     fn find_font_for_codepoint(&self, codepoint: u32) -> Option<String> {
         use std::process::Command;
 
-        let output = Command::new("fc-query")
-            .arg("--format")
+        // Use fc-match to find the font effectively used for this codepoint
+        // syntax: fc-match -f "%{family}" "monospace:charset=XXXX"
+        let output = Command::new("fc-match")
+            .arg("-f")
             .arg("%{family}")
-            .arg(format!("U+{:04X}", codepoint))
+            .arg(format!("monospace:charset={:x}", codepoint))
             .output()
             .ok()?;
 
@@ -386,8 +406,22 @@ impl NerdFontCheck {
         None
     }
 
+    fn is_nerd_font(&self, font: &str) -> bool {
+        let font_lower = font.to_lowercase();
+        for patterns in NERD_FONT_PATTERNS {
+            for pattern in *patterns {
+                if font_lower.contains(pattern) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     fn is_standard_font(&self, font: &str) -> bool {
-        STANDARD_FONTS.iter().any(|sf| font.to_lowercase().contains(&sf.to_lowercase()))
+        STANDARD_FONTS
+            .iter()
+            .any(|sf| font.to_lowercase().contains(&sf.to_lowercase()))
     }
 }
 
@@ -399,4 +433,5 @@ struct CoverageResult {
     has_nerd_coverage: bool,
     all_symbols_render: bool,
     fc_query_failed: bool,
+    bad_fonts: Vec<String>,
 }

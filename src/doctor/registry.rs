@@ -1,4 +1,4 @@
-use super::{checks::*, DoctorCheck};
+use super::{DoctorCheck, checks::*};
 use std::collections::HashMap;
 
 pub type CheckFactory = fn() -> Box<dyn DoctorCheck + Send + Sync>;
