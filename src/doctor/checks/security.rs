@@ -6,6 +6,18 @@ use tokio::process::Command as TokioCommand;
 /// Check if any polkit authentication agent is running
 /// This detects any agent that properly registers with polkit via D-Bus
 pub async fn is_polkit_agent_running() -> bool {
+    // On GNOME, the polkit agent is integrated into gnome-shell
+    // Use existing CompositorType detection for consistency
+    use crate::common::compositor::CompositorType;
+    if CompositorType::detect() == CompositorType::Gnome {
+        if is_process_running("gnome-shell").await {
+            return true;
+        }
+        if is_process_running("xdg-desktop-portal").await {
+            return true;
+        }
+    }
+
     // Check for registered polkit authentication agents via D-Bus
     // This detects any agent that properly registers with polkit, regardless of process name
     TokioCommand::new("busctl")
@@ -28,6 +40,17 @@ pub async fn is_polkit_agent_running() -> bool {
                 false
             }
         })
+        .unwrap_or(false)
+}
+
+/// Check if a process with the given name is running
+async fn is_process_running(process_name: &str) -> bool {
+    TokioCommand::new("pgrep")
+        .arg("-x")
+        .arg(process_name)
+        .output()
+        .await
+        .map(|output| output.status.success())
         .unwrap_or(false)
 }
 

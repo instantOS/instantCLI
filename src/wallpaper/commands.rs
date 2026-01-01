@@ -9,7 +9,7 @@ use crate::settings::store::{
 };
 use crate::wallpaper::cli::{SetArgs, WallpaperCommands};
 
-use crate::wallpaper::{sway, x11};
+use crate::wallpaper::{sway, x11, gnome};
 
 pub async fn handle_wallpaper_command(command: WallpaperCommands, _debug: bool) -> Result<()> {
     match command {
@@ -86,6 +86,10 @@ pub async fn apply_configured_wallpaper() -> Result<()> {
         }
         CompositorType::I3 | CompositorType::Dwm | CompositorType::InstantWM => {
             x11::apply_wallpaper(&path)?;
+            println!("{}", "Wallpaper applied successfully".green());
+        }
+        CompositorType::Gnome => {
+            gnome::apply_wallpaper(&path)?;
             println!("{}", "Wallpaper applied successfully".green());
         }
         _ => {
