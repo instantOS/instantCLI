@@ -16,8 +16,9 @@
 //! (often Chinese or Arabic glyphs from font fallback chains).
 
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
+use tokio::process::Command;
 
 const COMMON_SYMBOLS: &[char] = &[
     '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
@@ -35,6 +36,7 @@ const NERD_FONT_PATTERNS: &[&[&str]] = &[
     &["firacode", "fira code"],
     &["hacknerdfont", "hack nerd", "hack"],
     &["iosevka"],
+    &["maple mono", "maple mono nf"],
     &["meslo"],
     &["sauce code"],
     &["sourcecodepro", "source code pro"],
@@ -215,10 +217,16 @@ impl DoctorCheck for NerdFontCheck {
                 fixable: true,
             }
         } else if !nerd_fonts.is_empty() && fc_query_working {
+            let bad_fonts_str = if coverage.bad_fonts.is_empty() {
+                "unknown system fonts".to_string()
+            } else {
+                coverage.bad_fonts.join(", ")
+            };
+
             CheckStatus::Warning {
                 message: format!(
-                    "Nerd Font(s) detected ({}) but symbol rendering test failed. Symbols may not display correctly in your terminal.",
-                    nerd_font_display
+                    "Nerd Font(s) detected ({}) but symbol rendering test failed. Your system prefers other fonts for these symbols: {}. Configure your terminal or fontconfig to prioritize the Nerd Font.",
+                    nerd_font_display, bad_fonts_str
                 ),
                 fixable: true,
             }
@@ -243,35 +251,95 @@ impl DoctorCheck for NerdFontCheck {
     }
 
     fn fix_message(&self) -> Option<String> {
-        Some(String::from(
-            "Install a Nerd Font for proper symbol rendering. On Ubuntu/Debian:\n\
-              sudo apt install fonts-caskaydiacove fonts-jetbrains-mono fonts-firacode\n\
-              or download from: https://www.nerdfonts.com/font-downloads\n\n\
-              Recommended: CaskaydiaCove Nerd Font, JetBrainsMono Nerd Font, or FiraCode Nerd Font.\n\
-              After installation, configure your terminal to use the Nerd Font.",
-        ))
+        Some("Automatically install CaskaydiaCove Nerd Font to ~/.local/share/fonts/".to_string())
     }
 
     async fn fix(&self) -> Result<()> {
-        println!("To fix Nerd Font issues, install a Nerd Font:");
-        println!();
-        println!("  # Option 1: Install from Ubuntu repositories");
-        println!(
-            "  sudo apt update && sudo apt install fonts-caskaydiacove fonts-jetbrains-mono fonts-firacode"
-        );
-        println!();
-        println!("  # Option 2: Download from GitHub (more options)");
-        println!("  # Visit: https://www.nerdfonts.com/font-downloads");
-        println!("  # Download 'CaskaydiaCove Nerd Font' or 'JetBrainsMono Nerd Font'");
-        println!();
-        println!("  # After installation, configure your terminal:");
-        println!("  # - GNOME Terminal: Edit > Preferences > Profiles > Font");
-        println!("  # - Ghostty: Set 'font-family' to 'CaskaydiaCove Nerd Font'");
-        println!("  # - Alacritty: Set 'font.family' to 'CaskaydiaCove Nerd Font'");
-        println!();
-        println!("  # For lazygit, add to ~/.config/lazygit/config.yml:");
-        println!("  # gui:");
-        println!("  #   nerdFontsVersion: \"3\"");
+        println!("Attempting to install CaskaydiaCove Nerd Font...");
+
+        let home = dirs::home_dir().context("Could not determine home directory")?;
+
+        let fonts_dir = home.join(".local/share/fonts");
+
+        if !fonts_dir.exists() {
+            println!("Creating fonts directory: {:?}", fonts_dir);
+
+            tokio::fs::create_dir_all(&fonts_dir)
+                .await
+                .context("Failed to create fonts directory")?;
+        }
+
+        let zip_url =
+            "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/CascadiaCode.zip";
+
+        let zip_name = "CascadiaCode.zip";
+
+        let zip_path = std::env::temp_dir().join(zip_name);
+
+        println!("Downloading {}...", zip_url);
+
+        let client = reqwest::Client::new();
+
+        let response = client
+            .get(zip_url)
+            .send()
+            .await
+            .context("Failed to send request")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!("Download failed: {}", response.status());
+        }
+
+        let content = response
+            .bytes()
+            .await
+            .context("Failed to get response bytes")?;
+
+        tokio::fs::write(&zip_path, content)
+            .await
+            .context("Failed to write zip file")?;
+
+        println!("Extracting to {:?}...", fonts_dir);
+
+        // Use system unzip command
+
+        let status = Command::new("unzip")
+            .arg("-o") // overwrite
+            .arg("-q") // quiet
+            .arg(&zip_path)
+            .arg("-d")
+            .arg(&fonts_dir)
+            .output()
+            .await
+            .context("Failed to execute unzip command. Is 'unzip' installed?")?;
+
+        if !status.status.success() {
+            anyhow::bail!("Unzip failed: {}", String::from_utf8_lossy(&status.stderr));
+        }
+
+        // Clean up zip
+
+        let _ = tokio::fs::remove_file(&zip_path).await;
+
+        println!("Updating font cache...");
+
+        let status = Command::new("fc-cache")
+            .arg("-f")
+            .output()
+            .await
+            .context("Failed to execute fc-cache")?;
+
+        if !status.status.success() {
+            println!(
+                "Warning: fc-cache returned error: {}",
+                String::from_utf8_lossy(&status.stderr)
+            );
+        }
+
+        println!("Successfully installed CaskaydiaCove Nerd Font!");
+
+        println!("Please configure your terminal to use 'CaskaydiaCove Nerd Font'.");
+
         Ok(())
     }
 }
