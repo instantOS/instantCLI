@@ -1,5 +1,5 @@
 use super::{selection::select_game_interactive, validation::*};
-use crate::dot::path_serde::TildePath;
+use crate::common::TildePath;
 use crate::game::config::{
     Game, GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,
 };

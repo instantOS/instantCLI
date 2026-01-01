@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
 
-use crate::dot::path_serde::TildePath;
+use crate::common::TildePath;
 use crate::menu_utils::PathInputSelection;
 
 /// Convert a TildePath to a display string, falling back to absolute path if tilde conversion fails

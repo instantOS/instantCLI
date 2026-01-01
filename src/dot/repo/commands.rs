@@ -1,8 +1,8 @@
 use super::cli::{RepoCommands, SubdirCommands};
+use crate::common::TildePath;
 use crate::dot::config::{Config, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::git::add_repo as git_clone_repo;
-use crate::dot::path_serde::TildePath;
 use crate::dot::repo::RepositoryManager;
 use crate::ui::Level;
 use crate::ui::prelude::*;

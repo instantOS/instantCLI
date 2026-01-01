@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
-use crate::dot::path_serde::TildePath;
+use crate::common::TildePath;
 use crate::game::utils::path::{
     is_valid_wine_prefix, is_wine_prefix_path, path_selection_to_tilde, tilde_display_string,
 };

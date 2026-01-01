@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 
 use super::file_picker::{FilePickerScope, MenuWrapper};
 use super::fzf::{FzfResult, FzfSelectable, FzfWrapper};
-use crate::dot::path_serde::TildePath;
+use crate::common::TildePath;
 use crate::ui::nerd_font::NerdFont;
 
 #[derive(Debug, Clone)]

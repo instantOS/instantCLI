@@ -10,10 +10,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::common::paths;
+use crate::common::TildePath;
 use crate::dot::config::Config;
 use crate::dot::dotfile::Dotfile;
 use crate::dot::localrepo::LocalRepo;
-use crate::dot::path_serde::TildePath;
 
 /// A single dotfile source override
 #[derive(Serialize, Deserialize, Debug, Clone)]

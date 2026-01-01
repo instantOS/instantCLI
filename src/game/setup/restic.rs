@@ -98,7 +98,7 @@ pub(super) fn infer_snapshot_kind(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dot::path_serde::TildePath;
+    use crate::common::TildePath;
     use tempfile::TempDir;
 
     fn ensure_restic_available() -> bool {

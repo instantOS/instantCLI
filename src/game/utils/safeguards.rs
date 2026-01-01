@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use std::path::{Path, PathBuf};
 
-use crate::dot::path_serde::TildePath;
+use crate::common::TildePath;
 use crate::game::utils::path::tilde_display_string;
 
 /// Represents how a path will be used so that error messages can be contextualized.

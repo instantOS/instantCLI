@@ -7,7 +7,6 @@ pub mod git;
 pub mod localrepo;
 pub mod meta;
 pub mod override_config;
-pub mod path_serde;
 pub mod repo;
 
 // New organized modules

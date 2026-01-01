@@ -1,6 +1,6 @@
 use super::init::initialize_restic_repo;
 use crate::common::paths;
-use crate::dot::path_serde::TildePath;
+use crate::common::TildePath;
 use crate::game::config::InstantGameConfig;
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
@@ -36,7 +36,7 @@ impl RepositoryManager {
                         );
                         // Clear the current config to force new setup
                         config.repo =
-                            crate::dot::path_serde::TildePath::new(std::path::PathBuf::new());
+                            crate::common::TildePath::new(std::path::PathBuf::new());
                         config.repo_password = "instantgamepassword".to_string();
                     } else {
                         return Err(e);

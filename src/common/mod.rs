@@ -14,3 +14,7 @@ pub mod requirements;
 pub mod shell;
 pub mod systemd;
 pub mod terminal;
+pub mod tilde_path;
+
+// Re-export commonly used types
+pub use tilde_path::TildePath;
