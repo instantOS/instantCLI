@@ -212,5 +212,4 @@ mod tests {
         config_quotes.ensure_hook("test");
         assert_eq!(config_quotes.to_string(), "HOOKS=\"base udev test\"");
     }
-
 }

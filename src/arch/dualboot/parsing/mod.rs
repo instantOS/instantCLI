@@ -4,5 +4,5 @@ mod lsblk;
 mod sfdisk;
 
 // Re-export public functions from submodules
-pub use lsblk::{is_efi_partition, parse_partition};
+pub use lsblk::parse_partition;
 pub use sfdisk::get_free_regions;

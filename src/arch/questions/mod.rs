@@ -10,10 +10,7 @@ pub mod warnings;
 pub use boolean::BooleanQuestion;
 pub use disk::{DiskQuestion, PartitioningMethodQuestion, RunCfdiskQuestion};
 pub use dualboot::{DualBootPartitionQuestion, DualBootSizeQuestion};
-pub use partition::{
-    DefaultPartitionValidator, EspPartitionValidator, PartitionEntry, PartitionSelectorQuestion,
-    PartitionSize,
-};
+pub use partition::{EspPartitionValidator, PartitionSelectorQuestion};
 pub use resize_instructions::ResizeInstructionsQuestion;
 pub use system::{
     EncryptionPasswordQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion,
