@@ -1,134 +1,128 @@
 //! Nerd Font check - ensures Nerd Font symbols can be rendered correctly
 //!
-//! Nerd Fonts extend regular fonts with thousands of glyphs in the Private Use Area.
-//! Common Nerd Font PUA ranges:
-//! - U+F000 - U+F0FF: Font Awesome
-//! - U+E000 - U+E0FF: Devicons
-//! - U+E200 - U+E2FF: Octicons
-//! - U+E300 - U+E3FF: Font Awesome Extension
-//! - U+E500 - U+E5FF: Seti-UI
-//! - U+E600 - U+E6FF: Powerline Symbols
-//! - U+E700 - U+E7FF: Font Awesome 4
-//! - U+EB00 - U+EBFF: Powerline Extra
-//! - U+EC00 - U+ECFF: Code Icons
-//!
-//! Without a Nerd Font, these PUA symbols render as boxes or wrong characters
+//! Nerd Fonts extend regular fonts with thousands of glyphs in the Private Use Area (PUA).
+//! This check samples symbols from ALL major Nerd Font icon sets to ensure comprehensive
+//! coverage. Without a Nerd Font, these PUA symbols render as boxes or wrong characters
 //! (often Chinese or Arabic glyphs from font fallback chains).
+//!
+//! Nerd Font PUA ranges (v3.x):
+//! - Pomicons: e000 - e00a
+//! - Powerline: e0a0 - e0a2, e0b0 - e0b3
+//! - Powerline Extra: e0a3, e0b4 - e0c8, e0ca, e0cc - e0d7
+//! - Font Awesome Extension: e200 - e2a9
+//! - Weather Icons: e300 - e3e3
+//! - Seti-UI + Custom: e5fa - e6b7
+//! - Devicons: e700 - e8ef
+//! - Codicons: ea60 - ec1e
+//! - Font Awesome: ed00 - f2ff
+//! - Font Logos: f300 - f381
+//! - Octicons: f400 - f533
+//! - Material Design: f500 - fd46
 
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tokio::process::Command;
 
-const COMMON_SYMBOLS: &[char] = &[
-    '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-    '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
+/// Nerd Font icon set ranges for comprehensive coverage testing.
+/// Each entry: (name, start_codepoint, end_codepoint, sample_count)
+/// We sample a few characters from each range to test coverage without being excessive.
+const NERD_FONT_RANGES: &[(&str, u32, u32, usize)] = &[
+    // Pomicons (e000 - e00a) - 11 glyphs total
+    ("Pomicons", 0xe000, 0xe00a, 3),
+    // Powerline (e0a0 - e0a2, e0b0 - e0b3) - core symbols
+    ("Powerline", 0xe0a0, 0xe0a2, 3),
+    ("Powerline Arrows", 0xe0b0, 0xe0b3, 4),
+    // Powerline Extra (e0b4 - e0c8)
+    ("Powerline Extra", 0xe0b4, 0xe0c8, 4),
+    // Font Awesome Extension (e200 - e2a9)
+    ("FA Extension", 0xe200, 0xe2a9, 5),
+    // Weather Icons (e300 - e3e3)
+    ("Weather", 0xe300, 0xe3e3, 5),
+    // Seti-UI + Custom (e5fa - e6b7)
+    ("Seti-UI", 0xe5fa, 0xe6b7, 5),
+    // Devicons (e700 - e8ef)
+    ("Devicons", 0xe700, 0xe8ef, 5),
+    // Codicons (ea60 - ec1e)
+    ("Codicons", 0xea60, 0xec1e, 5),
+    // Font Awesome (ed00 - f2ff) - large range
+    ("Font Awesome", 0xed00, 0xf2ff, 8),
+    // Font Logos (f300 - f381)
+    ("Font Logos", 0xf300, 0xf381, 4),
+    // Octicons (f400 - f533)
+    ("Octicons", 0xf400, 0xf533, 5),
+    // Material Design Icons (f500 - fd46) - very large range
+    ("Material Design", 0xf500, 0xfd46, 10),
 ];
 
-const NERD_FONT_PATTERNS: &[&[&str]] = &[
-    &[
-        "caskaydia",
-        "caskaydiacove",
-        "caskaydia cove",
-        "caskaydia mono",
-    ],
-    &["jetbrainsmono", "jetbrains mono"],
-    &["firacode", "fira code"],
-    &["hacknerdfont", "hack nerd", "hack"],
-    &["iosevka"],
-    &["maple mono", "maple mono nf"],
-    &["meslo"],
-    &["sauce code"],
-    &["sourcecodepro", "source code pro"],
-    &["ubuntumono", "ubuntu mono"],
-    &["notomono", "noto mono", "noto sans mono"],
-    &["anonymouspro", "anonymous pro"],
-    &["agave"],
-    &["bigbluemono", "big blue mono"],
-    &["commitmono"],
-    &["envy code"],
-    &["fira mono"],
-    &["go mono"],
-    &["hasklig"],
-    &["ibm plex mono"],
-    &["inconsolata"],
-    &["ia writer mono"],
-    &["karmilla"],
-    &["lekton"],
-    &["libertinus mono"],
-    &["menlo"],
-    &["monoid"],
-    &["mononoki"],
-    &["terminus"],
-    &["victor mono"],
-    &["space mono"],
-    &["sharetechmono"],
-    &["roboto mono"],
-    &["pt mono", "pt sans mono"],
-    &["overpass mono"],
-    &["droid sans mono"],
-    &["racket mono"],
-    &["scientifica"],
-    &["zed mono"],
-    &["zeity mono"],
-    &["tinos"],
-    &["chroma mono"],
-    &["cmu mono", "computer modern mono"],
-    &["boston mono"],
-    &["blexblanco"],
-    &["dustin mono"],
-    &["grold mono"],
-    &["heavy mono"],
-    &["lumberjack mono"],
-    &["martian mono"],
-    &["recco mono"],
-    &["spot mono"],
-    &["stacksans mono"],
-    &["write mono"],
-    &["vim mono"],
-    &["wine mono"],
-    &["prestige elite"],
-    &["proggy", "pro font"],
-    &["quali"],
-    &["shannons mono"],
-];
-
-const STANDARD_FONTS: &[&str] = &[
-    "dejavu sans",
-    "ubuntu",
-    "noto sans",
-    "noto sans mono",
-    "arial",
-    "liberation sans",
-    "droid sans",
+/// Fonts that are known to NOT be Nerd Fonts - these provide fallback glyphs
+/// that appear as boxes, Arabic, Chinese, or other wrong characters.
+const NON_NERD_FONTS: &[&str] = &[
+    // System UI fonts
+    "dejavu",
+    "liberation",
     "freesans",
-    "lato",
-    "roboto",
-    "pt sans",
-    "pt mono",
-    "pt serif",
-    "urw gothic",
-    "go",
-    "tlwg typewriter",
+    "freemono",
+    "freeserif",
+    // Noto fonts (regular, not nerd)
+    "noto sans",
+    "noto serif",
+    "noto mono",
+    "noto color emoji",
+    "noto sans cjk",
+    "noto sans arabic",
+    "noto sans hebrew",
+    "noto sans symbols",
+    // CJK fallback fonts
     "ipagothic",
     "ipaexgothic",
-    "latin modern mono",
-    "tinos",
-    "berenis adf pro",
-    "noto sans cjk",
-    "noto sans egyptian",
-    "noto sans glagolitic",
-    "noto sans gothic",
-    "noto sans gunjala",
-    "noto sans inscriptional",
-    "noto sans masaram",
-    "noto sans mongolian",
-    "noto sans tifinagh",
-    "noto mono",
+    "ipamincho",
+    "wqy",
+    "wenquanyi",
+    "arphic",
+    "uming",
+    "ukai",
+    "droid sans fallback",
+    "source han",
+    "nanum",
+    // Arabic fallback fonts
+    "droid arabic",
+    "scheherazade",
+    "amiri",
+    "lateef",
+    "harmattan",
+    // Symbol fallback fonts
+    "symbola",
+    "unifont",
+    "lastresort",
+    "babelstone",
+    // Generic system fonts
     "sans",
+    "serif",
     "monospace",
     "courier",
     "courier new",
+    "arial",
+    "helvetica",
+    "times",
+    "times new roman",
+    "georgia",
+    "verdana",
+    "tahoma",
+    // Linux system fonts
+    "ubuntu",
+    "cantarell",
+    "droid sans",
+    "roboto",
+    "lato",
+    "open sans",
+    // Other common non-nerd fonts
+    "latin modern",
+    "computer modern",
+    "urw",
+    "nimbus",
+    "bitstream",
+    "tex gyre",
 ];
 
 #[derive(Default)]
@@ -153,97 +147,94 @@ impl DoctorCheck for NerdFontCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
-        let installed_fonts = match self.get_installed_fonts() {
-            Ok(fonts) => fonts,
-            Err(e) => {
-                return CheckStatus::Fail {
-                    message: format!("Failed to query installed fonts: {}", e),
-                    fixable: false,
-                };
-            }
-        };
-
-        if installed_fonts.is_empty() {
+        // Check if fontconfig tools are available
+        if !self.fc_match_available() {
             return CheckStatus::Fail {
-                message: String::from("No fonts detected on the system"),
+                message: String::from(
+                    "fontconfig tools not available. Install fontconfig package.",
+                ),
+                fixable: false,
+            };
+        }
+
+        let current_font = self
+            .get_current_monospace_font()
+            .unwrap_or_else(|| "system default".to_string());
+
+        let coverage = self.check_comprehensive_coverage();
+
+        if coverage.total_checked == 0 {
+            return CheckStatus::Fail {
+                message: String::from("Could not test any Nerd Font symbols"),
                 fixable: true,
             };
         }
 
-        let nerd_fonts = self.detect_nerd_fonts(&installed_fonts);
-        let current_font = self
-            .get_current_monospace_font()
-            .unwrap_or_else(|| "system default".to_string());
-        let coverage = self.check_coverage();
+        let pass_rate = coverage.nerd_font_count as f64 / coverage.total_checked as f64;
+        let fail_rate = coverage.non_nerd_count as f64 / coverage.total_checked as f64;
 
-        let has_nerd_coverage = coverage.has_nerd_coverage;
-        let all_symbols_render = coverage.all_symbols_render;
+        // Build a summary of which icon sets have issues
+        let problem_sets: Vec<&str> = coverage
+            .range_results
+            .iter()
+            .filter(|(_, nerd, non_nerd)| *non_nerd > *nerd)
+            .map(|(name, _, _)| *name)
+            .collect();
 
-        let nerd_font_display = if nerd_fonts.is_empty() {
-            current_font.clone()
-        } else {
-            nerd_fonts.join(", ")
-        };
-
-        let fc_query_working = !coverage.fc_query_failed;
-
-        if has_nerd_coverage && all_symbols_render {
-            if nerd_fonts.is_empty() {
-                CheckStatus::Pass(format!(
-                    "All Nerd Font symbols render correctly using '{}'",
-                    current_font
-                ))
-            } else {
-                CheckStatus::Pass(format!(
-                    "Nerd Font detected and all Nerd Font symbols render correctly ({})",
-                    nerd_font_display
-                ))
-            }
-        } else if has_nerd_coverage && !all_symbols_render {
+        if pass_rate >= 0.95 {
+            // 95%+ coverage is excellent
+            CheckStatus::Pass(format!(
+                "Nerd Font symbols rendering correctly ({}/{} symbols, font: '{}')",
+                coverage.nerd_font_count, coverage.total_checked, current_font
+            ))
+        } else if pass_rate >= 0.7 {
+            // 70-95% - mostly working but some issues
             let bad_fonts_str = if coverage.bad_fonts.is_empty() {
-                "unknown system fonts".to_string()
+                "unknown fonts".to_string()
             } else {
                 coverage.bad_fonts.join(", ")
             };
 
             CheckStatus::Warning {
                 message: format!(
-                    "Nerd Font(s) detected ({}) but {} of {} symbols are not using them. They are rendering using: {}. This causes boxes or wrong characters.",
-                    nerd_font_display,
-                    coverage.missing_count + coverage.standard_coverage_count,
+                    "Partial Nerd Font coverage: {}/{} symbols OK. {} symbols falling back to: {}. \
+                     Problem icon sets: {}",
+                    coverage.nerd_font_count,
                     coverage.total_checked,
-                    bad_fonts_str
+                    coverage.non_nerd_count,
+                    bad_fonts_str,
+                    if problem_sets.is_empty() {
+                        "various".to_string()
+                    } else {
+                        problem_sets.join(", ")
+                    }
                 ),
                 fixable: true,
             }
-        } else if !nerd_fonts.is_empty() && fc_query_working {
+        } else if fail_rate > 0.5 {
+            // More than 50% failing - likely no nerd font or wrong priority
             let bad_fonts_str = if coverage.bad_fonts.is_empty() {
-                "unknown system fonts".to_string()
+                "system fallback fonts".to_string()
             } else {
                 coverage.bad_fonts.join(", ")
             };
 
-            CheckStatus::Warning {
-                message: format!(
-                    "Nerd Font(s) detected ({}) but symbol rendering test failed. Your system prefers other fonts for these symbols: {}. Configure your terminal or fontconfig to prioritize the Nerd Font.",
-                    nerd_font_display, bad_fonts_str
-                ),
-                fixable: true,
-            }
-        } else if !nerd_fonts.is_empty() && !fc_query_working {
-            CheckStatus::Warning {
-                message: format!(
-                    "Nerd Font(s) installed ({}) but fontconfig query is broken. Run 'fc-cache -f' and try again. Symbols may display as boxes or wrong characters.",
-                    nerd_font_display
-                ),
-                fixable: true,
-            }
-        } else {
             CheckStatus::Fail {
                 message: format!(
-                    "No Nerd Font detected. Current font: '{}'. \
-                    Nerd Font symbols will render as boxes or wrong characters (e.g. Chinese, Arabic).",
-                    current_font
+                    "Nerd Font symbols not rendering correctly. Only {}/{} symbols use a Nerd Font. \
+                     Symbols are falling back to: {} (may appear as boxes, Chinese, or Arabic characters). \
+                     Current monospace font: '{}'",
+                    coverage.nerd_font_count, coverage.total_checked, bad_fonts_str, current_font
+                ),
+                fixable: true,
+            }
+        } else {
+            // Low pass rate but not catastrophic
+            CheckStatus::Warning {
+                message: format!(
+                    "Nerd Font symbols partially working ({}/{} OK). Some symbols may display incorrectly. \
+                     Consider installing or prioritizing a Nerd Font.",
+                    coverage.nerd_font_count, coverage.total_checked
                 ),
                 fixable: true,
             }
@@ -387,22 +378,14 @@ impl DoctorCheck for NerdFontCheck {
 }
 
 impl NerdFontCheck {
-    fn get_installed_fonts(&self) -> Result<Vec<String>> {
+    /// Check if fc-match is available
+    fn fc_match_available(&self) -> bool {
         use std::process::Command;
-
-        let output = Command::new("fc-list").arg(":").arg("family").output()?;
-
-        if !output.status.success() {
-            anyhow::bail!("fc-list command failed");
-        }
-
-        let fonts = String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .map(|s| s.to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-
-        Ok(fonts)
+        Command::new("fc-match")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
     }
 
     fn get_current_monospace_font(&self) -> Option<String> {
@@ -421,76 +404,69 @@ impl NerdFontCheck {
         None
     }
 
-    fn detect_nerd_fonts(&self, fonts: &[String]) -> Vec<String> {
-        let mut detected = Vec::new();
-        let fonts_lower: Vec<String> = fonts.iter().map(|s| s.to_lowercase()).collect();
-
-        for font in &fonts_lower {
-            for patterns in NERD_FONT_PATTERNS {
-                for pattern in *patterns {
-                    if font.contains(pattern) {
-                        let original = fonts.iter().find(|f| f.to_lowercase() == *font);
-                        if let Some(f) = original {
-                            if !detected.contains(f) {
-                                detected.push(f.clone());
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
+    /// Generate sample codepoints from a range, evenly distributed
+    fn sample_codepoints(start: u32, end: u32, count: usize) -> Vec<u32> {
+        let range_size = end.saturating_sub(start) + 1;
+        if count == 0 || range_size == 0 {
+            return vec![];
         }
 
-        detected
+        let actual_count = count.min(range_size as usize);
+
+        if actual_count == range_size as usize {
+            // Take all
+            (start..=end).collect()
+        } else {
+            // Evenly distribute samples across the range
+            let step = range_size as f64 / actual_count as f64;
+            (0..actual_count)
+                .map(|i| start + (i as f64 * step) as u32)
+                .collect()
+        }
     }
 
-    fn check_coverage(&self) -> CoverageResult {
-        let mut nerd_coverage_count = 0;
-        let mut standard_coverage_count = 0;
-        let mut missing_count = 0;
-        let mut fc_query_failed = false;
-        let mut all_render = true;
+    /// Check comprehensive coverage across all Nerd Font ranges
+    fn check_comprehensive_coverage(&self) -> ComprehensiveCoverageResult {
+        let mut total_checked = 0;
+        let mut nerd_font_count = 0;
+        let mut non_nerd_count = 0;
         let mut bad_fonts = std::collections::HashSet::new();
+        let mut range_results = Vec::new();
 
-        let all_symbols: Vec<char> = COMMON_SYMBOLS.iter().copied().collect();
+        for (name, start, end, sample_count) in NERD_FONT_RANGES {
+            let codepoints = Self::sample_codepoints(*start, *end, *sample_count);
+            let mut range_nerd = 0;
+            let mut range_non_nerd = 0;
 
-        for &glyph in &all_symbols {
-            let codepoint = glyph as u32;
-            match self.find_font_for_codepoint(codepoint) {
-                Some(font) => {
-                    if self.is_nerd_font(&font) {
-                        nerd_coverage_count += 1;
-                    } else {
-                        standard_coverage_count += 1;
-                        all_render = false;
+            for cp in codepoints {
+                total_checked += 1;
+
+                if let Some(font) = self.find_font_for_codepoint(cp) {
+                    if self.is_non_nerd_font(&font) {
+                        non_nerd_count += 1;
+                        range_non_nerd += 1;
                         bad_fonts.insert(font);
+                    } else {
+                        // Font is not in the known non-nerd list, likely a nerd font
+                        nerd_font_count += 1;
+                        range_nerd += 1;
                     }
-                }
-                None => {
-                    // Try to distinguish between "fc-match failed to run" and "no font found"
-                    // But find_font_for_codepoint returns None on error or empty output
-                    // For now, treat as missing/failure
-                    fc_query_failed = true; // technically match failed or returned nothing
-                    missing_count += 1;
-                    all_render = false;
+                } else {
+                    // No font found - counts as non-nerd (will render as box)
+                    non_nerd_count += 1;
+                    range_non_nerd += 1;
                 }
             }
+
+            range_results.push((*name, range_nerd, range_non_nerd));
         }
 
-        let total_checked = all_symbols.len();
-        // Relaxed check: if we have significant nerd coverage, we assume it's "detected"
-        // even if some symbols fall back.
-        let has_nerd_coverage = nerd_coverage_count > total_checked / 3;
-
-        CoverageResult {
-            nerd_coverage_count,
-            standard_coverage_count,
-            missing_count,
+        ComprehensiveCoverageResult {
             total_checked,
-            has_nerd_coverage,
-            all_symbols_render: all_render,
-            fc_query_failed,
+            nerd_font_count,
+            non_nerd_count,
             bad_fonts: bad_fonts.into_iter().collect(),
+            range_results,
         }
     }
 
@@ -516,32 +492,26 @@ impl NerdFontCheck {
         None
     }
 
-    fn is_nerd_font(&self, font: &str) -> bool {
+    /// Check if a font is a known non-nerd font (fallback font)
+    fn is_non_nerd_font(&self, font: &str) -> bool {
         let font_lower = font.to_lowercase();
-        for patterns in NERD_FONT_PATTERNS {
-            for pattern in *patterns {
-                if font_lower.contains(pattern) {
-                    return true;
-                }
+
+        // Check against known non-nerd fonts
+        for pattern in NON_NERD_FONTS {
+            if font_lower.contains(pattern) {
+                return true;
             }
         }
-        false
-    }
 
-    fn is_standard_font(&self, font: &str) -> bool {
-        STANDARD_FONTS
-            .iter()
-            .any(|sf| font.to_lowercase().contains(&sf.to_lowercase()))
+        false
     }
 }
 
-struct CoverageResult {
-    nerd_coverage_count: usize,
-    standard_coverage_count: usize,
-    missing_count: usize,
+struct ComprehensiveCoverageResult {
     total_checked: usize,
-    has_nerd_coverage: bool,
-    all_symbols_render: bool,
-    fc_query_failed: bool,
+    nerd_font_count: usize,
+    non_nerd_count: usize,
     bad_fonts: Vec<String>,
+    /// Per-range results: (range_name, nerd_count, non_nerd_count)
+    range_results: Vec<(&'static str, usize, usize)>,
 }
