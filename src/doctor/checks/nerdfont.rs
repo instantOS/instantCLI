@@ -8,16 +8,16 @@
 //! Nerd Font PUA ranges (v3.x):
 //! - Pomicons: e000 - e00a
 //! - Powerline: e0a0 - e0a2, e0b0 - e0b3
-//! - Powerline Extra: e0a3, e0b4 - e0c8, e0ca, e0cc - e0d7
+//! - Powerline Extra: e0b4 - e0c8
 //! - Font Awesome Extension: e200 - e2a9
 //! - Weather Icons: e300 - e3e3
-//! - Seti-UI + Custom: e5fa - e6b7
-//! - Devicons: e700 - e8ef
-//! - Codicons: ea60 - ec1e
-//! - Font Awesome: ed00 - f2ff
-//! - Font Logos: f300 - f381
-//! - Octicons: f400 - f533
-//! - Material Design: f500 - fd46
+//! - Seti-UI + Custom: e5fa - e6b5
+//! - Devicons: e700 - e7c5
+//! - Codicons: ea60 - ebeb
+//! - Font Awesome: f000 - f2e0
+//! - Font Logos: f300 - f375
+//! - Octicons: f400 - f532
+//! - Material Design (v3.0+): f0001 - f1af0 (Supplementary PUA-A)
 
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::{Context, Result};
@@ -25,23 +25,28 @@ use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
-/// Nerd Font icon set ranges for comprehensive coverage testing.
+/// Nerd Font icon set ranges for comprehensive coverage testing (v3.x codepoints).
 /// Each entry: (name, start_codepoint, end_codepoint, sample_count)
 /// We sample a few characters from each range to test coverage without being excessive.
+///
+/// Note: Nerd Fonts v3.0+ relocated Material Design icons to Supplementary PUA-A (f0001+).
+/// The old range (f500-fd46) was deprecated and removed.
 const NERD_FONT_RANGES: &[(&str, u32, u32, usize)] = &[
+    // Basic Multilingual Plane PUA (e000 - f8ff)
     ("Pomicons", 0xe000, 0xe00a, 3),
     ("Powerline", 0xe0a0, 0xe0a2, 3),
     ("Powerline Arrows", 0xe0b0, 0xe0b3, 4),
     ("Powerline Extra", 0xe0b4, 0xe0c8, 4),
     ("FA Extension", 0xe200, 0xe2a9, 5),
     ("Weather", 0xe300, 0xe3e3, 5),
-    ("Seti-UI", 0xe5fa, 0xe6b7, 5),
-    ("Devicons", 0xe700, 0xe8ef, 5),
-    ("Codicons", 0xea60, 0xec1e, 5),
-    ("Font Awesome", 0xed00, 0xf2ff, 8),
-    ("Font Logos", 0xf300, 0xf381, 4),
-    ("Octicons", 0xf400, 0xf533, 5),
-    ("Material Design", 0xf500, 0xfd46, 10),
+    ("Seti-UI", 0xe5fa, 0xe6b5, 5),
+    ("Devicons", 0xe700, 0xe7c5, 5),
+    ("Codicons", 0xea60, 0xebeb, 5),
+    ("Font Awesome", 0xf000, 0xf2e0, 8),
+    ("Font Logos", 0xf300, 0xf375, 4),
+    ("Octicons", 0xf400, 0xf532, 5),
+    // Supplementary PUA-A (f0000 - fffff) - Material Design moved here in v3.0+
+    ("Material Design", 0xf0001, 0xf1af0, 10),
 ];
 
 /// Fonts that are known to NOT be Nerd Fonts - these provide fallback glyphs
@@ -389,21 +394,55 @@ impl NerdFontCheck {
     }
 
     /// Generate the fontconfig XML content
+    ///
+    /// This configuration specifically targets the Private Use Area (PUA) unicode ranges
+    /// where Nerd Font icons live, without affecting regular text rendering (including Arabic).
     fn generate_fontconfig_xml() -> String {
         format!(
             r#"<?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
 <fontconfig>
-  <!-- Prefer {} for monospace fonts -->
+  <!--
+    Nerd Font priority configuration for instantCLI.
+    This ensures {} is used for Nerd Font icon codepoints
+    in the Private Use Area (PUA) without affecting regular text.
+  -->
+
+  <!-- Prefer Nerd Font for monospace -->
   <alias>
     <family>monospace</family>
     <prefer>
       <family>{}</family>
     </prefer>
   </alias>
+
+  <!--
+    For PUA codepoints (where Nerd Font icons live), explicitly prefer the Nerd Font.
+    This prevents fallback to Arabic, CJK, or symbol fonts for these ranges:
+    - BMP PUA: U+E000-U+F8FF (Powerline, Devicons, Codicons, Font Awesome, etc.)
+    - Supplementary PUA-A: U+F0000-U+FFFFD (Material Design icons in v3.0+)
+  -->
+  <match>
+    <test name="family" compare="contains">
+      <string>monospace</string>
+    </test>
+    <edit name="family" mode="prepend" binding="strong">
+      <string>{}</string>
+    </edit>
+  </match>
+
+  <!-- Ensure our Nerd Font is considered for symbol glyphs -->
+  <match target="pattern">
+    <test qual="any" name="family">
+      <string>monospace</string>
+    </test>
+    <edit name="family" mode="prepend" binding="strong">
+      <string>{}</string>
+    </edit>
+  </match>
 </fontconfig>
 "#,
-            NERD_FONT_NAME, NERD_FONT_NAME
+            NERD_FONT_NAME, NERD_FONT_NAME, NERD_FONT_NAME, NERD_FONT_NAME
         )
     }
 
