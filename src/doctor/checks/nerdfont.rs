@@ -22,36 +22,25 @@
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 /// Nerd Font icon set ranges for comprehensive coverage testing.
 /// Each entry: (name, start_codepoint, end_codepoint, sample_count)
 /// We sample a few characters from each range to test coverage without being excessive.
 const NERD_FONT_RANGES: &[(&str, u32, u32, usize)] = &[
-    // Pomicons (e000 - e00a) - 11 glyphs total
     ("Pomicons", 0xe000, 0xe00a, 3),
-    // Powerline (e0a0 - e0a2, e0b0 - e0b3) - core symbols
     ("Powerline", 0xe0a0, 0xe0a2, 3),
     ("Powerline Arrows", 0xe0b0, 0xe0b3, 4),
-    // Powerline Extra (e0b4 - e0c8)
     ("Powerline Extra", 0xe0b4, 0xe0c8, 4),
-    // Font Awesome Extension (e200 - e2a9)
     ("FA Extension", 0xe200, 0xe2a9, 5),
-    // Weather Icons (e300 - e3e3)
     ("Weather", 0xe300, 0xe3e3, 5),
-    // Seti-UI + Custom (e5fa - e6b7)
     ("Seti-UI", 0xe5fa, 0xe6b7, 5),
-    // Devicons (e700 - e8ef)
     ("Devicons", 0xe700, 0xe8ef, 5),
-    // Codicons (ea60 - ec1e)
     ("Codicons", 0xea60, 0xec1e, 5),
-    // Font Awesome (ed00 - f2ff) - large range
     ("Font Awesome", 0xed00, 0xf2ff, 8),
-    // Font Logos (f300 - f381)
     ("Font Logos", 0xf300, 0xf381, 4),
-    // Octicons (f400 - f533)
     ("Octicons", 0xf400, 0xf533, 5),
-    // Material Design Icons (f500 - fd46) - very large range
     ("Material Design", 0xf500, 0xfd46, 10),
 ];
 
@@ -125,6 +114,12 @@ const NON_NERD_FONTS: &[&str] = &[
     "tex gyre",
 ];
 
+/// Font to install and its configuration
+const NERD_FONT_NAME: &str = "CaskaydiaCove Nerd Font";
+const NERD_FONT_ZIP_URL: &str =
+    "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/CascadiaCode.zip";
+const FONTCONFIG_PRIORITY_FILENAME: &str = "10-nerd-font-priority.conf";
+
 #[derive(Default)]
 pub struct NerdFontCheck;
 
@@ -147,8 +142,7 @@ impl DoctorCheck for NerdFontCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
-        // Check if fontconfig tools are available
-        if !self.fc_match_available() {
+        if !Self::fc_match_available() {
             return CheckStatus::Fail {
                 message: String::from(
                     "fontconfig tools not available. Install fontconfig package.",
@@ -157,8 +151,7 @@ impl DoctorCheck for NerdFontCheck {
             };
         }
 
-        let current_font = self
-            .get_current_monospace_font()
+        let current_font = Self::get_current_monospace_font()
             .unwrap_or_else(|| "system default".to_string());
 
         let coverage = self.check_comprehensive_coverage();
@@ -170,216 +163,289 @@ impl DoctorCheck for NerdFontCheck {
             };
         }
 
-        let pass_rate = coverage.nerd_font_count as f64 / coverage.total_checked as f64;
-        let fail_rate = coverage.non_nerd_count as f64 / coverage.total_checked as f64;
-
-        // Build a summary of which icon sets have issues
-        let problem_sets: Vec<&str> = coverage
-            .range_results
-            .iter()
-            .filter(|(_, nerd, non_nerd)| *non_nerd > *nerd)
-            .map(|(name, _, _)| *name)
-            .collect();
-
-        if pass_rate >= 0.95 {
-            // 95%+ coverage is excellent
-            CheckStatus::Pass(format!(
-                "Nerd Font symbols rendering correctly ({}/{} symbols, font: '{}')",
-                coverage.nerd_font_count, coverage.total_checked, current_font
-            ))
-        } else if pass_rate >= 0.7 {
-            // 70-95% - mostly working but some issues
-            let bad_fonts_str = if coverage.bad_fonts.is_empty() {
-                "unknown fonts".to_string()
-            } else {
-                coverage.bad_fonts.join(", ")
-            };
-
-            CheckStatus::Warning {
-                message: format!(
-                    "Partial Nerd Font coverage: {}/{} symbols OK. {} symbols falling back to: {}. \
-                     Problem icon sets: {}",
-                    coverage.nerd_font_count,
-                    coverage.total_checked,
-                    coverage.non_nerd_count,
-                    bad_fonts_str,
-                    if problem_sets.is_empty() {
-                        "various".to_string()
-                    } else {
-                        problem_sets.join(", ")
-                    }
-                ),
-                fixable: true,
-            }
-        } else if fail_rate > 0.5 {
-            // More than 50% failing - likely no nerd font or wrong priority
-            let bad_fonts_str = if coverage.bad_fonts.is_empty() {
-                "system fallback fonts".to_string()
-            } else {
-                coverage.bad_fonts.join(", ")
-            };
-
-            CheckStatus::Fail {
-                message: format!(
-                    "Nerd Font symbols not rendering correctly. Only {}/{} symbols use a Nerd Font. \
-                     Symbols are falling back to: {} (may appear as boxes, Chinese, or Arabic characters). \
-                     Current monospace font: '{}'",
-                    coverage.nerd_font_count, coverage.total_checked, bad_fonts_str, current_font
-                ),
-                fixable: true,
-            }
-        } else {
-            // Low pass rate but not catastrophic
-            CheckStatus::Warning {
-                message: format!(
-                    "Nerd Font symbols partially working ({}/{} OK). Some symbols may display incorrectly. \
-                     Consider installing or prioritizing a Nerd Font.",
-                    coverage.nerd_font_count, coverage.total_checked
-                ),
-                fixable: true,
-            }
-        }
+        Self::evaluate_coverage(&coverage, &current_font)
     }
 
     fn fix_message(&self) -> Option<String> {
-        Some("Automatically install CaskaydiaCove Nerd Font to ~/.local/share/fonts/".to_string())
+        Some(format!(
+            "Install {} to ~/.local/share/fonts/ and configure fontconfig priority",
+            NERD_FONT_NAME
+        ))
     }
 
     async fn fix(&self) -> Result<()> {
-        println!("Attempting to install CaskaydiaCove Nerd Font...");
-
         let home = dirs::home_dir().context("Could not determine home directory")?;
-
         let fonts_dir = home.join(".local/share/fonts");
+        let fontconfig_dir = home.join(".config/fontconfig/conf.d");
 
-        if !fonts_dir.exists() {
-            println!("Creating fonts directory: {:?}", fonts_dir);
+        // Check current state for idempotency
+        let state = self.check_fix_state(&fonts_dir, &fontconfig_dir).await;
 
-            tokio::fs::create_dir_all(&fonts_dir)
-                .await
-                .context("Failed to create fonts directory")?;
+        if state.is_fully_configured() {
+            println!("✓ {} is already installed and configured correctly.", NERD_FONT_NAME);
+            println!("  Font location: {:?}", fonts_dir);
+            println!("  Config file: {:?}", fontconfig_dir.join(FONTCONFIG_PRIORITY_FILENAME));
+            return Ok(());
         }
 
-        let zip_url =
-            "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/CascadiaCode.zip";
-
-        let zip_name = "CascadiaCode.zip";
-
-        let zip_path = std::env::temp_dir().join(zip_name);
-
-        println!("Downloading {}...", zip_url);
-
-        let client = reqwest::Client::new();
-
-        let response = client
-            .get(zip_url)
-            .send()
-            .await
-            .context("Failed to send request")?;
-
-        if !response.status().is_success() {
-            anyhow::bail!("Download failed: {}", response.status());
+        // Install font if needed
+        if !state.font_installed {
+            self.install_font(&fonts_dir).await?;
+        } else {
+            println!("✓ {} already installed, skipping download.", NERD_FONT_NAME);
         }
 
-        let content = response
-            .bytes()
-            .await
-            .context("Failed to get response bytes")?;
-
-        tokio::fs::write(&zip_path, content)
-            .await
-            .context("Failed to write zip file")?;
-
-        println!("Extracting to {:?}...", fonts_dir);
-
-        // Use system unzip command
-
-        let status = Command::new("unzip")
-            .arg("-o") // overwrite
-            .arg("-q") // quiet
-            .arg(&zip_path)
-            .arg("-d")
-            .arg(&fonts_dir)
-            .output()
-            .await
-            .context("Failed to execute unzip command. Is 'unzip' installed?")?;
-
-        if !status.status.success() {
-            anyhow::bail!("Unzip failed: {}", String::from_utf8_lossy(&status.stderr));
+        // Configure fontconfig if needed
+        if !state.fontconfig_configured {
+            self.configure_fontconfig(&fontconfig_dir).await?;
+        } else {
+            println!("✓ Fontconfig priority already configured, skipping.");
         }
 
-        // Clean up zip
+        // Always refresh font cache to ensure changes are picked up
+        self.refresh_font_cache().await?;
 
-        let _ = tokio::fs::remove_file(&zip_path).await;
-
-        // Configure fontconfig priority
-
-        let config_dir = home.join(".config/fontconfig/conf.d");
-
-        if !config_dir.exists() {
-            println!("Creating fontconfig directory: {:?}", config_dir);
-
-            tokio::fs::create_dir_all(&config_dir)
-                .await
-                .context("Failed to create fontconfig directory")?;
-        }
-
-        let config_file = config_dir.join("10-nerd-font-priority.conf");
-
-        let config_content = r#"<?xml version="1.0"?>
-
-        <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
-
-        <fontconfig>
-
-          <alias>
-
-            <family>monospace</family>
-
-            <prefer>
-
-              <family>CaskaydiaCove Nerd Font</family>
-
-            </prefer>
-
-          </alias>
-
-        </fontconfig>
-
-        "#;
-
-        println!("Writing fontconfig priority file to {:?}...", config_file);
-
-        tokio::fs::write(&config_file, config_content)
-            .await
-            .context("Failed to write fontconfig file")?;
-
-        println!("Updating font cache...");
-
-        let status = Command::new("fc-cache")
-            .arg("-f")
-            .output()
-            .await
-            .context("Failed to execute fc-cache")?;
-
-        if !status.status.success() {
-            println!(
-                "Warning: fc-cache returned error: {}",
-                String::from_utf8_lossy(&status.stderr)
-            );
-        }
-
-        println!("Successfully installed CaskaydiaCove Nerd Font and updated priority!");
-
-        println!("Please restart your terminal for changes to take effect.");
+        println!();
+        println!("✓ {} setup complete!", NERD_FONT_NAME);
+        println!("  Please restart your terminal for changes to take effect.");
 
         Ok(())
     }
 }
 
+// =============================================================================
+// Fix State and Idempotency
+// =============================================================================
+
+/// Represents the current state of the nerd font fix
+struct FixState {
+    font_installed: bool,
+    fontconfig_configured: bool,
+}
+
+impl FixState {
+    fn is_fully_configured(&self) -> bool {
+        self.font_installed && self.fontconfig_configured
+    }
+}
+
 impl NerdFontCheck {
+    /// Check the current state of the fix for idempotency
+    async fn check_fix_state(&self, fonts_dir: &Path, fontconfig_dir: &Path) -> FixState {
+        FixState {
+            font_installed: Self::is_font_installed(fonts_dir).await,
+            fontconfig_configured: Self::is_fontconfig_configured(fontconfig_dir).await,
+        }
+    }
+
+    /// Check if the nerd font is already installed
+    async fn is_font_installed(fonts_dir: &Path) -> bool {
+        if !fonts_dir.exists() {
+            return false;
+        }
+
+        // Check for CaskaydiaCove or CascadiaCode font files
+        let patterns = ["CaskaydiaCove", "CascadiaCode"];
+
+        if let Ok(mut entries) = tokio::fs::read_dir(fonts_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+
+                for pattern in &patterns {
+                    if name_str.contains(pattern)
+                        && (name_str.ends_with(".ttf") || name_str.ends_with(".otf"))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Check if fontconfig priority is already configured
+    async fn is_fontconfig_configured(fontconfig_dir: &Path) -> bool {
+        let config_file = fontconfig_dir.join(FONTCONFIG_PRIORITY_FILENAME);
+
+        if !config_file.exists() {
+            return false;
+        }
+
+        // Check if the config file contains our font configuration
+        if let Ok(content) = tokio::fs::read_to_string(&config_file).await {
+            return content.contains(NERD_FONT_NAME) || content.contains("CaskaydiaCove");
+        }
+
+        false
+    }
+}
+
+// =============================================================================
+// Font Installation
+// =============================================================================
+
+impl NerdFontCheck {
+    /// Download and install the nerd font
+    async fn install_font(&self, fonts_dir: &Path) -> Result<()> {
+        // Ensure fonts directory exists
+        Self::ensure_directory(fonts_dir).await?;
+
+        // Download the font zip
+        let zip_path = self.download_font().await?;
+
+        // Extract the font
+        Self::extract_font(&zip_path, fonts_dir).await?;
+
+        // Clean up zip file
+        let _ = tokio::fs::remove_file(&zip_path).await;
+
+        println!("✓ Installed {} to {:?}", NERD_FONT_NAME, fonts_dir);
+        Ok(())
+    }
+
+    /// Download the font zip file
+    async fn download_font(&self) -> Result<PathBuf> {
+        let zip_path = std::env::temp_dir().join("CascadiaCode.zip");
+
+        println!("  Downloading {}...", NERD_FONT_NAME);
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .context("Failed to create HTTP client")?;
+
+        let response = client
+            .get(NERD_FONT_ZIP_URL)
+            .send()
+            .await
+            .context("Failed to download font (network error)")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "Failed to download font: HTTP {}",
+                response.status()
+            );
+        }
+
+        let content = response
+            .bytes()
+            .await
+            .context("Failed to read font download")?;
+
+        tokio::fs::write(&zip_path, content)
+            .await
+            .context("Failed to save font zip file")?;
+
+        Ok(zip_path)
+    }
+
+    /// Extract the font zip to the fonts directory
+    async fn extract_font(zip_path: &Path, fonts_dir: &Path) -> Result<()> {
+        println!("  Extracting fonts...");
+
+        let output = Command::new("unzip")
+            .arg("-o") // overwrite existing
+            .arg("-q") // quiet
+            .arg(zip_path)
+            .arg("-d")
+            .arg(fonts_dir)
+            .output()
+            .await
+            .context("Failed to run unzip. Is the 'unzip' package installed?")?;
+
+        if !output.status.success() {
+            anyhow::bail!(
+                "Failed to extract font: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        Ok(())
+    }
+}
+
+// =============================================================================
+// Fontconfig Configuration
+// =============================================================================
+
+impl NerdFontCheck {
+    /// Configure fontconfig to prioritize the nerd font
+    async fn configure_fontconfig(&self, fontconfig_dir: &Path) -> Result<()> {
+        Self::ensure_directory(fontconfig_dir).await?;
+
+        let config_file = fontconfig_dir.join(FONTCONFIG_PRIORITY_FILENAME);
+        let config_content = Self::generate_fontconfig_xml();
+
+        println!("  Configuring fontconfig priority...");
+
+        tokio::fs::write(&config_file, config_content)
+            .await
+            .context("Failed to write fontconfig file")?;
+
+        println!("✓ Created fontconfig priority file: {:?}", config_file);
+        Ok(())
+    }
+
+    /// Generate the fontconfig XML content
+    fn generate_fontconfig_xml() -> String {
+        format!(
+            r#"<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <!-- Prefer {} for monospace fonts -->
+  <alias>
+    <family>monospace</family>
+    <prefer>
+      <family>{}</family>
+    </prefer>
+  </alias>
+</fontconfig>
+"#,
+            NERD_FONT_NAME, NERD_FONT_NAME
+        )
+    }
+
+    /// Refresh the font cache
+    async fn refresh_font_cache(&self) -> Result<()> {
+        println!("  Refreshing font cache...");
+
+        let output = Command::new("fc-cache")
+            .arg("-f")
+            .output()
+            .await
+            .context("Failed to run fc-cache")?;
+
+        if !output.status.success() {
+            // Non-fatal warning
+            eprintln!(
+                "  Warning: fc-cache returned an error: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        Ok(())
+    }
+}
+
+// =============================================================================
+// Utility Functions
+// =============================================================================
+
+impl NerdFontCheck {
+    /// Ensure a directory exists, creating it if necessary
+    async fn ensure_directory(path: &Path) -> Result<()> {
+        if !path.exists() {
+            tokio::fs::create_dir_all(path)
+                .await
+                .with_context(|| format!("Failed to create directory: {:?}", path))?;
+        }
+        Ok(())
+    }
+
     /// Check if fc-match is available
-    fn fc_match_available(&self) -> bool {
+    fn fc_match_available() -> bool {
         use std::process::Command;
         Command::new("fc-match")
             .arg("--version")
@@ -388,7 +454,8 @@ impl NerdFontCheck {
             .unwrap_or(false)
     }
 
-    fn get_current_monospace_font(&self) -> Option<String> {
+    /// Get the current default monospace font
+    fn get_current_monospace_font() -> Option<String> {
         use std::process::Command;
 
         let output = Command::new("fc-match").arg("monospace").output().ok()?;
@@ -403,6 +470,87 @@ impl NerdFontCheck {
 
         None
     }
+}
+
+// =============================================================================
+// Coverage Checking
+// =============================================================================
+
+impl NerdFontCheck {
+    /// Evaluate coverage results and return appropriate status
+    fn evaluate_coverage(coverage: &ComprehensiveCoverageResult, current_font: &str) -> CheckStatus {
+        let pass_rate = coverage.nerd_font_count as f64 / coverage.total_checked as f64;
+        let fail_rate = coverage.non_nerd_count as f64 / coverage.total_checked as f64;
+
+        let problem_sets: Vec<&str> = coverage
+            .range_results
+            .iter()
+            .filter(|(_, nerd, non_nerd)| *non_nerd > *nerd)
+            .map(|(name, _, _)| *name)
+            .collect();
+
+        if pass_rate >= 0.95 {
+            CheckStatus::Pass(format!(
+                "Nerd Font symbols rendering correctly ({}/{} symbols, font: '{}')",
+                coverage.nerd_font_count, coverage.total_checked, current_font
+            ))
+        } else if pass_rate >= 0.7 {
+            let bad_fonts_str = Self::format_bad_fonts(&coverage.bad_fonts);
+
+            CheckStatus::Warning {
+                message: format!(
+                    "Partial Nerd Font coverage: {}/{} symbols OK. {} symbols falling back to: {}. \
+                     Problem icon sets: {}",
+                    coverage.nerd_font_count,
+                    coverage.total_checked,
+                    coverage.non_nerd_count,
+                    bad_fonts_str,
+                    Self::format_problem_sets(&problem_sets)
+                ),
+                fixable: true,
+            }
+        } else if fail_rate > 0.5 {
+            let bad_fonts_str = Self::format_bad_fonts(&coverage.bad_fonts);
+
+            CheckStatus::Fail {
+                message: format!(
+                    "Nerd Font symbols not rendering correctly. Only {}/{} symbols use a Nerd Font. \
+                     Symbols are falling back to: {} (may appear as boxes, Chinese, or Arabic characters). \
+                     Current monospace font: '{}'",
+                    coverage.nerd_font_count,
+                    coverage.total_checked,
+                    bad_fonts_str,
+                    current_font
+                ),
+                fixable: true,
+            }
+        } else {
+            CheckStatus::Warning {
+                message: format!(
+                    "Nerd Font symbols partially working ({}/{} OK). Some symbols may display incorrectly. \
+                     Consider installing or prioritizing a Nerd Font.",
+                    coverage.nerd_font_count, coverage.total_checked
+                ),
+                fixable: true,
+            }
+        }
+    }
+
+    fn format_bad_fonts(fonts: &[String]) -> String {
+        if fonts.is_empty() {
+            "unknown fonts".to_string()
+        } else {
+            fonts.join(", ")
+        }
+    }
+
+    fn format_problem_sets(sets: &[&str]) -> String {
+        if sets.is_empty() {
+            "various".to_string()
+        } else {
+            sets.join(", ")
+        }
+    }
 
     /// Generate sample codepoints from a range, evenly distributed
     fn sample_codepoints(start: u32, end: u32, count: usize) -> Vec<u32> {
@@ -414,10 +562,8 @@ impl NerdFontCheck {
         let actual_count = count.min(range_size as usize);
 
         if actual_count == range_size as usize {
-            // Take all
             (start..=end).collect()
         } else {
-            // Evenly distribute samples across the range
             let step = range_size as f64 / actual_count as f64;
             (0..actual_count)
                 .map(|i| start + (i as f64 * step) as u32)
@@ -441,18 +587,16 @@ impl NerdFontCheck {
             for cp in codepoints {
                 total_checked += 1;
 
-                if let Some(font) = self.find_font_for_codepoint(cp) {
-                    if self.is_non_nerd_font(&font) {
+                if let Some(font) = Self::find_font_for_codepoint(cp) {
+                    if Self::is_non_nerd_font(&font) {
                         non_nerd_count += 1;
                         range_non_nerd += 1;
                         bad_fonts.insert(font);
                     } else {
-                        // Font is not in the known non-nerd list, likely a nerd font
                         nerd_font_count += 1;
                         range_nerd += 1;
                     }
                 } else {
-                    // No font found - counts as non-nerd (will render as box)
                     non_nerd_count += 1;
                     range_non_nerd += 1;
                 }
@@ -470,11 +614,9 @@ impl NerdFontCheck {
         }
     }
 
-    fn find_font_for_codepoint(&self, codepoint: u32) -> Option<String> {
+    fn find_font_for_codepoint(codepoint: u32) -> Option<String> {
         use std::process::Command;
 
-        // Use fc-match to find the font effectively used for this codepoint
-        // syntax: fc-match -f "%{family}" "monospace:charset=XXXX"
         let output = Command::new("fc-match")
             .arg("-f")
             .arg("%{family}")
@@ -493,25 +635,20 @@ impl NerdFontCheck {
     }
 
     /// Check if a font is a known non-nerd font (fallback font)
-    fn is_non_nerd_font(&self, font: &str) -> bool {
+    fn is_non_nerd_font(font: &str) -> bool {
         let font_lower = font.to_lowercase();
-
-        // Check against known non-nerd fonts
-        for pattern in NON_NERD_FONTS {
-            if font_lower.contains(pattern) {
-                return true;
-            }
-        }
-
-        false
+        NON_NERD_FONTS.iter().any(|pattern| font_lower.contains(pattern))
     }
 }
+
+// =============================================================================
+// Types
+// =============================================================================
 
 struct ComprehensiveCoverageResult {
     total_checked: usize,
     nerd_font_count: usize,
     non_nerd_count: usize,
     bad_fonts: Vec<String>,
-    /// Per-range results: (range_name, nerd_count, non_nerd_count)
     range_results: Vec<(&'static str, usize, usize)>,
 }
