@@ -158,8 +158,8 @@ impl DoctorCheck for NerdFontCheck {
             };
         }
 
-        let current_font = Self::get_current_monospace_font()
-            .unwrap_or_else(|| "system default".to_string());
+        let current_font =
+            Self::get_current_monospace_font().unwrap_or_else(|| "system default".to_string());
 
         let coverage = self.check_comprehensive_coverage();
 
@@ -189,9 +189,15 @@ impl DoctorCheck for NerdFontCheck {
         let state = self.check_fix_state(&fonts_dir, &fontconfig_dir).await;
 
         if state.is_fully_configured() {
-            println!("✓ {} is already installed and configured correctly.", NERD_FONT_NAME);
+            println!(
+                "✓ {} is already installed and configured correctly.",
+                NERD_FONT_NAME
+            );
             println!("  Font location: {:?}", fonts_dir);
-            println!("  Config file: {:?}", fontconfig_dir.join(FONTCONFIG_PRIORITY_FILENAME));
+            println!(
+                "  Config file: {:?}",
+                fontconfig_dir.join(FONTCONFIG_PRIORITY_FILENAME)
+            );
             return Ok(());
         }
 
@@ -283,7 +289,9 @@ impl NerdFontCheck {
         // Check if the config file matches our new strict configuration
         if let Ok(content) = tokio::fs::read_to_string(&config_file).await {
             // Must contain key elements of our configuration
-            return content.contains(NERD_FONT_NAME) && content.contains("STRICT enforcement");
+            return content.contains(NERD_FONT_NAME)
+                && content.contains("STRICT enforcement")
+                && content.contains(r#"mode="assign""#);
         }
 
         false
@@ -331,10 +339,7 @@ impl NerdFontCheck {
             .context("Failed to download font (network error)")?;
 
         if !response.status().is_success() {
-            anyhow::bail!(
-                "Failed to download font: HTTP {}",
-                response.status()
-            );
+            anyhow::bail!("Failed to download font: HTTP {}", response.status());
         }
 
         let content = response
@@ -525,9 +530,11 @@ impl NerdFontCheck {
 
 impl NerdFontCheck {
     /// Evaluate coverage results and return appropriate status
-    fn evaluate_coverage(coverage: &ComprehensiveCoverageResult, current_font: &str) -> CheckStatus {
+    fn evaluate_coverage(
+        coverage: &ComprehensiveCoverageResult,
+        current_font: &str,
+    ) -> CheckStatus {
         let pass_rate = coverage.nerd_font_count as f64 / coverage.total_checked as f64;
-        let fail_rate = coverage.non_nerd_count as f64 / coverage.total_checked as f64;
 
         let problem_sets: Vec<&str> = coverage
             .range_results
@@ -536,47 +543,61 @@ impl NerdFontCheck {
             .map(|(name, _, _)| *name)
             .collect();
 
-        if pass_rate >= 0.95 {
-            CheckStatus::Pass(format!(
+        // Check for "dangerous" fallbacks (fonts that cause Arabic/CJK garbage in PUA)
+        let dangerous_fallbacks = coverage.bad_fonts.iter().any(|f| {
+            let f_lower = f.to_lowercase();
+            f_lower.contains("aming")
+                || f_lower.contains("uming")
+                || f_lower.contains("gentium")
+                || f_lower.contains("amiri")
+                || f_lower.contains("kacst")
+        });
+
+        // 1. Excellent coverage, no dangerous fallbacks
+        if pass_rate >= 0.95 && !dangerous_fallbacks {
+            return CheckStatus::Pass(format!(
                 "Nerd Font symbols rendering correctly ({}/{} symbols, font: '{}')",
                 coverage.nerd_font_count, coverage.total_checked, current_font
-            ))
-        } else if pass_rate >= 0.7 {
-            let bad_fonts_str = Self::format_bad_fonts(&coverage.bad_fonts);
+            ));
+        }
 
+        // 2. Good coverage OR Dangerous Fallbacks present
+        // If we have dangerous fallbacks, we MUST warn even if coverage is high
+        let bad_fonts_str = Self::format_bad_fonts(&coverage.bad_fonts);
+        let problem_sets_str = Self::format_problem_sets(&problem_sets);
+
+        let message = format!(
+            "Partial Nerd Font coverage: {}/{} symbols OK. {} symbols falling back to: {}. \
+             Problem icon sets: {}",
+            coverage.nerd_font_count,
+            coverage.total_checked,
+            coverage.non_nerd_count,
+            bad_fonts_str,
+            problem_sets_str
+        );
+
+        if dangerous_fallbacks {
+            // High visibility warning for Arabic/CJK fallbacks
             CheckStatus::Warning {
                 message: format!(
-                    "Partial Nerd Font coverage: {}/{} symbols OK. {} symbols falling back to: {}. \
-                     Problem icon sets: {}",
-                    coverage.nerd_font_count,
-                    coverage.total_checked,
-                    coverage.non_nerd_count,
-                    bad_fonts_str,
-                    Self::format_problem_sets(&problem_sets)
+                    "{} (Detected unsafe fallback fonts likely causing incorrect glyphs)",
+                    message
                 ),
                 fixable: true,
             }
-        } else if fail_rate > 0.5 {
-            let bad_fonts_str = Self::format_bad_fonts(&coverage.bad_fonts);
-
-            CheckStatus::Fail {
-                message: format!(
-                    "Nerd Font symbols not rendering correctly. Only {}/{} symbols use a Nerd Font. \
-                     Symbols are falling back to: {} (may appear as boxes, Chinese, or Arabic characters). \
-                     Current monospace font: '{}'",
-                    coverage.nerd_font_count,
-                    coverage.total_checked,
-                    bad_fonts_str,
-                    current_font
-                ),
+        } else if pass_rate >= 0.7 {
+            // Standard warning for moderate coverage gaps (likely boxes)
+            CheckStatus::Warning {
+                message,
                 fixable: true,
             }
         } else {
-            CheckStatus::Warning {
+            // Fail based on low rate
+            CheckStatus::Fail {
                 message: format!(
-                    "Nerd Font symbols partially working ({}/{} OK). Some symbols may display incorrectly. \
-                     Consider installing or prioritizing a Nerd Font.",
-                    coverage.nerd_font_count, coverage.total_checked
+                    "Nerd Font symbols not rendering correctly. Only {}/{} symbols use a Nerd Font. \
+                     Symbols are falling back to: {}. Current monospace font: '{}'",
+                    coverage.nerd_font_count, coverage.total_checked, bad_fonts_str, current_font
                 ),
                 fixable: true,
             }
@@ -684,7 +705,9 @@ impl NerdFontCheck {
     /// Check if a font is a known non-nerd font (fallback font)
     fn is_non_nerd_font(font: &str) -> bool {
         let font_lower = font.to_lowercase();
-        NON_NERD_FONTS.iter().any(|pattern| font_lower.contains(pattern))
+        NON_NERD_FONTS
+            .iter()
+            .any(|pattern| font_lower.contains(pattern))
     }
 }
 
