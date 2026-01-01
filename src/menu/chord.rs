@@ -438,18 +438,18 @@ mod tests {
         let tree = build_chord_tree(&parsed).unwrap();
 
         assert_eq!(tree.description, "Chord Menu");
-        assert_eq!(tree.chords().len(), 1);
+        assert_eq!(tree.chords.len(), 1);
 
-        let chord = &tree.chords()[0];
+        let chord = &tree.chords[0];
         assert_eq!(chord.description, "A group");
 
         match &chord.child {
             KeyChordChild::Node(node) => {
                 assert_eq!(node.description, "A group");
-                assert_eq!(node.chords().len(), 2);
+                assert_eq!(node.chords.len(), 2);
 
                 let ids: Vec<_> = node
-                    .chords()
+                    .chords
                     .iter()
                     .filter_map(|c| match &c.child {
                         KeyChordChild::Leaf(action) => {
@@ -480,17 +480,17 @@ mod tests {
         let tree = build_chord_tree(&parsed).unwrap();
 
         assert_eq!(tree.description, "Chord Menu");
-        assert_eq!(tree.chords().len(), 1);
+        assert_eq!(tree.chords.len(), 1);
 
-        let chord = &tree.chords()[0];
+        let chord = &tree.chords[0];
         assert_eq!(key_label(&chord.key), "a");
         assert_eq!(chord.description, "a");
 
         match &chord.child {
             KeyChordChild::Node(node) => {
                 assert_eq!(node.description, "a");
-                assert_eq!(node.chords().len(), 1);
-                match &node.chords()[0].child {
+                assert_eq!(node.chords.len(), 1);
+                match &node.chords[0].child {
                     KeyChordChild::Leaf(action) => assert_eq!(action.id, "ab"),
                     _ => panic!("Expected leaf"),
                 }

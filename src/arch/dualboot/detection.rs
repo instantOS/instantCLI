@@ -177,28 +177,8 @@ mod tests {
         assert_eq!(format_size(1099511627776), "1.0 TB");
     }
 
-    #[test]
-    fn test_parse_os_release_field() {
-        let content = r#"NAME="Arch Linux"
-PRETTY_NAME="Arch Linux"
-ID=arch
-BUILD_ID=rolling
-VERSION_ID="TEMPLATE_VERSION_ID"
-ANSI_COLOR="38;2;23;147;209"
-HOME_URL="https://archlinux.org/"
-"#;
-        assert_eq!(
-            parse_os_release_field(content, "PRETTY_NAME"),
-            Some("Arch Linux".to_string())
-        );
-        assert_eq!(
-            parse_os_release_field(content, "ID"),
-            Some("arch".to_string())
-        );
-        assert_eq!(parse_os_release_field(content, "NONEXISTENT"), None);
-    }
-
     // NTFS resize tests have been moved to resize/ntfs.rs
+    // parse_os_release_field tests have been moved to os_detection/ module
 
     #[test]
     fn test_partition_table_display() {
@@ -207,13 +187,7 @@ HOME_URL="https://archlinux.org/"
         assert_eq!(format!("{}", PartitionTableType::Unknown), "Unknown");
     }
 
-    #[test]
-    fn test_os_type_display() {
-        assert_eq!(format!("{}", OSType::Windows), "Windows");
-        assert_eq!(format!("{}", OSType::Linux), "Linux");
-        assert_eq!(format!("{}", OSType::MacOS), "macOS");
-        assert_eq!(format!("{}", OSType::Unknown), "Unknown");
-    }
+    // test_os_type_display has been moved to os_detection/ module
 
     #[test]
     fn test_resize_info_min_size_human() {
@@ -265,63 +239,5 @@ HOME_URL="https://archlinux.org/"
         path
     }
 
-    #[test]
-    fn sfdisk_detects_end_gap_on_gpt_image() {
-        // 100MB image with two 20MB partitions leaves a large gap at the end.
-        let script = "label: gpt\n,20M\n,20M\n";
-        let img = create_image_with_sfdisk(100, script);
-
-        let regions = get_free_regions(img.to_str().expect("path"), None).expect("regions");
-        assert!(!regions.is_empty());
-
-        let max_gap = regions.iter().map(|r| r.size_bytes).max().unwrap();
-        // Expect roughly 60MB free (allow wide tolerance for alignment/padding).
-        assert!(
-            max_gap > 50 * MB && max_gap < 75 * MB,
-            "gap was {} bytes",
-            max_gap
-        );
-    }
-
-    #[test]
-    fn sfdisk_detects_middle_gap_between_partitions() {
-        // 200MB image: 32MB partition, ~60MB gap, 32MB partition, remaining free at end.
-        let script = "label: gpt\n,32M\nstart=120M,size=32M\n";
-        let img = create_image_with_sfdisk(200, script);
-
-        let regions = get_free_regions(img.to_str().expect("path"), None).expect("regions");
-        assert!(regions.len() >= 2);
-
-        let mut sizes: Vec<u64> = regions.iter().map(|r| r.size_bytes).collect();
-        sizes.sort_unstable();
-
-        let largest = *sizes.last().unwrap();
-        let second = sizes[sizes.len() - 2];
-
-        // Middle gap should be comfortably above the 1MB cutoff; allow wide tolerance for alignment.
-        assert!(
-            second > 30 * MB && second < 120 * MB,
-            "middle gap {} bytes",
-            second
-        );
-        assert!(
-            largest > 40 * MB && largest < 140 * MB,
-            "end gap {} bytes",
-            largest
-        );
-    }
-
-    #[test]
-    fn sfdisk_detects_small_gaps_filtered_out() {
-        // 50MB image with tiny 512KB gap between partitions should be ignored (<1MB threshold).
-        let script = "label: gpt\n,10M\nstart=12M,size=10M\n";
-        let img = create_image_with_sfdisk(50, script);
-
-        let regions = get_free_regions(img.to_str().expect("path"), None).expect("regions");
-
-        // Only the main trailing gap should remain; tiny gap is below threshold.
-        assert_eq!(regions.len(), 1);
-        let gap = regions[0].size_bytes;
-        assert!(gap > 25 * MB && gap < 40 * MB, "trailing gap {} bytes", gap);
-    }
+    // sfdisk tests using get_free_regions have been moved to parsing/ module
 }
