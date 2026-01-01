@@ -321,6 +321,48 @@ impl DoctorCheck for NerdFontCheck {
 
         let _ = tokio::fs::remove_file(&zip_path).await;
 
+        // Configure fontconfig priority
+
+        let config_dir = home.join(".config/fontconfig/conf.d");
+
+        if !config_dir.exists() {
+            println!("Creating fontconfig directory: {:?}", config_dir);
+
+            tokio::fs::create_dir_all(&config_dir)
+                .await
+                .context("Failed to create fontconfig directory")?;
+        }
+
+        let config_file = config_dir.join("10-nerd-font-priority.conf");
+
+        let config_content = r#"<?xml version="1.0"?>
+
+        <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+
+        <fontconfig>
+
+          <alias>
+
+            <family>monospace</family>
+
+            <prefer>
+
+              <family>CaskaydiaCove Nerd Font</family>
+
+            </prefer>
+
+          </alias>
+
+        </fontconfig>
+
+        "#;
+
+        println!("Writing fontconfig priority file to {:?}...", config_file);
+
+        tokio::fs::write(&config_file, config_content)
+            .await
+            .context("Failed to write fontconfig file")?;
+
         println!("Updating font cache...");
 
         let status = Command::new("fc-cache")
@@ -336,9 +378,9 @@ impl DoctorCheck for NerdFontCheck {
             );
         }
 
-        println!("Successfully installed CaskaydiaCove Nerd Font!");
+        println!("Successfully installed CaskaydiaCove Nerd Font and updated priority!");
 
-        println!("Please configure your terminal to use 'CaskaydiaCove Nerd Font'.");
+        println!("Please restart your terminal for changes to take effect.");
 
         Ok(())
     }
