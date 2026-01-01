@@ -1,4 +1,4 @@
-use super::{DoctorCheck, checks::*};
+use super::{checks::*, DoctorCheck};
 use std::collections::HashMap;
 
 pub type CheckFactory = fn() -> Box<dyn DoctorCheck + Send + Sync>;
@@ -17,6 +17,7 @@ impl CheckRegistry {
         registry.register::<InternetCheck>("internet");
         registry.register::<InstantRepoCheck>("instant-repo");
         registry.register::<LocaleCheck>("locale");
+        registry.register::<NerdFontCheck>("nerd-font");
         registry.register::<PacmanCacheCheck>("pacman-cache");
         registry.register::<YayCacheCheck>("yay-cache");
         registry.register::<PacmanStaleDownloadsCheck>("pacman-stale-downloads");
