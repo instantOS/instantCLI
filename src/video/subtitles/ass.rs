@@ -197,21 +197,27 @@ impl AssStyle {
 
 /// ASS subtitle animation constants
 mod ass_constants {
-    /// Scale animation: grow to 115% during word highlight
-    pub const SCALE_HIGHLIGHT: u32 = 115;
+    /// Scale animation: grow to 120% during word highlight
+    pub const SCALE_HIGHLIGHT: u32 = 120;
     /// Scale animation: 100% is normal size
     pub const SCALE_NORMAL: u32 = 100;
 
-    /// Animation timing: milliseconds for scale pop-in
-    pub const POP_IN_MS: u32 = 50;
-    /// Animation timing: milliseconds for scale pop-out
-    pub const POP_OUT_MS: u32 = 50;
+    /// Animation timing (in centiseconds: 1 cs = 10ms)
+    /// Quick pop-in animation: 150ms = 15 centiseconds
+    pub const POP_IN_CS: u32 = 15;
+    /// Quick pop-out animation: 100ms = 10 centiseconds
+    pub const POP_OUT_CS: u32 = 10;
 
     /// Color codes (ABGR format: Blue-Green-Red)
-    /// Catppuccin Mocha "Mauve" (#CBA6F7) - highlighted word
-    pub const COLOR_HIGHLIGHT: &str = "&H00F7A6CB";
-    /// Catppuccin Mocha "Text" (#CDD6F4) - normal word
-    pub const COLOR_NORMAL: &str = "&H00F4D6CD";
+    /// Catppuccin Mocha "Mauve" (#CBA6F7) - highlighted word color
+    pub const COLOR_HIGHLIGHT: &str = "&H00F7A6CB&";
+    /// Catppuccin Mocha "Text" (#CDD6F4) - normal word color
+    pub const COLOR_NORMAL: &str = "&H00F4D6CD&";
+
+    /// Maximum gap between words (in milliseconds) to pad
+    /// Gaps smaller than this are considered minor pauses and will be extended
+    /// Gaps larger are considered sentence/slide breaks and left as-is
+    pub const MAX_GAP_MS: u64 = 600;
 }
 
 /// Generate an ASS subtitle file content with karaoke-style word highlighting.
@@ -262,11 +268,11 @@ pub fn generate_ass_file(
     .unwrap();
 
     for subtitle in subtitles {
-        let start = format_ass_timestamp(subtitle.start);
-        let end = format_ass_timestamp(subtitle.end);
-
         if subtitle.words.is_empty() {
             // No word timing, just use plain text
+            let start = format_ass_timestamp(subtitle.start);
+            let end = format_ass_timestamp(subtitle.end);
+
             writeln!(
                 output,
                 "Dialogue: 0,{start},{end},{style},,0,0,0,,{text}",
@@ -277,41 +283,21 @@ pub fn generate_ass_file(
             )
             .unwrap();
         } else {
-            use ass_constants::*;
+            // Generate karaoke with per-word dialogue lines
+            // Each line shows the full text, but only highlights one word
+            let word_lines = format_karaoke_text(subtitle);
 
-            // Generate karaoke with separate dialogue lines
-            let (base_text, highlight_lines) = format_karaoke_text(subtitle);
-
-            // Base line: all words in normal color
-            writeln!(
-                output,
-                "Dialogue: 0,{start},{end},{style},,0,0,0,,{text}",
-                start = start,
-                end = end,
-                style = style.name,
-                text = base_text
-            )
-            .unwrap();
-
-            // Per-word highlight lines: each word in highlight color during its timing
-            for highlight in &highlight_lines {
-                let hl_start = format_ass_timestamp(highlight.start);
-                let hl_end = format_ass_timestamp(highlight.end);
+            for word_line in &word_lines {
+                let start = format_ass_timestamp(word_line.start);
+                let end = format_ass_timestamp(word_line.end);
 
                 writeln!(
                     output,
-                    "Dialogue: 0,{hl_start},{hl_end},Highlight,,0,0,0,,{{\\fscx{}\\fscy{}\\t({},{}\\fscx{}\\fscy{})\\t({},{}\\fscx{}\\fscy{})}}{}",
-                    SCALE_NORMAL,
-                    SCALE_NORMAL,
-                    highlight.rel_start_ms,
-                    highlight.grow_end,
-                    SCALE_HIGHLIGHT,
-                    SCALE_HIGHLIGHT,
-                    highlight.shrink_start,
-                    highlight.rel_end_ms,
-                    SCALE_NORMAL,
-                    SCALE_NORMAL,
-                    highlight.word
+                    "Dialogue: 0,{start},{end},{style},,0,0,0,,{text}",
+                    start = start,
+                    end = end,
+                    style = style.name,
+                    text = word_line.text
                 )
                 .unwrap();
             }
@@ -323,65 +309,114 @@ pub fn generate_ass_file(
 
 /// Format karaoke text with word-level timing using separate dialogue events.
 ///
-/// This approach creates multiple dialogue lines:
-/// 1. Base line: All words in normal color for the full duration
-/// 2. Per-word lines: Each word highlighted only during its spoken time
+/// This approach creates multiple dialogue lines, one per word, where each line
+/// shows the full text but only highlights the current word with an animated
+/// "pop" effect.
 ///
-/// This achieves the effect of only the current word being highlighted.
-fn format_karaoke_text(subtitle: &RemappedSubtitle) -> (String, Vec<KaraokeHighlightLine>) {
+/// For example, for "Hi there" with two words:
+/// - Line 1 (0-0.2s): "{\1c&H00F4D6CD&\fscx100\fscy100}Hi{\1c&H00F7A6CB&\fscx100\fscy100\t(0,15\fscx140\fscy140)\t(15,25\fscx100\fscy100)} there"
+/// - Line 2 (0.2-0.5s): "{\1c&H00F4D6CD&\fscx100\fscy100}Hi {\1c&H00F7A6CB&\fscx100\fscy100\t(0,15\fscx140\fscy140)\t(15,25\fscx100\fscy100)}there"
+///
+/// The animation:
+/// - Word starts at 100% scale (normal)
+/// - Grows to 140% scale over first 150ms (15cs)
+/// - Shrinks back to 100% over last 100ms (10cs)
+///
+/// To prevent flickering, small gaps between words (< MAX_GAP_MS) are padded
+/// by extending word end times to the next word's start time.
+fn format_karaoke_text(subtitle: &RemappedSubtitle) -> Vec<KaraokeWordLine> {
     use ass_constants::*;
 
-    // Build the base text (all words in normal color)
-    let base_text: String = subtitle.words
-        .iter()
-        .map(|w| escape_ass_text(&w.word))
-        .collect::<Vec<_>>()
-        .join(" ");
+    subtitle.words.iter().enumerate().map(|(idx, current_word)| {
+        // Build the full text with only the current word highlighted
+        let mut formatted_text = String::new();
 
-    // Create per-word highlight lines
-    let highlight_lines = subtitle.words.iter().map(|word| {
-        let duration = if word.end > word.start {
-            word.end - word.start
-        } else {
-            Duration::ZERO
-        };
+        for (word_idx, word) in subtitle.words.iter().enumerate() {
+            // Add space before word (except first)
+            if word_idx > 0 {
+                formatted_text.push(' ');
+            }
 
-        let rel_start_ms = (word.start - subtitle.start).as_millis() as u32;
-        let rel_end_ms = (word.end - subtitle.start).as_millis() as u32;
-        let word_duration_ms = duration.as_millis() as u32;
+            // Determine if this is the highlighted word
+            let is_highlighted = word_idx == idx;
 
-        // Calculate scale pop animation timing
-        let pop_duration = POP_IN_MS.min(word_duration_ms / 2);
-        let grow_end = rel_start_ms + pop_duration;
-        let shrink_start = rel_end_ms.saturating_sub(pop_duration);
+            if is_highlighted {
+                // Current word: highlighted (mauve) with animated scale
+                // Start at normal scale, animate to highlight scale, then back
+                write!(
+                    formatted_text,
+                    "{{\\1c{}\\fscx{}\\fscy{}\\t({},{}\\fscx{}\\fscy{})\\t({},{}\\fscx{}\\fscy{})}}",
+                    COLOR_HIGHLIGHT,
+                    SCALE_NORMAL,
+                    SCALE_NORMAL,
+                    0,                    // Start animation at time 0
+                    POP_IN_CS,            // End pop-in at 15cs (150ms)
+                    SCALE_HIGHLIGHT,      // Grow to 140%
+                    SCALE_HIGHLIGHT,
+                    POP_IN_CS,            // Start pop-out at 15cs
+                    POP_IN_CS + POP_OUT_CS, // End pop-out at 25cs (250ms)
+                    SCALE_NORMAL,         // Shrink back to 100%
+                    SCALE_NORMAL
+                ).unwrap();
+            } else {
+                // Other words: normal color + normal scale
+                write!(
+                    formatted_text,
+                    "{{\\1c{}\\fscx{}\\fscy{}}}",
+                    COLOR_NORMAL,
+                    SCALE_NORMAL,
+                    SCALE_NORMAL
+                ).unwrap();
+            }
 
-        KaraokeHighlightLine {
-            start: word.start,
-            end: word.end,
-            word: escape_ass_text(&word.word),
-            rel_start_ms,
-            rel_end_ms,
-            grow_end,
-            shrink_start,
+            formatted_text.push_str(&escape_ass_text(&word.word));
+
+            // Reset to normal after each word
+            if is_highlighted {
+                write!(
+                    formatted_text,
+                    "{{\\1c{}\\fscx{}\\fscy{}}}",
+                    COLOR_NORMAL,
+                    SCALE_NORMAL,
+                    SCALE_NORMAL
+                ).unwrap();
+            }
         }
-    }).collect();
 
-    (base_text, highlight_lines)
+        // Calculate word duration, padding small gaps to prevent flickering
+        let mut end = current_word.end;
+
+        // If there's a next word:
+        // 1. Pad small gaps (> 0 and < MAX_GAP_MS) to extend to next word's start
+        // 2. Clip overlaps to prevent displaying two lines simultaneously
+        if idx + 1 < subtitle.words.len() {
+            let next_word = &subtitle.words[idx + 1];
+
+            // Prevent overlap: if current word extends past next word start, clip it
+            if end > next_word.start {
+                end = next_word.start;
+            } else {
+                // Pad small gaps to prevent flickering
+                let gap_ms = next_word.start.saturating_sub(end).as_millis();
+                if gap_ms > 0 && (gap_ms as u64) < MAX_GAP_MS {
+                    end = next_word.start;
+                }
+            }
+        }
+
+        KaraokeWordLine {
+            start: current_word.start,
+            end,
+            text: formatted_text,
+        }
+    }).collect()
 }
 
-/// Per-word karaoke highlight data
-struct KaraokeHighlightLine {
+/// Per-word karaoke dialogue line data
+struct KaraokeWordLine {
     start: Duration,
     end: Duration,
-    word: String,
-    rel_start_ms: u32,
-    rel_end_ms: u32,
-    grow_end: u32,
-    shrink_start: u32,
-}
-
-fn duration_to_cs(duration: Duration) -> u32 {
-    (duration.as_secs_f64() * 100.0).round() as u32
+    text: String,
 }
 
 /// Format a Duration as an ASS timestamp (H:MM:SS.cc).
@@ -519,33 +554,47 @@ mod tests {
             ],
         };
 
-        let (base_text, highlight_lines) = format_karaoke_text(&subtitle);
+        let word_lines = format_karaoke_text(&subtitle);
 
-        // Verify base text contains all words
-        assert_eq!(base_text, "Hello world test");
+        // Verify we have one line per word
+        assert_eq!(word_lines.len(), 3);
 
-        // Verify we have one highlight line per word
-        assert_eq!(highlight_lines.len(), 3);
+        // Verify first line: "Hello" highlighted with animation, others normal
+        // End time padded to 600ms to cover 100ms gap to next word
+        assert_eq!(word_lines[0].start, start);
+        assert_eq!(word_lines[0].end, start + Duration::from_millis(600));
+        // Check for animated scale transform (100 -> 140 -> 100)
+        assert!(word_lines[0].text.contains(r"\t(0,15\fscx140\fscy140)"));
+        assert!(word_lines[0].text.contains(r"\t(15,25\fscx100\fscy100)"));
+        // Check for highlight color
+        assert!(word_lines[0].text.contains(r"\1c&H00F7A6CB&"));
+        assert!(word_lines[0].text.contains(r"Hello"));
+        assert!(word_lines[0].text.contains(r"world"));
+        assert!(word_lines[0].text.contains(r"test"));
 
-        // Verify first word highlight data
-        assert_eq!(highlight_lines[0].word, "Hello");
-        assert_eq!(highlight_lines[0].start, start);
-        assert_eq!(highlight_lines[0].end, start + Duration::from_millis(500));
-        assert_eq!(highlight_lines[0].rel_start_ms, 0);
-        assert_eq!(highlight_lines[0].rel_end_ms, 500);
+        // Verify second line: "world" highlighted with animation, others normal
+        // Gap to next word is 0ms, so no padding - end time stays at 1100ms
+        assert_eq!(word_lines[1].start, start + Duration::from_millis(600));
+        assert_eq!(word_lines[1].end, start + Duration::from_millis(1100));
+        assert!(word_lines[1].text.contains(r"\t(0,15\fscx140\fscy140)"));
+        assert!(word_lines[1].text.contains(r"Hello"));
+        assert!(word_lines[1].text.contains(r"world"));
+        assert!(word_lines[1].text.contains(r"test"));
 
-        // Verify second word highlight data
-        assert_eq!(highlight_lines[1].word, "world");
-        assert_eq!(highlight_lines[1].start, start + Duration::from_millis(600));
-        assert_eq!(highlight_lines[1].end, start + Duration::from_millis(1100));
-        assert_eq!(highlight_lines[1].rel_start_ms, 600);
-        assert_eq!(highlight_lines[1].rel_end_ms, 1100);
+        // Verify third line: "test" highlighted with animation, others normal
+        // No next word, so end time is not padded (1600ms)
+        assert_eq!(word_lines[2].start, start + Duration::from_millis(1100));
+        assert_eq!(word_lines[2].end, start + Duration::from_millis(1600));
+        assert!(word_lines[2].text.contains(r"\t(0,15\fscx140\fscy140)"));
+        assert!(word_lines[2].text.contains(r"Hello"));
+        assert!(word_lines[2].text.contains(r"world"));
+        assert!(word_lines[2].text.contains(r"test"));
 
-        // Verify third word highlight data
-        assert_eq!(highlight_lines[2].word, "test");
-        assert_eq!(highlight_lines[2].start, start + Duration::from_millis(1100));
-        assert_eq!(highlight_lines[2].end, start + Duration::from_millis(1600));
-        assert_eq!(highlight_lines[2].rel_start_ms, 1100);
-        assert_eq!(highlight_lines[2].rel_end_ms, 1600);
+        // Verify all lines contain all three words
+        for line in &word_lines {
+            assert!(line.text.contains("Hello"));
+            assert!(line.text.contains("world"));
+            assert!(line.text.contains("test"));
+        }
     }
 }
