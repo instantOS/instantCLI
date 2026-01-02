@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use crate::video::render_timeline::{SegmentData, Timeline};
-use crate::video::transcript::{TranscriptCue, WordTiming};
+use crate::video::transcript::TranscriptCue;
 
 /// A remapped word with timing adjusted to the final timeline.
 #[derive(Debug, Clone)]
@@ -167,9 +167,11 @@ fn merge_overlapping_subtitles(subtitles: Vec<RemappedSubtitle>) -> Vec<Remapped
             current.end = current.end.max(next.end);
             // Merge words, avoiding duplicates
             for word in next.words {
-                if !current.words.iter().any(|w| {
-                    w.word == word.word && w.start == word.start && w.end == word.end
-                }) {
+                if !current
+                    .words
+                    .iter()
+                    .any(|w| w.word == word.word && w.start == word.start && w.end == word.end)
+                {
                     current.words.push(word);
                 }
             }

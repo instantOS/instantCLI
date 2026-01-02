@@ -757,7 +757,7 @@ mod tests {
             start: Duration::from_millis(0),
             end: Duration::from_millis(1000),
             text: "only".to_string(),
-                words: vec![],
+            words: vec![],
         }];
 
         let err = align_plan_with_subtitles(&mut plan, &cues).unwrap_err();

@@ -11,4 +11,4 @@ mod ass;
 mod remap;
 
 pub use ass::{AssStyle, generate_ass_file};
-pub use remap::{RemappedSubtitle, remap_subtitles_to_timeline};
+pub use remap::remap_subtitles_to_timeline;

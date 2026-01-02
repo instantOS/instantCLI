@@ -195,6 +195,25 @@ impl AssStyle {
     }
 }
 
+/// ASS subtitle animation constants
+mod ass_constants {
+    /// Scale animation: grow to 115% during word highlight
+    pub const SCALE_HIGHLIGHT: u32 = 115;
+    /// Scale animation: 100% is normal size
+    pub const SCALE_NORMAL: u32 = 100;
+
+    /// Animation timing: milliseconds for scale pop-in
+    pub const POP_IN_MS: u32 = 50;
+    /// Animation timing: milliseconds for scale pop-out
+    pub const POP_OUT_MS: u32 = 50;
+
+    /// Color codes (ABGR format: Blue-Green-Red)
+    /// Catppuccin Mocha "Mauve" (#CBA6F7) - highlighted word
+    pub const COLOR_HIGHLIGHT: &str = "&H00F7A6CB";
+    /// Catppuccin Mocha "Text" (#CDD6F4) - normal word
+    pub const COLOR_NORMAL: &str = "&H00F4D6CD";
+}
+
 /// Generate an ASS subtitle file content with karaoke-style word highlighting.
 ///
 /// # Arguments
@@ -246,62 +265,119 @@ pub fn generate_ass_file(
         let start = format_ass_timestamp(subtitle.start);
         let end = format_ass_timestamp(subtitle.end);
 
-        // Generate karaoke text with word-level timing
-        let text = if subtitle.words.is_empty() {
+        if subtitle.words.is_empty() {
             // No word timing, just use plain text
-            escape_ass_text(&subtitle.text)
+            writeln!(
+                output,
+                "Dialogue: 0,{start},{end},{style},,0,0,0,,{text}",
+                start = start,
+                end = end,
+                style = style.name,
+                text = escape_ass_text(&subtitle.text)
+            )
+            .unwrap();
         } else {
-            format_karaoke_text(subtitle)
-        };
+            use ass_constants::*;
 
-        writeln!(
-            output,
-            "Dialogue: 0,{start},{end},{style},,0,0,0,,{text}",
-            start = start,
-            end = end,
-            style = style.name,
-            text = text
-        )
-        .unwrap();
+            // Generate karaoke with separate dialogue lines
+            let (base_text, highlight_lines) = format_karaoke_text(subtitle);
+
+            // Base line: all words in normal color
+            writeln!(
+                output,
+                "Dialogue: 0,{start},{end},{style},,0,0,0,,{text}",
+                start = start,
+                end = end,
+                style = style.name,
+                text = base_text
+            )
+            .unwrap();
+
+            // Per-word highlight lines: each word in highlight color during its timing
+            for highlight in &highlight_lines {
+                let hl_start = format_ass_timestamp(highlight.start);
+                let hl_end = format_ass_timestamp(highlight.end);
+
+                writeln!(
+                    output,
+                    "Dialogue: 0,{hl_start},{hl_end},Highlight,,0,0,0,,{{\\fscx{}\\fscy{}\\t({},{}\\fscx{}\\fscy{})\\t({},{}\\fscx{}\\fscy{})}}{}",
+                    SCALE_NORMAL,
+                    SCALE_NORMAL,
+                    highlight.rel_start_ms,
+                    highlight.grow_end,
+                    SCALE_HIGHLIGHT,
+                    SCALE_HIGHLIGHT,
+                    highlight.shrink_start,
+                    highlight.rel_end_ms,
+                    SCALE_NORMAL,
+                    SCALE_NORMAL,
+                    highlight.word
+                )
+                .unwrap();
+            }
+        }
     }
 
     output
 }
 
-/// Format karaoke text with word-level timing tags.
-fn format_karaoke_text(subtitle: &RemappedSubtitle) -> String {
-    let mut output = String::new();
-    let mut cursor = subtitle.start;
+/// Format karaoke text with word-level timing using separate dialogue events.
+///
+/// This approach creates multiple dialogue lines:
+/// 1. Base line: All words in normal color for the full duration
+/// 2. Per-word lines: Each word highlighted only during its spoken time
+///
+/// This achieves the effect of only the current word being highlighted.
+fn format_karaoke_text(subtitle: &RemappedSubtitle) -> (String, Vec<KaraokeHighlightLine>) {
+    use ass_constants::*;
 
-    for (i, word) in subtitle.words.iter().enumerate() {
-        // Handle gap/space before word
-        if i > 0 {
-            let gap = if word.start > cursor {
-                word.start - cursor
-            } else {
-                Duration::ZERO
-            };
-            // Separator space gets the duration of the gap
-            write!(output, "{{\\k{}}} ", duration_to_cs(gap)).unwrap();
-        } else {
-            // First word: check for initial gap relative to subtitle start
-            if word.start > cursor {
-                let gap = word.start - cursor;
-                write!(output, "{{\\k{}}}", duration_to_cs(gap)).unwrap();
-            }
-        }
+    // Build the base text (all words in normal color)
+    let base_text: String = subtitle.words
+        .iter()
+        .map(|w| escape_ass_text(&w.word))
+        .collect::<Vec<_>>()
+        .join(" ");
 
+    // Create per-word highlight lines
+    let highlight_lines = subtitle.words.iter().map(|word| {
         let duration = if word.end > word.start {
             word.end - word.start
         } else {
             Duration::ZERO
         };
-        write!(output, "{{\\k{}}}{}", duration_to_cs(duration), escape_ass_text(&word.word)).unwrap();
 
-        cursor = word.end;
-    }
+        let rel_start_ms = (word.start - subtitle.start).as_millis() as u32;
+        let rel_end_ms = (word.end - subtitle.start).as_millis() as u32;
+        let word_duration_ms = duration.as_millis() as u32;
 
-    output
+        // Calculate scale pop animation timing
+        let pop_duration = POP_IN_MS.min(word_duration_ms / 2);
+        let grow_end = rel_start_ms + pop_duration;
+        let shrink_start = rel_end_ms.saturating_sub(pop_duration);
+
+        KaraokeHighlightLine {
+            start: word.start,
+            end: word.end,
+            word: escape_ass_text(&word.word),
+            rel_start_ms,
+            rel_end_ms,
+            grow_end,
+            shrink_start,
+        }
+    }).collect();
+
+    (base_text, highlight_lines)
+}
+
+/// Per-word karaoke highlight data
+struct KaraokeHighlightLine {
+    start: Duration,
+    end: Duration,
+    word: String,
+    rel_start_ms: u32,
+    rel_end_ms: u32,
+    grow_end: u32,
+    shrink_start: u32,
 }
 
 fn duration_to_cs(duration: Duration) -> u32 {
@@ -443,15 +519,33 @@ mod tests {
             ],
         };
 
-        let karaoke = format_karaoke_text(&subtitle);
+        let (base_text, highlight_lines) = format_karaoke_text(&subtitle);
 
-        // Expected:
-        // Hello: 500ms = 50cs -> {\k50}Hello
-        // Gap: 100ms = 10cs -> {\k10} (space)
-        // world: 500ms = 50cs -> {\k50}world
-        // No gap
-        // test: 500ms = 50cs -> {\k50}test
+        // Verify base text contains all words
+        assert_eq!(base_text, "Hello world test");
 
-        assert_eq!(karaoke, r"{\k50}Hello{\k10} {\k50}world{\k0} {\k50}test");
+        // Verify we have one highlight line per word
+        assert_eq!(highlight_lines.len(), 3);
+
+        // Verify first word highlight data
+        assert_eq!(highlight_lines[0].word, "Hello");
+        assert_eq!(highlight_lines[0].start, start);
+        assert_eq!(highlight_lines[0].end, start + Duration::from_millis(500));
+        assert_eq!(highlight_lines[0].rel_start_ms, 0);
+        assert_eq!(highlight_lines[0].rel_end_ms, 500);
+
+        // Verify second word highlight data
+        assert_eq!(highlight_lines[1].word, "world");
+        assert_eq!(highlight_lines[1].start, start + Duration::from_millis(600));
+        assert_eq!(highlight_lines[1].end, start + Duration::from_millis(1100));
+        assert_eq!(highlight_lines[1].rel_start_ms, 600);
+        assert_eq!(highlight_lines[1].rel_end_ms, 1100);
+
+        // Verify third word highlight data
+        assert_eq!(highlight_lines[2].word, "test");
+        assert_eq!(highlight_lines[2].start, start + Duration::from_millis(1100));
+        assert_eq!(highlight_lines[2].end, start + Duration::from_millis(1600));
+        assert_eq!(highlight_lines[2].rel_start_ms, 1100);
+        assert_eq!(highlight_lines[2].rel_end_ms, 1600);
     }
 }
