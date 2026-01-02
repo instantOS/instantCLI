@@ -7,7 +7,15 @@
 use std::time::Duration;
 
 use crate::video::render_timeline::{SegmentData, Timeline};
-use crate::video::transcript::TranscriptCue;
+use crate::video::transcript::{TranscriptCue, WordTiming};
+
+/// A remapped word with timing adjusted to the final timeline.
+#[derive(Debug, Clone)]
+pub struct RemappedWord {
+    pub word: String,
+    pub start: Duration,
+    pub end: Duration,
+}
 
 /// A subtitle with timing remapped to the final timeline.
 #[derive(Debug, Clone)]
@@ -16,8 +24,10 @@ pub struct RemappedSubtitle {
     pub start: Duration,
     /// End time in the final rendered video
     pub end: Duration,
-    /// Subtitle text
+    /// Subtitle text (full phrase)
     pub text: String,
+    /// Individual word timings for karaoke highlighting
+    pub words: Vec<RemappedWord>,
 }
 
 /// Minimum subtitle display duration in seconds.

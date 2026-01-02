@@ -2,11 +2,22 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::time::Duration;
 
+/// A single word with its timing information.
+#[derive(Debug, Clone)]
+pub struct WordTiming {
+    pub word: String,
+    pub start: Duration,
+    pub end: Duration,
+}
+
 #[derive(Debug, Clone)]
 pub struct TranscriptCue {
     pub start: Duration,
     pub end: Duration,
     pub text: String,
+    /// Individual word timings for karaoke-style highlighting.
+    /// If empty, the cue text is displayed without word-level highlighting.
+    pub words: Vec<WordTiming>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,10 +117,20 @@ fn create_cue_from_cluster(cluster: &[WhisperWord]) -> TranscriptCue {
         .collect::<Vec<_>>()
         .join(" ");
 
+    let words = cluster
+        .iter()
+        .map(|w| WordTiming {
+            word: w.word.clone(),
+            start: Duration::from_secs_f64(w.start),
+            end: Duration::from_secs_f64(w.end),
+        })
+        .collect();
+
     TranscriptCue {
         start: Duration::from_secs_f64(start),
         end: Duration::from_secs_f64(end),
         text,
+        words,
     }
 }
 
