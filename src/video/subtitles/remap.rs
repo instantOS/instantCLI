@@ -82,7 +82,8 @@ pub fn remap_subtitles_to_timeline(
             // Ensure minimum duration for readability
             let duration = final_end - final_start;
             let adjusted_end = if duration < MIN_SUBTITLE_DURATION_SECS {
-                (final_start + MIN_SUBTITLE_DURATION_SECS).min(segment.start_time + segment.duration)
+                (final_start + MIN_SUBTITLE_DURATION_SECS)
+                    .min(segment.start_time + segment.duration)
             } else {
                 final_end
             };

@@ -49,8 +49,10 @@ impl FfmpegCompiler {
         let offset_pct = self.render_mode.vertical_offset_pct();
 
         // Build the base scale+pad filter
+        // Note: input_label is a filter label (e.g., "v0_raw"), not an input stream index
+        // setsar=1 normalizes the sample aspect ratio for consistent concat
         let mut filter = format!(
-            "[{input}:v]scale={width}:-1:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)*{offset}:black",
+            "[{input}]scale={width}:-1:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)*{offset}:black,setsar=1",
             input = input_label,
             width = self.target_width,
             height = self.target_height,
@@ -237,9 +239,9 @@ impl FfmpegCompiler {
             if let Some(padding_filter) = self.build_padding_filter(&trimmed_label, &video_label) {
                 filters.push(padding_filter);
             } else {
-                // No padding needed, just copy the video
+                // No padding needed, but normalize SAR for consistent concat
                 filters.push(format!(
-                    "[{trimmed}]copy[{video}]",
+                    "[{trimmed}]setsar=1[{video}]",
                     trimmed = trimmed_label,
                     video = video_label
                 ));
@@ -317,10 +319,31 @@ impl FfmpegCompiler {
             let enable_condition =
                 format!("between(t,{},{})", segment.start_time, segment.end_time());
 
+            // Calculate overlay position based on render mode
+            // In reels mode, position overlay within the video content area (offset from top)
+            // In standard mode, center in the frame
+            let y_position = if self.render_mode.requires_padding() {
+                // For reels: video is positioned at offset_pct from top
+                // Center overlay within the video content area
+                let offset_pct = self.render_mode.vertical_offset_pct();
+                // Video top position: (H - video_h) * offset_pct
+                // Video is scaled to width, so video_h = H * (target_w / source_w) for 16:9
+                // Approximate: assume 16:9 source scaled to target_width
+                // scaled_height ≈ target_width * 9/16 = 1080 * 9/16 = 607.5
+                // video_top = (1920 - 607.5) * 0.1 ≈ 131
+                // Center overlay in video: video_top + (video_h - overlay_h) / 2
+                // = (H - scaled_h) * offset + (scaled_h - h) / 2
+                // Simplified: use the same offset logic as the video
+                format!("(H*9/16-h)/2+(H-H*9/16)*{}", offset_pct)
+            } else {
+                "(H-h)/2".to_string()
+            };
+
             filters.push(format!(
-                "[{video}][{overlay}]overlay=x=(W-w)/2:y=(H-h)/2:enable='{condition}'[{output}]",
+                "[{video}][{overlay}]overlay=x=(W-w)/2:y={y_pos}:enable='{condition}'[{output}]",
                 video = current_video_label,
                 overlay = overlay_label,
+                y_pos = y_position,
                 condition = enable_condition,
                 output = output_label,
             ));
@@ -498,8 +521,13 @@ mod tests {
 
     #[test]
     fn compiler_includes_output_path_in_args() {
-        let compiler =
-            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default(), None);
+        let compiler = FfmpegCompiler::new(
+            RenderMode::Standard,
+            1920,
+            1080,
+            VideoConfig::default(),
+            None,
+        );
         let timeline = Timeline::new();
         let output = compiler
             .compile(
@@ -513,8 +541,13 @@ mod tests {
 
     #[test]
     fn concat_order_respects_timeline_order() {
-        let compiler =
-            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default(), None);
+        let compiler = FfmpegCompiler::new(
+            RenderMode::Standard,
+            1920,
+            1080,
+            VideoConfig::default(),
+            None,
+        );
 
         // Deliberately add segments whose *source* start times are out-of-order.
         // The user expects their authored order to be preserved.
@@ -579,7 +612,8 @@ mod tests {
 
     #[test]
     fn test_reels_mode_generates_padding_filter() {
-        let compiler = FfmpegCompiler::new(RenderMode::Reels, 1920, 1080, VideoConfig::default(), None);
+        let compiler =
+            FfmpegCompiler::new(RenderMode::Reels, 1920, 1080, VideoConfig::default(), None);
         let padding = compiler.build_padding_filter("v0_raw", "v0");
         assert!(padding.is_some());
 
@@ -610,8 +644,13 @@ mod tests {
 
     #[test]
     fn test_standard_mode_no_padding() {
-        let compiler =
-            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default(), None);
+        let compiler = FfmpegCompiler::new(
+            RenderMode::Standard,
+            1920,
+            1080,
+            VideoConfig::default(),
+            None,
+        );
         let padding = compiler.build_padding_filter("v0_raw", "v0");
         assert!(padding.is_none());
     }

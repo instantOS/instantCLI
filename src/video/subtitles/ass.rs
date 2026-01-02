@@ -65,9 +65,9 @@ impl AssStyle {
             outline_color: "&H001B1111".to_string(),
             // Catppuccin Mocha "Mantle" (#181825) with 60% opacity - subtle shadow
             back_color: "&H99251818".to_string(),
-            bold: false, // Clean, not bold for modern look
-            outline: 2,  // Thinner outline for minimal aesthetic
-            shadow: 1,   // Subtle shadow
+            bold: false,  // Clean, not bold for modern look
+            outline: 2,   // Thinner outline for minimal aesthetic
+            shadow: 1,    // Subtle shadow
             alignment: 2, // Bottom-center
             margin_l: 60,
             margin_r: 60,
@@ -245,10 +245,7 @@ mod tests {
             format_ass_timestamp(Duration::from_millis(1500)),
             "0:00:01.50"
         );
-        assert_eq!(
-            format_ass_timestamp(Duration::from_secs(61)),
-            "0:01:01.00"
-        );
+        assert_eq!(format_ass_timestamp(Duration::from_secs(61)), "0:01:01.00");
         assert_eq!(
             format_ass_timestamp(Duration::from_secs(3661)),
             "1:01:01.00"

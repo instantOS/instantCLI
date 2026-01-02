@@ -264,6 +264,9 @@ impl SlideGenerator {
             .arg("-shortest")
             .arg("-t")
             .arg(&duration)
+            // Normalize SAR to 1:1 for consistent concat with other video segments
+            .arg("-vf")
+            .arg("setsar=1")
             .arg("-c:v")
             .arg("libx264")
             .arg("-preset")
