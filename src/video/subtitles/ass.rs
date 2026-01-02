@@ -18,6 +18,8 @@ pub struct AssStyle {
     pub font_size: u32,
     /// Primary color in ABGR format (e.g., &H00FFFFFF for white)
     pub primary_color: String,
+    /// Secondary color in ABGR format (used for karaoke unsung part)
+    pub secondary_color: String,
     /// Outline color in ABGR format
     pub outline_color: String,
     /// Background/shadow color in ABGR format
@@ -59,8 +61,10 @@ impl AssStyle {
             // Modern sans-serif stack: Inter preferred, with system fallbacks
             font_name: "Inter".to_string(),
             font_size: 52, // Slightly smaller for cleaner look
-            // Catppuccin Mocha "Text" (#CDD6F4) - ABGR format
-            primary_color: "&H00F4D6CD".to_string(),
+            // Catppuccin Mocha "Mauve" (#CBA6F7) - Primary (Sung/Active)
+            primary_color: "&H00F7A6CB".to_string(),
+            // Catppuccin Mocha "Text" (#CDD6F4) - Secondary (Unsung/Inactive)
+            secondary_color: "&H00F4D6CD".to_string(),
             // Catppuccin Mocha "Crust" (#11111B) - deep dark outline
             outline_color: "&H001B1111".to_string(),
             // Catppuccin Mocha "Mantle" (#181825) with 60% opacity - subtle shadow
@@ -82,8 +86,10 @@ impl AssStyle {
             name: "Accent".to_string(),
             font_name: "Inter".to_string(),
             font_size: 52,
-            // Catppuccin Mocha "Mauve" (#CBA6F7) - soft purple accent
+            // Catppuccin Mocha "Mauve" (#CBA6F7)
             primary_color: "&H00F7A6CB".to_string(),
+            // Catppuccin Mocha "Text" (#CDD6F4)
+            secondary_color: "&H00F4D6CD".to_string(),
             outline_color: "&H001B1111".to_string(),
             back_color: "&H99251818".to_string(),
             bold: false,
@@ -103,8 +109,10 @@ impl AssStyle {
             name: "Default".to_string(),
             font_name: "Inter".to_string(),
             font_size: 52,
+            // Catppuccin Latte "Mauve" (#8839EF) - darker purple for light mode
+            primary_color: "&H00EF3988".to_string(),
             // Catppuccin Latte "Text" (#4C4F69) - dark text
-            primary_color: "&H00694F4C".to_string(),
+            secondary_color: "&H00694F4C".to_string(),
             // Catppuccin Latte "Crust" (#DCE0E8) - light outline
             outline_color: "&H00E8E0DC".to_string(),
             // Catppuccin Latte "Mantle" (#E6E9EF) with opacity
@@ -124,18 +132,32 @@ impl AssStyle {
     /// Create a style optimized for reels mode (9:16 vertical video).
     /// Uses Catppuccin Mocha theme for modern, minimal aesthetics.
     pub fn for_reels() -> Self {
-        Self::catppuccin_mocha()
+        let mut style = Self::catppuccin_mocha();
+        // Optimize for Reels/TikTok vertical layout (1080x1920)
+        // The video content (assuming 16:9 source) is scaled to width 1080.
+        // Height = 1080 * (9/16) ≈ 608px.
+        // The video is positioned with a 10% top offset (from ffmpeg_compiler).
+        // Top padding ≈ 1920 * (1 - 608/1920) * 0.1 ≈ 131px.
+        // Video bottom ≈ 131 + 608 = 739px.
+        // Empty space below ≈ 1920 - 739 = 1181px.
+        // Center of empty space from bottom ≈ 1181 / 2 = 590px.
+        // We position slightly lower than exact center to be safe from UI elements,
+        // but high enough to be clearly in the "content" area.
+        style.font_size = 70; // Larger for mobile visibility
+        style.margin_v = 560; // Centered in empty space below video
+        style
     }
 
     /// Format the style line for the ASS file.
     fn to_style_line(&self) -> String {
         let bold_val = if self.bold { -1 } else { 0 };
         format!(
-            "Style: {name},{font},{size},{primary},&H000000FF,{outline},{back},{bold},0,0,0,100,100,0,0,1,{outline_w},{shadow},{align},{ml},{mr},{mv},1",
+            "Style: {name},{font},{size},{primary},{secondary},{outline},{back},{bold},0,0,0,100,100,0,0,1,{outline_w},{shadow},{align},{ml},{mr},{mv},1",
             name = self.name,
             font = self.font_name,
             size = self.font_size,
             primary = self.primary_color,
+            secondary = self.secondary_color,
             outline = self.outline_color,
             back = self.back_color,
             bold = bold_val,
@@ -155,10 +177,11 @@ impl AssStyle {
         // Catppuccin Mocha "Mauve" (#CBA6F7) in ABGR format
         let highlight_color = "&H00F7A6CB";
         format!(
-            "Style: Highlight,{font},{size},{primary},&H000000FF,{outline},{back},{bold},0,0,0,100,100,0,0,1,{outline_w},{shadow},{align},{ml},{mr},{mv},1",
+            "Style: Highlight,{font},{size},{primary},{secondary},{outline},{back},{bold},0,0,0,100,100,0,0,1,{outline_w},{shadow},{align},{ml},{mr},{mv},1",
             font = self.font_name,
             size = self.font_size,
             primary = highlight_color,
+            secondary = self.secondary_color,
             outline = self.outline_color,
             back = self.back_color,
             bold = bold_val,
@@ -245,6 +268,46 @@ pub fn generate_ass_file(
     output
 }
 
+/// Format karaoke text with word-level timing tags.
+fn format_karaoke_text(subtitle: &RemappedSubtitle) -> String {
+    let mut output = String::new();
+    let mut cursor = subtitle.start;
+
+    for (i, word) in subtitle.words.iter().enumerate() {
+        // Handle gap/space before word
+        if i > 0 {
+            let gap = if word.start > cursor {
+                word.start - cursor
+            } else {
+                Duration::ZERO
+            };
+            // Separator space gets the duration of the gap
+            write!(output, "{{\\k{}}} ", duration_to_cs(gap)).unwrap();
+        } else {
+            // First word: check for initial gap relative to subtitle start
+            if word.start > cursor {
+                let gap = word.start - cursor;
+                write!(output, "{{\\k{}}}", duration_to_cs(gap)).unwrap();
+            }
+        }
+
+        let duration = if word.end > word.start {
+            word.end - word.start
+        } else {
+            Duration::ZERO
+        };
+        write!(output, "{{\\k{}}}{}", duration_to_cs(duration), escape_ass_text(&word.word)).unwrap();
+
+        cursor = word.end;
+    }
+
+    output
+}
+
+fn duration_to_cs(duration: Duration) -> u32 {
+    (duration.as_secs_f64() * 100.0).round() as u32
+}
+
 /// Format a Duration as an ASS timestamp (H:MM:SS.cc).
 fn format_ass_timestamp(duration: Duration) -> String {
     let total_secs = duration.as_secs_f64();
@@ -304,11 +367,13 @@ mod tests {
                 start: Duration::from_secs(0),
                 end: Duration::from_millis(2500),
                 text: "Hello world".to_string(),
+                words: vec![],
             },
             RemappedSubtitle {
                 start: Duration::from_millis(3000),
                 end: Duration::from_millis(5000),
                 text: "Second line".to_string(),
+                words: vec![],
             },
         ];
 
@@ -330,9 +395,9 @@ mod tests {
         let line = style.to_style_line();
 
         // Catppuccin Mocha theme with Inter font
-        assert!(line.starts_with("Style: Default,Inter,52,"));
+        assert!(line.starts_with("Style: Default,Inter,70,")); // Size 70
         assert!(line.contains(",2,")); // Alignment = 2
-        assert!(line.contains(",120,")); // MarginV = 120
+        assert!(line.contains(",560,")); // MarginV = 560
         // Verify Catppuccin colors are present (ABGR format)
         assert!(line.contains("&H00F4D6CD")); // Catppuccin Text color
     }
@@ -342,10 +407,51 @@ mod tests {
         let style = AssStyle::catppuccin_mocha();
 
         // Verify Catppuccin Mocha palette
-        assert_eq!(style.primary_color, "&H00F4D6CD"); // Text (#CDD6F4)
+        assert_eq!(style.primary_color, "&H00F7A6CB"); // Mauve (Sung)
+        assert_eq!(style.secondary_color, "&H00F4D6CD"); // Text (Unsung)
         assert_eq!(style.outline_color, "&H001B1111"); // Crust (#11111B)
         assert!(style.back_color.contains("251818")); // Mantle (#181825)
         assert!(!style.bold); // Modern clean look = not bold
         assert_eq!(style.font_name, "Inter");
+    }
+
+    #[test]
+    fn test_format_karaoke_text() {
+        use crate::video::subtitles::remap::RemappedWord;
+
+        let start = Duration::from_secs(10);
+        let subtitle = RemappedSubtitle {
+            start,
+            end: start + Duration::from_secs(2),
+            text: "Hello world test".to_string(),
+            words: vec![
+                RemappedWord {
+                    word: "Hello".to_string(),
+                    start: start,
+                    end: start + Duration::from_millis(500),
+                },
+                RemappedWord {
+                    word: "world".to_string(),
+                    start: start + Duration::from_millis(600), // 100ms gap
+                    end: start + Duration::from_millis(1100),
+                },
+                RemappedWord {
+                    word: "test".to_string(),
+                    start: start + Duration::from_millis(1100), // No gap
+                    end: start + Duration::from_millis(1600),
+                },
+            ],
+        };
+
+        let karaoke = format_karaoke_text(&subtitle);
+
+        // Expected:
+        // Hello: 500ms = 50cs -> {\k50}Hello
+        // Gap: 100ms = 10cs -> {\k10} (space)
+        // world: 500ms = 50cs -> {\k50}world
+        // No gap
+        // test: 500ms = 50cs -> {\k50}test
+
+        assert_eq!(karaoke, r"{\k50}Hello{\k10} {\k50}world{\k0} {\k50}test");
     }
 }

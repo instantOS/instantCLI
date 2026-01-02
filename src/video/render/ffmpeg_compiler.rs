@@ -40,7 +40,6 @@ impl FfmpegCompiler {
     }
 
     /// Build letterboxing/pillboxing filter chain when target != source aspect ratio
-    /// Optionally includes ASS subtitle burning if subtitle_path is set
     fn build_padding_filter(&self, input_label: &str, output_label: &str) -> Option<String> {
         if !self.render_mode.requires_padding() {
             return None;
@@ -51,22 +50,15 @@ impl FfmpegCompiler {
         // Build the base scale+pad filter
         // Note: input_label is a filter label (e.g., "v0_raw"), not an input stream index
         // setsar=1 normalizes the sample aspect ratio for consistent concat
-        let mut filter = format!(
-            "[{input}]scale={width}:-1:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)*{offset}:black,setsar=1",
+        let filter = format!(
+            "[{input}]scale={width}:-1:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)*{offset}:0x1E1E2E,setsar=1[{output}]",
             input = input_label,
             width = self.target_width,
             height = self.target_height,
             offset = offset_pct,
+            output = output_label
         );
 
-        // Add ASS subtitle filter if path is provided
-        if let Some(ass_path) = &self.subtitle_path {
-            // Escape special characters in path for FFmpeg filter
-            let escaped_path = escape_ffmpeg_path(ass_path);
-            filter.push_str(&format!(",ass='{}'", escaped_path));
-        }
-
-        filter.push_str(&format!("[{output}]", output = output_label));
         Some(filter)
     }
 
@@ -165,11 +157,30 @@ impl FfmpegCompiler {
             audio_input_index,
         )?;
 
-        if overlay_segments.is_empty() {
-            filters.push("[concat_v]copy[outv]".to_string());
-        } else {
-            self.apply_overlays(&mut filters, &overlay_segments, source_map)?;
+        let mut current_video_label = "concat_v".to_string();
+
+        if !overlay_segments.is_empty() {
+            current_video_label = self.apply_overlays(
+                &mut filters,
+                &overlay_segments,
+                source_map,
+                &current_video_label,
+            )?;
         }
+
+        if let Some(ass_path) = &self.subtitle_path {
+            let escaped_path = escape_ffmpeg_path(ass_path);
+            let next_label = "subtitled_v";
+            filters.push(format!(
+                "[{input}]ass='{path}'[{output}]",
+                input = current_video_label,
+                path = escaped_path,
+                output = next_label
+            ));
+            current_video_label = next_label.to_string();
+        }
+
+        filters.push(format!("[{}]copy[outv]", current_video_label));
 
         self.build_audio_mix_filters(
             &mut filters,
@@ -284,8 +295,9 @@ impl FfmpegCompiler {
         filters: &mut Vec<String>,
         overlay_segments: &[&Segment],
         source_map: &HashMap<PathBuf, usize>,
-    ) -> Result<()> {
-        let mut current_video_label = "concat_v".to_string();
+        input_label: &str,
+    ) -> Result<String> {
+        let mut current_video_label = input_label.to_string();
 
         for (idx, segment) in overlay_segments.iter().enumerate() {
             let SegmentData::Image {
@@ -351,8 +363,7 @@ impl FfmpegCompiler {
             current_video_label = output_label;
         }
 
-        filters.push(format!("[{}]copy[outv]", current_video_label));
-        Ok(())
+        Ok(current_video_label)
     }
 
     fn build_audio_mix_filters(
@@ -621,11 +632,12 @@ mod tests {
         assert!(filter.contains("scale=1080:-1"));
         assert!(filter.contains("pad=1080:1920"));
         assert!(filter.contains("(oh-ih)*0.1")); // 10% offset
+        assert!(filter.contains(":0x1E1E2E")); // Catppuccin Base background
         assert!(!filter.contains("ass=")); // No subtitles without path
     }
 
     #[test]
-    fn test_reels_mode_with_subtitles() {
+    fn test_reels_mode_padding_excludes_subtitles() {
         let compiler = FfmpegCompiler::new(
             RenderMode::Reels,
             1920,
@@ -639,7 +651,43 @@ mod tests {
         let filter = padding.unwrap();
         assert!(filter.contains("scale=1080:-1"));
         assert!(filter.contains("pad=1080:1920"));
-        assert!(filter.contains("ass='/tmp/subs.ass'")); // Subtitles included
+        assert!(!filter.contains("ass=")); // Subtitles moved to global filter_complex
+    }
+
+    #[test]
+    fn test_filter_complex_includes_subtitles() {
+        let compiler = FfmpegCompiler::new(
+            RenderMode::Reels,
+            1920,
+            1080,
+            VideoConfig::default(),
+            Some(PathBuf::from("/tmp/subs.ass")),
+        );
+
+        let mut timeline = Timeline::new();
+        // Add a dummy segment so we have video content
+        timeline.add_segment(Segment::new_video_subset(
+            0.0,
+            0.0,
+            5.0,
+            PathBuf::from("video.mp4"),
+            None,
+            false,
+        ));
+
+        // Create a dummy source map
+        let mut source_map = HashMap::new();
+        source_map.insert(PathBuf::from("video.mp4"), 0);
+        let audio_input_index = 0;
+
+        let filter_complex = compiler
+            .build_filter_complex(&timeline, &source_map, audio_input_index, 5.0)
+            .unwrap();
+
+        assert!(filter_complex.contains("ass='/tmp/subs.ass'"));
+        // Ensure subtitles are applied after concat/overlays
+        // The structure should involve [concat_v]...[subtitled_v]...[outv]
+        assert!(filter_complex.contains("[concat_v]ass='/tmp/subs.ass'[subtitled_v]"));
     }
 
     #[test]

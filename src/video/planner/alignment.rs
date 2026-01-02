@@ -619,11 +619,13 @@ mod tests {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(950),
                 text: "first".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(1200),
                 end: Duration::from_millis(2450),
                 text: "second".to_string(),
+                words: vec![],
             },
         ];
 
@@ -660,11 +662,13 @@ mod tests {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1100),
                 text: "completely different".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(1100),
                 end: Duration::from_millis(2000),
                 text: "also different".to_string(),
+                words: vec![],
             },
         ];
 
@@ -704,16 +708,19 @@ mod tests {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1000),
                 text: "first".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(1020),
                 end: Duration::from_millis(2000),
                 text: "mid".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(2020),
                 end: Duration::from_millis(3000),
                 text: "third".to_string(),
+                words: vec![],
             },
         ];
 
@@ -750,6 +757,7 @@ mod tests {
             start: Duration::from_millis(0),
             end: Duration::from_millis(1000),
             text: "only".to_string(),
+                words: vec![],
         }];
 
         let err = align_plan_with_subtitles(&mut plan, &cues).unwrap_err();
@@ -780,26 +788,31 @@ mod tests {
                 start: Duration::from_millis(866),
                 end: Duration::from_millis(7274),
                 text: "Hello".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(9677),
                 end: Duration::from_millis(11559),
                 text: "I do not want".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(14403),
                 end: Duration::from_millis(16005),
                 text: "A big pile".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(19189),
                 end: Duration::from_millis(20730),
                 text: "Goodbye".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(20791),
                 end: Duration::from_millis(26898),
                 text: "No, you don't say".to_string(),
+                words: vec![],
             },
         ];
 
@@ -863,11 +876,13 @@ mod tests {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1234),
                 text: "intro".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(6789),
                 end: Duration::from_millis(8000),
                 text: "outro".to_string(),
+                words: vec![],
             },
         ];
 
@@ -914,11 +929,13 @@ mod tests {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1000),
                 text: "intro".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(50_000),
                 end: Duration::from_millis(51_000),
                 text: "outro".to_string(),
+                words: vec![],
             },
         ];
 

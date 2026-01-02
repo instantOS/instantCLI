@@ -138,6 +138,9 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         );
     }
 
+    // Automatically enable subtitles for Reels mode
+    let burn_subtitles = burn_subtitles || render_mode == RenderMode::Reels;
+
     let output_path = if pre_cache_only {
         None
     } else {
