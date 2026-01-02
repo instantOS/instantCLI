@@ -154,7 +154,8 @@ impl DoctorCheck for NerdFontCheck {
         // 1. Skip if not in a desktop session
         if !DisplayServer::detect().is_desktop_session() {
             return CheckStatus::Skipped(
-                "Not running in a desktop session (nerd fonts require a display server)".to_string(),
+                "Not running in a desktop session (nerd fonts require a display server)"
+                    .to_string(),
             );
         }
 

@@ -1,4 +1,4 @@
-use super::{create_terminal_process, ScratchpadProvider, ScratchpadWindowInfo};
+use super::{ScratchpadProvider, ScratchpadWindowInfo, create_terminal_process};
 use crate::scratchpad::config::ScratchpadConfig;
 use anyhow::{Context, Result};
 use serde::Deserialize;

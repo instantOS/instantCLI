@@ -90,11 +90,21 @@ pub fn set_mouse_speed(value: i64) -> Result<()> {
         }
         CompositorType::Gnome => {
             Command::new("gsettings")
-                .args(["set", "org.gnome.desktop.peripherals.mouse", "speed", &speed.to_string()])
+                .args([
+                    "set",
+                    "org.gnome.desktop.peripherals.mouse",
+                    "speed",
+                    &speed.to_string(),
+                ])
                 .output()
                 .context("Failed to set mouse speed")?;
             Command::new("gsettings")
-                .args(["set", "org.gnome.desktop.peripherals.touchpad", "speed", &speed.to_string()])
+                .args([
+                    "set",
+                    "org.gnome.desktop.peripherals.touchpad",
+                    "speed",
+                    &speed.to_string(),
+                ])
                 .output()
                 .context("Failed to set touchpad speed")?;
         }
