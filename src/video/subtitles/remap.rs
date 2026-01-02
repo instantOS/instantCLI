@@ -165,6 +165,18 @@ fn merge_overlapping_subtitles(subtitles: Vec<RemappedSubtitle>) -> Vec<Remapped
         // non-contiguous source regions (e.g., when source content is cut)
         if current.text == next.text && next.start < current.end {
             current.end = current.end.max(next.end);
+            // Merge words, avoiding duplicates
+            for word in next.words {
+                if !current.words.iter().any(|w| {
+                    w.word == word.word && w.start == word.start && w.end == word.end
+                }) {
+                    current.words.push(word);
+                }
+            }
+            // Re-sort words by start time after merge
+            current
+                .words
+                .sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
         } else {
             result.push(current);
             current = next;
@@ -186,6 +198,7 @@ mod tests {
             start: Duration::from_millis(start_ms),
             end: Duration::from_millis(end_ms),
             text: text.to_string(),
+            words: vec![], // No word-level timing for basic tests
         }
     }
 

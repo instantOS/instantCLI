@@ -147,9 +147,32 @@ impl AssStyle {
             mv = self.margin_v,
         )
     }
+
+    /// Format the highlight style line (for karaoke current word).
+    /// Uses Catppuccin Mauve for the highlighted word.
+    fn to_highlight_style_line(&self) -> String {
+        let bold_val = if self.bold { -1 } else { 0 };
+        // Catppuccin Mocha "Mauve" (#CBA6F7) in ABGR format
+        let highlight_color = "&H00F7A6CB";
+        format!(
+            "Style: Highlight,{font},{size},{primary},&H000000FF,{outline},{back},{bold},0,0,0,100,100,0,0,1,{outline_w},{shadow},{align},{ml},{mr},{mv},1",
+            font = self.font_name,
+            size = self.font_size,
+            primary = highlight_color,
+            outline = self.outline_color,
+            back = self.back_color,
+            bold = bold_val,
+            outline_w = self.outline,
+            shadow = self.shadow,
+            align = self.alignment,
+            ml = self.margin_l,
+            mr = self.margin_r,
+            mv = self.margin_v,
+        )
+    }
 }
 
-/// Generate an ASS subtitle file content.
+/// Generate an ASS subtitle file content with karaoke-style word highlighting.
 ///
 /// # Arguments
 /// * `subtitles` - List of remapped subtitles with final timeline timing
@@ -182,7 +205,10 @@ pub fn generate_ass_file(
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding"
     )
     .unwrap();
+    // Default style (for text before it's highlighted)
     writeln!(output, "{}", style.to_style_line()).unwrap();
+    // Highlight style (Catppuccin Mauve for current word)
+    writeln!(output, "{}", style.to_highlight_style_line()).unwrap();
     writeln!(output).unwrap();
 
     // Events section
@@ -196,7 +222,14 @@ pub fn generate_ass_file(
     for subtitle in subtitles {
         let start = format_ass_timestamp(subtitle.start);
         let end = format_ass_timestamp(subtitle.end);
-        let text = escape_ass_text(&subtitle.text);
+
+        // Generate karaoke text with word-level timing
+        let text = if subtitle.words.is_empty() {
+            // No word timing, just use plain text
+            escape_ass_text(&subtitle.text)
+        } else {
+            format_karaoke_text(subtitle)
+        };
 
         writeln!(
             output,
