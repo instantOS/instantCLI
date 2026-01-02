@@ -37,6 +37,7 @@ const MIN_SUBTITLE_DURATION_SECS: f64 = 0.5;
 ///
 /// For each video segment in the timeline, finds transcript cues that overlap
 /// with the segment's source time range and remaps them to the final timeline.
+/// Word-level timings are preserved for karaoke-style highlighting.
 ///
 /// # Arguments
 /// * `timeline` - The render timeline with segments in final order
@@ -66,6 +67,8 @@ pub fn remap_subtitles_to_timeline(
         }
 
         let source_end = source_start + segment.duration;
+        // Time offset to convert source time to final timeline time
+        let time_offset = segment.start_time - source_start;
 
         // Find cues that overlap with this segment's source time range
         for cue in cues {
@@ -81,13 +84,34 @@ pub fn remap_subtitles_to_timeline(
             let overlap_start = cue_start.max(*source_start);
             let overlap_end = cue_end.min(source_end);
 
-            // Calculate offset from segment start
-            let offset_start = overlap_start - source_start;
-            let offset_end = overlap_end - source_start;
+            // Remap cue timing to final timeline
+            let final_start = overlap_start + time_offset;
+            let final_end = overlap_end + time_offset;
 
-            // Remap to final timeline
-            let final_start = segment.start_time + offset_start;
-            let final_end = segment.start_time + offset_end;
+            // Remap word timings, filtering to only words within this segment
+            let remapped_words: Vec<RemappedWord> = cue
+                .words
+                .iter()
+                .filter_map(|word| {
+                    let word_start = word.start.as_secs_f64();
+                    let word_end = word.end.as_secs_f64();
+
+                    // Check if word overlaps with segment's source range
+                    if word_end <= *source_start || word_start >= source_end {
+                        return None;
+                    }
+
+                    // Clamp word timing to segment boundaries and remap
+                    let clamped_start = word_start.max(*source_start);
+                    let clamped_end = word_end.min(source_end);
+
+                    Some(RemappedWord {
+                        word: word.word.clone(),
+                        start: Duration::from_secs_f64(clamped_start + time_offset),
+                        end: Duration::from_secs_f64(clamped_end + time_offset),
+                    })
+                })
+                .collect();
 
             // Ensure minimum duration for readability
             let duration = final_end - final_start;
@@ -98,10 +122,22 @@ pub fn remap_subtitles_to_timeline(
                 final_end
             };
 
+            // Build text from remapped words if available, otherwise use cue text
+            let text = if remapped_words.is_empty() {
+                cue.text.clone()
+            } else {
+                remapped_words
+                    .iter()
+                    .map(|w| w.word.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+
             subtitles.push(RemappedSubtitle {
                 start: Duration::from_secs_f64(final_start),
                 end: Duration::from_secs_f64(adjusted_end),
-                text: cue.text.clone(),
+                text,
+                words: remapped_words,
             });
         }
     }
