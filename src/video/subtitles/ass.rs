@@ -40,28 +40,91 @@ pub struct AssStyle {
 
 impl Default for AssStyle {
     fn default() -> Self {
+        Self::catppuccin_mocha()
+    }
+}
+
+impl AssStyle {
+    /// Catppuccin Mocha theme - modern, minimal, and fancy.
+    ///
+    /// Uses Catppuccin's signature soft colors:
+    /// - Text: Catppuccin "Text" (CDD6F4) - soft white with slight blue tint
+    /// - Outline: Catppuccin "Crust" (11111B) - deep dark for contrast
+    /// - Shadow: Catppuccin "Mantle" with transparency - subtle depth
+    ///
+    /// Font: Inter (modern geometric sans-serif) with fallbacks
+    pub fn catppuccin_mocha() -> Self {
         Self {
             name: "Default".to_string(),
-            font_name: "Arial".to_string(),
-            font_size: 56,
-            primary_color: "&H00FFFFFF".to_string(), // White
-            outline_color: "&H00000000".to_string(), // Black
-            back_color: "&H80000000".to_string(),    // Semi-transparent black
-            bold: true,
-            outline: 3,
-            shadow: 2,
+            // Modern sans-serif stack: Inter preferred, with system fallbacks
+            font_name: "Inter".to_string(),
+            font_size: 52, // Slightly smaller for cleaner look
+            // Catppuccin Mocha "Text" (#CDD6F4) - ABGR format
+            primary_color: "&H00F4D6CD".to_string(),
+            // Catppuccin Mocha "Crust" (#11111B) - deep dark outline
+            outline_color: "&H001B1111".to_string(),
+            // Catppuccin Mocha "Mantle" (#181825) with 60% opacity - subtle shadow
+            back_color: "&H99251818".to_string(),
+            bold: false, // Clean, not bold for modern look
+            outline: 2,  // Thinner outline for minimal aesthetic
+            shadow: 1,   // Subtle shadow
             alignment: 2, // Bottom-center
-            margin_l: 40,
-            margin_r: 40,
-            margin_v: 150, // 150px from bottom edge for reels
+            margin_l: 60,
+            margin_r: 60,
+            margin_v: 120, // Refined vertical margin
+        }
+    }
+
+    /// Catppuccin Mocha with accent color (Mauve) for emphasis.
+    #[allow(dead_code)]
+    pub fn catppuccin_mocha_accent() -> Self {
+        Self {
+            name: "Accent".to_string(),
+            font_name: "Inter".to_string(),
+            font_size: 52,
+            // Catppuccin Mocha "Mauve" (#CBA6F7) - soft purple accent
+            primary_color: "&H00F7A6CB".to_string(),
+            outline_color: "&H001B1111".to_string(),
+            back_color: "&H99251818".to_string(),
+            bold: false,
+            outline: 2,
+            shadow: 1,
+            alignment: 2,
+            margin_l: 60,
+            margin_r: 60,
+            margin_v: 120,
+        }
+    }
+
+    /// Catppuccin Latte theme (light mode variant).
+    #[allow(dead_code)]
+    pub fn catppuccin_latte() -> Self {
+        Self {
+            name: "Default".to_string(),
+            font_name: "Inter".to_string(),
+            font_size: 52,
+            // Catppuccin Latte "Text" (#4C4F69) - dark text
+            primary_color: "&H00694F4C".to_string(),
+            // Catppuccin Latte "Crust" (#DCE0E8) - light outline
+            outline_color: "&H00E8E0DC".to_string(),
+            // Catppuccin Latte "Mantle" (#E6E9EF) with opacity
+            back_color: "&H99EFE9E6".to_string(),
+            bold: false,
+            outline: 2,
+            shadow: 1,
+            alignment: 2,
+            margin_l: 60,
+            margin_r: 60,
+            margin_v: 120,
         }
     }
 }
 
 impl AssStyle {
     /// Create a style optimized for reels mode (9:16 vertical video).
+    /// Uses Catppuccin Mocha theme for modern, minimal aesthetics.
     pub fn for_reels() -> Self {
-        Self::default()
+        Self::catppuccin_mocha()
     }
 
     /// Format the style line for the ASS file.
@@ -236,8 +299,23 @@ mod tests {
         let style = AssStyle::for_reels();
         let line = style.to_style_line();
 
-        assert!(line.starts_with("Style: Default,Arial,56,"));
+        // Catppuccin Mocha theme with Inter font
+        assert!(line.starts_with("Style: Default,Inter,52,"));
         assert!(line.contains(",2,")); // Alignment = 2
-        assert!(line.contains(",150,")); // MarginV = 150
+        assert!(line.contains(",120,")); // MarginV = 120
+        // Verify Catppuccin colors are present (ABGR format)
+        assert!(line.contains("&H00F4D6CD")); // Catppuccin Text color
+    }
+
+    #[test]
+    fn test_catppuccin_mocha_colors() {
+        let style = AssStyle::catppuccin_mocha();
+
+        // Verify Catppuccin Mocha palette
+        assert_eq!(style.primary_color, "&H00F4D6CD"); // Text (#CDD6F4)
+        assert_eq!(style.outline_color, "&H001B1111"); // Crust (#11111B)
+        assert!(style.back_color.contains("251818")); // Mantle (#181825)
+        assert!(!style.bold); // Modern clean look = not bold
+        assert_eq!(style.font_name, "Inter");
     }
 }
