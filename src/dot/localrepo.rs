@@ -20,10 +20,7 @@ impl DotfileDir {
         // Create directory if it doesn't exist (git doesn't track empty directories)
         if !path.exists() {
             std::fs::create_dir_all(&path).with_context(|| {
-                format!(
-                    "Failed to create dotfile directory '{}'",
-                    path.display()
-                )
+                format!("Failed to create dotfile directory '{}'", path.display())
             })?;
 
             // Notify user about created directory

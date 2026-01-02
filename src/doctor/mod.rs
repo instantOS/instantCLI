@@ -18,7 +18,11 @@ pub enum DoctorCommands {
     /// Apply fix for a specific health check
     Fix {
         /// Name of the check to fix
-        name: String,
+        #[arg(value_name = "NAME")]
+        name: Option<String>,
+        /// Fix all failing checks
+        #[arg(long, conflicts_with = "name")]
+        all: bool,
     },
 }
 

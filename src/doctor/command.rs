@@ -3,7 +3,7 @@ use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
 use crate::ui::{Level, prelude::*};
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use colored::*;
 
 pub async fn handle_doctor_command(command: Option<DoctorCommands>) -> Result<()> {
@@ -11,7 +11,15 @@ pub async fn handle_doctor_command(command: Option<DoctorCommands>) -> Result<()
         None => run_all_checks_cmd().await,
         Some(DoctorCommands::List) => list_available_checks().await,
         Some(DoctorCommands::Run { name }) => run_single_check(&name).await,
-        Some(DoctorCommands::Fix { name }) => fix_single_check(&name).await,
+        Some(DoctorCommands::Fix { name, all }) => {
+            if all {
+                fix_all_checks().await
+            } else if let Some(check_name) = name {
+                fix_single_check(&check_name).await
+            } else {
+                bail!("Either --all or a check name must be provided")
+            }
+        }
     }
 }
 
@@ -356,4 +364,114 @@ fn should_escalate(check: &dyn DoctorCheck) -> Result<bool> {
         ConfirmResult::Yes => Ok(true),
         ConfirmResult::No | ConfirmResult::Cancelled => Ok(false),
     }
+}
+
+/// Apply fixes for all failing/fixable health checks
+async fn fix_all_checks() -> Result<()> {
+    // STEP 1: Run all checks to identify failures
+    let checks = REGISTRY.all_checks();
+    let results = run_all_checks(checks).await;
+
+    // STEP 2: Filter for fixable failures (both Fail and Warning)
+    let fixable: Vec<_> = results
+        .iter()
+        .filter(|r| r.status.is_fixable() && (r.status.needs_fix() || r.status.is_warning()))
+        .collect();
+
+    if fixable.is_empty() {
+        emit(
+            Level::Success,
+            "doctor.fix_all.none",
+            &format!("{} No fixable issues found!", char::from(NerdFont::Check)),
+            None,
+        );
+        return Ok(());
+    }
+
+    emit(
+        Level::Info,
+        "doctor.fix_all.start",
+        &format!(
+            "{} Found {} fixable issue(s)",
+            char::from(NerdFont::List),
+            fixable.len()
+        ),
+        None,
+    );
+
+    // STEP 3: Sort by priority (Fail before Warning)
+    let mut fixable_sorted = fixable;
+    fixable_sorted.sort_by_key(|r| r.status.sort_priority());
+
+    // STEP 4: Apply fixes sequentially, continuing on failure
+    let mut success_count = 0;
+    let mut failure_count = 0;
+
+    for result in fixable_sorted {
+        emit(
+            Level::Info,
+            "doctor.fix_all.item",
+            &format!("\nFixing: {} ({})", result.name, result.check_id),
+            None,
+        );
+
+        match fix_single_check(&result.check_id).await {
+            Ok(()) => {
+                emit(
+                    Level::Success,
+                    "doctor.fix_all.success",
+                    &format!("{} Fixed {}", char::from(NerdFont::Check), result.name),
+                    None,
+                );
+                success_count += 1;
+            }
+            Err(e) => {
+                emit(
+                    Level::Error,
+                    "doctor.fix_all.failed",
+                    &format!(
+                        "{} Failed to fix {}: {}",
+                        char::from(NerdFont::CrossCircle),
+                        result.name,
+                        e
+                    ),
+                    None,
+                );
+                failure_count += 1;
+            }
+        }
+    }
+
+    // STEP 5: Show final summary
+    emit(
+        Level::Info,
+        "doctor.fix_all.summary",
+        "\n=== Summary ===",
+        None,
+    );
+    emit(
+        Level::Success,
+        "doctor.fix_all.summary_success",
+        &format!(
+            "{} Successfully fixed: {}",
+            char::from(NerdFont::Check),
+            success_count
+        ),
+        None,
+    );
+
+    if failure_count > 0 {
+        emit(
+            Level::Error,
+            "doctor.fix_all.summary_failure",
+            &format!(
+                "{} Failed to fix: {}",
+                char::from(NerdFont::CrossCircle),
+                failure_count
+            ),
+            None,
+        );
+    }
+
+    Ok(())
 }
