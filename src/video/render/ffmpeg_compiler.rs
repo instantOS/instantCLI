@@ -17,6 +17,7 @@ pub struct FfmpegCompiler {
     target_height: u32,
     render_mode: RenderMode,
     config: VideoConfig,
+    subtitle_path: Option<PathBuf>,
 }
 
 impl FfmpegCompiler {
@@ -25,6 +26,7 @@ impl FfmpegCompiler {
         source_width: u32,
         source_height: u32,
         config: VideoConfig,
+        subtitle_path: Option<PathBuf>,
     ) -> Self {
         let (target_width, target_height) =
             render_mode.target_dimensions(source_width, source_height);
@@ -33,10 +35,12 @@ impl FfmpegCompiler {
             target_height,
             render_mode,
             config,
+            subtitle_path,
         }
     }
 
     /// Build letterboxing/pillboxing filter chain when target != source aspect ratio
+    /// Optionally includes ASS subtitle burning if subtitle_path is set
     fn build_padding_filter(&self, input_label: &str, output_label: &str) -> Option<String> {
         if !self.render_mode.requires_padding() {
             return None;
@@ -44,14 +48,24 @@ impl FfmpegCompiler {
 
         let offset_pct = self.render_mode.vertical_offset_pct();
 
-        Some(format!(
-            "[{input}:v]scale={width}:-1:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)*{offset}:black[{output}]",
+        // Build the base scale+pad filter
+        let mut filter = format!(
+            "[{input}:v]scale={width}:-1:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)*{offset}:black",
             input = input_label,
             width = self.target_width,
             height = self.target_height,
             offset = offset_pct,
-            output = output_label,
-        ))
+        );
+
+        // Add ASS subtitle filter if path is provided
+        if let Some(ass_path) = &self.subtitle_path {
+            // Escape special characters in path for FFmpeg filter
+            let escaped_path = escape_ffmpeg_path(ass_path);
+            filter.push_str(&format!(",ass='{}'", escaped_path));
+        }
+
+        filter.push_str(&format!("[{output}]", output = output_label));
+        Some(filter)
     }
 
     pub fn compile(
@@ -469,6 +483,15 @@ fn format_time(value: f64) -> String {
     format!("{value:.6}")
 }
 
+/// Escape special characters in a path for use in FFmpeg filter expressions.
+/// FFmpeg filter syntax requires escaping of ', \, and : characters.
+fn escape_ffmpeg_path(path: &PathBuf) -> String {
+    path.to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('\'', "'\\''")
+        .replace(':', "\\:")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -476,7 +499,7 @@ mod tests {
     #[test]
     fn compiler_includes_output_path_in_args() {
         let compiler =
-            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default());
+            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default(), None);
         let timeline = Timeline::new();
         let output = compiler
             .compile(
@@ -491,7 +514,7 @@ mod tests {
     #[test]
     fn concat_order_respects_timeline_order() {
         let compiler =
-            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default());
+            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default(), None);
 
         // Deliberately add segments whose *source* start times are out-of-order.
         // The user expects their authored order to be preserved.
@@ -556,7 +579,7 @@ mod tests {
 
     #[test]
     fn test_reels_mode_generates_padding_filter() {
-        let compiler = FfmpegCompiler::new(RenderMode::Reels, 1920, 1080, VideoConfig::default());
+        let compiler = FfmpegCompiler::new(RenderMode::Reels, 1920, 1080, VideoConfig::default(), None);
         let padding = compiler.build_padding_filter("v0_raw", "v0");
         assert!(padding.is_some());
 
@@ -564,13 +587,48 @@ mod tests {
         assert!(filter.contains("scale=1080:-1"));
         assert!(filter.contains("pad=1080:1920"));
         assert!(filter.contains("(oh-ih)*0.1")); // 10% offset
+        assert!(!filter.contains("ass=")); // No subtitles without path
+    }
+
+    #[test]
+    fn test_reels_mode_with_subtitles() {
+        let compiler = FfmpegCompiler::new(
+            RenderMode::Reels,
+            1920,
+            1080,
+            VideoConfig::default(),
+            Some(PathBuf::from("/tmp/subs.ass")),
+        );
+        let padding = compiler.build_padding_filter("v0_raw", "v0");
+        assert!(padding.is_some());
+
+        let filter = padding.unwrap();
+        assert!(filter.contains("scale=1080:-1"));
+        assert!(filter.contains("pad=1080:1920"));
+        assert!(filter.contains("ass='/tmp/subs.ass'")); // Subtitles included
     }
 
     #[test]
     fn test_standard_mode_no_padding() {
         let compiler =
-            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default());
+            FfmpegCompiler::new(RenderMode::Standard, 1920, 1080, VideoConfig::default(), None);
         let padding = compiler.build_padding_filter("v0_raw", "v0");
         assert!(padding.is_none());
+    }
+
+    #[test]
+    fn test_escape_ffmpeg_path() {
+        assert_eq!(
+            escape_ffmpeg_path(&PathBuf::from("/simple/path.ass")),
+            "/simple/path.ass"
+        );
+        assert_eq!(
+            escape_ffmpeg_path(&PathBuf::from("/path/with spaces/file.ass")),
+            "/path/with spaces/file.ass"
+        );
+        assert_eq!(
+            escape_ffmpeg_path(&PathBuf::from("/path/with'quote/file.ass")),
+            "/path/with'\\''quote/file.ass"
+        );
     }
 }

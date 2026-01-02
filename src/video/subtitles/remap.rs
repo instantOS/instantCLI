@@ -108,12 +108,15 @@ fn merge_overlapping_subtitles(subtitles: Vec<RemappedSubtitle>) -> Vec<Remapped
         return subtitles;
     }
 
+    let mut iter = subtitles.into_iter();
+    let mut current = iter.next().unwrap();
     let mut result = Vec::new();
-    let mut current = subtitles.into_iter().next().unwrap();
 
-    for next in subtitles.into_iter().skip(1) {
-        // If same text and overlapping or adjacent, merge
-        if current.text == next.text && next.start <= current.end {
+    for next in iter {
+        // If same text and truly overlapping (not just adjacent), merge
+        // We don't merge adjacent subtitles because they may come from
+        // non-contiguous source regions (e.g., when source content is cut)
+        if current.text == next.text && next.start < current.end {
             current.end = current.end.max(next.end);
         } else {
             result.push(current);
