@@ -30,8 +30,14 @@ pub fn handle_slide(args: SlideArgs) -> Result<()> {
         path
     };
 
-    // Use default 1920x1080 resolution for slides
-    let generator = SlideGenerator::new(1920, 1080)?;
+    // Determine dimensions based on reels flag
+    let (width, height) = if args.reels {
+        (1080, 1920)
+    } else {
+        (1920, 1080)
+    };
+
+    let generator = SlideGenerator::new(width, height)?;
 
     let asset = generator.markdown_slide(content)?;
 

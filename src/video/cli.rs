@@ -122,6 +122,10 @@ pub struct SlideArgs {
     /// Optional output path; defaults to <markdownfilename>.jpg
     #[arg(short = 'o', long = "out-file", value_hint = ValueHint::FilePath)]
     pub out_file: Option<PathBuf>,
+
+    /// Render in Instagram Reels/TikTok format (9:16 vertical)
+    #[arg(long)]
+    pub reels: bool,
 }
 
 #[derive(Args, Debug, Clone)]
