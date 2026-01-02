@@ -213,9 +213,6 @@ mod ass_constants {
     pub const BORD_THICKNESS_FULL: u32 = 8;      // Full outline thickness
     pub const BORD_THICKNESS_MIN: u32 = 2;       // Minimum thickness for "stay" phase
 
-    /// Rounded corners: blur value (higher = more rounded)
-    pub const BLUR_ROUNDED: u32 = 2;             // Slightly rounded corners
-
     /// Animation timing for outline phases
     pub const BOX_SCALE_IN_CS: u32 = 10;         // 100ms to scale up
     pub const BOX_SCALE_OUT_CS: u32 = 10;        // 100ms to scale down
@@ -320,8 +317,8 @@ pub fn generate_ass_file(
 /// outline and custom colors.
 ///
 /// For example, for "Hi there" with two words (assuming each word is ~500ms):
-/// - Line 1 (0-0.5s): "{\1c&H001B1111&\3c&H00F7A6CB&\bord0\blur2\t(0,10\bord8)\t(40,50\bord2)}Hi{\r} {\1c&H00F4D6CD&}there"
-/// - Line 2 (0.5-1.0s): "{\1c&H00F4D6CD&}Hi {\1c&H001B1111&\3c&H00F7A6CB&\bord0\blur2\t(0,10\bord8)\t(40,50\bord2)}there{\r}"
+/// - Line 1 (0-0.5s): "{\1c&H001B1111&\3c&H00F7A6CB&\bord0\t(0,10\bord8)\t(40,50\bord2)}Hi{\r} {\1c&H00F4D6CD&}there"
+/// - Line 2 (0.5-1.0s): "{\1c&H00F4D6CD&}Hi {\1c&H001B1111&\3c&H00F7A6CB&\bord0\t(0,10\bord8)\t(40,50\bord2)}there{\r}"
 ///
 /// The highlighting:
 /// - Current word: Dark text color (Crust #11111B) with mauve animated outline (Mauve #CBA6F7)
@@ -337,7 +334,6 @@ pub fn generate_ass_file(
 /// - \1c (primary color) for text color
 /// - \3c (outline/border color) for the outline around text
 /// - \bord (border thickness) for the outline thickness
-/// - \blur (blur) for rounded corners on the outline
 /// - \t(start,end,commands) for animation transitions
 /// - \r to reset to style defaults
 ///
@@ -369,17 +365,16 @@ fn format_karaoke_text(subtitle: &RemappedSubtitle) -> Vec<KaraokeWordLine> {
                 // Calculate when to start scaling out (near end of word)
                 let scale_out_start = word_duration_cs.saturating_sub(BOX_SCALE_OUT_CS);
 
-                // Start with outline at 0 thickness, rounded corners
+                // Start with outline at 0 thickness
                 // Scale in: 0 -> 8 thickness over 100ms (10cs)
                 // Stay: at 2 thickness for most of word duration
                 // Scale out: back to 2 at end of word
                 write!(
                     formatted_text,
-                    "{{\\1c{}\\3c{}\\bord{}\\blur{}\\t({},{}\\bord{})\\t({},{}\\bord{})}}",
+                    "{{\\1c{}\\3c{}\\bord{}\\t({},{}\\bord{})\\t({},{}\\bord{})}}",
                     COLOR_HIGHLIGHT_TEXT,       // Dark text (Crust)
                     COLOR_HIGHLIGHT_OUTLINE,    // Mauve outline
                     BORD_THICKNESS_NONE,        // Start at 0
-                    BLUR_ROUNDED,               // Blur=2 for rounded corners
                     0,                          // Start scale-in at time 0
                     BOX_SCALE_IN_CS,            // End scale-in at 10cs (100ms)
                     BORD_THICKNESS_FULL,        // Scale to thickness 8
@@ -587,7 +582,6 @@ mod tests {
         // Check for highlighting: dark text color with mauve outline
         assert!(word_lines[0].text.contains(r"\1c&H001B1111&")); // Dark text (Crust)
         assert!(word_lines[0].text.contains(r"\3c&H00F7A6CB&")); // Mauve outline
-        assert!(word_lines[0].text.contains(r"\blur2")); // Rounded corners
         assert!(word_lines[0].text.contains(r"\bord0")); // Start at 0 thickness
         assert!(word_lines[0].text.contains(r"\t(0,10\bord8)")); // Scale up to 8
         assert!(word_lines[0].text.contains(r"\t(40,50\bord2)")); // Scale down to 2 at end (500ms word = 50cs, scale out at 40cs)
@@ -605,7 +599,6 @@ mod tests {
         // Word duration is 500ms, so scale out should be at 40cs
         assert!(word_lines[1].text.contains(r"\1c&H001B1111&")); // Dark text
         assert!(word_lines[1].text.contains(r"\3c&H00F7A6CB&")); // Mauve outline
-        assert!(word_lines[1].text.contains(r"\blur2")); // Rounded corners
         assert!(word_lines[1].text.contains(r"\t(0,10\bord8)")); // Scale up
         assert!(word_lines[1].text.contains(r"\t(40,50\bord2)")); // Scale down
         assert!(word_lines[1].text.contains(r"\r")); // Reset
@@ -619,7 +612,6 @@ mod tests {
         assert_eq!(word_lines[2].end, start + Duration::from_millis(1600));
         assert!(word_lines[2].text.contains(r"\1c&H001B1111&")); // Dark text
         assert!(word_lines[2].text.contains(r"\3c&H00F7A6CB&")); // Mauve outline
-        assert!(word_lines[2].text.contains(r"\blur2")); // Rounded corners
         assert!(word_lines[2].text.contains(r"\t(0,10\bord8)")); // Scale up
         assert!(word_lines[2].text.contains(r"\t(40,50\bord2)")); // Scale down
         assert!(word_lines[2].text.contains(r"\r")); // Reset
