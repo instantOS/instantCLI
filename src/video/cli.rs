@@ -107,6 +107,10 @@ pub struct RenderArgs {
     /// Render in Instagram Reels/TikTok format (9:16 vertical)
     #[arg(long)]
     pub reels: bool,
+
+    /// Burn subtitles into the video (reels mode only, positions in bottom bar)
+    #[arg(long)]
+    pub subtitles: bool,
 }
 
 #[derive(Args, Debug, Clone)]

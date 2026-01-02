@@ -55,6 +55,7 @@ impl RenderMode {
 use super::cli::RenderArgs;
 use super::config::{VideoConfig, VideoDirectories};
 use super::document::{VideoMetadata, parse_video_document};
+use super::subtitles::{AssStyle, generate_ass_file, remap_subtitles_to_timeline};
 
 use self::ffmpeg_compiler::FfmpegCompiler;
 use self::path_resolver as paths;
@@ -102,6 +103,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
 fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> Result<()> {
     let pre_cache_only = args.precache_slides;
     let dry_run = args.dry_run;
+    let burn_subtitles = args.subtitles;
 
     log!(
         Level::Info,
@@ -125,6 +127,16 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     } else {
         RenderMode::Standard
     };
+
+    // Warn if subtitles requested but not in reels mode
+    if burn_subtitles && render_mode != RenderMode::Reels {
+        emit(
+            Level::Warn,
+            "video.render.subtitles.mode",
+            "Subtitles are currently only supported in reels mode (--reels). Ignoring --subtitles flag.",
+            None,
+        );
+    }
 
     let output_path = if pre_cache_only {
         None
@@ -176,6 +188,23 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         bail!("Output path is required when not pre-caching");
     };
 
+    // Generate subtitles if requested and in reels mode
+    let subtitle_path = if burn_subtitles && render_mode == RenderMode::Reels {
+        log!(
+            Level::Info,
+            "video.render.subtitles",
+            "Generating ASS subtitles for reels mode"
+        );
+        Some(generate_subtitle_file(
+            &nle_timeline,
+            &cues,
+            &output_path,
+            (target_width, target_height),
+        )?)
+    } else {
+        None
+    };
+
     let video_config = VideoConfig::load()?;
     let pipeline = RenderPipeline::new(
         output_path.clone(),
@@ -185,6 +214,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         video_height,
         video_config,
         audio_path,
+        subtitle_path,
         runner,
     );
 
@@ -220,6 +250,49 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     );
 
     Ok(())
+}
+
+/// Generate an ASS subtitle file for the timeline.
+fn generate_subtitle_file(
+    timeline: &Timeline,
+    cues: &[super::transcript::TranscriptCue],
+    output_path: &Path,
+    play_res: (u32, u32),
+) -> Result<PathBuf> {
+    let remapped = remap_subtitles_to_timeline(timeline, cues);
+
+    if remapped.is_empty() {
+        emit(
+            Level::Warn,
+            "video.render.subtitles.empty",
+            "No subtitle cues found to burn into video",
+            None,
+        );
+    } else {
+        emit(
+            Level::Info,
+            "video.render.subtitles.count",
+            &format!("Remapped {} subtitle entries to timeline", remapped.len()),
+            None,
+        );
+    }
+
+    let style = AssStyle::for_reels();
+    let ass_content = generate_ass_file(&remapped, &style, play_res);
+
+    // Write ASS file next to output with .ass extension
+    let ass_path = output_path.with_extension("ass");
+    fs::write(&ass_path, &ass_content)
+        .with_context(|| format!("Failed to write subtitle file to {}", ass_path.display()))?;
+
+    emit(
+        Level::Info,
+        "video.render.subtitles.written",
+        &format!("Wrote subtitle file to {}", ass_path.display()),
+        None,
+    );
+
+    Ok(ass_path)
 }
 
 pub(super) fn load_video_document(markdown_path: &Path) -> Result<super::document::VideoDocument> {
@@ -762,6 +835,7 @@ struct RenderPipeline<'a> {
     source_height: u32,
     config: VideoConfig,
     audio_source: PathBuf,
+    subtitle_path: Option<PathBuf>,
     runner: &'a dyn FfmpegRunner,
 }
 
@@ -774,6 +848,7 @@ impl<'a> RenderPipeline<'a> {
         source_height: u32,
         config: VideoConfig,
         audio_source: PathBuf,
+        subtitle_path: Option<PathBuf>,
         runner: &'a dyn FfmpegRunner,
     ) -> Self {
         Self {
@@ -784,6 +859,7 @@ impl<'a> RenderPipeline<'a> {
             source_height,
             config,
             audio_source,
+            subtitle_path,
             runner,
         }
     }
@@ -806,6 +882,7 @@ impl<'a> RenderPipeline<'a> {
             self.source_width,
             self.source_height,
             self.config.clone(),
+            self.subtitle_path.clone(),
         );
         Ok(compiler
             .compile(
