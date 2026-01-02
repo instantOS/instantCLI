@@ -149,13 +149,27 @@ impl DoctorCheck for NerdFontCheck {
     }
 
     async fn execute(&self) -> CheckStatus {
+        use crate::common::display_server::DisplayServer;
+
+        // 1. Skip if not in a desktop session
+        if !DisplayServer::detect().is_desktop_session() {
+            return CheckStatus::Skipped(
+                "Not running in a desktop session (nerd fonts require a display server)".to_string(),
+            );
+        }
+
+        // 2. Skip if running in a pure TTY (virtual console)
+        if Self::is_pure_tty() {
+            return CheckStatus::Skipped(
+                "Running in a TTY console (terminal emulators in desktop sessions support nerd fonts)".to_string(),
+            );
+        }
+
+        // 3. Skip if fontconfig tools are unavailable
         if !Self::fc_match_available() {
-            return CheckStatus::Fail {
-                message: String::from(
-                    "fontconfig tools not available. Install fontconfig package.",
-                ),
-                fixable: false,
-            };
+            return CheckStatus::Skipped(
+                "fontconfig tools not available (install fontconfig package)".to_string(),
+            );
         }
 
         let current_font =
@@ -521,6 +535,45 @@ impl NerdFontCheck {
         }
 
         None
+    }
+
+    /// Detect if running in a pure TTY (virtual console, not terminal emulator)
+    ///
+    /// Distinguishes between:
+    /// - Virtual consoles (tty1-tty6) → pure TTY, skip
+    /// - Terminal emulators in desktop sessions → not pure TTY, run check
+    /// - SSH sessions → depends on terminal device
+    fn is_pure_tty() -> bool {
+        use std::env;
+
+        // Method 1: Check if we're on a virtual console device
+        // Virtual consoles are /dev/tty1-6, terminal emulators are /dev/pts/*
+        if let Ok(tty_output) = std::process::Command::new("tty").output() {
+            let tty_path = String::from_utf8_lossy(&tty_output.stdout);
+            let path = tty_path.trim();
+
+            // Virtual console (e.g., /dev/tty1, /dev/tty2)
+            if path.starts_with("/dev/tty") && !path.starts_with("/dev/tty/") {
+                // Exclude /dev/ttyUSB* etc.
+                if let Some(rest) = path.strip_prefix("/dev/tty") {
+                    // If it's just a number (or nothing after), it's a virtual console
+                    if rest.is_empty() || rest.chars().all(|c| c.is_ascii_digit()) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Method 2: Check TERM variable for console indications
+        if let Ok(term) = env::var("TERM") {
+            // Linux console types
+            if term == "linux" {
+                return true;
+            }
+        }
+
+        // Not a pure TTY
+        false
     }
 }
 
