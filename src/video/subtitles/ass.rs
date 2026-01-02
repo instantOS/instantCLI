@@ -197,22 +197,28 @@ impl AssStyle {
 
 /// ASS subtitle animation constants
 mod ass_constants {
-    /// Scale animation: grow to 120% during word highlight
-    pub const SCALE_HIGHLIGHT: u32 = 120;
-    /// Scale animation: 100% is normal size
-    pub const SCALE_NORMAL: u32 = 100;
-
-    /// Animation timing (in centiseconds: 1 cs = 10ms)
-    /// Quick pop-in animation: 150ms = 15 centiseconds
-    pub const POP_IN_CS: u32 = 15;
-    /// Quick pop-out animation: 100ms = 10 centiseconds
-    pub const POP_OUT_CS: u32 = 10;
-
     /// Color codes (ABGR format: Blue-Green-Red)
-    /// Catppuccin Mocha "Mauve" (#CBA6F7) - highlighted word color
-    pub const COLOR_HIGHLIGHT: &str = "&H00F7A6CB&";
     /// Catppuccin Mocha "Text" (#CDD6F4) - normal word color
     pub const COLOR_NORMAL: &str = "&H00F4D6CD&";
+
+    /// Highlighted word colors
+    /// Catppuccin Mocha "Crust" (#11111B) - dark text color for current word
+    pub const COLOR_HIGHLIGHT_TEXT: &str = "&H001B1111&";
+    /// Catppuccin Mocha "Mauve" (#CBA6F7) - outline color for current word
+    pub const COLOR_HIGHLIGHT_OUTLINE: &str = "&H00F7A6CB&";
+
+    /// Outline animation constants
+    /// Border thickness values for scaling effect
+    pub const BORD_THICKNESS_NONE: u32 = 0;      // No outline
+    pub const BORD_THICKNESS_FULL: u32 = 8;      // Full outline thickness
+    pub const BORD_THICKNESS_MIN: u32 = 2;       // Minimum thickness for "stay" phase
+
+    /// Rounded corners: blur value (higher = more rounded)
+    pub const BLUR_ROUNDED: u32 = 2;             // Slightly rounded corners
+
+    /// Animation timing for outline phases
+    pub const BOX_SCALE_IN_CS: u32 = 10;         // 100ms to scale up
+    pub const BOX_SCALE_OUT_CS: u32 = 10;        // 100ms to scale down
 
     /// Maximum gap between words (in milliseconds) to pad
     /// Gaps smaller than this are considered minor pauses and will be extended
@@ -311,16 +317,29 @@ pub fn generate_ass_file(
 ///
 /// This approach creates multiple dialogue lines, one per word, where each line
 /// shows the full text but only highlights the current word with an animated
-/// "pop" effect.
+/// outline and custom colors.
 ///
-/// For example, for "Hi there" with two words:
-/// - Line 1 (0-0.2s): "{\1c&H00F4D6CD&\fscx100\fscy100}Hi{\1c&H00F7A6CB&\fscx100\fscy100\t(0,15\fscx140\fscy140)\t(15,25\fscx100\fscy100)} there"
-/// - Line 2 (0.2-0.5s): "{\1c&H00F4D6CD&\fscx100\fscy100}Hi {\1c&H00F7A6CB&\fscx100\fscy100\t(0,15\fscx140\fscy140)\t(15,25\fscx100\fscy100)}there"
+/// For example, for "Hi there" with two words (assuming each word is ~500ms):
+/// - Line 1 (0-0.5s): "{\1c&H001B1111&\3c&H00F7A6CB&\bord0\blur2\t(0,10\bord8)\t(40,50\bord2)}Hi{\r} {\1c&H00F4D6CD&}there"
+/// - Line 2 (0.5-1.0s): "{\1c&H00F4D6CD&}Hi {\1c&H001B1111&\3c&H00F7A6CB&\bord0\blur2\t(0,10\bord8)\t(40,50\bord2)}there{\r}"
 ///
-/// The animation:
-/// - Word starts at 100% scale (normal)
-/// - Grows to 140% scale over first 150ms (15cs)
-/// - Shrinks back to 100% over last 100ms (10cs)
+/// The highlighting:
+/// - Current word: Dark text color (Crust #11111B) with mauve animated outline (Mauve #CBA6F7)
+/// - Other words: Normal text color (Text #CDD6F4) with default outline
+///
+/// The outline animation:
+/// - Word starts with no outline (bord=0)
+/// - Scales up to thickness 8 over first 100ms (10cs)
+/// - Stays at thickness 2 for most of the word duration
+/// - Scales back to thickness 2 at the very end of the word
+///
+/// Color codes:
+/// - \1c (primary color) for text color
+/// - \3c (outline/border color) for the outline around text
+/// - \bord (border thickness) for the outline thickness
+/// - \blur (blur) for rounded corners on the outline
+/// - \t(start,end,commands) for animation transitions
+/// - \r to reset to style defaults
 ///
 /// To prevent flickering, small gaps between words (< MAX_GAP_MS) are padded
 /// by extending word end times to the next word's start time.
@@ -341,45 +360,47 @@ fn format_karaoke_text(subtitle: &RemappedSubtitle) -> Vec<KaraokeWordLine> {
             let is_highlighted = word_idx == idx;
 
             if is_highlighted {
-                // Current word: highlighted (mauve) with animated scale
-                // Start at normal scale, animate to highlight scale, then back
+                // Current word: dark text color with mauve animated outline
+                // Calculate word duration for proper timing
+                let word_duration_cs = current_word.end
+                    .saturating_sub(current_word.start)
+                    .as_millis() as u32 / 10; // Convert to centiseconds
+
+                // Calculate when to start scaling out (near end of word)
+                let scale_out_start = word_duration_cs.saturating_sub(BOX_SCALE_OUT_CS);
+
+                // Start with outline at 0 thickness, rounded corners
+                // Scale in: 0 -> 8 thickness over 100ms (10cs)
+                // Stay: at 2 thickness for most of word duration
+                // Scale out: back to 2 at end of word
                 write!(
                     formatted_text,
-                    "{{\\1c{}\\fscx{}\\fscy{}\\t({},{}\\fscx{}\\fscy{})\\t({},{}\\fscx{}\\fscy{})}}",
-                    COLOR_HIGHLIGHT,
-                    SCALE_NORMAL,
-                    SCALE_NORMAL,
-                    0,                    // Start animation at time 0
-                    POP_IN_CS,            // End pop-in at 15cs (150ms)
-                    SCALE_HIGHLIGHT,      // Grow to 140%
-                    SCALE_HIGHLIGHT,
-                    POP_IN_CS,            // Start pop-out at 15cs
-                    POP_IN_CS + POP_OUT_CS, // End pop-out at 25cs (250ms)
-                    SCALE_NORMAL,         // Shrink back to 100%
-                    SCALE_NORMAL
+                    "{{\\1c{}\\3c{}\\bord{}\\blur{}\\t({},{}\\bord{})\\t({},{}\\bord{})}}",
+                    COLOR_HIGHLIGHT_TEXT,       // Dark text (Crust)
+                    COLOR_HIGHLIGHT_OUTLINE,    // Mauve outline
+                    BORD_THICKNESS_NONE,        // Start at 0
+                    BLUR_ROUNDED,               // Blur=2 for rounded corners
+                    0,                          // Start scale-in at time 0
+                    BOX_SCALE_IN_CS,            // End scale-in at 10cs (100ms)
+                    BORD_THICKNESS_FULL,        // Scale to thickness 8
+                    scale_out_start,            // Start scale-out near word end
+                    word_duration_cs,           // End scale-out at word end
+                    BORD_THICKNESS_MIN          // Scale to thickness 2 (persistent)
                 ).unwrap();
             } else {
-                // Other words: normal color + normal scale
+                // Other words: normal color, no outline override
                 write!(
                     formatted_text,
-                    "{{\\1c{}\\fscx{}\\fscy{}}}",
-                    COLOR_NORMAL,
-                    SCALE_NORMAL,
-                    SCALE_NORMAL
+                    "{{\\1c{}}}",
+                    COLOR_NORMAL
                 ).unwrap();
             }
 
             formatted_text.push_str(&escape_ass_text(&word.word));
 
-            // Reset to normal after each word
+            // Reset to style defaults after highlighted word
             if is_highlighted {
-                write!(
-                    formatted_text,
-                    "{{\\1c{}\\fscx{}\\fscy{}}}",
-                    COLOR_NORMAL,
-                    SCALE_NORMAL,
-                    SCALE_NORMAL
-                ).unwrap();
+                write!(formatted_text, "{{\\r}}").unwrap();
             }
         }
 
@@ -559,33 +580,49 @@ mod tests {
         // Verify we have one line per word
         assert_eq!(word_lines.len(), 3);
 
-        // Verify first line: "Hello" highlighted with animation, others normal
+        // Verify first line: "Hello" highlighted with dark text and mauve outline animation
         // End time padded to 600ms to cover 100ms gap to next word
         assert_eq!(word_lines[0].start, start);
         assert_eq!(word_lines[0].end, start + Duration::from_millis(600));
-        // Check for animated scale transform (100 -> 140 -> 100)
-        assert!(word_lines[0].text.contains(r"\t(0,15\fscx140\fscy140)"));
-        assert!(word_lines[0].text.contains(r"\t(15,25\fscx100\fscy100)"));
-        // Check for highlight color
-        assert!(word_lines[0].text.contains(r"\1c&H00F7A6CB&"));
+        // Check for highlighting: dark text color with mauve outline
+        assert!(word_lines[0].text.contains(r"\1c&H001B1111&")); // Dark text (Crust)
+        assert!(word_lines[0].text.contains(r"\3c&H00F7A6CB&")); // Mauve outline
+        assert!(word_lines[0].text.contains(r"\blur2")); // Rounded corners
+        assert!(word_lines[0].text.contains(r"\bord0")); // Start at 0 thickness
+        assert!(word_lines[0].text.contains(r"\t(0,10\bord8)")); // Scale up to 8
+        assert!(word_lines[0].text.contains(r"\t(40,50\bord2)")); // Scale down to 2 at end (500ms word = 50cs, scale out at 40cs)
+        assert!(word_lines[0].text.contains(r"\r")); // Reset after highlighted word
+        // Check for normal color on non-highlighted words
+        assert!(word_lines[0].text.contains(r"\1c&H00F4D6CD&")); // Normal text color
         assert!(word_lines[0].text.contains(r"Hello"));
         assert!(word_lines[0].text.contains(r"world"));
         assert!(word_lines[0].text.contains(r"test"));
 
-        // Verify second line: "world" highlighted with animation, others normal
+        // Verify second line: "world" highlighted with animation
         // Gap to next word is 0ms, so no padding - end time stays at 1100ms
         assert_eq!(word_lines[1].start, start + Duration::from_millis(600));
         assert_eq!(word_lines[1].end, start + Duration::from_millis(1100));
-        assert!(word_lines[1].text.contains(r"\t(0,15\fscx140\fscy140)"));
+        // Word duration is 500ms, so scale out should be at 40cs
+        assert!(word_lines[1].text.contains(r"\1c&H001B1111&")); // Dark text
+        assert!(word_lines[1].text.contains(r"\3c&H00F7A6CB&")); // Mauve outline
+        assert!(word_lines[1].text.contains(r"\blur2")); // Rounded corners
+        assert!(word_lines[1].text.contains(r"\t(0,10\bord8)")); // Scale up
+        assert!(word_lines[1].text.contains(r"\t(40,50\bord2)")); // Scale down
+        assert!(word_lines[1].text.contains(r"\r")); // Reset
         assert!(word_lines[1].text.contains(r"Hello"));
         assert!(word_lines[1].text.contains(r"world"));
         assert!(word_lines[1].text.contains(r"test"));
 
-        // Verify third line: "test" highlighted with animation, others normal
+        // Verify third line: "test" highlighted with animation
         // No next word, so end time is not padded (1600ms)
         assert_eq!(word_lines[2].start, start + Duration::from_millis(1100));
         assert_eq!(word_lines[2].end, start + Duration::from_millis(1600));
-        assert!(word_lines[2].text.contains(r"\t(0,15\fscx140\fscy140)"));
+        assert!(word_lines[2].text.contains(r"\1c&H001B1111&")); // Dark text
+        assert!(word_lines[2].text.contains(r"\3c&H00F7A6CB&")); // Mauve outline
+        assert!(word_lines[2].text.contains(r"\blur2")); // Rounded corners
+        assert!(word_lines[2].text.contains(r"\t(0,10\bord8)")); // Scale up
+        assert!(word_lines[2].text.contains(r"\t(40,50\bord2)")); // Scale down
+        assert!(word_lines[2].text.contains(r"\r")); // Reset
         assert!(word_lines[2].text.contains(r"Hello"));
         assert!(word_lines[2].text.contains(r"world"));
         assert!(word_lines[2].text.contains(r"test"));
