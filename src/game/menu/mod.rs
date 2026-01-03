@@ -17,6 +17,7 @@ use state::EditState;
 enum GameAction {
     Launch,
     Edit,
+    Back,
 }
 
 #[derive(Clone)]
@@ -66,6 +67,11 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 preview: format!("Edit {}'s configuration (name, description, launch command, save path)", game_name),
                 action: GameAction::Edit,
             },
+            GameActionItem {
+                display: format!("{} Back", char::from(NerdFont::ArrowLeft)),
+                preview: "Return to game selection".to_string(),
+                action: GameAction::Back,
+            },
         ];
 
         let selection = FzfWrapper::builder()
@@ -90,6 +96,13 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 GameAction::Edit => {
                     run_edit_menu_for_game(&game_name)?;
                     // If game_name was provided as argument, exit after edit
+                    // Otherwise, loop back to game selection
+                    if has_provided_name {
+                        return Ok(());
+                    }
+                }
+                GameAction::Back => {
+                    // If game_name was provided as argument, exit
                     // Otherwise, loop back to game selection
                     if has_provided_name {
                         return Ok(());
