@@ -19,9 +19,8 @@ pub enum MenuAction {
     EditDescription,
     EditLaunchCommand,
     EditSavePath,
-    LaunchGame,
-    SaveAndExit,
-    ExitWithoutSaving,
+    Save,
+    Back,
 }
 
 /// Menu item with display text, preview, and action
@@ -58,17 +57,32 @@ impl FzfSelectable for MenuItem {
 
 /// Run the main edit menu loop
 pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
+    let mut last_action: Option<MenuAction> = None;
+
     loop {
         let menu_items = build_menu_items(state);
 
-        let selection = FzfWrapper::builder()
+        // Find index of last selected action to restore cursor position
+        let initial_index = last_action.as_ref().and_then(|action| {
+            menu_items.iter().position(|item| {
+                std::mem::discriminant(&item.action) == std::mem::discriminant(action)
+            })
+        });
+
+        let mut builder = FzfWrapper::builder()
             .header(format!("Editing: {}", game_name))
-            .prompt("Select property to edit")
-            .select(menu_items)?;
+            .prompt("Select property to edit");
+
+        if let Some(index) = initial_index {
+            builder = builder.initial_index(index);
+        }
+
+        let selection = builder.select(menu_items)?;
 
         match selection {
             FzfResult::Selected(item) => {
-                if handle_menu_action(game_name, item.action, state)? == Flow::Exit {
+                last_action = Some(item.action.clone());
+                if handle_menu_action(item.action, state)? == Flow::Exit {
                     return Ok(());
                 }
             }
@@ -82,7 +96,7 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
     }
 }
 
-fn handle_menu_action(game_name: &str, action: MenuAction, state: &mut EditState) -> Result<Flow> {
+fn handle_menu_action(action: MenuAction, state: &mut EditState) -> Result<Flow> {
     match action {
         MenuAction::EditName => {
             if editors::edit_name(state)? {
@@ -111,19 +125,15 @@ fn handle_menu_action(game_name: &str, action: MenuAction, state: &mut EditState
                 );
             }
         }
-        MenuAction::LaunchGame => {
+        MenuAction::Save => {
             if state.is_dirty() {
                 state.save()?;
+            } else {
+                println!("{} No changes to save.", char::from(NerdFont::Info));
             }
-            editors::launch_game(game_name)?;
+            // Stay in menu after saving
         }
-        MenuAction::SaveAndExit => {
-            if state.is_dirty() {
-                state.save()?;
-            }
-            return Ok(Flow::Exit);
-        }
-        MenuAction::ExitWithoutSaving => {
+        MenuAction::Back => {
             if state.is_dirty() {
                 if confirm_discard_changes()? {
                     println!(
@@ -253,21 +263,15 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
 
     // Actions
     items.push(MenuItem::new(
-        format!("{} Launch Game", char::from(NerdFont::Rocket)),
-        "Launch the game (saves changes first)".to_string(),
-        MenuAction::LaunchGame,
+        format!("{} Save", char::from(NerdFont::Check)),
+        "Save all changes (stay in menu)".to_string(),
+        MenuAction::Save,
     ));
 
     items.push(MenuItem::new(
-        format!("{} Save and Exit", char::from(NerdFont::Check)),
-        "Save all changes and exit".to_string(),
-        MenuAction::SaveAndExit,
-    ));
-
-    items.push(MenuItem::new(
-        format!("{} Exit Without Saving", char::from(NerdFont::Cross)),
-        "Discard all changes and exit".to_string(),
-        MenuAction::ExitWithoutSaving,
+        format!("{} Back", char::from(NerdFont::ArrowLeft)),
+        "Return to game menu (warns if unsaved changes)".to_string(),
+        MenuAction::Back,
     ));
 
     items

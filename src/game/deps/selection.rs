@@ -80,7 +80,7 @@ pub fn select_dependency<'a>(
 
 fn format_path_for_display(path: &str) -> String {
     let path_buf = PathBuf::from(path);
-    crate::dot::path_serde::TildePath::new(path_buf)
+    crate::common::TildePath::new(path_buf)
         .to_tilde_string()
         .unwrap_or_else(|_| path.to_string())
 }

@@ -11,24 +11,29 @@ pub enum WelcomeCommands {
 pub fn handle_welcome_command(
     _command: &Option<WelcomeCommands>,
     gui: bool,
+    force_live: bool,
     debug: bool,
 ) -> Result<()> {
     if gui {
-        return launch_welcome_in_terminal(debug);
+        return launch_welcome_in_terminal(force_live, debug);
     }
 
-    super::ui::run_welcome_ui(debug)
+    super::ui::run_welcome_ui(force_live, debug)
 }
 
 /// Launch the welcome UI in a terminal window
 ///
 /// The terminal will automatically close when welcome exits.
 /// Respects the user's $TERMINAL environment variable.
-fn launch_welcome_in_terminal(debug: bool) -> Result<()> {
+fn launch_welcome_in_terminal(force_live: bool, debug: bool) -> Result<()> {
     let mut args: Vec<String> = vec![];
 
     if debug {
         args.push("--debug".to_string());
+    }
+
+    if force_live {
+        args.push("--force-live".to_string());
     }
 
     args.push("welcome".to_string());

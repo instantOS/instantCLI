@@ -20,6 +20,7 @@ pub enum Category {
     Appearance,
     Mouse,
     Desktop,
+    Display,
     Audio,
     Apps,
     Storage,
@@ -38,6 +39,7 @@ impl Category {
             Category::Appearance => "appearance",
             Category::Mouse => "mouse",
             Category::Desktop => "desktop",
+            Category::Display => "display",
             Category::Audio => "audio",
             Category::Apps => "apps",
             Category::Storage => "storage",
@@ -56,6 +58,7 @@ impl Category {
             Category::Appearance => "Appearance",
             Category::Mouse => "Mouse & Touchpad",
             Category::Desktop => "Desktop",
+            Category::Display => "Display",
             Category::Audio => "Sound",
             Category::Apps => "Default Apps",
             Category::Storage => "Storage",
@@ -74,6 +77,7 @@ impl Category {
             Category::Appearance => "Themes, wallpaper, brightness, and visual styles.",
             Category::Mouse => "Pointer speed, scrolling, and button settings.",
             Category::Desktop => "Desktop behaviour, window management, and layout preferences.",
+            Category::Display => "Monitor resolution, refresh rate, and display configuration.",
             Category::Audio => "Sound routing tools and audio behaviour.",
             Category::Apps => "Default applications and file associations.",
             Category::Storage => "Disk management and auto-mounting.",
@@ -92,6 +96,7 @@ impl Category {
             Category::Appearance => NerdFont::Palette,
             Category::Mouse => NerdFont::Mouse,
             Category::Desktop => NerdFont::Desktop,
+            Category::Display => NerdFont::Monitor,
             Category::Audio => NerdFont::VolumeUp,
             Category::Apps => NerdFont::Package,
             Category::Storage => NerdFont::Database2,
@@ -103,7 +108,7 @@ impl Category {
     }
 
     pub fn color(&self) -> &'static str {
-        use super::context::colors;
+        use crate::ui::catppuccin::colors;
         match self {
             Category::Install => colors::BLUE,
             Category::Network => colors::GREEN,
@@ -111,6 +116,7 @@ impl Category {
             Category::Appearance => colors::LAVENDER,
             Category::Mouse => colors::PEACH,
             Category::Desktop => colors::MAUVE,
+            Category::Display => colors::SKY,
             Category::Audio => colors::TEAL,
             Category::Apps => colors::SAPPHIRE,
             Category::Storage => colors::YELLOW,
@@ -129,6 +135,7 @@ impl Category {
             "appearance" => Some(Category::Appearance),
             "mouse" => Some(Category::Mouse),
             "desktop" => Some(Category::Desktop),
+            "display" => Some(Category::Display),
             "audio" => Some(Category::Audio),
             "apps" => Some(Category::Apps),
             "storage" => Some(Category::Storage),
@@ -145,6 +152,7 @@ impl Category {
         &[
             Category::Install,
             Category::Appearance,
+            Category::Display,
             Category::Network,
             Category::Bluetooth,
             Category::Mouse,

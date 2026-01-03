@@ -11,9 +11,51 @@ pub use self::path_resolver::{resolve_transcript_path, resolve_video_path};
 
 use crate::ui::prelude::{Level, emit};
 
+/// Rendering mode for the output video
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RenderMode {
+    /// Standard rendering (same dimensions as source)
+    #[default]
+    Standard,
+    /// Instagram Reels/TikTok (9:16 vertical, 1080x1920)
+    Reels,
+}
+
+impl RenderMode {
+    /// Get target dimensions for this render mode
+    pub fn target_dimensions(&self, source_width: u32, source_height: u32) -> (u32, u32) {
+        match self {
+            RenderMode::Standard => (source_width, source_height),
+            RenderMode::Reels => (1080, 1920),
+        }
+    }
+
+    /// Get output file suffix for this render mode
+    pub fn output_suffix(&self) -> &str {
+        match self {
+            RenderMode::Standard => "_edit",
+            RenderMode::Reels => "_reels",
+        }
+    }
+
+    /// Whether this mode requires letterboxing/pillboxing
+    pub fn requires_padding(&self) -> bool {
+        matches!(self, RenderMode::Reels)
+    }
+
+    /// Get vertical position offset as percentage (0.0 = top, 0.5 = center)
+    pub fn vertical_offset_pct(&self) -> f64 {
+        match self {
+            RenderMode::Standard => 0.5,
+            RenderMode::Reels => 0.1, // 10% from top
+        }
+    }
+}
+
 use super::cli::RenderArgs;
 use super::config::{VideoConfig, VideoDirectories};
 use super::document::{VideoMetadata, parse_video_document};
+use super::subtitles::{AssStyle, generate_ass_file, remap_subtitles_to_timeline};
 
 use self::ffmpeg_compiler::FfmpegCompiler;
 use self::path_resolver as paths;
@@ -61,6 +103,7 @@ pub fn handle_render(args: RenderArgs) -> Result<()> {
 fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> Result<()> {
     let pre_cache_only = args.precache_slides;
     let dry_run = args.dry_run;
+    let burn_subtitles = args.subtitles;
 
     log!(
         Level::Info,
@@ -78,6 +121,26 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     let video_path = resolve_source_video_path(&document.metadata, markdown_dir)?;
     let audio_path = resolve_audio_path(&video_path)?;
 
+    // Determine render mode from CLI args
+    let render_mode = if args.reels {
+        RenderMode::Reels
+    } else {
+        RenderMode::Standard
+    };
+
+    // Warn if subtitles requested but not in reels mode
+    if burn_subtitles && render_mode != RenderMode::Reels {
+        emit(
+            Level::Warn,
+            "video.render.subtitles.mode",
+            "Subtitles are currently only supported in reels mode (--reels). Ignoring --subtitles flag.",
+            None,
+        );
+    }
+
+    // Automatically enable subtitles for Reels mode
+    let burn_subtitles = burn_subtitles || render_mode == RenderMode::Reels;
+
     let output_path = if pre_cache_only {
         None
     } else {
@@ -85,6 +148,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
             args.out_file.as_ref(),
             &video_path,
             markdown_dir,
+            render_mode,
         )?)
     };
 
@@ -99,7 +163,10 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     );
     let (video_width, video_height) = probe_video_dimensions(&video_path)?;
 
-    let generator = SlideGenerator::new(video_width, video_height)?;
+    // Use render mode to determine target dimensions
+    let (target_width, target_height) = render_mode.target_dimensions(video_width, video_height);
+
+    let generator = SlideGenerator::new(target_width, target_height)?;
 
     log!(
         Level::Info,
@@ -124,14 +191,33 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
         bail!("Output path is required when not pre-caching");
     };
 
+    // Generate subtitles if requested and in reels mode
+    let subtitle_path = if burn_subtitles && render_mode == RenderMode::Reels {
+        log!(
+            Level::Info,
+            "video.render.subtitles",
+            "Generating ASS subtitles for reels mode"
+        );
+        Some(generate_subtitle_file(
+            &nle_timeline,
+            &cues,
+            &output_path,
+            (target_width, target_height),
+        )?)
+    } else {
+        None
+    };
+
     let video_config = VideoConfig::load()?;
     let pipeline = RenderPipeline::new(
         output_path.clone(),
         nle_timeline,
+        render_mode,
         video_width,
         video_height,
         video_config,
         audio_path,
+        subtitle_path,
         runner,
     );
 
@@ -167,6 +253,49 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     );
 
     Ok(())
+}
+
+/// Generate an ASS subtitle file for the timeline.
+fn generate_subtitle_file(
+    timeline: &Timeline,
+    cues: &[super::transcript::TranscriptCue],
+    output_path: &Path,
+    play_res: (u32, u32),
+) -> Result<PathBuf> {
+    let remapped = remap_subtitles_to_timeline(timeline, cues);
+
+    if remapped.is_empty() {
+        emit(
+            Level::Warn,
+            "video.render.subtitles.empty",
+            "No subtitle cues found to burn into video",
+            None,
+        );
+    } else {
+        emit(
+            Level::Info,
+            "video.render.subtitles.count",
+            &format!("Remapped {} subtitle entries to timeline", remapped.len()),
+            None,
+        );
+    }
+
+    let style = AssStyle::for_reels();
+    let ass_content = generate_ass_file(&remapped, &style, play_res);
+
+    // Write ASS file next to output with .ass extension
+    let ass_path = output_path.with_extension("ass");
+    fs::write(&ass_path, &ass_content)
+        .with_context(|| format!("Failed to write subtitle file to {}", ass_path.display()))?;
+
+    emit(
+        Level::Info,
+        "video.render.subtitles.written",
+        &format!("Wrote subtitle file to {}", ass_path.display()),
+        None,
+    );
+
+    Ok(ass_path)
 }
 
 pub(super) fn load_video_document(markdown_path: &Path) -> Result<super::document::VideoDocument> {
@@ -603,20 +732,17 @@ mod tests {
                     end: 12.0,
                     kind: SegmentKind::Dialogue,
                     text: "hello world".to_string(),
-                    line: 1,
                     overlay: None,
                 }),
                 TimelinePlanItem::Standalone(StandalonePlan::Heading {
                     level: 1,
                     text: "title card".to_string(),
-                    line: 2,
                 }),
                 TimelinePlanItem::Clip(ClipPlan {
                     start: 12.0,
                     end: 20.0,
                     kind: SegmentKind::Dialogue,
                     text: "this is a test".to_string(),
-                    line: 3,
                     overlay: None,
                 }),
             ],
@@ -677,16 +803,42 @@ mod tests {
         assert_eq!(clip2_source, &PathBuf::from("source.mp4"));
         assert!(!clip2_mute);
     }
+
+    #[test]
+    fn test_render_mode_standard() {
+        let mode = RenderMode::Standard;
+        assert_eq!(mode.target_dimensions(1920, 1080), (1920, 1080));
+        assert_eq!(mode.output_suffix(), "_edit");
+        assert!(!mode.requires_padding());
+        assert_eq!(mode.vertical_offset_pct(), 0.5);
+    }
+
+    #[test]
+    fn test_render_mode_reels() {
+        let mode = RenderMode::Reels;
+        assert_eq!(mode.target_dimensions(1920, 1080), (1080, 1920));
+        assert_eq!(mode.output_suffix(), "_reels");
+        assert!(mode.requires_padding());
+        assert_eq!(mode.vertical_offset_pct(), 0.1);
+    }
+
+    #[test]
+    fn test_render_mode_default() {
+        let mode = RenderMode::default();
+        assert_eq!(mode, RenderMode::Standard);
+    }
 }
 
 /// The NLE-based render pipeline
 struct RenderPipeline<'a> {
     output: PathBuf,
     timeline: Timeline,
-    target_width: u32,
-    target_height: u32,
+    render_mode: RenderMode,
+    source_width: u32,
+    source_height: u32,
     config: VideoConfig,
     audio_source: PathBuf,
+    subtitle_path: Option<PathBuf>,
     runner: &'a dyn FfmpegRunner,
 }
 
@@ -694,19 +846,23 @@ impl<'a> RenderPipeline<'a> {
     fn new(
         output: PathBuf,
         timeline: Timeline,
-        target_width: u32,
-        target_height: u32,
+        render_mode: RenderMode,
+        source_width: u32,
+        source_height: u32,
         config: VideoConfig,
         audio_source: PathBuf,
+        subtitle_path: Option<PathBuf>,
         runner: &'a dyn FfmpegRunner,
     ) -> Self {
         Self {
             output,
             timeline,
-            target_width,
-            target_height,
+            render_mode,
+            source_width,
+            source_height,
             config,
             audio_source,
+            subtitle_path,
             runner,
         }
     }
@@ -724,8 +880,13 @@ impl<'a> RenderPipeline<'a> {
     }
 
     fn build_args(&self) -> Result<Vec<String>> {
-        let compiler =
-            FfmpegCompiler::new(self.target_width, self.target_height, self.config.clone());
+        let compiler = FfmpegCompiler::new(
+            self.render_mode,
+            self.source_width,
+            self.source_height,
+            self.config.clone(),
+            self.subtitle_path.clone(),
+        );
         Ok(compiler
             .compile(
                 self.output.clone(),

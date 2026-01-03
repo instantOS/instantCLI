@@ -5,10 +5,10 @@
 use anyhow::Result;
 
 use crate::settings::context::SettingsContext;
-use crate::settings::context::colors;
 use crate::settings::defaultapps;
 use crate::settings::deps::XDG_UTILS;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
+use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
 
 macro_rules! default_app_setting {

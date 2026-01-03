@@ -47,6 +47,7 @@ pub struct FileInfo {
     pub dotfile: crate::dot::Dotfile,
     pub repo_name: crate::dot::RepoName,
     pub dotfile_dir: String,
+    pub is_overridden: bool,
 }
 
 /// Status summary statistics
@@ -142,9 +143,22 @@ pub fn show_single_file_status(
                     let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
                     let relative_path = path.strip_prefix(&home).unwrap_or(path);
                     let tilde_path = format!("~/{}", relative_path.display());
+
+                    let override_indicator = if let Ok(overrides) =
+                        crate::dot::override_config::OverrideConfig::load()
+                    {
+                        if overrides.get_override(path).is_some() {
+                            " [override]"
+                        } else {
+                            ""
+                        }
+                    } else {
+                        ""
+                    };
+
                     println!("  {} -> {}", tilde_path, status);
                     println!("    Source: {}", dotfile.source_path.display());
-                    println!("    Repo: {repo_name} ({dotfile_dir})");
+                    println!("    Repo: {repo_name} ({dotfile_dir}){override_indicator}");
                 }
             }
         }
@@ -188,13 +202,26 @@ pub fn show_single_file_status(
             if let Some(dotfile) = all_dotfiles.get(&target_path) {
                 let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
                 let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+
+                // Check for override
+                let override_indicator =
+                    if let Ok(overrides) = crate::dot::override_config::OverrideConfig::load() {
+                        if overrides.get_override(&target_path).is_some() {
+                            " [override]"
+                        } else {
+                            ""
+                        }
+                    } else {
+                        ""
+                    };
+
                 println!(
                     "{} -> {}",
                     target_path.display(),
                     get_dotfile_status(dotfile, db)
                 );
                 println!("  Source: {}", dotfile.source_path.display());
-                println!("  Repo: {repo_name} ({dotfile_dir})");
+                println!("  Repo: {repo_name} ({dotfile_dir}){override_indicator}");
             } else {
                 println!("{} -> not tracked", target_path.display());
             }
@@ -235,16 +262,21 @@ pub fn categorize_files_and_get_summary<'a>(
     let mut modified_count = 0;
     let mut outdated_count = 0;
 
+    // Load override config to check for overridden files
+    let overrides = crate::dot::override_config::OverrideConfig::load().unwrap_or_default();
+
     for (target_path, dotfile) in all_dotfiles {
         let status = get_dotfile_status(dotfile, db);
         let repo_name = get_repo_name_for_dotfile(dotfile, cfg);
         let dotfile_dir = get_dotfile_dir_name(dotfile, cfg);
+        let is_overridden = overrides.has_override(target_path);
 
         let file_info = FileInfo {
             target_path: target_path.clone(),
             dotfile: dotfile.clone(),
             repo_name: repo_name.clone(),
             dotfile_dir: dotfile_dir.clone(),
+            is_overridden,
         };
 
         files_by_status
@@ -257,6 +289,11 @@ pub fn categorize_files_and_get_summary<'a>(
             DotFileStatus::Modified => modified_count += 1,
             DotFileStatus::Outdated => outdated_count += 1,
         }
+    }
+
+    // Sort files by path within each status category for better readability
+    for files in files_by_status.values_mut() {
+        files.sort_by(|a, b| a.target_path.cmp(&b.target_path));
     }
 
     let summary = StatusSummary {
@@ -415,12 +452,18 @@ fn show_modified_files(files: &[FileInfo], home: &PathBuf) {
             .strip_prefix(home)
             .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
+        let override_indicator = if file_info.is_overridden {
+            " [override]"
+        } else {
+            ""
+        };
         println!(
-            "  {} -> {} ({}: {})",
+            "  {} -> {} ({}: {}{})",
             tilde_path,
             "modified".yellow(),
             file_info.repo_name,
-            file_info.dotfile_dir
+            file_info.dotfile_dir,
+            override_indicator.magenta()
         );
     }
     println!();
@@ -435,12 +478,18 @@ fn show_outdated_files(files: &[FileInfo], home: &PathBuf) {
             .strip_prefix(home)
             .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
+        let override_indicator = if file_info.is_overridden {
+            " [override]"
+        } else {
+            ""
+        };
         println!(
-            "  {} -> {} ({}: {})",
+            "  {} -> {} ({}: {}{})",
             tilde_path,
             "outdated".blue(),
             file_info.repo_name,
-            file_info.dotfile_dir
+            file_info.dotfile_dir,
+            override_indicator.magenta()
         );
     }
     println!();
@@ -455,12 +504,18 @@ fn show_clean_files(files: &[FileInfo], home: &PathBuf) {
             .strip_prefix(home)
             .unwrap_or(&file_info.target_path);
         let tilde_path = format!("~/{}", relative_path.display());
+        let override_indicator = if file_info.is_overridden {
+            " [override]"
+        } else {
+            ""
+        };
         println!(
-            "  {} -> {} ({}: {})",
+            "  {} -> {} ({}: {}{})",
             tilde_path,
             "clean".green(),
             file_info.repo_name,
-            file_info.dotfile_dir
+            file_info.dotfile_dir,
+            override_indicator.magenta()
         );
     }
     println!();

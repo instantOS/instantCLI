@@ -1,3 +1,4 @@
+use crate::arch::dualboot::feasibility::check_disk_dualboot_feasibility;
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
@@ -62,7 +63,7 @@ fn try_prepare_disk(device_name: &str) -> Result<bool> {
                 device_name, e
             );
             // Show the error via the menu UI so the user cannot miss it
-            let _ = FzfWrapper::message_dialog(&message);
+            let _ = FzfWrapper::message(&message);
             Ok(false)
         }
     }
@@ -195,9 +196,7 @@ impl Question for PartitioningMethodQuestion {
                 move || -> anyhow::Result<crate::arch::dualboot::DualBootFeasibility> {
                     let disks = crate::arch::dualboot::detect_disks()?;
                     if let Some(disk_info) = disks.iter().find(|d| d.device == disk_path_owned) {
-                        Ok(crate::arch::dualboot::check_disk_dualboot_feasibility(
-                            disk_info,
-                        ))
+                        Ok(check_disk_dualboot_feasibility(disk_info))
                     } else {
                         Ok(crate::arch::dualboot::DualBootFeasibility {
                             feasible: false,

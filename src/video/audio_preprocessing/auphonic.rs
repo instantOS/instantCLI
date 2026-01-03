@@ -25,6 +25,7 @@ use crate::video::utils::compute_file_hash;
 const BASE_URL: &str = "https://auphonic.com/api";
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct UserInfo {
     pub username: String,
     pub user_id: String,
@@ -276,7 +277,6 @@ impl AudioPreprocessor for AuphonicPreprocessor {
             );
             return Ok(PreprocessResult {
                 output_path: processed_cache_path,
-                cached: true,
             });
         }
 
@@ -328,7 +328,6 @@ impl AudioPreprocessor for AuphonicPreprocessor {
 
         Ok(PreprocessResult {
             output_path: processed_cache_path,
-            cached: false,
         })
     }
 

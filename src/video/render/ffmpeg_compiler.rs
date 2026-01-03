@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
 
+use super::RenderMode;
 use crate::video::config::VideoConfig;
 use crate::video::render_timeline::{Segment, SegmentData, Timeline};
 
@@ -14,16 +15,51 @@ pub struct FfmpegCompileOutput {
 pub struct FfmpegCompiler {
     target_width: u32,
     target_height: u32,
+    render_mode: RenderMode,
     config: VideoConfig,
+    subtitle_path: Option<PathBuf>,
 }
 
 impl FfmpegCompiler {
-    pub fn new(target_width: u32, target_height: u32, config: VideoConfig) -> Self {
+    pub fn new(
+        render_mode: RenderMode,
+        source_width: u32,
+        source_height: u32,
+        config: VideoConfig,
+        subtitle_path: Option<PathBuf>,
+    ) -> Self {
+        let (target_width, target_height) =
+            render_mode.target_dimensions(source_width, source_height);
         Self {
             target_width,
             target_height,
+            render_mode,
             config,
+            subtitle_path,
         }
+    }
+
+    /// Build letterboxing/pillboxing filter chain when target != source aspect ratio
+    fn build_padding_filter(&self, input_label: &str, output_label: &str) -> Option<String> {
+        if !self.render_mode.requires_padding() {
+            return None;
+        }
+
+        let offset_pct = self.render_mode.vertical_offset_pct();
+
+        // Build the base scale+pad filter
+        // Note: input_label is a filter label (e.g., "v0_raw"), not an input stream index
+        // setsar=1 normalizes the sample aspect ratio for consistent concat
+        let filter = format!(
+            "[{input}]scale={width}:-1:flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)*{offset}:0x1E1E2E,setsar=1[{output}]",
+            input = input_label,
+            width = self.target_width,
+            height = self.target_height,
+            offset = offset_pct,
+            output = output_label
+        );
+
+        Some(filter)
     }
 
     pub fn compile(
@@ -121,11 +157,30 @@ impl FfmpegCompiler {
             audio_input_index,
         )?;
 
-        if overlay_segments.is_empty() {
-            filters.push("[concat_v]copy[outv]".to_string());
-        } else {
-            self.apply_overlays(&mut filters, &overlay_segments, source_map)?;
+        let mut current_video_label = "concat_v".to_string();
+
+        if !overlay_segments.is_empty() {
+            current_video_label = self.apply_overlays(
+                &mut filters,
+                &overlay_segments,
+                source_map,
+                &current_video_label,
+            )?;
         }
+
+        if let Some(ass_path) = &self.subtitle_path {
+            let escaped_path = escape_ffmpeg_path(ass_path);
+            let next_label = "subtitled_v";
+            filters.push(format!(
+                "[{input}]ass='{path}'[{output}]",
+                input = current_video_label,
+                path = escaped_path,
+                output = next_label
+            ));
+            current_video_label = next_label.to_string();
+        }
+
+        filters.push(format!("[{}]copy[outv]", current_video_label));
 
         self.build_audio_mix_filters(
             &mut filters,
@@ -181,13 +236,27 @@ impl FfmpegCompiler {
             let audio_label = format!("a{idx}");
             let end_time = start_time + segment.duration;
 
+            // Trim and set timing
+            let trimmed_label = format!("v{idx}_raw");
             filters.push(format!(
-                "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{video}]",
+                "[{input}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[{trimmed}]",
                 input = input_index,
                 start = format_time(*start_time),
                 end = format_time(end_time),
-                video = video_label,
+                trimmed = trimmed_label,
             ));
+
+            // Apply letterboxing/pillboxing if needed
+            if let Some(padding_filter) = self.build_padding_filter(&trimmed_label, &video_label) {
+                filters.push(padding_filter);
+            } else {
+                // No padding needed, but normalize SAR for consistent concat
+                filters.push(format!(
+                    "[{trimmed}]setsar=1[{video}]",
+                    trimmed = trimmed_label,
+                    video = video_label
+                ));
+            }
 
             if *mute_audio {
                 filters.push(format!(
@@ -226,8 +295,9 @@ impl FfmpegCompiler {
         filters: &mut Vec<String>,
         overlay_segments: &[&Segment],
         source_map: &HashMap<PathBuf, usize>,
-    ) -> Result<()> {
-        let mut current_video_label = "concat_v".to_string();
+        input_label: &str,
+    ) -> Result<String> {
+        let mut current_video_label = input_label.to_string();
 
         for (idx, segment) in overlay_segments.iter().enumerate() {
             let SegmentData::Image {
@@ -261,10 +331,31 @@ impl FfmpegCompiler {
             let enable_condition =
                 format!("between(t,{},{})", segment.start_time, segment.end_time());
 
+            // Calculate overlay position based on render mode
+            // In reels mode, position overlay within the video content area (offset from top)
+            // In standard mode, center in the frame
+            let y_position = if self.render_mode.requires_padding() {
+                // For reels: video is positioned at offset_pct from top
+                // Center overlay within the video content area
+                let offset_pct = self.render_mode.vertical_offset_pct();
+                // Video top position: (H - video_h) * offset_pct
+                // Video is scaled to width, so video_h = H * (target_w / source_w) for 16:9
+                // Approximate: assume 16:9 source scaled to target_width
+                // scaled_height ≈ target_width * 9/16 = 1080 * 9/16 = 607.5
+                // video_top = (1920 - 607.5) * 0.1 ≈ 131
+                // Center overlay in video: video_top + (video_h - overlay_h) / 2
+                // = (H - scaled_h) * offset + (scaled_h - h) / 2
+                // Simplified: use the same offset logic as the video
+                format!("(H*9/16-h)/2+(H-H*9/16)*{}", offset_pct)
+            } else {
+                "(H-h)/2".to_string()
+            };
+
             filters.push(format!(
-                "[{video}][{overlay}]overlay=x=(W-w)/2:y=(H-h)/2:enable='{condition}'[{output}]",
+                "[{video}][{overlay}]overlay=x=(W-w)/2:y={y_pos}:enable='{condition}'[{output}]",
                 video = current_video_label,
                 overlay = overlay_label,
+                y_pos = y_position,
                 condition = enable_condition,
                 output = output_label,
             ));
@@ -272,8 +363,7 @@ impl FfmpegCompiler {
             current_video_label = output_label;
         }
 
-        filters.push(format!("[{}]copy[outv]", current_video_label));
-        Ok(())
+        Ok(current_video_label)
     }
 
     fn build_audio_mix_filters(
@@ -427,13 +517,28 @@ fn format_time(value: f64) -> String {
     format!("{value:.6}")
 }
 
+/// Escape special characters in a path for use in FFmpeg filter expressions.
+/// FFmpeg filter syntax requires escaping of ', \, and : characters.
+fn escape_ffmpeg_path(path: &PathBuf) -> String {
+    path.to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('\'', "'\\''")
+        .replace(':', "\\:")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn compiler_includes_output_path_in_args() {
-        let compiler = FfmpegCompiler::new(1920, 1080, VideoConfig::default());
+        let compiler = FfmpegCompiler::new(
+            RenderMode::Standard,
+            1920,
+            1080,
+            VideoConfig::default(),
+            None,
+        );
         let timeline = Timeline::new();
         let output = compiler
             .compile(
@@ -447,7 +552,13 @@ mod tests {
 
     #[test]
     fn concat_order_respects_timeline_order() {
-        let compiler = FfmpegCompiler::new(1920, 1080, VideoConfig::default());
+        let compiler = FfmpegCompiler::new(
+            RenderMode::Standard,
+            1920,
+            1080,
+            VideoConfig::default(),
+            None,
+        );
 
         // Deliberately add segments whose *source* start times are out-of-order.
         // The user expects their authored order to be preserved.
@@ -508,5 +619,103 @@ mod tests {
         let pos_start_3 = before_concat.find("trim=start=3.000000").unwrap();
         assert!(pos_start_5 < pos_start_1);
         assert!(pos_start_1 < pos_start_3);
+    }
+
+    #[test]
+    fn test_reels_mode_generates_padding_filter() {
+        let compiler =
+            FfmpegCompiler::new(RenderMode::Reels, 1920, 1080, VideoConfig::default(), None);
+        let padding = compiler.build_padding_filter("v0_raw", "v0");
+        assert!(padding.is_some());
+
+        let filter = padding.unwrap();
+        assert!(filter.contains("scale=1080:-1"));
+        assert!(filter.contains("pad=1080:1920"));
+        assert!(filter.contains("(oh-ih)*0.1")); // 10% offset
+        assert!(filter.contains(":0x1E1E2E")); // Catppuccin Base background
+        assert!(!filter.contains("ass=")); // No subtitles without path
+    }
+
+    #[test]
+    fn test_reels_mode_padding_excludes_subtitles() {
+        let compiler = FfmpegCompiler::new(
+            RenderMode::Reels,
+            1920,
+            1080,
+            VideoConfig::default(),
+            Some(PathBuf::from("/tmp/subs.ass")),
+        );
+        let padding = compiler.build_padding_filter("v0_raw", "v0");
+        assert!(padding.is_some());
+
+        let filter = padding.unwrap();
+        assert!(filter.contains("scale=1080:-1"));
+        assert!(filter.contains("pad=1080:1920"));
+        assert!(!filter.contains("ass=")); // Subtitles moved to global filter_complex
+    }
+
+    #[test]
+    fn test_filter_complex_includes_subtitles() {
+        let compiler = FfmpegCompiler::new(
+            RenderMode::Reels,
+            1920,
+            1080,
+            VideoConfig::default(),
+            Some(PathBuf::from("/tmp/subs.ass")),
+        );
+
+        let mut timeline = Timeline::new();
+        // Add a dummy segment so we have video content
+        timeline.add_segment(Segment::new_video_subset(
+            0.0,
+            0.0,
+            5.0,
+            PathBuf::from("video.mp4"),
+            None,
+            false,
+        ));
+
+        // Create a dummy source map
+        let mut source_map = HashMap::new();
+        source_map.insert(PathBuf::from("video.mp4"), 0);
+        let audio_input_index = 0;
+
+        let filter_complex = compiler
+            .build_filter_complex(&timeline, &source_map, audio_input_index, 5.0)
+            .unwrap();
+
+        assert!(filter_complex.contains("ass='/tmp/subs.ass'"));
+        // Ensure subtitles are applied after concat/overlays
+        // The structure should involve [concat_v]...[subtitled_v]...[outv]
+        assert!(filter_complex.contains("[concat_v]ass='/tmp/subs.ass'[subtitled_v]"));
+    }
+
+    #[test]
+    fn test_standard_mode_no_padding() {
+        let compiler = FfmpegCompiler::new(
+            RenderMode::Standard,
+            1920,
+            1080,
+            VideoConfig::default(),
+            None,
+        );
+        let padding = compiler.build_padding_filter("v0_raw", "v0");
+        assert!(padding.is_none());
+    }
+
+    #[test]
+    fn test_escape_ffmpeg_path() {
+        assert_eq!(
+            escape_ffmpeg_path(&PathBuf::from("/simple/path.ass")),
+            "/simple/path.ass"
+        );
+        assert_eq!(
+            escape_ffmpeg_path(&PathBuf::from("/path/with spaces/file.ass")),
+            "/path/with spaces/file.ass"
+        );
+        assert_eq!(
+            escape_ffmpeg_path(&PathBuf::from("/path/with'quote/file.ass")),
+            "/path/with'\\''quote/file.ass"
+        );
     }
 }

@@ -6,8 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::common::TildePath;
 use crate::common::paths;
-use crate::dot::path_serde::TildePath;
 
 /// Describes what kind of filesystem element a tracked path represents
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

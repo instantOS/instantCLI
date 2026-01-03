@@ -1,8 +1,8 @@
 use super::cli::{RepoCommands, SubdirCommands};
+use crate::common::TildePath;
 use crate::dot::config::{Config, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::git::add_repo as git_clone_repo;
-use crate::dot::path_serde::TildePath;
 use crate::dot::repo::RepositoryManager;
 use crate::ui::Level;
 use crate::ui::prelude::*;
@@ -38,6 +38,7 @@ pub fn handle_repo_command(
         RepoCommands::SetReadOnly { name, read_only } => {
             set_read_only_status(config, name, *read_only)
         }
+        RepoCommands::Status { name } => show_repository_status(config, db, name.as_deref()),
     }
 }
 
@@ -167,6 +168,78 @@ fn list_repositories(config: &Config, db: &Database) -> Result<()> {
     Ok(())
 }
 
+/// Resolve repository name from provided name, metadata, or URL
+fn resolve_repo_name(url: &str, name: Option<&str>) -> String {
+    name.map(|s| s.to_string())
+        .or_else(|| {
+            // For local paths, try to read name from instantdots.toml
+            let path = std::path::Path::new(url);
+            if path.exists() {
+                let canonical = path.canonicalize().ok()?;
+                crate::dot::meta::read_meta(&canonical)
+                    .ok()
+                    .map(|meta| meta.name)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| extract_repo_name(url))
+}
+
+/// Configure an external (yadm/stow) repository after cloning
+fn configure_external_repo(config: &mut Config, repo_name: &str, read_only: bool) -> Result<()> {
+    emit(
+        Level::Info,
+        "dot.repo.clone.external",
+        &format!(
+            "{} Detected external dotfile repository (Yadm/Stow compatible)",
+            char::from(NerdFont::Info)
+        ),
+        None,
+    );
+
+    for repo in &mut config.repos {
+        if repo.name == repo_name {
+            repo.active_subdirectories = vec![".".to_string()];
+            repo.metadata = Some(crate::dot::types::RepoMetaData {
+                name: repo_name.to_string(),
+                author: None,
+                description: None,
+                read_only: if read_only { Some(true) } else { None },
+                dots_dirs: vec![".".to_string()],
+            });
+            break;
+        }
+    }
+    config.save(None)
+}
+
+/// Check if repository metadata requests read-only mode and update config
+fn handle_read_only_metadata(config: &mut Config, db: &Database, repo_name: &str) -> Result<()> {
+    if let Ok(local_repo) =
+        crate::dot::repo::RepositoryManager::new(config, db).get_repository_info(repo_name)
+        && let Some(true) = local_repo.meta.read_only
+    {
+        emit(
+            Level::Info,
+            "dot.repo.clone.read_only",
+            &format!(
+                "{} Repository requested read-only mode. Marking as read-only.",
+                char::from(NerdFont::Info)
+            ),
+            None,
+        );
+        for repo in &mut config.repos {
+            if repo.name == repo_name {
+                repo.read_only = true;
+                break;
+            }
+        }
+        config.save(None)?;
+    }
+    Ok(())
+}
+
 /// Clone a new repository
 pub fn clone_repository(
     config: &mut Config,
@@ -184,11 +257,8 @@ pub fn clone_repository(
         ));
     }
 
-    let repo_name = name
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| extract_repo_name(url));
+    let repo_name = resolve_repo_name(url, name);
 
-    // Create the repo config
     let repo_config = crate::dot::config::Repo {
         url: url.to_string(),
         name: repo_name.clone(),
@@ -199,14 +269,13 @@ pub fn clone_repository(
         metadata: None,
     };
 
-    // Add the repo to config
     config.add_repo(repo_config.clone(), None)?;
 
     emit(
         Level::Success,
         "dot.repo.clone.added",
         &format!(
-            "{} Cloned repository '{}' from {}",
+            "{} Cloning repository '{}' from {}",
             char::from(NerdFont::Check),
             repo_name,
             url
@@ -214,7 +283,6 @@ pub fn clone_repository(
         None,
     );
 
-    // Clone the repository
     match git_clone_repo(config, repo_config, debug) {
         Ok(path) => {
             emit(
@@ -228,7 +296,12 @@ pub fn clone_repository(
                 None,
             );
 
-            // Apply the repository immediately after adding
+            // Detect and configure external (yadm/stow) repos
+            if !path.join("instantdots.toml").exists() {
+                configure_external_repo(config, &repo_name, read_only_flag)?;
+            }
+
+            // Apply dotfiles
             emit(
                 Level::Info,
                 "dot.repo.clone.apply",
@@ -250,30 +323,9 @@ pub fn clone_repository(
                 );
             }
 
-            // Check metadata for read-only request
-            if !read_only_flag
-                && !force_write_flag
-                && let Ok(local_repo) = crate::dot::repo::RepositoryManager::new(config, db)
-                    .get_repository_info(&repo_name)
-                && let Some(true) = local_repo.meta.read_only
-            {
-                emit(
-                    Level::Info,
-                    "dot.repo.clone.read_only",
-                    &format!(
-                        "{} Repository requested read-only mode. Marking as read-only.",
-                        char::from(NerdFont::Info)
-                    ),
-                    None,
-                );
-                // Update config to set read_only to true
-                for repo in &mut config.repos {
-                    if repo.name == repo_name {
-                        repo.read_only = true;
-                        break;
-                    }
-                }
-                config.save(None)?;
+            // Handle read-only metadata request
+            if !read_only_flag && !force_write_flag {
+                handle_read_only_metadata(config, db, &repo_name)?;
             }
         }
         Err(e) => {
@@ -286,7 +338,6 @@ pub fn clone_repository(
                 ),
                 None,
             );
-            // Remove from config since clone failed
             config.remove_repo(&repo_name, None)?;
             return Err(e);
         }
@@ -500,6 +551,8 @@ fn handle_subdir_command(
     match command {
         SubdirCommands::List { name, active } => list_subdirectories(config, db, name, *active),
         SubdirCommands::Set { name, subdirs } => set_subdirectories(config, name, subdirs),
+        SubdirCommands::Enable { name, subdir } => enable_subdirectory(config, db, name, subdir),
+        SubdirCommands::Disable { name, subdir } => disable_subdirectory(config, name, subdir),
     }
 }
 
@@ -588,4 +641,210 @@ fn set_read_only_status(config: &mut Config, name: &str, read_only: bool) -> Res
         }
     }
     Err(anyhow::anyhow!("Repository '{}' not found", name))
+}
+
+/// Enable a subdirectory for a repository
+fn enable_subdirectory(config: &mut Config, db: &Database, name: &str, subdir: &str) -> Result<()> {
+    // First verify the subdir exists in the repo's metadata
+    let local_repo = crate::dot::localrepo::LocalRepo::new(config, name.to_string())?;
+    if !local_repo.meta.dots_dirs.contains(&subdir.to_string()) {
+        return Err(anyhow::anyhow!(
+            "Subdirectory '{}' not found in repository '{}'. Available: {}",
+            subdir,
+            name,
+            local_repo.meta.dots_dirs.join(", ")
+        ));
+    }
+
+    // Get current active subdirs
+    let mut active = config.get_active_subdirs(name);
+
+    if active.contains(&subdir.to_string()) {
+        println!(
+            "{} Subdirectory '{}' is already enabled for '{}'",
+            char::from(NerdFont::Info),
+            subdir,
+            name
+        );
+        return Ok(());
+    }
+
+    active.push(subdir.to_string());
+    config.set_active_subdirs(name, active, None)?;
+
+    println!(
+        "{} Enabled subdirectory '{}' for repository '{}'",
+        char::from(NerdFont::Check).to_string().green(),
+        subdir,
+        name
+    );
+
+    // Apply to pick up new dotfiles
+    apply_all_repos(config, db)?;
+
+    Ok(())
+}
+
+/// Disable a subdirectory for a repository
+fn disable_subdirectory(config: &mut Config, name: &str, subdir: &str) -> Result<()> {
+    let mut active = config.get_active_subdirs(name);
+
+    if !active.contains(&subdir.to_string()) {
+        println!(
+            "{} Subdirectory '{}' is not enabled for '{}'",
+            char::from(NerdFont::Info),
+            subdir,
+            name
+        );
+        return Ok(());
+    }
+
+    active.retain(|s| s != subdir);
+
+    if active.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Cannot disable '{}' - at least one subdirectory must remain active",
+            subdir
+        ));
+    }
+
+    config.set_active_subdirs(name, active, None)?;
+
+    println!(
+        "{} Disabled subdirectory '{}' for repository '{}'",
+        char::from(NerdFont::Check).to_string().green(),
+        subdir,
+        name
+    );
+
+    Ok(())
+}
+
+/// Show git repository status (working directory and branch sync state)
+fn show_repository_status(config: &Config, db: &Database, name: Option<&str>) -> Result<()> {
+    let repo_manager = RepositoryManager::new(config, db);
+
+    // Determine which repos to show
+    let repos_to_show: Vec<_> = if let Some(name) = name {
+        vec![name.to_string()]
+    } else {
+        config.repos.iter().map(|r| r.name.clone()).collect()
+    };
+
+    for repo_name in repos_to_show {
+        let local_repo = match repo_manager.get_repository_info(&repo_name) {
+            Ok(repo) => repo,
+            Err(e) => {
+                eprintln!(
+                    "{} {}: {}",
+                    char::from(NerdFont::CrossCircle),
+                    repo_name.cyan(),
+                    e
+                );
+                continue;
+            }
+        };
+
+        let repo_path = local_repo.local_path(config)?;
+
+        let git_repo = match git2::Repository::open(&repo_path) {
+            Ok(repo) => repo,
+            Err(e) => {
+                eprintln!(
+                    "{} {}: Failed to open git repository: {}",
+                    char::from(NerdFont::CrossCircle),
+                    repo_name.cyan(),
+                    e
+                );
+                continue;
+            }
+        };
+
+        let repo_status = match crate::common::git::get_repo_status(&git_repo) {
+            Ok(status) => status,
+            Err(e) => {
+                eprintln!(
+                    "{} {}: Failed to get repo status: {}",
+                    char::from(NerdFont::CrossCircle),
+                    repo_name.cyan(),
+                    e
+                );
+                continue;
+            }
+        };
+
+        let repo_config = match config.repos.iter().find(|r| r.name == repo_name) {
+            Some(config) => config,
+            None => {
+                eprintln!(
+                    "{} {}: Repository not found in configuration",
+                    char::from(NerdFont::CrossCircle),
+                    repo_name.cyan()
+                );
+                continue;
+            }
+        };
+
+        let tilde_path = TildePath::new(repo_path.to_path_buf());
+        let local_path = tilde_path
+            .to_tilde_string()
+            .unwrap_or_else(|_| repo_path.display().to_string());
+
+        println!();
+        println!(
+            "{} {}",
+            char::from(NerdFont::FolderGit),
+            repo_name.bold().cyan()
+        );
+
+        // Working directory status
+        let (icon, status_text) = if repo_status.working_dir_clean {
+            (char::from(NerdFont::CheckCircle), "Clean".green())
+        } else {
+            (
+                char::from(NerdFont::Edit),
+                format!(
+                    "Dirty [{} modified, {} untracked]",
+                    repo_status.file_counts.modified, repo_status.file_counts.untracked
+                )
+                .yellow(),
+            )
+        };
+
+        println!("  Working Directory:  {} {}", icon, status_text);
+
+        // Branch sync status
+        let (icon, _status_text) = match &repo_status.branch_sync {
+            crate::common::git::BranchSyncStatus::UpToDate => {
+                (char::from(NerdFont::Check), "Up-to-date".green())
+            }
+            crate::common::git::BranchSyncStatus::Ahead { commits } => (
+                char::from(NerdFont::CloudUpload),
+                format!("Ahead {} commits", commits).blue(),
+            ),
+            crate::common::git::BranchSyncStatus::Behind { commits } => (
+                char::from(NerdFont::CloudDownload),
+                format!("Behind {} commits", commits).blue(),
+            ),
+            crate::common::git::BranchSyncStatus::Diverged { ahead, behind } => (
+                char::from(NerdFont::GitMerge),
+                format!("Diverged ({} ahead, {} behind)", ahead, behind).red(),
+            ),
+            crate::common::git::BranchSyncStatus::NoRemote => {
+                (char::from(NerdFont::Warning), "No remote".yellow())
+            }
+        };
+
+        println!(
+            "  Branch Status:       {} ({})",
+            icon,
+            repo_status.branch.dimmed()
+        );
+        println!("  URL:                 {}", repo_config.url.dimmed());
+        println!("  Local Path:          {}", local_path.dimmed());
+    }
+
+    println!();
+
+    Ok(())
 }

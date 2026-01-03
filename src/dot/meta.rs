@@ -103,6 +103,7 @@ struct RepoInputs {
     author: Option<String>,
     description: Option<String>,
     read_only: bool,
+    dots_dir: String,
 }
 
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
@@ -117,6 +118,7 @@ fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoI
             author: None,
             description: None,
             read_only: false,
+            dots_dir: "dots".to_string(),
         });
     }
 
@@ -155,11 +157,23 @@ fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoI
 
     let read_only = matches!(FzfWrapper::confirm("Read-only?"), Ok(ConfirmResult::Yes));
 
+    let dots_dir = FzfWrapper::input("Dotfiles directory [dots]: ")
+        .map(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                "dots".to_string()
+            } else {
+                trimmed.to_string()
+            }
+        })
+        .unwrap_or_else(|_| "dots".to_string());
+
     Ok(RepoInputs {
         name,
         author,
         description,
         read_only,
+        dots_dir,
     })
 }
 
@@ -183,7 +197,7 @@ fn write_instantdots_toml(repo_path: &Path, inputs: &RepoInputs) -> Result<()> {
         author: inputs.author.clone(),
         description: inputs.description.clone(),
         read_only: if inputs.read_only { Some(true) } else { None },
-        dots_dirs: vec!["dots".to_string()],
+        dots_dirs: vec![inputs.dots_dir.clone()],
     };
 
     let toml = toml::to_string_pretty(&meta).context("serializing instantdots.toml")?;
@@ -215,7 +229,50 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>, non_interactive: bool) ->
         .map(|s| s.trim().to_string())
         .unwrap_or(default_name);
 
-    let inputs = gather_repo_inputs(&default_name, non_interactive)?;
+    let mut inputs = gather_repo_inputs(&default_name, non_interactive)?;
+
+    // Check if dots_dir exists, offer to create or rename
+    if !non_interactive {
+        loop {
+            let dots_path = repo_path.join(&inputs.dots_dir);
+            if dots_path.exists() {
+                break;
+            }
+
+            println!(
+                "{} Directory '{}' does not exist",
+                char::from(NerdFont::Warning),
+                inputs.dots_dir
+            );
+
+            match FzfWrapper::confirm(&format!("Create '{}'?", inputs.dots_dir)) {
+                Ok(ConfirmResult::Yes) => {
+                    fs::create_dir_all(&dots_path)
+                        .with_context(|| format!("creating directory {}", dots_path.display()))?;
+                    println!(
+                        "{} Created directory '{}'",
+                        char::from(NerdFont::Check),
+                        inputs.dots_dir
+                    );
+                    break;
+                }
+                _ => {
+                    // Let user enter a different name
+                    inputs.dots_dir = FzfWrapper::input("Dotfiles directory [dots]: ")
+                        .map(|s| {
+                            let trimmed = s.trim();
+                            if trimmed.is_empty() {
+                                "dots".to_string()
+                            } else {
+                                trimmed.to_string()
+                            }
+                        })
+                        .unwrap_or_else(|_| "dots".to_string());
+                }
+            }
+        }
+    }
+
     write_instantdots_toml(repo_path, &inputs)?;
     Ok(())
 }
@@ -344,7 +401,7 @@ pub fn init_or_create_default_repo(
     name: Option<&str>,
     non_interactive: bool,
 ) -> Result<InitOutcome> {
-    if let Some(outcome) = handle_existing_git_repo(config, current_dir, name, non_interactive)? {
+    if let Some(outcome) = handle_existing_git_repo(current_dir, name, non_interactive)? {
         return Ok(outcome);
     }
 
@@ -356,7 +413,6 @@ pub fn init_or_create_default_repo(
 }
 
 fn handle_existing_git_repo(
-    config: &mut Config,
     current_dir: &Path,
     name: Option<&str>,
     non_interactive: bool,
@@ -371,57 +427,9 @@ fn handle_existing_git_repo(
         println!();
     }
 
-    let toml_path = current_dir.join("instantdots.toml");
-    if toml_path.exists() {
-        // Standard instantCLI repo
-        init_repo(current_dir, name, non_interactive)?;
-    } else {
-        // Auto-detect for Yadm/Stow compatibility
-        let default_name = current_dir
-            .file_name()
-            .and_then(|os| os.to_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "dotfiles".to_string());
-
-        let repo_name = name
-            .filter(|s| !s.trim().is_empty())
-            .map(|s| s.trim().to_string())
-            .unwrap_or(default_name);
-
-        // Check for common dotfile roots
-        let dots_dirs =
-            if current_dir.join(".config").exists() || current_dir.join("config").exists() {
-                vec![".".to_string()]
-            } else {
-                // Default to root as best effort
-                vec![".".to_string()]
-            };
-
-        let metadata = RepoMetaData {
-            name: repo_name.clone(),
-            author: None,
-            description: None,
-            read_only: None,
-            dots_dirs: dots_dirs.clone(),
-        };
-
-        let repo_config = config::Repo {
-            url: current_dir.to_string_lossy().to_string(),
-            name: repo_name,
-            branch: None,
-            active_subdirectories: dots_dirs,
-            enabled: true,
-            read_only: false,
-            metadata: Some(metadata),
-        };
-
-        config.add_repo(repo_config, None)?;
-
-        println!(
-            "{} Detected external dotfile repository (Yadm/Stow compatible)",
-            char::from(NerdFont::Info)
-        );
-    }
+    // Just create instantdots.toml - don't add to global config
+    // User should clone/add the repo separately if they want it tracked
+    init_repo(current_dir, name, non_interactive)?;
 
     Ok(Some(InitOutcome::InitializedInPlace {
         path: current_dir.to_path_buf(),

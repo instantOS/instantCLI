@@ -192,11 +192,9 @@ impl FilePickerBuilder {
                         "`{}` is a file.\n\nPlease choose a directory instead.",
                         first_invalid.display()
                     );
-                    FzfWrapper::message_dialog(&message)?;
+                    FzfWrapper::message(&message)?;
                 } else {
-                    FzfWrapper::message_dialog(
-                        "A file was selected. Please choose a directory instead.",
-                    )?;
+                    FzfWrapper::message("A file was selected. Please choose a directory instead.")?;
                 }
 
                 preselect = invalid_entries.into_iter().next();
@@ -299,17 +297,5 @@ pub struct MenuWrapper;
 impl MenuWrapper {
     pub fn file_picker() -> FilePickerBuilder {
         FilePickerBuilder::new()
-    }
-
-    pub fn pick_file() -> Result<Option<PathBuf>> {
-        FilePickerBuilder::new().pick_one()
-    }
-
-    pub fn pick_files() -> Result<Vec<PathBuf>> {
-        match FilePickerBuilder::new().multi(true).pick()? {
-            FilePickerResult::MultiSelected(paths) => Ok(paths),
-            FilePickerResult::Selected(path) => Ok(vec![path]),
-            FilePickerResult::Cancelled => Ok(vec![]),
-        }
     }
 }

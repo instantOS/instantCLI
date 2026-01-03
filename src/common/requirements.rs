@@ -5,24 +5,6 @@
 use duct::cmd;
 use std::path::Path;
 
-/// Status of a package installation request
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PackageStatus {
-    /// Package is installed and ready to use
-    Installed,
-    /// User explicitly declined installation
-    Declined,
-    /// Installation failed or verification failed
-    Failed,
-}
-
-impl PackageStatus {
-    /// Check if the package is effectively installed
-    pub fn is_installed(&self) -> bool {
-        matches!(self, Self::Installed)
-    }
-}
-
 /// Tests for determining whether a dependency is available on the system.
 #[derive(Debug, Clone, Copy)]
 pub enum InstallTest {

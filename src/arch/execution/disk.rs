@@ -1,4 +1,6 @@
 use super::CommandExecutor;
+use crate::arch::dualboot::parsing::get_free_regions;
+use crate::arch::dualboot::types::MIN_ESP_SIZE;
 use crate::arch::dualboot::{DisksKey, PartitionTableType};
 use crate::arch::engine::{
     BootMode, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext,
@@ -187,10 +189,10 @@ fn create_esp_partition(
     let partitions_before = get_current_partitions(disk_path)?;
 
     // We need at least MIN_ESP_SIZE contiguous space
-    let esp_size_bytes = crate::arch::dualboot::MIN_ESP_SIZE;
+    let esp_size_bytes = MIN_ESP_SIZE;
     let esp_sectors = esp_size_bytes.div_ceil(512);
 
-    let regions = crate::arch::dualboot::get_free_regions(disk_path, Some(disk_info.size_bytes))
+    let regions = get_free_regions(disk_path, Some(disk_info.size_bytes))
         .context("Failed to get free regions for ESP creation")?;
 
     let region = regions
@@ -253,7 +255,7 @@ fn create_dualboot_partitions(
     let partitions_before = get_current_partitions(disk_path)?;
 
     // Get free regions to calculate optimal layout
-    let regions = crate::arch::dualboot::get_free_regions(disk_path, Some(disk_size_bytes))
+    let regions = get_free_regions(disk_path, Some(disk_size_bytes))
         .context("Failed to get free space regions")?;
 
     if regions.is_empty() {

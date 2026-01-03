@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::dot::path_serde::TildePath;
+use crate::common::TildePath;
 use crate::game::config::{
     Game, GameDependency, GameInstallation, InstallationsConfig, InstalledDependency,
     InstantGameConfig, PathContentKind,
@@ -646,7 +646,7 @@ fn prompt_custom_install_path(
 }
 
 fn prepare_install_target(
-    path: &crate::dot::path_serde::TildePath,
+    path: &crate::common::TildePath,
     expected_kind: PathContentKind,
 ) -> Result<bool> {
     let display = path
@@ -750,7 +750,7 @@ fn prepare_install_target(
 
 fn format_path_for_display(path: &str) -> String {
     let buf = PathBuf::from(path);
-    crate::dot::path_serde::TildePath::new(buf)
+    crate::common::TildePath::new(buf)
         .to_tilde_string()
         .unwrap_or_else(|_| path.to_string())
 }

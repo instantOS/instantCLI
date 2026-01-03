@@ -1,6 +1,8 @@
 pub mod add;
+pub mod alternative;
 pub mod apply;
 pub mod git_commands;
+pub mod merge;
 pub mod reset;
 
 pub use add::add_dotfile;

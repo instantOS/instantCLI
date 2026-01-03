@@ -32,7 +32,7 @@ fn align_dialogue_clips_to_cues(
     plan: &mut TimelinePlan,
     cues: &[TranscriptCue],
 ) -> Result<Vec<usize>> {
-    let mut dialogue_clips: Vec<(usize, f64, f64, usize, String)> = Vec::new();
+    let mut dialogue_clips: Vec<(usize, f64, f64, String)> = Vec::new();
 
     for (idx, item) in plan.items.iter().enumerate() {
         let TimelinePlanItem::Clip(clip) = item else {
@@ -43,7 +43,7 @@ fn align_dialogue_clips_to_cues(
             continue;
         }
 
-        dialogue_clips.push((idx, clip.start, clip.end, clip.line, clip.text.clone()));
+        dialogue_clips.push((idx, clip.start, clip.end, clip.text.clone()));
     }
 
     if dialogue_clips.is_empty() {
@@ -268,7 +268,7 @@ fn padded_cue_bounds(
 }
 
 fn assign_cues_max_overlap(
-    dialogue_clips: &[(usize, f64, f64, usize, String)],
+    dialogue_clips: &[(usize, f64, f64, String)],
     cues: &[TranscriptCue],
 ) -> Result<Vec<(usize, usize)>> {
     validate_alignment_inputs(dialogue_clips, cues)?;
@@ -295,7 +295,7 @@ fn assign_cues_max_overlap(
 }
 
 fn validate_alignment_inputs(
-    dialogue_clips: &[(usize, f64, f64, usize, String)],
+    dialogue_clips: &[(usize, f64, f64, String)],
     cues: &[TranscriptCue],
 ) -> Result<()> {
     if cues.is_empty() {
@@ -364,10 +364,10 @@ impl AssignmentGraphBuilder {
 
     fn add_overlap_options(
         &mut self,
-        dialogue_clips: &[(usize, f64, f64, usize, String)],
+        dialogue_clips: &[(usize, f64, f64, String)],
         cues: &[TranscriptCue],
     ) {
-        for (clip_idx, (_timeline_idx, clip_start, clip_end, _line, _text)) in
+        for (clip_idx, (_timeline_idx, clip_start, clip_end, _text)) in
             dialogue_clips.iter().enumerate()
         {
             let clip_duration = (clip_end - clip_start).max(0.0);
@@ -408,7 +408,7 @@ impl AssignmentGraphBuilder {
 
     fn extract_assignments(
         &self,
-        dialogue_clips: &[(usize, f64, f64, usize, String)],
+        dialogue_clips: &[(usize, f64, f64, String)],
     ) -> Result<Vec<(usize, usize)>> {
         let clip_count = dialogue_clips.len();
         let mut result: Vec<(usize, usize)> = Vec::with_capacity(clip_count);
@@ -446,14 +446,14 @@ impl AssignmentGraphBuilder {
 }
 
 fn diagnose_alignment_failure(
-    dialogue_clips: &[(usize, f64, f64, usize, String)],
+    dialogue_clips: &[(usize, f64, f64, String)],
     cues: &[TranscriptCue],
 ) -> Result<()> {
     // Find a useful error pointing to the first clip with no candidate cues.
-    for (_timeline_idx, clip_start, clip_end, line, text) in dialogue_clips {
+    for (_timeline_idx, clip_start, clip_end, text) in dialogue_clips {
         let clip_duration = (clip_end - clip_start).max(0.0);
         if clip_duration <= 0.0 {
-            bail!("Invalid segment duration for `{}` at line {}", text, line);
+            bail!("Invalid segment duration for `{}`", text);
         }
 
         let mut has_candidate = false;
@@ -472,11 +472,7 @@ fn diagnose_alignment_failure(
         }
 
         if !has_candidate {
-            bail!(
-                "Unable to locate subtitle entry for segment `{}` at line {}",
-                text,
-                line
-            );
+            bail!("Unable to locate subtitle entry for segment `{}`", text);
         }
     }
 
@@ -623,11 +619,13 @@ mod tests {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(950),
                 text: "first".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(1200),
                 end: Duration::from_millis(2450),
                 text: "second".to_string(),
+                words: vec![],
             },
         ];
 
@@ -664,11 +662,13 @@ mod tests {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1100),
                 text: "completely different".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(1100),
                 end: Duration::from_millis(2000),
                 text: "also different".to_string(),
+                words: vec![],
             },
         ];
 
@@ -708,16 +708,19 @@ mod tests {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1000),
                 text: "first".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(1020),
                 end: Duration::from_millis(2000),
                 text: "mid".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(2020),
                 end: Duration::from_millis(3000),
                 text: "third".to_string(),
+                words: vec![],
             },
         ];
 
@@ -754,6 +757,7 @@ mod tests {
             start: Duration::from_millis(0),
             end: Duration::from_millis(1000),
             text: "only".to_string(),
+            words: vec![],
         }];
 
         let err = align_plan_with_subtitles(&mut plan, &cues).unwrap_err();
@@ -784,26 +788,31 @@ mod tests {
                 start: Duration::from_millis(866),
                 end: Duration::from_millis(7274),
                 text: "Hello".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(9677),
                 end: Duration::from_millis(11559),
                 text: "I do not want".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(14403),
                 end: Duration::from_millis(16005),
                 text: "A big pile".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(19189),
                 end: Duration::from_millis(20730),
                 text: "Goodbye".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(20791),
                 end: Duration::from_millis(26898),
                 text: "No, you don't say".to_string(),
+                words: vec![],
             },
         ];
 
@@ -867,11 +876,13 @@ mod tests {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1234),
                 text: "intro".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(6789),
                 end: Duration::from_millis(8000),
                 text: "outro".to_string(),
+                words: vec![],
             },
         ];
 
@@ -918,11 +929,13 @@ mod tests {
                 start: Duration::from_millis(0),
                 end: Duration::from_millis(1000),
                 text: "intro".to_string(),
+                words: vec![],
             },
             TranscriptCue {
                 start: Duration::from_millis(50_000),
                 end: Duration::from_millis(51_000),
                 text: "outro".to_string(),
+                words: vec![],
             },
         ];
 

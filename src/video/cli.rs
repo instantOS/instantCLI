@@ -103,6 +103,14 @@ pub struct RenderArgs {
     /// Show the ffmpeg command that would be executed without running it
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Render in Instagram Reels/TikTok format (9:16 vertical)
+    #[arg(long)]
+    pub reels: bool,
+
+    /// Burn subtitles into the video (reels mode only, positions in bottom bar)
+    #[arg(long)]
+    pub subtitles: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -114,6 +122,10 @@ pub struct SlideArgs {
     /// Optional output path; defaults to <markdownfilename>.jpg
     #[arg(short = 'o', long = "out-file", value_hint = ValueHint::FilePath)]
     pub out_file: Option<PathBuf>,
+
+    /// Render in Instagram Reels/TikTok format (9:16 vertical)
+    #[arg(long)]
+    pub reels: bool,
 }
 
 #[derive(Args, Debug, Clone)]

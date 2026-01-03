@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -233,10 +233,19 @@ fn generate_markdown_output(
         .map(|name| name.to_string_lossy().into_owned())
         .context("Video file name is not valid UTF-8")?;
 
+    // Compute relative path from markdown directory to video file
+    let relative_video_path = pathdiff::diff_paths(video_path, markdown_dir).ok_or_else(|| {
+        anyhow!(
+            "Failed to compute relative path from {} to {}",
+            markdown_dir.display(),
+            video_path.display()
+        )
+    })?;
+
     let metadata = MarkdownMetadata {
         video_hash,
         video_name: video_name.as_str(),
-        video_source: video_path,
+        video_source: &relative_video_path,
         transcript_source: &relative_subtitle_path,
     };
 

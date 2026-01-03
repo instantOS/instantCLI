@@ -22,8 +22,6 @@ pub enum PreprocessorType {
 pub struct PreprocessResult {
     /// Path to the processed audio file
     pub output_path: PathBuf,
-    /// Whether the result was retrieved from cache
-    pub cached: bool,
 }
 
 /// Trait for audio preprocessing backends

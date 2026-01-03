@@ -455,14 +455,6 @@ impl FzfWrapper {
         }
     }
 
-    pub fn select_many<T: FzfSelectable + Clone>(items: Vec<T>) -> Result<Vec<T>> {
-        match Self::builder().multi_select(true).select(items)? {
-            FzfResult::MultiSelected(items) => Ok(items),
-            FzfResult::Selected(item) => Ok(vec![item]),
-            _ => Ok(vec![]),
-        }
-    }
-
     pub fn input(prompt: &str) -> Result<String> {
         Self::builder().prompt(prompt).input().input_dialog()
     }
@@ -477,18 +469,6 @@ impl FzfWrapper {
 
     pub fn password(prompt: &str) -> Result<FzfResult<String>> {
         Self::builder().prompt(prompt).password().password_dialog()
-    }
-
-    pub fn password_dialog(prompt: &str) -> Result<FzfResult<String>> {
-        Self::builder().prompt(prompt).password().password_dialog()
-    }
-
-    pub fn message_dialog(message: &str) -> Result<()> {
-        Self::builder().message(message).message_dialog()
-    }
-
-    pub fn confirm_dialog(message: &str) -> Result<ConfirmResult> {
-        Self::builder().confirm(message).confirm_dialog()
     }
 }
 
@@ -515,6 +495,7 @@ pub struct FzfBuilder {
     additional_args: Vec<String>,
     dialog_type: DialogType,
     initial_cursor: Option<InitialCursor>,
+    initial_query: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -548,6 +529,7 @@ impl FzfBuilder {
             additional_args: Self::default_args(),
             dialog_type: DialogType::Selection,
             initial_cursor: None,
+            initial_query: None,
         }
     }
 
@@ -568,6 +550,12 @@ impl FzfBuilder {
 
     pub fn initial_index(mut self, index: usize) -> Self {
         self.initial_cursor = Some(InitialCursor::Index(index));
+        self
+    }
+
+    /// Set an initial query to prepopulate the input field
+    pub fn query<S: Into<String>>(mut self, query: S) -> Self {
+        self.initial_query = Some(query.into());
         self
     }
 
@@ -631,13 +619,6 @@ impl FzfBuilder {
         };
         self.header = Some(message.into());
         self.additional_args = Self::confirm_args();
-        self
-    }
-
-    pub fn ok_text<S: Into<String>>(mut self, text: S) -> Self {
-        if let DialogType::Message { ok_text, .. } = &mut self.dialog_type {
-            *ok_text = text.into();
-        }
         self
     }
 
@@ -855,14 +836,6 @@ impl FzfBuilder {
         self.execute_message()
     }
 
-    pub fn show_selection<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
-        self.select(items)
-    }
-
-    pub fn show_password(self) -> Result<FzfResult<String>> {
-        self.password_dialog()
-    }
-
     pub fn show_confirmation(self) -> Result<ConfirmResult> {
         self.confirm_dialog()
     }
@@ -894,6 +867,10 @@ impl FzfBuilder {
 
         if let Some(prompt) = &self.prompt {
             cmd.arg("--prompt").arg(format!("{prompt} "));
+        }
+
+        if let Some(query) = &self.initial_query {
+            cmd.arg("-q").arg(query);
         }
 
         for arg in &self.additional_args {

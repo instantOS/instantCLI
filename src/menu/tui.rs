@@ -48,17 +48,6 @@ impl MenuServerTui {
         })
     }
 
-    /// Get the show_help flag
-    pub fn show_help(&self) -> Arc<AtomicBool> {
-        self.show_help.clone()
-    }
-
-    /// Toggle help display - disabled since keyboard input is not handled
-    pub fn toggle_help(&self) {
-        // Help toggle is disabled since we don't handle keyboard input
-        // Let the show_help flag remain false always
-    }
-
     /// Request a full redraw on next draw
     pub fn request_redraw(&mut self) {
         self.force_redraw = true;

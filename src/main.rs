@@ -18,6 +18,7 @@ mod restic;
 mod scratchpad;
 mod self_update;
 mod settings;
+mod setup;
 mod ui;
 mod update;
 mod video;
@@ -158,6 +159,11 @@ enum Commands {
         #[command(subcommand)]
         command: ScratchpadCommand,
     },
+    /// Set up instantOS integrations (window managers, system config)
+    Setup {
+        #[command(subcommand)]
+        command: setup::SetupCommands,
+    },
     /// Desktop settings and preferences
     Settings {
         #[command(subcommand)]
@@ -208,6 +214,9 @@ enum Commands {
         /// Open welcome app in a GUI terminal window (uses kitty)
         #[arg(long = "gui")]
         gui: bool,
+        /// Force live session mode (shows instantOS installation option)
+        #[arg(long = "force-live")]
+        force_live: bool,
     },
 }
 
@@ -284,6 +293,13 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             let exit_code = command.clone().run(&compositor, cli.debug)?;
             std::process::exit(exit_code);
         }
+        Some(Commands::Setup { command }) => {
+            execute_with_error_handling(
+                setup::handle_setup_command(command.clone()),
+                "Error running setup",
+                None,
+            )?;
+        }
         Some(Commands::Settings {
             command,
             setting,
@@ -354,9 +370,13 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                 None,
             )?;
         }
-        Some(Commands::Welcome { command, gui }) => {
+        Some(Commands::Welcome {
+            command,
+            gui,
+            force_live,
+        }) => {
             execute_with_error_handling(
-                welcome::handle_welcome_command(command, *gui, cli.debug),
+                welcome::handle_welcome_command(command, *gui, *force_live, cli.debug),
                 "Error running welcome",
                 None,
             )?;

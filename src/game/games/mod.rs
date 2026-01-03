@@ -3,4 +3,4 @@ pub mod manager;
 pub mod selection;
 pub mod validation;
 
-pub use manager::*;
+pub use manager::GameManager;

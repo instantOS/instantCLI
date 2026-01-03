@@ -25,11 +25,6 @@ impl InstallableApp {
     pub fn is_installed(&self) -> bool {
         self.deps.iter().all(|dep| dep.is_installed())
     }
-
-    /// Get all dependencies for installation
-    pub fn dependencies(&self) -> Vec<&'static Dependency> {
-        self.deps.to_vec()
-    }
 }
 
 // =============================================================================
@@ -587,7 +582,7 @@ pub static ARCHIVE_MANAGERS: &[InstallableApp] = &[
 // =============================================================================
 
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
-use crate::ui::NerdFont;
+use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 
 /// Wrapper for FZF display

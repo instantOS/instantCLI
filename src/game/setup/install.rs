@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 
-use crate::dot::path_serde::TildePath;
+use crate::common::TildePath;
 use crate::game::checkpoint;
 use crate::game::config::{
     GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,

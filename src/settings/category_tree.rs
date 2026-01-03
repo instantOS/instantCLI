@@ -47,8 +47,8 @@ impl CategoryNode {
 /// are top-level and which are grouped into subcategories.
 pub fn category_tree(category: Category) -> Vec<CategoryNode> {
     use crate::settings::definitions::{
-        appearance, apps, brightness, desktop, flatpak, keyboard, language, mouse, network,
-        packages, printers, storage, swap_escape, system, toggles, users, wiremix,
+        appearance, apps, brightness, desktop, display, flatpak, keyboard, language, mouse,
+        network, packages, printers, storage, swap_escape, system, toggles, users, wiremix,
     };
 
     match category {
@@ -56,6 +56,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&brightness::Brightness),
             CategoryNode::setting(&appearance::Animations),
             CategoryNode::setting(&appearance::DarkMode),
+            CategoryNode::setting(&appearance::CursorTheme),
             CategoryNode::group("Wallpaper")
                 .child(CategoryNode::setting(&appearance::SetWallpaper))
                 .child(CategoryNode::setting(&appearance::RandomWallpaper))
@@ -73,6 +74,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         Category::Network => vec![
             CategoryNode::setting(&network::IpInfo),
             CategoryNode::setting(&network::SpeedTest),
+            CategoryNode::setting(&network::EditConnectionsTui),
             CategoryNode::setting(&network::EditConnections),
         ],
         Category::Bluetooth => vec![
@@ -90,6 +92,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&toggles::ClipboardManager),
             CategoryNode::setting(&swap_escape::SwapEscape),
         ],
+        Category::Display => vec![CategoryNode::setting(&display::ConfigureDisplay)],
         Category::Audio => vec![CategoryNode::setting(&wiremix::LaunchWiremix)],
         Category::Apps => vec![
             CategoryNode::setting(&apps::ManageAllApps),

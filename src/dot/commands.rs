@@ -35,6 +35,9 @@ pub enum DotCommands {
         /// Recursively add all files in directory, including untracked ones
         #[arg(long)]
         all: bool,
+        /// Choose which repository/subdirectory to add the file to
+        #[arg(long)]
+        choose: bool,
     },
     /// Pull updates for all configured repos and apply changes
     Update {
@@ -65,6 +68,15 @@ pub enum DotCommands {
         #[arg(value_hint = ValueHint::AnyPath)]
         path: Option<String>,
     },
+    /// Merge a modified dotfile with its source using nvim diff
+    Merge {
+        /// Path to the dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+        /// Show verbose output including unmodified files
+        #[arg(long)]
+        verbose: bool,
+    },
     /// Manage ignored paths
     Ignore {
         #[command(subcommand)]
@@ -87,6 +99,21 @@ pub enum DotCommands {
         /// Git command and arguments (e.g. "log --oneline")
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
+    },
+    /// Set or view which repository/subdirectory a dotfile is sourced from
+    Alternative {
+        /// Path to the dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+        /// Remove the override for this file (use default priority)
+        #[arg(long)]
+        reset: bool,
+        /// Create the file in a new repo/subdir if it doesn't exist there
+        #[arg(long)]
+        create: bool,
+        /// List available alternatives and exit
+        #[arg(long)]
+        list: bool,
     },
 }
 
@@ -241,14 +268,14 @@ pub fn handle_dot_command(
         DotCommands::Apply => {
             super::apply_all(&config, &db)?;
         }
-        DotCommands::Add { path, all } => {
-            super::add_dotfile(&config, &db, path, *all, debug)?;
+        DotCommands::Add { path, all, choose } => {
+            super::add_dotfile(&config, &db, path, *all, *choose, debug)?;
         }
         DotCommands::Update { no_apply } => {
             super::update_all(&config, debug, &db, !*no_apply)?;
         }
         DotCommands::Status { path, all } => {
-            super::status_all(&config, debug, path.as_deref(), &db, *all)?;
+            super::status_all(&config, path.as_deref(), &db, *all)?;
         }
         DotCommands::Init {
             name,
@@ -259,7 +286,10 @@ pub fn handle_dot_command(
             super::meta::handle_init_command(&mut config, &cwd, name.as_deref(), *non_interactive)?;
         }
         DotCommands::Diff { path } => {
-            super::diff_all(&config, debug, path.as_deref(), &db)?;
+            super::diff_all(&config, path.as_deref(), &db)?;
+        }
+        DotCommands::Merge { path, verbose } => {
+            super::operations::merge::merge_dotfile(&config, &db, path, *verbose)?;
         }
         DotCommands::Ignore { command } => {
             handle_ignore_command(&mut config, command, config_path)?;
@@ -272,6 +302,16 @@ pub fn handle_dot_command(
         }
         DotCommands::Git { args } => {
             super::git_run_any(&config, args, debug)?;
+        }
+        DotCommands::Alternative {
+            path,
+            reset,
+            create,
+            list,
+        } => {
+            super::operations::alternative::handle_alternative(
+                &config, path, *reset, *create, *list,
+            )?;
         }
     }
 

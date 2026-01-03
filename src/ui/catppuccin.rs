@@ -1,11 +1,12 @@
 use anyhow::Result;
 
 use crate::menu_utils::FzfWrapper;
-use crate::ui::NerdFont;
+use crate::ui::nerd_font::NerdFont;
 
 /// Catppuccin Mocha color palette.
 ///
 /// Values are hex RGB strings in the `#RRGGBB` format.
+#[allow(dead_code)]
 pub mod colors {
     // Accent colors
     pub const ROSEWATER: &str = "#f5e0dc";

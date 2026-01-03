@@ -54,7 +54,6 @@ impl AudioPreprocessor for NonePreprocessor {
     async fn process(&self, input: &Path, _force: bool) -> Result<PreprocessResult> {
         Ok(PreprocessResult {
             output_path: input.to_path_buf(),
-            cached: true,
         })
     }
 

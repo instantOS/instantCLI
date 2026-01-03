@@ -1,13 +1,15 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::menu_utils::FzfWrapper;
+use crate::common::shell::shell_quote;
+use crate::menu::client::MenuClient;
+use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
 
 pub fn search_man_pages() -> Result<()> {
     let list_command = r#"
         man -w | tr ':' '\n' | while read -r path; do
-            find "$path" -type f -name "man*" 2>/dev/null
-        done | sed 's/.*\///; s/\.gz$//; s/\.[0-9].*//' | sort -u
+            find "$path" -type f \( -name '*.[0-9]*' -o -name '*.[0-9]*.gz' \) 2>/dev/null
+        done | sed 's/.*\///; s/\.[0-9].*//' | sort -u
     "#;
 
     let output = Command::new("bash")
@@ -28,12 +30,29 @@ pub fn search_man_pages() -> Result<()> {
         return Ok(());
     }
 
-    let selected = FzfWrapper::builder().prompt("Man Page").select(pages)?;
+    let client = MenuClient::new();
+    let items: Vec<SerializableMenuItem> = pages
+        .into_iter()
+        .map(|page| SerializableMenuItem {
+            display_text: page.clone(),
+            preview: FzfPreview::Command(format!(
+                "man -f {} 2>/dev/null || echo 'Manual page'",
+                shell_quote(&page)
+            )),
+            metadata: None,
+        })
+        .collect();
 
-    if let crate::menu_utils::FzfResult::Selected(page) = selected {
-        let command = format!(r#"man "{}""#, page);
-        crate::assist::utils::run_command_in_terminal(&command, "Man Pages")?;
+    let selected = client.choice("Select a man page:".to_string(), items, false)?;
+
+    // Handle empty selection (user cancelled)
+    if selected.is_empty() {
+        return Ok(());
     }
+
+    let page = &selected[0].display_text;
+    let command = format!(r#"man "{}""#, page);
+    crate::assist::utils::run_command_in_terminal(&command, "Man Pages")?;
 
     Ok(())
 }

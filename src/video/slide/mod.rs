@@ -81,15 +81,6 @@ impl SlideGenerator {
         })
     }
 
-    pub fn generate_image_from_markdown(
-        &self,
-        markdown_content: &str,
-        output_path: &Path,
-    ) -> Result<()> {
-        let asset = self.markdown_slide(markdown_content)?;
-        self.copy_image(&asset.image_path, output_path)
-    }
-
     pub fn ensure_video_for_duration(&self, asset: &SlideAsset, duration: f64) -> Result<PathBuf> {
         let sanitized = (duration * 1000.0).round() as u64;
         let video_path = asset.slide_dir.join(format!("slide_{sanitized}.mp4"));
@@ -108,17 +99,6 @@ impl SlideGenerator {
                 slide_dir.display()
             )
         })
-    }
-
-    fn copy_image(&self, source: &Path, dest: &Path) -> Result<()> {
-        fs::copy(source, dest).with_context(|| {
-            format!(
-                "Failed to copy slide image from {} to {}",
-                source.display(),
-                dest.display()
-            )
-        })?;
-        Ok(())
     }
 
     /// Build cache key from dimensions, CSS/JS content, and markdown.
@@ -284,6 +264,9 @@ impl SlideGenerator {
             .arg("-shortest")
             .arg("-t")
             .arg(&duration)
+            // Normalize SAR to 1:1 for consistent concat with other video segments
+            .arg("-vf")
+            .arg("setsar=1")
             .arg("-c:v")
             .arg("libx264")
             .arg("-preset")

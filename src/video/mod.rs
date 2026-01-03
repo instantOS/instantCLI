@@ -15,6 +15,7 @@ mod render_timeline;
 pub mod setup;
 mod slide;
 pub mod stats;
+pub mod subtitles;
 mod transcribe;
 pub mod transcript;
 mod utils;

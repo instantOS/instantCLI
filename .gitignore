@@ -42,3 +42,5 @@ insvideodata/*
 *.m4a
 empty.img
 test.img
+*.wav
+*.mkv

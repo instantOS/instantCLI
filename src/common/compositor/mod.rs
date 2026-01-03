@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::process::Command;
 
+pub mod config;
 pub mod fallback;
 pub mod gnome;
 pub mod hyprland;
@@ -96,7 +97,7 @@ impl CompositorType {
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
                 "kde" | "plasma" | "kwin" => return CompositorType::KWin,
-                s if s.contains("gnome") => return CompositorType::Gnome,
+                s if s.contains("gnome") || s == "ubuntu" => return CompositorType::Gnome,
                 _ => {}
             }
         }
@@ -109,16 +110,20 @@ impl CompositorType {
                 "sway" => return CompositorType::Sway,
                 "hyprland" => return CompositorType::Hyprland,
                 "kde" | "plasma" | "kwin" => return CompositorType::KWin,
-                s if s.contains("gnome") => return CompositorType::Gnome,
+                s if s.contains("gnome") || s == "ubuntu" => return CompositorType::Gnome,
                 _ => {}
             }
         }
 
-        // Check XDG_CURRENT_DESKTOP for KDE
-        if let Ok(current) = env::var("XDG_CURRENT_DESKTOP")
-            && current.to_lowercase() == "kde"
-        {
-            return CompositorType::KWin;
+        // Check XDG_CURRENT_DESKTOP for KDE or GNOME
+        if let Ok(current) = env::var("XDG_CURRENT_DESKTOP") {
+            let lower = current.to_lowercase();
+            if lower == "kde" {
+                return CompositorType::KWin;
+            }
+            if lower.contains("gnome") {
+                return CompositorType::Gnome;
+            }
         }
 
         // Use display server detection to guide compositor detection

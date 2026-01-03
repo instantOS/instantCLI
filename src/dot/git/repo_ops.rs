@@ -57,23 +57,40 @@ pub fn add_repo(config: &mut config::Config, repo: config::Repo, debug: bool) ->
         ));
     }
 
-    let depth = config.clone_depth;
+    // For local paths, canonicalize to absolute path and disable shallow clone
+    let local_path = std::path::Path::new(&repo.url);
+    let (clone_url, depth) = if local_path.exists() {
+        let canonical = local_path
+            .canonicalize()
+            .with_context(|| format!("Failed to resolve path: {}", repo.url))?;
+        (canonical.to_string_lossy().to_string(), None)
+    } else {
+        (repo.url.clone(), Some(config.clone_depth as i32))
+    };
 
-    let pb = common::progress::create_spinner(format!("Cloning {}...", repo.url));
+    let pb = common::progress::create_spinner(format!("Cloning {}...", clone_url));
 
-    git::clone_repo(
-        &repo.url,
-        &target,
-        repo.branch.as_deref(),
-        Some(depth as i32),
-    )
-    .context("Failed to clone repository")?;
+    git::clone_repo(&clone_url, &target, repo.branch.as_deref(), depth)
+        .context("Failed to clone repository")?;
 
-    common::progress::finish_spinner_with_success(pb, format!("Cloned {}", repo.url));
+    common::progress::finish_spinner_with_success(pb, format!("Cloned {}", clone_url));
 
-    // Note: config addition is now handled by the caller (clone_repository function)
+    // Create missing dots directories (git doesn't track empty directories)
+    if let Ok(meta) = crate::dot::meta::read_meta(&target) {
+        for dots_dir in &meta.dots_dirs {
+            let dots_path = target.join(dots_dir);
+            if !dots_path.exists() {
+                std::fs::create_dir_all(&dots_path).with_context(|| {
+                    format!("Failed to create dots directory: {}", dots_path.display())
+                })?;
+                if debug {
+                    eprintln!("Created missing dots directory: {}", dots_path.display());
+                }
+            }
+        }
+    }
 
-    // validate metadata but do not delete invalid clones; report their existence
+    // Validate metadata
     let local_repo = repo_mod::LocalRepo::new(config, repo.name.clone())?;
     let meta = &local_repo.meta;
 

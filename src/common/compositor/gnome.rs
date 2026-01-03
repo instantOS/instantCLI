@@ -40,6 +40,7 @@ impl Gnome {
                 || stderr.contains("Service was not found")
                 || stderr.contains("Method name")
                 || stderr.contains("Object does not exist")
+                || stderr.contains("/org/gnome/Shell/Extensions/Windows")
             {
                 return Err(anyhow::anyhow!(
                     "Gnome Scratchpad requires the 'Window Calls' extension. Please install it: https://extensions.gnome.org/extension/4724/window-calls/"

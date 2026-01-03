@@ -400,17 +400,6 @@ impl MenuServer {
         }
     }
 
-    /// Stop the server
-    pub async fn stop(&mut self) {
-        self.running.store(false, Ordering::SeqCst);
-        self.cleanup_socket().await;
-    }
-
-    /// Get the detected compositor type
-    pub fn compositor(&self) -> &CompositorType {
-        &self.compositor
-    }
-
     /// Get server status information
     fn get_status_info(&self) -> MenuResponse {
         let status = if self.running.load(Ordering::SeqCst) {

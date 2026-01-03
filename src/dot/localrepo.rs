@@ -2,6 +2,7 @@ use crate::common;
 use crate::common::git;
 use crate::dot::config::Config;
 use anyhow::{Context, Result};
+use colored::Colorize;
 use git2::Repository;
 use std::{path::Path, path::PathBuf};
 
@@ -16,13 +17,23 @@ impl DotfileDir {
     pub fn new(name: &str, repo_path: &PathBuf, is_active: bool) -> Result<Self> {
         let path = repo_path.join(name);
 
-        // Check if path exists on creation
+        // Create directory if it doesn't exist (git doesn't track empty directories)
         if !path.exists() {
-            return Err(anyhow::anyhow!(
-                "Dotfile directory '{}' does not exist at '{}'",
-                name,
-                path.display()
-            ));
+            std::fs::create_dir_all(&path).with_context(|| {
+                format!("Failed to create dotfile directory '{}'", path.display())
+            })?;
+
+            // Notify user about created directory
+            crate::ui::emit(
+                crate::ui::Level::Success,
+                "dot.repo.directory_created",
+                &format!(
+                    "{} Created directory: {}",
+                    char::from(crate::ui::nerd_font::NerdFont::Folder),
+                    path.display().to_string().cyan()
+                ),
+                None,
+            );
         }
 
         Ok(DotfileDir { path, is_active })
@@ -124,11 +135,7 @@ impl LocalRepo {
 
     /// Convert a target path (in home directory) to source path (in repo)
     #[allow(dead_code)]
-    pub fn target_to_source(
-        &self,
-        target_path: &Path,
-        _config: &crate::dot::config::Config,
-    ) -> Result<Option<PathBuf>> {
+    pub fn target_to_source(&self, target_path: &Path) -> Result<Option<PathBuf>> {
         let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());
         let relative = target_path.strip_prefix(&home).unwrap_or(target_path);
 

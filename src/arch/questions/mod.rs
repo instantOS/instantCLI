@@ -6,10 +6,14 @@ pub mod resize_instructions;
 pub mod system;
 pub mod warnings;
 
-pub use boolean::*;
-pub use disk::*;
-pub use dualboot::*;
-pub use partition::*;
-pub use resize_instructions::*;
-pub use system::*;
-pub use warnings::*;
+// Re-exports
+pub use boolean::BooleanQuestion;
+pub use disk::{DiskQuestion, PartitioningMethodQuestion, RunCfdiskQuestion};
+pub use dualboot::{DualBootPartitionQuestion, DualBootSizeQuestion};
+pub use partition::{EspPartitionValidator, PartitionSelectorQuestion};
+pub use resize_instructions::ResizeInstructionsQuestion;
+pub use system::{
+    EncryptionPasswordQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion,
+    MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion, UsernameQuestion,
+};
+pub use warnings::{VirtualBoxWarning, WeakPasswordWarning};

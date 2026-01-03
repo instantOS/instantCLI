@@ -100,6 +100,8 @@ h6 {
   text-align: center;
   width: 100%;
   letter-spacing: -0.02em;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 h1 {
@@ -146,6 +148,8 @@ p {
   margin-bottom: 0.8em;
   color: var(--ctp-subtext1);
   width: 100%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 /* =========================================
@@ -473,6 +477,7 @@ body.layout-hero .content {
 body.layout-hero h1 {
   font-size: 8.5em;
   margin-bottom: 0.15em;
+  line-height: 1.2;
   background: linear-gradient(to bottom, var(--ctp-text) 40%, var(--ctp-mauve) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -614,4 +619,83 @@ body.layout-dense p {
 body.layout-dense pre {
   padding-top: 3rem;
   margin: 1em 0;
+}
+
+/* =========================================
+   Responsive Design / Reels Support
+   ========================================= */
+
+/* Portrait / Vertical Video (9:16 aspect ratio) */
+@media (aspect-ratio < 1/1) {
+  body {
+    /* Unequal padding to clear UI elements (Reels/TikTok captions & buttons) */
+    padding-top: 15vh;
+    padding-bottom: 30vh;
+    padding-left: 6vw;
+    padding-right: 6vw;
+    
+    /* Adjust base size for narrow screens to keep relative units sane */
+    --base-size: 85%;
+  }
+
+  .content {
+    /* Use full available width (minus body padding) */
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Adjust typography scaling for vertical layout */
+  h1 {
+    font-size: 6em; 
+    line-height: 1.15;
+  }
+
+  h2 {
+    font-size: 4.5em;
+  }
+
+  h3 {
+    font-size: 3.5em;
+  }
+
+  p {
+    font-size: 3.2em;
+    line-height: 1.5;
+  }
+
+  ul, ol {
+    font-size: 3.2em;
+    padding-left: 1.2em;
+  }
+
+  /* Adjust code blocks for narrow width */
+  div.sourceCode,
+  div.code-window {
+    margin: 1em 0;
+  }
+
+  pre code {
+    font-size: 1.4em;
+  }
+
+  /* Layout specifics adjustments */
+  body.layout-hero .content {
+    transform: none; /* Disable scaling transform which might clip */
+    width: 100%;
+  }
+
+  body.layout-hero h1 {
+    font-size: 9em; /* Slightly smaller than 10em to avoid excessive wrapping */
+    line-height: 1.2;
+  }
+
+  body.layout-hero p {
+    font-size: 4.5em;
+  }
+
+  body.layout-quote blockquote {
+    font-size: 4em;
+    padding: 1.5em 1.5em;
+    margin: 1em 0;
+  }
 }

@@ -47,19 +47,6 @@ impl ScratchpadManager {
         Ok(())
     }
 
-    /// Hide the scratchpad if currently visible
-    pub fn hide(&self) -> Result<()> {
-        // Check if currently visible to avoid unnecessary operations
-        if self.visible.load(Ordering::SeqCst) {
-            self.compositor
-                .provider()
-                .hide(&self.config)
-                .context("Failed to hide menu server scratchpad")?;
-            self.visible.store(false, Ordering::SeqCst);
-        }
-        Ok(())
-    }
-
     /// Hide the scratchpad without checks - optimized for performance
     /// Use this when you need the absolute fastest hide operation
     pub fn hide_fast(&self) -> Result<()> {

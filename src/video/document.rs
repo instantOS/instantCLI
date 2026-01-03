@@ -17,7 +17,6 @@ pub struct VideoDocument {
 pub struct VideoMetadata {
     pub video: Option<VideoMetadataVideo>,
     pub transcript: Option<VideoMetadataTranscript>,
-    pub generated_at: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,7 +35,7 @@ pub struct VideoMetadataTranscript {
 pub enum DocumentBlock {
     Segment(SegmentBlock),
     Heading(HeadingBlock),
-    Separator(SeparatorBlock),
+    Separator,
     Unhandled(UnhandledBlock),
     Music(MusicBlock),
 }
@@ -52,25 +51,17 @@ pub struct SegmentBlock {
     pub range: TimeRange,
     pub text: String,
     pub kind: SegmentKind,
-    pub line: usize,
 }
 
 #[derive(Debug)]
 pub struct HeadingBlock {
     pub level: u32,
     pub text: String,
-    pub line: usize,
 }
 
 #[derive(Debug)]
 pub struct UnhandledBlock {
     pub description: String,
-    pub line: usize,
-}
-
-#[derive(Debug)]
-pub struct SeparatorBlock {
-    pub line: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +73,6 @@ pub enum MusicDirective {
 #[derive(Debug)]
 pub struct MusicBlock {
     pub directive: MusicDirective,
-    pub line: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -119,7 +109,6 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
             return Ok(VideoMetadata {
                 video: None,
                 transcript: None,
-                generated_at: None,
             });
         }
         let parsed: FrontMatter = serde_yaml::from_str(fm).with_context(|| {
@@ -138,13 +127,11 @@ fn parse_metadata(front_matter: Option<&str>, source_path: &Path) -> Result<Vide
             transcript: parsed.transcript.map(|transcript| VideoMetadataTranscript {
                 source: transcript.source.map(PathBuf::from),
             }),
-            generated_at: parsed.generated_at,
         })
     } else {
         Ok(VideoMetadata {
             video: None,
             transcript: None,
-            generated_at: None,
         })
     }
 }
@@ -188,30 +175,35 @@ impl<'a> BodyParserState<'a> {
         }
     }
 
+    fn byte_to_line(&self, byte_offset: usize) -> usize {
+        self.line_map.line_number(byte_offset)
+    }
+
     fn process_event(&mut self, event: Event, range: std::ops::Range<usize>) -> Result<()> {
         match event {
             Event::Start(Tag::Paragraph) => {
-                self.paragraph = Some(ParagraphState::new(range.start));
+                self.paragraph = Some(ParagraphState::new());
             }
             Event::End(TagEnd::Paragraph) => {
                 self.flush_paragraph()?;
             }
             Event::Start(Tag::Heading { level, .. }) => {
-                self.heading = Some(HeadingState::new(heading_level_to_u32(level), range.start));
+                self.heading = Some(HeadingState::new(heading_level_to_u32(level)));
             }
             Event::End(TagEnd::Heading(_)) => {
                 self.flush_heading();
             }
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
                 if is_music_code_block(&info) {
-                    self.code_block = Some(CodeBlockState::music(range.start));
+                    let line = self.byte_to_line(range.start);
+                    self.code_block = Some(CodeBlockState::music(line));
                 }
             }
             Event::End(TagEnd::CodeBlock) => {
                 self.flush_code_block()?;
             }
             Event::Start(Tag::BlockQuote(_)) => {
-                self.blockquote = Some(BlockquoteState::new(range.start));
+                self.blockquote = Some(BlockquoteState::new());
             }
             Event::End(TagEnd::BlockQuote(_)) => {
                 self.flush_blockquote();
@@ -226,16 +218,18 @@ impl<'a> BodyParserState<'a> {
             }
             Event::End(TagEnd::Image) => {
                 // Flush the pending image with its alt text
+                let line = self.byte_to_line(range.start);
                 if let Some(state) = self.paragraph.as_mut() {
-                    state.flush_pending_image(range.start);
+                    state.flush_pending_image(line);
                 }
             }
             Event::Text(text) => {
                 self.handle_text(text.into_string(), range.start);
             }
             Event::Code(code) => {
+                let line = self.byte_to_line(range.start);
                 if let Some(state) = self.paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::code(range.start, code.into_string()));
+                    state.push_fragment(InlineFragment::code(line, code.into_string()));
                 }
             }
             Event::SoftBreak => {
@@ -245,21 +239,21 @@ impl<'a> BodyParserState<'a> {
                 self.handle_break(range.start, true);
             }
             Event::Html(text) => {
+                let line = self.byte_to_line(range.start);
                 if let Some(state) = self.paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::html(range.start, text.into_string()));
+                    state.push_fragment(InlineFragment::html(line, text.into_string()));
                 }
             }
             Event::FootnoteReference(reference) => {
+                let line = self.byte_to_line(range.start);
                 if let Some(state) = self.paragraph.as_mut() {
-                    state.push_fragment(InlineFragment::text(range.start, reference.into_string()));
+                    state.push_fragment(InlineFragment::text(line, reference.into_string()));
                 }
             }
             Event::Rule => {
                 self.flush_paragraph()?;
                 self.flush_heading();
-                let line = self.base_line_offset + self.line_map.line_number(range.start);
-                self.blocks
-                    .push(DocumentBlock::Separator(SeparatorBlock { line }));
+                self.blocks.push(DocumentBlock::Separator);
             }
             _ => {}
         }
@@ -268,8 +262,7 @@ impl<'a> BodyParserState<'a> {
 
     fn flush_paragraph(&mut self) -> Result<()> {
         if let Some(state) = self.paragraph.take() {
-            let mut paragraph_blocks =
-                state.into_document_blocks(self.base_line_offset, self.line_map)?;
+            let mut paragraph_blocks = state.into_document_blocks(self.base_line_offset)?;
             self.blocks.append(&mut paragraph_blocks);
         }
         Ok(())
@@ -277,25 +270,22 @@ impl<'a> BodyParserState<'a> {
 
     fn flush_heading(&mut self) {
         if let Some(state) = self.heading.take() {
-            let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
-            self.blocks
-                .push(DocumentBlock::Heading(state.into_block(line)));
+            self.blocks.push(DocumentBlock::Heading(state.into_block()));
         }
     }
 
     fn flush_code_block(&mut self) -> Result<()> {
         if let Some(state) = self.code_block.take() {
-            let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
+            let line = self.base_line_offset + state.start_line;
             let directive = state.into_music_directive(line)?;
             self.blocks
-                .push(DocumentBlock::Music(MusicBlock { directive, line }));
+                .push(DocumentBlock::Music(MusicBlock { directive }));
         }
         Ok(())
     }
 
     fn flush_blockquote(&mut self) {
         if let Some(state) = self.blockquote.take() {
-            let line = self.base_line_offset + self.line_map.line_number(state.start_byte);
             // Re-wrap content with `> ` prefix so it renders as <blockquote> in Pandoc
             let markdown = state
                 .content
@@ -306,7 +296,6 @@ impl<'a> BodyParserState<'a> {
             if !markdown.trim().is_empty() {
                 self.blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
                     description: markdown,
-                    line,
                 }));
             }
         }
@@ -315,12 +304,14 @@ impl<'a> BodyParserState<'a> {
     fn handle_text(&mut self, text: String, start: usize) {
         if let Some(state) = self.blockquote.as_mut() {
             state.push_text(text.clone());
-        } else if let Some(state) = self.paragraph.as_mut() {
+        } else if self.paragraph.is_some() {
             // If inside an image tag, accumulate as alt text; otherwise add as text fragment
+            let line = self.byte_to_line(start);
+            let state = self.paragraph.as_mut().unwrap();
             if state.is_inside_image() {
                 state.push_image_alt(&text);
             } else {
-                state.push_fragment(InlineFragment::text(start, text.clone()));
+                state.push_fragment(InlineFragment::text(line, text.clone()));
             }
         }
         if let Some(state) = self.heading.as_mut() {
@@ -334,11 +325,13 @@ impl<'a> BodyParserState<'a> {
     fn handle_break(&mut self, start: usize, hard: bool) {
         if let Some(state) = self.blockquote.as_mut() {
             state.push_newline();
-        } else if let Some(state) = self.paragraph.as_mut() {
+        } else if self.paragraph.is_some() {
+            let line = self.byte_to_line(start);
+            let state = self.paragraph.as_mut().unwrap();
             if hard {
-                state.push_fragment(InlineFragment::hard_break(start));
+                state.push_fragment(InlineFragment::hard_break(line));
             } else {
-                state.push_fragment(InlineFragment::soft_break(start));
+                state.push_fragment(InlineFragment::soft_break(line));
             }
         }
         if let Some(state) = self.heading.as_mut() {
@@ -402,7 +395,6 @@ fn strip_html_comments(input: &str) -> String {
 }
 
 struct ParagraphState {
-    start_byte: usize,
     fragments: Vec<InlineFragment>,
     /// Pending image to be flushed when we encounter the end tag
     pending_image: Option<(String, String)>, // (url, title)
@@ -411,9 +403,8 @@ struct ParagraphState {
 }
 
 impl ParagraphState {
-    fn new(start: usize) -> Self {
+    fn new() -> Self {
         Self {
-            start_byte: start,
             fragments: Vec::new(),
             pending_image: None,
             pending_image_alt: String::new(),
@@ -433,11 +424,11 @@ impl ParagraphState {
         self.pending_image_alt.push_str(text);
     }
 
-    fn flush_pending_image(&mut self, start: usize) {
+    fn flush_pending_image(&mut self, line: usize) {
         if let Some((url, title)) = self.pending_image.take() {
             let alt = std::mem::take(&mut self.pending_image_alt);
             self.fragments
-                .push(InlineFragment::image(start, url, alt, title));
+                .push(InlineFragment::image(line, url, alt, title));
         }
     }
 
@@ -445,11 +436,7 @@ impl ParagraphState {
         self.pending_image.is_some()
     }
 
-    fn into_document_blocks(
-        self,
-        base_line_offset: usize,
-        line_map: &LineMap,
-    ) -> Result<Vec<DocumentBlock>> {
+    fn into_document_blocks(self, base_line_offset: usize) -> Result<Vec<DocumentBlock>> {
         if self.fragments.is_empty() {
             return Ok(Vec::new());
         }
@@ -461,13 +448,13 @@ impl ParagraphState {
         while let Some(fragment) = fragments.next() {
             match fragment.kind {
                 InlineFragmentKind::Code(code) => {
-                    let code_line = line_map.line_number(fragment.start_byte);
+                    let code_line = fragment.start_line;
                     let mut following = Vec::new();
                     while let Some(next) = fragments.peek() {
                         if matches!(next.kind, InlineFragmentKind::Code(_)) {
                             break;
                         }
-                        let next_line = line_map.line_number(next.start_byte);
+                        let next_line = next.start_line;
                         if next_line != code_line {
                             break;
                         }
@@ -475,7 +462,7 @@ impl ParagraphState {
                     }
 
                     let text = InlineFragment::render_many(&following).trim().to_string();
-                    let line = base_line_offset + line_map.line_number(fragment.start_byte);
+                    let line = base_line_offset + code_line;
                     let range = parse_time_range(&code).with_context(|| {
                         format!("Invalid timestamp range `{}` at line {}", code, line)
                     })?;
@@ -484,12 +471,7 @@ impl ParagraphState {
                     } else {
                         SegmentKind::Dialogue
                     };
-                    blocks.push(DocumentBlock::Segment(SegmentBlock {
-                        range,
-                        text,
-                        kind,
-                        line,
-                    }));
+                    blocks.push(DocumentBlock::Segment(SegmentBlock { range, text, kind }));
                 }
                 _ => leftover_text.push(fragment),
             }
@@ -499,10 +481,8 @@ impl ParagraphState {
             .trim()
             .to_string();
         if !leftover_content.is_empty() {
-            let line = base_line_offset + line_map.line_number(self.start_byte);
             blocks.push(DocumentBlock::Unhandled(UnhandledBlock {
                 description: leftover_content,
-                line,
             }));
         }
 
@@ -512,15 +492,13 @@ impl ParagraphState {
 
 struct HeadingState {
     level: u32,
-    start_byte: usize,
     text: String,
 }
 
 impl HeadingState {
-    fn new(level: u32, start: usize) -> Self {
+    fn new(level: u32) -> Self {
         Self {
             level,
-            start_byte: start,
             text: String::new(),
         }
     }
@@ -529,24 +507,21 @@ impl HeadingState {
         self.text.push_str(&text);
     }
 
-    fn into_block(self, line: usize) -> HeadingBlock {
+    fn into_block(self) -> HeadingBlock {
         HeadingBlock {
             level: self.level,
             text: self.text.trim().to_string(),
-            line,
         }
     }
 }
 
 struct BlockquoteState {
-    start_byte: usize,
     content: String,
 }
 
 impl BlockquoteState {
-    fn new(start: usize) -> Self {
+    fn new() -> Self {
         Self {
-            start_byte: start,
             content: String::new(),
         }
     }
@@ -561,13 +536,13 @@ impl BlockquoteState {
 }
 
 struct InlineFragment {
-    start_byte: usize,
+    start_line: usize,
     kind: InlineFragmentKind,
 }
 
 struct CodeBlockState {
     kind: CodeBlockKindState,
-    start_byte: usize,
+    start_line: usize,
     content: String,
 }
 
@@ -576,10 +551,10 @@ enum CodeBlockKindState {
 }
 
 impl CodeBlockState {
-    fn music(start_byte: usize) -> Self {
+    fn music(start_line: usize) -> Self {
         Self {
             kind: CodeBlockKindState::Music,
-            start_byte,
+            start_line,
             content: String::new(),
         }
     }
@@ -612,42 +587,42 @@ impl CodeBlockState {
 impl InlineFragment {
     fn text(start: usize, text: String) -> Self {
         Self {
-            start_byte: start,
+            start_line: start,
             kind: InlineFragmentKind::Text(text),
         }
     }
 
     fn code(start: usize, code: String) -> Self {
         Self {
-            start_byte: start,
+            start_line: start,
             kind: InlineFragmentKind::Code(code),
         }
     }
 
     fn soft_break(start: usize) -> Self {
         Self {
-            start_byte: start,
+            start_line: start,
             kind: InlineFragmentKind::SoftBreak,
         }
     }
 
     fn hard_break(start: usize) -> Self {
         Self {
-            start_byte: start,
+            start_line: start,
             kind: InlineFragmentKind::HardBreak,
         }
     }
 
     fn html(start: usize, html: String) -> Self {
         Self {
-            start_byte: start,
+            start_line: start,
             kind: InlineFragmentKind::Html(html),
         }
     }
 
     fn image(start: usize, url: String, alt: String, title: String) -> Self {
         Self {
-            start_byte: start,
+            start_line: start,
             kind: InlineFragmentKind::Image { url, alt, title },
         }
     }
@@ -784,7 +759,6 @@ mod tests {
                 assert!((segment.range.start_seconds() - 0.0).abs() < f64::EPSILON);
                 assert!((segment.range.end_seconds() - 1.0).abs() < f64::EPSILON);
                 assert_eq!(segment.text, "first line");
-                assert_eq!(segment.line, 1);
             }
             other => panic!("Expected first block to be Segment, got {:?}", other),
         }
@@ -794,7 +768,6 @@ mod tests {
                 assert!((segment.range.start_seconds() - 1.5).abs() < f64::EPSILON);
                 assert!((segment.range.end_seconds() - 2.0).abs() < f64::EPSILON);
                 assert_eq!(segment.text, "second line");
-                assert_eq!(segment.line, 2);
             }
             other => panic!("Expected second block to be Segment, got {:?}", other),
         }
@@ -948,8 +921,6 @@ impl LineMap {
 struct FrontMatter {
     video: Option<FrontMatterVideo>,
     transcript: Option<FrontMatterTranscript>,
-    #[serde(rename = "generated_at")]
-    generated_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

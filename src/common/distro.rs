@@ -28,25 +28,29 @@ pub enum OperatingSystem {
     CentOS,
     /// OpenSUSE (including Leap and Tumbleweed)
     OpenSUSE,
+    /// Termux (Android)
+    Termux,
     /// Unknown distribution with ID
     Unknown(String),
 }
-
-/// Type alias for backward compatibility
-pub type Distro = OperatingSystem;
 
 impl OperatingSystem {
     /// Detect the current operating system from /etc/os-release
     pub fn detect() -> Self {
         let os_release_path = Path::new("/etc/os-release");
-        if !os_release_path.exists() {
-            return Self::Unknown("No /etc/os-release found".to_string());
+        if os_release_path.exists() {
+            return match fs::read_to_string(os_release_path) {
+                Ok(content) => Self::parse_os_release(&content),
+                Err(_) => Self::Unknown("Failed to read /etc/os-release".to_string()),
+            };
         }
 
-        match fs::read_to_string(os_release_path) {
-            Ok(content) => Self::parse_os_release(&content),
-            Err(_) => Self::Unknown("Failed to read /etc/os-release".to_string()),
+        // Check for Termux environment if /etc/os-release not found
+        if std::env::var("TERMUX_VERSION").is_ok() {
+            return Self::Termux;
         }
+
+        Self::Unknown("No /etc/os-release found".to_string())
     }
 
     /// Parse os-release content and return the detected OS
@@ -105,6 +109,8 @@ impl OperatingSystem {
             // Ubuntu-based (Ubuntu itself is Debian-based)
             Self::PopOS | Self::LinuxMint => Some(Self::Ubuntu),
             Self::Ubuntu => Some(Self::Debian),
+            // Termux is Debian-based (uses apt/dpkg structure)
+            Self::Termux => Some(Self::Debian),
             // CentOS is Fedora/RHEL-based
             Self::CentOS => Some(Self::Fedora),
             // Root distributions and Unknown have no parent
@@ -175,6 +181,7 @@ impl OperatingSystem {
             Self::Fedora => Some(PM::Dnf),
             Self::CentOS => Some(PM::Dnf),
             Self::OpenSUSE => Some(PM::Zypper),
+            Self::Termux => Some(PM::Pkg),
 
             // Unknown has no supported manager
             Self::Unknown(_) => None,
@@ -198,6 +205,7 @@ impl OperatingSystem {
             Self::Fedora => "Fedora",
             Self::CentOS => "CentOS",
             Self::OpenSUSE => "openSUSE",
+            Self::Termux => "Termux",
             Self::Unknown(_) => "Unknown",
         }
     }
@@ -353,10 +361,12 @@ ID_LIKE="arch""#;
         assert!(OperatingSystem::Ubuntu.is_debian_based());
         assert!(OperatingSystem::PopOS.is_debian_based());
         assert!(OperatingSystem::LinuxMint.is_debian_based());
+        assert!(OperatingSystem::Termux.is_debian_based());
 
         // Cross-checks
         assert!(!OperatingSystem::Arch.is_debian_based());
         assert!(!OperatingSystem::Ubuntu.is_arch_based());
+        assert!(!OperatingSystem::Termux.is_arch_based());
     }
 
     #[test]
@@ -382,6 +392,10 @@ ID_LIKE="arch""#;
         assert_eq!(
             OperatingSystem::Fedora.native_package_manager(),
             Some(PackageManager::Dnf)
+        );
+        assert_eq!(
+            OperatingSystem::Termux.native_package_manager(),
+            Some(PackageManager::Pkg)
         );
     }
 
@@ -415,6 +429,12 @@ ID_LIKE="arch""#;
             Some(OperatingSystem::Debian)
         );
 
+        // Termux
+        assert_eq!(
+            OperatingSystem::Termux.based_on(),
+            Some(OperatingSystem::Debian)
+        );
+
         // Root distributions have no parent
         assert_eq!(OperatingSystem::Arch.based_on(), None);
         assert_eq!(OperatingSystem::Debian.based_on(), None);
@@ -444,6 +464,7 @@ ID_LIKE="arch""#;
         assert!(OperatingSystem::Debian.is_supported_by(supported_debian));
         assert!(OperatingSystem::Ubuntu.is_supported_by(supported_debian)); // Ubuntu is based on Debian
         assert!(OperatingSystem::PopOS.is_supported_by(supported_debian)); // PopOS -> Ubuntu -> Debian
+        assert!(OperatingSystem::Termux.is_supported_by(supported_debian));
 
         // InstantOS specific support
         assert!(OperatingSystem::InstantOS.is_supported_by(supported_instantos));

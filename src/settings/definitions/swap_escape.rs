@@ -35,7 +35,7 @@ fn apply_swap_escape_setting_impl(
                 "Swap Escape/Caps Lock configuration is not yet supported on {}. Setting saved but not applied.",
                 compositor.name()
             );
-            let _ = FzfWrapper::message_dialog(&message);
+            let _ = FzfWrapper::message(&message);
         }
         return Ok(());
     }
@@ -59,7 +59,7 @@ fn apply_swap_escape_setting_impl(
             Err(e) => {
                 if verbose {
                     let message = format!("Failed to apply in Sway: {e}");
-                    let _ = FzfWrapper::message_dialog(&message);
+                    let _ = FzfWrapper::message(&message);
                 }
             }
         }
@@ -95,13 +95,13 @@ fn apply_swap_escape_setting_impl(
             Ok(_) => {
                 if verbose {
                     let message = "gsettings command failed to apply the setting.";
-                    let _ = FzfWrapper::message_dialog(message);
+                    let _ = FzfWrapper::message(message);
                 }
             }
             Err(e) => {
                 if verbose {
                     let message = format!("Failed to execute gsettings: {e}");
-                    let _ = FzfWrapper::message_dialog(&message);
+                    let _ = FzfWrapper::message(&message);
                 }
             }
         }
@@ -232,7 +232,7 @@ fn apply_swap_escape_setting_impl(
                 );
             } else {
                 let message = "KDE configuration updated, but requires restart or manual reapply.\n\nSystem Settings → Input Devices → Keyboard → Advanced → Caps Lock behavior\n\nOr restart the keyboard daemon by logging out and back in.";
-                let _ = FzfWrapper::message_dialog(message);
+                let _ = FzfWrapper::message(message);
             }
         }
     } else {
@@ -262,13 +262,13 @@ fn apply_swap_escape_setting_impl(
             Ok(_) => {
                 if verbose {
                     let message = "setxkbmap command failed to apply the setting.";
-                    let _ = FzfWrapper::message_dialog(message);
+                    let _ = FzfWrapper::message(message);
                 }
             }
             Err(e) => {
                 if verbose {
                     let message = format!("Failed to execute setxkbmap: {e}");
-                    let _ = FzfWrapper::message_dialog(&message);
+                    let _ = FzfWrapper::message(&message);
                 }
             }
         }

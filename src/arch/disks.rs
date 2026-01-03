@@ -170,16 +170,6 @@ pub struct DiskPrepareResult {
     pub swapoff: Vec<String>,
 }
 
-impl DiskPrepareResult {
-    pub fn is_empty(&self) -> bool {
-        self.unmounted.is_empty() && self.swapoff.is_empty()
-    }
-
-    pub fn total_count(&self) -> usize {
-        self.unmounted.len() + self.swapoff.len()
-    }
-}
-
 /// Prepare a disk for installation by unmounting all partitions and disabling swap
 pub fn prepare_disk(disk: &str) -> Result<DiskPrepareResult> {
     let mut result = DiskPrepareResult::default();

@@ -130,16 +130,23 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
 /// - For untracked files: Prompt to add them to a repository
 /// - For directories without --all: Only update tracked files
 /// - For directories with --all: Update tracked files AND add untracked files
+/// - With --choose: Pick which repo/subdir to add the file to
 pub fn add_dotfile(
     config: &Config,
     db: &Database,
     path: &str,
     add_all: bool,
+    choose: bool,
     debug: bool,
 ) -> Result<()> {
     let all_dotfiles = get_all_dotfiles(config, db)?;
     let target_path = resolve_dotfile_path(path)?;
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
+
+    // Handle --choose flag for single files
+    if choose && target_path.is_file() {
+        return add_with_destination_picker(config, db, &target_path);
+    }
 
     // Get tracked dotfiles within the specified path
     let tracked_dotfiles = filter_dotfiles_by_path(&all_dotfiles, &target_path);
@@ -158,7 +165,7 @@ pub fn add_dotfile(
         add_untracked_files(&untracked_files, config, db, &mut stats, debug)?;
     } else if target_path.is_file() && tracked_dotfiles.is_empty() {
         // Single untracked file - prompt to add it
-        let repo_path = add_new_file(config, db, &target_path, debug)?;
+        let repo_path = add_new_file(config, db, &target_path)?;
         stats.added_count += 1;
         stats.modified_repos.insert(repo_path);
     } else if tracked_dotfiles.is_empty() {
@@ -184,8 +191,113 @@ pub fn add_dotfile(
     Ok(())
 }
 
+/// Add a file with a destination picker (for --choose flag)
+fn add_with_destination_picker(
+    config: &Config,
+    db: &Database,
+    target_path: &PathBuf,
+) -> Result<()> {
+    use super::alternative::{add_to_destination, get_all_destinations};
+    use crate::dot::override_config::{DotfileSource, find_all_sources};
+
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let display_path = target_path
+        .strip_prefix(&home)
+        .map(|p| format!("~/{}", p.display()))
+        .unwrap_or_else(|_| target_path.display().to_string());
+
+    // Find existing sources for this file
+    let existing_sources = find_all_sources(config, target_path)?;
+    let all_destinations = get_all_destinations(config)?;
+
+    if all_destinations.is_empty() {
+        emit(
+            Level::Warn,
+            "dot.add.no_repos",
+            &format!(
+                "{} No writable repositories configured",
+                char::from(NerdFont::Warning)
+            ),
+            None,
+        );
+        return Ok(());
+    }
+
+    // Build selection items, marking which ones already have the file
+    #[derive(Clone)]
+    struct DestItem {
+        source: DotfileSource,
+        exists: bool,
+    }
+
+    impl crate::menu_utils::FzfSelectable for DestItem {
+        fn fzf_display_text(&self) -> String {
+            let status = if self.exists { " [exists]" } else { "" };
+            format!(
+                "{} / {}{}",
+                self.source.repo_name, self.source.subdir_name, status
+            )
+        }
+        fn fzf_key(&self) -> String {
+            format!("{}:{}", self.source.repo_name, self.source.subdir_name)
+        }
+    }
+
+    let items: Vec<DestItem> = all_destinations
+        .into_iter()
+        .map(|dest| {
+            let exists = existing_sources
+                .iter()
+                .any(|s| s.repo_name == dest.repo_name && s.subdir_name == dest.subdir_name);
+            DestItem {
+                source: dest,
+                exists,
+            }
+        })
+        .collect();
+
+    let prompt = format!("Select destination for {}: ", display_path);
+    match FzfWrapper::builder().prompt(prompt).select(items)? {
+        FzfResult::Selected(item) => {
+            if item.exists {
+                emit(
+                    Level::Info,
+                    "dot.add.already_exists",
+                    &format!(
+                        "{} {} already exists in {} / {}",
+                        char::from(NerdFont::Info),
+                        display_path.cyan(),
+                        item.source.repo_name.green(),
+                        item.source.subdir_name.green()
+                    ),
+                    None,
+                );
+            } else {
+                add_to_destination(config, db, target_path, &item.source)?;
+            }
+        }
+        FzfResult::Cancelled => {
+            emit(
+                Level::Info,
+                "dot.add.cancelled",
+                &format!("{} Selection cancelled", char::from(NerdFont::Info)),
+                None,
+            );
+        }
+        FzfResult::Error(e) => {
+            return Err(anyhow::anyhow!("Selection error: {}", e));
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
 /// Add a new untracked file and return the repo path
-fn add_new_file(config: &Config, db: &Database, full_path: &Path, debug: bool) -> Result<PathBuf> {
+fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<PathBuf> {
+    use super::alternative::add_to_destination;
+    use crate::dot::override_config::DotfileSource;
+
     // Repository selection
     let repo_config = select_repo(config)?;
     let local_repo = LocalRepo::new(config, repo_config.name.clone())?;
@@ -193,47 +305,20 @@ fn add_new_file(config: &Config, db: &Database, full_path: &Path, debug: bool) -
     // dots_dir selection
     let chosen_dir = select_dots_dir(&local_repo)?;
 
-    // Construct destination path inside the repo
+    // Build destination info
     let repo_base = local_repo.local_path(config)?;
-    let dest_base = repo_base.join(&chosen_dir.path);
-
-    // Compute relative path from home and final destination
-    let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let relative = full_path.strip_prefix(&home).unwrap_or(full_path);
-    let dest_path = dest_base.join(relative);
-
-    // Use Dotfile methods to perform the copy and DB registration
-    let dotfile = Dotfile {
-        source_path: dest_path.clone(),
-        target_path: full_path.to_path_buf(),
+    let dest = DotfileSource {
+        repo_name: repo_config.name.clone(),
+        subdir_name: chosen_dir
+            .path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string()),
+        source_path: chosen_dir.path.clone(),
     };
 
-    dotfile.create_source_from_target(db)?;
-
-    // Automatically stage the new file
-    if let Err(e) = crate::dot::git::repo_ops::git_add(&repo_base, &dest_path, debug) {
-        // Just warn if git add fails, don't fail the whole operation
-        eprintln!(
-            "{} Failed to stage file: {}",
-            char::from(NerdFont::Warning).to_string().yellow(),
-            e
-        );
-    }
-
-    let chosen_dir_name = chosen_dir
-        .path
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| chosen_dir.path.display().to_string());
-
-    let relative_display = relative.display().to_string();
-    println!(
-        "{} Added ~/{} to repo '{}' in directory '{}'",
-        char::from(NerdFont::Check),
-        relative_display.green(),
-        local_repo.name,
-        chosen_dir_name
-    );
+    // Use shared add function
+    add_to_destination(config, db, &full_path.to_path_buf(), &dest)?;
 
     Ok(repo_base)
 }
@@ -353,7 +438,7 @@ fn add_untracked_files(
     config: &Config,
     db: &Database,
     stats: &mut DirectoryAddStats,
-    debug: bool,
+    _debug: bool,
 ) -> Result<()> {
     if file_paths.is_empty() {
         return Ok(());
@@ -366,7 +451,7 @@ fn add_untracked_files(
     );
 
     for file_path in file_paths {
-        let repo_path = add_new_file(config, db, file_path, debug)?;
+        let repo_path = add_new_file(config, db, file_path)?;
         stats.added_count += 1;
         stats.modified_repos.insert(repo_path);
     }

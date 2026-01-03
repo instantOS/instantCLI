@@ -4,7 +4,6 @@ use anyhow::{Result, bail};
 use duct::cmd;
 use sudo::RunningAs;
 
-use crate::common::package::{Dependency, InstallResult, ensure_all};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::*;
 
@@ -184,10 +183,6 @@ impl SettingsContext {
         }
     }
 
-    pub fn ensure_dependencies(&mut self, deps: &[&'static Dependency]) -> Result<InstallResult> {
-        ensure_all(deps)
-    }
-
     pub fn persist(&mut self) -> Result<()> {
         if self.dirty {
             self.store.save()?;
@@ -220,7 +215,7 @@ impl SettingsContext {
 
     pub fn show_message(&self, message: &str) {
         // Best-effort; user feedback in TUI context
-        let _ = FzfWrapper::message_dialog(message);
+        let _ = FzfWrapper::message(message);
     }
 
     pub fn emit_success(&self, code: &str, message: &str) {
@@ -330,8 +325,3 @@ impl SettingsContext {
     //     Ok(())
     // }
 }
-
-pub use crate::ui::catppuccin::{
-    colors, format_back_icon, format_icon, format_icon_colored, format_search_icon, hex_to_ansi_fg,
-    select_one_with_style, select_one_with_style_at,
-};

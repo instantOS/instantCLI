@@ -47,16 +47,22 @@ window.addEventListener('load', () => {
     // 2. Auto-scaling logic
     let currentScale = 100;
     const minScale = 20;
-    const maxScale = 300; // Allow growing up to 3x base size
+    let maxScale = 300; // Allow growing up to 3x base size
+
+    if (body.classList.contains('layout-hero')) {
+        maxScale = 250; // Cap hero slightly more to avoid clipping
+    }
 
     function checkOverflow() {
+        const buffer = 20; // px safety margin
+
         // Vertical overflow
-        if (body.scrollHeight > body.clientHeight || content.scrollHeight > body.clientHeight) {
+        if (body.scrollHeight > body.clientHeight - buffer || content.scrollHeight > body.clientHeight - buffer) {
             return true;
         }
 
         // Horizontal overflow (global)
-        if (body.scrollWidth > body.clientWidth) {
+        if (body.scrollWidth > body.clientWidth - buffer) {
             return true;
         }
 

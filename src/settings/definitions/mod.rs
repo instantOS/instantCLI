@@ -10,6 +10,7 @@ pub mod appearance;
 pub mod apps;
 pub mod brightness;
 pub mod desktop;
+pub mod display;
 pub mod flatpak;
 pub mod keyboard;
 pub mod language;

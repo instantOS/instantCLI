@@ -22,7 +22,7 @@ mod tests {
             .expect("Failed to init git repo");
 
         let mut config = Config::default();
-        config.repos_dir = crate::dot::path_serde::TildePath::new(dir.path().to_path_buf());
+        config.repos_dir = crate::common::TildePath::new(dir.path().to_path_buf());
 
         let metadata = RepoMetaData {
             name: "test-repo".to_string(),
@@ -66,7 +66,7 @@ mod tests {
         fs::create_dir_all(repo_path.join("dots")).unwrap();
 
         let mut config = Config::default();
-        config.repos_dir = crate::dot::path_serde::TildePath::new(dir.path().to_path_buf());
+        config.repos_dir = crate::common::TildePath::new(dir.path().to_path_buf());
 
         let repo_config = Repo {
             url: "https://example.com/repo.git".to_string(),

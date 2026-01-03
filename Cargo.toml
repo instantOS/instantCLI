@@ -22,13 +22,13 @@ lto = false
 [dependencies]
 anyhow = "1.0.100"
 chrono = { version = "0.4.42", features = ["serde"] }
-clap = { version = "4.5.48", features = ["derive"] }
-clap_complete = { version = "4.5.58", features = ["unstable-dynamic"] }
+clap = { version = "4.5.53", features = ["derive"] }
+clap_complete = { version = "4.5.64", features = ["unstable-dynamic"] }
 colored = "3.0.0"
 dirs = "6.0.0"
 indicatif = "0.18.0"
-once_cell = "1.19"
-rusqlite = "0.37.0"
+once_cell = "1.21.3"
+rusqlite = "0.38.0"
 semver = "1.0"
 serde = { version = "1.0.227", features = ["derive"] }
 sha2 = "0.10.9"
@@ -44,7 +44,7 @@ comfy-table = "7.2.1"            # Formatted tables for doctor command output
 regex = "1.10.0"
 reqwest = { version = "0.12.23", features = ["blocking", "json", "multipart"] }  # For GitHub API calls and Imgur uploads
 serde_json = "1.0.145"             # For JSON parsing
-git2 = "0.20.2"                 # For native git operations
+git2 = "0.20.3"                 # For native git operations
 duct = "1.1.0"                  # For non-git shell commands (makepkg, etc.)
 tempfile = "3.23.0"            # For temporary files
 rand = "0.8.5"                    # For request ID generation
@@ -58,6 +58,7 @@ dialoguer = "0.12.0"
 pulldown-cmark = { version = "0.12.2", features = ["simd"] }
 serde_yaml = "0.9.34"
 nix = { version = "0.29", features = ["fs"] }
+pathdiff = "0.2"
 urlencoding = "2.1.3"
 
 [dev-dependencies]

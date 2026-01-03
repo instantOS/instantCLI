@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use git2::{
-    FetchOptions, Repository,
+    FetchOptions, Repository, Status, StatusOptions,
     build::{CheckoutBuilder, RepoBuilder},
 };
 use std::path::Path;
@@ -141,4 +141,116 @@ pub fn clean_and_pull(repo: &mut Repository) -> Result<()> {
         .context("Failed to reset to remote commit")?;
 
     Ok(())
+}
+
+/// Detailed repository status information
+#[derive(Debug, Clone)]
+pub struct RepoStatus {
+    pub branch: String,
+    pub working_dir_clean: bool,
+    pub file_counts: FileStatusCounts,
+    pub branch_sync: BranchSyncStatus,
+}
+
+/// File count by status
+#[derive(Debug, Clone, Default)]
+pub struct FileStatusCounts {
+    pub modified: usize,
+    pub added: usize,
+    pub deleted: usize,
+    pub untracked: usize,
+}
+
+/// Branch synchronization status
+#[derive(Debug, Clone)]
+pub enum BranchSyncStatus {
+    UpToDate,
+    Ahead { commits: usize },
+    Behind { commits: usize },
+    Diverged { ahead: usize, behind: usize },
+    NoRemote,
+}
+
+/// Get comprehensive git repository status
+pub fn get_repo_status(repo: &Repository) -> Result<RepoStatus> {
+    let branch = current_branch(repo)?;
+    let statuses = repo.statuses(Some(
+        StatusOptions::new()
+            .include_untracked(true)
+            .recurse_untracked_dirs(true),
+    ))?;
+
+    let file_counts = count_file_statuses(&statuses);
+    let working_dir_clean = file_counts.modified == 0
+        && file_counts.added == 0
+        && file_counts.deleted == 0
+        && file_counts.untracked == 0;
+
+    let branch_sync = compare_with_remote(repo, &branch)?;
+
+    Ok(RepoStatus {
+        branch,
+        working_dir_clean,
+        file_counts,
+        branch_sync,
+    })
+}
+
+/// Count files by their git status
+pub fn count_file_statuses(statuses: &git2::Statuses) -> FileStatusCounts {
+    let mut counts = FileStatusCounts::default();
+
+    for entry in statuses.iter() {
+        let status = entry.status();
+
+        if status.contains(Status::WT_NEW) {
+            counts.untracked += 1;
+        }
+        if status.contains(Status::WT_MODIFIED) {
+            counts.modified += 1;
+        }
+        if status.contains(Status::WT_DELETED) {
+            counts.deleted += 1;
+        }
+        if status.contains(Status::INDEX_NEW) {
+            counts.added += 1;
+        }
+        if status.contains(Status::INDEX_MODIFIED) || status.contains(Status::INDEX_DELETED) {
+            counts.modified += 1;
+        }
+    }
+
+    counts
+}
+
+/// Compare local branch with remote tracking branch
+pub fn compare_with_remote(repo: &Repository, branch_name: &str) -> Result<BranchSyncStatus> {
+    let local_branch = repo.find_branch(branch_name, git2::BranchType::Local);
+
+    let local_branch = match local_branch {
+        Ok(branch) => branch,
+        Err(_) => return Ok(BranchSyncStatus::NoRemote),
+    };
+
+    let upstream = local_branch.upstream();
+
+    let upstream = match upstream {
+        Ok(branch) => branch,
+        Err(_) => return Ok(BranchSyncStatus::NoRemote),
+    };
+
+    let local_commit = local_branch.get().peel_to_commit()?;
+    let upstream_commit = upstream.get().peel_to_commit()?;
+
+    let (ahead, behind) = repo.graph_ahead_behind(local_commit.id(), upstream_commit.id())?;
+
+    match (ahead, behind) {
+        (0, 0) => Ok(BranchSyncStatus::UpToDate),
+        (a, 0) => Ok(BranchSyncStatus::Ahead { commits: a }),
+        (0, b) => Ok(BranchSyncStatus::Behind { commits: b }),
+        (a, b) => Ok(BranchSyncStatus::Diverged {
+            ahead: a,
+            behind: b,
+        }),
+    }
 }

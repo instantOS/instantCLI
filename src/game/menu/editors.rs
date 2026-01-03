@@ -15,6 +15,7 @@ pub fn edit_name(state: &mut EditState) -> Result<bool> {
         .prompt("Enter new game name")
         .header(format!("Current name: {}", current_name))
         .input()
+        .query(current_name)
         .input_dialog()?;
 
     let trimmed = new_name.trim();
@@ -65,6 +66,7 @@ pub fn edit_description(state: &mut EditState) -> Result<bool> {
             }
         ))
         .input()
+        .query(current_desc)
         .input_dialog()?;
 
     let trimmed = new_desc.trim();
@@ -294,6 +296,7 @@ fn edit_launch_command_value(
         .prompt(prompt)
         .header(header)
         .input()
+        .query(current.unwrap_or_default())
         .input_dialog()?;
 
     let trimmed = input.trim();
@@ -321,12 +324,4 @@ fn edit_launch_command_value(
     setter(Some(trimmed.to_string()));
     println!("{} {}", char::from(updated_feedback.0), updated_feedback.1);
     Ok(true)
-}
-
-/// Launch the game
-pub fn launch_game(game_name: &str) -> Result<()> {
-    use crate::game::operations::launch_game;
-
-    println!("\n{} Launching game...\n", char::from(NerdFont::Rocket));
-    launch_game(Some(game_name.to_string()))
 }

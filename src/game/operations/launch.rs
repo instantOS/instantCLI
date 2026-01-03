@@ -226,7 +226,7 @@ fn run_launch_command(game: &LaunchableGame) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dot::path_serde::TildePath;
+    use crate::common::TildePath;
     use crate::game::config::GameInstallation;
     use std::path::PathBuf;
 

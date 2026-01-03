@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use anyhow::Result;
 
 use super::{Dependency, PackageDefinition, PackageManager};
-use crate::common::requirements::PackageStatus;
 use crate::menu_utils::FzfWrapper;
 
 /// A batch of packages to install, grouped by package manager.
@@ -133,9 +132,9 @@ impl InstallBatch {
     /// Execute the batched installation.
     ///
     /// Installs packages in priority order (native managers first, then Flatpak, etc.)
-    pub fn execute(&self) -> Result<PackageStatus> {
+    pub fn execute(&self) -> Result<()> {
         if self.is_empty() {
-            return Ok(PackageStatus::Installed);
+            return Ok(());
         }
 
         // Sort managers by priority
@@ -165,53 +164,6 @@ impl InstallBatch {
             super::install::install_packages(*manager, packages)?;
         }
 
-        Ok(PackageStatus::Installed)
+        Ok(())
     }
-}
-
-/// Ensure multiple dependencies are installed with batched prompts.
-///
-/// This is the main entry point for installing multiple dependencies at once.
-/// It groups packages by manager and prompts once per batch.
-///
-/// # Returns
-///
-/// - `Ok(PackageStatus::Installed)` if all packages are installed or were successfully installed
-/// - `Ok(PackageStatus::Declined)` if user cancelled
-/// - `Ok(PackageStatus::Failed)` if any installation failed
-pub fn ensure_dependencies_batch(deps: &'static [Dependency]) -> Result<PackageStatus> {
-    let mut batch = InstallBatch::new();
-
-    for dep in deps {
-        batch.add(dep)?;
-    }
-
-    // Check for unresolved dependencies
-    if !batch.unresolved().is_empty() {
-        let msg = format!(
-            "The following dependencies cannot be automatically installed:\n\n{}",
-            batch
-                .unresolved()
-                .iter()
-                .map(|s| format!("  • {}", s))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-        FzfWrapper::builder()
-            .message(&msg)
-            .title("Manual Installation Required")
-            .show_message()?;
-    }
-
-    if batch.is_empty() {
-        return Ok(PackageStatus::Installed);
-    }
-
-    // Prompt for confirmation
-    if !batch.prompt_confirmation()? {
-        return Ok(PackageStatus::Declined);
-    }
-
-    // Execute installation
-    batch.execute()
 }
