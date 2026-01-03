@@ -76,6 +76,14 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
         match selection {
             FzfResult::Selected(item) => match item.action {
                 GameAction::Launch => {
+                    // Check if the game has a launch command
+                    if !has_launch_command(&game_name)? {
+                        FzfWrapper::message(&format!(
+                            "No launch command configured for '{}'.\n\nUse Edit to set a launch command first.",
+                            game_name
+                        ))?;
+                        continue;
+                    }
                     launch_game(Some(game_name))?;
                     return Ok(());
                 }
@@ -123,4 +131,30 @@ fn run_edit_menu_for_game(game_name: &str) -> Result<()> {
     // Create edit state and run the menu
     let mut state = EditState::new(game_config, installations, game_index, installation_index);
     edit_menu::run_edit_menu(game_name, &mut state)
+}
+
+/// Check if a game has a launch command configured
+fn has_launch_command(game_name: &str) -> Result<bool> {
+    let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let installations = InstallationsConfig::load().context("Failed to load installations configuration")?;
+
+    // Find the game
+    let game = game_config
+        .games
+        .iter()
+        .find(|g| g.name.0 == game_name);
+
+    let game_has_command = game
+        .and_then(|g| g.launch_command.as_ref())
+        .is_some();
+
+    // Check installation override
+    let installation_has_command = installations
+        .installations
+        .iter()
+        .find(|i| i.game_name.0 == game_name)
+        .and_then(|i| i.launch_command.as_ref())
+        .is_some();
+
+    Ok(game_has_command || installation_has_command)
 }

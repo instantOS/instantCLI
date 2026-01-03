@@ -67,7 +67,7 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
 
         match selection {
             FzfResult::Selected(item) => {
-                if handle_menu_action(game_name, item.action, state)? == Flow::Exit {
+                if handle_menu_action(item.action, state)? == Flow::Exit {
                     return Ok(());
                 }
             }
@@ -81,7 +81,7 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
     }
 }
 
-fn handle_menu_action(_game_name: &str, action: MenuAction, state: &mut EditState) -> Result<Flow> {
+fn handle_menu_action(action: MenuAction, state: &mut EditState) -> Result<Flow> {
     match action {
         MenuAction::EditName => {
             if editors::edit_name(state)? {
