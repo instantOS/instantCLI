@@ -108,8 +108,9 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             game_name, cmd
         ),
         None => format!(
-            "Launch {} with automatic save sync.\n\n⚠ No launch command configured. Use Edit to set one.",
-            game_name
+            "Launch {} with automatic save sync.\n\n{} No launch command configured. Use Edit to set one.",
+            game_name,
+            char::from(NerdFont::Warning)
         ),
     };
 
