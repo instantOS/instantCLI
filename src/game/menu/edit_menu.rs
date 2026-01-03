@@ -57,16 +57,31 @@ impl FzfSelectable for MenuItem {
 
 /// Run the main edit menu loop
 pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
+    let mut last_action: Option<MenuAction> = None;
+
     loop {
         let menu_items = build_menu_items(state);
 
-        let selection = FzfWrapper::builder()
+        // Find index of last selected action to restore cursor position
+        let initial_index = last_action.as_ref().and_then(|action| {
+            menu_items.iter().position(|item| {
+                std::mem::discriminant(&item.action) == std::mem::discriminant(action)
+            })
+        });
+
+        let mut builder = FzfWrapper::builder()
             .header(format!("Editing: {}", game_name))
-            .prompt("Select property to edit")
-            .select(menu_items)?;
+            .prompt("Select property to edit");
+
+        if let Some(index) = initial_index {
+            builder = builder.initial_index(index);
+        }
+
+        let selection = builder.select(menu_items)?;
 
         match selection {
             FzfResult::Selected(item) => {
+                last_action = Some(item.action.clone());
                 if handle_menu_action(item.action, state)? == Flow::Exit {
                     return Ok(());
                 }
