@@ -495,6 +495,7 @@ pub struct FzfBuilder {
     additional_args: Vec<String>,
     dialog_type: DialogType,
     initial_cursor: Option<InitialCursor>,
+    initial_query: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -528,6 +529,7 @@ impl FzfBuilder {
             additional_args: Self::default_args(),
             dialog_type: DialogType::Selection,
             initial_cursor: None,
+            initial_query: None,
         }
     }
 
@@ -548,6 +550,12 @@ impl FzfBuilder {
 
     pub fn initial_index(mut self, index: usize) -> Self {
         self.initial_cursor = Some(InitialCursor::Index(index));
+        self
+    }
+
+    /// Set an initial query to prepopulate the input field
+    pub fn query<S: Into<String>>(mut self, query: S) -> Self {
+        self.initial_query = Some(query.into());
         self
     }
 
@@ -859,6 +867,10 @@ impl FzfBuilder {
 
         if let Some(prompt) = &self.prompt {
             cmd.arg("--prompt").arg(format!("{prompt} "));
+        }
+
+        if let Some(query) = &self.initial_query {
+            cmd.arg("-q").arg(query);
         }
 
         for arg in &self.additional_args {
