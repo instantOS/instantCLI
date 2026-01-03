@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InstantCLI is a Rust-based command-line tool (v0.1.9) for managing dotfiles, game saves, system settings, and instantOS configurations. It provides a decentralized approach to dotfile management that respects user modifications while enabling easy theme and configuration switching, along with comprehensive system management capabilities.
+InstantCLI is a Rust-based command-line tool (v0.10.9) for managing dotfiles, game saves, system settings, and instantOS configurations. It provides a decentralized approach to dotfile management that respects user modifications while enabling easy theme and configuration switching, along with comprehensive system management capabilities.
 
 ## Common Development Commands
 
@@ -101,19 +101,33 @@ let result = FzfWrapper::builder()
 
 2. **Dotfile Management** (`src/dot/`): Core dotfile functionality
    - `mod.rs`: Main orchestration logic for dotfile operations
+   - `commands.rs`: Dotfile command definitions
    - `config.rs`: Configuration management (TOML-based, stored in `~/.config/instant/dots.toml`)
    - `db.rs`: SQLite database for tracking file hashes and modifications
    - `dotfile.rs`: Core `Dotfile` struct with apply/fetch/reset operations
-   - `git.rs`: Git repository operations (cloning, updating, status checking)
    - `localrepo.rs`: Local repository representation and management
    - `meta.rs`: Repository initialization and metadata handling
+   - `types.rs`: Type definitions for dotfile system
+   - `override_config.rs`: Dotfile override configuration
+   - `git.rs`: Git repository operations (cloning, updating, status checking)
+   - `utils.rs`: Utility functions
    - `repo/`: Repository management subdirectory
      - `cli.rs`: Repository CLI command definitions
      - `commands.rs`: Repository command handlers
      - `manager.rs`: Repository management logic
-   - `utils.rs`: Utility functions
-   - `path_serde.rs`: Path serialization/deserialization
-   - `path_tests.rs`: Path-related tests
+     - `mod.rs`: Repository module orchestration
+   - `operations/`: Dotfile operation implementations
+     - `apply.rs`: Apply dotfiles from repos
+     - `add.rs`: Add/update dotfiles
+     - `reset.rs`: Reset modified dotfiles
+     - `merge.rs`: Merge dotfiles with nvim diff
+     - `alternative.rs`: Alternative source management
+     - `git_commands.rs`: Git command execution
+     - `mod.rs`: Operations module
+   - `git/`: Git operations subdirectory
+     - `status.rs`: Git status checking
+     - `diff.rs`: Git diff operations
+     - `repo_ops.rs`: Repository operations
 
 3. **Game Save Management** (`src/game/`): Game save backup and synchronization using restic
    - `cli.rs`: Game command definitions
@@ -128,11 +142,21 @@ let result = FzfWrapper::builder()
 4. **System Settings** (`src/settings/`): System configuration management
    - `mod.rs`: Settings module orchestration
    - `commands.rs`: Settings CLI command definitions
-   - `registry.rs`: Settings definitions and metadata
-   - `ui/`: Settings user interface components
-   - `actions.rs`: Setting application logic
+   - `setting.rs`: Setting trait and core implementation
+   - `category_tree.rs`: Setting category organization
+   - `context.rs`: Settings context and dependencies
    - `store.rs`: Settings persistence
    - `apply.rs`: Settings application and reapplication
+   - `restore.rs`: Settings restoration
+   - `sources.rs`: Setting source management
+   - `deps.rs`: Setting dependencies
+   - `packages.rs`: Package settings
+   - `printer.rs`: Printer configuration
+   - `defaultapps.rs`: Default application settings
+   - `network.rs`: Network settings
+   - `installable_packages.rs`: Installable package registry
+   - `definitions/`: Individual setting definitions (organized by category)
+   - `ui/`: Settings user interface components
 
 5. **Interactive Menus** (`src/menu/`): FZF-based interactive menu system
    - `mod.rs`: Menu command definitions and handlers
@@ -143,9 +167,18 @@ let result = FzfWrapper::builder()
 
 6. **System Diagnostics** (`src/doctor/`): System health checks and diagnostics
    - `mod.rs`: Doctor trait definitions and orchestration
-   - `checks.rs`: Individual health check implementations
    - `command.rs`: Doctor command handlers
    - `registry.rs`: Health check registry
+   - `checks.rs`: Check orchestration and utilities
+   - `checks/`: Individual health check implementations
+     - `display.rs`: Display configuration checks
+     - `locale.rs`: Locale and language settings
+     - `nerdfont.rs`: Nerd Font installation verification
+     - `network.rs`: Network connectivity checks
+     - `security.rs`: Security settings verification
+     - `storage.rs`: Storage and filesystem checks
+     - `system.rs`: System configuration checks
+   - `privileges.rs`: Privilege escalation utilities
 
 7. **Scratchpad Management** (`src/scratchpad/`): Terminal scratchpad functionality
    - `mod.rs`: Scratchpad command definitions
@@ -170,6 +203,71 @@ let result = FzfWrapper::builder()
     - `error.rs`: Error handling for restic operations
     - `logging.rs`: Restic command logging
 
+11. **Arch Installation** (`src/arch/`): Arch Linux installation commands
+    - `cli.rs`: Arch installation CLI definitions
+    - `engine.rs`: Installation engine orchestration
+    - `disks.rs`: Disk detection and management
+    - `execution/`: Installation step execution
+    - `questions/`: User interaction and prompts
+    - `dualboot/`: Dual-boot detection and configuration
+
+12. **Assist System** (`src/assist/`): Quick action system for common tasks
+    - `commands.rs`: Assist command definitions
+    - `registry.rs`: Assist action registry
+    - `execute.rs`: Assist execution logic
+    - `actions/`: Individual assist implementations
+    - `utils.rs`: Assist utilities
+    - `deps.rs`: Assist dependency management
+
+13. **Autostart** (`src/autostart.rs`): Autostart task management
+
+14. **Completions** (`src/completions/`): Shell completion helpers
+    - `mod.rs`: Completion command handlers
+
+15. **Self-Update** (`src/self_update/`): InstantCLI self-update functionality
+    - `mod.rs`: Self-update logic
+
+16. **System Update** (`src/update.rs`): Combined system, dotfile, and game updates
+
+17. **Video Processing** (`src/video/`): Video transcript and editing utilities
+    - `cli.rs`: Video command definitions
+    - `transcript.rs`: Transcript processing
+    - `document.rs`: Video markdown document handling
+    - `render/`: Video rendering pipeline
+    - `planner/`: Rendering planning and graph
+    - `slide/`: Slide generation
+    - `subtitles/`: Subtitle processing (ASS, remap)
+    - `audio_preprocessing/`: Audio processing (Auphonic, local)
+
+18. **Wallpaper Management** (`src/wallpaper/`): Wallpaper configuration
+    - `cli.rs`: Wallpaper command definitions
+    - `commands.rs`: Wallpaper command handlers
+    - `random.rs`: Random wallpaper fetching
+    - `colored.rs`: Colored wallpaper generation
+
+19. **Welcome App** (`src/welcome/`): instantOS first-time setup interface
+    - `commands.rs`: Welcome command definitions
+    - `ui.rs`: Welcome UI implementation
+
+20. **Common Utilities** (`src/common/`): Shared utility modules
+    - `compositor/`: Window manager detection and integration
+    - `display/`: Display server utilities
+    - `package/`: Package management abstraction
+
+21. **Setup** (`src/setup/`): instantOS integration setup
+    - `commands.rs`: Setup command handlers
+
+22. **Debug** (`src/debug/`): Debugging and diagnostic utilities
+    - `mod.rs`: Debug command definitions
+
+23. **UI** (`src/ui/`): User interface utilities
+    - `mod.rs`: UI initialization and formatting
+
+24. **Menu Utils** (`src/menu_utils/`): Menu system utilities
+    - `fzf.rs`: FZF wrapper implementation
+    - `file_picker.rs`: File picker utilities
+    - `slider.rs`: Slider control
+
 ### Key Concepts
 
 **Dotfile Structure**: 
@@ -193,16 +291,16 @@ The hash system distinguishes between **source files** (in dotfile repositories)
 ```sql
 CREATE TABLE file_hashes (
     created TEXT NOT NULL,
-    hash TEXT NOT NULL, 
+    hash TEXT NOT NULL,
     path TEXT NOT NULL,
-    source_file INTEGER NOT NULL,  -- true=source file, false=target file
+    source_file INTEGER NOT NULL,  -- 1=source file, 0=target file
     PRIMARY KEY (hash, path)
 )
 ```
 
 **DotFileType Enum**:
-- `SourceFile` (serializes as `true`): Files in the dotfile repository (`~/.local/share/instant/dots/`)
-- `TargetFile` (serializes as `false`): Files in the home directory (`~/`)
+- `SourceFile` (serializes as `true` in JSON, stored as `1` in database): Files in the dotfile repository (`~/.local/share/instant/dots/`)
+- `TargetFile` (serializes as `false` in JSON, stored as `0` in database): Files in the home directory (`~/`)
 
 **Key Concepts**:
 - **Source Files**: Files in the dotfile repository (`~/.local/share/instant/dots/`)
@@ -226,8 +324,8 @@ The `is_target_unmodified()` function determines if a target file can be safely 
 **Hash Management**:
 - Hashes are computed lazily when needed
 - Database cache is validated against file modification timestamps
-- Target files always stored with `DotFileType::TargetFile` (serializes as `false`)
-- Source files always stored with `DotFileType::SourceFile` (serializes as `true`)
+- Target files always stored with `DotFileType::TargetFile` (serializes as `false` in JSON, stored as `0` in database)
+- Source files always stored with `DotFileType::SourceFile` (serializes as `true` in JSON, stored as `1` in database)
 
 ### Configuration Structure
 
@@ -269,6 +367,18 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 - `ins dot status [<path>]`: Check repository status
 - `ins dot init`: Initialize current directory as a dotfile repo
 - `ins dot diff [<path>]`: Show differences between source and target files
+- `ins dot merge <path>`: Merge a modified dotfile with its source using nvim diff
+  - `--verbose`: Show verbose output including unmodified files
+- `ins dot commit [args...]`: Commit changes in all writable repositories
+  - Arguments are passed directly to git commit (e.g., `-m "message"`)
+- `ins dot push [args...]`: Push changes in all writable repositories
+  - Arguments are passed directly to git push (e.g., `origin main`)
+- `ins dot git <command> [args...]`: Run an arbitrary git command in a repository
+  - Example: `ins dot git log --oneline`
+- `ins dot alternative <path>`: Set or view which repository/subdirectory a dotfile is sourced from
+  - `--reset`: Remove the override for this file (use default priority)
+  - `--create`: Create the file in a new repo/subdir if it doesn't exist there
+  - `--list`: List available alternatives and exit
 - `ins dot repo clone <url>`: Clone a new dotfile repository
 - `ins dot repo list`: List all configured repositories
 - `ins dot repo remove <name>`: Remove a repository
@@ -292,6 +402,16 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 - `ins game sync <game>`: Sync game saves (backup then restore latest)
 - `ins game setup`: Set up games that have been added but not configured
 - `ins game prune`: Clean up old backup snapshots
+- `ins game exec <command>`: Execute a command with pre/post syncs (for Steam game prefixes)
+  - Use with Steam %command% placeholder
+- `ins game info [<game>]`: Show detailed information about a game
+- `ins game edit [<game>]`: Edit a game's configuration interactively
+- `ins game restic <args...>`: Run restic commands with instant games repository configuration
+  - Direct access to restic with the games repository pre-configured
+- `ins game deps add [<game>]`: Add a dependency to a game and snapshot it into restic
+- `ins game deps install [<game>]`: Install a dependency onto this device
+- `ins game deps list [<game>]`: List all dependencies for a game
+- `ins game deps remove [<game>]`: Remove a dependency from a game
 
 ### System Settings Commands
 - `ins settings`: Open interactive settings UI
@@ -300,13 +420,40 @@ You run in an environment where `ast-grep` is available; whenever a search requi
 - `ins settings list --categories`: List only setting categories
 
 ### Interactive Menu Commands
-- `ins menu confirm --message "Are you sure?"`: Show confirmation dialog
-- `ins menu choice --prompt "Select an item:" --multi`: Show selection menu
+- `ins menu confirm --message "Are you sure?"`: Show confirmation dialog (exit codes: 0=Yes, 1=No, 2=Cancelled)
+  - `--gui`: Use GUI menu server instead of local fzf
+- `ins menu choice --prompt "Select:" --multi`: Show selection menu
+  - `--items "<items>"`: Items to choose from (space-separated). If empty, reads from stdin
+  - `--multi`: Allow multiple selections
+  - `--gui`: Use GUI menu server instead of local fzf
 - `ins menu input --prompt "Type a value:"`: Show text input dialog
+  - `--gui`: Use GUI menu server instead of local fzf
 - `ins menu password --prompt "Enter password:"`: Show password input dialog
-- `ins menu server launch`: Launch menu server
-- `ins menu server stop`: Stop menu server
-- `ins menu status`: Get menu server status
+  - `--gui`: Use GUI menu server instead of local fzf
+- `ins menu pick [--start <path>] [--dirs] [--files] [--multi]`: Launch file picker and output selected path(s)
+  - `--start <dir>`: Starting directory for the picker
+  - `--dirs`: Restrict selection to directories
+  - `--files`: Allow selecting files (enabled by default)
+  - `--multi`: Allow multiple selections
+  - `--gui`: Use GUI menu server instead of local picker
+- `ins menu show`: Show the scratchpad without any other action
+- `ins menu chord <chord:description>...`: Show chord navigator and print selected sequence
+  - `--stdin`: Read additional chord definitions from stdin (one per line)
+  - `--gui`: Use GUI menu server instead of local chord picker
+- `ins menu slide [--min <val>] [--max <val>] [--value <val>]`: Show slider prompt (like legacy islide)
+  - `--min`: Minimum slider value (default: 0)
+  - `--max`: Maximum slider value (default: 100)
+  - `--value <val>`: Initial slider value
+  - `--step <val>`: Small step increment (default: 1)
+  - `--big-step <val>`: Big step increment (default: 5)
+  - `--label <text>`: Label for the slider
+  - `--preset <audio|brightness>`: Use preset configuration
+  - `--gui`: Use GUI menu server instead of local slider
+- `ins menu server launch [--inside] [--no-scratchpad]`: Launch menu server
+  - `--inside`: Launch terminal server instead of spawning external terminal
+  - `--no-scratchpad`: Run without a scratchpad
+- `ins menu server stop`: Stop the running menu server
+- `ins menu status`: Get menu server status information
 
 ### Scratchpad Commands
 - `ins scratchpad toggle`: Toggle scratchpad terminal visibility (create if doesn't exist)
@@ -350,6 +497,47 @@ ins scratchpad hide --name term1
 - `ins dev clone`: Clone development repositories
 - `ins dev install`: Install development tools
 
+### Assist Commands
+- `ins assist`: Open interactive assist selector (quick actions menu)
+- `ins assist list`: List all available assists
+- `ins assist run <key_sequence>`: Run an assist by its key sequence (e.g., 'c' for color picker, 'vn' for network viewer)
+- `ins assist export [--format sway|i3]`: Export assists to window manager config format
+
+### Autostart Commands
+- `ins autostart`: Run autostart tasks (setup assist, update dots, sync games, etc.)
+- Runs automatically on login in instantOS sessions
+
+### Completions Commands
+- `ins completions`: Shell completion helpers (internal use)
+
+### Self-Update Commands
+- `ins self-update`: Update instantCLI to the latest version
+
+### Update Commands
+- `ins update`: Update system, dotfiles, and sync games all at once
+- Combines system updates, dotfile updates, and game save synchronization
+
+### Video Commands
+- `ins video convert <video>`: Convert a timestamped transcript into editable video markdown
+- `ins video transcribe <video>`: Generate a transcript using WhisperX
+- `ins video render <markdown>`: Render a video according to edits in a markdown file
+- `ins video slide <markdown>`: Generate a slide image from a markdown file
+- `ins video check <markdown>`: Validate a video markdown file and summarize planned output
+- `ins video stats <markdown>`: Display statistics about how a markdown file will be rendered
+- `ins video preprocess <audio>`: Process audio with configured preprocessor (local or Auphonic)
+- `ins video setup`: Setup video tools (local preprocessor, Auphonic, WhisperX)
+
+### Wallpaper Commands
+- `ins wallpaper set <path>`: Set the wallpaper to an image file
+- `ins wallpaper apply`: Apply the currently configured wallpaper
+- `ins wallpaper random [--no-logo]`: Fetch and set a random wallpaper
+- `ins wallpaper colored [--bg <color>] [--fg <color>]`: Generate a colored wallpaper with instantOS logo
+
+### Welcome Commands
+- `ins welcome`: Open the welcome app for instantOS first-time setup
+- `ins welcome --gui`: Open welcome app in a GUI terminal window
+- `ins welcome --force-live`: Force live session mode (shows instantOS installation option)
+
 ## Multiple Subdirectories Support
 
 InstantCLI repositories can declare multiple subdirectories containing dotfiles, with configurable active subdirectories per repository.
@@ -372,7 +560,7 @@ The global configuration can specify which subdirectories are active for each re
 [[repos]]
 url = "https://github.com/user/dotfiles.git"
 name = "my-dotfiles"
-active_subdirs = ["dots", "themes"]
+active_subdirectories = ["dots", "themes"]
 ```
 
 ### Subdirectory Management Commands
@@ -383,7 +571,7 @@ active_subdirs = ["dots", "themes"]
 ### Default Behavior
 
 - If `dots_dirs` is not specified in `instantdots.toml`, defaults to `["dots"]`
-- If `active_subdirs` is not specified in global config, defaults to `["dots"]`
+- If `active_subdirectories` is not specified in global config, defaults to `["dots"]`
 - Only the first subdirectory is active by default to maintain backward compatibility
 - Later repositories override earlier ones for the same file paths (overlay system)
 

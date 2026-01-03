@@ -1,14 +1,15 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::common::shell::shell_quote;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
 
 pub fn search_man_pages() -> Result<()> {
     let list_command = r#"
         man -w | tr ':' '\n' | while read -r path; do
-            find "$path" -type f -name "man*" 2>/dev/null
-        done | sed 's/.*\///; s/\.gz$//; s/\.[0-9].*//' | sort -u
+            find "$path" -type f \( -name '*.[0-9]*' -o -name '*.[0-9]*.gz' \) 2>/dev/null
+        done | sed 's/.*\///; s/\.[0-9].*//' | sort -u
     "#;
 
     let output = Command::new("bash")
@@ -34,7 +35,7 @@ pub fn search_man_pages() -> Result<()> {
         .into_iter()
         .map(|page| SerializableMenuItem {
             display_text: page.clone(),
-            preview: FzfPreview::None,
+            preview: FzfPreview::Command(format!("man -f {} 2>/dev/null || echo 'Manual page'", shell_quote(&page))),
             metadata: None,
         })
         .collect();
