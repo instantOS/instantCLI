@@ -10,10 +10,10 @@ use super::deps::{
     AddDependencyOptions, InstallDependencyOptions, UninstallDependencyOptions, add_dependency,
     install_dependency, list_dependencies as list_game_dependencies, uninstall_dependency,
 };
-use super::menu;
 use super::games::GameManager;
 use super::games::manager::AddGameOptions;
 use super::games::{display, selection};
+use super::menu;
 use super::operations::{exec_game_command, launch_game, sync_game_saves};
 use super::repository::RepositoryManager;
 use super::repository::manager::InitOptions;

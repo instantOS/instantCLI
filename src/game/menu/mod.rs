@@ -49,26 +49,34 @@ struct GameState {
     installations: InstallationsConfig,
     needs_setup: bool,
     launch_command: Option<String>,
+    description: Option<String>,
+    save_path: Option<String>,
 }
 
 impl GameState {
     fn load(game_name: &str) -> Result<Self> {
         let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
-        let installations = InstallationsConfig::load().context("Failed to load installations configuration")?;
+        let installations =
+            InstallationsConfig::load().context("Failed to load installations configuration")?;
 
-        let has_installation = installations
+        let installation = installations
             .installations
             .iter()
-            .any(|i| i.game_name.0 == game_name);
+            .find(|i| i.game_name.0 == game_name);
+
+        let has_installation = installation.is_some();
 
         let game = game_config.games.iter().find(|g| g.name.0 == game_name);
         let game_cmd = game.and_then(|g| g.launch_command.clone());
+        let description = game.and_then(|g| g.description.clone());
 
-        let inst_cmd = installations
-            .installations
-            .iter()
-            .find(|i| i.game_name.0 == game_name)
-            .and_then(|i| i.launch_command.clone());
+        let inst_cmd = installation.and_then(|i| i.launch_command.clone());
+
+        let save_path = installation.map(|i| {
+            i.save_path
+                .to_tilde_string()
+                .unwrap_or_else(|_| i.save_path.as_path().to_string_lossy().to_string())
+        });
 
         // Installation command takes precedence over game command
         let launch_command = inst_cmd.or(game_cmd);
@@ -78,6 +86,8 @@ impl GameState {
             installations,
             needs_setup: !has_installation,
             launch_command,
+            description,
+            save_path,
         })
     }
 
@@ -120,9 +130,12 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
         action: GameAction::Launch,
     });
 
+    // Build Edit preview showing current config
+    let edit_preview = build_edit_preview(game_name, state);
+
     actions.push(GameActionItem {
         display: format!("{} Edit", char::from(NerdFont::Edit)),
-        preview: format!("Edit {}'s configuration (name, description, launch command, save path)", game_name),
+        preview: edit_preview,
         action: GameAction::Edit,
     });
 
@@ -135,11 +148,48 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
     actions
 }
 
+/// Build preview text for Edit option showing current config
+fn build_edit_preview(game_name: &str, state: &GameState) -> String {
+    let mut lines = vec![format!("Edit configuration for '{}'", game_name)];
+    lines.push(String::new());
+
+    // games.toml section
+    lines.push(format!("{} games.toml:", char::from(NerdFont::FileConfig)));
+    lines.push(format!(
+        "  {} Description: {}",
+        char::from(NerdFont::Info),
+        state.description.as_deref().unwrap_or("<not set>")
+    ));
+    lines.push(format!(
+        "  {} Launch Command: {}",
+        char::from(NerdFont::Rocket),
+        state.launch_command.as_deref().unwrap_or("<not set>")
+    ));
+
+    // installations.toml section
+    lines.push(String::new());
+    if let Some(path) = &state.save_path {
+        lines.push(format!("{} installations.toml:", char::from(NerdFont::Desktop)));
+        lines.push(format!(
+            "  {} Save Path: {}",
+            char::from(NerdFont::Folder),
+            path
+        ));
+    } else {
+        lines.push(format!(
+            "{} No installation on this device",
+            char::from(NerdFont::Warning)
+        ));
+    }
+
+    lines.join("\n")
+}
+
 /// Result of handling a game action
 enum ActionResult {
-    Stay,       // Stay in this game's action menu
-    Back,       // Go back to game selection
-    Exit,       // Exit the menu entirely
+    Stay, // Stay in this game's action menu
+    Back, // Go back to game selection
+    Exit, // Exit the menu entirely
 }
 
 /// Handle a selected game action
@@ -170,14 +220,26 @@ fn handle_action(
         }
         GameAction::Edit => {
             run_edit_menu_for_game(game_name, &state.game_config, &state.installations)?;
-            if exit_after { Ok(ActionResult::Exit) } else { Ok(ActionResult::Stay) }
+            if exit_after {
+                Ok(ActionResult::Exit)
+            } else {
+                Ok(ActionResult::Stay)
+            }
         }
         GameAction::Setup => {
             setup::setup_uninstalled_games()?;
-            if exit_after { Ok(ActionResult::Exit) } else { Ok(ActionResult::Stay) }
+            if exit_after {
+                Ok(ActionResult::Exit)
+            } else {
+                Ok(ActionResult::Stay)
+            }
         }
         GameAction::Back => {
-            if exit_after { Ok(ActionResult::Exit) } else { Ok(ActionResult::Back) }
+            if exit_after {
+                Ok(ActionResult::Exit)
+            } else {
+                Ok(ActionResult::Back)
+            }
         }
     }
 }
@@ -207,9 +269,15 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 .select(actions)?;
 
             let result = match selection {
-                FzfResult::Selected(item) => handle_action(item.action, &game_name, &state, exit_after_action)?,
+                FzfResult::Selected(item) => {
+                    handle_action(item.action, &game_name, &state, exit_after_action)?
+                }
                 FzfResult::Cancelled => {
-                    if exit_after_action { ActionResult::Exit } else { ActionResult::Back }
+                    if exit_after_action {
+                        ActionResult::Exit
+                    } else {
+                        ActionResult::Back
+                    }
                 }
                 _ => ActionResult::Exit,
             };

@@ -90,13 +90,20 @@ impl Game {
                 .to_tilde_string()
                 .unwrap_or_else(|_| install.save_path.as_path().to_string_lossy().to_string());
 
-            text.push_str(&format!("  📁 Save Path: {}\n", path_display.green()));
+            text.push_str(&format!(
+                "  {} Save Path: {}\n",
+                char::from(crate::ui::nerd_font::NerdFont::Folder),
+                path_display.green()
+            ));
 
             // Try to get save directory stats
             match get_save_directory_info(install.save_path.as_path()) {
                 Ok(info) => {
                     if info.file_count > 0 {
-                        text.push_str("  💾 Local Saves:\n");
+                        text.push_str(&format!(
+                            "  {} Local Saves:\n",
+                            char::from(crate::ui::nerd_font::NerdFont::Save)
+                        ));
                         text.push_str(&format!(
                             "     • Last modified: {}\n",
                             format_system_time_for_display(info.last_modified)
@@ -107,25 +114,36 @@ impl Game {
                             format_file_size(info.total_size)
                         ));
                     } else {
-                        text.push_str("  💾 Local Saves: No save files found\n");
+                        text.push_str(&format!(
+                            "  {} Local Saves: No save files found\n",
+                            char::from(crate::ui::nerd_font::NerdFont::Save)
+                        ));
                     }
                 }
                 Err(_) => {
-                    text.push_str("  💾 Local Saves: Unable to analyze\n");
+                    text.push_str(&format!(
+                        "  {} Local Saves: Unable to analyze\n",
+                        char::from(crate::ui::nerd_font::NerdFont::Save)
+                    ));
                 }
             }
 
             // Dependencies count
             if !install.dependencies.is_empty() {
                 text.push_str(&format!(
-                    "  📦 Dependencies: {}\n",
+                    "  {} Dependencies: {}\n",
+                    char::from(crate::ui::nerd_font::NerdFont::Package),
                     install.dependencies.len()
                 ));
             }
 
             // Checkpoint info
             if let Some(checkpoint) = &install.nearest_checkpoint {
-                text.push_str(&format!("  🏁 Checkpoint: {}\n", checkpoint));
+                text.push_str(&format!(
+                    "  {} Checkpoint: {}\n",
+                    char::from(crate::ui::nerd_font::NerdFont::Flag),
+                    checkpoint
+                ));
             }
         } else {
             text.push_str(&format!(
@@ -137,7 +155,8 @@ impl Game {
         // Game dependencies (from game config)
         if !self.dependencies.is_empty() {
             text.push_str(&format!(
-                "\n📦 Configured Dependencies: {}\n",
+                "\n{} Configured Dependencies: {}\n",
+                char::from(crate::ui::nerd_font::NerdFont::Package),
                 self.dependencies.len()
             ));
             for dep in self.dependencies.iter().take(3) {
