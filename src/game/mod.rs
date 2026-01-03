@@ -3,7 +3,7 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod deps;
-pub mod edit;
+pub mod menu;
 pub mod games;
 pub mod operations;
 pub mod repository;

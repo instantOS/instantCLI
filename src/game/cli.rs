@@ -62,9 +62,9 @@ pub enum GameCommands {
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
     },
-    /// Edit a game's configuration interactively
-    Edit {
-        /// Game name to edit (optional, will prompt if not specified)
+    /// Interactive game menu (launch or edit games)
+    Menu {
+        /// Game name (optional, will prompt if not specified)
         #[arg(add = ArgValueCompleter::new(crate::completions::game_name_completion))]
         game_name: Option<String>,
     },

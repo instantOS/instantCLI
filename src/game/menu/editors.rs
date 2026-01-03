@@ -325,11 +325,3 @@ fn edit_launch_command_value(
     println!("{} {}", char::from(updated_feedback.0), updated_feedback.1);
     Ok(true)
 }
-
-/// Launch the game
-pub fn launch_game(game_name: &str) -> Result<()> {
-    use crate::game::operations::launch_game;
-
-    println!("\n{} Launching game...\n", char::from(NerdFont::Rocket));
-    launch_game(Some(game_name.to_string()))
-}
