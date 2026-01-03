@@ -47,6 +47,7 @@ impl FzfSelectable for GameActionItem {
 pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
     let has_provided_name = provided_game_name.is_some();
     
+    // Outer loop: game selection
     loop {
         // Select game if not provided
         let game_name = match &provided_game_name {
@@ -57,101 +58,106 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             },
         };
 
-        // Check if game needs setup (no installation entry)
-        let needs_setup = !has_installation(&game_name)?;
+        // Inner loop: game action menu (stays on same game)
+        loop {
+            // Check if game needs setup (no installation entry)
+            let needs_setup = !has_installation(&game_name)?;
 
-        // Build action menu dynamically
-        let mut actions = vec![
-            GameActionItem {
-                display: format!("{} Launch", char::from(NerdFont::Rocket)),
-                preview: format!("Launch {} with automatic save sync", game_name),
-                action: GameAction::Launch,
-            },
-            GameActionItem {
-                display: format!("{} Edit", char::from(NerdFont::Edit)),
-                preview: format!("Edit {}'s configuration (name, description, launch command, save path)", game_name),
-                action: GameAction::Edit,
-            },
-        ];
+            // Build action menu dynamically
+            let mut actions = vec![
+                GameActionItem {
+                    display: format!("{} Launch", char::from(NerdFont::Rocket)),
+                    preview: format!("Launch {} with automatic save sync", game_name),
+                    action: GameAction::Launch,
+                },
+                GameActionItem {
+                    display: format!("{} Edit", char::from(NerdFont::Edit)),
+                    preview: format!("Edit {}'s configuration (name, description, launch command, save path)", game_name),
+                    action: GameAction::Edit,
+                },
+            ];
 
-        // Add setup option if game needs it
-        if needs_setup {
-            actions.insert(0, GameActionItem {
-                display: format!("{} Setup", char::from(NerdFont::Wrench)),
-                preview: format!(
-                    "Configure save path for '{}' on this device.\n\nThis game is registered but has no save data location set up yet.",
-                    game_name
-                ),
-                action: GameAction::Setup,
-            });
-        }
-
-        actions.push(GameActionItem {
-            display: format!("{} Back", char::from(NerdFont::ArrowLeft)),
-            preview: "Return to game selection".to_string(),
-            action: GameAction::Back,
-        });
-
-        let selection = FzfWrapper::builder()
-            .header(format!("Game: {}", game_name))
-            .prompt("Select action")
-            .select(actions)?;
-
-        match selection {
-            FzfResult::Selected(item) => match item.action {
-                GameAction::Launch => {
-                    // Check if the game has a launch command
-                    if !has_launch_command(&game_name)? {
-                        FzfWrapper::message(&format!(
-                            "No launch command configured for '{}'.\n\nUse Edit to set a launch command first.",
-                            game_name
-                        ))?;
-                        continue;
-                    }
-                    // Check if setup is needed
-                    if needs_setup {
-                        FzfWrapper::message(&format!(
-                            "No save path configured for '{}' on this device.\n\nUse Setup to configure the save path first.",
-                            game_name
-                        ))?;
-                        continue;
-                    }
-                    launch_game(Some(game_name))?;
-                    return Ok(());
-                }
-                GameAction::Edit => {
-                    run_edit_menu_for_game(&game_name)?;
-                    // If game_name was provided as argument, exit after edit
-                    // Otherwise, loop back to game action menu
-                    if has_provided_name {
-                        return Ok(());
-                    }
-                }
-                GameAction::Setup => {
-                    // Run the setup flow for this specific game
-                    setup::setup_uninstalled_games()?;
-                    // Return to menu after setup
-                    if has_provided_name {
-                        return Ok(());
-                    }
-                }
-                GameAction::Back => {
-                    // If game_name was provided as argument, exit
-                    // Otherwise, loop back to game selection
-                    if has_provided_name {
-                        return Ok(());
-                    }
-                }
-            },
-            FzfResult::Cancelled => {
-                // If game_name was provided as argument, exit
-                // Otherwise, loop back to game selection
-                if has_provided_name {
-                    return Ok(());
-                }
-                // Continue loop to show game selection again
+            // Add setup option if game needs it
+            if needs_setup {
+                actions.insert(0, GameActionItem {
+                    display: format!("{} Setup", char::from(NerdFont::Wrench)),
+                    preview: format!(
+                        "Configure save path for '{}' on this device.\n\nThis game is registered but has no save data location set up yet.",
+                        game_name
+                    ),
+                    action: GameAction::Setup,
+                });
             }
-            _ => return Ok(()),
+
+            actions.push(GameActionItem {
+                display: format!("{} Back", char::from(NerdFont::ArrowLeft)),
+                preview: "Return to game selection".to_string(),
+                action: GameAction::Back,
+            });
+
+            let selection = FzfWrapper::builder()
+                .header(format!("Game: {}", game_name))
+                .prompt("Select action")
+                .select(actions)?;
+
+            match selection {
+                FzfResult::Selected(item) => match item.action {
+                    GameAction::Launch => {
+                        // Check if the game has a launch command
+                        if !has_launch_command(&game_name)? {
+                            FzfWrapper::message(&format!(
+                                "No launch command configured for '{}'.\n\nUse Edit to set a launch command first.",
+                                game_name
+                            ))?;
+                            continue; // Stay in this game's action menu
+                        }
+                        // Check if setup is needed
+                        if needs_setup {
+                            FzfWrapper::message(&format!(
+                                "No save path configured for '{}' on this device.\n\nUse Setup to configure the save path first.",
+                                game_name
+                            ))?;
+                            continue; // Stay in this game's action menu
+                        }
+                        launch_game(Some(game_name))?;
+                        return Ok(());
+                    }
+                    GameAction::Edit => {
+                        run_edit_menu_for_game(&game_name)?;
+                        // If game_name was provided as argument, exit after edit
+                        if has_provided_name {
+                            return Ok(());
+                        }
+                        // Otherwise stay in this game's action menu
+                    }
+                    GameAction::Setup => {
+                        // Run the setup flow for this specific game
+                        setup::setup_uninstalled_games()?;
+                        // If game_name was provided as argument, exit after setup
+                        if has_provided_name {
+                            return Ok(());
+                        }
+                        // Otherwise stay in this game's action menu
+                    }
+                    GameAction::Back => {
+                        // If game_name was provided as argument, exit
+                        if has_provided_name {
+                            return Ok(());
+                        }
+                        // Otherwise break inner loop to go back to game selection
+                        break;
+                    }
+                },
+                FzfResult::Cancelled => {
+                    // If game_name was provided as argument, exit
+                    if has_provided_name {
+                        return Ok(());
+                    }
+                    // Otherwise break inner loop to go back to game selection
+                    break;
+                }
+                _ => return Ok(()),
+            }
         }
     }
 }
