@@ -26,6 +26,7 @@ pub enum QuestionId {
     ConfirmInstall,
     VirtualBoxWarning,
     WeakPasswordWarning,
+    LowRamWarning,
     MinimalMode,
     PartitioningMethod,
     RunCfdisk,
@@ -56,6 +57,7 @@ pub struct SystemInfo {
     pub internet_connected: bool,
     pub architecture: String,
     pub distro: String,
+    pub total_ram_gb: Option<u64>,
 }
 
 impl std::fmt::Display for BootMode {
@@ -220,6 +222,21 @@ impl SystemInfo {
 
         // Distro check
         info.distro = crate::common::distro::OperatingSystem::detect().to_string();
+
+        // RAM detection
+        if let Ok(meminfo) = std::fs::read_to_string("/proc/meminfo") {
+            for line in meminfo.lines() {
+                if line.starts_with("MemTotal:") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2
+                        && let Ok(kb) = parts[1].parse::<u64>()
+                    {
+                        info.total_ram_gb = Some(kb / 1024 / 1024); // Convert KB to GB
+                    }
+                    break;
+                }
+            }
+        }
 
         info
     }

@@ -102,6 +102,7 @@ async fn handle_ask_command(
         println!("  Intel CPU: {}", system_info.has_intel_cpu);
         println!("  GPUs: {:?}", system_info.gpus);
         println!("  Virtual Machine: {:?}", system_info.vm_type);
+        println!("  RAM: {:?} GB", system_info.total_ram_gb);
 
         let mut engine = QuestionEngine::new(questions);
         engine.context.system_info = system_info;
@@ -525,6 +526,7 @@ pub async fn handle_arch_command(command: ArchCommands, _debug: bool) -> Result<
 
     let questions: Vec<Box<dyn crate::arch::engine::Question>> = vec![
         Box::new(VirtualBoxWarning),
+        Box::new(crate::arch::questions::warnings::LowRamWarning),
         Box::new(KeymapQuestion),
         Box::new(DiskQuestion),
         Box::new(PartitioningMethodQuestion),
@@ -792,6 +794,23 @@ fn print_system_info(info: &crate::arch::engine::SystemInfo) {
         "Architecture:",
         &info.architecture.bright_magenta(),
     );
+
+    // RAM
+    if let Some(ram_gb) = info.total_ram_gb {
+        let ram_str = format!("{} GB", ram_gb);
+        let colored = if ram_gb >= 4 {
+            ram_str.bright_green()
+        } else if ram_gb >= 1 {
+            ram_str.bright_yellow()
+        } else {
+            ram_str.bright_red()
+        };
+        print_row(
+            NerdFont::Memory.to_string().bright_cyan(),
+            "Memory:",
+            &colored,
+        );
+    }
 
     // CPU
     if info.has_intel_cpu {

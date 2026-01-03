@@ -3,6 +3,33 @@ use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 
+pub struct LowRamWarning;
+
+#[async_trait::async_trait]
+impl Question for LowRamWarning {
+    fn id(&self) -> QuestionId {
+        QuestionId::LowRamWarning
+    }
+
+    fn should_ask(&self, context: &InstallContext) -> bool {
+        // Show warning if RAM is detected and less than 1GB
+        context.system_info.total_ram_gb.is_some_and(|ram| ram < 1)
+    }
+
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+        let ram_gb = context.system_info.total_ram_gb.unwrap_or(0);
+        FzfWrapper::message(&format!(
+            "{} Low Memory Warning\n\n\
+             System has {} GB of RAM (less than 1 GB).\n\
+             Installation may be slow or fail.\n\n\
+             Installation will proceed, but consider upgrading your RAM for a better experience.",
+            NerdFont::Warning,
+            ram_gb
+        ))?;
+        Ok(QuestionResult::Answer("acknowledged".to_string()))
+    }
+}
+
 pub struct VirtualBoxWarning;
 
 #[async_trait::async_trait]

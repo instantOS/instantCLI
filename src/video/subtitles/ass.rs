@@ -209,13 +209,13 @@ mod ass_constants {
 
     /// Outline animation constants
     /// Border thickness values for scaling effect
-    pub const BORD_THICKNESS_NONE: u32 = 0;      // No outline
-    pub const BORD_THICKNESS_FULL: u32 = 8;      // Full outline thickness
-    pub const BORD_THICKNESS_MIN: u32 = 2;       // Minimum thickness for "stay" phase
+    pub const BORD_THICKNESS_NONE: u32 = 0; // No outline
+    pub const BORD_THICKNESS_FULL: u32 = 8; // Full outline thickness
+    pub const BORD_THICKNESS_MIN: u32 = 2; // Minimum thickness for "stay" phase
 
     /// Animation timing for outline phases
-    pub const BOX_SCALE_IN_CS: u32 = 10;         // 100ms to scale up
-    pub const BOX_SCALE_OUT_CS: u32 = 10;        // 100ms to scale down
+    pub const BOX_SCALE_IN_CS: u32 = 10; // 100ms to scale up
+    pub const BOX_SCALE_OUT_CS: u32 = 10; // 100ms to scale down
 
     /// Maximum gap between words (in milliseconds) to pad
     /// Gaps smaller than this are considered minor pauses and will be extended
@@ -342,90 +342,94 @@ pub fn generate_ass_file(
 fn format_karaoke_text(subtitle: &RemappedSubtitle) -> Vec<KaraokeWordLine> {
     use ass_constants::*;
 
-    subtitle.words.iter().enumerate().map(|(idx, current_word)| {
-        // Build the full text with only the current word highlighted
-        let mut formatted_text = String::new();
+    subtitle
+        .words
+        .iter()
+        .enumerate()
+        .map(|(idx, current_word)| {
+            // Build the full text with only the current word highlighted
+            let mut formatted_text = String::new();
 
-        for (word_idx, word) in subtitle.words.iter().enumerate() {
-            // Add space before word (except first)
-            if word_idx > 0 {
-                formatted_text.push(' ');
-            }
+            for (word_idx, word) in subtitle.words.iter().enumerate() {
+                // Add space before word (except first)
+                if word_idx > 0 {
+                    formatted_text.push(' ');
+                }
 
-            // Determine if this is the highlighted word
-            let is_highlighted = word_idx == idx;
+                // Determine if this is the highlighted word
+                let is_highlighted = word_idx == idx;
 
-            if is_highlighted {
-                // Current word: dark text color with mauve animated outline
-                // Calculate word duration for proper timing
-                let word_duration_cs = current_word.end
-                    .saturating_sub(current_word.start)
-                    .as_millis() as u32 / 10; // Convert to centiseconds
+                if is_highlighted {
+                    // Current word: dark text color with mauve animated outline
+                    // Calculate word duration for proper timing
+                    let word_duration_cs = current_word
+                        .end
+                        .saturating_sub(current_word.start)
+                        .as_millis() as u32
+                        / 10; // Convert to centiseconds
 
-                // Calculate when to start scaling out (near end of word)
-                let scale_out_start = word_duration_cs.saturating_sub(BOX_SCALE_OUT_CS);
+                    // Calculate when to start scaling out (near end of word)
+                    let scale_out_start = word_duration_cs.saturating_sub(BOX_SCALE_OUT_CS);
 
-                // Start with outline at 0 thickness
-                // Scale in: 0 -> 8 thickness over 100ms (10cs)
-                // Stay: at 2 thickness for most of word duration
-                // Scale out: back to 2 at end of word
-                write!(
-                    formatted_text,
-                    "{{\\1c{}\\3c{}\\bord{}\\t({},{}\\bord{})\\t({},{}\\bord{})}}",
-                    COLOR_HIGHLIGHT_TEXT,       // Dark text (Crust)
-                    COLOR_HIGHLIGHT_OUTLINE,    // Mauve outline
-                    BORD_THICKNESS_NONE,        // Start at 0
-                    0,                          // Start scale-in at time 0
-                    BOX_SCALE_IN_CS,            // End scale-in at 10cs (100ms)
-                    BORD_THICKNESS_FULL,        // Scale to thickness 8
-                    scale_out_start,            // Start scale-out near word end
-                    word_duration_cs,           // End scale-out at word end
-                    BORD_THICKNESS_MIN          // Scale to thickness 2 (persistent)
-                ).unwrap();
-            } else {
-                // Other words: normal color, no outline override
-                write!(
-                    formatted_text,
-                    "{{\\1c{}}}",
-                    COLOR_NORMAL
-                ).unwrap();
-            }
+                    // Start with outline at 0 thickness
+                    // Scale in: 0 -> 8 thickness over 100ms (10cs)
+                    // Stay: at 2 thickness for most of word duration
+                    // Scale out: back to 2 at end of word
+                    write!(
+                        formatted_text,
+                        "{{\\1c{}\\3c{}\\bord{}\\t({},{}\\bord{})\\t({},{}\\bord{})}}",
+                        COLOR_HIGHLIGHT_TEXT,    // Dark text (Crust)
+                        COLOR_HIGHLIGHT_OUTLINE, // Mauve outline
+                        BORD_THICKNESS_NONE,     // Start at 0
+                        0,                       // Start scale-in at time 0
+                        BOX_SCALE_IN_CS,         // End scale-in at 10cs (100ms)
+                        BORD_THICKNESS_FULL,     // Scale to thickness 8
+                        scale_out_start,         // Start scale-out near word end
+                        word_duration_cs,        // End scale-out at word end
+                        BORD_THICKNESS_MIN       // Scale to thickness 2 (persistent)
+                    )
+                    .unwrap();
+                } else {
+                    // Other words: normal color, no outline override
+                    write!(formatted_text, "{{\\1c{}}}", COLOR_NORMAL).unwrap();
+                }
 
-            formatted_text.push_str(&escape_ass_text(&word.word));
+                formatted_text.push_str(&escape_ass_text(&word.word));
 
-            // Reset to style defaults after highlighted word
-            if is_highlighted {
-                write!(formatted_text, "{{\\r}}").unwrap();
-            }
-        }
-
-        // Calculate word duration, padding small gaps to prevent flickering
-        let mut end = current_word.end;
-
-        // If there's a next word:
-        // 1. Pad small gaps (> 0 and < MAX_GAP_MS) to extend to next word's start
-        // 2. Clip overlaps to prevent displaying two lines simultaneously
-        if idx + 1 < subtitle.words.len() {
-            let next_word = &subtitle.words[idx + 1];
-
-            // Prevent overlap: if current word extends past next word start, clip it
-            if end > next_word.start {
-                end = next_word.start;
-            } else {
-                // Pad small gaps to prevent flickering
-                let gap_ms = next_word.start.saturating_sub(end).as_millis();
-                if gap_ms > 0 && (gap_ms as u64) < MAX_GAP_MS {
-                    end = next_word.start;
+                // Reset to style defaults after highlighted word
+                if is_highlighted {
+                    write!(formatted_text, "{{\\r}}").unwrap();
                 }
             }
-        }
 
-        KaraokeWordLine {
-            start: current_word.start,
-            end,
-            text: formatted_text,
-        }
-    }).collect()
+            // Calculate word duration, padding small gaps to prevent flickering
+            let mut end = current_word.end;
+
+            // If there's a next word:
+            // 1. Pad small gaps (> 0 and < MAX_GAP_MS) to extend to next word's start
+            // 2. Clip overlaps to prevent displaying two lines simultaneously
+            if idx + 1 < subtitle.words.len() {
+                let next_word = &subtitle.words[idx + 1];
+
+                // Prevent overlap: if current word extends past next word start, clip it
+                if end > next_word.start {
+                    end = next_word.start;
+                } else {
+                    // Pad small gaps to prevent flickering
+                    let gap_ms = next_word.start.saturating_sub(end).as_millis();
+                    if gap_ms > 0 && (gap_ms as u64) < MAX_GAP_MS {
+                        end = next_word.start;
+                    }
+                }
+            }
+
+            KaraokeWordLine {
+                start: current_word.start,
+                end,
+                text: formatted_text,
+            }
+        })
+        .collect()
 }
 
 /// Per-word karaoke dialogue line data

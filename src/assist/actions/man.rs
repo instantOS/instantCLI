@@ -35,7 +35,10 @@ pub fn search_man_pages() -> Result<()> {
         .into_iter()
         .map(|page| SerializableMenuItem {
             display_text: page.clone(),
-            preview: FzfPreview::Command(format!("man -f {} 2>/dev/null || echo 'Manual page'", shell_quote(&page))),
+            preview: FzfPreview::Command(format!(
+                "man -f {} 2>/dev/null || echo 'Manual page'",
+                shell_quote(&page)
+            )),
             metadata: None,
         })
         .collect();
