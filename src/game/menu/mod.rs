@@ -5,7 +5,9 @@ mod state;
 use anyhow::{Context, Result, anyhow};
 
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
-use crate::game::games::selection::select_game_interactive;
+use crate::game::games::manager::GameManager;
+use crate::game::games::manager::AddGameOptions;
+use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
 use crate::game::operations::launch_game;
 use crate::game::setup;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
@@ -248,29 +250,20 @@ fn handle_action(
 pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
     let exit_after_action = provided_game_name.is_some();
 
-    // Outer loop: game selection
-    loop {
-        let game_name = match &provided_game_name {
-            Some(name) => name.clone(),
-            None => match select_game_interactive(None)? {
-                Some(name) => name,
-                None => return Ok(()),
-            },
-        };
-
-        // Inner loop: game action menu
+    // If a game name is provided, skip the menu and go directly to actions
+    if let Some(name) = &provided_game_name {
         loop {
-            let state = GameState::load(&game_name)?;
-            let actions = build_action_menu(&game_name, &state);
+            let state = GameState::load(name)?;
+            let actions = build_action_menu(name, &state);
 
             let selection = FzfWrapper::builder()
-                .header(format!("Game: {}", game_name))
+                .header(format!("Game: {}", name))
                 .prompt("Select action")
                 .select(actions)?;
 
             let result = match selection {
                 FzfResult::Selected(item) => {
-                    handle_action(item.action, &game_name, &state, exit_after_action)?
+                    handle_action(item.action, name, &state, exit_after_action)?
                 }
                 FzfResult::Cancelled => {
                     if exit_after_action {
@@ -286,6 +279,54 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 ActionResult::Stay => continue,
                 ActionResult::Back => break,
                 ActionResult::Exit => return Ok(()),
+            }
+        }
+        return Ok(());
+    }
+
+    // Outer loop: menu entry selection
+    loop {
+        let entry = match select_game_menu_entry()? {
+            Some(entry) => entry,
+            None => return Ok(()),
+        };
+
+        match entry {
+            GameMenuEntry::AddGame => {
+                GameManager::add_game(AddGameOptions::default())?;
+                // Return to menu after adding
+                continue;
+            }
+            GameMenuEntry::SetupGames => {
+                setup::setup_uninstalled_games()?;
+                // Return to menu after setup
+                continue;
+            }
+            GameMenuEntry::Game(game_name) => {
+                // Inner loop: game action menu
+                loop {
+                    let state = GameState::load(&game_name)?;
+                    let actions = build_action_menu(&game_name, &state);
+
+                    let selection = FzfWrapper::builder()
+                        .header(format!("Game: {}", game_name))
+                        .prompt("Select action")
+                        .select(actions)?;
+
+                    let result = match selection {
+                        FzfResult::Selected(item) => {
+                            handle_action(item.action, &game_name, &state, false)?
+                        }
+                        FzfResult::Cancelled => ActionResult::Back,
+                        _ => ActionResult::Exit,
+                    };
+
+                    match result {
+                        ActionResult::Stay => continue,
+                        ActionResult::Back => break,
+                        ActionResult::Exit => return Ok(()),
+                    }
+                }
             }
         }
     }

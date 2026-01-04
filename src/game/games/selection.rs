@@ -3,9 +3,91 @@ use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,
 };
 use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 use colored::*;
+
+/// Menu entry for game selection - can be a game or a special action
+#[derive(Debug, Clone)]
+pub enum GameMenuEntry {
+    Game(String),
+    AddGame,
+    SetupGames,
+}
+
+impl FzfSelectable for GameMenuEntry {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            GameMenuEntry::Game(name) => name.clone(),
+            GameMenuEntry::AddGame => {
+                format!("{} Add Game", char::from(NerdFont::Plus))
+            }
+            GameMenuEntry::SetupGames => {
+                format!("{} Set Up Existing Games", char::from(NerdFont::Wrench))
+            }
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            GameMenuEntry::Game(name) => name.clone(),
+            GameMenuEntry::AddGame => "\0__add_game__".to_string(),
+            GameMenuEntry::SetupGames => "\0__setup_games__".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            GameMenuEntry::Game(name) => {
+                // Try to load game for preview
+                match (
+                    InstantGameConfig::load(),
+                    InstallationsConfig::load(),
+                ) {
+                    (Ok(game_config), Ok(installations)) => {
+                        let game = game_config.games.iter().find(|g| g.name.0 == *name);
+                        let installation = installations
+                            .installations
+                            .iter()
+                            .find(|inst| inst.game_name.0 == *name);
+
+                        if let Some(game) = game {
+                            FzfPreview::Text(game.generate_preview_text(
+                                &game.description,
+                                &game.launch_command,
+                                installation,
+                            ))
+                        } else {
+                            FzfPreview::Text(format!("Game: {}", name))
+                        }
+                    }
+                    _ => FzfPreview::Text(format!("Game: {}", name)),
+                }
+            }
+            GameMenuEntry::AddGame => FzfPreview::Text(
+                format!(
+                    "{} Add a new game to track.\n\n\
+                    This will guide you through:\n\
+                    • Setting a game name and description\n\
+                    • Configuring the launch command\n\
+                    • Selecting the save data location",
+                    char::from(NerdFont::Plus)
+                )
+            ),
+            GameMenuEntry::SetupGames => FzfPreview::Text(
+                format!(
+                    "{} Configure games that need setup.\n\n\
+                    This helps with:\n\
+                    • Games registered but missing save paths\n\
+                    • Games with pending dependencies\n\
+                    • Restoring games from backups",
+                    char::from(NerdFont::Wrench)
+                )
+            ),
+        }
+    }
+}
 
 impl FzfSelectable for Game {
     fn fzf_display_text(&self) -> String {
@@ -208,5 +290,35 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
             println!("No game selected.");
             Ok(None)
         }
+    }
+}
+
+/// Select a game menu entry (game or special action)
+/// Returns Some(entry) if selected, None if cancelled
+pub fn select_game_menu_entry() -> Result<Option<GameMenuEntry>> {
+    let config = InstantGameConfig::load().context("Failed to load game configuration")?;
+
+    // Build menu entries: special actions first, then games
+    let mut entries = vec![
+        GameMenuEntry::AddGame,
+        GameMenuEntry::SetupGames,
+    ];
+
+    // Add all games
+    for game in &config.games {
+        entries.push(GameMenuEntry::Game(game.name.0.clone()));
+    }
+
+    // Show menu
+    let result = FzfWrapper::builder()
+        .header("Game Menu")
+        .prompt("Select")
+        .select(entries)
+        .map_err(|e| anyhow::anyhow!("Failed to select from game menu: {}", e))?;
+
+    match result {
+        FzfResult::Selected(entry) => Ok(Some(entry)),
+        FzfResult::Cancelled => Ok(None),
+        _ => Ok(None),
     }
 }
