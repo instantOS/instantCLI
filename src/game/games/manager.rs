@@ -193,6 +193,102 @@ impl GameManager {
         Ok(())
     }
 
+    /// Move a game's save location to a new path
+    pub fn move_game(game_name: Option<String>, new_path: Option<String>) -> Result<()> {
+        let mut context = GameCreationContext::load()?;
+
+        let game_name = match game_name {
+            Some(name) => name,
+            None => match select_game_interactive(Some("Select a game to move:"))? {
+                Some(name) => name,
+                None => return Ok(()),
+            },
+        };
+
+        // Check if game exists in config
+        if !context.game_exists(&game_name) {
+            eprintln!("Game '{game_name}' not found in configuration.");
+            return Ok(());
+        }
+
+        // Resolve new path
+        let new_path = match new_path {
+            Some(path) => {
+                let trimmed = path.trim();
+                if !validate_non_empty(trimmed, "Save path")? {
+                    return Err(anyhow!("Save path cannot be empty"));
+                }
+                let tilde_path = TildePath::from_str(trimmed)
+                    .map_err(|e| anyhow!("Invalid save path: {}", e))?;
+
+                ensure_safe_path(tilde_path.as_path(), PathUsage::SaveDirectory)?;
+
+                if !tilde_path.as_path().exists() {
+                    match FzfWrapper::confirm(&format!(
+                        "{} Save path '{}' does not exist. Create it?",
+                        char::from(NerdFont::Warning),
+                        trimmed
+                    ))
+                    .map_err(|e| anyhow::anyhow!("Failed to get confirmation: {}", e))?
+                    {
+                        ConfirmResult::Yes => {
+                            std::fs::create_dir_all(tilde_path.as_path())
+                                .context("Failed to create save directory")?;
+                            println!(
+                                "{} Created save directory: {}",
+                                char::from(NerdFont::Check),
+                                trimmed
+                            );
+                        }
+                        ConfirmResult::No | ConfirmResult::Cancelled => {
+                            return Err(anyhow!("Save path creation cancelled"));
+                        }
+                    }
+                }
+
+                tilde_path
+            }
+            None => Self::get_save_path(&game_name)?,
+        };
+
+        // Determine path type
+        let save_path_type = if new_path.as_path().exists() {
+            let metadata = fs::metadata(new_path.as_path()).with_context(|| {
+                format!(
+                    "Failed to read metadata for save path: {}",
+                    new_path.as_path().display()
+                )
+            })?;
+            PathContentKind::from(metadata)
+        } else {
+            PathContentKind::Directory
+        };
+
+        // Update or create installation
+        let installations = &mut context.installations_mut().installations;
+        if let Some(inst) = installations.iter_mut().find(|i| i.game_name.0 == game_name) {
+            inst.save_path = new_path.clone();
+            inst.save_path_type = save_path_type;
+        } else {
+            installations.push(GameInstallation::with_kind(
+                game_name.clone(),
+                new_path.clone(),
+                save_path_type,
+            ));
+        }
+
+        context.save()?;
+
+        let path_display = new_path
+            .to_tilde_string()
+            .unwrap_or_else(|_| new_path.as_path().to_string_lossy().to_string());
+
+        println!("✓ Game '{game_name}' moved successfully!");
+        println!("New save path: {}", path_display);
+
+        Ok(())
+    }
+
     /// Get and validate game name from user input
     fn get_game_name(config: &InstantGameConfig) -> Result<String> {
         let game_name = FzfWrapper::input("Enter game name")

@@ -110,6 +110,14 @@ pub enum GameCommands {
     },
     /// Set up games that have been added but are not configured on this device
     Setup,
+    /// Move a game's save location to a new path
+    Move {
+        /// The new path for the game saves
+        path: Option<String>,
+        /// Game name (optional, will prompt if not specified)
+        #[arg(long, short)]
+        game: Option<String>,
+    },
     /// Manage game dependencies
     Deps {
         /// Dependency subcommands

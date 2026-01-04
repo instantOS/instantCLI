@@ -95,6 +95,7 @@ pub fn handle_game_command(command: GameCommands, debug: bool) -> Result<()> {
             ensure_restic_available()?;
             handle_setup()
         }
+        GameCommands::Move { path, game } => handle_move(game, path),
         GameCommands::Deps { command } => handle_dependency_command(command),
         #[cfg(debug_assertions)]
         GameCommands::Debug { debug_command } => handle_debug(debug_command),
@@ -159,6 +160,10 @@ fn handle_restore(
 
 fn handle_setup() -> Result<()> {
     setup::setup_uninstalled_games()
+}
+
+fn handle_move(game_name: Option<String>, path: Option<String>) -> Result<()> {
+    GameManager::move_game(game_name, path)
 }
 
 fn handle_dependency_command(command: DependencyCommands) -> Result<()> {
