@@ -5,12 +5,15 @@ mod state;
 use anyhow::{Context, Result, anyhow};
 
 use crate::game::config::{InstallationsConfig, InstantGameConfig};
-use crate::game::games::manager::GameManager;
 use crate::game::games::manager::AddGameOptions;
+use crate::game::games::manager::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
 use crate::game::operations::launch_game;
 use crate::game::setup;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::ui::catppuccin::{
+    colors, format_back_icon, format_icon_colored, fzf_mocha_args, hex_to_ansi_fg,
+};
 use crate::ui::nerd_font::NerdFont;
 
 use state::EditState;
@@ -106,7 +109,7 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
     // Add setup option first if game needs it
     if state.needs_setup {
         actions.push(GameActionItem {
-            display: format!("{} Setup", char::from(NerdFont::Wrench)),
+            display: format!("{} Setup", format_icon_colored(NerdFont::Wrench, colors::PEACH)),
             preview: format!(
                 "Configure save path for '{}' on this device.\n\nThis game is registered but has no save data location set up yet.",
                 game_name
@@ -128,7 +131,10 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
     };
 
     actions.push(GameActionItem {
-        display: format!("{} Launch", char::from(NerdFont::Rocket)),
+        display: format!(
+            "{} Launch",
+            format_icon_colored(NerdFont::Rocket, colors::GREEN)
+        ),
         preview: launch_preview,
         action: GameAction::Launch,
     });
@@ -137,7 +143,10 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
     let edit_preview = build_edit_preview(game_name, state);
 
     actions.push(GameActionItem {
-        display: format!("{} Edit", char::from(NerdFont::Edit)),
+        display: format!(
+            "{} Edit",
+            format_icon_colored(NerdFont::Edit, colors::SAPPHIRE)
+        ),
         preview: edit_preview,
         action: GameAction::Edit,
     });
@@ -151,14 +160,17 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
         );
 
         actions.push(GameActionItem {
-            display: format!("{} Move", char::from(NerdFont::Folder)),
+            display: format!(
+                "{} Move",
+                format_icon_colored(NerdFont::Folder, colors::LAVENDER)
+            ),
             preview: move_preview,
             action: GameAction::Move,
         });
     }
 
     actions.push(GameActionItem {
-        display: format!("{} Back", char::from(NerdFont::ArrowLeft)),
+        display: format!("{} Back", format_back_icon()),
         preview: "Return to game selection".to_string(),
         action: GameAction::Back,
     });
@@ -168,36 +180,54 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
 
 /// Build preview text for Edit option showing current config
 fn build_edit_preview(game_name: &str, state: &GameState) -> String {
-    let mut lines = vec![format!("Edit configuration for '{}'", game_name)];
-    lines.push(String::new());
+    let reset = "\x1b[0m";
+    let mauve = hex_to_ansi_fg(colors::MAUVE);
+    let teal = hex_to_ansi_fg(colors::TEAL);
+    let text = hex_to_ansi_fg(colors::TEXT);
+    let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
+    let surface = hex_to_ansi_fg(colors::SURFACE1);
+
+    let mut lines = vec![
+        String::new(),
+        format!(
+            "{mauve}{}  Edit Configuration{reset}",
+            char::from(NerdFont::Edit)
+        ),
+        format!("{surface}───────────────────────────────────{reset}"),
+        String::new(),
+        format!("{text}Edit configuration for '{}'{reset}", game_name),
+        String::new(),
+        format!("{surface}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{reset}"),
+        String::new(),
+    ];
 
     // games.toml section
-    lines.push(format!("{} games.toml:", char::from(NerdFont::FileConfig)));
     lines.push(format!(
-        "  {} Description: {}",
-        char::from(NerdFont::Info),
+        "{mauve}{}  games.toml{reset}",
+        char::from(NerdFont::FileConfig)
+    ));
+    lines.push(format!(
+        "  {subtext}Description:{reset} {text}{}{reset}",
         state.description.as_deref().unwrap_or("<not set>")
     ));
     lines.push(format!(
-        "  {} Launch Command: {}",
-        char::from(NerdFont::Rocket),
+        "  {subtext}Launch Command:{reset} {text}{}{reset}",
         state.launch_command.as_deref().unwrap_or("<not set>")
     ));
 
     // installations.toml section
     lines.push(String::new());
     if let Some(path) = &state.save_path {
-        lines.push(format!("{} installations.toml:", char::from(NerdFont::Desktop)));
         lines.push(format!(
-            "  {} Save Path: {}",
-            char::from(NerdFont::Folder),
+            "{mauve}{}  installations.toml{reset}",
+            char::from(NerdFont::Desktop)
+        ));
+        lines.push(format!(
+            "  {subtext}Save Path:{reset} {teal}{}{reset}",
             path
         ));
     } else {
-        lines.push(format!(
-            "{} No installation on this device",
-            char::from(NerdFont::Warning)
-        ));
+        lines.push(format!("{subtext}No installation on this device{reset}",));
     }
 
     lines.join("\n")
@@ -290,6 +320,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             let selection = FzfWrapper::builder()
                 .header(format!("Game: {}", name))
                 .prompt("Select action")
+                .args(fzf_mocha_args())
                 .select(actions)?;
 
             let result = match selection {
@@ -342,6 +373,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     let selection = FzfWrapper::builder()
                         .header(format!("Game: {}", game_name))
                         .prompt("Select action")
+                        .args(fzf_mocha_args())
                         .select(actions)?;
 
                     let result = match selection {
@@ -392,22 +424,38 @@ fn run_edit_menu_for_game(
 /// Show menu when game manager is not initialized
 fn show_uninitialized_menu() -> Result<()> {
     let options = vec![
-        format!("{} Initialize Game Manager", char::from(NerdFont::Play)),
-        format!("{} Cancel", char::from(NerdFont::CrossCircle)),
+        format!(
+            "{} Initialize Game Manager",
+            format_icon_colored(NerdFont::Play, colors::GREEN)
+        ),
+        format!("{} Cancel", format_back_icon()),
     ];
 
     let selection = FzfWrapper::builder()
         .header("Game save manager is not initialized")
         .prompt("Select action")
+        .args(fzf_mocha_args())
         .select(options)?;
 
     match selection {
-        FzfResult::Selected(item) if item == format!("{} Initialize Game Manager", char::from(NerdFont::Play)) => {
+        FzfResult::Selected(item)
+            if item
+                == format!(
+                    "{} Initialize Game Manager",
+                    format_icon_colored(NerdFont::Play, colors::GREEN)
+                ) =>
+        {
             // Run initialization
-            let init_result = crate::game::repository::manager::RepositoryManager::initialize_game_manager(false, Default::default());
+            let init_result =
+                crate::game::repository::manager::RepositoryManager::initialize_game_manager(
+                    false,
+                    Default::default(),
+                );
             match init_result {
                 Ok(()) => {
-                    FzfWrapper::message("Game save manager initialized successfully!\n\nYou can now add games with 'ins game add' or open the menu again.")?;
+                    FzfWrapper::message(
+                        "Game save manager initialized successfully!\n\nYou can now add games with 'ins game add' or open the menu again.",
+                    )?;
                 }
                 Err(e) => {
                     FzfWrapper::message(&format!("Initialization failed: {}", e))?;

@@ -41,10 +41,7 @@ impl FzfSelectable for GameMenuEntry {
         match self {
             GameMenuEntry::Game(name) => {
                 // Try to load game for preview
-                match (
-                    InstantGameConfig::load(),
-                    InstallationsConfig::load(),
-                ) {
+                match (InstantGameConfig::load(), InstallationsConfig::load()) {
                     (Ok(game_config), Ok(installations)) => {
                         let game = game_config.games.iter().find(|g| g.name.0 == *name);
                         let installation = installations
@@ -65,26 +62,22 @@ impl FzfSelectable for GameMenuEntry {
                     _ => FzfPreview::Text(format!("Game: {}", name)),
                 }
             }
-            GameMenuEntry::AddGame => FzfPreview::Text(
-                format!(
-                    "{} Add a new game to track.\n\n\
+            GameMenuEntry::AddGame => FzfPreview::Text(format!(
+                "{} Add a new game to track.\n\n\
                     This will guide you through:\n\
                     • Setting a game name and description\n\
                     • Configuring the launch command\n\
                     • Selecting the save data location",
-                    char::from(NerdFont::Plus)
-                )
-            ),
-            GameMenuEntry::SetupGames => FzfPreview::Text(
-                format!(
-                    "{} Configure games that need setup.\n\n\
+                char::from(NerdFont::Plus)
+            )),
+            GameMenuEntry::SetupGames => FzfPreview::Text(format!(
+                "{} Configure games that need setup.\n\n\
                     This helps with:\n\
                     • Games registered but missing save paths\n\
                     • Games with pending dependencies\n\
                     • Restoring games from backups",
-                    char::from(NerdFont::Wrench)
-                )
-            ),
+                char::from(NerdFont::Wrench)
+            )),
         }
     }
 }
@@ -299,10 +292,7 @@ pub fn select_game_menu_entry() -> Result<Option<GameMenuEntry>> {
     let config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
     // Build menu entries: special actions first, then games
-    let mut entries = vec![
-        GameMenuEntry::AddGame,
-        GameMenuEntry::SetupGames,
-    ];
+    let mut entries = vec![GameMenuEntry::AddGame, GameMenuEntry::SetupGames];
 
     // Add all games
     for game in &config.games {

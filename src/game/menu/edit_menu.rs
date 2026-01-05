@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 
 use super::editors;
@@ -71,7 +72,8 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
 
         let mut builder = FzfWrapper::builder()
             .header(format!("Editing: {}", game_name))
-            .prompt("Select property to edit");
+            .prompt("Select property to edit")
+            .args(fzf_mocha_args());
 
         if let Some(index) = initial_index {
             builder = builder.initial_index(index);
@@ -186,7 +188,11 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
 
     // Name
     items.push(MenuItem::new(
-        format!("{} Name: {}", char::from(NerdFont::Edit), game.name.0),
+        format!(
+            "{} Name: {}",
+            format_icon_colored(NerdFont::Edit, colors::BLUE),
+            game.name.0
+        ),
         format!(
             "Current name: {}\n\nEdit the game's name in games.toml",
             game.name.0
@@ -199,7 +205,7 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
     items.push(MenuItem::new(
         format!(
             "{} Description: {}",
-            char::from(NerdFont::Info),
+            format_icon_colored(NerdFont::Info, colors::TEAL),
             desc_display
         ),
         format!(
@@ -237,7 +243,7 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
     items.push(MenuItem::new(
         format!(
             "{} Launch Command: {}",
-            char::from(NerdFont::Rocket),
+            format_icon_colored(NerdFont::Rocket, colors::GREEN),
             effective_cmd
         ),
         launch_preview,
@@ -252,7 +258,7 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
             .unwrap_or_else(|_| inst.save_path.as_path().to_string_lossy().to_string());
 
         items.push(MenuItem::new(
-            format!("{} Save Path: {}", char::from(NerdFont::Folder), save_path_str),
+            format!("{} Save Path: {}", format_icon_colored(NerdFont::Folder, colors::LAVENDER), save_path_str),
             format!(
                 "Current save path: {}\n\nEdit the save path in installations.toml (device-specific)",
                 save_path_str
@@ -263,13 +269,16 @@ fn build_menu_items(state: &EditState) -> Vec<MenuItem> {
 
     // Actions
     items.push(MenuItem::new(
-        format!("{} Save", char::from(NerdFont::Check)),
+        format!(
+            "{} Save",
+            format_icon_colored(NerdFont::Check, colors::GREEN)
+        ),
         "Save all changes (stay in menu)".to_string(),
         MenuAction::Save,
     ));
 
     items.push(MenuItem::new(
-        format!("{} Back", char::from(NerdFont::ArrowLeft)),
+        format!("{} Back", format_back_icon()),
         "Return to game menu (warns if unsaved changes)".to_string(),
         MenuAction::Back,
     ));
