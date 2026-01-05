@@ -26,8 +26,3 @@ pub use types::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, Header};
 // Re-export main user-facing types
 pub use builder::FzfBuilder;
 pub use wrapper::FzfWrapper;
-
-// Internal use (pub(crate) for other modules)
-pub(crate) use types::InitialCursor;
-pub(crate) use preview::{PreviewStrategy, PreviewUtils};
-pub(crate) use utils::{check_for_old_fzf_and_exit, extract_icon_padding, log_fzf_failure};

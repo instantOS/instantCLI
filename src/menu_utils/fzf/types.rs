@@ -102,24 +102,19 @@ impl Header {
     }
 }
 
-// DEPRECATED: Convenience for backward compatibility, remove in next breaking change
-// Use Header::default() or Header::manual() explicitly instead
+// Convenience implementations allow strings to be passed directly to .header() method
 impl From<&str> for Header {
     fn from(s: &str) -> Self {
         Header::Default(s.to_string())
     }
 }
 
-// DEPRECATED: Convenience for backward compatibility, remove in next breaking change
-// Use Header::default() or Header::manual() explicitly instead
 impl From<String> for Header {
     fn from(s: String) -> Self {
         Header::Default(s)
     }
 }
 
-// DEPRECATED: Convenience for backward compatibility, remove in next breaking change
-// Use Header::default() or Header::manual() explicitly instead
 impl From<&String> for Header {
     fn from(s: &String) -> Self {
         Header::Default(s.clone())

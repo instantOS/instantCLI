@@ -306,7 +306,6 @@ impl FzfWrapper {
         parse_fzf_output(output, &item_map, self.multi_select)
     }
 
-    // DEPRECATED: Use FzfWrapper::builder().select()? instead
     pub fn select_one<T: FzfSelectable + Clone>(items: Vec<T>) -> Result<Option<T>> {
         match Self::builder().select(items)? {
             FzfResult::Selected(item) => Ok(Some(item)),
@@ -314,22 +313,18 @@ impl FzfWrapper {
         }
     }
 
-    // DEPRECATED: Use FzfWrapper::builder().input().input_dialog()? instead
     pub fn input(prompt: &str) -> Result<String> {
         Self::builder().prompt(prompt).input().input_dialog()
     }
 
-    // DEPRECATED: Use FzfWrapper::builder().message().message_dialog()? instead
     pub fn message(message: &str) -> Result<()> {
         Self::builder().message(message).message_dialog()
     }
 
-    // DEPRECATED: Use FzfWrapper::builder().confirm().confirm_dialog()? instead
     pub fn confirm(message: &str) -> Result<ConfirmResult> {
         Self::builder().confirm(message).confirm_dialog()
     }
 
-    // DEPRECATED: Use FzfWrapper::builder().password().password_dialog()? instead
     pub fn password(prompt: &str) -> Result<FzfResult<String>> {
         Self::builder().prompt(prompt).password().password_dialog()
     }

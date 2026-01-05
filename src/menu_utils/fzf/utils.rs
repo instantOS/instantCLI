@@ -1,7 +1,5 @@
 //! Utility functions for FZF wrapper
 
-use crate::ui::{self, Level};
-
 /// Check if the error indicates an old fzf version and exit if so
 pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
     let stderr_str = String::from_utf8_lossy(stderr);

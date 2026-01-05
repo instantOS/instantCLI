@@ -7,7 +7,6 @@ use std::process::{Command, Stdio};
 use super::types::*;
 use super::utils::*;
 use super::wrapper::FzfWrapper;
-use super::theme::theme_args;
 
 #[derive(Debug, Clone)]
 pub struct FzfBuilder {
@@ -352,17 +351,16 @@ impl FzfBuilder {
         self.execute_message()
     }
 
-    // DEPRECATED: Alias for confirm_dialog(), remove in next breaking change
     pub fn show_confirmation(self) -> Result<ConfirmResult> {
         self.confirm_dialog()
     }
 
-    // DEPRECATED: Alias for message_dialog(), remove in next breaking change
     pub fn show_message(self) -> Result<()> {
         self.message_dialog()
     }
 
-    // DEPRECATED: Use input_dialog() instead, remove in next breaking change
+    /// Returns FzfResult with explicit Cancelled variant, unlike input_dialog() which returns empty string.
+    /// Use this when you need to distinguish between user cancellation and empty input.
     pub fn input_result(self) -> Result<FzfResult<String>> {
         if !matches!(self.dialog_type, DialogType::Input) {
             return Err(anyhow::anyhow!("Builder not configured for input"));
