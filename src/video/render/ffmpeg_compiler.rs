@@ -332,21 +332,13 @@ impl FfmpegCompiler {
                 format!("between(t,{},{})", segment.start_time, segment.end_time());
 
             // Calculate overlay position based on render mode
-            // In reels mode, position overlay within the video content area (offset from top)
-            // In standard mode, center in the frame
+            // In reels mode: center overlay on full frame at 30% from top
+            // In standard mode: center in the frame
             let y_position = if self.render_mode.requires_padding() {
-                // For reels: video is positioned at offset_pct from top
-                // Center overlay within the video content area
-                let offset_pct = self.render_mode.vertical_offset_pct();
-                // Video top position: (H - video_h) * offset_pct
-                // Video is scaled to width, so video_h = H * (target_w / source_w) for 16:9
-                // Approximate: assume 16:9 source scaled to target_width
-                // scaled_height ≈ target_width * 9/16 = 1080 * 9/16 = 607.5
-                // video_top = (1920 - 607.5) * 0.1 ≈ 131
-                // Center overlay in video: video_top + (video_h - overlay_h) / 2
-                // = (H - scaled_h) * offset + (scaled_h - h) / 2
-                // Simplified: use the same offset logic as the video
-                format!("(H*9/16-h)/2+(H-H*9/16)*{}", offset_pct)
+                // For reels: center overlay on full frame at 30% from top
+                // This leaves ~70% of frame below for subtitles
+                // Formula: (H - h) * 0.3
+                "(H-h)*0.3".to_string()
             } else {
                 "(H-h)/2".to_string()
             };

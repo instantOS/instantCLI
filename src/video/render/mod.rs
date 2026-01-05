@@ -280,7 +280,7 @@ fn generate_subtitle_file(
         );
     }
 
-    let style = AssStyle::for_reels();
+    let style = AssStyle::for_reels(timeline.has_overlays);
     let ass_content = generate_ass_file(&remapped, &style, play_res);
 
     // Write ASS file next to output with .ass extension
@@ -546,7 +546,12 @@ fn build_nle_timeline(
 
     state.finalize();
 
-    Ok((state.timeline, stats))
+    // Set has_overlays flag based on plan
+    let has_overlays = plan.overlay_count > 0;
+    let mut timeline = state.timeline;
+    timeline.has_overlays = has_overlays;
+
+    Ok((timeline, stats))
 }
 
 struct TimelineBuildState {

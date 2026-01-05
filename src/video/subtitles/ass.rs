@@ -131,7 +131,10 @@ impl AssStyle {
 impl AssStyle {
     /// Create a style optimized for reels mode (9:16 vertical video).
     /// Uses Catppuccin Mocha theme for modern, minimal aesthetics.
-    pub fn for_reels() -> Self {
+    ///
+    /// # Arguments
+    /// * `has_overlays` - If true, position subtitles lower to avoid overlap with overlays
+    pub fn for_reels(has_overlays: bool) -> Self {
         let mut style = Self::catppuccin_mocha();
         // Optimize for Reels/TikTok vertical layout (1080x1920)
         // The video content (assuming 16:9 source) is scaled to width 1080.
@@ -141,10 +144,12 @@ impl AssStyle {
         // Video bottom ≈ 131 + 608 = 739px.
         // Empty space below ≈ 1920 - 739 = 1181px.
         // Center of empty space from bottom ≈ 1181 / 2 = 590px.
-        // We position slightly lower than exact center to be safe from UI elements,
-        // but high enough to be clearly in the "content" area.
         style.font_size = 70; // Larger for mobile visibility
-        style.margin_v = 560; // Centered in empty space below video
+        // Position based on overlay presence:
+        // - No overlay: margin_v = 560 (centered in empty space below video)
+        // - With overlay: margin_v = 850 (further down to avoid overlay)
+        //   Overlay is centered at ~30% from top, subtitles at bottom
+        style.margin_v = if has_overlays { 850 } else { 560 };
         style
     }
 
@@ -508,7 +513,7 @@ mod tests {
             },
         ];
 
-        let style = AssStyle::for_reels();
+        let style = AssStyle::for_reels(false);
         let output = generate_ass_file(&subtitles, &style, (1080, 1920));
 
         assert!(output.contains("[Script Info]"));
@@ -522,13 +527,26 @@ mod tests {
 
     #[test]
     fn test_style_line() {
-        let style = AssStyle::for_reels();
+        let style = AssStyle::for_reels(false);
         let line = style.to_style_line();
 
         // Catppuccin Mocha theme with Inter font
         assert!(line.starts_with("Style: Default,Inter,70,")); // Size 70
         assert!(line.contains(",2,")); // Alignment = 2
-        assert!(line.contains(",560,")); // MarginV = 560
+        assert!(line.contains(",560,")); // MarginV = 560 (no overlay)
+        // Verify Catppuccin colors are present (ABGR format)
+        assert!(line.contains("&H00F4D6CD")); // Catppuccin Text color
+    }
+
+    #[test]
+    fn test_style_line_with_overlay() {
+        let style = AssStyle::for_reels(true);
+        let line = style.to_style_line();
+
+        // Catppuccin Mocha theme with Inter font
+        assert!(line.starts_with("Style: Default,Inter,70,")); // Size 70
+        assert!(line.contains(",2,")); // Alignment = 2
+        assert!(line.contains(",850,")); // MarginV = 850 (with overlay)
         // Verify Catppuccin colors are present (ABGR format)
         assert!(line.contains("&H00F4D6CD")); // Catppuccin Text color
     }

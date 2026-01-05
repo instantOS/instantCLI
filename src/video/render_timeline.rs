@@ -21,6 +21,8 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct Timeline {
     pub segments: Vec<Segment>,
+    /// Track if timeline contains overlay segments
+    pub has_overlays: bool,
 }
 
 /// A segment in the timeline with a start time, duration, and data
@@ -78,6 +80,7 @@ impl Timeline {
     pub fn new() -> Self {
         Timeline {
             segments: Vec::new(),
+            has_overlays: false,
         }
     }
 
