@@ -2,9 +2,31 @@ use super::types::{SyncAction, ToleranceDirection};
 use crate::game::config::{GameInstallation, InstantGameConfig};
 use crate::game::restic::cache;
 use crate::game::utils::save_files::{
-    TimeComparison, compare_snapshot_vs_local, get_save_directory_info,
+    TimeComparison, compare_snapshot_vs_local, get_save_directory_info, SYNC_TOLERANCE_SECONDS,
 };
 use anyhow::Result;
+use std::time::SystemTime;
+
+/// Check if file was modified after checkpoint was set (with tolerance)
+/// Returns true if file was modified significantly after checkpoint
+fn file_modified_after_checkpoint(file_time: SystemTime, checkpoint_time: &str) -> bool {
+    // Parse checkpoint time from ISO 8601 string
+    let checkpoint_dt = match chrono::DateTime::parse_from_rfc3339(checkpoint_time) {
+        Ok(dt) => dt.with_timezone(&chrono::Utc),
+        Err(_) => return true, // If we can't parse, assume modified (safer to backup)
+    };
+
+    // Convert file_time to DateTime
+    let file_dt: chrono::DateTime<chrono::Utc> = file_time.into();
+
+    // Calculate difference in seconds
+    let diff_seconds = file_dt
+        .signed_duration_since(checkpoint_dt)
+        .num_seconds();
+
+    // File is considered modified if it's more than SYNC_TOLERANCE_SECONDS newer than checkpoint
+    diff_seconds > SYNC_TOLERANCE_SECONDS
+}
 
 /// Determine the required action for a single game
 pub fn determine_action(
@@ -60,7 +82,20 @@ pub fn determine_action(
         (Some(local_time), Some(snapshot)) => {
             // Both local saves and snapshots exist - compare timestamps
             match compare_snapshot_vs_local(&snapshot.time, local_time) {
-                Ok(TimeComparison::LocalNewer) => Ok(SyncAction::CreateBackup),
+                Ok(TimeComparison::LocalNewer) => {
+                    // Check if backup should be skipped:
+                    // 1. Checkpoint ID matches latest snapshot
+                    // 2. File was NOT modified after checkpoint was set (within tolerance)
+                    if !force
+                        && let Some(ref nearest_checkpoint) = installation.nearest_checkpoint
+                        && nearest_checkpoint == &snapshot.id
+                        && let Some(ref checkpoint_time) = installation.checkpoint_time
+                        && !file_modified_after_checkpoint(local_time, checkpoint_time)
+                    {
+                        return Ok(SyncAction::BackupSkipped(snapshot.id.clone()));
+                    }
+                    Ok(SyncAction::CreateBackup)
+                }
                 Ok(TimeComparison::LocalNewerWithinTolerance(delta)) => {
                     if force {
                         return Ok(SyncAction::CreateBackup);

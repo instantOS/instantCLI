@@ -163,6 +163,8 @@ pub struct GameInstallation {
     pub save_path_type: PathContentKind,
     pub nearest_checkpoint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_time: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub launch_command: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<InstalledDependency>,
@@ -183,6 +185,7 @@ impl GameInstallation {
             save_path: save_path.into(),
             save_path_type: kind,
             nearest_checkpoint: None,
+            checkpoint_time: None,
             launch_command: None,
             dependencies: Vec::new(),
         }
@@ -190,6 +193,7 @@ impl GameInstallation {
 
     pub fn update_checkpoint(&mut self, checkpoint_id: impl Into<String>) {
         self.nearest_checkpoint = Some(checkpoint_id.into());
+        self.checkpoint_time = Some(chrono::Utc::now().to_rfc3339());
     }
 }
 

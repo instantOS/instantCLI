@@ -48,6 +48,7 @@ pub fn get_game_installation(game_name: Option<String>) -> Result<GameSelectionR
                         save_path: crate::common::TildePath::new(std::path::PathBuf::new()),
                         save_path_type: crate::game::config::PathContentKind::Directory,
                         nearest_checkpoint: None,
+                        checkpoint_time: None,
                         launch_command: None,
                         dependencies: Vec::new(),
                     },

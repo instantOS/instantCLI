@@ -68,6 +68,10 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
                     ui::report_restore_skipped(&game_name_plain, &snapshot_id);
                     total_skipped += 1;
                 }
+                SyncAction::BackupSkipped(snapshot_id) => {
+                    ui::report_backup_skipped(&game_name_plain, &snapshot_id);
+                    total_skipped += 1;
+                }
                 SyncAction::CreateBackup => {
                     ui::report_backup_start(&game_name_plain);
                     let result = execution::perform_backup(&installation, &game_config);

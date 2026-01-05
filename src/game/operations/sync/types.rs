@@ -12,6 +12,8 @@ pub enum SyncAction {
     CreateInitialBackup,
     /// Restore skipped due to matching checkpoint
     RestoreSkipped(String),
+    /// Backup skipped due to matching checkpoint
+    BackupSkipped(String),
     /// Skipped due to being within tolerance window
     WithinTolerance {
         direction: ToleranceDirection,

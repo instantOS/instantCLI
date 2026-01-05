@@ -147,6 +147,28 @@ pub fn report_restore_skipped(game_name: &str, snapshot_id: &str) {
     );
 }
 
+pub fn report_backup_skipped(game_name: &str, snapshot_id: &str) {
+    emit_with_icon(
+        Level::Info,
+        "game.sync.backup_skipped",
+        char::from(NerdFont::Info),
+        format!(
+            "{}: Cloud checkpoint {} already matches your local saves (use --force to override)",
+            game_name, snapshot_id
+        ),
+        format!(
+            "{}: Cloud checkpoint {} already matches your local saves (use --force to override)",
+            game_name.yellow(),
+            snapshot_id
+        ),
+        Some(serde_json::json!({
+            "game": game_name,
+            "action": "backup_skipped",
+            "snapshot_id": snapshot_id
+        })),
+    );
+}
+
 pub fn report_backup_start(game_name: &str) {
     emit_with_icon(
         Level::Info,
