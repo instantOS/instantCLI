@@ -21,6 +21,7 @@ enum GameAction {
     Launch,
     Edit,
     Setup,
+    Move,
     Back,
 }
 
@@ -141,6 +142,21 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
         action: GameAction::Edit,
     });
 
+    // Move option - only show if game has a save path configured
+    if !state.needs_setup {
+        let move_preview = format!(
+            "Move '{}' save location to a new path.\n\nCurrent path: {}",
+            game_name,
+            state.save_path.as_deref().unwrap_or("<not set>")
+        );
+
+        actions.push(GameActionItem {
+            display: format!("{} Move", char::from(NerdFont::Folder)),
+            preview: move_preview,
+            action: GameAction::Move,
+        });
+    }
+
     actions.push(GameActionItem {
         display: format!("{} Back", char::from(NerdFont::ArrowLeft)),
         preview: "Return to game selection".to_string(),
@@ -230,6 +246,14 @@ fn handle_action(
         }
         GameAction::Setup => {
             setup::setup_uninstalled_games()?;
+            if exit_after {
+                Ok(ActionResult::Exit)
+            } else {
+                Ok(ActionResult::Stay)
+            }
+        }
+        GameAction::Move => {
+            GameManager::move_game(Some(game_name.to_string()), None)?;
             if exit_after {
                 Ok(ActionResult::Exit)
             } else {
