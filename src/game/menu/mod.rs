@@ -248,6 +248,13 @@ fn handle_action(
 
 /// Main entry point for the game menu
 pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
+    // Check if game manager is initialized
+    let config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    if !config.is_initialized() {
+        // Show simplified menu with initialization option
+        return show_uninitialized_menu();
+    }
+
     let exit_after_action = provided_game_name.is_some();
 
     // If a game name is provided, skip the menu and go directly to actions
@@ -356,4 +363,34 @@ fn run_edit_menu_for_game(
         installation_index,
     );
     edit_menu::run_edit_menu(game_name, &mut state)
+}
+
+/// Show menu when game manager is not initialized
+fn show_uninitialized_menu() -> Result<()> {
+    let options = vec![
+        format!("{} Initialize Game Manager", char::from(NerdFont::Play)),
+        format!("{} Cancel", char::from(NerdFont::CrossCircle)),
+    ];
+
+    let selection = FzfWrapper::builder()
+        .header("Game save manager is not initialized")
+        .prompt("Select action")
+        .select(options)?;
+
+    match selection {
+        FzfResult::Selected(item) if item == format!("{} Initialize Game Manager", char::from(NerdFont::Play)) => {
+            // Run initialization
+            let init_result = crate::game::repository::manager::RepositoryManager::initialize_game_manager(false, Default::default());
+            match init_result {
+                Ok(()) => {
+                    FzfWrapper::message("Game save manager initialized successfully!\n\nYou can now add games with 'ins game add' or open the menu again.")?;
+                }
+                Err(e) => {
+                    FzfWrapper::message(&format!("Initialization failed: {}", e))?;
+                }
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }

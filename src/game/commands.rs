@@ -21,6 +21,7 @@ use super::restic::{
     backup_game_saves, handle_restic_command, prune_snapshots, restore_game_saves,
 };
 use super::setup;
+use super::utils::validation::prompt_initialize_if_needed;
 
 #[cfg(debug_assertions)]
 use super::cli::DebugCommands;
@@ -107,6 +108,10 @@ fn handle_init(debug: bool, repo: Option<String>, password: Option<String>) -> R
 }
 
 fn handle_add(options: AddGameOptions) -> Result<()> {
+    // Prompt to initialize if not already initialized
+    if !prompt_initialize_if_needed()? {
+        return Ok(());
+    }
     GameManager::add_game(options)
 }
 
