@@ -157,7 +157,7 @@ where
 {
     let mut builder = FzfWrapper::builder()
         .prompt(format!("{} ", char::from(NerdFont::Search)))
-        .header(" ")
+        .header("")
         .args(fzf_mocha_args());
 
     if let Some(index) = initial_index {

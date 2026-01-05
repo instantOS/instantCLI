@@ -427,7 +427,8 @@ impl FzfWrapper {
             cmd.arg("--prompt").arg(format!("{prompt} > "));
         }
         if let Some(header) = &self.header {
-            cmd.arg("--header").arg(header);
+            // Add padding to separate header from items
+            cmd.arg("--header").arg(format!("\n{}\n ", header));
         }
 
         // Build input text and configure preview
@@ -779,7 +780,8 @@ impl FzfBuilder {
             cmd.arg("--prompt").arg(format!("{prompt} > "));
         }
         if let Some(header) = &self.header {
-            cmd.arg("--header").arg(header);
+            // Add padding to separate header from items
+            cmd.arg("--header").arg(format!("\n{}\n ", header));
         }
 
         // Apply initial cursor position
