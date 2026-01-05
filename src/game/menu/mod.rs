@@ -318,10 +318,10 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             let actions = build_action_menu(name, &state);
 
             let selection = FzfWrapper::builder()
-                .header(format!("Game: {}", name))
+                .header(format!("Game: {}\n ", name))
                 .prompt("Select action")
                 .args(fzf_mocha_args())
-                .select(actions)?;
+                .select_padded(actions)?;
 
             let result = match selection {
                 FzfResult::Selected(item) => {
@@ -371,10 +371,10 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     let actions = build_action_menu(&game_name, &state);
 
                     let selection = FzfWrapper::builder()
-                        .header(format!("Game: {}", game_name))
+                        .header(format!("Game: {}\n ", game_name))
                         .prompt("Select action")
                         .args(fzf_mocha_args())
-                        .select(actions)?;
+                        .select_padded(actions)?;
 
                     let result = match selection {
                         FzfResult::Selected(item) => {
@@ -432,10 +432,10 @@ fn show_uninitialized_menu() -> Result<()> {
     ];
 
     let selection = FzfWrapper::builder()
-        .header("Game save manager is not initialized")
+        .header("Game save manager is not initialized\n ")
         .prompt("Select action")
         .args(fzf_mocha_args())
-        .select(options)?;
+        .select_padded(options)?;
 
     match selection {
         FzfResult::Selected(item)

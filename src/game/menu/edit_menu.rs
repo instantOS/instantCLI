@@ -71,7 +71,7 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
         });
 
         let mut builder = FzfWrapper::builder()
-            .header(format!("Editing: {}", game_name))
+            .header(format!("Editing: {}\n ", game_name))
             .prompt("Select property to edit")
             .args(fzf_mocha_args());
 
@@ -79,7 +79,7 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
             builder = builder.initial_index(index);
         }
 
-        let selection = builder.select(menu_items)?;
+        let selection = builder.select_padded(menu_items)?;
 
         match selection {
             FzfResult::Selected(item) => {
