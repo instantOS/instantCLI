@@ -269,6 +269,7 @@ impl GameManager {
         if let Some(inst) = installations.iter_mut().find(|i| i.game_name.0 == game_name) {
             inst.save_path = new_path.clone();
             inst.save_path_type = save_path_type;
+            inst.nearest_checkpoint = None;
         } else {
             installations.push(GameInstallation::with_kind(
                 game_name.clone(),
