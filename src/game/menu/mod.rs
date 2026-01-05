@@ -12,7 +12,8 @@ use crate::game::operations::launch_game;
 use crate::game::setup;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::catppuccin::{
-    colors, format_back_icon, format_icon_colored, fzf_mocha_args, hex_to_ansi_fg,
+    colors, format_back_icon, format_icon_colored, format_styled_header, fzf_mocha_args,
+    hex_to_ansi_fg,
 };
 use crate::ui::nerd_font::NerdFont;
 
@@ -318,7 +319,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             let actions = build_action_menu(name, &state);
 
             let selection = FzfWrapper::builder()
-                .header(format!("\nGame: {}\n ", name))
+                .header(format_styled_header(&format!("Game: {}", name)))
                 .prompt("Select action")
                 .args(fzf_mocha_args())
                 .select_padded(actions)?;
@@ -371,7 +372,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     let actions = build_action_menu(&game_name, &state);
 
                     let selection = FzfWrapper::builder()
-                        .header(format!("\nGame: {}\n ", game_name))
+                        .header(format_styled_header(&format!("Game: {}", game_name)))
                         .prompt("Select action")
                         .args(fzf_mocha_args())
                         .select_padded(actions)?;
@@ -432,7 +433,7 @@ fn show_uninitialized_menu() -> Result<()> {
     ];
 
     let selection = FzfWrapper::builder()
-        .header("\nGame save manager is not initialized\n ")
+        .header(format_styled_header("Game save manager is not initialized"))
         .prompt("Select action")
         .args(fzf_mocha_args())
         .select_padded(options)?;

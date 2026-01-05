@@ -1175,7 +1175,7 @@ impl FzfBuilder {
             "--color=spinner:#F5E0DC".to_string(),
             "--color=hl:#F38BA8".to_string(),
             "--color=fg:#CDD6F4".to_string(),
-            "--color=header:#F38BA8".to_string(),
+            "--color=header:#CDD6F4".to_string(),
             "--color=info:#CBA6F7".to_string(),
             "--color=pointer:#F5E0DC".to_string(),
             "--color=marker:#B4BEFE".to_string(),

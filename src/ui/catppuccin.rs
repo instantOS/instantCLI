@@ -106,6 +106,23 @@ pub fn format_search_icon() -> String {
     format_icon_colored(NerdFont::Search, colors::MAUVE)
 }
 
+/// Format a styled header with decorative separators.
+/// Returns a multi-line header with padding and colored separator lines.
+///
+/// Example output:
+///   ╱
+///   ───────────────────────────────────────
+///   Game: MyGame
+///   ───────────────────────────────────────
+///   ╱
+pub fn format_styled_header(text: &str) -> String {
+    let reset = "\x1b[0m";
+    let surface = hex_to_ansi_fg(colors::SURFACE1);
+    let separator = "──────────────────────────────────────";
+
+    format!("\n{surface}{separator}{reset}\n{text}\n{surface}{separator}{reset}\n ")
+}
+
 pub fn fzf_mocha_args() -> Vec<String> {
     vec![
         // Visual styling
