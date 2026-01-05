@@ -8,9 +8,9 @@ use std::process::{Command, Stdio};
 
 use crate::common::shell::shell_quote;
 
-use super::types::*;
-use super::preview::PreviewUtils;
 use super::preview::PreviewStrategy;
+use super::preview::PreviewUtils;
+use super::types::*;
 use super::utils::{check_for_old_fzf_and_exit, log_fzf_failure};
 
 // ============================================================================

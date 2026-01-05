@@ -13,16 +13,15 @@
 //! All fzf invocations clear `FZF_DEFAULT_OPTS` to avoid conflicts with user/system-wide
 //! settings that may contain unsupported options.
 
-mod types;
 mod builder;
-mod wrapper;
 mod preview;
 mod theme;
+mod types;
 mod utils;
+mod wrapper;
 
 // Re-export public API for backward compatibility
 pub use types::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, Header};
 
 // Re-export main user-facing types
-pub use builder::FzfBuilder;
 pub use wrapper::FzfWrapper;

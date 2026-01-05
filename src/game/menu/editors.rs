@@ -40,10 +40,7 @@ pub fn edit_name(state: &mut EditState) -> Result<bool> {
 
     // Check for duplicates
     if state.game_config.games.iter().any(|g| g.name.0 == trimmed) {
-        FzfWrapper::message(&format!(
-            "A game with name '{}' already exists.",
-            trimmed
-        ))?;
+        FzfWrapper::message(&format!("A game with name '{}' already exists.", trimmed))?;
         return Ok(false);
     }
 

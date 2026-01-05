@@ -4,8 +4,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::types::FzfSelectable;
 use super::types::FzfPreview;
+use super::types::FzfSelectable;
 
 // UNUSED: Consider removing - not used anywhere in the codebase
 #[derive(Serialize, Deserialize)]
