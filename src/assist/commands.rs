@@ -267,7 +267,7 @@ fn export_wm_config(output_path: Option<std::path::PathBuf>, wm_name: &str) -> R
         let mode_name_with_hint = if prefix.is_empty() {
             format!("{}{} (h for help)", mode_name, keys_hint)
         } else {
-            format!("{}{} (h for help)", mode_name, keys_hint)
+            format!("{}{}", mode_name, keys_hint)
         };
         writeln!(output, "mode \"{}\" {{", mode_name_with_hint)?;
         writeln!(output, "    # Exit with Escape or Return")?;

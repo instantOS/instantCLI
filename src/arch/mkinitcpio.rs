@@ -125,7 +125,7 @@ impl MkinitcpioConfig {
                 let target = if min_idx > max_idx {
                     min_idx // Conflicting constraints - prioritize 'after' (dependencies)
                 } else {
-                    min_idx
+                    max_idx
                 };
 
                 self.hooks.insert(target, removed);
@@ -164,7 +164,11 @@ impl MkinitcpioConfig {
                         }
                     }
 
-                    let target = if max_idx < min_idx { max_idx } else { max_idx };
+                    let target = if max_idx < min_idx {
+                        max_idx // Conflicting constraints - prioritize 'before' (dependents)
+                    } else {
+                        min_idx
+                    };
 
                     self.hooks.insert(target, removed);
                     changed = true;

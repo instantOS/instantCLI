@@ -2,7 +2,7 @@ use super::types::{SyncAction, ToleranceDirection};
 use crate::game::config::{GameInstallation, InstantGameConfig};
 use crate::game::restic::cache;
 use crate::game::utils::save_files::{
-    TimeComparison, compare_snapshot_vs_local, get_save_directory_info, SYNC_TOLERANCE_SECONDS,
+    SYNC_TOLERANCE_SECONDS, TimeComparison, compare_snapshot_vs_local, get_save_directory_info,
 };
 use anyhow::Result;
 use std::time::SystemTime;
@@ -20,9 +20,7 @@ fn file_modified_after_checkpoint(file_time: SystemTime, checkpoint_time: &str) 
     let file_dt: chrono::DateTime<chrono::Utc> = file_time.into();
 
     // Calculate difference in seconds
-    let diff_seconds = file_dt
-        .signed_duration_since(checkpoint_dt)
-        .num_seconds();
+    let diff_seconds = file_dt.signed_duration_since(checkpoint_dt).num_seconds();
 
     // File is considered modified if it's more than SYNC_TOLERANCE_SECONDS newer than checkpoint
     diff_seconds > SYNC_TOLERANCE_SECONDS

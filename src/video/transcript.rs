@@ -80,9 +80,7 @@ pub fn parse_whisper_json(json_str: &str) -> Result<Vec<TranscriptCue>> {
 
         if let Some(last) = current_cluster.last() {
             let pause = word.start - last.end;
-            if pause > PAUSE_THRESHOLD_SECONDS {
-                flush = true;
-            } else if current_cluster.len() >= MAX_CLUSTER_SIZE {
+            if pause > PAUSE_THRESHOLD_SECONDS || current_cluster.len() >= MAX_CLUSTER_SIZE {
                 flush = true;
             }
         }

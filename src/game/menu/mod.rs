@@ -337,13 +337,11 @@ fn handle_checkpoint_action(game_name: &str) -> Result<()> {
         .find(|i| i.game_name.0 == game_name);
 
     // Select a snapshot interactively
-    let snapshot_id = match select_snapshot_interactive_with_local_comparison(
-        game_name,
-        installation,
-    )? {
-        Some(id) => id,
-        None => return Ok(()), // User cancelled
-    };
+    let snapshot_id =
+        match select_snapshot_interactive_with_local_comparison(game_name, installation)? {
+            Some(id) => id,
+            None => return Ok(()), // User cancelled
+        };
 
     // Restore the selected snapshot
     restic::restore_game_saves(Some(game_name.to_string()), Some(snapshot_id), false)
