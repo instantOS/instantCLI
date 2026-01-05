@@ -63,13 +63,15 @@ cd ~ && ins dot reset .config
 - **Enhanced APIs**:
   - `FzfWrapper::builder()` - Create customizable FZF configurations with fluent API
   - `FzfWrapper::select_one()` - Quick single selection with default options
-  - `FzfWrapper::select_many()` - Quick multi-selection with default options
   - `FzfWrapper::input()` - Text input dialog
-  - `FzfWrapper::confirm_dialog()` - Confirmation dialog
-  - `FzfWrapper::message_dialog()` - Message dialog
+  - `FzfWrapper::confirm()` - Confirmation dialog
+  - `FzfWrapper::message()` - Message dialog
+  - `FzfWrapper::password()` - Password input dialog
+- **Builder Methods**: `FzfBuilder::multi_select()`, `prompt()`, `header()`, `initial_index()`, `query()`, `args()`, `input()`, `password()`, `confirm()`, `message()`, `title()`, `yes_text()`, `no_text()`, `with_confirmation()`
+- **Dialog Execution**: `FzfBuilder::select()`, `select_padded()`, `select_streaming()`, `input_dialog()`, `password_dialog()`, `confirm_dialog()`, `message_dialog()`, `input_result()` (for distinguishing cancellation from empty input)
 - **Streaming Support**: `select_streaming()` allows FZF to start showing results before command completes
-- **Preview Support**: Built-in preview functionality for complex data structures
-- **Backward compatibility**: All existing APIs continue to work unchanged
+- **Preview Support**: Built-in preview functionality for complex data structures via `FzfPreview` trait
+- **Header Types**: `Header::default()`, `Header::manual()`, `Header::fancy()` for different styling options
 
 Example usage:
 ```rust

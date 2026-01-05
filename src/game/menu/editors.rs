@@ -11,43 +11,44 @@ use super::state::EditState;
 pub fn edit_name(state: &mut EditState) -> Result<bool> {
     let current_name = &state.game().name.0;
 
-    let new_name = FzfWrapper::builder()
+    let result = FzfWrapper::builder()
         .prompt("Enter new game name")
         .header(format!("Current name: {}", current_name))
         .input()
         .query(current_name)
-        .input_dialog()?;
+        .input_result()?;
+
+    let new_name = match result {
+        FzfResult::Selected(name) => name,
+        FzfResult::Cancelled => {
+            FzfWrapper::message("Edit cancelled. Name unchanged.")?;
+            return Ok(false);
+        }
+        _ => return Ok(false),
+    };
 
     let trimmed = new_name.trim();
     if trimmed.is_empty() {
-        println!(
-            "{} Name cannot be empty. No changes made.",
-            char::from(NerdFont::Warning)
-        );
+        FzfWrapper::message("Name cannot be empty. No changes made.")?;
         return Ok(false);
     }
 
     if trimmed == current_name {
-        println!("{} Name unchanged.", char::from(NerdFont::Info));
+        FzfWrapper::message("Name unchanged.")?;
         return Ok(false);
     }
 
     // Check for duplicates
     if state.game_config.games.iter().any(|g| g.name.0 == trimmed) {
-        println!(
-            "{} A game with name '{}' already exists.",
-            char::from(NerdFont::Warning),
+        FzfWrapper::message(&format!(
+            "A game with name '{}' already exists.",
             trimmed
-        );
+        ))?;
         return Ok(false);
     }
 
     state.game_mut().name.0 = trimmed.to_string();
-    println!(
-        "{} Name updated to '{}'",
-        char::from(NerdFont::Check),
-        trimmed
-    );
+    FzfWrapper::message(&format!("Name updated to '{}'", trimmed))?;
     Ok(true)
 }
 
@@ -55,7 +56,7 @@ pub fn edit_name(state: &mut EditState) -> Result<bool> {
 pub fn edit_description(state: &mut EditState) -> Result<bool> {
     let current_desc = state.game().description.as_deref().unwrap_or("");
 
-    let new_desc = FzfWrapper::builder()
+    let result = FzfWrapper::builder()
         .prompt("Enter new description (leave empty to remove)")
         .header(format!(
             "Current description: {}",
@@ -67,27 +68,36 @@ pub fn edit_description(state: &mut EditState) -> Result<bool> {
         ))
         .input()
         .query(current_desc)
-        .input_dialog()?;
+        .input_result()?;
+
+    let new_desc = match result {
+        FzfResult::Selected(desc) => desc,
+        FzfResult::Cancelled => {
+            FzfWrapper::message("Edit cancelled. Description unchanged.")?;
+            return Ok(false);
+        }
+        _ => return Ok(false),
+    };
 
     let trimmed = new_desc.trim();
 
     if trimmed.is_empty() {
         if state.game().description.is_none() {
-            println!("{} Description already empty.", char::from(NerdFont::Info));
+            FzfWrapper::message("Description already empty.")?;
             return Ok(false);
         }
         state.game_mut().description = None;
-        println!("{} Description removed", char::from(NerdFont::Check));
+        FzfWrapper::message("Description removed")?;
         return Ok(true);
     }
 
     if trimmed == current_desc {
-        println!("{} Description unchanged.", char::from(NerdFont::Info));
+        FzfWrapper::message("Description unchanged.")?;
         return Ok(false);
     }
 
     state.game_mut().description = Some(trimmed.to_string());
-    println!("{} Description updated", char::from(NerdFont::Check));
+    FzfWrapper::message("Description updated")?;
     Ok(true)
 }
 
@@ -185,10 +195,10 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
         "Enter new launch command (leave empty to remove)",
         header,
         current,
-        (NerdFont::Info, "Launch command already empty."),
-        (NerdFont::Check, "Launch command removed from games.toml"),
-        (NerdFont::Info, "Launch command unchanged."),
-        (NerdFont::Check, "Launch command updated in games.toml"),
+        "Launch command already empty.",
+        "Launch command removed from games.toml",
+        "Launch command unchanged.",
+        "Launch command updated in games.toml",
         |value| {
             state.game_mut().launch_command = value;
         },
@@ -211,16 +221,10 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
         "Enter new launch command override (leave empty to remove override)",
         header,
         current,
-        (NerdFont::Info, "Launch command override already empty."),
-        (
-            NerdFont::Check,
-            "Launch command override removed from installations.toml",
-        ),
-        (NerdFont::Info, "Launch command override unchanged."),
-        (
-            NerdFont::Check,
-            "Launch command override updated in installations.toml",
-        ),
+        "Launch command override already empty.",
+        "Launch command override removed from installations.toml",
+        "Launch command override unchanged.",
+        "Launch command override updated in installations.toml",
         |value| {
             if let Some(installation) = state.installation_mut() {
                 installation.launch_command = value;
@@ -263,20 +267,20 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
     match path_selection_to_tilde(path_selection)? {
         Some(new_path) => {
             if new_path.as_path() == current_path.as_path() {
-                println!("{} Save path unchanged.", char::from(NerdFont::Info));
+                FzfWrapper::message("Save path unchanged.")?;
                 Ok(false)
             } else {
                 if let Err(err) = ensure_safe_path(new_path.as_path(), PathUsage::SaveDirectory) {
-                    println!("{} {}", char::from(NerdFont::CrossCircle), err);
+                    FzfWrapper::message(&format!("{}", err))?;
                     return Ok(false);
                 }
                 state.installation_mut().unwrap().save_path = new_path;
-                println!("{} Save path updated", char::from(NerdFont::Check));
+                FzfWrapper::message("Save path updated")?;
                 Ok(true)
             }
         }
         None => {
-            println!("{} Save path unchanged.", char::from(NerdFont::Info));
+            FzfWrapper::message("Save path unchanged.")?;
             Ok(false)
         }
     }
@@ -286,42 +290,47 @@ fn edit_launch_command_value(
     prompt: &str,
     header: String,
     current: Option<&str>,
-    empty_feedback: (NerdFont, &'static str),
-    removed_feedback: (NerdFont, &'static str),
-    unchanged_feedback: (NerdFont, &'static str),
-    updated_feedback: (NerdFont, &'static str),
+    empty_feedback: &'static str,
+    removed_feedback: &'static str,
+    unchanged_feedback: &'static str,
+    updated_feedback: &'static str,
     mut setter: impl FnMut(Option<String>),
 ) -> Result<bool> {
-    let input = FzfWrapper::builder()
+    let result = FzfWrapper::builder()
         .prompt(prompt)
         .header(header)
         .input()
         .query(current.unwrap_or_default())
-        .input_dialog()?;
+        .input_result()?;
+
+    let input = match result {
+        FzfResult::Selected(value) => value,
+        FzfResult::Cancelled => {
+            FzfWrapper::message("Edit cancelled. Launch command unchanged.")?;
+            return Ok(false);
+        }
+        _ => return Ok(false),
+    };
 
     let trimmed = input.trim();
 
     if trimmed.is_empty() {
         if current.is_none() {
-            println!("{} {}", char::from(empty_feedback.0), empty_feedback.1);
+            FzfWrapper::message(empty_feedback)?;
             return Ok(false);
         }
 
         setter(None);
-        println!("{} {}", char::from(removed_feedback.0), removed_feedback.1);
+        FzfWrapper::message(removed_feedback)?;
         return Ok(true);
     }
 
     if current == Some(trimmed) {
-        println!(
-            "{} {}",
-            char::from(unchanged_feedback.0),
-            unchanged_feedback.1
-        );
+        FzfWrapper::message(unchanged_feedback)?;
         return Ok(false);
     }
 
     setter(Some(trimmed.to_string()));
-    println!("{} {}", char::from(updated_feedback.0), updated_feedback.1);
+    FzfWrapper::message(updated_feedback)?;
     Ok(true)
 }
