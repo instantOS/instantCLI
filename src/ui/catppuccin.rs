@@ -128,6 +128,7 @@ pub fn fzf_mocha_args() -> Vec<String> {
         format!("--color=hl+:{}", colors::YELLOW),
         format!("--color=prompt:{}", colors::TEXT),
         format!("--color=pointer:{}", colors::ROSEWATER),
+        format!("--color=header:{}", colors::TEXT),
         format!("--color=border:{}", colors::SURFACE1),
         format!("--color=gutter:{}", colors::BASE),
     ]
