@@ -64,25 +64,25 @@ impl Setting for ConfigureDisplay {
             return Ok(());
         }
 
-        // Build display selection menu
-        let display_options: Vec<String> = outputs.iter().map(|o| o.display_label()).collect();
+        // If there's only one display, use it directly without prompting
+        let output = if outputs.len() == 1 {
+            outputs.first().unwrap()
+        } else {
+            // Build display selection menu
+            let display_options: Vec<String> = outputs.iter().map(|o| o.display_label()).collect();
 
-        let selected_display = FzfWrapper::builder()
-            .prompt("Select Display")
-            .header("Choose a display to configure")
-            .select(display_options.clone())?;
+            let selected_display = FzfWrapper::builder()
+                .prompt("Select Display")
+                .header("Choose a display to configure")
+                .select(display_options.clone())?;
 
-        let selected_output = match selected_display {
-            crate::menu_utils::FzfResult::Selected(selection) => {
-                // Find the matching output
-                outputs.iter().find(|o| o.display_label() == selection)
+            match selected_display {
+                crate::menu_utils::FzfResult::Selected(selection) => {
+                    outputs.iter().find(|o| o.display_label() == selection)
+                }
+                _ => return Ok(()),
             }
-            _ => return Ok(()),
-        };
-
-        let output = match selected_output {
-            Some(o) => o,
-            None => return Ok(()),
+            .ok_or_else(|| anyhow::anyhow!("No display selected"))?
         };
 
         // Build resolution/refresh rate menu
