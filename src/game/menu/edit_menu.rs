@@ -1,7 +1,7 @@
 use anyhow::Result;
 
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper};
-use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_styled_header, fzf_mocha_args};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 
 use super::editors;
@@ -71,7 +71,7 @@ pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
         });
 
         let mut builder = FzfWrapper::builder()
-            .header(format_styled_header(&format!("Editing: {}", game_name)))
+            .header(Header::fancy(&format!("Editing: {}", game_name)))
             .prompt("Select property to edit")
             .args(fzf_mocha_args());
 

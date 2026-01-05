@@ -10,10 +10,9 @@ use crate::game::games::manager::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
 use crate::game::operations::launch_game;
 use crate::game::setup;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{
-    colors, format_back_icon, format_icon_colored, format_styled_header, fzf_mocha_args,
-    hex_to_ansi_fg,
+    colors, format_back_icon, format_icon_colored, fzf_mocha_args, hex_to_ansi_fg,
 };
 use crate::ui::nerd_font::NerdFont;
 
@@ -319,7 +318,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             let actions = build_action_menu(name, &state);
 
             let selection = FzfWrapper::builder()
-                .header(format_styled_header(&format!("Game: {}", name)))
+                .header(Header::fancy(&format!("Game: {}", name)))
                 .prompt("Select action")
                 .args(fzf_mocha_args())
                 .select_padded(actions)?;
@@ -372,7 +371,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     let actions = build_action_menu(&game_name, &state);
 
                     let selection = FzfWrapper::builder()
-                        .header(format_styled_header(&format!("Game: {}", game_name)))
+                        .header(Header::fancy(&format!("Game: {}", game_name)))
                         .prompt("Select action")
                         .args(fzf_mocha_args())
                         .select_padded(actions)?;
@@ -433,7 +432,7 @@ fn show_uninitialized_menu() -> Result<()> {
     ];
 
     let selection = FzfWrapper::builder()
-        .header(format_styled_header("Game save manager is not initialized"))
+        .header(Header::fancy("Game save manager is not initialized"))
         .prompt("Select action")
         .args(fzf_mocha_args())
         .select_padded(options)?;

@@ -319,14 +319,14 @@ impl FzfWrapper {
     fn new(
         multi_select: bool,
         prompt: Option<String>,
-        header: Option<String>,
+        header: Option<Header>,
         additional_args: Vec<String>,
         initial_cursor: Option<InitialCursor>,
     ) -> Self {
         Self {
             multi_select,
             prompt,
-            header,
+            header: header.map(|h| h.to_fzf_string()),
             additional_args,
             initial_cursor,
         }
@@ -427,8 +427,7 @@ impl FzfWrapper {
             cmd.arg("--prompt").arg(format!("{prompt} > "));
         }
         if let Some(header) = &self.header {
-            // Add padding to separate header from items
-            cmd.arg("--header").arg(format!("\n{}\n ", header));
+            cmd.arg("--header").arg(header);
         }
 
         // Build input text and configure preview
@@ -492,7 +491,7 @@ pub enum ConfirmResult {
 pub struct FzfBuilder {
     multi_select: bool,
     prompt: Option<String>,
-    header: Option<String>,
+    header: Option<Header>,
     additional_args: Vec<String>,
     dialog_type: DialogType,
     initial_cursor: Option<InitialCursor>,
@@ -521,6 +520,69 @@ pub(crate) enum InitialCursor {
     Index(usize),
 }
 
+/// Header type for FZF menus with different padding and styling options.
+#[derive(Debug, Clone)]
+pub enum Header {
+    /// Manual header - passed verbatim to fzf (no modifications)
+    Manual(String),
+    /// Default header - adds standard wrapper padding (\n{text}\n )
+    Default(String),
+    /// Fancy header - styled with separators and colors
+    Fancy(String),
+}
+
+impl Header {
+    /// Create a manual header (passed verbatim to fzf)
+    pub fn manual(text: &str) -> Self {
+        Header::Manual(text.to_string())
+    }
+
+    /// Create a default header (with standard wrapper padding)
+    pub fn default(text: &str) -> Self {
+        Header::Default(text.to_string())
+    }
+
+    /// Create a fancy header (styled with separators and colors)
+    pub fn fancy(text: &str) -> Self {
+        Header::Fancy(text.to_string())
+    }
+
+    /// Render to fzf-compatible string with appropriate padding/formatting
+    fn to_fzf_string(&self) -> String {
+        match self {
+            Header::Manual(text) => text.clone(),
+            Header::Default(text) => format!("\n{}\n ", text),
+            Header::Fancy(text) => {
+                // Inline the fancy header styling (moved from format_styled_header)
+                let reset = "\x1b[0m";
+                let surface =
+                    crate::ui::catppuccin::hex_to_ansi_fg(crate::ui::catppuccin::colors::SURFACE1);
+                let separator = "──────────────────────────────────────";
+                format!("\n{surface}{separator}{reset}\n{text}\n{surface}{separator}{reset}\n ")
+            }
+        }
+    }
+}
+
+// Convenience constructors - allow simple strings without verbosity
+impl From<&str> for Header {
+    fn from(s: &str) -> Self {
+        Header::Default(s.to_string())
+    }
+}
+
+impl From<String> for Header {
+    fn from(s: String) -> Self {
+        Header::Default(s)
+    }
+}
+
+impl From<&String> for Header {
+    fn from(s: &String) -> Self {
+        Header::Default(s.clone())
+    }
+}
+
 impl FzfBuilder {
     pub fn new() -> Self {
         Self {
@@ -544,7 +606,7 @@ impl FzfBuilder {
         self
     }
 
-    pub fn header<S: Into<String>>(mut self, header: S) -> Self {
+    pub fn header<H: Into<Header>>(mut self, header: H) -> Self {
         self.header = Some(header.into());
         self
     }
@@ -594,7 +656,7 @@ impl FzfBuilder {
             yes_text: "Yes".to_string(),
             no_text: "No".to_string(),
         };
-        self.header = Some(message.into());
+        self.header = Some(Header::Default(message.into()));
         self.additional_args = Self::confirm_args();
         self
     }
@@ -618,7 +680,7 @@ impl FzfBuilder {
             ok_text: "OK".to_string(),
             title: None,
         };
-        self.header = Some(message.into());
+        self.header = Some(Header::Default(message.into()));
         self.additional_args = Self::confirm_args();
         self
     }
@@ -780,8 +842,7 @@ impl FzfBuilder {
             cmd.arg("--prompt").arg(format!("{prompt} > "));
         }
         if let Some(header) = &self.header {
-            // Add padding to separate header from items
-            cmd.arg("--header").arg(format!("\n{}\n ", header));
+            cmd.arg("--header").arg(header.to_fzf_string());
         }
 
         // Apply initial cursor position
@@ -918,7 +979,8 @@ impl FzfBuilder {
 
     fn execute_password(self, confirm: bool) -> Result<FzfResult<String>> {
         loop {
-            let pass1 = self.run_password_prompt(self.prompt.as_deref(), self.header.as_deref())?;
+            let header_str = self.header.as_ref().map(|h| h.to_fzf_string());
+            let pass1 = self.run_password_prompt(self.prompt.as_deref(), header_str.as_deref())?;
 
             if !confirm {
                 return Ok(pass1);
@@ -1024,7 +1086,7 @@ impl FzfBuilder {
         cmd.arg("--layout").arg("reverse");
 
         if let Some(header) = &self.header {
-            cmd.arg("--header").arg(format!("{header}\n"));
+            cmd.arg("--header").arg(header.to_fzf_string());
         }
 
         cmd.arg("--prompt").arg("> ");
@@ -1090,10 +1152,11 @@ impl FzfBuilder {
 
         if let Some(title) = &title {
             if let Some(header) = &self.header {
-                cmd.arg("--header").arg(format!("{title}\n\n{header}"));
+                cmd.arg("--header")
+                    .arg(format!("{title}\n\n{}", header.to_fzf_string()));
             }
         } else if let Some(header) = &self.header {
-            cmd.arg("--header").arg(header);
+            cmd.arg("--header").arg(header.to_fzf_string());
         }
 
         cmd.arg("--prompt").arg("- ");
