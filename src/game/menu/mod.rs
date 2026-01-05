@@ -9,6 +9,7 @@ use crate::game::games::manager::AddGameOptions;
 use crate::game::games::manager::GameManager;
 use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
 use crate::game::operations::launch_game;
+use crate::game::restic;
 use crate::game::setup;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{
@@ -25,6 +26,7 @@ enum GameAction {
     Edit,
     Setup,
     Move,
+    Checkpoint,
     Back,
 }
 
@@ -167,6 +169,21 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             preview: move_preview,
             action: GameAction::Move,
         });
+
+        // Checkpoint option - restore from a past backup
+        let checkpoint_preview = format!(
+            "Browse and restore from a past checkpoint for '{}'.\n\nView all available snapshots and select one to restore.\nIf local saves are newer, you will be warned before overwriting.",
+            game_name
+        );
+
+        actions.push(GameActionItem {
+            display: format!(
+                "{} Checkpoint",
+                format_icon_colored(NerdFont::Clock, colors::YELLOW)
+            ),
+            preview: checkpoint_preview,
+            action: GameAction::Checkpoint,
+        });
     }
 
     actions.push(GameActionItem {
@@ -290,6 +307,14 @@ fn handle_action(
                 Ok(ActionResult::Stay)
             }
         }
+        GameAction::Checkpoint => {
+            handle_checkpoint_action(game_name)?;
+            if exit_after {
+                Ok(ActionResult::Exit)
+            } else {
+                Ok(ActionResult::Stay)
+            }
+        }
         GameAction::Back => {
             if exit_after {
                 Ok(ActionResult::Exit)
@@ -298,6 +323,30 @@ fn handle_action(
             }
         }
     }
+}
+
+/// Handle checkpoint action - select and restore from a past snapshot
+fn handle_checkpoint_action(game_name: &str) -> Result<()> {
+    use crate::game::restic::snapshot_selection::select_snapshot_interactive_with_local_comparison;
+
+    // Get installation for local save comparison
+    let installations = InstallationsConfig::load().context("Failed to load installations")?;
+    let installation = installations
+        .installations
+        .iter()
+        .find(|i| i.game_name.0 == game_name);
+
+    // Select a snapshot interactively
+    let snapshot_id = match select_snapshot_interactive_with_local_comparison(
+        game_name,
+        installation,
+    )? {
+        Some(id) => id,
+        None => return Ok(()), // User cancelled
+    };
+
+    // Restore the selected snapshot
+    restic::restore_game_saves(Some(game_name.to_string()), Some(snapshot_id), false)
 }
 
 /// Main entry point for the game menu
