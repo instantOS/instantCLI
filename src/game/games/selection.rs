@@ -14,6 +14,7 @@ pub enum GameMenuEntry {
     Game(String),
     AddGame,
     SetupGames,
+    CloseMenu,
 }
 
 impl FzfSelectable for GameMenuEntry {
@@ -26,6 +27,9 @@ impl FzfSelectable for GameMenuEntry {
             GameMenuEntry::SetupGames => {
                 format!("{} Set Up Existing Games", char::from(NerdFont::Wrench))
             }
+            GameMenuEntry::CloseMenu => {
+                format!("{} Close Menu", char::from(NerdFont::Cross))
+            }
         }
     }
 
@@ -34,6 +38,7 @@ impl FzfSelectable for GameMenuEntry {
             GameMenuEntry::Game(name) => name.clone(),
             GameMenuEntry::AddGame => "\0__add_game__".to_string(),
             GameMenuEntry::SetupGames => "\0__setup_games__".to_string(),
+            GameMenuEntry::CloseMenu => "\0__close_menu__".to_string(),
         }
     }
 
@@ -77,6 +82,11 @@ impl FzfSelectable for GameMenuEntry {
                     • Games with pending dependencies\n\
                     • Restoring games from backups",
                 char::from(NerdFont::Wrench)
+            )),
+            GameMenuEntry::CloseMenu => FzfPreview::Text(format!(
+                "{} Close the game menu.\n\n\
+                    This will exit the interactive game menu and return to the command prompt.",
+                char::from(NerdFont::Cross)
             )),
         }
     }
@@ -292,7 +302,11 @@ pub fn select_game_menu_entry() -> Result<Option<GameMenuEntry>> {
     let config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
     // Build menu entries: special actions first, then games
-    let mut entries = vec![GameMenuEntry::AddGame, GameMenuEntry::SetupGames];
+    let mut entries = vec![
+        GameMenuEntry::AddGame,
+        GameMenuEntry::SetupGames,
+        GameMenuEntry::CloseMenu,
+    ];
 
     // Add all games
     for game in &config.games {

@@ -391,6 +391,10 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                     }
                 }
             }
+            GameMenuEntry::CloseMenu => {
+                // Exit the menu entirely
+                return Ok(());
+            }
         }
     }
 }
