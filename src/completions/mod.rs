@@ -108,6 +108,16 @@ fn sort_and_filter(mut values: Vec<String>, prefix: &str) -> Vec<CompletionCandi
         .collect()
 }
 
+fn sort_and_filter_with_descriptions(mut values: Vec<(String, &'static str)>, prefix: &str) -> Vec<CompletionCandidate> {
+    values.sort_by(|a, b| a.0.cmp(&b.0));
+    values.dedup_by(|a, b| a.0 == b.0);
+    values
+        .into_iter()
+        .filter(|value| matches_prefix(&value.0, prefix))
+        .map(|(key, description)| CompletionCandidate::new(key).help(Some(description.to_string().into())))
+        .collect()
+}
+
 fn lossy_prefix(input: &OsStr) -> String {
     input.to_string_lossy().to_string()
 }
@@ -143,23 +153,23 @@ pub fn check_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
     sort_and_filter(names, &prefix)
 }
 
-/// Collect all assist key sequences from the registry
-fn collect_assist_keys(entries: &[AssistEntry]) -> Vec<String> {
+/// Collect all assist key sequences with their descriptions from the registry
+fn collect_assist_keys(entries: &[AssistEntry]) -> Vec<(String, &'static str)> {
     let mut keys = Vec::new();
 
     for entry in entries {
         match entry {
             AssistEntry::Action(action) => {
-                keys.push(action.key.to_string());
+                keys.push((action.key.to_string(), action.description));
             }
             AssistEntry::Group(group) => {
                 // Add the group key itself
-                keys.push(group.key.to_string());
+                keys.push((group.key.to_string(), group.description));
 
                 // Add all child keys with the group prefix
                 for child in group.children {
                     if let AssistEntry::Action(action) = child {
-                        keys.push(format!("{}{}", group.key, action.key));
+                        keys.push((format!("{}{}", group.key, action.key), action.description));
                     }
                 }
             }
@@ -174,7 +184,7 @@ pub fn assist_key_sequence_completion(current: &OsStr) -> Vec<CompletionCandidat
 
     let keys = collect_assist_keys(registry::ASSISTS);
 
-    sort_and_filter(keys, &prefix)
+    sort_and_filter_with_descriptions(keys, &prefix)
 }
 
 pub fn settings_category_completion(current: &OsStr) -> Vec<CompletionCandidate> {
