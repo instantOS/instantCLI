@@ -72,5 +72,30 @@ pub fn update_checkpoint_after_backup(
 
 /// Update installation checkpoint after successful restore
 pub fn update_checkpoint_after_restore(game_name: &str, snapshot_id: &str) -> Result<()> {
-    update_installation_checkpoint(game_name, snapshot_id)
+    update_installation_checkpoint_with_snapshot_time(game_name, snapshot_id)
+}
+
+/// Update checkpoint with the snapshot's actual timestamp (not current time)
+pub fn update_installation_checkpoint_with_snapshot_time(game_name: &str, snapshot_id: &str) -> Result<()> {
+    let mut installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
+
+    // Get the snapshot to extract its actual timestamp
+    let game_config = super::config::InstantGameConfig::load()
+        .context("Failed to load game configuration")?;
+    let snapshot = cache::get_snapshot_by_id(snapshot_id, game_name, &game_config)?
+        .context("Snapshot not found for checkpoint update")?;
+
+    // Find and update the installation
+    for installation in &mut installations.installations {
+        if installation.game_name.0 == game_name {
+            installation.nearest_checkpoint = Some(snapshot_id.to_string());
+            installation.checkpoint_time = Some(snapshot.time); // Use snapshot's timestamp, not current time
+            break;
+        }
+    }
+
+    installations
+        .save()
+        .context("Failed to save updated installations configuration")
 }
