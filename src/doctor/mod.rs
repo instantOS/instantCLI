@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Subcommand;
+use clap_complete::engine::ArgValueCompleter;
 use colored::*;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Row, Table, presets::UTF8_FULL};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -13,12 +14,16 @@ pub enum DoctorCommands {
     /// Run a specific health check
     Run {
         /// Name of the check to run
+        #[arg(add = ArgValueCompleter::new(crate::completions::check_name_completion))]
         name: String,
     },
     /// Apply fix for a specific health check
     Fix {
         /// Name of the check to fix
-        #[arg(value_name = "NAME")]
+        #[arg(
+            value_name = "NAME",
+            add = ArgValueCompleter::new(crate::completions::check_name_completion)
+        )]
         name: Option<String>,
         /// Fix all failing checks
         #[arg(long, conflicts_with = "name")]

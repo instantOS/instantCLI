@@ -6,6 +6,7 @@ use clap_complete::engine::CompletionCandidate;
 use clap_complete::env::Shells;
 
 use crate::dot::config::Config;
+use crate::doctor::registry::REGISTRY;
 use crate::game::config::InstantGameConfig;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -127,6 +128,15 @@ pub fn repo_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
     };
 
     let names = config.repos.into_iter().map(|repo| repo.name).collect();
+
+    sort_and_filter(names, &prefix)
+}
+
+pub fn check_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
+    let prefix = lossy_prefix(current);
+
+    let checks = REGISTRY.all_checks();
+    let names: Vec<String> = checks.into_iter().map(|check| check.id().to_string()).collect();
 
     sort_and_filter(names, &prefix)
 }
