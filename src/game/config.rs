@@ -195,6 +195,15 @@ impl GameInstallation {
         self.nearest_checkpoint = Some(checkpoint_id.into());
         self.checkpoint_time = Some(chrono::Utc::now().to_rfc3339());
     }
+
+    pub fn update_checkpoint_at(
+        &mut self,
+        checkpoint_id: impl Into<String>,
+        time: impl Into<String>,
+    ) {
+        self.nearest_checkpoint = Some(checkpoint_id.into());
+        self.checkpoint_time = Some(time.into());
+    }
 }
 
 /// Installed dependency mapping stored in installations.toml

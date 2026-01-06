@@ -6,8 +6,8 @@ use clap_complete::engine::CompletionCandidate;
 use clap_complete::env::Shells;
 
 use crate::assist::registry::{self, AssistEntry};
-use crate::dot::config::Config;
 use crate::doctor::registry::REGISTRY;
+use crate::dot::config::Config;
 use crate::game::config::InstantGameConfig;
 use crate::settings::setting::Category;
 
@@ -108,13 +108,18 @@ fn sort_and_filter(mut values: Vec<String>, prefix: &str) -> Vec<CompletionCandi
         .collect()
 }
 
-fn sort_and_filter_with_descriptions(mut values: Vec<(String, &'static str)>, prefix: &str) -> Vec<CompletionCandidate> {
+fn sort_and_filter_with_descriptions(
+    mut values: Vec<(String, &'static str)>,
+    prefix: &str,
+) -> Vec<CompletionCandidate> {
     values.sort_by(|a, b| a.0.cmp(&b.0));
     values.dedup_by(|a, b| a.0 == b.0);
     values
         .into_iter()
         .filter(|value| matches_prefix(&value.0, prefix))
-        .map(|(key, description)| CompletionCandidate::new(key).help(Some(description.to_string().into())))
+        .map(|(key, description)| {
+            CompletionCandidate::new(key).help(Some(description.to_string().into()))
+        })
         .collect()
 }
 
@@ -148,7 +153,10 @@ pub fn check_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
     let prefix = lossy_prefix(current);
 
     let checks = REGISTRY.all_checks();
-    let names: Vec<String> = checks.into_iter().map(|check| check.id().to_string()).collect();
+    let names: Vec<String> = checks
+        .into_iter()
+        .map(|check| check.id().to_string())
+        .collect();
 
     sort_and_filter(names, &prefix)
 }
@@ -190,7 +198,10 @@ pub fn assist_key_sequence_completion(current: &OsStr) -> Vec<CompletionCandidat
 pub fn settings_category_completion(current: &OsStr) -> Vec<CompletionCandidate> {
     let prefix = lossy_prefix(current);
 
-    let categories: Vec<String> = Category::all().iter().map(|cat| cat.id().to_string()).collect();
+    let categories: Vec<String> = Category::all()
+        .iter()
+        .map(|cat| cat.id().to_string())
+        .collect();
 
     sort_and_filter(categories, &prefix)
 }

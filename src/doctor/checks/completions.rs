@@ -82,12 +82,10 @@ impl DoctorCheck for ShellCompletionCheck {
         let shell = DetectedShell::detect();
 
         match shell {
-            DetectedShell::Other(shell_name) => {
-                CheckStatus::Skipped(format!(
-                    "Unsupported shell: {} (only bash and zsh are supported)",
-                    shell_name
-                ))
-            }
+            DetectedShell::Other(shell_name) => CheckStatus::Skipped(format!(
+                "Unsupported shell: {} (only bash and zsh are supported)",
+                shell_name
+            )),
 
             DetectedShell::Bash => self.check_bash_completions().await,
 
@@ -133,14 +131,12 @@ impl ShellCompletionCheck {
     /// Check if bash completions are installed and loaded
     async fn check_bash_completions(&self) -> CheckStatus {
         // Spawn interactive bash subshell and check if completions are registered
-        let output = match self.spawn_subshell_with_timeout("bash", "complete -p ins").await {
+        let output = match self
+            .spawn_subshell_with_timeout("bash", "complete -p ins")
+            .await
+        {
             Ok(output) => output,
-            Err(e) => {
-                return CheckStatus::Skipped(format!(
-                    "Could not spawn bash subshell: {}",
-                    e
-                ))
-            }
+            Err(e) => return CheckStatus::Skipped(format!("Could not spawn bash subshell: {}", e)),
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -165,7 +161,8 @@ impl ShellCompletionCheck {
         } else {
             // Edge case: exit code 0 but completion not found in output
             CheckStatus::Warning {
-                message: "Bash completions status unclear (completion function not found)".to_string(),
+                message: "Bash completions status unclear (completion function not found)"
+                    .to_string(),
                 fixable: true,
             }
         }
@@ -179,12 +176,7 @@ impl ShellCompletionCheck {
             .await
         {
             Ok(output) => output,
-            Err(e) => {
-                return CheckStatus::Skipped(format!(
-                    "Could not spawn zsh subshell: {}",
-                    e
-                ))
-            }
+            Err(e) => return CheckStatus::Skipped(format!("Could not spawn zsh subshell: {}", e)),
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -202,7 +194,8 @@ impl ShellCompletionCheck {
         } else {
             // Edge case: exit code 0 but function not in output
             CheckStatus::Warning {
-                message: "Zsh completions status unclear (completion function not found)".to_string(),
+                message: "Zsh completions status unclear (completion function not found)"
+                    .to_string(),
                 fixable: true,
             }
         }
@@ -225,7 +218,12 @@ impl ShellCompletionCheck {
                 .output(),
         )
         .await
-        .map_err(|_| anyhow::anyhow!("Shell subprocess timed out after {} seconds", duration.as_secs()))?
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "Shell subprocess timed out after {} seconds",
+                duration.as_secs()
+            )
+        })?
         .map_err(|e| anyhow::anyhow!("Failed to spawn subshell: {}", e))?;
 
         Ok(output)
