@@ -5,9 +5,11 @@ use clap::ValueEnum;
 use clap_complete::engine::CompletionCandidate;
 use clap_complete::env::Shells;
 
+use crate::assist::registry::{self, AssistEntry};
 use crate::dot::config::Config;
 use crate::doctor::registry::REGISTRY;
 use crate::game::config::InstantGameConfig;
+use crate::settings::setting::Category;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum SupportedShell {
@@ -139,6 +141,48 @@ pub fn check_name_completion(current: &OsStr) -> Vec<CompletionCandidate> {
     let names: Vec<String> = checks.into_iter().map(|check| check.id().to_string()).collect();
 
     sort_and_filter(names, &prefix)
+}
+
+/// Collect all assist key sequences from the registry
+fn collect_assist_keys(entries: &[AssistEntry]) -> Vec<String> {
+    let mut keys = Vec::new();
+
+    for entry in entries {
+        match entry {
+            AssistEntry::Action(action) => {
+                keys.push(action.key.to_string());
+            }
+            AssistEntry::Group(group) => {
+                // Add the group key itself
+                keys.push(group.key.to_string());
+
+                // Add all child keys with the group prefix
+                for child in group.children {
+                    if let AssistEntry::Action(action) = child {
+                        keys.push(format!("{}{}", group.key, action.key));
+                    }
+                }
+            }
+        }
+    }
+
+    keys
+}
+
+pub fn assist_key_sequence_completion(current: &OsStr) -> Vec<CompletionCandidate> {
+    let prefix = lossy_prefix(current);
+
+    let keys = collect_assist_keys(registry::ASSISTS);
+
+    sort_and_filter(keys, &prefix)
+}
+
+pub fn settings_category_completion(current: &OsStr) -> Vec<CompletionCandidate> {
+    let prefix = lossy_prefix(current);
+
+    let categories: Vec<String> = Category::all().iter().map(|cat| cat.id().to_string()).collect();
+
+    sort_and_filter(categories, &prefix)
 }
 
 pub fn handle_completions_command(command: &CompletionCommands) -> Result<()> {
