@@ -66,11 +66,9 @@ impl Setting for CursorTheme {
         match selected {
             crate::menu_utils::FzfResult::Selected(selection) => {
                 apply_cursor_theme_changes(ctx, &selection);
-                return Ok(());
+                Ok(())
             }
-            _ => {
-                return Ok(());
-            }
+            _ => Ok(()),
         }
     }
 }

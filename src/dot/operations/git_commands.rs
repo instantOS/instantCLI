@@ -90,6 +90,79 @@ pub fn git_push_all(config: &Config, args: &[String], debug: bool) -> Result<()>
     Ok(())
 }
 
+/// Get the current HEAD commit hash for a repository
+fn get_head_commit(repo_path: &std::path::Path) -> Option<String> {
+    std::process::Command::new("git")
+        .current_dir(repo_path)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+}
+
+/// Run git pull across all writable repositories
+/// Returns true if any repository successfully pulled new commits
+pub fn git_pull_all(config: &Config, args: &[String], debug: bool) -> Result<bool> {
+    let repos = config.get_writable_repos();
+
+    if repos.is_empty() {
+        println!("No writable repositories found.");
+        return Ok(false);
+    }
+
+    // Build the git pull command with any extra args
+    let mut git_args = vec!["pull"];
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    git_args.extend(args_str);
+
+    let mut any_pulled_commits = false;
+
+    for repo in repos {
+        println!(
+            "\n{} Pulling changes in '{}'...",
+            char::from(NerdFont::Git),
+            repo.name.cyan()
+        );
+
+        let local_repo = LocalRepo::new(config, repo.name.clone())?;
+        let repo_path = local_repo.local_path(config)?;
+
+        // Get HEAD before pull
+        let head_before = get_head_commit(&repo_path);
+
+        // Run git pull interactively (may need editor for merge commits, may fail with conflicts)
+        if let Err(e) = run_interactive_git_command(&repo_path, &git_args, debug) {
+            eprintln!("Failed to pull in {}: {}", repo.name, e);
+            // Don't mark as having pulled commits if pull failed
+            continue;
+        }
+
+        // Get HEAD after pull
+        let head_after = get_head_commit(&repo_path);
+
+        // Check if new commits were pulled
+        if head_before != head_after {
+            any_pulled_commits = true;
+            if debug {
+                println!(
+                    "  {} New commits pulled (HEAD changed from {:?} to {:?})",
+                    char::from(NerdFont::Check),
+                    head_before,
+                    head_after
+                );
+            }
+        }
+    }
+
+    Ok(any_pulled_commits)
+}
+
 /// Run an arbitrary git command
 pub fn git_run_any(config: &Config, args: &[String], debug: bool) -> Result<()> {
     // If no args provided, show help or error
