@@ -16,6 +16,8 @@ pub enum OperatingSystem {
     EndeavourOS,
     /// SteamOS (immutable Arch-based)
     SteamOS,
+    /// Bazzite (immutable Fedora-based gaming distro)
+    Bazzite,
     /// Debian
     Debian,
     /// Ubuntu
@@ -74,6 +76,7 @@ impl OperatingSystem {
             "manjaro" => Self::Manjaro,
             "endeavouros" => Self::EndeavourOS,
             "steamos" => Self::SteamOS,
+            "bazzite" => Self::Bazzite,
             "debian" => Self::Debian,
             "ubuntu" => Self::Ubuntu,
             "pop" => Self::PopOS,
@@ -109,6 +112,8 @@ impl OperatingSystem {
         match self {
             // Arch-based
             Self::InstantOS | Self::Manjaro | Self::EndeavourOS | Self::SteamOS => Some(Self::Arch),
+            // Fedora-based
+            Self::Bazzite => Some(Self::Fedora),
             // Ubuntu-based (Ubuntu itself is Debian-based)
             Self::PopOS | Self::LinuxMint => Some(Self::Ubuntu),
             Self::Ubuntu => Some(Self::Debian),
@@ -143,7 +148,7 @@ impl OperatingSystem {
     /// Immutable OSes cannot be modified in the traditional way and
     /// updates replace the entire OS image.
     pub fn is_immutable(&self) -> bool {
-        matches!(self, Self::SteamOS)
+        matches!(self, Self::SteamOS | Self::Bazzite)
     }
 
     // ========================================================================
@@ -209,6 +214,7 @@ impl OperatingSystem {
             Self::Manjaro => "Manjaro",
             Self::EndeavourOS => "EndeavourOS",
             Self::SteamOS => "SteamOS",
+            Self::Bazzite => "Bazzite",
             Self::Debian => "Debian",
             Self::Ubuntu => "Ubuntu",
             Self::PopOS => "Pop!_OS",
@@ -522,6 +528,48 @@ STEAMOS_DEFAULT_UPDATE_BRANCH=stable"#;
         assert_eq!(
             OperatingSystem::SteamOS.based_on(),
             Some(OperatingSystem::Arch)
+        );
+    }
+
+    #[test]
+    fn test_parse_bazzite() {
+        let content = r#"NAME="Bazzite"
+VERSION="43.20251210.0 (Kinoite)"
+ID=bazzite
+ID_LIKE="fedora"
+VERSION_ID=43
+PRETTY_NAME="Bazzite"
+ANSI_COLOR="0;38;2;138;43;226"
+LOGO=bazzite-logo-icon"#;
+        let os = OperatingSystem::parse_os_release(content);
+        assert_eq!(os, OperatingSystem::Bazzite);
+        assert_eq!(os.name(), "Bazzite");
+    }
+
+    #[test]
+    fn test_bazzite_is_fedora_based() {
+        assert_eq!(
+            OperatingSystem::Bazzite.based_on(),
+            Some(OperatingSystem::Fedora)
+        );
+    }
+
+    #[test]
+    fn test_bazzite_is_immutable() {
+        assert!(OperatingSystem::Bazzite.is_immutable());
+    }
+
+    #[test]
+    fn test_bazzite_is_not_arch_based() {
+        assert!(!OperatingSystem::Bazzite.is_arch_based());
+    }
+
+    #[test]
+    fn test_bazzite_package_manager() {
+        use crate::common::package::PackageManager;
+        assert_eq!(
+            OperatingSystem::Bazzite.native_package_manager(),
+            Some(PackageManager::Dnf)
         );
     }
 }
