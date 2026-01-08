@@ -32,8 +32,14 @@ impl DoctorCheck for PacmanCacheCheck {
 
     async fn execute(&self) -> CheckStatus {
         // Only run on Arch-based systems
-        if !crate::common::distro::OperatingSystem::detect().is_arch_based() {
+        let os = crate::common::distro::OperatingSystem::detect();
+        if !os.is_arch_based() {
             return CheckStatus::Skipped("Not an Arch-based system".to_string());
+        }
+
+        // Skip on immutable OSes (no writable package cache)
+        if os.is_immutable() {
+            return CheckStatus::Skipped("Immutable OS (no writable package cache)".to_string());
         }
 
         // Calculate total size of pacman cache directory
@@ -107,8 +113,14 @@ impl DoctorCheck for PacmanStaleDownloadsCheck {
 
     async fn execute(&self) -> CheckStatus {
         // Only run on Arch-based systems
-        if !crate::common::distro::OperatingSystem::detect().is_arch_based() {
+        let os = crate::common::distro::OperatingSystem::detect();
+        if !os.is_arch_based() {
             return CheckStatus::Skipped("Not an Arch-based system".to_string());
+        }
+
+        // Skip on immutable OSes (no writable package cache)
+        if os.is_immutable() {
+            return CheckStatus::Skipped("Immutable OS (no writable package cache)".to_string());
         }
 
         // Check if pacman is currently running - if so, download dirs are in use
@@ -373,8 +385,14 @@ impl DoctorCheck for PacmanDbSyncCheck {
 
     async fn execute(&self) -> CheckStatus {
         // Only run on Arch-based systems
-        if !crate::common::distro::OperatingSystem::detect().is_arch_based() {
+        let os = crate::common::distro::OperatingSystem::detect();
+        if !os.is_arch_based() {
             return CheckStatus::Skipped("Not an Arch-based system".to_string());
+        }
+
+        // Skip on immutable OSes (no writable package cache)
+        if os.is_immutable() {
+            return CheckStatus::Skipped("Immutable OS (no writable package cache)".to_string());
         }
 
         use std::time::{Duration, SystemTime};
@@ -507,8 +525,14 @@ impl DoctorCheck for YayCacheCheck {
 
     async fn execute(&self) -> CheckStatus {
         // Only run on Arch-based systems
-        if !crate::common::distro::OperatingSystem::detect().is_arch_based() {
+        let os = crate::common::distro::OperatingSystem::detect();
+        if !os.is_arch_based() {
             return CheckStatus::Skipped("Not an Arch-based system".to_string());
+        }
+
+        // Skip on immutable OSes (no writable package cache)
+        if os.is_immutable() {
+            return CheckStatus::Skipped("Immutable OS (no writable package cache)".to_string());
         }
 
         // Check if yay is installed

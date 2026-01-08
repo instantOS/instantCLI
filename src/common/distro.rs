@@ -14,6 +14,8 @@ pub enum OperatingSystem {
     Manjaro,
     /// EndeavourOS
     EndeavourOS,
+    /// SteamOS (immutable Arch-based)
+    SteamOS,
     /// Debian
     Debian,
     /// Ubuntu
@@ -71,6 +73,7 @@ impl OperatingSystem {
             "arch" => Self::Arch,
             "manjaro" => Self::Manjaro,
             "endeavouros" => Self::EndeavourOS,
+            "steamos" => Self::SteamOS,
             "debian" => Self::Debian,
             "ubuntu" => Self::Ubuntu,
             "pop" => Self::PopOS,
@@ -105,7 +108,7 @@ impl OperatingSystem {
     pub fn based_on(&self) -> Option<Self> {
         match self {
             // Arch-based
-            Self::InstantOS | Self::Manjaro | Self::EndeavourOS => Some(Self::Arch),
+            Self::InstantOS | Self::Manjaro | Self::EndeavourOS | Self::SteamOS => Some(Self::Arch),
             // Ubuntu-based (Ubuntu itself is Debian-based)
             Self::PopOS | Self::LinuxMint => Some(Self::Ubuntu),
             Self::Ubuntu => Some(Self::Debian),
@@ -134,6 +137,13 @@ impl OperatingSystem {
                 .based_on()
                 .map(|p| p.is_debian_based())
                 .unwrap_or(false)
+    }
+
+    /// Check if this OS is immutable (read-only root filesystem)
+    /// Immutable OSes cannot be modified in the traditional way and
+    /// updates replace the entire OS image.
+    pub fn is_immutable(&self) -> bool {
+        matches!(self, Self::SteamOS)
     }
 
     // ========================================================================
@@ -198,6 +208,7 @@ impl OperatingSystem {
             Self::Arch => "Arch Linux",
             Self::Manjaro => "Manjaro",
             Self::EndeavourOS => "EndeavourOS",
+            Self::SteamOS => "SteamOS",
             Self::Debian => "Debian",
             Self::Ubuntu => "Ubuntu",
             Self::PopOS => "Pop!_OS",
@@ -470,5 +481,47 @@ ID_LIKE="arch""#;
         assert!(OperatingSystem::InstantOS.is_supported_by(supported_instantos));
         assert!(!OperatingSystem::Arch.is_supported_by(supported_instantos));
         assert!(!OperatingSystem::Manjaro.is_supported_by(supported_instantos));
+    }
+
+    #[test]
+    fn test_parse_steamos() {
+        let content = r#"NAME="SteamOS"
+PRETTY_NAME="SteamOS 3.6.19"
+ID=steamos
+ID_LIKE=arch
+VARIANT_ID=steamdeck
+VERSION_ID=3.6.19
+BUILD_ID=20250313.1
+STEAMOS_DEFAULT_UPDATE_BRANCH=stable"#;
+        let os = OperatingSystem::parse_os_release(content);
+        assert_eq!(os, OperatingSystem::SteamOS);
+        assert!(os.is_arch_based());
+        assert!(os.is_immutable());
+        assert_eq!(os.name(), "SteamOS");
+    }
+
+    #[test]
+    fn test_is_immutable() {
+        // SteamOS is immutable
+        assert!(OperatingSystem::SteamOS.is_immutable());
+
+        // Other Arch-based distros are not immutable
+        assert!(!OperatingSystem::Arch.is_immutable());
+        assert!(!OperatingSystem::InstantOS.is_immutable());
+        assert!(!OperatingSystem::Manjaro.is_immutable());
+        assert!(!OperatingSystem::EndeavourOS.is_immutable());
+
+        // Other distros are not immutable
+        assert!(!OperatingSystem::Debian.is_immutable());
+        assert!(!OperatingSystem::Ubuntu.is_immutable());
+        assert!(!OperatingSystem::Fedora.is_immutable());
+    }
+
+    #[test]
+    fn test_steamos_based_on_arch() {
+        assert_eq!(
+            OperatingSystem::SteamOS.based_on(),
+            Some(OperatingSystem::Arch)
+        );
     }
 }
