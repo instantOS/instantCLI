@@ -3,17 +3,17 @@
 //! This module runs the doctor CLI, parses JSON output, and provides
 //! an interactive menu for selecting fixes to apply.
 
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use anyhow::{Context, Result};
 use duct::cmd;
 use serde_json::Value;
-use crate::menu_utils::{FzfWrapper, FzfResult, FzfSelectable};
 
 /// Struct representing a fixable issue for display in FZF menu
 #[derive(Clone)]
 pub struct FixableIssue {
     pub name: String,
     pub check_id: String,
-    pub status: String,  // "FAIL" or "WARN"
+    pub status: String, // "FAIL" or "WARN"
     pub message: String,
     pub fix_message: Option<String>,
 }
@@ -31,45 +31,67 @@ impl FzfSelectable for FixableIssue {
 /// Run doctor checks and parse JSON output
 pub fn run_doctor_checks() -> Result<Vec<FixableIssue>> {
     // Run doctor with JSON output
-    let output = cmd!(
-        env!("CARGO_BIN_NAME"),
-        "doctor",
-        "--output-format",
-        "json"
-    )
-    .read()
-    .context("running doctor checks")?;
+    let output = cmd!(env!("CARGO_BIN_NAME"), "doctor", "--output", "json")
+        .read()
+        .context("running doctor checks")?;
 
-    // Parse JSON output
-    let json: Value = serde_json::from_str(&output)
-        .context("parsing doctor JSON output")?;
+    // Parse newline-delimited JSON, looking for the results event
+    let mut fixable_issues = Vec::new();
 
-    // Extract results
-    let results = json["results"]
-        .as_array()
-        .ok_or_else(|| anyhow::anyhow!("Missing results array"))?;
+    for line in output.lines() {
+        if let Ok(json) = serde_json::from_str::<Value>(&line) {
+            // Look for the "doctor.results" event
+            if json.get("code").and_then(|v| v.as_str()) == Some("doctor.results") {
+                if let Some(results) = json
+                    .get("data")
+                    .and_then(|d| d.get("results"))
+                    .and_then(|r| r.as_array())
+                {
+                    // Filter for fixable issues (FAIL or WARN with fixable=true)
+                    for result in results {
+                        let fixable = result
+                            .get("fixable")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        let success = result
+                            .get("success")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
 
-    // Filter for fixable issues (FAIL or WARN with fixable=true)
-    let fixable_issues: Vec<FixableIssue> = results
-        .iter()
-        .filter_map(|result| {
-            let fixable = result.get("fixable").and_then(|v| v.as_bool()).unwrap_or(false);
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
-
-            // Include if fixable and not successful (FAIL or WARN)
-            if fixable && !success {
-                Some(FixableIssue {
-                    name: result.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    check_id: result.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    status: result.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    message: result.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    fix_message: result.get("fix_message").and_then(|v| v.as_str()).map(String::from),
-                })
-            } else {
-                None
+                        // Include if fixable and not successful (FAIL or WARN)
+                        if fixable && !success {
+                            fixable_issues.push(FixableIssue {
+                                name: result
+                                    .get("name")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                check_id: result
+                                    .get("id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                status: result
+                                    .get("status")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                message: result
+                                    .get("message")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                fix_message: result
+                                    .get("fix_message")
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from),
+                            });
+                        }
+                    }
+                }
             }
-        })
-        .collect();
+        }
+    }
 
     Ok(fixable_issues)
 }
@@ -94,7 +116,9 @@ pub fn show_fix_menu(fixable_issues: Vec<FixableIssue>) -> Result<Vec<FixableIss
     match FzfWrapper::builder()
         .multi_select(true)
         .prompt("Select issues to fix:")
-        .header("System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel")
+        .header(
+            "System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel",
+        )
         .select(menu_items)?
     {
         FzfResult::MultiSelected(selected) => Ok(selected),

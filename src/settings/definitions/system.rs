@@ -79,30 +79,29 @@ impl Setting for SystemDoctor {
 
         use crate::settings::doctor_integration;
 
-        // Step 1: Display the full doctor results table (current behavior)
+        // Step 1: Display the full doctor results table and wait for user
         cmd!(
             "sh",
             "-c",
-            &format!("{} doctor", env!("CARGO_BIN_NAME"))
+            &format!("{} doctor && read -n 1", env!("CARGO_BIN_NAME"))
         )
         .run()
         .context("running system doctor")?;
 
         // Step 2: Get fixable issues from doctor JSON output
-        let fixable_issues = doctor_integration::run_doctor_checks()
-            .context("getting fixable issues")?;
+        let fixable_issues =
+            doctor_integration::run_doctor_checks().context("getting fixable issues")?;
 
         // Step 3: Show fix menu if there are fixable issues
         if !fixable_issues.is_empty() {
             println!(); // Add spacing before menu
 
-            let selected = doctor_integration::show_fix_menu(fixable_issues)
-                .context("showing fix menu")?;
+            let selected =
+                doctor_integration::show_fix_menu(fixable_issues).context("showing fix menu")?;
 
             // Step 4: Execute selected fixes via CLI
             if !selected.is_empty() {
-                doctor_integration::execute_fixes(selected)
-                    .context("executing fixes")?;
+                doctor_integration::execute_fixes(selected).context("executing fixes")?;
 
                 ctx.notify(
                     "System Diagnostics",
@@ -110,10 +109,7 @@ impl Setting for SystemDoctor {
                 );
             }
         } else {
-            ctx.notify(
-                "System Diagnostics",
-                "No fixable issues found.",
-            );
+            ctx.notify("System Diagnostics", "No fixable issues found.");
         }
 
         Ok(())
