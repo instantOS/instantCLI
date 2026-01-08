@@ -11,8 +11,15 @@ pub async fn handle_doctor_command(command: Option<DoctorCommands>) -> Result<()
         None => run_all_checks_cmd().await,
         Some(DoctorCommands::List) => list_available_checks().await,
         Some(DoctorCommands::Run { name }) => run_single_check(&name).await,
-        Some(DoctorCommands::Fix { name, all }) => {
-            if all {
+        Some(DoctorCommands::Fix {
+            name,
+            all,
+            batch_ids,
+        }) => {
+            if let Some(ids) = batch_ids {
+                // Internal batch mode - fix specific checks (used after escalation)
+                fix_batch_checks(ids).await
+            } else if all {
                 fix_all_checks().await
             } else if let Some(check_name) = name {
                 fix_single_check(&check_name).await
@@ -421,121 +428,96 @@ async fn fix_check_without_escalation(check_id: &str) -> Result<()> {
     apply_fix(check, &before_status).await
 }
 
-/// Apply fixes for all failing/fixable health checks
-async fn fix_all_checks() -> Result<()> {
-    use sudo::RunningAs;
-    use super::PrivilegeLevel;
+/// Fix a batch of checks (internal mode used after privilege escalation)
+async fn fix_batch_checks(batch_ids: String) -> Result<()> {
+    let check_ids: Vec<String> = batch_ids.split(',').map(|s| s.to_string()).collect();
 
-    // Check if we're in batch mode (escalated from a previous run)
-    // Scan for temp files that contain batch fix data
-    if matches!(sudo::check(), RunningAs::Root) {
-        // We're running as root - check if we were escalated for batch fixing
-        let temp_dir = std::env::temp_dir();
-        let uid = std::env::var("SUDO_UID")
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(0);
+    emit(
+        Level::Info,
+        "doctor.fix.batch",
+        &format!(
+            "{} Batch fixing {} check(s) that require elevated privileges...",
+            char::from(NerdFont::Info),
+            check_ids.len()
+        ),
+        None,
+    );
 
-        // Try to find and read the batch fix data
-        if let Ok(entries) = temp_dir.read_dir() {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
-                    if fname.starts_with(&format!("instant_doctor_fix_{}_", uid)) {
-                        // Found a potential batch fix file
-                        if let Ok(content) = std::fs::read_to_string(&path) {
-                            if let Ok(check_ids) = serde_json::from_str::<Vec<String>>(&content) {
+    let mut success_count = 0;
+    let mut failure_count = 0;
 
-                                emit(
-                                    Level::Info,
-                                    "doctor.fix.batch",
-                                    &format!(
-                                        "{} Batch fixing {} check(s) that require elevated privileges...",
-                                        char::from(NerdFont::Info),
-                                        check_ids.len()
-                                    ),
-                                    None,
-                                );
+    for check_id in check_ids {
+        emit(
+            Level::Info,
+            "doctor.fix.batch.item",
+            &format!("\nFixing: {} (escalated)", check_id),
+            None,
+        );
 
-                                let mut success_count = 0;
-                                let mut failure_count = 0;
-
-                                for check_id in check_ids {
-                                    emit(
-                                        Level::Info,
-                                        "doctor.fix.batch.item",
-                                        &format!("\nFixing: {} (escalated)", check_id),
-                                        None,
-                                    );
-
-                                    match fix_check_without_escalation(&check_id).await {
-                                        Ok(()) => {
-                                            emit(
-                                                Level::Success,
-                                                "doctor.fix.batch.success",
-                                                &format!("{} Fixed {}", char::from(NerdFont::Check), check_id),
-                                                None,
-                                            );
-                                            success_count += 1;
-                                        }
-                                        Err(e) => {
-                                            emit(
-                                                Level::Error,
-                                                "doctor.fix.batch.failed",
-                                                &format!(
-                                                    "{} Failed to fix {}: {}",
-                                                    char::from(NerdFont::CrossCircle),
-                                                    check_id,
-                                                    e
-                                                ),
-                                                None,
-                                            );
-                                            failure_count += 1;
-                                        }
-                                    }
-                                }
-
-                                // Clean up the temp file
-                                let _ = std::fs::remove_file(&path);
-
-                                emit(
-                                    Level::Info,
-                                    "doctor.fix.batch.summary",
-                                    "\n=== Batch Fix Summary ===",
-                                    None,
-                                );
-                                emit(
-                                    Level::Success,
-                                    "doctor.fix.batch.summary_success",
-                                    &format!(
-                                        "{} Successfully fixed: {}",
-                                        char::from(NerdFont::Check),
-                                        success_count
-                                    ),
-                                    None,
-                                );
-
-                                if failure_count > 0 {
-                                    emit(
-                                        Level::Error,
-                                        "doctor.fix.batch.summary_failure",
-                                        &format!(
-                                            "{} Failed to fix: {}",
-                                            char::from(NerdFont::CrossCircle),
-                                            failure_count
-                                        ),
-                                        None,
-                                    );
-                                }
-
-                                return Ok(());
-                            }
-                        }
-                    }
-                }
+        match fix_check_without_escalation(&check_id).await {
+            Ok(()) => {
+                emit(
+                    Level::Success,
+                    "doctor.fix.batch.success",
+                    &format!("{} Fixed {}", char::from(NerdFont::Check), check_id),
+                    None,
+                );
+                success_count += 1;
+            }
+            Err(e) => {
+                emit(
+                    Level::Error,
+                    "doctor.fix.batch.failed",
+                    &format!(
+                        "{} Failed to fix {}: {}",
+                        char::from(NerdFont::CrossCircle),
+                        check_id,
+                        e
+                    ),
+                    None,
+                );
+                failure_count += 1;
             }
         }
     }
+
+    emit(
+        Level::Info,
+        "doctor.fix.batch.summary",
+        "\n=== Batch Fix Summary ===",
+        None,
+    );
+    emit(
+        Level::Success,
+        "doctor.fix.batch.summary_success",
+        &format!(
+            "{} Successfully fixed: {}",
+            char::from(NerdFont::Check),
+            success_count
+        ),
+        None,
+    );
+
+    if failure_count > 0 {
+        emit(
+            Level::Error,
+            "doctor.fix.batch.summary_failure",
+            &format!(
+                "{} Failed to fix: {}",
+                char::from(NerdFont::CrossCircle),
+                failure_count
+            ),
+            None,
+        );
+    }
+
+    Ok(())
+}
+
+/// Apply fixes for all failing/fixable health checks
+async fn fix_all_checks() -> Result<()> {
+    use super::PrivilegeLevel;
+    use sudo::RunningAs;
 
     // Normal mode: Run all checks and group by privilege requirement
     let checks = REGISTRY.all_checks();

@@ -28,6 +28,9 @@ pub enum DoctorCommands {
         /// Fix all failing checks
         #[arg(long, conflicts_with = "name")]
         all: bool,
+        /// Internal: Comma-separated list of check IDs to fix (used for batch mode after escalation)
+        #[arg(long, hide = true, conflicts_with_all(&["name", "all"]))]
+        batch_ids: Option<String>,
     },
 }
 

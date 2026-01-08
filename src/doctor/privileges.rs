@@ -41,56 +41,29 @@ pub fn should_skip_for_privileges(required: PrivilegeLevel) -> Option<&'static s
     skip_reason_for_privilege_level(required, is_root)
 }
 
-/// Get the predictable temp file path for batch fix data
-/// Uses the current user's UID which remains the same after sudo escalation
-pub fn batch_fix_temp_file() -> std::path::PathBuf {
-    use sudo::RunningAs;
-
-    // Get the real user ID (the user who ran sudo, not root)
-    // When running as root, we need to find the original user
-    let uid = if matches!(sudo::check(), RunningAs::Root) {
-        // Running as root - try to get the real user from SUDO_UID or use root (0)
-        std::env::var("SUDO_UID")
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(0)
-    } else {
-        // Not running as root - use current user
-        // Use username as identifier since we can't safely get UID without unsafe
-        std::env::var("USER")
-            .unwrap_or_else(|_| "default".to_string())
-            .chars()
-            .map(|c| c as u32)
-            .fold(0u32, |acc, val| acc.wrapping_add(val))
-    };
-
-    let temp_dir = std::env::temp_dir();
-    // Include current PID for uniqueness, and user ID for predictability
-    temp_dir.join(format!("instant_doctor_fix_{}_{}", uid, std::process::id()))
-}
-
+/// Escalate privileges and fix a batch of checks
+/// Replaces the current process with sudo, passing check IDs as arguments
 pub fn escalate_for_fix(check_ids: Vec<String>) -> Result<(), anyhow::Error> {
-    // Pass check IDs via a temporary file with a predictable path
-    // No environment variables needed - the escalated process scans for the right file
-    let ids_json = serde_json::to_string(&check_ids)?;
-    let temp_file = batch_fix_temp_file();
+    use std::process::Command;
 
-    std::fs::write(&temp_file, ids_json)
-        .map_err(|e| anyhow::anyhow!("Failed to write temp file: {}", e))?;
+    // Join check IDs with commas for the command line
+    let batch_ids = check_ids.join(",");
 
-    // Use sudo crate to restart with privileges
-    // The escalated process will scan for temp files matching the pattern
-    match sudo::with_env(&["RUST_BACKTRACE", "RUST_LOG"]) {
-        Ok(_) => {
-            // This should never be reached as process restarts
-            unreachable!("sudo::with_env should restart the process")
-        }
-        Err(e) => {
-            // Clean up temp file on error
-            let _ = std::fs::remove_file(&temp_file);
-            Err(anyhow::anyhow!("Failed to escalate privileges: {}", e))
-        }
-    }
+    // Get the current program path and args
+    let current_exe = std::env::current_exe()
+        .map_err(|e| anyhow::anyhow!("Failed to get current executable: {}", e))?;
+
+    // Build the sudo command with the batch IDs
+    let status = Command::new("sudo")
+        .arg(&current_exe)
+        .args(std::env::args().skip(1)) // Pass through existing args
+        .arg("--batch-ids")
+        .arg(&batch_ids)
+        .status()
+        .map_err(|e| anyhow::anyhow!("Failed to execute sudo: {}", e))?;
+
+    // Exit with the same code as the sudo command
+    std::process::exit(status.code().unwrap_or(1));
 }
 
 #[derive(Debug, Error)]
