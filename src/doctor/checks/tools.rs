@@ -1,10 +1,92 @@
 use super::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::Result;
 use async_trait::async_trait;
+use std::path::Path;
 use tokio::process::Command as TokioCommand;
 
 #[derive(Default)]
 pub struct BatCheck;
+
+#[derive(Default)]
+pub struct GitConfigCheck;
+
+/// Check if we're running inside a container
+fn is_container() -> bool {
+    Path::new("/.dockerenv").exists() || Path::new("/run/.containerenv").exists()
+}
+
+#[async_trait]
+impl DoctorCheck for GitConfigCheck {
+    fn name(&self) -> &'static str {
+        "Git Commit Configuration"
+    }
+
+    fn id(&self) -> &'static str {
+        "git-config"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        // Skip in containers
+        if is_container() {
+            return CheckStatus::Skipped("Running in a container".to_string());
+        }
+
+        // Check if git is installed
+        if which::which("git").is_err() {
+            return CheckStatus::Skipped("git is not installed".to_string());
+        }
+
+        // Check user.name
+        let name_output = TokioCommand::new("git")
+            .args(["config", "--global", "user.name"])
+            .output()
+            .await;
+
+        let has_name = match name_output {
+            Ok(output) => output.status.success() && !output.stdout.is_empty(),
+            Err(_) => false,
+        };
+
+        // Check user.email
+        let email_output = TokioCommand::new("git")
+            .args(["config", "--global", "user.email"])
+            .output()
+            .await;
+
+        let has_email = match email_output {
+            Ok(output) => output.status.success() && !output.stdout.is_empty(),
+            Err(_) => false,
+        };
+
+        match (has_name, has_email) {
+            (true, true) => CheckStatus::Pass("Git user name and email are configured".to_string()),
+            (false, false) => CheckStatus::Fail {
+                message: "Git user.name and user.email are not configured".to_string(),
+                fixable: false,
+            },
+            (true, false) => CheckStatus::Fail {
+                message: "Git user.email is not configured".to_string(),
+                fixable: false,
+            },
+            (false, true) => CheckStatus::Fail {
+                message: "Git user.name is not configured".to_string(),
+                fixable: false,
+            },
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Run 'git config --global user.name \"Your Name\"' and 'git config --global user.email \"you@example.com\"'".to_string())
+    }
+}
 
 #[async_trait]
 impl DoctorCheck for BatCheck {

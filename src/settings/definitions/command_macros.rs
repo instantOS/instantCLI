@@ -72,7 +72,8 @@ macro_rules! gui_command_setting {
                 // Some tools (notably Piper) are python scripts with `#!/usr/bin/env python3`.
                 // When mise is active, `python3` may resolve to a shim/interpreter without system
                 // GI bindings, so force system python for these scripts.
-                let resolved_path: PathBuf = which::which($command).unwrap_or_else(|_| $command.into());
+                let resolved_path: PathBuf =
+                    which::which($command).unwrap_or_else(|_| $command.into());
                 let env_python3_shebang = std::fs::File::open(&resolved_path)
                     .ok()
                     .and_then(|mut f| {
