@@ -16,6 +16,7 @@ use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::sources;
 use crate::settings::store::{BoolSettingKey, PACMAN_AUTOCLEAN_KEY};
 use crate::ui::prelude::*;
+use dialoguer::console::Term;
 
 // ============================================================================
 // About System (uses shell command with read, can't use macro)
@@ -56,6 +57,13 @@ impl Setting for AboutSystem {
 
 pub struct SystemDoctor;
 
+fn press_any_key_to_continue() -> Result<()> {
+    println!();
+    println!("Press any key to continue...");
+    Term::stdout().read_key().context("waiting for key press")?;
+    Ok(())
+}
+
 impl Setting for SystemDoctor {
     fn metadata(&self) -> SettingMetadata {
         SettingMetadata::builder()
@@ -80,13 +88,10 @@ impl Setting for SystemDoctor {
         use crate::settings::doctor_integration;
 
         // Step 1: Display the full doctor results table and wait for user
-        cmd!(
-            "sh",
-            "-c",
-            &format!("{} doctor && read -n 1", env!("CARGO_BIN_NAME"))
-        )
-        .run()
-        .context("running system doctor")?;
+        cmd!(env!("CARGO_BIN_NAME"), "doctor")
+            .run()
+            .context("running system doctor")?;
+        press_any_key_to_continue()?;
 
         // Step 2: Get fixable issues from doctor JSON output
         let fixable_issues =
@@ -102,6 +107,7 @@ impl Setting for SystemDoctor {
             // Step 4: Execute selected fixes via CLI
             if !selected.is_empty() {
                 doctor_integration::execute_fixes(selected).context("executing fixes")?;
+                press_any_key_to_continue()?;
 
                 ctx.notify(
                     "System Diagnostics",

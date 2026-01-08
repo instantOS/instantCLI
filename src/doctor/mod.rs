@@ -29,7 +29,10 @@ pub enum DoctorCommands {
         #[arg(long, conflicts_with = "name")]
         all: bool,
         /// Internal: Comma-separated list of check IDs to fix (used for batch mode after escalation)
-        #[arg(long, hide = true, conflicts_with_all(&["name", "all"]))]
+        ///
+        /// Note: when restarted with sudo, the original `NAME` argument may still be present;
+        /// we intentionally allow both and prefer `--batch-ids`.
+        #[arg(long, hide = true)]
         batch_ids: Option<String>,
     },
 }
