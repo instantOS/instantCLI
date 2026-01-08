@@ -61,13 +61,40 @@ macro_rules! gui_command_setting {
                 ctx: &mut $crate::settings::context::SettingsContext,
             ) -> anyhow::Result<()> {
                 use anyhow::Context;
+                use std::path::{Path, PathBuf};
                 use std::process::{Command, Stdio};
 
                 ctx.emit_info(
                     "settings.command.launching",
                     &format!("Launching {}...", $title),
                 );
-                Command::new($command)
+
+                let mut command = if $command == "piper" {
+                    // Piper is a python script (#!/usr/bin/env python3). When mise is active,
+                    // `python3` may resolve to a shim/interpreter without system GI bindings.
+                    // Force the system python to avoid mise shims.
+                    let piper_path: PathBuf = if Path::new("/usr/bin/piper").exists() {
+                        "/usr/bin/piper".into()
+                    } else {
+                        which::which("piper").unwrap_or_else(|_| "piper".into())
+                    };
+
+                    let mut c = if Path::new("/usr/bin/python3").exists() {
+                        Command::new("/usr/bin/python3")
+                    } else {
+                        Command::new("python3")
+                    };
+                    c.arg(piper_path);
+                    c.env_remove("VIRTUAL_ENV")
+                        .env_remove("CONDA_PREFIX")
+                        .env_remove("PYTHONHOME")
+                        .env_remove("PYTHONPATH");
+                    c
+                } else {
+                    Command::new($command)
+                };
+
+                command
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .spawn()
