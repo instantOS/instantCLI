@@ -51,7 +51,7 @@ impl Setting for AboutSystem {
 }
 
 // ============================================================================
-// System Doctor (runs ins doctor, can't use macro due to shell command with read)
+// System Doctor (runs ins doctor and shows interactive fix menu)
 // ============================================================================
 
 pub struct SystemDoctor;
@@ -68,7 +68,7 @@ impl Setting for SystemDoctor {
     }
 
     fn setting_type(&self) -> SettingType {
-        SettingType::Command
+        SettingType::Action
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
@@ -76,13 +76,46 @@ impl Setting for SystemDoctor {
             "settings.command.launching",
             "Running system diagnostics...",
         );
+
+        use crate::settings::doctor_integration;
+
+        // Step 1: Display the full doctor results table (current behavior)
         cmd!(
             "sh",
             "-c",
-            &format!("{} doctor && read -n 1", env!("CARGO_BIN_NAME"))
+            &format!("{} doctor", env!("CARGO_BIN_NAME"))
         )
         .run()
         .context("running system doctor")?;
+
+        // Step 2: Get fixable issues from doctor JSON output
+        let fixable_issues = doctor_integration::run_doctor_checks()
+            .context("getting fixable issues")?;
+
+        // Step 3: Show fix menu if there are fixable issues
+        if !fixable_issues.is_empty() {
+            println!(); // Add spacing before menu
+
+            let selected = doctor_integration::show_fix_menu(fixable_issues)
+                .context("showing fix menu")?;
+
+            // Step 4: Execute selected fixes via CLI
+            if !selected.is_empty() {
+                doctor_integration::execute_fixes(selected)
+                    .context("executing fixes")?;
+
+                ctx.notify(
+                    "System Diagnostics",
+                    "Fixes applied. Run diagnostics again to verify.",
+                );
+            }
+        } else {
+            ctx.notify(
+                "System Diagnostics",
+                "No fixable issues found.",
+            );
+        }
+
         Ok(())
     }
 }

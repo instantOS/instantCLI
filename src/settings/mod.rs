@@ -6,6 +6,7 @@ pub mod context;
 pub mod defaultapps;
 pub mod definitions;
 pub mod deps;
+pub mod doctor_integration;
 pub mod firmware;
 pub mod installable_packages;
 pub mod language;
