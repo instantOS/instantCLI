@@ -25,11 +25,12 @@ impl FzfSelectable for FixableIssue {
             "FAIL" => NerdFont::CrossCircle,
             "WARN" => NerdFont::Warning,
             "ALL" => NerdFont::CheckCircle,
+            "INFO" => NerdFont::Info,
             _ => NerdFont::Info,
         };
 
-        // Special handling for "Fix All" option
-        if self.check_id == "__ALL__" {
+        // Special handling for "Fix All" and "View All" options
+        if self.check_id == "__ALL__" || self.check_id == "__VIEW_ALL__" {
             return format!("[{}] {}", char::from(icon), self.name);
         }
 
@@ -48,6 +49,7 @@ impl FzfSelectable for FixableIssue {
             "FAIL" => (NerdFont::CrossCircle, colors::RED),
             "WARN" => (NerdFont::Warning, colors::YELLOW),
             "ALL" => (NerdFont::CheckCircle, colors::GREEN),
+            "INFO" => (NerdFont::Info, colors::BLUE),
             _ => (NerdFont::Info, colors::BLUE),
         };
 
@@ -68,31 +70,38 @@ impl FzfSelectable for FixableIssue {
         lines.push(String::new());
 
         // Status section
-        lines.push(format!(
-            "{text_fg}Current Status:{reset} {subtext_fg}{}{reset}",
-            self.message
-        ));
-
-        // Fix section
-        if let Some(fix_msg) = &self.fix_message {
-            lines.push(String::new());
+        if self.check_id == "__VIEW_ALL__" {
             lines.push(format!(
-                "{mauve_fg}Available Fix:{reset}",
+                "{text_fg}{}{reset}",
+                self.message
             ));
-            lines.push(format!("{text_fg}{}{reset}", fix_msg));
-        } else if self.check_id != "__ALL__" {
-            lines.push(String::new());
-            lines.push(format!("{subtext_fg}No automatic fix available{reset}"));
-            lines.push(format!("{subtext_fg}Manual intervention may be required{reset}"));
-        }
-
-        // Check ID for reference
-        if self.check_id != "__ALL__" {
-            lines.push(String::new());
+        } else {
             lines.push(format!(
-                "{surface_fg}ID: {subtext_fg}{}{reset}",
-                self.check_id
+                "{text_fg}Current Status:{reset} {subtext_fg}{}{reset}",
+                self.message
             ));
+
+            // Fix section
+            if let Some(fix_msg) = &self.fix_message {
+                lines.push(String::new());
+                lines.push(format!(
+                    "{mauve_fg}Available Fix:{reset}",
+                ));
+                lines.push(format!("{text_fg}{}{reset}", fix_msg));
+            } else if self.check_id != "__ALL__" {
+                lines.push(String::new());
+                lines.push(format!("{subtext_fg}No automatic fix available{reset}"));
+                lines.push(format!("{subtext_fg}Manual intervention may be required{reset}"));
+            }
+
+            // Check ID for reference
+            if self.check_id != "__ALL__" {
+                lines.push(String::new());
+                lines.push(format!(
+                    "{surface_fg}ID: {subtext_fg}{}{reset}",
+                    self.check_id
+                ));
+            }
         }
 
         FzfPreview::Text(lines.join("\n"))
@@ -903,6 +912,101 @@ async fn fix_all_checks() -> Result<()> {
     Ok(())
 }
 
+/// Struct representing a check result for viewing in the "View All Results" menu
+#[derive(Clone)]
+struct ViewableCheck {
+    name: String,
+    check_id: String,
+    status: String,
+    message: String,
+}
+
+impl FzfSelectable for ViewableCheck {
+    fn fzf_display_text(&self) -> String {
+        let icon = match self.status.as_str() {
+            "PASS" => NerdFont::Check,
+            "FAIL" => NerdFont::CrossCircle,
+            "WARN" => NerdFont::Warning,
+            "SKIP" => NerdFont::Minus,
+            _ => NerdFont::Info,
+        };
+
+        format!("[{}] {} {}", char::from(icon), self.status, self.name)
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let text_fg = hex_to_ansi_fg(colors::TEXT);
+        let subtext_fg = hex_to_ansi_fg(colors::SUBTEXT0);
+        let mauve_fg = hex_to_ansi_fg(colors::MAUVE);
+        let surface_fg = hex_to_ansi_fg(colors::SURFACE1);
+        let reset = "\x1b[0m";
+
+        // Choose icon and color based on status
+        let (icon, _color) = match self.status.as_str() {
+            "PASS" => (NerdFont::Check, colors::GREEN),
+            "FAIL" => (NerdFont::CrossCircle, colors::RED),
+            "WARN" => (NerdFont::Warning, colors::YELLOW),
+            "SKIP" => (NerdFont::Minus, colors::OVERLAY0),
+            _ => (NerdFont::Info, colors::BLUE),
+        };
+
+        let mut lines = Vec::new();
+
+        // Header with icon and title
+        lines.push(String::new());
+        lines.push(format!(
+            "{mauve_fg}{}  {}{reset} {text_fg}{}{reset}",
+            char::from(icon),
+            self.status,
+            self.name
+        ));
+
+        // Separator
+        lines.push(format!("{surface_fg}────────────────────────────────────{reset}"));
+        lines.push(String::new());
+
+        // Status section
+        lines.push(format!(
+            "{text_fg}Status:{reset} {subtext_fg}{}{reset}",
+            self.message
+        ));
+
+        // Check ID for reference
+        lines.push(String::new());
+        lines.push(format!(
+            "{surface_fg}ID: {subtext_fg}{}{reset}",
+            self.check_id
+        ));
+
+        FzfPreview::Text(lines.join("\n"))
+    }
+
+    fn fzf_key(&self) -> String {
+        self.check_id.clone()
+    }
+}
+
+/// Show all check results (including passed and skipped checks) in a menu
+fn show_all_check_results(results: &[CheckResult]) -> Result<()> {
+    let viewable: Vec<_> = results
+        .iter()
+        .map(|r| ViewableCheck {
+            name: r.name.clone(),
+            check_id: r.check_id.clone(),
+            status: r.status.status_text().to_string(),
+            message: r.status.message().to_string(),
+        })
+        .collect();
+
+    FzfWrapper::builder()
+        .prompt("View results:")
+        .header("All Check Results - Use arrow keys to navigate, ESC to return")
+        .args(fzf_mocha_args())
+        .select(viewable)?;
+
+    Ok(())
+}
+
 /// Interactive fix mode: show menu of fixable issues and apply selected fixes
 async fn fix_interactive() -> Result<()> {
     // Run all checks to find fixable issues
@@ -925,71 +1029,94 @@ async fn fix_interactive() -> Result<()> {
         .collect();
 
     if fixable_issues.is_empty() {
-        emit(
-            Level::Success,
-            "doctor.fix_choose.none",
-            &format!(
-                "{} No fixable issues found!",
-                char::from(NerdFont::Check)
-            ),
-            None,
-        );
+        // Count successful and skipped checks
+        let success_count = results.iter().filter(|r| r.status.is_success()).count();
+        let skipped_count = results.iter().filter(|r| r.status.is_skipped()).count();
+
+        FzfWrapper::builder()
+            .message(format!(
+                "{} All systems operational!\n\n✓ {} checks passed\n⊘ {} checks skipped",
+                char::from(NerdFont::Check),
+                success_count,
+                skipped_count
+            ))
+            .title("System Diagnostics")
+            .show_message()?;
+
         return Ok(());
     }
 
-    // Add "Fix All" option
-    let mut menu_items = vec![FixableIssue {
-        name: format!("Fix All Issues ({})", fixable_issues.len()),
-        check_id: "__ALL__".to_string(),
-        status: "ALL".to_string(),
-        message: "Apply all available fixes".to_string(),
-        fix_message: None,
-    }];
-    menu_items.extend(fixable_issues);
+    loop {
+        // Build menu items
+        let mut menu_items = vec![
+            FixableIssue {
+                name: "View All Check Results".to_string(),
+                check_id: "__VIEW_ALL__".to_string(),
+                status: "INFO".to_string(),
+                message: "Show status of all checks including passed and skipped".to_string(),
+                fix_message: None,
+            },
+            FixableIssue {
+                name: format!("Fix All Issues ({})", fixable_issues.len()),
+                check_id: "__ALL__".to_string(),
+                status: "ALL".to_string(),
+                message: "Apply all available fixes".to_string(),
+                fix_message: None,
+            },
+        ];
+        menu_items.extend(fixable_issues.clone());
 
-    // Show FZF multi-select menu
-    match FzfWrapper::builder()
-        .multi_select(true)
-        .prompt("Select issues to fix:")
-        .header("System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel")
-        .args(fzf_mocha_args())
-        .select(menu_items)?
-    {
-        FzfResult::MultiSelected(selected) => {
-            if selected.is_empty() {
+        // Show FZF multi-select menu
+        match FzfWrapper::builder()
+            .multi_select(true)
+            .prompt("Select issues to fix:")
+            .header("System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel")
+            .args(fzf_mocha_args())
+            .select(menu_items)?
+        {
+            FzfResult::MultiSelected(selected) => {
+                if selected.is_empty() {
+                    emit(
+                        Level::Info,
+                        "doctor.fix_choose.cancelled",
+                        &format!("{} No fixes selected", char::from(NerdFont::Info)),
+                        None,
+                    );
+                    return Ok(());
+                }
+
+                // Check if "View All Results" was selected
+                if selected.iter().any(|i| i.check_id == "__VIEW_ALL__") {
+                    show_all_check_results(&results)?;
+                    // Continue the loop to show the menu again
+                    continue;
+                }
+
+                // Check if "Fix All" was selected
+                let fix_all = selected.iter().any(|i| i.check_id == "__ALL__");
+
+                if fix_all {
+                    // Use existing fix_all_checks logic
+                    return fix_all_checks().await;
+                } else {
+                    // Fix each selected issue
+                    return fix_selected_checks(selected).await;
+                }
+            }
+            FzfResult::Cancelled => {
                 emit(
                     Level::Info,
                     "doctor.fix_choose.cancelled",
-                    &format!("{} No fixes selected", char::from(NerdFont::Info)),
+                    &format!(
+                        "{} Fix selection cancelled",
+                        char::from(NerdFont::Info)
+                    ),
                     None,
                 );
                 return Ok(());
             }
-
-            // Check if "Fix All" was selected
-            let fix_all = selected.iter().any(|i| i.check_id == "__ALL__");
-
-            if fix_all {
-                // Use existing fix_all_checks logic
-                fix_all_checks().await
-            } else {
-                // Fix each selected issue
-                fix_selected_checks(selected).await
-            }
+            _ => return Ok(()),
         }
-        FzfResult::Cancelled => {
-            emit(
-                Level::Info,
-                "doctor.fix_choose.cancelled",
-                &format!(
-                    "{} Fix selection cancelled",
-                    char::from(NerdFont::Info)
-                ),
-                None,
-            );
-            Ok(())
-        }
-        _ => Ok(()),
     }
 }
 
