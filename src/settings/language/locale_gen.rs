@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_parse_locale_lines() {
-        let lines = vec![
+        let lines = [
             "#  en_US.UTF-8 UTF-8",
             "#  en_US ISO-8859-1",
             "de_DE.UTF-8 UTF-8",

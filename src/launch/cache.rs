@@ -407,7 +407,7 @@ impl LaunchCache {
     }
 
     /// Sort launch items by frecency
-    fn sort_by_frecency_launch_items(&mut self, items: &mut Vec<LaunchItem>) -> Result<()> {
+    fn sort_by_frecency_launch_items(&mut self, items: &mut [LaunchItem]) -> Result<()> {
         let frecency_store = self.get_frecency_store()?;
         let sorted_items = frecency_store.sorted(SortMethod::Frecent);
 

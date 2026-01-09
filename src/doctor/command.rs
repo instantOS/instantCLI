@@ -558,12 +558,12 @@ async fn fix_all_checks() -> Result<()> {
     let mut root_required_checks = Vec::new();
     let mut any_level_checks = Vec::new();
 
-    for result in &fixable {
+    for &result in &fixable {
         if let Some(check) = REGISTRY.create_check(&result.check_id) {
             match check.fix_privilege_level() {
-                PrivilegeLevel::User => user_only_checks.push(result.clone()),
-                PrivilegeLevel::Root => root_required_checks.push(result.clone()),
-                PrivilegeLevel::Any => any_level_checks.push(result.clone()),
+                PrivilegeLevel::User => user_only_checks.push(result),
+                PrivilegeLevel::Root => root_required_checks.push(result),
+                PrivilegeLevel::Any => any_level_checks.push(result),
             }
         }
     }

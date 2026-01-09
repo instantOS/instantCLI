@@ -209,17 +209,17 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
     };
 
     let video_config = VideoConfig::load()?;
-    let pipeline = RenderPipeline::new(
-        output_path.clone(),
-        nle_timeline,
+    let pipeline = RenderPipeline::new(RenderPipelineParams {
+        output: output_path.clone(),
+        timeline: nle_timeline,
         render_mode,
-        video_width,
-        video_height,
-        video_config,
-        audio_path,
+        source_width: video_width,
+        source_height: video_height,
+        config: video_config,
+        audio_source: audio_path,
         subtitle_path,
         runner,
-    );
+    });
 
     log!(
         Level::Info,
@@ -705,6 +705,76 @@ fn finalize_music_segment(
     }
 }
 
+/// The NLE-based render pipeline
+struct RenderPipeline<'a> {
+    output: PathBuf,
+    timeline: Timeline,
+    render_mode: RenderMode,
+    source_width: u32,
+    source_height: u32,
+    config: VideoConfig,
+    audio_source: PathBuf,
+    subtitle_path: Option<PathBuf>,
+    runner: &'a dyn FfmpegRunner,
+}
+
+struct RenderPipelineParams<'a> {
+    output: PathBuf,
+    timeline: Timeline,
+    render_mode: RenderMode,
+    source_width: u32,
+    source_height: u32,
+    config: VideoConfig,
+    audio_source: PathBuf,
+    subtitle_path: Option<PathBuf>,
+    runner: &'a dyn FfmpegRunner,
+}
+
+impl<'a> RenderPipeline<'a> {
+    fn new(params: RenderPipelineParams<'a>) -> Self {
+        Self {
+            output: params.output,
+            timeline: params.timeline,
+            render_mode: params.render_mode,
+            source_width: params.source_width,
+            source_height: params.source_height,
+            config: params.config,
+            audio_source: params.audio_source,
+            subtitle_path: params.subtitle_path,
+            runner: params.runner,
+        }
+    }
+
+    fn print_command(&self) -> Result<()> {
+        let args = self.build_args()?;
+        println!("ffmpeg command that would be executed:");
+        println!("ffmpeg {}", args.join(" "));
+        Ok(())
+    }
+
+    fn execute(&self) -> Result<()> {
+        let args = self.build_args()?;
+        self.runner.run(&args)
+    }
+
+    fn build_args(&self) -> Result<Vec<String>> {
+        let compiler = FfmpegCompiler::new(
+            self.render_mode,
+            self.source_width,
+            self.source_height,
+            self.config.clone(),
+            self.subtitle_path.clone(),
+        );
+        Ok(compiler
+            .compile(
+                self.output.clone(),
+                &self.timeline,
+                self.audio_source.clone(),
+            )?
+            .args)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -831,73 +901,5 @@ mod tests {
     fn test_render_mode_default() {
         let mode = RenderMode::default();
         assert_eq!(mode, RenderMode::Standard);
-    }
-}
-
-/// The NLE-based render pipeline
-struct RenderPipeline<'a> {
-    output: PathBuf,
-    timeline: Timeline,
-    render_mode: RenderMode,
-    source_width: u32,
-    source_height: u32,
-    config: VideoConfig,
-    audio_source: PathBuf,
-    subtitle_path: Option<PathBuf>,
-    runner: &'a dyn FfmpegRunner,
-}
-
-impl<'a> RenderPipeline<'a> {
-    fn new(
-        output: PathBuf,
-        timeline: Timeline,
-        render_mode: RenderMode,
-        source_width: u32,
-        source_height: u32,
-        config: VideoConfig,
-        audio_source: PathBuf,
-        subtitle_path: Option<PathBuf>,
-        runner: &'a dyn FfmpegRunner,
-    ) -> Self {
-        Self {
-            output,
-            timeline,
-            render_mode,
-            source_width,
-            source_height,
-            config,
-            audio_source,
-            subtitle_path,
-            runner,
-        }
-    }
-
-    fn print_command(&self) -> Result<()> {
-        let args = self.build_args()?;
-        println!("ffmpeg command that would be executed:");
-        println!("ffmpeg {}", args.join(" "));
-        Ok(())
-    }
-
-    fn execute(&self) -> Result<()> {
-        let args = self.build_args()?;
-        self.runner.run(&args)
-    }
-
-    fn build_args(&self) -> Result<Vec<String>> {
-        let compiler = FfmpegCompiler::new(
-            self.render_mode,
-            self.source_width,
-            self.source_height,
-            self.config.clone(),
-            self.subtitle_path.clone(),
-        );
-        Ok(compiler
-            .compile(
-                self.output.clone(),
-                &self.timeline,
-                self.audio_source.clone(),
-            )?
-            .args)
     }
 }

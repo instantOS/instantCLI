@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
 
@@ -115,7 +115,7 @@ impl FfmpegCompiler {
     fn build_input_source_map(
         &self,
         timeline: &Timeline,
-        audio_source: &PathBuf,
+        audio_source: &Path,
     ) -> (HashMap<PathBuf, usize>, Vec<PathBuf>) {
         let mut source_map: HashMap<PathBuf, usize> = HashMap::new();
         let mut source_order: Vec<PathBuf> = Vec::new();
@@ -132,8 +132,8 @@ impl FfmpegCompiler {
         }
 
         if !source_map.contains_key(audio_source) {
-            source_map.insert(audio_source.clone(), next_index);
-            source_order.push(audio_source.clone());
+            source_map.insert(audio_source.to_path_buf(), next_index);
+            source_order.push(audio_source.to_path_buf());
         }
 
         (source_map, source_order)
@@ -511,7 +511,7 @@ fn format_time(value: f64) -> String {
 
 /// Escape special characters in a path for use in FFmpeg filter expressions.
 /// FFmpeg filter syntax requires escaping of ', \, and : characters.
-fn escape_ffmpeg_path(path: &PathBuf) -> String {
+fn escape_ffmpeg_path(path: &Path) -> String {
     path.to_string_lossy()
         .replace('\\', "\\\\")
         .replace('\'', "'\\''")

@@ -39,54 +39,53 @@ pub fn run_doctor_checks() -> Result<Vec<FixableIssue>> {
     let mut fixable_issues = Vec::new();
 
     for line in output.lines() {
-        if let Ok(json) = serde_json::from_str::<Value>(&line) {
+        if let Ok(json) = serde_json::from_str::<Value>(line) {
             // Look for the "doctor.results" event
-            if json.get("code").and_then(|v| v.as_str()) == Some("doctor.results") {
-                if let Some(results) = json
+            if json.get("code").and_then(|v| v.as_str()) == Some("doctor.results")
+                && let Some(results) = json
                     .get("data")
                     .and_then(|d| d.get("results"))
                     .and_then(|r| r.as_array())
-                {
-                    // Filter for fixable issues (FAIL or WARN with fixable=true)
-                    for result in results {
-                        let fixable = result
-                            .get("fixable")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        let success = result
-                            .get("success")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(true);
+            {
+                // Filter for fixable issues (FAIL or WARN with fixable=true)
+                for result in results {
+                    let fixable = result
+                        .get("fixable")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let success = result
+                        .get("success")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
 
-                        // Include if fixable and not successful (FAIL or WARN)
-                        if fixable && !success {
-                            fixable_issues.push(FixableIssue {
-                                name: result
-                                    .get("name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                check_id: result
-                                    .get("id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                status: result
-                                    .get("status")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                message: result
-                                    .get("message")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string(),
-                                fix_message: result
-                                    .get("fix_message")
-                                    .and_then(|v| v.as_str())
-                                    .map(String::from),
-                            });
-                        }
+                    // Include if fixable and not successful (FAIL or WARN)
+                    if fixable && !success {
+                        fixable_issues.push(FixableIssue {
+                            name: result
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            check_id: result
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            status: result
+                                .get("status")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            message: result
+                                .get("message")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            fix_message: result
+                                .get("fix_message")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                        });
                     }
                 }
             }

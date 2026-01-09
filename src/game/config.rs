@@ -86,7 +86,7 @@ pub struct RetentionPolicyValues {
 }
 
 impl RetentionPolicyValues {
-    pub fn to_rules(&self) -> Vec<(String, String)> {
+    pub fn to_rules(self) -> Vec<(String, String)> {
         let mut rules = Vec::with_capacity(5);
 
         if let Some(keep_last) = self.keep_last {

@@ -34,15 +34,6 @@ impl DataKey for MirrorRegionsFetchFailed {
     const KEY: &'static str = "mirror_regions_fetch_failed";
 }
 
-/// Key to track whether a fallback mirrorlist was used
-/// This is set during execution when region-specific fetch fails
-pub struct MirrorlistFallbackUsed;
-
-impl DataKey for MirrorlistFallbackUsed {
-    type Value = bool;
-    const KEY: &'static str = "mirrorlist_fallback_used";
-}
-
 // ============================================================================
 // Mirror Region Fetching
 // ============================================================================
