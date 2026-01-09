@@ -10,14 +10,31 @@ pub enum FzfPreview {
     None,
 }
 
-/// Trait for types that can be displayed in FZF selection menus
+/// Trait for types that can be displayed in FZF selection menus.
+///
+/// # Styling with ANSI Escape Codes
+///
+/// Both `fzf_display_text()` and `fzf_preview()` support ANSI escape codes:
+///
+/// - Use `format_icon_colored()` for styled icon badges
+/// - Use `hex_to_ansi_fg()` for colored text
+/// - Use `PreviewBuilder` for consistent preview formatting
 pub trait FzfSelectable {
+    /// Text shown in the FZF selection list.
+    ///
+    /// Supports ANSI escape codes for colored output. Use `format_icon_colored()`
+    /// or `hex_to_ansi_fg()` for styling.
     fn fzf_display_text(&self) -> String;
 
+    /// Preview content shown in the right pane.
+    ///
+    /// Supports ANSI escape codes for styling. Use `PreviewBuilder` for
+    /// consistent formatting.
     fn fzf_preview(&self) -> FzfPreview {
         FzfPreview::None
     }
 
+    /// Unique key for identifying this item (defaults to display text).
     fn fzf_key(&self) -> String {
         self.fzf_display_text()
     }

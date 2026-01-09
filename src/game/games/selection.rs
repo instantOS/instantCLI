@@ -35,9 +35,9 @@ impl FzfSelectable for GameMenuEntry {
     fn fzf_key(&self) -> String {
         match self {
             GameMenuEntry::Game(name) => name.clone(),
-            GameMenuEntry::AddGame => "\0__add_game__".to_string(),
-            GameMenuEntry::SetupGames => "\0__setup_games__".to_string(),
-            GameMenuEntry::CloseMenu => "\0__close_menu__".to_string(),
+            GameMenuEntry::AddGame => "!__add_game__".to_string(),
+            GameMenuEntry::SetupGames => "!__setup_games__".to_string(),
+            GameMenuEntry::CloseMenu => "!__close_menu__".to_string(),
         }
     }
 

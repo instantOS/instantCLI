@@ -20,21 +20,29 @@ struct FixableIssue {
 
 impl FzfSelectable for FixableIssue {
     fn fzf_display_text(&self) -> String {
-        // Use NerdFont icons in display text (no ANSI codes for reliable matching)
-        let icon = match self.status.as_str() {
-            "FAIL" => NerdFont::CrossCircle,
-            "WARN" => NerdFont::Warning,
-            "ALL" => NerdFont::CheckCircle,
-            "INFO" => NerdFont::Info,
-            _ => NerdFont::Info,
-        };
+        use crate::ui::catppuccin::{colors, format_icon_colored};
 
-        // Special handling for "Fix All" and "View All" options
-        if self.check_id == "__ALL__" || self.check_id == "__VIEW_ALL__" {
-            return format!("[{}] {}", char::from(icon), self.name);
+        // Menu action items use styled icon badges
+        match self.check_id.as_str() {
+            "__VIEW_ALL__" => {
+                format!("{} View All Check Results", format_icon_colored(NerdFont::List, colors::BLUE))
+            }
+            "__ALL__" => {
+                format!("{} {}", format_icon_colored(NerdFont::Wrench, colors::GREEN), self.name)
+            }
+            "__CLOSE__" => {
+                format!("{} Close", format_icon_colored(NerdFont::Cross, colors::OVERLAY1))
+            }
+            _ => {
+                // Regular fixable issues with status indicator
+                let (icon, color) = match self.status.as_str() {
+                    "FAIL" => (NerdFont::CrossCircle, colors::RED),
+                    "WARN" => (NerdFont::Warning, colors::YELLOW),
+                    _ => (NerdFont::Info, colors::BLUE),
+                };
+                format!("{} {} {}", format_icon_colored(icon, color), self.status, self.name)
+            }
         }
-
-        format!("[{}] {} {}", char::from(icon), self.status, self.name)
     }
 
     fn fzf_preview(&self) -> FzfPreview {
@@ -981,17 +989,47 @@ async fn fix_interactive() -> Result<()> {
         let success_count = results.iter().filter(|r| r.status.is_success()).count();
         let skipped_count = results.iter().filter(|r| r.status.is_skipped()).count();
 
-        FzfWrapper::builder()
-            .message(format!(
-                "{} All systems operational!\n\n✓ {} checks passed\n⊘ {} checks skipped",
-                char::from(NerdFont::Check),
-                success_count,
-                skipped_count
-            ))
-            .title("System Diagnostics")
-            .show_message()?;
+        // Build menu with "View All Results" option
+        let menu_items = vec![
+            FixableIssue {
+                name: "View All Check Results".to_string(),
+                check_id: "__VIEW_ALL__".to_string(),
+                status: "INFO".to_string(),
+                message: "Show status of all checks including passed and skipped".to_string(),
+                fix_message: None,
+            },
+            FixableIssue {
+                name: "Close".to_string(),
+                check_id: "__CLOSE__".to_string(),
+                status: "INFO".to_string(),
+                message: "Exit the diagnostics menu".to_string(),
+                fix_message: None,
+            },
+        ];
 
-        return Ok(());
+        loop {
+            match FzfWrapper::builder()
+                .prompt("Select:")
+                .header(format!(
+                    "{} All systems operational!\n\n✓ {} checks passed\n⊘ {} checks skipped\n\nSelect an option or press Esc to exit",
+                    char::from(NerdFont::Check),
+                    success_count,
+                    skipped_count
+                ))
+                .args(fzf_mocha_args())
+                .select(menu_items.clone())?
+            {
+                FzfResult::Selected(item) if item.check_id == "__VIEW_ALL__" => {
+                    show_all_check_results(&results)?;
+                    // Continue the loop to show the menu again
+                    continue;
+                }
+                _ => {
+                    // Close selected or cancelled
+                    return Ok(());
+                }
+            }
+        }
     }
 
     loop {
