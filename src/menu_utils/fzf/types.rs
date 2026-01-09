@@ -38,6 +38,13 @@ pub trait FzfSelectable {
     fn fzf_key(&self) -> String {
         self.fzf_display_text()
     }
+
+    /// Optional: provide initial checked state for checklists.
+    /// Default implementation returns false (unchecked).
+    /// Only used by DialogType::Checklist.
+    fn fzf_initial_checked_state(&self) -> bool {
+        false
+    }
 }
 
 impl FzfSelectable for String {
@@ -136,4 +143,102 @@ impl From<&String> for Header {
     fn from(s: &String) -> Self {
         Header::Default(s.clone())
     }
+}
+
+/// Wrapper for items in a checklist dialog with checkbox state.
+#[derive(Clone)]
+pub struct ChecklistItem<T> {
+    /// The underlying item
+    pub item: T,
+    /// Current checked state
+    pub checked: bool,
+    display_text: String,
+}
+
+impl<T: FzfSelectable> ChecklistItem<T> {
+    pub fn new(item: T) -> Self {
+        let checked = item.fzf_initial_checked_state();
+        Self {
+            display_text: Self::format_display(&item, checked),
+            item,
+            checked,
+        }
+    }
+
+    pub fn toggle(&mut self) {
+        self.checked = !self.checked;
+        self.display_text = Self::format_display(&self.item, self.checked);
+    }
+
+    pub fn set_checked(&mut self, checked: bool) {
+        self.checked = checked;
+        self.display_text = Self::format_display(&self.item, checked);
+    }
+
+    fn format_display(item: &T, checked: bool) -> String {
+        let checkbox = if checked { "☑ " } else { "☐ " };
+        format!("{}{}", checkbox, item.fzf_display_text())
+    }
+}
+
+impl<T: FzfSelectable> FzfSelectable for ChecklistItem<T> {
+    fn fzf_display_text(&self) -> String {
+        self.display_text.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.item.fzf_preview()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.item.fzf_key()
+    }
+
+    fn fzf_initial_checked_state(&self) -> bool {
+        self.checked
+    }
+}
+
+/// Special marker item for checklist confirm action.
+/// Appears at the bottom of the checklist as a distinct option.
+#[derive(Clone)]
+pub struct ChecklistConfirm {
+    pub text: String,
+}
+
+impl ChecklistConfirm {
+    pub fn new(text: &str) -> Self {
+        Self {
+            text: text.to_string(),
+        }
+    }
+
+    /// Special key that identifies this as the confirm action.
+    /// This unique prefix ensures it doesn't collide with real item keys.
+    pub fn confirm_key() -> String {
+        "__CHECKLIST_CONFIRM__".to_string()
+    }
+}
+
+impl FzfSelectable for ChecklistConfirm {
+    fn fzf_display_text(&self) -> String {
+        // Make visually distinct with arrow indicator
+        format!("▶ {}", self.text)
+    }
+
+    fn fzf_key(&self) -> String {
+        Self::confirm_key()
+    }
+
+    fn fzf_initial_checked_state(&self) -> bool {
+        false
+    }
+}
+
+/// Intermediate result from a single checklist iteration.
+/// Used internally during the loop/reload pattern.
+pub(crate) enum ChecklistSelection {
+    Cancelled,
+    Toggled(usize), // Index of item that was toggled
+    Confirmed,      // User selected confirm option
 }
