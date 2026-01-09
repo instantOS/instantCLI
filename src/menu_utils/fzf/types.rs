@@ -251,7 +251,8 @@ impl FzfSelectable for ChecklistConfirm {
 /// Used internally during the loop/reload pattern.
 pub(crate) enum ChecklistSelection {
     Cancelled,           // User pressed Esc/Ctrl-C
-    EmptySelection,      // User pressed Enter with no matches (should ask to discard)
+    EmptyQuery,          // User pressed Enter with empty query (should ask to discard)
+    NotFound,            // User typed a query that doesn't match any item
     Toggled(usize),      // Index of item that was toggled
     Confirmed,           // User selected confirm option
 }

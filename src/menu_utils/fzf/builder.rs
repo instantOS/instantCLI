@@ -749,8 +749,8 @@ impl FzfBuilder {
 
             match result {
                 ChecklistSelection::Cancelled => return Ok(FzfResult::Cancelled),
-                ChecklistSelection::EmptySelection => {
-                    // User pressed Enter with no matches - ask if they want to discard selections
+                ChecklistSelection::EmptyQuery => {
+                    // User pressed Enter with empty query - ask if they want to discard selections
                     // Check if there are any checked items
                     let has_checked = checklist_items.iter().any(|item| item.checked);
 
@@ -769,6 +769,12 @@ impl FzfBuilder {
                         // No checked items, just continue the loop
                         continue;
                     }
+                }
+                ChecklistSelection::NotFound => {
+                    // User typed a query that doesn't match any items
+                    // Show message and continue the loop
+                    FzfWrapper::message("No matching items found")?;
+                    continue;
                 }
                 ChecklistSelection::Toggled(index) => {
                     // Toggle the item at index (if it's a valid item index)
@@ -819,6 +825,7 @@ impl FzfBuilder {
         cmd.arg("--ansi");
         cmd.arg("--tiebreak=index");
         cmd.arg("--layout=reverse");
+        cmd.arg("--print-query"); // Always print the query, even if no match
 
         // Use delimiter to separate display from key
         cmd.arg("--delimiter=\x1f").arg("--with-nth=1");
@@ -884,33 +891,32 @@ impl FzfBuilder {
             return Ok(ChecklistSelection::Cancelled);
         }
 
-        // Handle "no match" exit code (exit code 1 = no matches found)
-        if let Some(1) = exit_code {
-            // User typed something that matched no items and pressed Enter
-            // Check stderr to distinguish from actual errors
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            if stderr.contains("No match") || stderr.is_empty() {
-                return Ok(ChecklistSelection::EmptySelection);
-            }
-            // Otherwise it's a real error
-            log_fzf_failure(&result.stderr, exit_code);
-            return Ok(ChecklistSelection::Cancelled);
-        }
-
-        // Handle other non-zero exit codes as errors
-        if !result.status.success() {
+        // Handle other non-zero exit codes as errors (except code 1 which we handle below)
+        if !result.status.success() && exit_code != Some(1) {
             check_for_old_fzf_and_exit(&result.stderr);
             log_fzf_failure(&result.stderr, exit_code);
             return Ok(ChecklistSelection::Cancelled);
         }
 
         let stdout = String::from_utf8_lossy(&result.stdout);
-        let selected = stdout.trim();
+        let lines: Vec<&str> = stdout.trim_end().split('\n').collect();
 
-        // Exit code 0 but empty stdout - shouldn't normally happen
-        // but handle it gracefully
+        // With --print-query, output is:
+        // Line 1: query (what user typed)
+        // Line 2: selected item (if any)
+
+        let query = lines.first().map(|s| s.trim()).unwrap_or("");
+        let selected = lines.get(1).map(|s| s.trim()).unwrap_or("");
+
+        // No selection - check if query is empty or not
         if selected.is_empty() {
-            return Ok(ChecklistSelection::EmptySelection);
+            if query.is_empty() {
+                // User pressed Enter with empty query
+                return Ok(ChecklistSelection::EmptyQuery);
+            } else {
+                // User typed a query that doesn't match anything
+                return Ok(ChecklistSelection::NotFound);
+            }
         }
 
         // Extract the key from selected line (format: display\x1fkey)
@@ -926,8 +932,8 @@ impl FzfBuilder {
             }
         }
 
-        // If we couldn't parse the selection, treat as cancelled
-        Ok(ChecklistSelection::Cancelled)
+        // Selection doesn't match any of our items - treat as not found
+        Ok(ChecklistSelection::NotFound)
     }
 
     /// Base args with margin and theme, used by other *_args functions.
