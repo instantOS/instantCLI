@@ -2,6 +2,8 @@ use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_f
 use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfResult, FzfWrapper};
+use crate::ui::catppuccin::{colors, fzf_mocha_args, hex_to_ansi_fg};
+use crate::ui::nerd_font::NerdFont;
 use crate::ui::{Level, prelude::*};
 use anyhow::{Result, anyhow, bail};
 use colored::*;
@@ -18,18 +20,82 @@ struct FixableIssue {
 
 impl FzfSelectable for FixableIssue {
     fn fzf_display_text(&self) -> String {
-        format!("{} - {}", self.status, self.name)
+        // Use NerdFont icons in display text (no ANSI codes for reliable matching)
+        let icon = match self.status.as_str() {
+            "FAIL" => NerdFont::CrossCircle,
+            "WARN" => NerdFont::Warning,
+            "ALL" => NerdFont::CheckCircle,
+            _ => NerdFont::Info,
+        };
+
+        // Special handling for "Fix All" option
+        if self.check_id == "__ALL__" {
+            return format!("[{}] {}", char::from(icon), self.name);
+        }
+
+        format!("[{}] {} {}", char::from(icon), self.status, self.name)
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let preview = format!(
-            "Check: {}\nStatus: {}\n\nMessage: {}\n\nFix: {}",
-            self.name,
+        let text_fg = hex_to_ansi_fg(colors::TEXT);
+        let subtext_fg = hex_to_ansi_fg(colors::SUBTEXT0);
+        let mauve_fg = hex_to_ansi_fg(colors::MAUVE);
+        let surface_fg = hex_to_ansi_fg(colors::SURFACE1);
+        let reset = "\x1b[0m";
+
+        // Choose icon and color based on status
+        let (icon, _color) = match self.status.as_str() {
+            "FAIL" => (NerdFont::CrossCircle, colors::RED),
+            "WARN" => (NerdFont::Warning, colors::YELLOW),
+            "ALL" => (NerdFont::CheckCircle, colors::GREEN),
+            _ => (NerdFont::Info, colors::BLUE),
+        };
+
+        // Build formatted preview with proper structure
+        let mut lines = Vec::new();
+
+        // Header with icon and title
+        lines.push(String::new());
+        lines.push(format!(
+            "{mauve_fg}{}  {}{reset} {text_fg}{}{reset}",
+            char::from(icon),
             self.status,
-            self.message,
-            self.fix_message.as_deref().unwrap_or("No fix available")
-        );
-        FzfPreview::Text(preview)
+            self.name
+        ));
+
+        // Separator
+        lines.push(format!("{surface_fg}────────────────────────────────────{reset}"));
+        lines.push(String::new());
+
+        // Status section
+        lines.push(format!(
+            "{text_fg}Current Status:{reset} {subtext_fg}{}{reset}",
+            self.message
+        ));
+
+        // Fix section
+        if let Some(fix_msg) = &self.fix_message {
+            lines.push(String::new());
+            lines.push(format!(
+                "{mauve_fg}Available Fix:{reset}",
+            ));
+            lines.push(format!("{text_fg}{}{reset}", fix_msg));
+        } else if self.check_id != "__ALL__" {
+            lines.push(String::new());
+            lines.push(format!("{subtext_fg}No automatic fix available{reset}"));
+            lines.push(format!("{subtext_fg}Manual intervention may be required{reset}"));
+        }
+
+        // Check ID for reference
+        if self.check_id != "__ALL__" {
+            lines.push(String::new());
+            lines.push(format!(
+                "{surface_fg}ID: {subtext_fg}{}{reset}",
+                self.check_id
+            ));
+        }
+
+        FzfPreview::Text(lines.join("\n"))
     }
 
     fn fzf_key(&self) -> String {
@@ -886,6 +952,7 @@ async fn fix_interactive() -> Result<()> {
         .multi_select(true)
         .prompt("Select issues to fix:")
         .header("System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel")
+        .args(fzf_mocha_args())
         .select(menu_items)?
     {
         FzfResult::MultiSelected(selected) => {
