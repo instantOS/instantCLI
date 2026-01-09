@@ -1,5 +1,6 @@
 use crate::menu_utils::{
-    ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfResult, FzfWrapper, MenuWrapper,
+    ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfResult, FzfWrapper,
+    MenuWrapper,
 };
 use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
@@ -474,7 +475,10 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             }
         }
-        MenuCommands::Checklist { ref items, ref confirm } => {
+        MenuCommands::Checklist {
+            ref items,
+            ref confirm,
+        } => {
             // Parse items or use defaults
             let item_list: Vec<String> = if items.is_empty() {
                 vec![

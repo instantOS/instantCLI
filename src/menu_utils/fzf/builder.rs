@@ -721,9 +721,13 @@ impl FzfBuilder {
         // Create confirm option
         let confirm_item = ChecklistConfirm::new(&confirm_text);
 
+        // Track cursor position across FZF restarts
+        let mut cursor: Option<usize> = None;
+
         loop {
             // Build key-to-index map and input text
-            let mut key_to_index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut key_to_index: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
             let mut input_lines = Vec::new();
 
             for (idx, item) in checklist_items.iter().enumerate() {
@@ -740,8 +744,8 @@ impl FzfBuilder {
 
             let input_text = input_lines.join("\n");
 
-            // Execute FZF with current state
-            let result = self.run_checklist_fzf(&input_text, &key_to_index)?;
+            // Execute FZF with current state and cursor position
+            let result = self.run_checklist_fzf(&input_text, &key_to_index, cursor)?;
 
             match result {
                 ChecklistSelection::Cancelled => return Ok(FzfResult::Cancelled),
@@ -750,6 +754,8 @@ impl FzfBuilder {
                     if let Some(item) = checklist_items.get_mut(index) {
                         item.toggle();
                     }
+                    // Update cursor to stay on this item for next iteration
+                    cursor = Some(index);
                     // Loop continues - FZF will reopen with updated checkboxes
                 }
                 ChecklistSelection::Confirmed => {
@@ -785,6 +791,7 @@ impl FzfBuilder {
         &self,
         input_text: &str,
         key_to_index: &std::collections::HashMap<String, usize>,
+        cursor: Option<usize>,
     ) -> Result<ChecklistSelection> {
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
@@ -808,6 +815,11 @@ impl FzfBuilder {
         // Apply additional args (contains toggle bindings from checklist_args)
         for arg in &self.additional_args {
             cmd.arg(arg);
+        }
+
+        // Apply cursor position to preserve position across FZF restarts
+        if let Some(index) = cursor {
+            cmd.arg("--bind").arg(format!("load:pos({})", index + 1));
         }
 
         // Apply responsive layout if enabled
