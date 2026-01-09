@@ -490,7 +490,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
 
             match FzfWrapper::builder()
                 .prompt("Select items")
-                .header("Use Tab or Enter to toggle items")
+                .header("Enter on item toggles it | Enter on Continue confirms")
                 .checklist(confirm)
                 .checklist_dialog(item_list)?
             {

@@ -718,7 +718,7 @@ impl FzfBuilder {
         let mut checklist_items: Vec<ChecklistItem<T>> =
             items.into_iter().map(ChecklistItem::new).collect();
 
-        // Add confirm option at the end
+        // Create confirm option
         let confirm_item = ChecklistConfirm::new(&confirm_text);
 
         loop {
@@ -733,7 +733,7 @@ impl FzfBuilder {
                 input_lines.push(format!("{}\x1f{}", display, key));
             }
 
-            // Add confirm option
+            // Add confirm option at the end
             let confirm_display = confirm_item.fzf_display_text();
             let confirm_key = confirm_item.fzf_key();
             input_lines.push(format!("{}\x1f{}", confirm_display, confirm_key));
@@ -746,10 +746,11 @@ impl FzfBuilder {
             match result {
                 ChecklistSelection::Cancelled => return Ok(FzfResult::Cancelled),
                 ChecklistSelection::Toggled(index) => {
-                    // Toggle the item at index (ignore confirm option)
+                    // Toggle the item at index (if it's a valid item index)
                     if let Some(item) = checklist_items.get_mut(index) {
                         item.toggle();
                     }
+                    // Loop continues - FZF will reopen with updated checkboxes
                 }
                 ChecklistSelection::Confirmed => {
                     // Collect indices of checked items first
@@ -770,7 +771,7 @@ impl FzfBuilder {
                     let checked: Vec<T> = checklist_items
                         .into_iter()
                         .enumerate()
-                        .filter(|(idx, item)| checked_indices.contains(idx))
+                        .filter(|(idx, _)| checked_indices.contains(idx))
                         .map(|(_, item)| item.item)
                         .collect();
 
@@ -912,10 +913,8 @@ impl FzfBuilder {
     fn checklist_args() -> Vec<String> {
         let mut args = Self::base_args("10%,2%");
         args.push("--height=95%".to_string()); // Give more space for checklist
-        args.push("--bind=ctrl-space:toggle".to_string());
-        args.push("--bind=tab:toggle".to_string());
-        args.push("--bind=enter:toggle".to_string());
-        args.push("--bind=ctrl-r:toggle-all".to_string());
+        // Don't use --multi - we use single-select with loop/reload pattern
+        // No special key bindings needed - use default fzf behavior
         args
     }
 }
