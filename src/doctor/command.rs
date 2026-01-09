@@ -1,10 +1,41 @@
 use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_for_fix};
 use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
-use crate::menu_utils::{ConfirmResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfResult, FzfWrapper};
 use crate::ui::{Level, prelude::*};
 use anyhow::{Result, anyhow, bail};
 use colored::*;
+
+/// Struct representing a fixable issue for FZF menu display
+#[derive(Clone)]
+struct FixableIssue {
+    name: String,
+    check_id: String,
+    status: String, // "FAIL" or "WARN"
+    message: String,
+    fix_message: Option<String>,
+}
+
+impl FzfSelectable for FixableIssue {
+    fn fzf_display_text(&self) -> String {
+        format!("{} - {}", self.status, self.name)
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let preview = format!(
+            "Check: {}\nStatus: {}\n\nMessage: {}\n\nFix: {}",
+            self.name,
+            self.status,
+            self.message,
+            self.fix_message.as_deref().unwrap_or("No fix available")
+        );
+        FzfPreview::Text(preview)
+    }
+
+    fn fzf_key(&self) -> String {
+        self.check_id.clone()
+    }
+}
 
 pub async fn handle_doctor_command(command: Option<DoctorCommands>) -> Result<()> {
     match command {
@@ -14,17 +45,20 @@ pub async fn handle_doctor_command(command: Option<DoctorCommands>) -> Result<()
         Some(DoctorCommands::Fix {
             name,
             all,
+            choose,
             batch_ids,
         }) => {
             if let Some(ids) = batch_ids {
                 // Internal batch mode - fix specific checks (used after escalation)
                 fix_batch_checks(ids).await
+            } else if choose {
+                fix_interactive().await
             } else if all {
                 fix_all_checks().await
             } else if let Some(check_name) = name {
                 fix_single_check(&check_name).await
             } else {
-                bail!("Either --all or a check name must be provided")
+                bail!("Either --all, --choose, or a check name must be provided")
             }
         }
     }
@@ -749,6 +783,16 @@ async fn fix_all_checks() -> Result<()> {
                 None,
             );
 
+            // Show which root-required checks will be fixed
+            for result in &root_required_checks {
+                emit(
+                    Level::Info,
+                    "doctor.fix_all.root_item",
+                    &format!("Will fix: {} ({})", result.name, result.check_id),
+                    None,
+                );
+            }
+
             let check_ids: Vec<String> = root_required_checks
                 .iter()
                 .map(|r| r.check_id.clone())
@@ -781,6 +825,237 @@ async fn fix_all_checks() -> Result<()> {
         emit(
             Level::Error,
             "doctor.fix_all.summary_failure",
+            &format!(
+                "{} Failed to fix: {}",
+                char::from(NerdFont::CrossCircle),
+                total_failure
+            ),
+            None,
+        );
+    }
+
+    Ok(())
+}
+
+/// Interactive fix mode: show menu of fixable issues and apply selected fixes
+async fn fix_interactive() -> Result<()> {
+    // Run all checks to find fixable issues
+    let checks = REGISTRY.all_checks();
+    let results = run_all_checks(checks).await;
+
+    // Filter for fixable issues (FAIL or WARN with fixable=true)
+    let fixable_issues: Vec<_> = results
+        .iter()
+        .filter(|r| {
+            r.status.is_fixable() && (r.status.needs_fix() || r.status.is_warning())
+        })
+        .map(|r| FixableIssue {
+            name: r.name.clone(),
+            check_id: r.check_id.clone(),
+            status: r.status.status_text().to_string(),
+            message: r.status.message().to_string(),
+            fix_message: r.fix_message.clone(),
+        })
+        .collect();
+
+    if fixable_issues.is_empty() {
+        emit(
+            Level::Success,
+            "doctor.fix_choose.none",
+            &format!(
+                "{} No fixable issues found!",
+                char::from(NerdFont::Check)
+            ),
+            None,
+        );
+        return Ok(());
+    }
+
+    // Add "Fix All" option
+    let mut menu_items = vec![FixableIssue {
+        name: format!("Fix All Issues ({})", fixable_issues.len()),
+        check_id: "__ALL__".to_string(),
+        status: "ALL".to_string(),
+        message: "Apply all available fixes".to_string(),
+        fix_message: None,
+    }];
+    menu_items.extend(fixable_issues);
+
+    // Show FZF multi-select menu
+    match FzfWrapper::builder()
+        .multi_select(true)
+        .prompt("Select issues to fix:")
+        .header("System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel")
+        .select(menu_items)?
+    {
+        FzfResult::MultiSelected(selected) => {
+            if selected.is_empty() {
+                emit(
+                    Level::Info,
+                    "doctor.fix_choose.cancelled",
+                    &format!("{} No fixes selected", char::from(NerdFont::Info)),
+                    None,
+                );
+                return Ok(());
+            }
+
+            // Check if "Fix All" was selected
+            let fix_all = selected.iter().any(|i| i.check_id == "__ALL__");
+
+            if fix_all {
+                // Use existing fix_all_checks logic
+                fix_all_checks().await
+            } else {
+                // Fix each selected issue
+                fix_selected_checks(selected).await
+            }
+        }
+        FzfResult::Cancelled => {
+            emit(
+                Level::Info,
+                "doctor.fix_choose.cancelled",
+                &format!(
+                    "{} Fix selection cancelled",
+                    char::from(NerdFont::Info)
+                ),
+                None,
+            );
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Fix a list of selected checks with proper privilege handling
+async fn fix_selected_checks(selected: Vec<FixableIssue>) -> Result<()> {
+    use super::PrivilegeLevel;
+    use sudo::RunningAs;
+
+    let is_root = matches!(sudo::check(), RunningAs::Root);
+
+    // Group by privilege requirement
+    let mut user_only: Vec<String> = Vec::new();
+    let mut root_required: Vec<String> = Vec::new();
+    let mut any_level: Vec<String> = Vec::new();
+
+    for issue in &selected {
+        if let Some(check) = REGISTRY.create_check(&issue.check_id) {
+            match check.fix_privilege_level() {
+                PrivilegeLevel::User => user_only.push(issue.check_id.clone()),
+                PrivilegeLevel::Root => root_required.push(issue.check_id.clone()),
+                PrivilegeLevel::Any => any_level.push(issue.check_id.clone()),
+            }
+        }
+    }
+
+    let mut total_success = 0;
+    let mut total_failure = 0;
+
+    // Fix user-only checks
+    if !user_only.is_empty() {
+        if is_root {
+            emit(
+                Level::Warn,
+                "doctor.fix_choose.skip_user",
+                &format!(
+                    "{} Skipping {} user-only check(s) - must run as regular user",
+                    char::from(NerdFont::Warning),
+                    user_only.len()
+                ),
+                None,
+            );
+        } else {
+            for check_id in user_only {
+                match fix_single_check(&check_id).await {
+                    Ok(()) => total_success += 1,
+                    Err(e) => {
+                        emit(
+                            Level::Error,
+                            "doctor.fix_choose.failed",
+                            &format!("Failed: {}", e),
+                            None,
+                        );
+                        total_failure += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Fix any-level checks
+    if !any_level.is_empty() {
+        for check_id in any_level {
+            match fix_single_check(&check_id).await {
+                Ok(()) => total_success += 1,
+                Err(e) => {
+                    emit(
+                        Level::Error,
+                        "doctor.fix_choose.failed",
+                        &format!("Failed: {}", e),
+                        None,
+                    );
+                    total_failure += 1;
+                }
+            }
+        }
+    }
+
+    // Handle root-required checks
+    if !root_required.is_empty() {
+        if is_root {
+            for check_id in root_required {
+                match fix_check_without_escalation(&check_id).await {
+                    Ok(()) => total_success += 1,
+                    Err(e) => {
+                        emit(
+                            Level::Error,
+                            "doctor.fix_choose.failed",
+                            &format!("Failed: {}", e),
+                            None,
+                        );
+                        total_failure += 1;
+                    }
+                }
+            }
+        } else {
+            // Escalate for root-required checks
+            emit(
+                Level::Info,
+                "doctor.fix_choose.escalate",
+                &format!(
+                    "{} {} check(s) require administrator privileges",
+                    char::from(NerdFont::Warning),
+                    root_required.len()
+                ),
+                None,
+            );
+            escalate_for_fix(root_required)?;
+            unreachable!("Process should restart with sudo");
+        }
+    }
+
+    // Show summary
+    emit(
+        Level::Info,
+        "doctor.fix_choose.summary",
+        "\n=== Summary ===",
+        None,
+    );
+    emit(
+        Level::Success,
+        "doctor.fix_choose.summary_success",
+        &format!(
+            "{} Successfully fixed: {}",
+            char::from(NerdFont::Check),
+            total_success
+        ),
+        None,
+    );
+
+    if total_failure > 0 {
+        emit(
+            Level::Error,
+            "doctor.fix_choose.summary_failure",
             &format!(
                 "{} Failed to fix: {}",
                 char::from(NerdFont::CrossCircle),

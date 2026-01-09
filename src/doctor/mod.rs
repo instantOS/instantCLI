@@ -28,6 +28,9 @@ pub enum DoctorCommands {
         /// Fix all failing checks
         #[arg(long, conflicts_with = "name")]
         all: bool,
+        /// Interactive mode: choose which fixes to apply
+        #[arg(long, conflicts_with = "name", conflicts_with = "all")]
+        choose: bool,
         /// Internal: Comma-separated list of check IDs to fix (used for batch mode after escalation)
         ///
         /// Note: when restarted with sudo, the original `NAME` argument may still be present;

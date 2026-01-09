@@ -16,7 +16,6 @@ use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::sources;
 use crate::settings::store::{BoolSettingKey, PACMAN_AUTOCLEAN_KEY};
 use crate::ui::prelude::*;
-use dialoguer::console::Term;
 
 // ============================================================================
 // About System (uses shell command with read, can't use macro)
@@ -52,17 +51,10 @@ impl Setting for AboutSystem {
 }
 
 // ============================================================================
-// System Doctor (runs ins doctor and shows interactive fix menu)
+// System Doctor (runs ins doctor fix --choose for interactive diagnostics)
 // ============================================================================
 
 pub struct SystemDoctor;
-
-fn press_any_key_to_continue() -> Result<()> {
-    println!();
-    println!("Press any key to continue...");
-    Term::stdout().read_key().context("waiting for key press")?;
-    Ok(())
-}
 
 impl Setting for SystemDoctor {
     fn metadata(&self) -> SettingMetadata {
@@ -85,39 +77,13 @@ impl Setting for SystemDoctor {
             "Running system diagnostics...",
         );
 
-        use crate::settings::doctor_integration;
-
-        // Step 1: Display the full doctor results table and wait for user
-        cmd!(env!("CARGO_BIN_NAME"), "doctor")
+        // Simply call the new doctor fix --choose command
+        // It handles everything: diagnosis, interactive menu, and fixes
+        cmd!(env!("CARGO_BIN_NAME"), "doctor", "fix", "--choose")
             .run()
-            .context("running system doctor")?;
-        press_any_key_to_continue()?;
+            .context("running interactive doctor fix")?;
 
-        // Step 2: Get fixable issues from doctor JSON output
-        let fixable_issues =
-            doctor_integration::run_doctor_checks().context("getting fixable issues")?;
-
-        // Step 3: Show fix menu if there are fixable issues
-        if !fixable_issues.is_empty() {
-            println!(); // Add spacing before menu
-
-            let selected =
-                doctor_integration::show_fix_menu(fixable_issues).context("showing fix menu")?;
-
-            // Step 4: Execute selected fixes via CLI
-            if !selected.is_empty() {
-                doctor_integration::execute_fixes(selected).context("executing fixes")?;
-                press_any_key_to_continue()?;
-
-                ctx.notify(
-                    "System Diagnostics",
-                    "Fixes applied. Run diagnostics again to verify.",
-                );
-            }
-        } else {
-            ctx.notify("System Diagnostics", "No fixable issues found.");
-        }
-
+        ctx.notify("System Diagnostics", "Diagnostic session completed.");
         Ok(())
     }
 }
