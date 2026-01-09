@@ -284,8 +284,17 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
     if let Some(message) = prompt_message {
         FzfWrapper::message(message).context("Failed to show selection prompt")?;
     }
-    let selected = FzfWrapper::select_one(config.games.clone())
+
+    let result = FzfWrapper::builder()
+        .args(crate::ui::catppuccin::fzf_mocha_args())
+        .responsive_layout()
+        .select(config.games.clone())
         .map_err(|e| anyhow::anyhow!("Failed to select game: {}", e))?;
+
+    let selected = match result {
+        FzfResult::Selected(game) => Some(game),
+        _ => None,
+    };
 
     match selected {
         Some(game) => Ok(Some(game.name.0)),
@@ -317,6 +326,8 @@ pub fn select_game_menu_entry() -> Result<Option<GameMenuEntry>> {
     let result = FzfWrapper::builder()
         .header("Game Menu")
         .prompt("Select")
+        .args(crate::ui::catppuccin::fzf_mocha_args())
+        .responsive_layout()
         .select(entries)
         .map_err(|e| anyhow::anyhow!("Failed to select from game menu: {}", e))?;
 

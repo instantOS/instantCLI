@@ -17,6 +17,7 @@ pub struct FzfBuilder {
     dialog_type: DialogType,
     initial_cursor: Option<InitialCursor>,
     initial_query: Option<String>,
+    responsive_layout: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +46,7 @@ impl FzfBuilder {
             dialog_type: DialogType::Selection,
             initial_cursor: None,
             initial_query: None,
+            responsive_layout: false,
         }
     }
 
@@ -84,11 +86,11 @@ impl FzfBuilder {
         self
     }
 
-    /// Enable responsive layout: preview window position adapts to terminal orientation.
-    /// Landscape (width > height) uses right preview, portrait uses bottom preview.
+    /// Enable responsive layout: preview window position adapts to terminal dimensions.
+    /// Uses bottom preview for narrow (< 60 cols) or square-ish (aspect ratio < 2:1) terminals.
+    /// Uses right preview for wide terminals with aspect ratio >= 2:1.
     pub fn responsive_layout(mut self) -> Self {
-        let responsive_args = super::utils::get_responsive_preview_args();
-        self.additional_args.extend(responsive_args);
+        self.responsive_layout = true;
         self
     }
 
@@ -159,6 +161,7 @@ impl FzfBuilder {
             self.header,
             self.additional_args,
             self.initial_cursor,
+            self.responsive_layout,
         );
         wrapper.select(items)
     }
@@ -315,6 +318,14 @@ impl FzfBuilder {
             cmd.arg(arg);
         }
 
+        // Apply responsive layout settings LAST to override defaults
+        // Preview position and margins adapt to terminal dimensions
+        if self.responsive_layout {
+            let layout = super::utils::get_responsive_layout();
+            cmd.arg(layout.preview_window);
+            cmd.arg("--margin").arg(layout.margin);
+        }
+
         cmd
     }
 
@@ -325,6 +336,7 @@ impl FzfBuilder {
             self.header,
             self.additional_args,
             self.initial_cursor,
+            self.responsive_layout,
         );
         wrapper.select_streaming(command)
     }
@@ -657,36 +669,28 @@ impl FzfBuilder {
         Ok(())
     }
 
-    fn default_args() -> Vec<String> {
+    /// Base args with margin and theme, used by other *_args functions.
+    fn base_args(margin: &str) -> Vec<String> {
         let mut args = vec![
             "--margin".to_string(),
-            "10%,2%".to_string(),
+            margin.to_string(),
             "--min-height".to_string(),
             "10".to_string(),
         ];
         args.extend(super::theme::theme_args());
         args
+    }
+
+    fn default_args() -> Vec<String> {
+        Self::base_args("10%,2%")
     }
 
     fn input_args() -> Vec<String> {
-        let mut args = vec![
-            "--margin".to_string(),
-            "20%,2%".to_string(),
-            "--min-height".to_string(),
-            "10".to_string(),
-        ];
-        args.extend(super::theme::theme_args());
-        args
+        Self::base_args("20%,2%")
     }
 
     fn confirm_args() -> Vec<String> {
-        let mut args = vec![
-            "--margin".to_string(),
-            "20%,2%".to_string(),
-            "--min-height".to_string(),
-            "10".to_string(),
-        ];
-        args.extend(super::theme::theme_args());
+        let mut args = Self::base_args("20%,2%");
         args.push("--info=hidden".to_string());
         args.push("--color=header:-1".to_string());
         args
@@ -694,25 +698,5 @@ impl FzfBuilder {
 
     fn password_args() -> Vec<String> {
         vec![]
-    }
-
-    fn theme_args() -> Vec<String> {
-        vec![
-            "--color=bg+:#313244".to_string(),
-            "--color=bg:#1E1E2E".to_string(),
-            "--color=spinner:#F5E0DC".to_string(),
-            "--color=hl:#F38BA8".to_string(),
-            "--color=fg:#CDD6F4".to_string(),
-            "--color=header:#CDD6F4".to_string(),
-            "--color=info:#CBA6F7".to_string(),
-            "--color=pointer:#F5E0DC".to_string(),
-            "--color=marker:#B4BEFE".to_string(),
-            "--color=fg+:#CDD6F4".to_string(),
-            "--color=prompt:#CBA6F7".to_string(),
-            "--color=hl+:#F38BA8".to_string(),
-            "--color=selected-bg:#45475A".to_string(),
-            "--color=border:#6C7086".to_string(),
-            "--color=label:#CDD6F4".to_string(),
-        ]
     }
 }

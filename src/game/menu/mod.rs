@@ -368,6 +368,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 .header(Header::fancy(&format!("Game: {}", name)))
                 .prompt("Select action")
                 .args(fzf_mocha_args())
+                .responsive_layout()
                 .select_padded(actions)?;
 
             let result = match selection {
@@ -421,6 +422,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                         .header(Header::fancy(&format!("Game: {}", game_name)))
                         .prompt("Select action")
                         .args(fzf_mocha_args())
+                        .responsive_layout()
                         .select_padded(actions)?;
 
                     let result = match selection {
@@ -486,6 +488,7 @@ fn show_uninitialized_menu() -> Result<()> {
         .header(Header::fancy("Game save manager is not initialized"))
         .prompt("Select action")
         .args(fzf_mocha_args())
+        .responsive_layout()
         .select_padded(options)?;
 
     match selection {

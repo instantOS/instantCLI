@@ -6,20 +6,55 @@ use crossterm::terminal;
 pub(crate) fn get_terminal_dimensions() -> Option<(u16, u16)> {
     match terminal::size() {
         Ok((cols, rows)) if cols > 0 && rows > 0 => Some((cols, rows)),
-        _ => None,
+        _ => {
+            // Fallback to environment variables
+            let cols = std::env::var("COLUMNS").ok()?.parse::<u16>().ok()?;
+            let rows = std::env::var("LINES").ok()?.parse::<u16>().ok()?;
+            if cols > 0 && rows > 0 {
+                Some((cols, rows))
+            } else {
+                None
+            }
+        }
     }
 }
 
-/// Generate responsive fzf preview window arguments based on terminal orientation.
-/// Returns `right:50%` for landscape (width > height) or `down:50%` for portrait.
-/// Falls back to `right:50%` if terminal dimensions cannot be detected.
-pub(crate) fn get_responsive_preview_args() -> Vec<String> {
-    match get_terminal_dimensions() {
-        Some((cols, rows)) if cols > rows => {
-            vec!["--preview-window".to_string(), "right:50%".to_string()]
+/// Responsive layout settings for fzf based on terminal dimensions.
+pub(crate) struct ResponsiveLayout {
+    /// The preview window argument (e.g., "--preview-window=down:50%")
+    pub preview_window: &'static str,
+    /// The margin argument value (e.g., "2%,2%")
+    pub margin: &'static str,
+}
+
+/// Get the responsive layout settings based on terminal dimensions.
+/// Returns appropriate preview window and margin settings:
+/// - For narrow (<60 cols) or square-ish (aspect ratio <2:1) terminals:
+///   - Preview at bottom, reduced vertical margins (2%) to maximize space
+/// - For wide terminals with aspect ratio >=2:1:
+///   - Preview on right, larger vertical margins (10%) for visual balance
+/// - Falls back to bottom layout if terminal size cannot be detected
+pub(crate) fn get_responsive_layout() -> ResponsiveLayout {
+    if let Some((cols, rows)) = get_terminal_dimensions() {
+        let ratio = cols as f32 / rows as f32;
+        // Use bottom if: too narrow (<60 cols) OR aspect ratio <2:1
+        if cols < 60 || ratio < 2.0 {
+            ResponsiveLayout {
+                preview_window: "--preview-window=down:50%",
+                margin: "2%,2%", // Minimal vertical margins for stacked layout
+            }
+        } else {
+            ResponsiveLayout {
+                preview_window: "--preview-window=right:50%",
+                margin: "10%,2%", // More vertical margin when side-by-side layout allows it
+            }
         }
-        Some(_) => vec!["--preview-window".to_string(), "down:50%".to_string()],
-        None => vec!["--preview-window".to_string(), "right:50%".to_string()],
+    } else {
+        // Fallback to down if terminal size can't be detected - safer for narrow terminals
+        ResponsiveLayout {
+            preview_window: "--preview-window=down:50%",
+            margin: "2%,2%",
+        }
     }
 }
 
@@ -104,4 +139,3 @@ pub(crate) fn extract_icon_padding(display: &str) -> (String, String) {
     // Fallback: just return spaces for padding
     (" ".to_string(), " ".to_string())
 }
-

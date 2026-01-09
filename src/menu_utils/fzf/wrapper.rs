@@ -167,6 +167,7 @@ pub struct FzfWrapper {
     pub(crate) header: Option<String>,
     pub(crate) additional_args: Vec<String>,
     pub(crate) initial_cursor: Option<InitialCursor>,
+    pub(crate) responsive_layout: bool,
 }
 
 impl FzfWrapper {
@@ -180,6 +181,7 @@ impl FzfWrapper {
         header: Option<Header>,
         additional_args: Vec<String>,
         initial_cursor: Option<InitialCursor>,
+        responsive_layout: bool,
     ) -> Self {
         Self {
             multi_select,
@@ -187,6 +189,7 @@ impl FzfWrapper {
             header: header.map(|h| h.to_fzf_string()),
             additional_args,
             initial_cursor,
+            responsive_layout,
         }
     }
 
@@ -208,6 +211,14 @@ impl FzfWrapper {
         }
 
         fzf_args.extend(self.additional_args.clone());
+
+        // Apply responsive layout settings LAST to override defaults
+        if self.responsive_layout {
+            let layout = super::utils::get_responsive_layout();
+            fzf_args.push(layout.preview_window.to_string());
+            fzf_args.push("--margin".to_string());
+            fzf_args.push(layout.margin.to_string());
+        }
 
         let mut cmd = Command::new("sh");
         cmd.arg("-c");
@@ -297,6 +308,13 @@ impl FzfWrapper {
         }
         for arg in &self.additional_args {
             cmd.arg(arg);
+        }
+
+        // Apply responsive layout settings LAST to override defaults
+        if self.responsive_layout {
+            let layout = super::utils::get_responsive_layout();
+            cmd.arg(layout.preview_window);
+            cmd.arg("--margin").arg(layout.margin);
         }
 
         // Execute fzf
