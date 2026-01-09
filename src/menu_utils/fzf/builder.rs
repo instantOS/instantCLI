@@ -749,6 +749,27 @@ impl FzfBuilder {
 
             match result {
                 ChecklistSelection::Cancelled => return Ok(FzfResult::Cancelled),
+                ChecklistSelection::EmptySelection => {
+                    // User pressed Enter with no matches - ask if they want to discard selections
+                    // Check if there are any checked items
+                    let has_checked = checklist_items.iter().any(|item| item.checked);
+
+                    if has_checked {
+                        match FzfWrapper::builder()
+                            .confirm("Discard selections and exit?")
+                            .yes_text("Discard")
+                            .no_text("Keep")
+                            .confirm_dialog()?
+                        {
+                            ConfirmResult::Yes => return Ok(FzfResult::Cancelled),
+                            ConfirmResult::No => continue,
+                            ConfirmResult::Cancelled => continue,
+                        }
+                    } else {
+                        // No checked items, just continue the loop
+                        continue;
+                    }
+                }
                 ChecklistSelection::Toggled(index) => {
                     // Toggle the item at index (if it's a valid item index)
                     if let Some(item) = checklist_items.get_mut(index) {
@@ -854,24 +875,42 @@ impl FzfBuilder {
         result: std::process::Output,
         key_to_index: &std::collections::HashMap<String, usize>,
     ) -> Result<ChecklistSelection> {
-        // Handle cancellation
-        if let Some(code) = result.status.code()
+        let exit_code = result.status.code();
+
+        // Handle cancellation (Esc, Ctrl-C)
+        if let Some(code) = exit_code
             && (code == 130 || code == 143)
         {
             return Ok(ChecklistSelection::Cancelled);
         }
 
+        // Handle "no match" exit code (exit code 1 = no matches found)
+        if let Some(1) = exit_code {
+            // User typed something that matched no items and pressed Enter
+            // Check stderr to distinguish from actual errors
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            if stderr.contains("No match") || stderr.is_empty() {
+                return Ok(ChecklistSelection::EmptySelection);
+            }
+            // Otherwise it's a real error
+            log_fzf_failure(&result.stderr, exit_code);
+            return Ok(ChecklistSelection::Cancelled);
+        }
+
+        // Handle other non-zero exit codes as errors
         if !result.status.success() {
             check_for_old_fzf_and_exit(&result.stderr);
-            log_fzf_failure(&result.stderr, result.status.code());
+            log_fzf_failure(&result.stderr, exit_code);
             return Ok(ChecklistSelection::Cancelled);
         }
 
         let stdout = String::from_utf8_lossy(&result.stdout);
         let selected = stdout.trim();
 
+        // Exit code 0 but empty stdout - shouldn't normally happen
+        // but handle it gracefully
         if selected.is_empty() {
-            return Ok(ChecklistSelection::Cancelled);
+            return Ok(ChecklistSelection::EmptySelection);
         }
 
         // Extract the key from selected line (format: display\x1fkey)
