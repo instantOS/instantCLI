@@ -84,6 +84,14 @@ impl FzfBuilder {
         self
     }
 
+    /// Enable responsive layout: preview window position adapts to terminal orientation.
+    /// Landscape (width > height) uses right preview, portrait uses bottom preview.
+    pub fn responsive_layout(mut self) -> Self {
+        let responsive_args = super::utils::get_responsive_preview_args();
+        self.additional_args.extend(responsive_args);
+        self
+    }
+
     pub fn input(mut self) -> Self {
         self.dialog_type = DialogType::Input;
         self.additional_args = Self::input_args();

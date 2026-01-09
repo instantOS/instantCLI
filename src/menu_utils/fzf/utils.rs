@@ -1,5 +1,28 @@
 //! Utility functions for FZF wrapper
 
+use crossterm::terminal;
+
+/// Get terminal dimensions (columns, rows) using crossterm.
+pub(crate) fn get_terminal_dimensions() -> Option<(u16, u16)> {
+    match terminal::size() {
+        Ok((cols, rows)) if cols > 0 && rows > 0 => Some((cols, rows)),
+        _ => None,
+    }
+}
+
+/// Generate responsive fzf preview window arguments based on terminal orientation.
+/// Returns `right:50%` for landscape (width > height) or `down:50%` for portrait.
+/// Falls back to `right:50%` if terminal dimensions cannot be detected.
+pub(crate) fn get_responsive_preview_args() -> Vec<String> {
+    match get_terminal_dimensions() {
+        Some((cols, rows)) if cols > rows => {
+            vec!["--preview-window".to_string(), "right:50%".to_string()]
+        }
+        Some(_) => vec!["--preview-window".to_string(), "down:50%".to_string()],
+        None => vec!["--preview-window".to_string(), "right:50%".to_string()],
+    }
+}
+
 /// Check if the error indicates an old fzf version and exit if so
 pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
     let stderr_str = String::from_utf8_lossy(stderr);
@@ -82,23 +105,3 @@ pub(crate) fn extract_icon_padding(display: &str) -> (String, String) {
     (" ".to_string(), " ".to_string())
 }
 
-// UNUSED: Consider removing - not used anywhere in the codebase
-/// Strip ANSI escape codes from a string
-pub(crate) fn strip_ansi_codes(s: &str) -> String {
-    let mut result = String::new();
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Skip until we find 'm' (end of color code)
-            while let Some(&next) = chars.peek() {
-                chars.next();
-                if next == 'm' {
-                    break;
-                }
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
