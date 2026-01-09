@@ -1,6 +1,9 @@
 //! Core types and traits for the FZF wrapper
 
+use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 use serde::{Deserialize, Serialize};
+
+const RESET: &str = "\x1b[0m";
 
 /// Preview content for FZF items
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,7 +179,15 @@ impl<T: FzfSelectable> ChecklistItem<T> {
     }
 
     fn format_display(item: &T, checked: bool) -> String {
-        let checkbox = if checked { "☑ " } else { "☐ " };
+        // Use ASCII-only checkbox with ANSI colors
+        // [ ] in dimmed color for unchecked, [x] in green for checked
+        let checkbox = if checked {
+            let green = hex_to_ansi_fg(colors::GREEN);
+            format!("{green}[x]{RESET} ")
+        } else {
+            let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
+            format!("{subtext}[ ]{RESET} ")
+        };
         format!("{}{}", checkbox, item.fzf_display_text())
     }
 }
@@ -222,8 +233,9 @@ impl ChecklistConfirm {
 
 impl FzfSelectable for ChecklistConfirm {
     fn fzf_display_text(&self) -> String {
-        // Make visually distinct with arrow indicator
-        format!("▶ {}", self.text)
+        // Use ASCII arrow instead of nerd font symbol
+        let blue = hex_to_ansi_fg(colors::BLUE);
+        format!("{blue}→ {RESET}{}", self.text)
     }
 
     fn fzf_key(&self) -> String {

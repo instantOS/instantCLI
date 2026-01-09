@@ -479,16 +479,17 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             ref items,
             ref confirm,
         } => {
-            // Parse items or use defaults
+            // Parse items from stdin if empty, otherwise from --items arg
             let item_list: Vec<String> = if items.is_empty() {
-                vec![
-                    "Option A".to_string(),
-                    "Option B".to_string(),
-                    "Option C".to_string(),
-                    "Option D".to_string(),
-                    "Option E".to_string(),
-                ]
+                // Read from stdin (one item per line, like `ins menu choice`)
+                use std::io::{self, Read};
+                let mut buffer = String::new();
+                io::stdin()
+                    .read_to_string(&mut buffer)
+                    .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
+                buffer.lines().map(|s| s.to_string()).collect()
             } else {
+                // Split space-separated items from command line
                 items.split(' ').map(|s| s.to_string()).collect()
             };
 
