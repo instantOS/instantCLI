@@ -603,6 +603,7 @@ impl FzfBuilder {
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
         cmd.arg("--layout").arg("reverse");
+        cmd.arg("--wrap");
 
         if let Some(title) = &title {
             if let Some(header) = &self.header {
