@@ -129,6 +129,30 @@ impl PreviewBuilder {
         self
     }
 
+    /// Add a bold title in the specified color.
+    pub fn title(mut self, color: &str, content: &str) -> Self {
+        let fg = hex_to_ansi_fg(color);
+        let bold = "\x1b[1m";
+        self.lines.push(format!("{bold}{fg}{content}{RESET}"));
+        self
+    }
+
+    /// Add raw text without any coloring.
+    pub fn raw(mut self, content: &str) -> Self {
+        self.lines.push(content.to_string());
+        self
+    }
+
+    /// Add an indented line with icon and color.
+    pub fn indented_line(mut self, color: &str, icon: Option<NerdFont>, content: &str) -> Self {
+        let fg = hex_to_ansi_fg(color);
+        let icon_str = icon
+            .map(|i| format!("{} ", char::from(i)))
+            .unwrap_or_default();
+        self.lines.push(format!("  {fg}{icon_str}{content}{RESET}"));
+        self
+    }
+
     /// Add a bullet list item.
     pub fn bullet(mut self, content: &str) -> Self {
         let text_color = hex_to_ansi_fg(colors::TEXT);

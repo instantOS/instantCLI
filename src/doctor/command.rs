@@ -2,7 +2,7 @@ use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_f
 use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
 use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfResult, FzfWrapper};
-use crate::ui::catppuccin::{colors, fzf_mocha_args, hex_to_ansi_fg};
+use crate::ui::catppuccin::{colors, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::{Level, prelude::*};
 use anyhow::{Result, anyhow, bail};
@@ -38,73 +38,48 @@ impl FzfSelectable for FixableIssue {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let text_fg = hex_to_ansi_fg(colors::TEXT);
-        let subtext_fg = hex_to_ansi_fg(colors::SUBTEXT0);
-        let mauve_fg = hex_to_ansi_fg(colors::MAUVE);
-        let surface_fg = hex_to_ansi_fg(colors::SURFACE1);
-        let reset = "\x1b[0m";
+        use crate::ui::preview::PreviewBuilder;
 
-        // Choose icon and color based on status
-        let (icon, _color) = match self.status.as_str() {
-            "FAIL" => (NerdFont::CrossCircle, colors::RED),
-            "WARN" => (NerdFont::Warning, colors::YELLOW),
-            "ALL" => (NerdFont::CheckCircle, colors::GREEN),
-            "INFO" => (NerdFont::Info, colors::BLUE),
-            _ => (NerdFont::Info, colors::BLUE),
+        // Choose icon based on status
+        let icon = match self.status.as_str() {
+            "FAIL" => NerdFont::CrossCircle,
+            "WARN" => NerdFont::Warning,
+            "ALL" => NerdFont::CheckCircle,
+            "INFO" => NerdFont::Info,
+            _ => NerdFont::Info,
         };
 
-        // Build formatted preview with proper structure
-        let mut lines = Vec::new();
-
-        // Header with icon and title
-        lines.push(String::new());
-        lines.push(format!(
-            "{mauve_fg}{}  {}{reset} {text_fg}{}{reset}",
-            char::from(icon),
-            self.status,
-            self.name
-        ));
-
-        // Separator
-        lines.push(format!("{surface_fg}────────────────────────────────────{reset}"));
-        lines.push(String::new());
+        let mut builder = PreviewBuilder::new()
+            .header(icon, &format!("{} {}", self.status, self.name));
 
         // Status section
         if self.check_id == "__VIEW_ALL__" {
-            lines.push(format!(
-                "{text_fg}{}{reset}",
-                self.message
-            ));
+            builder = builder.text(&self.message);
         } else {
-            lines.push(format!(
-                "{text_fg}Current Status:{reset} {subtext_fg}{}{reset}",
-                self.message
-            ));
+            builder = builder.field("Current Status", &self.message);
 
             // Fix section
             if let Some(fix_msg) = &self.fix_message {
-                lines.push(String::new());
-                lines.push(format!(
-                    "{mauve_fg}Available Fix:{reset}",
-                ));
-                lines.push(format!("{text_fg}{}{reset}", fix_msg));
+                builder = builder
+                    .blank()
+                    .line(colors::MAUVE, None, "Available Fix:")
+                    .text(fix_msg);
             } else if self.check_id != "__ALL__" {
-                lines.push(String::new());
-                lines.push(format!("{subtext_fg}No automatic fix available{reset}"));
-                lines.push(format!("{subtext_fg}Manual intervention may be required{reset}"));
+                builder = builder
+                    .blank()
+                    .subtext("No automatic fix available")
+                    .subtext("Manual intervention may be required");
             }
 
             // Check ID for reference
             if self.check_id != "__ALL__" {
-                lines.push(String::new());
-                lines.push(format!(
-                    "{surface_fg}ID: {subtext_fg}{}{reset}",
-                    self.check_id
-                ));
+                builder = builder
+                    .blank()
+                    .subtext(&format!("ID: {}", self.check_id));
             }
         }
 
-        FzfPreview::Text(lines.join("\n"))
+        builder.build()
     }
 
     fn fzf_key(&self) -> String {
@@ -935,50 +910,23 @@ impl FzfSelectable for ViewableCheck {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let text_fg = hex_to_ansi_fg(colors::TEXT);
-        let subtext_fg = hex_to_ansi_fg(colors::SUBTEXT0);
-        let mauve_fg = hex_to_ansi_fg(colors::MAUVE);
-        let surface_fg = hex_to_ansi_fg(colors::SURFACE1);
-        let reset = "\x1b[0m";
+        use crate::ui::preview::PreviewBuilder;
 
-        // Choose icon and color based on status
-        let (icon, _color) = match self.status.as_str() {
-            "PASS" => (NerdFont::Check, colors::GREEN),
-            "FAIL" => (NerdFont::CrossCircle, colors::RED),
-            "WARN" => (NerdFont::Warning, colors::YELLOW),
-            "SKIP" => (NerdFont::Minus, colors::OVERLAY0),
-            _ => (NerdFont::Info, colors::BLUE),
+        // Choose icon based on status
+        let icon = match self.status.as_str() {
+            "PASS" => NerdFont::Check,
+            "FAIL" => NerdFont::CrossCircle,
+            "WARN" => NerdFont::Warning,
+            "SKIP" => NerdFont::Minus,
+            _ => NerdFont::Info,
         };
 
-        let mut lines = Vec::new();
-
-        // Header with icon and title
-        lines.push(String::new());
-        lines.push(format!(
-            "{mauve_fg}{}  {}{reset} {text_fg}{}{reset}",
-            char::from(icon),
-            self.status,
-            self.name
-        ));
-
-        // Separator
-        lines.push(format!("{surface_fg}────────────────────────────────────{reset}"));
-        lines.push(String::new());
-
-        // Status section
-        lines.push(format!(
-            "{text_fg}Status:{reset} {subtext_fg}{}{reset}",
-            self.message
-        ));
-
-        // Check ID for reference
-        lines.push(String::new());
-        lines.push(format!(
-            "{surface_fg}ID: {subtext_fg}{}{reset}",
-            self.check_id
-        ));
-
-        FzfPreview::Text(lines.join("\n"))
+        PreviewBuilder::new()
+            .header(icon, &format!("{} {}", self.status, self.name))
+            .field("Status", &self.message)
+            .blank()
+            .subtext(&format!("ID: {}", self.check_id))
+            .build()
     }
 
     fn fzf_key(&self) -> String {

@@ -6,7 +6,6 @@ use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
-use colored::*;
 
 /// Menu entry for game selection - can be a game or a special action
 #[derive(Debug, Clone)]
@@ -43,6 +42,8 @@ impl FzfSelectable for GameMenuEntry {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
+        use crate::ui::preview::PreviewBuilder;
+
         match self {
             GameMenuEntry::Game(name) => {
                 // Try to load game for preview
@@ -67,27 +68,31 @@ impl FzfSelectable for GameMenuEntry {
                     _ => FzfPreview::Text(format!("Game: {}", name)),
                 }
             }
-            GameMenuEntry::AddGame => FzfPreview::Text(format!(
-                "{} Add a new game to track.\n\n\
-                    This will guide you through:\n\
-                    • Setting a game name and description\n\
-                    • Configuring the launch command\n\
-                    • Selecting the save data location",
-                char::from(NerdFont::Plus)
-            )),
-            GameMenuEntry::SetupGames => FzfPreview::Text(format!(
-                "{} Configure games that need setup.\n\n\
-                    This helps with:\n\
-                    • Games registered but missing save paths\n\
-                    • Games with pending dependencies\n\
-                    • Restoring games from backups",
-                char::from(NerdFont::Wrench)
-            )),
-            GameMenuEntry::CloseMenu => FzfPreview::Text(format!(
-                "{} Close the game menu.\n\n\
-                    This will exit the interactive game menu and return to the command prompt.",
-                char::from(NerdFont::Cross)
-            )),
+            GameMenuEntry::AddGame => PreviewBuilder::new()
+                .header(NerdFont::Plus, "Add Game")
+                .text("Add a new game to track.")
+                .blank()
+                .text("This will guide you through:")
+                .bullet("Setting a game name and description")
+                .bullet("Configuring the launch command")
+                .bullet("Selecting the save data location")
+                .build(),
+            GameMenuEntry::SetupGames => PreviewBuilder::new()
+                .header(NerdFont::Wrench, "Set Up Existing Games")
+                .text("Configure games that need setup.")
+                .blank()
+                .text("This helps with:")
+                .bullet("Games registered but missing save paths")
+                .bullet("Games with pending dependencies")
+                .bullet("Restoring games from backups")
+                .build(),
+            GameMenuEntry::CloseMenu => PreviewBuilder::new()
+                .header(NerdFont::Cross, "Close Menu")
+                .text("Close the game menu.")
+                .blank()
+                .text("This will exit the interactive game menu")
+                .text("and return to the command prompt.")
+                .build(),
         }
     }
 }
@@ -147,117 +152,109 @@ impl Game {
         launch_command: &Option<String>,
         installation: Option<&crate::game::config::GameInstallation>,
     ) -> String {
-        let mut text = String::new();
+        use crate::ui::catppuccin::colors;
+        use crate::ui::preview::PreviewBuilder;
 
-        // Game name
-        text.push_str(&format!("{}\n", self.name.0.cyan().bold()));
-        text.push('\n');
+        let mut builder = PreviewBuilder::new()
+            .title(colors::SKY, &self.name.0)
+            .blank();
 
         // Description
         if let Some(desc) = description {
-            text.push_str(&format!(" {}\n\n", desc));
+            builder = builder.text(desc).blank();
         }
 
         // Launch command
         if let Some(command) = launch_command {
-            text.push_str(&format!(" Launch: {}\n", command.blue()));
+            builder = builder.line(colors::BLUE, None, &format!("Launch: {}", command));
         }
 
         // Installation information
         if let Some(install) = installation {
-            text.push_str(&format!(
-                "\n{} Installation:\n",
-                char::from(crate::ui::nerd_font::NerdFont::Folder)
-            ));
-
             let path_display = install
                 .save_path
                 .to_tilde_string()
                 .unwrap_or_else(|_| install.save_path.as_path().to_string_lossy().to_string());
 
-            text.push_str(&format!(
-                "  {} Save Path: {}\n",
-                char::from(crate::ui::nerd_font::NerdFont::Folder),
-                path_display.green()
-            ));
+            builder = builder
+                .blank()
+                .line(colors::TEXT, Some(NerdFont::Folder), "Installation:")
+                .indented_line(
+                    colors::GREEN,
+                    Some(NerdFont::Folder),
+                    &format!("Save Path: {}", path_display),
+                );
 
             // Try to get save directory stats
             match get_save_directory_info(install.save_path.as_path()) {
                 Ok(info) => {
                     if info.file_count > 0 {
-                        text.push_str(&format!(
-                            "  {} Local Saves:\n",
-                            char::from(crate::ui::nerd_font::NerdFont::Save)
-                        ));
-                        text.push_str(&format!(
-                            "     • Last modified: {}\n",
-                            format_system_time_for_display(info.last_modified)
-                        ));
-                        text.push_str(&format!("     • Files: {}\n", info.file_count));
-                        text.push_str(&format!(
-                            "     • Total size: {}\n",
-                            format_file_size(info.total_size)
-                        ));
+                        builder = builder
+                            .indented_line(colors::TEXT, Some(NerdFont::Save), "Local Saves:")
+                            .bullet(&format!(
+                                "Last modified: {}",
+                                format_system_time_for_display(info.last_modified)
+                            ))
+                            .bullet(&format!("Files: {}", info.file_count))
+                            .bullet(&format!("Total size: {}", format_file_size(info.total_size)));
                     } else {
-                        text.push_str(&format!(
-                            "  {} Local Saves: No save files found\n",
-                            char::from(crate::ui::nerd_font::NerdFont::Save)
-                        ));
+                        builder = builder.indented_line(
+                            colors::SUBTEXT0,
+                            Some(NerdFont::Save),
+                            "Local Saves: No save files found",
+                        );
                     }
                 }
                 Err(_) => {
-                    text.push_str(&format!(
-                        "  {} Local Saves: Unable to analyze\n",
-                        char::from(crate::ui::nerd_font::NerdFont::Save)
-                    ));
+                    builder = builder.indented_line(
+                        colors::SUBTEXT0,
+                        Some(NerdFont::Save),
+                        "Local Saves: Unable to analyze",
+                    );
                 }
             }
 
             // Dependencies count
             if !install.dependencies.is_empty() {
-                text.push_str(&format!(
-                    "  {} Dependencies: {}\n",
-                    char::from(crate::ui::nerd_font::NerdFont::Package),
-                    install.dependencies.len()
-                ));
+                builder = builder.indented_line(
+                    colors::TEXT,
+                    Some(NerdFont::Package),
+                    &format!("Dependencies: {}", install.dependencies.len()),
+                );
             }
 
             // Checkpoint info
             if let Some(checkpoint) = &install.nearest_checkpoint {
-                text.push_str(&format!(
-                    "  {} Checkpoint: {}\n",
-                    char::from(crate::ui::nerd_font::NerdFont::Flag),
-                    checkpoint
-                ));
+                builder = builder.indented_line(
+                    colors::TEXT,
+                    Some(NerdFont::Flag),
+                    &format!("Checkpoint: {}", checkpoint),
+                );
             }
         } else {
-            text.push_str(&format!(
-                "\n{} No installation data found\n",
-                char::from(crate::ui::nerd_font::NerdFont::Warning)
-            ));
+            builder = builder
+                .blank()
+                .line(colors::YELLOW, Some(NerdFont::Warning), "No installation data found");
         }
 
         // Game dependencies (from game config)
         if !self.dependencies.is_empty() {
-            text.push_str(&format!(
-                "\n{} Configured Dependencies: {}\n",
-                char::from(crate::ui::nerd_font::NerdFont::Package),
-                self.dependencies.len()
-            ));
+            builder = builder.blank().line(
+                colors::TEXT,
+                Some(NerdFont::Package),
+                &format!("Configured Dependencies: {}", self.dependencies.len()),
+            );
+
             for dep in self.dependencies.iter().take(3) {
-                // Show first 3 dependencies
-                text.push_str(&format!(
-                    "  • {} ({})\n",
-                    dep.id,
-                    kind_label(dep.source_type)
-                ));
+                builder = builder.bullet(&format!("{} ({})", dep.id, kind_label(dep.source_type)));
             }
+
             if self.dependencies.len() > 3 {
-                text.push_str(&format!("  ... and {} more\n", self.dependencies.len() - 3));
+                builder = builder.subtext(&format!("  ... and {} more", self.dependencies.len() - 3));
             }
         }
 
-        text
+        builder.build_string()
     }
 }
 
