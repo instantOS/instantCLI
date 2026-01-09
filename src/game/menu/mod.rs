@@ -12,9 +12,7 @@ use crate::game::operations::launch_game;
 use crate::game::restic;
 use crate::game::setup;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
-use crate::ui::catppuccin::{
-    colors, format_back_icon, format_icon_colored, fzf_mocha_args,
-};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 
 use state::EditState;

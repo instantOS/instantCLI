@@ -196,7 +196,10 @@ impl Game {
                                 format_system_time_for_display(info.last_modified)
                             ))
                             .bullet(&format!("Files: {}", info.file_count))
-                            .bullet(&format!("Total size: {}", format_file_size(info.total_size)));
+                            .bullet(&format!(
+                                "Total size: {}",
+                                format_file_size(info.total_size)
+                            ));
                     } else {
                         builder = builder.indented_line(
                             colors::SUBTEXT0,
@@ -232,9 +235,11 @@ impl Game {
                 );
             }
         } else {
-            builder = builder
-                .blank()
-                .line(colors::YELLOW, Some(NerdFont::Warning), "No installation data found");
+            builder = builder.blank().line(
+                colors::YELLOW,
+                Some(NerdFont::Warning),
+                "No installation data found",
+            );
         }
 
         // Game dependencies (from game config)
@@ -250,7 +255,8 @@ impl Game {
             }
 
             if self.dependencies.len() > 3 {
-                builder = builder.subtext(&format!("  ... and {} more", self.dependencies.len() - 3));
+                builder =
+                    builder.subtext(&format!("  ... and {} more", self.dependencies.len() - 3));
             }
         }
 

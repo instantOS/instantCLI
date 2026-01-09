@@ -18,7 +18,9 @@ use super::utils::{check_for_old_fzf_and_exit, log_fzf_failure};
 // ============================================================================
 
 /// Build a lookup map from fzf_key to item, and collect display lines with keys.
-fn build_item_map<T: FzfSelectable + Clone>(items: &[T]) -> (HashMap<String, T>, Vec<(String, String)>) {
+fn build_item_map<T: FzfSelectable + Clone>(
+    items: &[T],
+) -> (HashMap<String, T>, Vec<(String, String)>) {
     let mut item_map: HashMap<String, T> = HashMap::new();
     let mut display_with_keys = Vec::new();
 
@@ -64,8 +66,10 @@ fn configure_preview_and_input(
         }
         PreviewStrategy::Command(command) => {
             // Use literal \x1f character for POSIX compatibility (works in dash/sh)
-            cmd.arg("--preview")
-                .arg(format!("{} bash \"$(echo {{}} | cut -d'\x1f' -f2)\"", command));
+            cmd.arg("--preview").arg(format!(
+                "{} bash \"$(echo {{}} | cut -d'\x1f' -f2)\"",
+                command
+            ));
 
             // Format: display\x1fkey
             display_with_keys
@@ -288,7 +292,8 @@ impl FzfWrapper {
         let (item_map, display_with_keys) = build_item_map(&items);
 
         // Calculate initial cursor position
-        let cursor_position = calculate_cursor_position(&self.initial_cursor, display_with_keys.len());
+        let cursor_position =
+            calculate_cursor_position(&self.initial_cursor, display_with_keys.len());
 
         // Analyze preview strategy and build input text
         let preview_strategy = PreviewUtils::analyze_preview_strategy(&items)?;

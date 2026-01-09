@@ -50,8 +50,16 @@ impl FzfSelectable for ManageMenuItem {
 
                 let mut builder = PreviewBuilder::new()
                     .header(NerdFont::User, username)
-                    .line(colors::TEAL, Some(NerdFont::Tag), &format!("Status: {}", status))
-                    .line(colors::TEAL, Some(NerdFont::Terminal), &format!("Shell: {}", shell))
+                    .line(
+                        colors::TEAL,
+                        Some(NerdFont::Tag),
+                        &format!("Status: {}", status),
+                    )
+                    .line(
+                        colors::TEAL,
+                        Some(NerdFont::Terminal),
+                        &format!("Shell: {}", shell),
+                    )
                     .blank()
                     .separator()
                     .blank();

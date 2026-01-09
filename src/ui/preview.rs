@@ -60,8 +60,7 @@ impl PreviewBuilder {
         let surface = hex_to_ansi_fg(colors::SURFACE1);
         self.lines
             .push(format!("{mauve}{}  {title}{RESET}", char::from(icon)));
-        self.lines
-            .push(format!("{surface}{SEPARATOR}{RESET}"));
+        self.lines.push(format!("{surface}{SEPARATOR}{RESET}"));
         self.lines.push(String::new());
         self
     }
@@ -86,8 +85,9 @@ impl PreviewBuilder {
     pub fn field(mut self, label: &str, value: &str) -> Self {
         let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
         let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.lines
-            .push(format!("{subtext}{label}:{RESET} {text_color}{value}{RESET}"));
+        self.lines.push(format!(
+            "{subtext}{label}:{RESET} {text_color}{value}{RESET}"
+        ));
         self
     }
 
@@ -95,8 +95,9 @@ impl PreviewBuilder {
     pub fn field_indented(mut self, label: &str, value: &str) -> Self {
         let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
         let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.lines
-            .push(format!("  {subtext}{label}:{RESET} {text_color}{value}{RESET}"));
+        self.lines.push(format!(
+            "  {subtext}{label}:{RESET} {text_color}{value}{RESET}"
+        ));
         self
     }
 
@@ -156,8 +157,7 @@ impl PreviewBuilder {
     /// Add a bullet list item.
     pub fn bullet(mut self, content: &str) -> Self {
         let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.lines
-            .push(format!("{text_color}  • {content}{RESET}"));
+        self.lines.push(format!("{text_color}  • {content}{RESET}"));
         self
     }
 

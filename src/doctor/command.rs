@@ -1,7 +1,7 @@
 use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_for_fix};
 use super::registry::REGISTRY;
 use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
-use crate::menu_utils::{ConfirmResult, FzfPreview, FzfSelectable, FzfResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::catppuccin::{colors, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::{Level, prelude::*};
@@ -25,13 +25,23 @@ impl FzfSelectable for FixableIssue {
         // Menu action items use styled icon badges
         match self.check_id.as_str() {
             "__VIEW_ALL__" => {
-                format!("{} View All Check Results", format_icon_colored(NerdFont::List, colors::BLUE))
+                format!(
+                    "{} View All Check Results",
+                    format_icon_colored(NerdFont::List, colors::BLUE)
+                )
             }
             "__ALL__" => {
-                format!("{} {}", format_icon_colored(NerdFont::Wrench, colors::GREEN), self.name)
+                format!(
+                    "{} {}",
+                    format_icon_colored(NerdFont::Wrench, colors::GREEN),
+                    self.name
+                )
             }
             "__CLOSE__" => {
-                format!("{} Close", format_icon_colored(NerdFont::Cross, colors::OVERLAY1))
+                format!(
+                    "{} Close",
+                    format_icon_colored(NerdFont::Cross, colors::OVERLAY1)
+                )
             }
             _ => {
                 // Regular fixable issues with status indicator
@@ -40,7 +50,12 @@ impl FzfSelectable for FixableIssue {
                     "WARN" => (NerdFont::Warning, colors::YELLOW),
                     _ => (NerdFont::Info, colors::BLUE),
                 };
-                format!("{} {} {}", format_icon_colored(icon, color), self.status, self.name)
+                format!(
+                    "{} {} {}",
+                    format_icon_colored(icon, color),
+                    self.status,
+                    self.name
+                )
             }
         }
     }
@@ -57,8 +72,8 @@ impl FzfSelectable for FixableIssue {
             _ => NerdFont::Info,
         };
 
-        let mut builder = PreviewBuilder::new()
-            .header(icon, &format!("{} {}", self.status, self.name));
+        let mut builder =
+            PreviewBuilder::new().header(icon, &format!("{} {}", self.status, self.name));
 
         // Status section
         if self.check_id == "__VIEW_ALL__" {
@@ -81,9 +96,7 @@ impl FzfSelectable for FixableIssue {
 
             // Check ID for reference
             if self.check_id != "__ALL__" {
-                builder = builder
-                    .blank()
-                    .subtext(&format!("ID: {}", self.check_id));
+                builder = builder.blank().subtext(&format!("ID: {}", self.check_id));
             }
         }
 
@@ -972,9 +985,7 @@ async fn fix_interactive() -> Result<()> {
     // Filter for fixable issues (FAIL or WARN with fixable=true)
     let fixable_issues: Vec<_> = results
         .iter()
-        .filter(|r| {
-            r.status.is_fixable() && (r.status.needs_fix() || r.status.is_warning())
-        })
+        .filter(|r| r.status.is_fixable() && (r.status.needs_fix() || r.status.is_warning()))
         .map(|r| FixableIssue {
             name: r.name.clone(),
             check_id: r.check_id.clone(),
