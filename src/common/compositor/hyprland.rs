@@ -79,7 +79,11 @@ impl Hyprland {
         // Wait for window
         let mut attempts = 0;
         while attempts < 30 {
-            if window_exists(&window_class)? {
+            if let Some(client) = get_client_by_class(&window_class)? {
+                let expected_workspace = format!("special:{}", workspace_name);
+                if client.workspace.name != expected_workspace {
+                    move_window_to_special(&client.address, &workspace_name)?;
+                }
                 return Ok(());
             }
             std::thread::sleep(std::time::Duration::from_millis(200));
@@ -93,6 +97,7 @@ impl Hyprland {
 /// Client information from hyprctl clients -j
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct HyprlandClient {
+    pub address: String,
     pub class: String,
     pub title: String,
     pub workspace: HyprlandWorkspace,
@@ -104,6 +109,52 @@ struct HyprlandClient {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct HyprlandWorkspace {
     pub name: String,
+}
+
+/// Get client info by class
+pub fn get_client_by_class(window_class: &str) -> Result<Option<HyprlandClient>> {
+    let output = Command::new("hyprctl")
+        .args(["clients", "-j"])
+        .output()
+        .context("Failed to execute hyprctl clients")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!("hyprctl clients failed: {}", stderr));
+    }
+
+    let clients: Vec<HyprlandClient> = serde_json::from_slice(&output.stdout)
+        .context("Failed to parse hyprctl clients JSON output")?;
+
+    for client in clients.into_iter() {
+        if client.class == window_class {
+            return Ok(Some(client));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Move window to special workspace
+pub fn move_window_to_special(address: &str, workspace_name: &str) -> Result<()> {
+    let output = Command::new("hyprctl")
+        .args([
+            "dispatch",
+            "movetoworkspacesilent",
+            &format!("special:{},address:{}", workspace_name, address),
+        ])
+        .output()
+        .context("Failed to execute hyprctl dispatch movetoworkspacesilent")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!(
+            "Failed to move window to special workspace: {}",
+            stderr
+        ));
+    }
+
+    Ok(())
 }
 
 /// Check if a window with specific class exists in Hyprland using hyprctl
