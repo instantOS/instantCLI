@@ -24,7 +24,9 @@ pub(crate) enum PreviewStrategy {
     Text(HashMap<String, String>),
     /// Single command executed by FZF with key substitution
     Command(String),
-    /// Mixed - each item has different preview (fallback to text encoding)
+    /// Each item has its own command preview (stored as shell commands to execute)
+    CommandPerItem(HashMap<String, String>),
+    /// Mixed text and command previews (fallback to text encoding)
     Mixed(HashMap<String, String>),
 }
 
@@ -43,7 +45,7 @@ impl PreviewUtils {
 
         for item in items {
             let display = item.fzf_display_text();
-            let key = item.fzf_key();
+            let _key = item.fzf_key();
 
             match item.fzf_preview() {
                 FzfPreview::Text(text) => {
@@ -59,9 +61,8 @@ impl PreviewUtils {
                     } else {
                         first_command = Some(cmd.clone());
                     }
-                    // For command previews, we'll pass the key (usually MIME type) to the command
-                    // The command should use $1 to reference it
-                    text_map.insert(display.clone(), key);
+                    // Store the actual command for per-item command execution
+                    text_map.insert(display.clone(), cmd);
                 }
                 FzfPreview::None => {
                     // No preview for this item
@@ -76,12 +77,14 @@ impl PreviewUtils {
             // All items use the same command - optimal case!
             // We can use a single --preview command with {} substitution
             Ok(PreviewStrategy::Command(first_command.unwrap()))
+        } else if has_command && !has_text && !all_same_command {
+            // Each item has a different command - store commands to execute
+            Ok(PreviewStrategy::CommandPerItem(text_map))
         } else if !has_command && has_text {
             // All text previews - use existing base64 approach
             Ok(PreviewStrategy::Text(text_map))
         } else {
-            // Mixed or multiple different commands - fall back to text encoding
-            // For commands, we store the key to pass to a wrapper script
+            // Mixed text and command previews - fall back to text encoding
             Ok(PreviewStrategy::Mixed(text_map))
         }
     }

@@ -35,8 +35,12 @@ pub fn search_man_pages() -> Result<()> {
         .into_iter()
         .map(|page| SerializableMenuItem {
             display_text: page.clone(),
+            // Use bat for pretty man page preview with colors and syntax highlighting
+            // Falls back to plain man output if bat is unavailable
             preview: FzfPreview::Command(format!(
-                "man -f {} 2>/dev/null || echo 'Manual page'",
+                "MANWIDTH=${{FZF_PREVIEW_COLUMNS:-80}} man {} 2>/dev/null | \
+                 (bat --language=man --color=always --style=plain 2>/dev/null || col -bx) | \
+                 head -500",
                 shell_quote(&page)
             )),
             metadata: None,

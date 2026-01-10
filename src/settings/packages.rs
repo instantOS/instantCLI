@@ -97,11 +97,11 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
             "--preview",
             &preview_cmd,
             "--preview-window",
-            "down:40%:wrap",  // Smaller preview for more item space
+            "down:40%:wrap", // Smaller preview for more item space
             "--layout",
-            "reverse-list",  // More compact, dense layout for many items
+            "reverse-list", // More compact, dense layout for many items
             "--height",
-            "90%",  // Use most of the screen
+            "90%", // Use most of the screen
             "--bind",
             "ctrl-l:clear-screen",
             "--ansi",
@@ -380,11 +380,11 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
             "--preview",
             preview_cmd,
             "--preview-window",
-            "down:40%:wrap",  // Smaller preview for more item space
+            "down:40%:wrap", // Smaller preview for more item space
             "--layout",
-            "reverse-list",  // More compact, dense layout for many items
+            "reverse-list", // More compact, dense layout for many items
             "--height",
-            "90%",  // Use most of the screen
+            "90%", // Use most of the screen
             "--bind",
             "ctrl-l:clear-screen",
             "--ansi",

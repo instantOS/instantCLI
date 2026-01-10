@@ -48,8 +48,8 @@ impl CategoryNode {
 pub fn category_tree(category: Category) -> Vec<CategoryNode> {
     use crate::settings::definitions::{
         appearance, apps, brightness, desktop, display, flatpak, installed_packages, keyboard,
-        language, mouse, network, packages, printers, storage, swap_escape, system, toggles,
-        users, wiremix,
+        language, mouse, network, packages, printers, storage, swap_escape, system, toggles, users,
+        wiremix,
     };
 
     match category {

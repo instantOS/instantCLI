@@ -195,17 +195,11 @@ macro_rules! tui_command_setting {
                 let result = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::try_current()
                         .context("No tokio runtime available")?
-                        .block_on($crate::common::terminal::run_tui_program(
-                            $command,
-                            &[],
-                        ))
+                        .block_on($crate::common::terminal::run_tui_program($command, &[]))
                 })?;
 
                 if result {
-                    ctx.emit_success(
-                        "settings.command.completed",
-                        &format!("Exited {}", $title),
-                    );
+                    ctx.emit_success("settings.command.completed", &format!("Exited {}", $title));
                 } else {
                     ctx.emit_info(
                         "settings.command.cancelled",

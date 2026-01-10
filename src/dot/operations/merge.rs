@@ -112,7 +112,9 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
             (true, true) => {
                 // Best case: user merged changes into source, files now match
                 // Auto-stage the file
-                if let Err(e) = crate::dot::git::repo_ops::git_add(&repo_path, &dotfile.source_path, false) {
+                if let Err(e) =
+                    crate::dot::git::repo_ops::git_add(&repo_path, &dotfile.source_path, false)
+                {
                     emit(
                         Level::Warn,
                         "dot.merge.stage_failed",
@@ -153,7 +155,9 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
             (false, true) => {
                 // User edited source but files still differ
                 // Auto-stage so their work isn't lost
-                if let Err(e) = crate::dot::git::repo_ops::git_add(&repo_path, &dotfile.source_path, false) {
+                if let Err(e) =
+                    crate::dot::git::repo_ops::git_add(&repo_path, &dotfile.source_path, false)
+                {
                     emit(
                         Level::Warn,
                         "dot.merge.stage_failed",

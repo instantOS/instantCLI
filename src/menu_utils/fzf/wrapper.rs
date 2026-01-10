@@ -78,6 +78,23 @@ fn configure_preview_and_input(
                 .collect::<Vec<_>>()
                 .join("\n")
         }
+        PreviewStrategy::CommandPerItem(command_map) => {
+            // Each item has its own command - base64 encode and execute via sh
+            // Preview extracts field 3, decodes, and executes as shell command
+            cmd.arg("--preview")
+                .arg("echo {} | cut -d'\x1f' -f3 | base64 -d | sh");
+
+            // Format: display\x1fkey\x1fbase64_command
+            display_with_keys
+                .iter()
+                .map(|(display, key)| {
+                    let command = command_map.get(display).cloned().unwrap_or_default();
+                    let encoded = general_purpose::STANDARD.encode(command.as_bytes());
+                    format!("{display}\x1f{key}\x1f{encoded}")
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
         PreviewStrategy::Text(preview_map) | PreviewStrategy::Mixed(preview_map) => {
             // Use field 3 for base64-encoded preview
             // Use literal \x1f character for POSIX compatibility
