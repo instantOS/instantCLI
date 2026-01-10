@@ -12,6 +12,7 @@
 use crate::doctor::{CheckStatus, DoctorCheck, PrivilegeLevel};
 
 pub mod display;
+pub mod energy;
 pub mod locale;
 pub mod nerdfont;
 pub mod network;
@@ -22,6 +23,7 @@ pub mod tools;
 
 // Re-export all check types for easy access
 pub use display::SwayDisplayCheck;
+pub use energy::PowerCheck;
 pub use locale::LocaleCheck;
 pub use nerdfont::NerdFontCheck;
 pub use network::{InstantRepoCheck, InternetCheck};
