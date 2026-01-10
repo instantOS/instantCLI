@@ -55,23 +55,46 @@ pub fn launch_script_in_terminal(script: &str, title: &str) -> Result<()> {
 ///
 /// Shows the user a menu after installation completes, allowing them to either
 /// close the terminal or keep it open for review. Uses `ins menu` for the prompt.
+///
+/// If installation fails (e.g., due to network errors or package repo issues),
+/// the error is displayed and the user is prompted before the terminal closes.
 pub fn run_installation_in_terminal(install_command: &str, title: &str) -> Result<ExitStatus> {
     use tempfile::NamedTempFile;
 
     let binary = current_exe()?;
 
-    // Wrap the installation with a post-execution menu using ins menu
+    // Wrap the installation with proper error handling and post-execution menu
+    // NOTE: We intentionally do NOT use set -e, so we can capture the exit status
+    // and show errors to the user before the terminal closes
     let wrapped_script = format!(
         r#"#!/usr/bin/env bash
-set -e
 
-# Run installation
+# Run installation and capture exit status
 {}
+install_exit_code=$?
+
+if [ $install_exit_code -ne 0 ]; then
+    # Installation failed - show error and wait for user acknowledgment
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "⚠ Installation Failed (exit code: $install_exit_code)"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Please review the error messages above."
+    echo "Common causes:"
+    echo "  • No internet connection"
+    echo "  • Package repository misconfigured"
+    echo "  • Package not found"
+    echo "  • Insufficient permissions"
+    echo ""
+    read -p "Press Enter to close this terminal..."
+    exit $install_exit_code
+fi
 
 # Post-installation menu using ins menu choice
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Installation Complete"
+echo "✓ Installation Complete"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
