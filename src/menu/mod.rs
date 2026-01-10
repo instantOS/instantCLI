@@ -496,6 +496,7 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
             match FzfWrapper::builder()
                 .prompt("Select items")
                 .header("Enter on item toggles it | Enter on Continue confirms")
+                .initial_index(item_list.len().saturating_sub(1))
                 .checklist(confirm)
                 .checklist_dialog(item_list)?
             {

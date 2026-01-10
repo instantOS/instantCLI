@@ -1,11 +1,24 @@
 use super::SettingsContext;
+use crate::common::distro::OperatingSystem;
 use crate::menu_utils::{FzfResult, FzfWrapper};
 use anyhow::{Context, Result};
 use std::process::Command;
 
 /// Run the interactive package installer as a settings action
+/// This dispatches to the appropriate package manager based on the detected OS.
 pub fn run_package_installer_action(ctx: &mut SettingsContext) -> Result<()> {
-    run_unified_package_installer(ctx.debug())
+    let os = OperatingSystem::detect();
+
+    if os.is_arch_based() {
+        run_unified_package_installer(ctx.debug())
+    } else if os.is_debian_based() {
+        run_debian_package_installer(ctx.debug())
+    } else {
+        anyhow::bail!(
+            "Package installer not supported on this system ({})",
+            os.name()
+        )
+    }
 }
 
 /// Package source enumeration
@@ -191,26 +204,15 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
 fn detect_aur_helper() -> Option<String> {
     const AUR_HELPERS: &[&str] = &["yay", "paru", "pikaur", "trizen"];
 
-    for helper in AUR_HELPERS {
-        if Command::new("which")
-            .arg(helper)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-        {
-            return Some(helper.to_string());
-        }
-    }
-    None
+    AUR_HELPERS
+        .iter()
+        .find(|&&helper| which::which(helper).is_ok())
+        .map(|&s| s.to_string())
 }
 
 /// Check if pacman is available on the system
 fn is_pacman_available() -> bool {
-    Command::new("which")
-        .arg("pacman")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+    which::which("pacman").is_ok()
 }
 
 /// Install pacman packages
@@ -265,6 +267,198 @@ fn install_aur_packages(packages: &[String], aur_helper: &str, debug: bool) -> R
 
     if !status.success() {
         anyhow::bail!("AUR package installation failed");
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Debian/Ubuntu Package Installer
+// ============================================================================
+
+/// Check if apt is available on the system
+fn is_apt_available() -> bool {
+    which::which("apt").is_ok()
+}
+
+/// Check if running on Termux
+fn is_termux() -> bool {
+    std::env::var("TERMUX_VERSION").is_ok()
+}
+
+/// Check if pkg (Termux package manager) is available
+fn is_pkg_available() -> bool {
+    which::which("pkg").is_ok()
+}
+
+/// Install apt/pkg packages
+fn install_apt_packages(packages: &[String], debug: bool) -> Result<()> {
+    if packages.is_empty() {
+        return Ok(());
+    }
+
+    if debug {
+        println!("Installing apt packages: {}", packages.join(" "));
+    }
+
+    let is_termux = is_termux();
+    println!(
+        "Installing {}packages...",
+        if is_termux { "" } else { "repository " }
+    );
+
+    let status = if is_termux {
+        // Termux: no sudo needed, use pkg
+        Command::new("pkg")
+            .arg("install")
+            .arg("-y")
+            .args(packages)
+            .status()
+            .context("Failed to execute pkg")?
+    } else {
+        // Debian/Ubuntu: use sudo apt
+        Command::new("sudo")
+            .arg("apt")
+            .arg("install")
+            .arg("-y")
+            .args(packages)
+            .status()
+            .context("Failed to execute apt")?
+    };
+
+    if !status.success() {
+        anyhow::bail!("Package installation failed");
+    }
+
+    Ok(())
+}
+
+/// Run the unified Debian/Ubuntu package installer
+fn run_debian_package_installer(debug: bool) -> Result<()> {
+    if debug {
+        println!("Starting Debian package installer...");
+    }
+
+    let termux = is_termux();
+    let has_apt = is_apt_available();
+    let has_pkg = is_pkg_available();
+
+    // Validate package manager availability
+    if termux {
+        if !has_pkg {
+            anyhow::bail!("pkg is not available on this Termux system");
+        }
+    } else if !has_apt {
+        anyhow::bail!("apt is not available on this system");
+    }
+
+    // Construct the list command
+    // Format output as: "[apt] package-name - description"
+    // Use apt-cache search for both Termux and Debian/Ubuntu for consistent format
+    // Use "." as the search pattern to match all packages (empty string causes regex error)
+    let list_cmd = "apt-cache search . 2>/dev/null | grep -v '^$' | sed 's/^/[apt] /'";
+
+    // Preview command: apt show works on both
+    // {2} refers to the second field after splitting by space (the package name)
+    let preview_cmd = "apt show {2} 2>/dev/null";
+
+    // FZF prompt customization
+    let prompt = if termux {
+        "Select Termux packages to install"
+    } else {
+        "Select packages to install"
+    };
+
+    let result = FzfWrapper::builder()
+        .multi_select(true)
+        .prompt(prompt)
+        .args([
+            "--preview",
+            preview_cmd,
+            "--preview-window",
+            "down:65%:wrap",
+            "--bind",
+            "ctrl-l:clear-screen",
+            "--ansi",
+            "--no-mouse",
+            // Split by space: [apt] package-name - description
+            // Field 0 = [apt], Field 1 = package-name, rest = - description
+            "--delimiter",
+            " ",
+            "--with-nth",
+            "1..", // Show from field 1 onwards (package-name - description)
+        ])
+        .select_streaming(list_cmd)
+        .context("Failed to run package selector")?;
+
+    match result {
+        FzfResult::MultiSelected(lines) => {
+            if lines.is_empty() {
+                println!("No packages selected.");
+                return Ok(());
+            }
+
+            // Parse package names from format: "[apt] package-name - description"
+            let packages: Vec<String> = lines
+                .iter()
+                .filter_map(|line| {
+                    // Strip "[apt] " prefix and get package name (before " - ")
+                    line.strip_prefix("[apt] ")
+                        .and_then(|rest| rest.split(" - ").next())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+
+            if packages.is_empty() {
+                println!("No valid packages selected.");
+                return Ok(());
+            }
+
+            if debug {
+                println!("Selected packages: {:?}", packages);
+            }
+
+            // Confirm installation
+            let confirm_msg = format!(
+                "Install {} package{}?",
+                packages.len(),
+                if packages.len() == 1 { "" } else { "s" }
+            );
+
+            let confirm = FzfWrapper::builder()
+                .confirm(&confirm_msg)
+                .show_confirmation()?;
+
+            if !matches!(confirm, crate::menu_utils::ConfirmResult::Yes) {
+                println!("Installation cancelled.");
+                return Ok(());
+            }
+
+            install_apt_packages(&packages, debug)?;
+
+            println!("✓ Package installation completed successfully!");
+        }
+        FzfResult::Selected(line) => {
+            let package_name = line
+                .strip_prefix("[apt] ")
+                .and_then(|rest| rest.split(" - ").next())
+                .unwrap_or(&line)
+                .to_string();
+
+            if debug {
+                println!("Selected package: {}", package_name);
+            }
+
+            install_apt_packages(&[package_name], debug)?;
+
+            println!("✓ Package installation completed successfully!");
+        }
+        FzfResult::Cancelled => {
+            println!("Package selection cancelled.");
+        }
+        FzfResult::Error(err) => {
+            anyhow::bail!("Package selection failed: {}", err);
+        }
     }
 
     Ok(())
