@@ -31,9 +31,9 @@ trait BatteryCheck: DoctorCheck {
 
     fn format_battery(&self, battery: &Battery) -> String {
         format!(
-            "{} ({})",
+            "{} {}",
+            battery.vendor().unwrap_or("Unknown vendor"),
             battery.model().unwrap_or("Unknown model"),
-            battery.serial_number().unwrap_or("Unknown S/N"),
         )
     }
 }
@@ -69,17 +69,27 @@ impl BatteryCheck for PowerCheck {
         let lowest = batteries.first().unwrap();
         let lowest_charge = lowest.state_of_charge();
         let battery_str = self.format_battery(lowest);
+        let battery_status = lowest.state().to_string();
         let percent = (lowest_charge.value * 100.0) as u64;
         match lowest_charge.value {
             0.0..0.25 => CheckStatus::Fail {
-                message: format!("{} - Critical power: {}%", battery_str, percent),
+                message: format!(
+                    "{} - Critical power: {} % ({})",
+                    battery_str, percent, battery_status
+                ),
                 fixable: false,
             },
             0.25..0.5 => CheckStatus::Warning {
-                message: format!("{} - Low power: {}%", battery_str, percent),
+                message: format!(
+                    "{} - Low power: {} %, ({})",
+                    battery_str, percent, battery_status
+                ),
                 fixable: false,
             },
-            _ => CheckStatus::Pass(format!("{} - Power OK: {}%", battery_str, percent)),
+            _ => CheckStatus::Pass(format!(
+                "{} - Power OK: {} % ({})",
+                battery_str, percent, battery_status
+            )),
         }
     }
 }
@@ -110,15 +120,16 @@ impl BatteryCheck for BatteryHealthCheck {
                 .total_cmp(&b2.state_of_health().value)
         });
         let lowest = batteries.first().unwrap();
+        let battery_str = self.format_battery(lowest);
         let lowest_health = lowest.state_of_health();
         let percent = (lowest_health.value * 100.0) as u64;
         if percent < 90 {
             CheckStatus::Warning {
-                message: "Battery health degraded".into(),
+                message: format!("{} health degraded - {} %", battery_str, percent),
                 fixable: false,
             }
         } else {
-            CheckStatus::Pass(format!("Battery life: {}%", percent))
+            CheckStatus::Pass(format!("{} OK - {} %", battery_str, percent))
         }
     }
 }
