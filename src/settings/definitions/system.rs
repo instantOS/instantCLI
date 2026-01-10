@@ -160,6 +160,7 @@ impl Setting for PacmanAutoclean {
             .icon(NerdFont::Trash)
             .summary("Run paccache weekly to keep only the latest pacman packages.")
             .requirements(vec![&PACMAN_CONTRIB])
+            .supported_distros(&[OperatingSystem::Arch])
             .build()
     }
 
