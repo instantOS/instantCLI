@@ -250,9 +250,9 @@ impl FzfSelectable for ChecklistConfirm {
 /// Intermediate result from a single checklist iteration.
 /// Used internally during the loop/reload pattern.
 pub(crate) enum ChecklistSelection {
-    Cancelled,           // User pressed Esc/Ctrl-C
-    EmptyQuery,          // User pressed Enter with empty query (should ask to discard)
-    NotFound,            // User typed a query that doesn't match any item
-    Toggled(usize),      // Index of item that was toggled
-    Confirmed,           // User selected confirm option
+    Cancelled,      // User pressed Esc/Ctrl-C
+    EmptyQuery,     // User pressed Enter with empty query (should ask to discard)
+    NotFound,       // User typed a query that doesn't match any item
+    Toggled(usize), // Index of item that was toggled
+    Confirmed,      // User selected confirm option
 }
