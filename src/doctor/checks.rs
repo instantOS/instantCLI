@@ -16,6 +16,7 @@ pub mod energy;
 pub mod locale;
 pub mod nerdfont;
 pub mod network;
+mod performance;
 pub mod security;
 pub mod storage;
 pub mod system;
