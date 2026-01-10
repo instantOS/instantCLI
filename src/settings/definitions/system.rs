@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use duct::cmd;
 
+use crate::common::distro::OperatingSystem;
 use crate::common::package::{InstallResult, ensure_all};
 use crate::common::systemd::SystemdManager;
 use crate::menu_utils::FzfWrapper;

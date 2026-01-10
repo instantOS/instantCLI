@@ -180,16 +180,38 @@ macro_rules! tui_command_setting {
                 ctx: &mut $crate::settings::context::SettingsContext,
             ) -> anyhow::Result<()> {
                 use anyhow::Context;
-                use duct::cmd;
 
                 ctx.emit_info(
                     "settings.command.launching",
                     &format!("Launching {}...", $title),
                 );
-                cmd!($command)
-                    .run()
-                    .context(concat!("running ", $command))?;
-                ctx.emit_success("settings.command.completed", &format!("Exited {}", $title));
+
+                // Use the existing run_tui_program function which properly handles:
+                // - /dev/tty for terminal control
+                // - SIGINT (Ctrl+C) signal handling
+                // - spawn_blocking for async runtime compatibility
+                //
+                // We use block_in_place because apply() is sync but we're in a tokio runtime
+                let result = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::try_current()
+                        .context("No tokio runtime available")?
+                        .block_on($crate::common::terminal::run_tui_program(
+                            $command,
+                            &[],
+                        ))
+                })?;
+
+                if result {
+                    ctx.emit_success(
+                        "settings.command.completed",
+                        &format!("Exited {}", $title),
+                    );
+                } else {
+                    ctx.emit_info(
+                        "settings.command.cancelled",
+                        &format!("{} was cancelled", $title),
+                    );
+                }
                 Ok(())
             }
         }
