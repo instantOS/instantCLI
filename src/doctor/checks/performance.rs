@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use std::str::FromStr;
-use strum_macros::{EnumString, IntoStaticStr};
+use strum_macros::EnumString;
 use tokio::fs::File as TokioFile;
 use tokio::process::Command as TokioCommand;
 
@@ -17,61 +17,31 @@ use tokio::process::Command as TokioCommand;
 /// about the current CPU power mode, * is to replace with the id of the core.
 ///
 
-/// Abstract performance mode
-#[derive(Default)]
-pub enum GeneralPowerMode {
-    /// Absolute performance
-    Performance,
-
-    /// Power
-    Balanced,
-
-    /// Maximum power saving
-    PowerSave,
-
-    #[default]
-    Unknown,
-}
-
 /// Adapts to one of the two possible ways described in the top comment
 #[async_trait]
-pub trait PowerHandle<T>
-where
-    T: From<GeneralPowerMode> + FromStr + Into<&'static str>,
-{
+pub trait PowerHandle {
     /// Retrieves the current performance mode
-    async fn query_performance_mode(&self) -> T;
+    async fn query_performance_mode(&self) -> Option<PowerMode>;
 
     /// Changes the performance mode, might require sudo
     /// Returns true on success
-    async fn change_performance_mode(&mut self, mode: T) -> bool;
+    async fn change_performance_mode(&self, mode: PowerMode) -> bool;
+
+    /// Returns all available performance modes on the system
+    async fn available_modes(&self) -> Vec<PowerMode>;
 }
 
-/// Performance modes used by `powerprofilesctl`
-#[derive(Default, EnumString, IntoStaticStr)]
-pub enum GnomePowerMode {
+/// Performance modes
+#[derive(PartialEq, EnumString, Debug)]
+pub enum PowerMode {
     #[strum(serialize = "performance")]
     Performance,
 
     #[strum(serialize = "balanced")]
     Balanced,
 
-    #[strum(serialize = "power-saver")]
+    #[strum(serialize = "power-saver", serialize = "powersave")]
     PowerSaver,
-
-    #[default]
-    Unknown,
-}
-
-impl From<GeneralPowerMode> for GnomePowerMode {
-    fn from(mode: GeneralPowerMode) -> Self {
-        match mode {
-            GeneralPowerMode::Performance => GnomePowerMode::Performance,
-            GeneralPowerMode::Balanced => GnomePowerMode::Balanced,
-            GeneralPowerMode::PowerSave => GnomePowerMode::PowerSaver,
-            _ => GnomePowerMode::Unknown,
-        }
-    }
 }
 
 /// Implementation for `powerprofilesctl`
@@ -80,48 +50,140 @@ const PP_CTL: &str = "powerprofilesctl";
 pub struct GnomePowerHandle;
 
 #[async_trait]
-impl PowerHandle<GnomePowerMode> for GnomePowerHandle {
-    async fn query_performance_mode(&self) -> GnomePowerMode {
-        let output = TokioCommand::new(PP_CTL).output();
-        todo!();
+impl PowerHandle for GnomePowerHandle {
+    async fn query_performance_mode(&self) -> Option<PowerMode> {
+        let output = TokioCommand::new(PP_CTL).arg("get").output().await;
+
+        match output {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    PowerMode::from_str(stdout.as_ref().trim()).ok()
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        }
     }
 
-    async fn change_performance_mode(&mut self, mode: GnomePowerMode) -> bool {
+    async fn change_performance_mode(&self, mode: PowerMode) -> bool {
+        let gnome_identifier = match mode {
+            PowerMode::Performance => "performance",
+            PowerMode::Balanced => "balanced",
+            PowerMode::PowerSaver => "power-save",
+        };
+
         TokioCommand::new(PP_CTL)
-            .args(["set", mode.into()])
+            .args(["set", gnome_identifier])
             .output()
             .await
             .map(|output| output.status.success())
             .unwrap_or(false)
     }
-}
 
-pub enum LegacyPowerMode {
-    Performance,
-    PowerSave,
-    Unknown,
+    async fn available_modes(&self) -> Vec<PowerMode> {
+        let output = TokioCommand::new(PP_CTL).arg("list").output().await;
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                stdout
+                    .lines()
+                    .filter_map(|line| {
+                        let line = line.trim();
+                        if line.ends_with(':') {
+                            let profile_name =
+                                line.trim_end_matches(':').trim_start_matches('*').trim();
+                            profile_name.parse().ok()
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            }
+            _ => vec![],
+        }
+    }
 }
 
 /// Uses `/sys/devices/system/cpu/cpu_/cpufreq` to control performance mode
 #[derive(Default)]
 pub struct LegacyPowerHandle;
 
-impl From<&'static str> for LegacyPowerMode {
-    /// Turns the value read from /sys/devices/system/cpu/cpu_/cpufreq/scaling_available_governors/
-    /// into a variant of the PerformanceMode enum
-    fn from(value: &'static str) -> Self {
-        match value {
-            "performance" => LegacyPowerMode::Performance,
-            "powersave" => LegacyPowerMode::PowerSave,
-            _ => LegacyPowerMode::Unknown,
+#[async_trait]
+impl PowerHandle for LegacyPowerHandle {
+    async fn query_performance_mode(&self) -> Option<PowerMode> {
+        const GOVERNOR_PATH: &str = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor";
+
+        match tokio::fs::read_to_string(GOVERNOR_PATH).await {
+            Ok(content) => PowerMode::from_str(content.trim()).ok(),
+            Err(_) => None,
         }
     }
-}
 
-/// This enum holds all supported power handles
-pub enum PowerHandles {
-    ProfiledPowerHandle(GnomePowerHandle),
-    LegacyPowerHandle(LegacyPowerHandle),
+    async fn change_performance_mode(&self, mode: PowerMode) -> bool {
+        let available_modes = self.available_modes().await;
+
+        if !available_modes.contains(&mode) {
+            return false;
+        }
+
+        let legacy_idenitfier = match mode {
+            PowerMode::Performance | PowerMode::Balanced => "performance",
+            PowerMode::PowerSaver => "powersave",
+        };
+
+        let mut all_success = true;
+
+        let mut cpu_dirs = match tokio::fs::read_dir("/sys/devices/system/cpu").await {
+            Ok(dir) => dir,
+            Err(_) => return false,
+        };
+
+        loop {
+            let entry_opt = match cpu_dirs.next_entry().await {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+
+            if let Some(entry) = entry_opt {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+
+                if name_str.starts_with("cpu") && name_str[3..].parse::<u32>().is_ok() {
+                    let governor_path = format!(
+                        "/sys/devices/system/cpu/{}/cpufreq/scaling_governor",
+                        name_str
+                    );
+
+                    if tokio::fs::write(&governor_path, legacy_idenitfier)
+                        .await
+                        .is_err()
+                    {
+                        all_success = false;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        all_success
+    }
+
+    async fn available_modes(&self) -> Vec<PowerMode> {
+        const AVAILABLE_GOVERNORS_PATH: &str =
+            "/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors";
+
+        match tokio::fs::read_to_string(AVAILABLE_GOVERNORS_PATH).await {
+            Ok(content) => content
+                .split_whitespace()
+                .filter_map(|governor| governor.parse().ok())
+                .collect(),
+            Err(_) => vec![],
+        }
+    }
 }
 
 /// Creates a power handle
@@ -129,7 +191,7 @@ pub enum PowerHandles {
 pub struct PowerHandleFactory;
 
 impl PowerHandleFactory {
-    async fn build_power_handle(&self) -> Option<PowerHandles> {
+    async fn build_power_handle(&self) -> Option<Box<dyn PowerHandle>> {
         // We check if powerprofilesctl is available
         let profiled_power = TokioCommand::new("which")
             .arg("powerprofilesctl")
@@ -138,7 +200,7 @@ impl PowerHandleFactory {
             .map(|output| output.status.success())
             .unwrap_or(false);
         if profiled_power {
-            return PowerHandles::ProfiledPowerHandle(GnomePowerHandle::default()).into();
+            return Some(Box::new(GnomePowerHandle::default()));
         }
 
         // If not, we check if we have access to the sysfiles
@@ -147,10 +209,42 @@ impl PowerHandleFactory {
                 .await
                 .is_ok();
         if sys_available {
-            PowerHandles::LegacyPowerHandle(LegacyPowerHandle::default()).into()
+            Some(Box::new(LegacyPowerHandle::default()))
         } else {
             // Unfortunately we have no way to control power management
             None
         }
+    }
+}
+
+/// TODO: Implement this
+#[derive(Default)]
+struct PerformanceTest;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_factory() {
+        let factory = PowerHandleFactory::default();
+        let power_handle = factory.build_power_handle().await.unwrap();
+        println!(
+            "Current mode: {:?}",
+            power_handle.query_performance_mode().await.unwrap()
+        );
+        println!("Power modes:");
+        for power_mode in power_handle.available_modes().await {
+            println!("{:?}", power_mode)
+        }
+    }
+
+    #[tokio::test]
+    async fn get_mode_legacy() {
+        let handle = LegacyPowerHandle::default();
+        println!(
+            "Legacy mode: {:?}",
+            handle.query_performance_mode().await.unwrap()
+        );
     }
 }
