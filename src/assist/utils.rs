@@ -104,7 +104,11 @@ choice=$(printf "Close terminal and continue\nKeep terminal open for review" | \
 
 if [ "$choice" = "Keep terminal open for review" ]; then
     echo ""
-    echo "Terminal will stay open. Close when ready."
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "✓ Installation was successful"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Terminal will stay open for review."
     read -p "Press Enter to close..."
 fi
 "#,
