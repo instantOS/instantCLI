@@ -170,6 +170,126 @@ fn install_snap(packages: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// Uninstall packages using the specified package manager.
+pub fn uninstall_packages(manager: PackageManager, packages: &[&str]) -> Result<()> {
+    if packages.is_empty() {
+        return Ok(());
+    }
+
+    match manager {
+        PackageManager::Pacman => uninstall_pacman(packages),
+        PackageManager::Apt => uninstall_apt(packages),
+        PackageManager::Dnf => uninstall_dnf(packages),
+        PackageManager::Zypper => uninstall_zypper(packages),
+        PackageManager::Pkg => uninstall_pkg(packages),
+        PackageManager::Flatpak => uninstall_flatpak(packages),
+        PackageManager::Aur => uninstall_aur(packages),
+        PackageManager::Snap => uninstall_snap(packages),
+        PackageManager::Cargo => {
+            anyhow::bail!("Cargo packages must be uninstalled manually")
+        }
+    }
+}
+
+/// Uninstall packages using pacman.
+fn uninstall_pacman(packages: &[&str]) -> Result<()> {
+    let mut args = vec!["pacman", "-R", "--noconfirm"];
+    args.extend(packages);
+
+    cmd("sudo", &args)
+        .run()
+        .context("Failed to uninstall packages with pacman")?;
+
+    Ok(())
+}
+
+/// Uninstall packages using apt.
+fn uninstall_apt(packages: &[&str]) -> Result<()> {
+    let mut args = vec!["apt", "remove", "-y"];
+    args.extend(packages);
+
+    cmd("sudo", &args)
+        .run()
+        .context("Failed to uninstall packages with apt")?;
+
+    Ok(())
+}
+
+/// Uninstall packages using dnf.
+fn uninstall_dnf(packages: &[&str]) -> Result<()> {
+    let mut args = vec!["dnf", "remove", "-y"];
+    args.extend(packages);
+
+    cmd("sudo", &args)
+        .run()
+        .context("Failed to uninstall packages with dnf")?;
+
+    Ok(())
+}
+
+/// Uninstall packages using zypper.
+fn uninstall_zypper(packages: &[&str]) -> Result<()> {
+    let mut args = vec!["zypper", "remove", "-y"];
+    args.extend(packages);
+
+    cmd("sudo", &args)
+        .run()
+        .context("Failed to uninstall packages with zypper")?;
+
+    Ok(())
+}
+
+/// Uninstall packages using pkg (Termux).
+fn uninstall_pkg(packages: &[&str]) -> Result<()> {
+    let mut args = vec!["uninstall", "-y"];
+    args.extend(packages);
+
+    cmd("pkg", &args)
+        .run()
+        .context("Failed to uninstall packages with pkg")?;
+
+    Ok(())
+}
+
+/// Uninstall packages from Flatpak.
+fn uninstall_flatpak(packages: &[&str]) -> Result<()> {
+    let mut args = vec!["uninstall", "-y"];
+    args.extend(packages);
+
+    cmd("flatpak", &args)
+        .run()
+        .context("Failed to uninstall packages from Flatpak")?;
+
+    Ok(())
+}
+
+/// Uninstall packages from AUR using the detected AUR helper.
+fn uninstall_aur(packages: &[&str]) -> Result<()> {
+    let helper = detect_aur_helper()
+        .ok_or_else(|| anyhow::anyhow!("No AUR helper found (install yay, paru, etc.)"))?;
+
+    let mut args = vec!["-R", "--noconfirm"];
+    args.extend(packages);
+
+    cmd(helper, &args)
+        .run()
+        .with_context(|| format!("Failed to uninstall packages with {}", helper))?;
+
+    Ok(())
+}
+
+/// Uninstall packages using snap.
+fn uninstall_snap(packages: &[&str]) -> Result<()> {
+    let mut args = vec!["snap", "remove"];
+    args.extend(packages);
+
+    cmd("sudo", &args)
+        .run()
+        .context("Failed to uninstall packages with snap")?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -54,4 +54,5 @@ mod manager;
 
 pub use definition::PackageDefinition;
 pub use dependency::{Dependency, InstallResult, ensure_all};
+pub use install::uninstall_packages;
 pub use manager::PackageManager;

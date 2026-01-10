@@ -8,6 +8,7 @@ pub mod definitions;
 pub mod deps;
 pub mod firmware;
 pub mod installable_packages;
+pub mod installed_packages_manager;
 pub mod language;
 pub mod network;
 pub mod packages;

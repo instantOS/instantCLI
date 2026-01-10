@@ -134,6 +134,26 @@ impl PackageManager {
             Self::Snap => "Snap",
         }
     }
+
+    /// Get the uninstall command for this package manager.
+    ///
+    /// Returns the command and base arguments used to uninstall packages.
+    pub fn uninstall_command(&self) -> (&'static str, &'static [&'static str]) {
+        match self {
+            Self::Pacman => ("sudo", &["pacman", "-R", "--noconfirm"]),
+            Self::Apt => ("sudo", &["apt", "remove", "-y"]),
+            Self::Dnf => ("sudo", &["dnf", "remove", "-y"]),
+            Self::Zypper => ("sudo", &["zypper", "remove", "-y"]),
+            Self::Pkg => ("pkg", &["uninstall", "-y"]),
+            Self::Flatpak => ("flatpak", &["uninstall", "-y"]),
+            Self::Aur => ("yay", &["-R", "--noconfirm"]),
+            Self::Cargo => {
+                // Cargo doesn't have uninstall, need to manually remove binary
+                ("sh", &["-c"])
+            }
+            Self::Snap => ("sudo", &["snap", "remove"]),
+        }
+    }
 }
 
 impl std::fmt::Display for PackageManager {
