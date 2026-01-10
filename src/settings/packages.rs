@@ -92,11 +92,16 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt("Select packages to install")
+        .responsive_layout()
         .args([
             "--preview",
             &preview_cmd,
             "--preview-window",
-            "down:65%:wrap",
+            "down:40%:wrap",  // Smaller preview for more item space
+            "--layout",
+            "reverse-list",  // More compact, dense layout for many items
+            "--height",
+            "90%",  // Use most of the screen
             "--bind",
             "ctrl-l:clear-screen",
             "--ansi",
@@ -352,15 +357,13 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
         anyhow::bail!("apt is not available on this system");
     }
 
-    // Construct the list command
-    // Format output as: "[apt] package-name - description"
-    // Use apt-cache search for both Termux and Debian/Ubuntu for consistent format
-    // Use "." as the search pattern to match all packages (empty string causes regex error)
-    let list_cmd = "apt-cache search . 2>/dev/null | grep -v '^$' | sed 's/^/[apt] /'";
+    // Construct the list command - only package names, descriptions in preview
+    // Extract just the package name from apt-cache search output (one per line)
+    let list_cmd = "apt-cache search . 2>/dev/null | grep -v '^$' | cut -d' ' -f1";
 
     // Preview command: apt show works on both
-    // {2} refers to the second field after splitting by space (the package name)
-    let preview_cmd = "apt show {2} 2>/dev/null";
+    // {1} refers to the package name
+    let preview_cmd = "apt show {1} 2>/dev/null";
 
     // FZF prompt customization
     let prompt = if termux {
@@ -372,21 +375,20 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt(prompt)
+        .responsive_layout()
         .args([
             "--preview",
             preview_cmd,
             "--preview-window",
-            "down:65%:wrap",
+            "down:40%:wrap",  // Smaller preview for more item space
+            "--layout",
+            "reverse-list",  // More compact, dense layout for many items
+            "--height",
+            "90%",  // Use most of the screen
             "--bind",
             "ctrl-l:clear-screen",
             "--ansi",
             "--no-mouse",
-            // Split by space: [apt] package-name - description
-            // Field 0 = [apt], Field 1 = package-name, rest = - description
-            "--delimiter",
-            " ",
-            "--with-nth",
-            "1..", // Show from field 1 onwards (package-name - description)
         ])
         .select_streaming(list_cmd)
         .context("Failed to run package selector")?;
@@ -398,15 +400,10 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
                 return Ok(());
             }
 
-            // Parse package names from format: "[apt] package-name - description"
+            // Parse package names - each line is just a package name
             let packages: Vec<String> = lines
-                .iter()
-                .filter_map(|line| {
-                    // Strip "[apt] " prefix and get package name (before " - ")
-                    line.strip_prefix("[apt] ")
-                        .and_then(|rest| rest.split(" - ").next())
-                        .map(|s| s.to_string())
-                })
+                .into_iter()
+                .map(|line| line.trim().to_string())
                 .collect();
 
             if packages.is_empty() {
@@ -439,11 +436,7 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
             println!("✓ Package installation completed successfully!");
         }
         FzfResult::Selected(line) => {
-            let package_name = line
-                .strip_prefix("[apt] ")
-                .and_then(|rest| rest.split(" - ").next())
-                .unwrap_or(&line)
-                .to_string();
+            let package_name = line.trim().to_string();
 
             if debug {
                 println!("Selected package: {}", package_name);

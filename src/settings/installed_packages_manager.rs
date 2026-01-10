@@ -49,11 +49,10 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
         anyhow::bail!("apt is not available on this system");
     }
 
-    // List installed packages
-    // dpkg-query format: package-name
+    // List installed packages (one package per line)
     let list_cmd = "dpkg-query -W -f='${Package}\n' 2>/dev/null | sort";
 
-    // Preview: apt show <package>
+    // Preview: apt show <package> (each line is just a package name)
     let preview_cmd = "apt show {1} 2>/dev/null";
 
     // FZF prompt customization
@@ -67,11 +66,16 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
         .multi_select(true)
         .prompt(prompt)
         .header("Tab to select multiple packages, Enter to confirm uninstall")
+        .responsive_layout()
         .args([
             "--preview",
             preview_cmd,
             "--preview-window",
-            "down:65%:wrap",
+            "down:40%:wrap",  // Smaller preview for more item space
+            "--layout",
+            "reverse-list",  // More compact, dense layout for many items
+            "--height",
+            "90%",  // Use most of the screen
             "--bind",
             "ctrl-l:clear-screen",
             "--ansi",
@@ -230,21 +234,26 @@ fn run_arch_package_manager(debug: bool) -> Result<()> {
         anyhow::bail!("Neither pacman nor an AUR helper is available on this system");
     }
 
-    // List installed packages
+    // List installed packages (one package per line)
     let list_cmd = "pacman -Qq | sort";
 
-    // Preview: pacman -Qi <package>
+    // Preview: pacman -Qi <package> (each line is just a package name)
     let preview_cmd = "pacman -Qi {1}";
 
     let result = FzfWrapper::builder()
         .multi_select(true)
         .prompt("Select packages to uninstall")
         .header("Tab to select multiple packages, Enter to confirm uninstall")
+        .responsive_layout()
         .args([
             "--preview",
             preview_cmd,
             "--preview-window",
-            "down:65%:wrap",
+            "down:40%:wrap",  // Smaller preview for more item space
+            "--layout",
+            "reverse-list",  // More compact, dense layout for many items
+            "--height",
+            "90%",  // Use most of the screen
             "--bind",
             "ctrl-l:clear-screen",
             "--ansi",
