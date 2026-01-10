@@ -101,47 +101,96 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
 
         // Compute new source hash after merge
         let new_source_hash = dotfile.get_file_hash(&dotfile.source_path, true, db)?;
+        let source_changed = new_source_hash != original_source_hash;
+        let files_now_identical = dotfile.is_target_unmodified(db)?;
 
-        // Check if files are now the same
-        if dotfile.is_target_unmodified(db)? {
-            emit(
-                Level::Success,
-                "dot.merge.resolved",
-                &format!(
-                    "{} Merge complete: files are now identical",
-                    char::from(NerdFont::Check)
-                ),
-                None,
-            );
-        } else {
-            emit(
-                Level::Info,
-                "dot.merge.still_different",
-                &format!(
-                    "{} Files still differ after merge",
-                    char::from(NerdFont::Info)
-                ),
-                None,
-            );
-        }
+        // Get repo info for git operations
+        let repo_name = get_repo_name_for_dotfile(dotfile, config);
+        let repo_path = config.repos_path().join(repo_name.as_str());
 
-        // Check if source file changed (user edited the repo version)
-        if new_source_hash != original_source_hash {
-            let repo_name = get_repo_name_for_dotfile(dotfile, config);
-            let repo_path = config.repos_path().join(repo_name.as_str());
-
-            emit(
-                Level::Info,
-                "dot.merge.source_changed",
-                &format!(
-                    "{} Source file changed in repository\n   Repository path: {}\n   Use {} to commit changes, or {} to push",
-                    char::from(NerdFont::GitBranch),
-                    repo_path.display().to_string().cyan(),
-                    "ins dot commit".yellow(),
-                    "ins dot push".yellow()
-                ),
-                None,
-            );
+        match (files_now_identical, source_changed) {
+            (true, true) => {
+                // Best case: user merged changes into source, files now match
+                // Auto-stage the file
+                if let Err(e) = crate::dot::git::repo_ops::git_add(&repo_path, &dotfile.source_path, false) {
+                    emit(
+                        Level::Warn,
+                        "dot.merge.stage_failed",
+                        &format!(
+                            "{} Failed to stage file: {}",
+                            char::from(NerdFont::Warning),
+                            e
+                        ),
+                        None,
+                    );
+                } else {
+                    emit(
+                        Level::Success,
+                        "dot.merge.resolved_and_staged",
+                        &format!(
+                            "{} Merge complete and staged for commit\n   Run {} to commit, or {} to commit and push",
+                            char::from(NerdFont::Check),
+                            "ins dot commit".yellow(),
+                            "ins dot push".yellow()
+                        ),
+                        None,
+                    );
+                }
+            }
+            (true, false) => {
+                // Files are identical but source wasn't changed
+                // This means user chose to keep the source version
+                emit(
+                    Level::Success,
+                    "dot.merge.resolved",
+                    &format!(
+                        "{} Merge complete: files are now identical",
+                        char::from(NerdFont::Check)
+                    ),
+                    None,
+                );
+            }
+            (false, true) => {
+                // User edited source but files still differ
+                // Auto-stage so their work isn't lost
+                if let Err(e) = crate::dot::git::repo_ops::git_add(&repo_path, &dotfile.source_path, false) {
+                    emit(
+                        Level::Warn,
+                        "dot.merge.stage_failed",
+                        &format!(
+                            "{} Failed to stage file: {}",
+                            char::from(NerdFont::Warning),
+                            e
+                        ),
+                        None,
+                    );
+                } else {
+                    emit(
+                        Level::Info,
+                        "dot.merge.partial",
+                        &format!(
+                            "{} Partial merge staged (files still differ)\n   Run {} again to continue merging\n   Or use {} to commit current state",
+                            char::from(NerdFont::GitBranch),
+                            "ins dot merge".cyan(),
+                            "ins dot commit".yellow()
+                        ),
+                        None,
+                    );
+                }
+            }
+            (false, false) => {
+                // No changes made to source, files still differ
+                emit(
+                    Level::Info,
+                    "dot.merge.unchanged",
+                    &format!(
+                        "{} No changes made (files still differ)\n   Run {} again to retry",
+                        char::from(NerdFont::Info),
+                        "ins dot merge".cyan()
+                    ),
+                    None,
+                );
+            }
         }
     }
 
