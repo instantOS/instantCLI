@@ -12,9 +12,7 @@ use crate::game::operations::launch_game;
 use crate::game::restic;
 use crate::game::setup;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
-use crate::ui::catppuccin::{
-    colors, format_back_icon, format_icon_colored, fzf_mocha_args, hex_to_ansi_fg,
-};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 
 use state::EditState;
@@ -197,57 +195,34 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
 
 /// Build preview text for Edit option showing current config
 fn build_edit_preview(game_name: &str, state: &GameState) -> String {
-    let reset = "\x1b[0m";
-    let mauve = hex_to_ansi_fg(colors::MAUVE);
-    let teal = hex_to_ansi_fg(colors::TEAL);
-    let text = hex_to_ansi_fg(colors::TEXT);
-    let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
-    let surface = hex_to_ansi_fg(colors::SURFACE1);
+    use crate::ui::preview::PreviewBuilder;
 
-    let mut lines = vec![
-        String::new(),
-        format!(
-            "{mauve}{}  Edit Configuration{reset}",
-            char::from(NerdFont::Edit)
-        ),
-        format!("{surface}───────────────────────────────────{reset}"),
-        String::new(),
-        format!("{text}Edit configuration for '{}'{reset}", game_name),
-        String::new(),
-        format!("{surface}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{reset}"),
-        String::new(),
-    ];
+    let mut builder = PreviewBuilder::new()
+        .header(NerdFont::Edit, "Edit Configuration")
+        .text(&format!("Edit configuration for '{}'", game_name))
+        .blank()
+        .separator()
+        .blank()
+        .line(colors::MAUVE, Some(NerdFont::FileConfig), "games.toml")
+        .field_indented(
+            "Description",
+            state.description.as_deref().unwrap_or("<not set>"),
+        )
+        .field_indented(
+            "Launch Command",
+            state.launch_command.as_deref().unwrap_or("<not set>"),
+        );
 
-    // games.toml section
-    lines.push(format!(
-        "{mauve}{}  games.toml{reset}",
-        char::from(NerdFont::FileConfig)
-    ));
-    lines.push(format!(
-        "  {subtext}Description:{reset} {text}{}{reset}",
-        state.description.as_deref().unwrap_or("<not set>")
-    ));
-    lines.push(format!(
-        "  {subtext}Launch Command:{reset} {text}{}{reset}",
-        state.launch_command.as_deref().unwrap_or("<not set>")
-    ));
-
-    // installations.toml section
-    lines.push(String::new());
     if let Some(path) = &state.save_path {
-        lines.push(format!(
-            "{mauve}{}  installations.toml{reset}",
-            char::from(NerdFont::Desktop)
-        ));
-        lines.push(format!(
-            "  {subtext}Save Path:{reset} {teal}{}{reset}",
-            path
-        ));
+        builder = builder
+            .blank()
+            .line(colors::MAUVE, Some(NerdFont::Desktop), "installations.toml")
+            .field_indented("Save Path", path);
     } else {
-        lines.push(format!("{subtext}No installation on this device{reset}",));
+        builder = builder.blank().subtext("No installation on this device");
     }
 
-    lines.join("\n")
+    builder.build_string()
 }
 
 /// Result of handling a game action
@@ -368,6 +343,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 .header(Header::fancy(&format!("Game: {}", name)))
                 .prompt("Select action")
                 .args(fzf_mocha_args())
+                .responsive_layout()
                 .select_padded(actions)?;
 
             let result = match selection {
@@ -421,6 +397,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                         .header(Header::fancy(&format!("Game: {}", game_name)))
                         .prompt("Select action")
                         .args(fzf_mocha_args())
+                        .responsive_layout()
                         .select_padded(actions)?;
 
                     let result = match selection {
@@ -486,6 +463,7 @@ fn show_uninitialized_menu() -> Result<()> {
         .header(Header::fancy("Game save manager is not initialized"))
         .prompt("Select action")
         .args(fzf_mocha_args())
+        .responsive_layout()
         .select_padded(options)?;
 
     match selection {

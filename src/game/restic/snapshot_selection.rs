@@ -381,12 +381,6 @@ fn truncate_string(s: &str, max_len: usize) -> String {
     }
 }
 
-/// Select a snapshot interactively for a specific game (cached version)
-/// Returns Some(snapshot_id) if a snapshot was selected, None if cancelled
-pub fn select_snapshot_interactive(game_name: &str) -> Result<Option<String>> {
-    select_snapshot_interactive_with_local_comparison(game_name, None)
-}
-
 /// Select a snapshot interactively with optional local save comparison
 /// Returns Some(snapshot_id) if a snapshot was selected, None if cancelled
 pub fn select_snapshot_interactive_with_local_comparison(

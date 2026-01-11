@@ -14,7 +14,7 @@ pub struct DotfileDir {
 }
 
 impl DotfileDir {
-    pub fn new(name: &str, repo_path: &PathBuf, is_active: bool) -> Result<Self> {
+    pub fn new(name: &str, repo_path: &Path, is_active: bool) -> Result<Self> {
         let path = repo_path.join(name);
 
         // Create directory if it doesn't exist (git doesn't track empty directories)
@@ -112,7 +112,7 @@ impl LocalRepo {
     /// This creates DotfileDir instances for ALL available subdirectories,
     /// using active_subdirs only to determine which ones should be active.
     fn dotfile_dirs_from_path(
-        repo_path: &PathBuf,
+        repo_path: &Path,
         available_subdirs: &[String],
         active_subdirs: &[String],
     ) -> Result<Vec<DotfileDir>> {

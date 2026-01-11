@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2](https://github.com/instantOS/instantCLI/compare/v0.11.1...v0.11.2) - 2026-01-10
+
+### Fixed
+
+- fix empty vs invalid selection
+- fix mistype crash
+- fix cursor position being odd
+- fix checklist
+- fix responsive fzf
+- fix piper
+- fix json
+- fix restore bug
+- fix bugs
+- fix header color
+- fix padding
+- fix overlay positioning
+- fix issue
+
+### Other
+
+- make checklist read stdin
+- init checklist
+- fmt
+- more ansi support
+- migrate some previews
+- init preview builder
+- better fix viewing
+- prettier fix menu
+- improve doctor integration
+- make settings responsive
+- init responsive layout for previews
+- add line wrapping to messages
+- clippy
+- add git config check
+- limit buffer amount
+- more friendly doctor settings
+- better settings doctor integration
+- add bazzite support
+- add SteamOS support to `ins doctor`
+- change fix list to args
+- init better batch fixing
+- better outpout for dot reset
+- init `ins dot pull`
+- less awful function names
+- init completions check
+- add descriptions to assist completions
+- more custom completions
+- add doctor name completions
+- remove unnecessary loop
+- init backup skipper
+- add checkpoint checkout menu
+- add close menu option
+- fmt
+- better game edit dialogues
+- remove wrong deprecated markers
+- better display settings UX
+- init fzf refactor
+- better header interface
+- default padding
+- better header styling
+- better game menu styling
+- add move entry
+- better init prompt
+- init move game
+- add setup option to menu
+
 ## [0.11.1](https://github.com/instantOS/instantCLI/compare/v0.11.0...v0.11.1) - 2026-01-03
 
 ### Other

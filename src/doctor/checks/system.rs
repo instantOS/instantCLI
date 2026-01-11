@@ -90,8 +90,16 @@ impl DoctorCheck for PendingUpdatesCheck {
 
     async fn execute(&self) -> CheckStatus {
         // Only run on Arch-based systems
-        if !crate::common::distro::OperatingSystem::detect().is_arch_based() {
+        let os = crate::common::distro::OperatingSystem::detect();
+        if !os.is_arch_based() {
             return CheckStatus::Skipped("Not an Arch-based system".to_string());
+        }
+
+        // Skip on immutable OSes (updates replace entire OS image)
+        if os.is_immutable() {
+            return CheckStatus::Skipped(
+                "Immutable OS (updates replace entire OS image)".to_string(),
+            );
         }
 
         // Run checkupdates to get list of pending updates

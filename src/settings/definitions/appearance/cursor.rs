@@ -42,37 +42,33 @@ impl Setting for CursorTheme {
             return Ok(());
         }
 
-        loop {
-            let themes = list_cursor_themes()?;
+        let themes = list_cursor_themes()?;
 
-            let mut options: Vec<String> = Vec::new();
+        let mut options: Vec<String> = Vec::new();
 
-            for theme in &themes {
-                options.push(theme.clone());
+        for theme in &themes {
+            options.push(theme.clone());
+        }
+
+        if themes.is_empty() {
+            ctx.emit_info(
+                "settings.appearance.cursor_theme.no_themes",
+                "No cursor themes found. Install cursor themes from your package manager.",
+            );
+            return Ok(());
+        }
+
+        let selected = FzfWrapper::builder()
+            .prompt("Select Cursor Theme")
+            .header("Choose a cursor theme to apply globally")
+            .select(options)?;
+
+        match selected {
+            crate::menu_utils::FzfResult::Selected(selection) => {
+                apply_cursor_theme_changes(ctx, &selection);
+                Ok(())
             }
-
-            if themes.is_empty() {
-                ctx.emit_info(
-                    "settings.appearance.cursor_theme.no_themes",
-                    "No cursor themes found. Install cursor themes from your package manager.",
-                );
-                return Ok(());
-            }
-
-            let selected = FzfWrapper::builder()
-                .prompt("Select Cursor Theme")
-                .header("Choose a cursor theme to apply globally")
-                .select(options)?;
-
-            match selected {
-                crate::menu_utils::FzfResult::Selected(selection) => {
-                    apply_cursor_theme_changes(ctx, &selection);
-                    return Ok(());
-                }
-                _ => {
-                    return Ok(());
-                }
-            }
+            _ => Ok(()),
         }
     }
 }

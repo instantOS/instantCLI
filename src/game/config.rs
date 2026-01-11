@@ -86,7 +86,7 @@ pub struct RetentionPolicyValues {
 }
 
 impl RetentionPolicyValues {
-    pub fn to_rules(&self) -> Vec<(String, String)> {
+    pub fn to_rules(self) -> Vec<(String, String)> {
         let mut rules = Vec::with_capacity(5);
 
         if let Some(keep_last) = self.keep_last {
@@ -194,6 +194,15 @@ impl GameInstallation {
     pub fn update_checkpoint(&mut self, checkpoint_id: impl Into<String>) {
         self.nearest_checkpoint = Some(checkpoint_id.into());
         self.checkpoint_time = Some(chrono::Utc::now().to_rfc3339());
+    }
+
+    pub fn update_checkpoint_at(
+        &mut self,
+        checkpoint_id: impl Into<String>,
+        time: impl Into<String>,
+    ) {
+        self.nearest_checkpoint = Some(checkpoint_id.into());
+        self.checkpoint_time = Some(time.into());
     }
 }
 

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Subcommand;
+use clap_complete::engine::ArgValueCompleter;
 use std::fs::File;
 use std::io::{self, Write};
 
@@ -15,6 +16,7 @@ pub enum AssistCommands {
     /// Run an assist by its key sequence
     Run {
         /// Key sequence of the assist to run (e.g., 'c' or 'vn')
+        #[arg(add = ArgValueCompleter::new(crate::completions::assist_key_sequence_completion))]
         key_sequence: String,
     },
     #[command(hide = true)]

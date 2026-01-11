@@ -17,6 +17,7 @@ pub struct FzfBuilder {
     dialog_type: DialogType,
     initial_cursor: Option<InitialCursor>,
     initial_query: Option<String>,
+    responsive_layout: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -34,6 +35,10 @@ enum DialogType {
         ok_text: String,
         title: Option<String>,
     },
+    Checklist {
+        confirm_text: String,
+        allow_empty: bool,
+    },
 }
 impl FzfBuilder {
     pub fn new() -> Self {
@@ -45,6 +50,7 @@ impl FzfBuilder {
             dialog_type: DialogType::Selection,
             initial_cursor: None,
             initial_query: None,
+            responsive_layout: false,
         }
     }
 
@@ -81,6 +87,14 @@ impl FzfBuilder {
     {
         self.additional_args
             .extend(args.into_iter().map(Into::into));
+        self
+    }
+
+    /// Enable responsive layout: preview window position adapts to terminal dimensions.
+    /// Uses bottom preview for narrow (< 60 cols) or square-ish (aspect ratio < 2:1) terminals.
+    /// Uses right preview for wide terminals with aspect ratio >= 2:1.
+    pub fn responsive_layout(mut self) -> Self {
+        self.responsive_layout = true;
         self
     }
 
@@ -144,6 +158,34 @@ impl FzfBuilder {
         self
     }
 
+    /// Configure the builder as a checklist dialog.
+    /// Users can toggle items with Tab or Enter, then confirm by selecting the confirm option.
+    pub fn checklist<S: Into<String>>(mut self, confirm_text: S) -> Self {
+        self.dialog_type = DialogType::Checklist {
+            confirm_text: confirm_text.into(),
+            allow_empty: true,
+        };
+        self.additional_args = Self::checklist_args();
+        self
+    }
+
+    /// Set whether the checklist allows confirming with no items checked.
+    pub fn allow_empty_confirm(mut self, allow: bool) -> Self {
+        if let DialogType::Checklist { allow_empty, .. } = &mut self.dialog_type {
+            *allow_empty = allow;
+        }
+        self
+    }
+
+    /// Execute checklist dialog and return checked items.
+    /// Returns FzfResult::MultiSelected(Vec<T>) with checked items.
+    pub fn checklist_dialog<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
+        if !matches!(self.dialog_type, DialogType::Checklist { .. }) {
+            return Err(anyhow::anyhow!("Builder not configured for checklist"));
+        }
+        self.execute_checklist(items)
+    }
+
     pub fn select<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
         let wrapper = FzfWrapper::new(
             self.multi_select,
@@ -151,6 +193,7 @@ impl FzfBuilder {
             self.header,
             self.additional_args,
             self.initial_cursor,
+            self.responsive_layout,
         );
         wrapper.select(items)
     }
@@ -307,6 +350,14 @@ impl FzfBuilder {
             cmd.arg(arg);
         }
 
+        // Apply responsive layout settings LAST to override defaults
+        // Preview position and margins adapt to terminal dimensions
+        if self.responsive_layout {
+            let layout = super::utils::get_responsive_layout();
+            cmd.arg(layout.preview_window);
+            cmd.arg("--margin").arg(layout.margin);
+        }
+
         cmd
     }
 
@@ -317,6 +368,7 @@ impl FzfBuilder {
             self.header,
             self.additional_args,
             self.initial_cursor,
+            self.responsive_layout,
         );
         wrapper.select_streaming(command)
     }
@@ -603,6 +655,7 @@ impl FzfBuilder {
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
         cmd.arg("--layout").arg("reverse");
+        cmd.arg("--wrap");
 
         if let Some(title) = &title {
             if let Some(header) = &self.header {
@@ -648,36 +701,263 @@ impl FzfBuilder {
         Ok(())
     }
 
-    fn default_args() -> Vec<String> {
+    fn execute_checklist<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
+        if items.is_empty() {
+            return Ok(FzfResult::Cancelled);
+        }
+
+        let (confirm_text, allow_empty) = match &self.dialog_type {
+            DialogType::Checklist {
+                confirm_text,
+                allow_empty,
+            } => (confirm_text.clone(), *allow_empty),
+            _ => return Err(anyhow::anyhow!("Not a checklist dialog")),
+        };
+
+        // Create checklist state with wrapped items
+        let mut checklist_items: Vec<ChecklistItem<T>> =
+            items.into_iter().map(ChecklistItem::new).collect();
+
+        // Create confirm option
+        let confirm_item = ChecklistConfirm::new(&confirm_text);
+
+        // Track cursor position across FZF restarts
+        let mut cursor: Option<usize> = None;
+
+        loop {
+            // Build key-to-index map and input text
+            let mut key_to_index: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
+            let mut input_lines = Vec::new();
+
+            for (idx, item) in checklist_items.iter().enumerate() {
+                let display = item.fzf_display_text();
+                let key = item.fzf_key();
+                key_to_index.insert(key.clone(), idx);
+                input_lines.push(format!("{}\x1f{}", display, key));
+            }
+
+            // Add confirm option at the end
+            let confirm_display = confirm_item.fzf_display_text();
+            let confirm_key = confirm_item.fzf_key();
+            input_lines.push(format!("{}\x1f{}", confirm_display, confirm_key));
+
+            let input_text = input_lines.join("\n");
+
+            // Execute FZF with current state and cursor position
+            let result = self.run_checklist_fzf(&input_text, &key_to_index, cursor)?;
+
+            match result {
+                ChecklistSelection::Cancelled => return Ok(FzfResult::Cancelled),
+                ChecklistSelection::EmptyQuery => {
+                    // User pressed Enter with empty query - ask if they want to discard selections
+                    // Check if there are any checked items
+                    let has_checked = checklist_items.iter().any(|item| item.checked);
+
+                    if has_checked {
+                        match FzfWrapper::builder()
+                            .confirm("Discard selections and exit?")
+                            .yes_text("Discard")
+                            .no_text("Keep")
+                            .confirm_dialog()?
+                        {
+                            ConfirmResult::Yes => return Ok(FzfResult::Cancelled),
+                            ConfirmResult::No => continue,
+                            ConfirmResult::Cancelled => continue,
+                        }
+                    } else {
+                        // No checked items, just continue the loop
+                        continue;
+                    }
+                }
+                ChecklistSelection::NotFound => {
+                    // User typed a query that doesn't match any items
+                    // Show message and continue the loop
+                    FzfWrapper::message("No matching items found")?;
+                    continue;
+                }
+                ChecklistSelection::Toggled(index) => {
+                    // Toggle the item at index (if it's a valid item index)
+                    if let Some(item) = checklist_items.get_mut(index) {
+                        item.toggle();
+                    }
+                    // Update cursor to stay on this item for next iteration
+                    cursor = Some(index);
+                    // Loop continues - FZF will reopen with updated checkboxes
+                }
+                ChecklistSelection::Confirmed => {
+                    // Collect indices of checked items first
+                    let checked_indices: Vec<usize> = checklist_items
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, item)| item.checked)
+                        .map(|(idx, _)| idx)
+                        .collect();
+
+                    if !allow_empty && checked_indices.is_empty() {
+                        // Show error and loop again
+                        FzfWrapper::message("Please select at least one item before confirming.")?;
+                        continue;
+                    }
+
+                    // Now extract the checked items
+                    let checked: Vec<T> = checklist_items
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(idx, _)| checked_indices.contains(idx))
+                        .map(|(_, item)| item.item)
+                        .collect();
+
+                    return Ok(FzfResult::MultiSelected(checked));
+                }
+            }
+        }
+    }
+
+    fn run_checklist_fzf(
+        &self,
+        input_text: &str,
+        key_to_index: &std::collections::HashMap<String, usize>,
+        cursor: Option<usize>,
+    ) -> Result<ChecklistSelection> {
+        let mut cmd = Command::new("fzf");
+        cmd.env_remove("FZF_DEFAULT_OPTS");
+        cmd.arg("--ansi");
+        cmd.arg("--tiebreak=index");
+        cmd.arg("--layout=reverse");
+        cmd.arg("--print-query"); // Always print the query, even if no match
+
+        // Use delimiter to separate display from key
+        cmd.arg("--delimiter=\x1f").arg("--with-nth=1");
+
+        // Configure prompt
+        if let Some(prompt) = &self.prompt {
+            cmd.arg("--prompt").arg(format!("{prompt} > "));
+        }
+
+        // Configure header
+        if let Some(header) = &self.header {
+            cmd.arg("--header").arg(header.to_fzf_string());
+        }
+
+        // Apply additional args (contains toggle bindings from checklist_args)
+        for arg in &self.additional_args {
+            cmd.arg(arg);
+        }
+
+        // Apply cursor position to preserve position across FZF restarts
+        if let Some(index) = cursor {
+            cmd.arg("--bind").arg(format!("load:pos({})", index + 1));
+        }
+
+        // Apply responsive layout if enabled
+        if self.responsive_layout {
+            let layout = super::utils::get_responsive_layout();
+            cmd.arg(layout.preview_window);
+            cmd.arg("--margin").arg(layout.margin);
+        }
+
+        let mut child = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+
+        let pid = child.id();
+        let _ = crate::menu::server::register_menu_process(pid);
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(input_text.as_bytes())?;
+        }
+
+        let output = child.wait_with_output()?;
+        crate::menu::server::unregister_menu_process(pid);
+
+        // Parse output
+        self.parse_checklist_output(output, key_to_index)
+    }
+
+    fn parse_checklist_output(
+        &self,
+        result: std::process::Output,
+        key_to_index: &std::collections::HashMap<String, usize>,
+    ) -> Result<ChecklistSelection> {
+        let exit_code = result.status.code();
+
+        // Handle cancellation (Esc, Ctrl-C)
+        if let Some(code) = exit_code
+            && (code == 130 || code == 143)
+        {
+            return Ok(ChecklistSelection::Cancelled);
+        }
+
+        // Handle other non-zero exit codes as errors (except code 1 which we handle below)
+        if !result.status.success() && exit_code != Some(1) {
+            check_for_old_fzf_and_exit(&result.stderr);
+            log_fzf_failure(&result.stderr, exit_code);
+            return Ok(ChecklistSelection::Cancelled);
+        }
+
+        let stdout = String::from_utf8_lossy(&result.stdout);
+        let lines: Vec<&str> = stdout.trim_end().split('\n').collect();
+
+        // With --print-query, output is:
+        // Line 1: query (what user typed)
+        // Line 2: selected item (if any)
+
+        let query = lines.first().map(|s| s.trim()).unwrap_or("");
+        let selected = lines.get(1).map(|s| s.trim()).unwrap_or("");
+
+        // No selection - check if query is empty or not
+        if selected.is_empty() {
+            if query.is_empty() {
+                // User pressed Enter with empty query
+                return Ok(ChecklistSelection::EmptyQuery);
+            } else {
+                // User typed a query that doesn't match anything
+                return Ok(ChecklistSelection::NotFound);
+            }
+        }
+
+        // Extract the key from selected line (format: display\x1fkey)
+        if let Some(key) = selected.split('\x1f').nth(1) {
+            // Check if it's the confirm action
+            if key == ChecklistConfirm::confirm_key() {
+                return Ok(ChecklistSelection::Confirmed);
+            }
+
+            // Look up the index for this key
+            if let Some(&index) = key_to_index.get(key) {
+                return Ok(ChecklistSelection::Toggled(index));
+            }
+        }
+
+        // Selection doesn't match any of our items - treat as not found
+        Ok(ChecklistSelection::NotFound)
+    }
+
+    /// Base args with margin and theme, used by other *_args functions.
+    fn base_args(margin: &str) -> Vec<String> {
         let mut args = vec![
             "--margin".to_string(),
-            "10%,2%".to_string(),
+            margin.to_string(),
             "--min-height".to_string(),
             "10".to_string(),
         ];
         args.extend(super::theme::theme_args());
         args
+    }
+
+    fn default_args() -> Vec<String> {
+        Self::base_args("10%,2%")
     }
 
     fn input_args() -> Vec<String> {
-        let mut args = vec![
-            "--margin".to_string(),
-            "20%,2%".to_string(),
-            "--min-height".to_string(),
-            "10".to_string(),
-        ];
-        args.extend(super::theme::theme_args());
-        args
+        Self::base_args("20%,2%")
     }
 
     fn confirm_args() -> Vec<String> {
-        let mut args = vec![
-            "--margin".to_string(),
-            "20%,2%".to_string(),
-            "--min-height".to_string(),
-            "10".to_string(),
-        ];
-        args.extend(super::theme::theme_args());
+        let mut args = Self::base_args("20%,2%");
         args.push("--info=hidden".to_string());
         args.push("--color=header:-1".to_string());
         args
@@ -687,23 +967,11 @@ impl FzfBuilder {
         vec![]
     }
 
-    fn theme_args() -> Vec<String> {
-        vec![
-            "--color=bg+:#313244".to_string(),
-            "--color=bg:#1E1E2E".to_string(),
-            "--color=spinner:#F5E0DC".to_string(),
-            "--color=hl:#F38BA8".to_string(),
-            "--color=fg:#CDD6F4".to_string(),
-            "--color=header:#CDD6F4".to_string(),
-            "--color=info:#CBA6F7".to_string(),
-            "--color=pointer:#F5E0DC".to_string(),
-            "--color=marker:#B4BEFE".to_string(),
-            "--color=fg+:#CDD6F4".to_string(),
-            "--color=prompt:#CBA6F7".to_string(),
-            "--color=hl+:#F38BA8".to_string(),
-            "--color=selected-bg:#45475A".to_string(),
-            "--color=border:#6C7086".to_string(),
-            "--color=label:#CDD6F4".to_string(),
-        ]
+    fn checklist_args() -> Vec<String> {
+        let mut args = Self::base_args("10%,2%");
+        args.push("--height=95%".to_string()); // Give more space for checklist
+        // Don't use --multi - we use single-select with loop/reload pattern
+        // No special key bindings needed - use default fzf behavior
+        args
     }
 }

@@ -51,7 +51,7 @@ impl Setting for AboutSystem {
 }
 
 // ============================================================================
-// System Doctor (runs ins doctor, can't use macro due to shell command with read)
+// System Doctor (runs ins doctor fix --choose for interactive diagnostics)
 // ============================================================================
 
 pub struct SystemDoctor;
@@ -68,7 +68,7 @@ impl Setting for SystemDoctor {
     }
 
     fn setting_type(&self) -> SettingType {
-        SettingType::Command
+        SettingType::Action
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
@@ -76,13 +76,14 @@ impl Setting for SystemDoctor {
             "settings.command.launching",
             "Running system diagnostics...",
         );
-        cmd!(
-            "sh",
-            "-c",
-            &format!("{} doctor && read -n 1", env!("CARGO_BIN_NAME"))
-        )
-        .run()
-        .context("running system doctor")?;
+
+        // Simply call the new doctor fix --choose command
+        // It handles everything: diagnosis, interactive menu, and fixes
+        cmd!(env!("CARGO_BIN_NAME"), "doctor", "fix", "--choose")
+            .run()
+            .context("running interactive doctor fix")?;
+
+        ctx.notify("System Diagnostics", "Diagnostic session completed.");
         Ok(())
     }
 }

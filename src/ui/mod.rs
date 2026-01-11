@@ -74,6 +74,8 @@ pub mod nerd_font;
 
 pub mod catppuccin;
 
+pub mod preview;
+
 // Separator characters (not in nerd_font crate)
 pub const SEPARATOR_HEAVY: &str = "━";
 pub const SEPARATOR_LIGHT: &str = "─";

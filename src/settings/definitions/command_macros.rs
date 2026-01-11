@@ -61,13 +61,52 @@ macro_rules! gui_command_setting {
                 ctx: &mut $crate::settings::context::SettingsContext,
             ) -> anyhow::Result<()> {
                 use anyhow::Context;
+                use std::path::{Path, PathBuf};
                 use std::process::{Command, Stdio};
 
                 ctx.emit_info(
                     "settings.command.launching",
                     &format!("Launching {}...", $title),
                 );
-                Command::new($command)
+
+                // Some tools (notably Piper) are python scripts with `#!/usr/bin/env python3`.
+                // When mise is active, `python3` may resolve to a shim/interpreter without system
+                // GI bindings, so force system python for these scripts.
+                let resolved_path: PathBuf =
+                    which::which($command).unwrap_or_else(|_| $command.into());
+                let env_python3_shebang = std::fs::File::open(&resolved_path)
+                    .ok()
+                    .and_then(|mut f| {
+                        use std::io::Read;
+
+                        // Cap the amount of data we read so we never accidentally slurp a large
+                        // binary that doesn't contain a newline early.
+                        let mut buf = [0u8; 128];
+                        let n = f.read(&mut buf).ok()?;
+                        let slice = &buf[..n];
+                        let end = slice.iter().position(|&b| b == b'\n').unwrap_or(n);
+                        let mut line = &slice[..end];
+                        if line.ends_with(b"\r") {
+                            line = &line[..line.len().saturating_sub(1)];
+                        }
+
+                        Some(line == b"#!/usr/bin/env python3")
+                    })
+                    .unwrap_or(false);
+
+                let mut command = if env_python3_shebang && Path::new("/usr/bin/python3").exists() {
+                    let mut c = Command::new("/usr/bin/python3");
+                    c.arg(resolved_path);
+                    c.env_remove("VIRTUAL_ENV")
+                        .env_remove("CONDA_PREFIX")
+                        .env_remove("PYTHONHOME")
+                        .env_remove("PYTHONPATH");
+                    c
+                } else {
+                    Command::new($command)
+                };
+
+                command
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .spawn()

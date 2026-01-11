@@ -36,6 +36,9 @@ impl FzfSelectable for ManageMenuItem {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
+        use crate::ui::catppuccin::colors;
+        use crate::ui::preview::PreviewBuilder;
+
         match self {
             ManageMenuItem::User {
                 username,
@@ -43,91 +46,43 @@ impl FzfSelectable for ManageMenuItem {
                 groups,
                 in_toml,
             } => {
-                use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
+                let status = if *in_toml { "Managed" } else { "System" };
 
-                let reset = "\x1b[0m";
-                let mauve = hex_to_ansi_fg(colors::MAUVE);
-                let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
-                let text = hex_to_ansi_fg(colors::TEXT);
-                let teal = hex_to_ansi_fg(colors::TEAL);
-                let surface = hex_to_ansi_fg(colors::SURFACE1);
-                let green = hex_to_ansi_fg(colors::GREEN);
-
-                let mut lines = Vec::new();
-
-                lines.push(String::new());
-                lines.push(format!(
-                    "{mauve}{}  {}{reset}",
-                    char::from(NerdFont::User),
-                    username
-                ));
-                lines.push(format!(
-                    "{surface}───────────────────────────────────{reset}"
-                ));
-                lines.push(String::new());
-
-                let status = if *in_toml {
-                    format!("{green}Managed{reset}")
-                } else {
-                    format!("{text}System{reset}")
-                };
-                lines.push(format!(
-                    "{teal}{} Status: {}{reset}",
-                    char::from(NerdFont::Tag),
-                    status
-                ));
-                lines.push(format!(
-                    "{teal}{} Shell: {}{reset}",
-                    char::from(NerdFont::Terminal),
-                    shell
-                ));
-                lines.push(String::new());
-
-                lines.push(format!(
-                    "{surface}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{reset}"
-                ));
-                lines.push(String::new());
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::User, username)
+                    .line(
+                        colors::TEAL,
+                        Some(NerdFont::Tag),
+                        &format!("Status: {}", status),
+                    )
+                    .line(
+                        colors::TEAL,
+                        Some(NerdFont::Terminal),
+                        &format!("Shell: {}", shell),
+                    )
+                    .blank()
+                    .separator()
+                    .blank();
 
                 if groups.is_empty() {
-                    lines.push(format!(
-                        "{subtext}{} No groups assigned{reset}",
-                        char::from(NerdFont::List)
-                    ));
+                    builder = builder.subtext("No groups assigned");
                 } else {
-                    lines.push(format!(
-                        "{teal}{} Groups:{reset}",
-                        char::from(NerdFont::List)
-                    ));
-                    lines.push(String::new());
-                    for group in groups {
-                        lines.push(format!("{text}  • {}{reset}", group));
-                    }
+                    builder = builder
+                        .line(colors::TEAL, Some(NerdFont::List), "Groups:")
+                        .blank()
+                        .bullets(groups);
                 }
 
-                FzfPreview::Text(lines.join("\n"))
+                builder.build()
             }
-            ManageMenuItem::Add => {
-                use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
-
-                let reset = "\x1b[0m";
-                let mauve = hex_to_ansi_fg(colors::MAUVE);
-                let text = hex_to_ansi_fg(colors::TEXT);
-                let surface = hex_to_ansi_fg(colors::SURFACE1);
-
-                let lines = vec![
-                    String::new(),
-                    format!("{mauve}{}  Add User{reset}", char::from(NerdFont::Plus)),
-                    format!("{surface}───────────────────────────────────{reset}"),
-                    String::new(),
-                    format!("{text}Create a new managed user entry{reset}"),
-                    String::new(),
-                    format!("{text}The user will be added to the{reset}"),
-                    format!("{text}TOML configuration for tracking{reset}"),
-                    format!("{text}and management.{reset}"),
-                ];
-
-                FzfPreview::Text(lines.join("\n"))
-            }
+            ManageMenuItem::Add => PreviewBuilder::new()
+                .header(NerdFont::Plus, "Add User")
+                .text("Create a new managed user entry")
+                .blank()
+                .text("The user will be added to the")
+                .text("TOML configuration for tracking")
+                .text("and management.")
+                .build(),
             ManageMenuItem::Back => FzfPreview::Text("Return to settings".to_string()),
         }
     }

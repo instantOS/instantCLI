@@ -1,6 +1,6 @@
-/// Shell utility functions
-///
-/// This module provides common shell manipulation utilities used across the application.
+//! Shell utility functions
+//!
+//! This module provides common shell manipulation utilities used across the application.
 
 /// Escape a string for use in a shell command
 ///

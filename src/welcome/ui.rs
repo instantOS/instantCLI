@@ -1,7 +1,7 @@
 //! UI components for welcome application
 
 use crate::menu_utils::{FzfPreview, FzfSelectable};
-use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_fg, select_one_with_style};
+use crate::ui::catppuccin::{colors, format_icon_colored, select_one_with_style};
 use crate::ui::prelude::*;
 use anyhow::Result;
 
@@ -71,68 +71,50 @@ impl FzfSelectable for WelcomeItem {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let reset = "\x1b[0m";
-        let text = hex_to_ansi_fg(colors::TEXT);
-        let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
-        let surface = hex_to_ansi_fg(colors::SURFACE1);
-        let blue = hex_to_ansi_fg(colors::BLUE);
-        let mauve = hex_to_ansi_fg(colors::MAUVE);
-        let red = hex_to_ansi_fg(colors::RED);
-        let green = hex_to_ansi_fg(colors::GREEN);
+        use crate::ui::preview::PreviewBuilder;
 
-        let lines = match self {
-            WelcomeItem::InstallInstantOS => vec![
-                String::new(),
-                format!(
-                    "{green}{}  Install instantOS{reset}",
-                    char::from(NerdFont::Package)
-                ),
-                format!("{surface}───────────────────────────────────{reset}"),
-                String::new(),
-                format!("{text}Launch the instantOS installation wizard{reset}"),
-                format!("{text}to install instantOS on this system.{reset}"),
-                String::new(),
-                format!("{subtext}This will guide you through disk setup,{reset}"),
-                format!("{subtext}partitioning, and system installation.{reset}"),
-            ],
-            WelcomeItem::ConfigureNetwork => vec![
-                String::new(),
-                format!("{red}{}  Network Setup{reset}", char::from(NerdFont::Wifi)),
-                format!("{surface}───────────────────────────────────{reset}"),
-                String::new(),
-                format!("{text}No internet connection detected.{reset}"),
-                format!("{text}Launch network configuration tool{reset}"),
-                format!("{text}to set up your connection.{reset}"),
-                String::new(),
-                format!("{subtext}Opens nmtui in a new terminal.{reset}"),
-            ],
-            WelcomeItem::OpenWebsite => vec![
-                String::new(),
-                format!(
-                    "{blue}{}  instantOS Website{reset}",
-                    char::from(NerdFont::Globe)
-                ),
-                format!("{surface}───────────────────────────────────{reset}"),
-                String::new(),
-                format!("{text}Visit instantos.io to learn more about{reset}"),
-                format!("{text}instantOS and access documentation,{reset}"),
-                format!("{text}community forums, and downloads.{reset}"),
-                String::new(),
-                format!("{subtext}Opens in your default web browser.{reset}"),
-            ],
-            WelcomeItem::OpenSettings => vec![
-                String::new(),
-                format!("{mauve}{}  Settings{reset}", char::from(NerdFont::Gear)),
-                format!("{surface}───────────────────────────────────{reset}"),
-                String::new(),
-                format!("{text}Access the instantOS settings manager{reset}"),
-                format!("{text}to customize your desktop environment.{reset}"),
-                String::new(),
-                format!("{subtext}Configure appearance, applications,{reset}"),
-                format!("{subtext}keyboard, mouse, and more.{reset}"),
-            ],
+        match self {
+            WelcomeItem::InstallInstantOS => PreviewBuilder::new()
+                .line(colors::GREEN, Some(NerdFont::Package), "Install instantOS")
+                .separator()
+                .blank()
+                .text("Launch the instantOS installation wizard")
+                .text("to install instantOS on this system.")
+                .blank()
+                .subtext("This will guide you through disk setup,")
+                .subtext("partitioning, and system installation.")
+                .build(),
+            WelcomeItem::ConfigureNetwork => PreviewBuilder::new()
+                .line(colors::RED, Some(NerdFont::Wifi), "Network Setup")
+                .separator()
+                .blank()
+                .text("No internet connection detected.")
+                .text("Launch network configuration tool")
+                .text("to set up your connection.")
+                .blank()
+                .subtext("Opens nmtui in a new terminal.")
+                .build(),
+            WelcomeItem::OpenWebsite => PreviewBuilder::new()
+                .line(colors::BLUE, Some(NerdFont::Globe), "instantOS Website")
+                .separator()
+                .blank()
+                .text("Visit instantos.io to learn more about")
+                .text("instantOS and access documentation,")
+                .text("community forums, and downloads.")
+                .blank()
+                .subtext("Opens in your default web browser.")
+                .build(),
+            WelcomeItem::OpenSettings => PreviewBuilder::new()
+                .line(colors::MAUVE, Some(NerdFont::Gear), "Settings")
+                .separator()
+                .blank()
+                .text("Access the instantOS settings manager")
+                .text("to customize your desktop environment.")
+                .blank()
+                .subtext("Configure appearance, applications,")
+                .subtext("keyboard, mouse, and more.")
+                .build(),
             WelcomeItem::DisableAutostart => {
-                // Check current state to show appropriate message
                 let currently_enabled = get_autostart_state();
 
                 let (icon, color, status) = if currently_enabled {
@@ -141,34 +123,27 @@ impl FzfSelectable for WelcomeItem {
                     (NerdFont::ToggleOff, colors::PEACH, "○ Disabled")
                 };
 
-                vec![
-                    String::new(),
-                    format!(
-                        "{color}{}  Show on startup {status}{reset}",
-                        char::from(icon),
-                        color = hex_to_ansi_fg(color),
-                        status = status
-                    ),
-                    format!("{surface}───────────────────────────────────{reset}"),
-                    String::new(),
-                    if currently_enabled {
-                        format!("{text}The welcome app will appear{reset}")
-                    } else {
-                        format!("{text}The welcome app will not appear{reset}")
-                    },
-                    format!("{text}automatically when you log in.{reset}"),
-                    String::new(),
-                    format!("{subtext}You can change this setting later in{reset}"),
-                    format!("{subtext}Settings > System & Updates.{reset}"),
-                ]
-            }
-            WelcomeItem::Close => vec![
-                String::new(),
-                format!("{text}Exit the welcome application.{reset}"),
-            ],
-        };
+                let description = if currently_enabled {
+                    "The welcome app will appear"
+                } else {
+                    "The welcome app will not appear"
+                };
 
-        FzfPreview::Text(lines.join("\n"))
+                PreviewBuilder::new()
+                    .line(color, Some(icon), &format!("Show on startup {}", status))
+                    .separator()
+                    .blank()
+                    .text(description)
+                    .text("automatically when you log in.")
+                    .blank()
+                    .subtext("You can change this setting later in")
+                    .subtext("Settings > System & Updates.")
+                    .build()
+            }
+            WelcomeItem::Close => PreviewBuilder::new()
+                .text("Exit the welcome application.")
+                .build(),
+        }
     }
 }
 

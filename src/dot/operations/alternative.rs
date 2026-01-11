@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::dot::config::Config;
 use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
@@ -158,7 +158,7 @@ pub fn handle_alternative(
 }
 
 /// Handle --list flag
-fn handle_list(target_path: &PathBuf, display_path: &str, sources: &[DotfileSource]) -> Result<()> {
+fn handle_list(target_path: &Path, display_path: &str, sources: &[DotfileSource]) -> Result<()> {
     if sources.is_empty() {
         emit(
             Level::Info,
@@ -220,7 +220,7 @@ fn handle_list(target_path: &PathBuf, display_path: &str, sources: &[DotfileSour
 }
 
 /// Verify if it's safe to switch the dotfile source (target not modified by user)
-fn ensure_safe_to_switch(target_path: &PathBuf, items: &[SourceSelectItem]) -> Result<bool> {
+fn ensure_safe_to_switch(target_path: &Path, items: &[SourceSelectItem]) -> Result<bool> {
     if !target_path.exists() {
         return Ok(true);
     }
@@ -246,7 +246,7 @@ fn ensure_safe_to_switch(target_path: &PathBuf, items: &[SourceSelectItem]) -> R
 /// Apply the selected alternative
 fn apply_alternative_selection(
     config: &Config,
-    target_path: &PathBuf,
+    target_path: &Path,
     display_path: &str,
     item: &SourceSelectItem,
 ) -> Result<()> {
@@ -259,13 +259,13 @@ fn apply_alternative_selection(
     // verified the file is safe to switch (matches a known source)
     let new_dotfile = crate::dot::Dotfile {
         source_path: item.source.source_path.clone(),
-        target_path: target_path.clone(),
+        target_path: target_path.to_path_buf(),
     };
     new_dotfile.reset(&db)?;
 
     // Only save override after successful apply
     overrides.set_override(
-        target_path.clone(),
+        target_path.to_path_buf(),
         item.source.repo_name.clone(),
         item.source.subdir_name.clone(),
     )?;
@@ -410,7 +410,7 @@ pub fn get_all_destinations(config: &Config) -> Result<Vec<DotfileSource>> {
 pub fn add_to_destination(
     config: &Config,
     db: &crate::dot::db::Database,
-    target_path: &PathBuf,
+    target_path: &Path,
     dest: &DotfileSource,
 ) -> Result<()> {
     use crate::dot::dotfile::Dotfile;
@@ -428,7 +428,7 @@ pub fn add_to_destination(
     // Use Dotfile to copy and register in DB
     let dotfile = Dotfile {
         source_path: dest_path.clone(),
-        target_path: target_path.clone(),
+        target_path: target_path.to_path_buf(),
     };
     dotfile.create_source_from_target(db)?;
 
@@ -460,7 +460,7 @@ pub fn add_to_destination(
 }
 
 /// Handle the --reset flag
-fn handle_reset(target_path: &PathBuf, display_path: &str) -> Result<()> {
+fn handle_reset(target_path: &Path, display_path: &str) -> Result<()> {
     let mut overrides = OverrideConfig::load()?;
 
     if overrides.remove_override(target_path)? {

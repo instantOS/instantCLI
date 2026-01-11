@@ -1,5 +1,6 @@
 use crate::menu_utils::{
-    ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfWrapper, MenuWrapper,
+    ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfResult, FzfWrapper,
+    MenuWrapper,
 };
 use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;
@@ -474,6 +475,40 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             }
         }
+        MenuCommands::Checklist {
+            ref items,
+            ref confirm,
+        } => {
+            // Parse items from stdin if empty, otherwise from --items arg
+            let item_list: Vec<String> = if items.is_empty() {
+                // Read from stdin (one item per line, like `ins menu choice`)
+                use std::io::{self, Read};
+                let mut buffer = String::new();
+                io::stdin()
+                    .read_to_string(&mut buffer)
+                    .map_err(|e| anyhow::anyhow!("Failed to read from stdin: {}", e))?;
+                buffer.lines().map(|s| s.to_string()).collect()
+            } else {
+                // Split space-separated items from command line
+                items.split(' ').map(|s| s.to_string()).collect()
+            };
+
+            match FzfWrapper::builder()
+                .prompt("Select items")
+                .header("Enter on item toggles it | Enter on Continue confirms")
+                .checklist(confirm)
+                .checklist_dialog(item_list)?
+            {
+                FzfResult::MultiSelected(selected) => {
+                    for item in selected {
+                        println!("{}", item);
+                    }
+                    Ok(0)
+                }
+                FzfResult::Cancelled => Ok(1),
+                _ => Ok(2),
+            }
+        }
         MenuCommands::Server { command } => handle_server_command(command).await,
     }
 }
@@ -636,6 +671,15 @@ pub enum MenuCommands {
         /// Use GUI menu server instead of local slider
         #[arg(long)]
         gui: bool,
+    },
+    /// Show a checklist dialog for testing the checklist utility
+    Checklist {
+        /// Items to display in checklist (space-separated). If empty, uses sample items.
+        #[arg(long, default_value = "")]
+        items: String,
+        /// Text for the confirm button
+        #[arg(long, default_value = "Continue")]
+        confirm: String,
     },
 }
 

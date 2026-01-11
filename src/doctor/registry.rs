@@ -32,7 +32,8 @@ impl CheckRegistry {
         registry.register::<PowerCheck>("power");
         registry.register::<BatteryHealthCheck>("battery-life");
         registry.register::<PerformanceTest>("performance");
-
+        registry.register::<GitConfigCheck>("git-config");
+        registry.register::<ShellCompletionCheck>("shell-completions");
         registry
     }
 

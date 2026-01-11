@@ -17,7 +17,7 @@ mod tests {
 
         // Initialize git repo
         let _ = std::process::Command::new("git")
-            .args(&["init", repo_path.to_str().unwrap()])
+            .args(["init", repo_path.to_str().unwrap()])
             .output()
             .expect("Failed to init git repo");
 

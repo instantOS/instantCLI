@@ -41,15 +41,29 @@ pub fn should_skip_for_privileges(required: PrivilegeLevel) -> Option<&'static s
     skip_reason_for_privilege_level(required, is_root)
 }
 
-pub fn escalate_for_fix(_check_id: &str) -> Result<(), anyhow::Error> {
-    // Use sudo crate to restart with privileges
-    match sudo::with_env(&["RUST_BACKTRACE", "RUST_LOG"]) {
-        Ok(_) => {
-            // This should never be reached as process restarts
-            unreachable!("sudo::with_env should restart the process")
-        }
-        Err(e) => Err(anyhow::anyhow!("Failed to escalate privileges: {}", e)),
-    }
+/// Escalate privileges and fix a batch of checks
+/// Replaces the current process with sudo, passing check IDs as arguments
+pub fn escalate_for_fix(check_ids: Vec<String>) -> Result<(), anyhow::Error> {
+    use std::process::Command;
+
+    // Join check IDs with commas for the command line
+    let batch_ids = check_ids.join(",");
+
+    // Get the current program path and args
+    let current_exe = std::env::current_exe()
+        .map_err(|e| anyhow::anyhow!("Failed to get current executable: {}", e))?;
+
+    // Build the sudo command with the batch IDs
+    let status = Command::new("sudo")
+        .arg(&current_exe)
+        .args(std::env::args().skip(1)) // Pass through existing args
+        .arg("--batch-ids")
+        .arg(&batch_ids)
+        .status()
+        .map_err(|e| anyhow::anyhow!("Failed to execute sudo: {}", e))?;
+
+    // Exit with the same code as the sudo command
+    std::process::exit(status.code().unwrap_or(1));
 }
 
 #[derive(Debug, Error)]

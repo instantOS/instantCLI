@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_settings_store_bool() {
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_path_buf();
 
         // Create a new store
@@ -342,21 +342,21 @@ mod tests {
         let key = BoolSettingKey::new("appearance.animations", false);
 
         // Test default value
-        assert_eq!(store.bool(key), false);
+        assert!(!store.bool(key));
 
         // Set and verify
         store.set_bool(key, true);
-        assert_eq!(store.bool(key), true);
+        assert!(store.bool(key));
 
         // Save and reload
         store.save().unwrap();
         let reloaded = SettingsStore::load_from_path(path).unwrap();
-        assert_eq!(reloaded.bool(key), true);
+        assert!(reloaded.bool(key));
     }
 
     #[test]
     fn test_settings_store_string() {
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_path_buf();
 
         let mut store = SettingsStore::load_from_path(path.clone()).unwrap();
@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn test_settings_store_int() {
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_path_buf();
 
         let mut store = SettingsStore::load_from_path(path.clone()).unwrap();
@@ -419,7 +419,7 @@ layout = "monocle"
         let bool_key = BoolSettingKey::new("appearance.animations", false);
         let string_key = StringSettingKey::new("desktop.layout", "tile");
 
-        assert_eq!(store.bool(bool_key), true);
+        assert!(store.bool(bool_key));
         assert_eq!(store.string(string_key), "monocle");
 
         // Save should maintain hierarchical format
@@ -442,6 +442,6 @@ layout = "monocle"
         assert!(store.is_empty());
 
         let key = BoolSettingKey::new("test.key", true);
-        assert_eq!(store.bool(key), true); // Should return default
+        assert!(store.bool(key)); // Should return default
     }
 }

@@ -318,7 +318,7 @@ fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<Path
     };
 
     // Use shared add function
-    add_to_destination(config, db, &full_path.to_path_buf(), &dest)?;
+    add_to_destination(config, db, full_path, &dest)?;
 
     Ok(repo_base)
 }

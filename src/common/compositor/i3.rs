@@ -311,7 +311,6 @@ fn find_window_recursive(node: &Value, window_class: &str) -> Option<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_i3msg_command_format() {

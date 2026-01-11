@@ -1,5 +1,63 @@
 //! Utility functions for FZF wrapper
 
+use crossterm::terminal;
+
+/// Get terminal dimensions (columns, rows) using crossterm.
+pub(crate) fn get_terminal_dimensions() -> Option<(u16, u16)> {
+    match terminal::size() {
+        Ok((cols, rows)) if cols > 0 && rows > 0 => Some((cols, rows)),
+        _ => {
+            // Fallback to environment variables
+            let cols = std::env::var("COLUMNS").ok()?.parse::<u16>().ok()?;
+            let rows = std::env::var("LINES").ok()?.parse::<u16>().ok()?;
+            if cols > 0 && rows > 0 {
+                Some((cols, rows))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Responsive layout settings for fzf based on terminal dimensions.
+pub(crate) struct ResponsiveLayout {
+    /// The preview window argument (e.g., "--preview-window=down:50%")
+    pub preview_window: &'static str,
+    /// The margin argument value (e.g., "2%,2%")
+    pub margin: &'static str,
+}
+
+/// Get the responsive layout settings based on terminal dimensions.
+/// Returns appropriate preview window and margin settings:
+/// - For narrow (<60 cols) or square-ish (aspect ratio <2:1) terminals:
+///   - Preview at bottom, reduced vertical margins (2%) to maximize space
+/// - For wide terminals with aspect ratio >=2:1:
+///   - Preview on right, larger vertical margins (10%) for visual balance
+/// - Falls back to bottom layout if terminal size cannot be detected
+pub(crate) fn get_responsive_layout() -> ResponsiveLayout {
+    if let Some((cols, rows)) = get_terminal_dimensions() {
+        let ratio = cols as f32 / rows as f32;
+        // Use bottom if: too narrow (<60 cols) OR aspect ratio <2:1
+        if cols < 60 || ratio < 2.0 {
+            ResponsiveLayout {
+                preview_window: "--preview-window=down:50%",
+                margin: "2%,2%", // Minimal vertical margins for stacked layout
+            }
+        } else {
+            ResponsiveLayout {
+                preview_window: "--preview-window=right:50%",
+                margin: "10%,2%", // More vertical margin when side-by-side layout allows it
+            }
+        }
+    } else {
+        // Fallback to down if terminal size can't be detected - safer for narrow terminals
+        ResponsiveLayout {
+            preview_window: "--preview-window=down:50%",
+            margin: "2%,2%",
+        }
+    }
+}
+
 /// Check if the error indicates an old fzf version and exit if so
 pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
     let stderr_str = String::from_utf8_lossy(stderr);
@@ -80,25 +138,4 @@ pub(crate) fn extract_icon_padding(display: &str) -> (String, String) {
     }
     // Fallback: just return spaces for padding
     (" ".to_string(), " ".to_string())
-}
-
-// UNUSED: Consider removing - not used anywhere in the codebase
-/// Strip ANSI escape codes from a string
-pub(crate) fn strip_ansi_codes(s: &str) -> String {
-    let mut result = String::new();
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Skip until we find 'm' (end of color code)
-            while let Some(&next) = chars.peek() {
-                chars.next();
-                if next == 'm' {
-                    break;
-                }
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    result
 }
