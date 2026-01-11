@@ -4,7 +4,6 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use std::str::FromStr;
 use strum_macros::{Display, EnumString};
-use tokio::fs::File as TokioFile;
 use tokio::process::Command as TokioCommand;
 
 ///
@@ -170,10 +169,10 @@ impl PowerHandleFactory {
         }
 
         // If not, we check if we have access to the sysfiles
-        let sys_available =
-            TokioFile::open("/sys/devices/system/cpu/cpufreq/policy0/scaling_available_governors")
-                .await
-                .is_ok();
+        let sys_available = tokio::fs::try_exists(
+            "/sys/devices/system/cpu/cpufreq/policy0/scaling_available_governors",
+        )
+        .await?;
         if sys_available {
             Ok(Box::new(LegacyPowerHandle::default()))
         } else {
