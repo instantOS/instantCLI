@@ -23,7 +23,7 @@ mod path_tests;
 pub use crate::dot::dotfile::Dotfile;
 pub use git::{diff_all, status_all, update_all};
 pub use operations::{
-    add_dotfile, apply_all, git_commit_all, git_push_all, git_run_any, reset_modified,
+    add_dotfile, apply_all, git_commit_all, git_pull_all, git_push_all, git_run_any, reset_modified,
 };
 pub use types::RepoName;
 pub use utils::{get_all_dotfiles, resolve_dotfile_path};

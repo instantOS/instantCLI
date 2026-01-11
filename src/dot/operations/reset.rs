@@ -55,25 +55,43 @@ pub fn reset_modified(config: &Config, db: &Database, path: &str) -> Result<()> 
 
     // Summary
     if reset_count > 0 {
-        emit(
-            Level::Success,
-            "dot.reset.complete",
-            &format!(
-                "{} Reset {} file(s), {} already clean",
+        let reset_text = if reset_count == 1 {
+            "1 file".to_string()
+        } else {
+            format!("{} files", reset_count)
+        };
+
+        let msg = if clean_count > 0 {
+            let clean_text = if clean_count == 1 {
+                "1 already clean".to_string()
+            } else {
+                format!("{} already clean", clean_count)
+            };
+            format!(
+                "{} Reset {}, {}",
                 char::from(NerdFont::Check),
-                reset_count,
-                clean_count
-            ),
-            None,
-        );
+                reset_text,
+                clean_text
+            )
+        } else {
+            format!("{} Reset {}", char::from(NerdFont::Check), reset_text)
+        };
+
+        emit(Level::Success, "dot.reset.complete", &msg, None);
     } else {
+        let clean_text = if clean_count == 1 {
+            "1 file is already clean".to_string()
+        } else {
+            format!("All {} files already clean", clean_count)
+        };
+
         emit(
             Level::Info,
             "dot.reset.no_changes",
             &format!(
-                "{} All {} file(s) already clean - no reset needed",
+                "{} {} - no reset needed",
                 char::from(NerdFont::Info),
-                clean_count
+                clean_text
             ),
             None,
         );

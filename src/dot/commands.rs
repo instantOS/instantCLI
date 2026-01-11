@@ -94,6 +94,12 @@ pub enum DotCommands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Pull changes in all writable repositories
+    Pull {
+        /// Arguments to pass to git pull (e.g. "--rebase")
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Run an arbitrary git command in a repository
     Git {
         /// Git command and arguments (e.g. "log --oneline")
@@ -299,6 +305,18 @@ pub fn handle_dot_command(
         }
         DotCommands::Push { args } => {
             super::git_push_all(&config, args, debug)?;
+        }
+        DotCommands::Pull { args } => {
+            let pulled_commits = super::git_pull_all(&config, args, debug)?;
+            if pulled_commits {
+                println!();
+                super::status_all(&config, None, &db, false)?;
+                println!(
+                    "\n{} New commits were pulled. Use {} to apply the changes.",
+                    char::from(NerdFont::Info).to_string().blue(),
+                    "ins dot apply".green()
+                );
+            }
         }
         DotCommands::Git { args } => {
             super::git_run_any(&config, args, debug)?;

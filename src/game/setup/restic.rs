@@ -95,6 +95,20 @@ pub(super) fn infer_snapshot_kind(
     }
 }
 
+fn count_snapshot_files(game_config: &InstantGameConfig, snapshot_id: &str) -> Result<usize> {
+    let restic = ResticWrapper::new(
+        game_config.repo.as_path().to_string_lossy().to_string(),
+        game_config.repo_password.clone(),
+    )
+    .context("Failed to initialize restic wrapper")?;
+
+    let nodes = restic
+        .list_snapshot_nodes(snapshot_id)
+        .context("Failed to inspect snapshot contents")?;
+
+    Ok(nodes.iter().filter(|node| node.node_type == "file").count())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,11 +134,11 @@ mod tests {
     fn restic_wrapper_for_config(
         config: &InstantGameConfig,
     ) -> anyhow::Result<crate::restic::wrapper::ResticWrapper> {
-        Ok(crate::restic::wrapper::ResticWrapper::new(
+        crate::restic::wrapper::ResticWrapper::new(
             config.repo.as_path().to_string_lossy().to_string(),
             config.repo_password.clone(),
         )
-        .context("Failed to initialize restic wrapper")?)
+        .context("Failed to initialize restic wrapper")
     }
 
     fn latest_snapshot_id(config: &InstantGameConfig) -> String {
@@ -184,18 +198,4 @@ mod tests {
 
         Ok(())
     }
-}
-
-fn count_snapshot_files(game_config: &InstantGameConfig, snapshot_id: &str) -> Result<usize> {
-    let restic = ResticWrapper::new(
-        game_config.repo.as_path().to_string_lossy().to_string(),
-        game_config.repo_password.clone(),
-    )
-    .context("Failed to initialize restic wrapper")?;
-
-    let nodes = restic
-        .list_snapshot_nodes(snapshot_id)
-        .context("Failed to inspect snapshot contents")?;
-
-    Ok(nodes.iter().filter(|node| node.node_type == "file").count())
 }

@@ -17,18 +17,21 @@ use super::utils::{check_for_old_fzf_and_exit, log_fzf_failure};
 // Helper functions for FzfWrapper::select
 // ============================================================================
 
-/// Build a lookup map from display text to item, and collect display lines.
-fn build_item_map<T: FzfSelectable + Clone>(items: &[T]) -> (HashMap<String, T>, Vec<String>) {
+/// Build a lookup map from fzf_key to item, and collect display lines with keys.
+fn build_item_map<T: FzfSelectable + Clone>(
+    items: &[T],
+) -> (HashMap<String, T>, Vec<(String, String)>) {
     let mut item_map: HashMap<String, T> = HashMap::new();
-    let mut display_lines = Vec::new();
+    let mut display_with_keys = Vec::new();
 
     for item in items {
         let display = item.fzf_display_text();
-        display_lines.push(display.clone());
-        item_map.insert(display.clone(), item.clone());
+        let key = item.fzf_key();
+        display_with_keys.push((display, key.clone()));
+        item_map.insert(key, item.clone());
     }
 
-    (item_map, display_lines)
+    (item_map, display_with_keys)
 }
 
 /// Calculate the initial cursor position based on configuration.
@@ -43,44 +46,51 @@ fn calculate_cursor_position(
 }
 
 /// Configure fzf preview and build input text based on the preview strategy.
-fn configure_preview_and_input<T: FzfSelectable>(
+/// Always includes the fzf_key after a tab so we can reliably match items.
+fn configure_preview_and_input(
     cmd: &mut Command,
     strategy: PreviewStrategy,
-    display_lines: &[String],
-    item_map: &HashMap<String, T>,
+    display_with_keys: &[(String, String)],
 ) -> String {
-    match strategy {
-        PreviewStrategy::None => display_lines.join("\n"),
-        PreviewStrategy::Command(command) => {
-            cmd.arg("--delimiter=\t")
-                .arg("--with-nth=1")
-                .arg("--preview")
-                .arg(format!("{} bash \"$(echo {{}} | cut -f2)\"", command));
+    // Always use Unit Separator (\x1f) delimiter to separate display from key
+    cmd.arg("--delimiter=\x1f").arg("--with-nth=1");
 
-            display_lines
+    match strategy {
+        PreviewStrategy::None => {
+            // Format: display\x1fkey
+            display_with_keys
                 .iter()
-                .map(|display| {
-                    if let Some(item) = item_map.get(display) {
-                        format!("{display}\t{}", item.fzf_key())
-                    } else {
-                        display.clone()
-                    }
-                })
+                .map(|(display, key)| format!("{display}\x1f{key}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        PreviewStrategy::Command(command) => {
+            // Use literal \x1f character for POSIX compatibility (works in dash/sh)
+            cmd.arg("--preview").arg(format!(
+                "{} bash \"$(echo {{}} | cut -d'\x1f' -f2)\"",
+                command
+            ));
+
+            // Format: display\x1fkey
+            display_with_keys
+                .iter()
+                .map(|(display, key)| format!("{display}\x1f{key}"))
                 .collect::<Vec<_>>()
                 .join("\n")
         }
         PreviewStrategy::Text(preview_map) | PreviewStrategy::Mixed(preview_map) => {
-            cmd.arg("--delimiter=\t")
-                .arg("--with-nth=1")
-                .arg("--preview")
-                .arg("echo {} | cut -f2 | base64 -d");
+            // Use field 3 for base64-encoded preview
+            // Use literal \x1f character for POSIX compatibility
+            cmd.arg("--preview")
+                .arg("echo {} | cut -d'\x1f' -f3 | base64 -d");
 
-            display_lines
+            // Format: display\x1fkey\x1fbase64_preview
+            display_with_keys
                 .iter()
-                .map(|display| {
+                .map(|(display, key)| {
                     let preview = preview_map.get(display).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(preview.as_bytes());
-                    format!("{display}\t{encoded}")
+                    format!("{display}\x1f{key}\x1f{encoded}")
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -109,7 +119,7 @@ fn execute_fzf_command(mut cmd: Command, input_text: &str) -> Result<std::proces
     output.map_err(Into::into)
 }
 
-/// Parse fzf output and map selected lines back to items.
+/// Parse fzf output and map selected lines back to items using the fzf_key field.
 fn parse_fzf_output<T: Clone>(
     result: std::process::Output,
     item_map: &HashMap<String, T>,
@@ -140,23 +150,26 @@ fn parse_fzf_output<T: Clone>(
         return Ok(FzfResult::Cancelled);
     }
 
+    // Extract the key from field 2 (format: display\x1fkey or display\x1fkey\x1fpreview)
     if multi_select {
         let selected_items: Vec<T> = selected_lines
             .iter()
             .filter_map(|line| {
-                let display_text = line.split('\t').next().unwrap_or(line);
-                item_map.get(display_text).cloned()
+                // Extract key from field 2 (index 1) using Unit Separator
+                let key = line.split('\x1f').nth(1)?;
+                item_map.get(key).cloned()
             })
             .collect();
         Ok(FzfResult::MultiSelected(selected_items))
     } else {
-        let display_text = selected_lines[0]
-            .split('\t')
-            .next()
-            .unwrap_or(selected_lines[0]);
-        match item_map.get(display_text).cloned() {
-            Some(item) => Ok(FzfResult::Selected(item)),
-            None => Ok(FzfResult::Cancelled),
+        // Extract key from field 2 (index 1) using Unit Separator
+        if let Some(key) = selected_lines[0].split('\x1f').nth(1) {
+            match item_map.get(key).cloned() {
+                Some(item) => Ok(FzfResult::Selected(item)),
+                None => Ok(FzfResult::Cancelled),
+            }
+        } else {
+            Ok(FzfResult::Cancelled)
         }
     }
 }
@@ -167,6 +180,7 @@ pub struct FzfWrapper {
     pub(crate) header: Option<String>,
     pub(crate) additional_args: Vec<String>,
     pub(crate) initial_cursor: Option<InitialCursor>,
+    pub(crate) responsive_layout: bool,
 }
 
 impl FzfWrapper {
@@ -180,6 +194,7 @@ impl FzfWrapper {
         header: Option<Header>,
         additional_args: Vec<String>,
         initial_cursor: Option<InitialCursor>,
+        responsive_layout: bool,
     ) -> Self {
         Self {
             multi_select,
@@ -187,6 +202,7 @@ impl FzfWrapper {
             header: header.map(|h| h.to_fzf_string()),
             additional_args,
             initial_cursor,
+            responsive_layout,
         }
     }
 
@@ -208,6 +224,14 @@ impl FzfWrapper {
         }
 
         fzf_args.extend(self.additional_args.clone());
+
+        // Apply responsive layout settings LAST to override defaults
+        if self.responsive_layout {
+            let layout = super::utils::get_responsive_layout();
+            fzf_args.push(layout.preview_window.to_string());
+            fzf_args.push("--margin".to_string());
+            fzf_args.push(layout.margin.to_string());
+        }
 
         let mut cmd = Command::new("sh");
         cmd.arg("-c");
@@ -264,11 +288,12 @@ impl FzfWrapper {
             return Ok(FzfResult::Cancelled);
         }
 
-        // Build item lookup map and display lines
-        let (item_map, display_lines) = build_item_map(&items);
+        // Build item lookup map (keyed by fzf_key) and display lines with keys
+        let (item_map, display_with_keys) = build_item_map(&items);
 
         // Calculate initial cursor position
-        let cursor_position = calculate_cursor_position(&self.initial_cursor, display_lines.len());
+        let cursor_position =
+            calculate_cursor_position(&self.initial_cursor, display_with_keys.len());
 
         // Analyze preview strategy and build input text
         let preview_strategy = PreviewUtils::analyze_preview_strategy(&items)?;
@@ -276,6 +301,7 @@ impl FzfWrapper {
         // Configure fzf command
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
+        cmd.arg("--ansi"); // Enable ANSI color interpretation in display text
         cmd.arg("--tiebreak=index");
 
         if self.multi_select {
@@ -290,13 +316,20 @@ impl FzfWrapper {
 
         // Build input text and configure preview
         let input_text =
-            configure_preview_and_input(&mut cmd, preview_strategy, &display_lines, &item_map);
+            configure_preview_and_input(&mut cmd, preview_strategy, &display_with_keys);
 
         if let Some(position) = cursor_position {
             cmd.arg("--bind").arg(format!("load:pos({})", position + 1));
         }
         for arg in &self.additional_args {
             cmd.arg(arg);
+        }
+
+        // Apply responsive layout settings LAST to override defaults
+        if self.responsive_layout {
+            let layout = super::utils::get_responsive_layout();
+            cmd.arg(layout.preview_window);
+            cmd.arg("--margin").arg(layout.margin);
         }
 
         // Execute fzf
@@ -327,5 +360,18 @@ impl FzfWrapper {
 
     pub fn password(prompt: &str) -> Result<FzfResult<String>> {
         Self::builder().prompt(prompt).password().password_dialog()
+    }
+
+    /// Convenience method for checklist dialogs.
+    /// Returns Some(checked_items) or None if cancelled.
+    pub fn checklist<T: FzfSelectable + Clone>(items: Vec<T>) -> Result<Option<Vec<T>>> {
+        match Self::builder()
+            .checklist("Continue")
+            .checklist_dialog(items)?
+        {
+            FzfResult::MultiSelected(items) => Ok(Some(items)),
+            FzfResult::Cancelled => Ok(None),
+            _ => Ok(None),
+        }
     }
 }

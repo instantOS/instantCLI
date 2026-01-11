@@ -576,7 +576,7 @@ mod tests {
             words: vec![
                 RemappedWord {
                     word: "Hello".to_string(),
-                    start: start,
+                    start,
                     end: start + Duration::from_millis(500),
                 },
                 RemappedWord {

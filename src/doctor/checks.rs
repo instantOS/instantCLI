@@ -8,9 +8,11 @@
 //! - display.rs: Display and compositor checks
 //! - security.rs: Security-related checks (polkit agents)
 //! - nerdfont.rs: Nerd Font symbol rendering checks
+//! - completions.rs: Shell completion checks
 
 use crate::doctor::{CheckStatus, DoctorCheck, PrivilegeLevel};
 
+pub mod completions;
 pub mod display;
 pub mod energy;
 pub mod locale;
@@ -23,6 +25,7 @@ pub mod system;
 pub mod tools;
 
 // Re-export all check types for easy access
+pub use completions::ShellCompletionCheck;
 pub use display::SwayDisplayCheck;
 pub use energy::PowerCheck;
 pub use locale::LocaleCheck;
@@ -34,4 +37,4 @@ pub use storage::{
     PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck, YayCacheCheck,
 };
 pub use system::{PendingUpdatesCheck, SwapCheck};
-pub use tools::BatCheck;
+pub use tools::{BatCheck, GitConfigCheck};

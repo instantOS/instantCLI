@@ -742,12 +742,8 @@ impl QuestionEngine {
                 if opt.contains("Resume") {
                     Ok(false)
                 } else if opt.contains("Review Answers") {
-                    loop {
-                        if let Some(review_idx) = self.handle_review(current_idx)? {
-                            self.force_ask_question(review_idx).await?;
-                        } else {
-                            break;
-                        }
+                    while let Some(review_idx) = self.handle_review(current_idx)? {
+                        self.force_ask_question(review_idx).await?;
                     }
                     Ok(false)
                 } else if opt.contains("Go Back") {
@@ -790,12 +786,8 @@ impl QuestionEngine {
                 if opt.contains("Install") {
                     Ok(true)
                 } else if opt.contains("Review Answers") {
-                    loop {
-                        if let Some(review_idx) = self.handle_review(self.questions.len())? {
-                            self.force_ask_question(review_idx).await?;
-                        } else {
-                            break;
-                        }
+                    while let Some(review_idx) = self.handle_review(self.questions.len())? {
+                        self.force_ask_question(review_idx).await?;
                     }
                     Ok(false)
                 } else if opt.contains("Advanced Options") {

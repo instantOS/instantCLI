@@ -1,8 +1,9 @@
+//! Centralized path management for instantCLI
+//!
+//! This module provides a single source of truth for all application paths
+
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-
-/// Centralized path management for instantCLI
-/// This module provides a single source of truth for all application paths
 
 /// Get the main instant config directory
 pub fn instant_config_dir() -> Result<PathBuf> {

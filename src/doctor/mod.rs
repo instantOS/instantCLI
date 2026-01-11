@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Subcommand;
+use clap_complete::engine::ArgValueCompleter;
 use colored::*;
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Row, Table, presets::UTF8_FULL};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -13,16 +14,29 @@ pub enum DoctorCommands {
     /// Run a specific health check
     Run {
         /// Name of the check to run
+        #[arg(add = ArgValueCompleter::new(crate::completions::check_name_completion))]
         name: String,
     },
     /// Apply fix for a specific health check
     Fix {
         /// Name of the check to fix
-        #[arg(value_name = "NAME")]
+        #[arg(
+            value_name = "NAME",
+            add = ArgValueCompleter::new(crate::completions::check_name_completion)
+        )]
         name: Option<String>,
         /// Fix all failing checks
         #[arg(long, conflicts_with = "name")]
         all: bool,
+        /// Interactive mode: choose which fixes to apply
+        #[arg(long, conflicts_with = "name", conflicts_with = "all")]
+        choose: bool,
+        /// Internal: Comma-separated list of check IDs to fix (used for batch mode after escalation)
+        ///
+        /// Note: when restarted with sudo, the original `NAME` argument may still be present;
+        /// we intentionally allow both and prefer `--batch-ids`.
+        #[arg(long, hide = true)]
+        batch_ids: Option<String>,
     },
 }
 

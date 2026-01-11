@@ -383,7 +383,7 @@ pub fn format_setting_path(setting: &dyn Setting) -> String {
 mod tests {
     use super::*;
     use crate::settings::context::SettingsContext;
-    use crate::settings::setting::{Category, SettingMetadata, SettingType};
+    use crate::settings::setting::{SettingMetadata, SettingType};
     use crate::ui::prelude::NerdFont;
     use anyhow::Result;
 

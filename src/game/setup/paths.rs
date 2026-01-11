@@ -361,42 +361,6 @@ impl FzfSelectable for SavePathOption {
         }
     }
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_normalize_path_for_cross_device() {
-        assert_eq!(
-            normalize_path_for_cross_device("/home/alice/.config/game/saves"),
-            "~/.config/game/saves"
-        );
-
-        assert_eq!(
-            normalize_path_for_cross_device("/home/bob/Documents/GameSaves"),
-            "~/Documents/GameSaves"
-        );
-
-        assert_eq!(normalize_path_for_cross_device("/home/alice"), "~");
-
-        assert_eq!(
-            normalize_path_for_cross_device("/opt/game/saves"),
-            "/opt/game/saves"
-        );
-
-        assert_eq!(
-            normalize_path_for_cross_device("~/.local/share/game"),
-            "~/.local/share/game"
-        );
-
-        assert_eq!(normalize_path_for_cross_device("/"), "/");
-
-        assert_eq!(
-            normalize_path_for_cross_device("/home/user.name/.local/share/Steam/steamapps"),
-            "~/.local/share/Steam/steamapps"
-        );
-    }
-}
 
 /// Checks if the selected path has a different folder name than the original save folder
 /// and offers the user a choice between using the original folder name appended to the chosen path
@@ -458,5 +422,41 @@ fn handle_differently_named_folders(
         }
     } else {
         Ok(None)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_path_for_cross_device() {
+        assert_eq!(
+            normalize_path_for_cross_device("/home/alice/.config/game/saves"),
+            "~/.config/game/saves"
+        );
+
+        assert_eq!(
+            normalize_path_for_cross_device("/home/bob/Documents/GameSaves"),
+            "~/Documents/GameSaves"
+        );
+
+        assert_eq!(normalize_path_for_cross_device("/home/alice"), "~");
+
+        assert_eq!(
+            normalize_path_for_cross_device("/opt/game/saves"),
+            "/opt/game/saves"
+        );
+
+        assert_eq!(
+            normalize_path_for_cross_device("~/.local/share/game"),
+            "~/.local/share/game"
+        );
+
+        assert_eq!(normalize_path_for_cross_device("/"), "/");
+
+        assert_eq!(
+            normalize_path_for_cross_device("/home/user.name/.local/share/Steam/steamapps"),
+            "~/.local/share/Steam/steamapps"
+        );
     }
 }

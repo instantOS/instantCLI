@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{Subcommand, ValueHint};
+use clap_complete::engine::ArgValueCompleter;
 
 use super::apply;
 
@@ -25,6 +26,7 @@ pub enum SettingsCommands {
         categories_only: bool,
         /// Filter by category ID
         #[arg(short = 'f', long = "filter")]
+        #[arg(add = ArgValueCompleter::new(crate::completions::settings_category_completion))]
         category_filter: Option<String>,
     },
     #[command(hide = true)]
