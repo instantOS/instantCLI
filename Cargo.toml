@@ -60,6 +60,9 @@ serde_yaml = "0.9.34"
 nix = { version = "0.29", features = ["fs"] }
 pathdiff = "0.2"
 urlencoding = "2.1.3"
+battery = "0.7.8"
+strum = "0.27.2"
+strum_macros = "0.27.2"
 
 [dev-dependencies]
 serial_test = "3"

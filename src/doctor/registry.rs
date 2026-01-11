@@ -1,4 +1,5 @@
 use super::{DoctorCheck, checks::*};
+use crate::doctor::checks::energy::BatteryHealthCheck;
 use std::collections::HashMap;
 
 pub type CheckFactory = fn() -> Box<dyn DoctorCheck + Send + Sync>;
@@ -28,9 +29,11 @@ impl CheckRegistry {
         registry.register::<SwayDisplayCheck>("sway-display");
         registry.register::<PolkitAgentCheck>("polkit-agent");
         registry.register::<BatCheck>("bat-cache");
+        registry.register::<PowerCheck>("power");
+        registry.register::<BatteryHealthCheck>("battery-life");
+        registry.register::<PerformanceTest>("performance");
         registry.register::<GitConfigCheck>("git-config");
         registry.register::<ShellCompletionCheck>("shell-completions");
-
         registry
     }
 

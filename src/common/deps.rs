@@ -108,3 +108,13 @@ pub static SMARTMONTOOLS: Dependency = Dependency {
     ],
     tests: &[InstallTest::WhichSucceeds("smartctl")],
 };
+
+pub static POWERPROFILESDAEMON: Dependency = Dependency {
+    name: "power-profiles-daemon",
+    description: Some("Makes power profiles handling available over D-Bus"),
+    packages: &[
+        PackageDefinition::new("power-profiles-daemon", PackageManager::Apt),
+        PackageDefinition::new("power-profiles-daemon", PackageManager::Pacman),
+    ],
+    tests: &[InstallTest::WhichSucceeds("powerprofilesctl")],
+};

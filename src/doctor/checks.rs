@@ -14,9 +14,11 @@ use crate::doctor::{CheckStatus, DoctorCheck, PrivilegeLevel};
 
 pub mod completions;
 pub mod display;
+pub mod energy;
 pub mod locale;
 pub mod nerdfont;
 pub mod network;
+mod performance;
 pub mod security;
 pub mod storage;
 pub mod system;
@@ -25,9 +27,11 @@ pub mod tools;
 // Re-export all check types for easy access
 pub use completions::ShellCompletionCheck;
 pub use display::SwayDisplayCheck;
+pub use energy::PowerCheck;
 pub use locale::LocaleCheck;
 pub use nerdfont::NerdFontCheck;
 pub use network::{InstantRepoCheck, InternetCheck};
+pub use performance::PerformanceTest;
 pub use security::PolkitAgentCheck;
 pub use storage::{
     PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck, YayCacheCheck,
