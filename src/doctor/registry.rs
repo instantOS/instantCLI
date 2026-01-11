@@ -31,6 +31,7 @@ impl CheckRegistry {
         registry.register::<BatCheck>("bat-cache");
         registry.register::<PowerCheck>("power");
         registry.register::<BatteryHealthCheck>("battery-life");
+        registry.register::<PerformanceTest>("performance");
 
         registry
     }

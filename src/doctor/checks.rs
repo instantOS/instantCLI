@@ -28,6 +28,7 @@ pub use energy::PowerCheck;
 pub use locale::LocaleCheck;
 pub use nerdfont::NerdFontCheck;
 pub use network::{InstantRepoCheck, InternetCheck};
+pub use performance::PerformanceTest;
 pub use security::PolkitAgentCheck;
 pub use storage::{
     PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck, YayCacheCheck,

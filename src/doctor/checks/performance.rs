@@ -226,7 +226,7 @@ impl PowerHandleFactory {
 }
 
 #[derive(Default)]
-struct PerformanceTest;
+pub struct PerformanceTest;
 
 impl PerformanceTest {
     async fn try_execute(&self) -> Option<CheckStatus> {
