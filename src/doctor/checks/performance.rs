@@ -1,4 +1,4 @@
-use crate::doctor::{CheckStatus, DoctorCheck};
+use crate::doctor::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use std::str::FromStr;
@@ -271,6 +271,10 @@ impl DoctorCheck for PerformanceTest {
             .ok_or_else(|| anyhow!("Failed to build power handle"))?;
         handle.change_performance_mode(PowerMode::Performance).await
     }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Root
+    }
 }
 
 #[cfg(test)]
@@ -289,14 +293,5 @@ mod tests {
         for power_mode in power_handle.available_modes().await {
             println!("{:?}", power_mode)
         }
-    }
-
-    #[tokio::test]
-    async fn get_mode_legacy() {
-        let handle = LegacyPowerHandle::default();
-        println!(
-            "Legacy mode: {:?}",
-            handle.query_performance_mode().await.unwrap()
-        );
     }
 }
