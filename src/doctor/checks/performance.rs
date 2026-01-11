@@ -1,6 +1,6 @@
 use crate::common::deps;
 use crate::doctor::{CheckStatus, DoctorCheck, PrivilegeLevel};
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use async_trait::async_trait;
 use std::str::FromStr;
 use strum_macros::{Display, EnumString};
@@ -115,7 +115,7 @@ pub struct LegacyPowerHandle;
 #[async_trait]
 impl PowerHandle for LegacyPowerHandle {
     async fn query_performance_mode(&self) -> anyhow::Result<PowerMode> {
-        const GOVERNOR_PATH: &str = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor";
+        const GOVERNOR_PATH: &str = "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor";
 
         let content = tokio::fs::read_to_string(GOVERNOR_PATH).await?;
         Ok(PowerMode::from_str(content.trim())?)
@@ -133,48 +133,16 @@ impl PowerHandle for LegacyPowerHandle {
             PowerMode::PowerSaver => "powersave",
         };
 
-        let mut cpu_dirs = match tokio::fs::read_dir("/sys/devices/system/cpu").await {
-            Ok(dir) => dir,
-            Err(_) => return Err(anyhow!("Failed to read dir /sys/devices/system/cpu")),
-        };
-
-        loop {
-            let entry_opt = match cpu_dirs.next_entry().await {
-                Ok(entry) => entry,
-                Err(_) => {
-                    return Err(anyhow!(
-                        "Failed to read directory entry from /sys/devices/system/cpu"
-                    ));
-                }
-            };
-
-            if let Some(entry) = entry_opt {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-
-                if !name_str.starts_with("cpu") {
-                    continue;
-                }
-
-                if let Ok(core) = name_str[3..].parse::<u32>() {
-                    let governor_path = format!(
-                        "/sys/devices/system/cpu/cpu{}/cpufreq/scaling_governor",
-                        core
-                    );
-
-                    tokio::fs::write(&governor_path, legacy_idenitfier)
-                        .await
-                        .with_context(|| format!("writing to {}", governor_path))?;
-                }
-            } else {
-                return Ok(());
-            }
-        }
+        Ok(tokio::fs::write(
+            "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor",
+            legacy_idenitfier,
+        )
+        .await?)
     }
 
     async fn available_modes(&self) -> Vec<PowerMode> {
         const AVAILABLE_GOVERNORS_PATH: &str =
-            "/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors";
+            "/sys/devices/system/cpu/cpufreq/policy0/scaling_available_governors";
 
         match tokio::fs::read_to_string(AVAILABLE_GOVERNORS_PATH).await {
             Ok(content) => content
@@ -200,7 +168,7 @@ impl PowerHandleFactory {
 
         // If not, we check if we have access to the sysfiles
         let sys_available =
-            TokioFile::open("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors")
+            TokioFile::open("/sys/devices/system/cpu/cpufreq/policy0/scaling_available_governors")
                 .await
                 .is_ok();
         if sys_available {
