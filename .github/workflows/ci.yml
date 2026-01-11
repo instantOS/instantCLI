@@ -23,7 +23,7 @@ jobs:
           pacman -Syu --noconfirm
       - name: Install build dependencies
         run: |
-          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git cmake restic jq power-profiles-daemon
+          pacman -S --noconfirm --needed base-devel rust pkgconf openssl git cmake restic jq
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:

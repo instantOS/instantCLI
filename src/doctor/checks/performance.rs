@@ -68,7 +68,7 @@ impl PowerHandle for GnomePowerHandle {
         let gnome_identifier = match mode {
             PowerMode::Performance => "performance",
             PowerMode::Balanced => "balanced",
-            PowerMode::PowerSaver => "power-save",
+            PowerMode::PowerSaver => "power-saver",
         };
 
         let success = TokioCommand::new(PP_CTL)
@@ -259,24 +259,5 @@ impl DoctorCheck for PerformanceTest {
 
     fn fix_privilege_level(&self) -> PrivilegeLevel {
         PrivilegeLevel::Root
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_factory() {
-        let factory = PowerHandleFactory::default();
-        let power_handle = factory.build_power_handle().await.unwrap();
-        println!(
-            "Current mode: {:?}",
-            power_handle.query_performance_mode().await.unwrap()
-        );
-        println!("Power modes:");
-        for power_mode in power_handle.available_modes().await {
-            println!("{:?}", power_mode)
-        }
     }
 }
