@@ -225,14 +225,20 @@ fn show_available_fixes(results: &[CheckResult]) {
             if !fixable_issues.is_empty() {
                 let fixes_msg = "\nAvailable fixes:".bold().yellow();
                 println!("{fixes_msg}");
-                for result in &fixable_issues {
+                for (i, result) in fixable_issues.iter().enumerate() {
                     if let Some(ref msg) = result.fix_message {
-                        println!("  - {}: {}", result.name, msg);
-                        println!(
-                            "    Run: {} doctor fix {}",
-                            env!("CARGO_BIN_NAME"),
-                            result.check_id
-                        );
+                        let check_name = result.name.bright_cyan();
+                        let mut lines = msg.lines();
+                        if let Some(first_line) = lines.next() {
+                            println!("  {} {}: {}", i + 1, check_name, first_line);
+                            for line in lines {
+                                println!("     {}", line);
+                            }
+                        }
+                        let run_cmd =
+                            format!("{} doctor fix {}", env!("CARGO_BIN_NAME"), result.check_id)
+                                .bright_white();
+                        println!("     {} {}", "→".green(), run_cmd);
                     }
                 }
             }
@@ -240,8 +246,9 @@ fn show_available_fixes(results: &[CheckResult]) {
             if !non_fixable_failures.is_empty() {
                 let manual_msg = "\nRequires manual intervention:".bold().red();
                 println!("{manual_msg}");
-                for result in &non_fixable_failures {
-                    println!("  - {}: {}", result.name, result.status.message());
+                for (i, result) in non_fixable_failures.iter().enumerate() {
+                    let check_name = result.name.bright_magenta();
+                    println!("  {} {}: {}", i + 1, check_name, result.status.message());
                 }
             }
         }
