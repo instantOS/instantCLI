@@ -35,6 +35,7 @@ pub trait PowerHandle: Send + Sync {
 
 /// Performance modes
 #[derive(PartialEq, EnumString, Debug, Display)]
+#[strum(ascii_case_insensitive)]
 pub enum PowerMode {
     #[strum(serialize = "performance")]
     Performance,
