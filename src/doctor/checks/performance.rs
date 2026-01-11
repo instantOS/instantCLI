@@ -163,7 +163,10 @@ impl PowerHandleFactory {
         // We check if powerprofilesctl is available
         let profiled_power = deps::POWERPROFILESDAEMON.is_installed();
         if profiled_power {
-            return Ok(Box::new(GnomePowerHandle::default()));
+            let gnome_handle = GnomePowerHandle::default();
+            if gnome_handle.query_performance_mode().await.is_ok() {
+                return Ok(Box::new(gnome_handle));
+            }
         }
 
         // If not, we check if we have access to the sysfiles
