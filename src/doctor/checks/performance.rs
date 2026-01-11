@@ -1,6 +1,8 @@
+use crate::doctor::{CheckStatus, DoctorCheck};
+use anyhow::anyhow;
 use async_trait::async_trait;
 use std::str::FromStr;
-use strum_macros::EnumString;
+use strum_macros::{Display, EnumString};
 use tokio::fs::File as TokioFile;
 use tokio::process::Command as TokioCommand;
 
@@ -19,20 +21,20 @@ use tokio::process::Command as TokioCommand;
 
 /// Adapts to one of the two possible ways described in the top comment
 #[async_trait]
-pub trait PowerHandle {
+pub trait PowerHandle: Send + Sync {
     /// Retrieves the current performance mode
     async fn query_performance_mode(&self) -> Option<PowerMode>;
 
     /// Changes the performance mode, might require sudo
     /// Returns true on success
-    async fn change_performance_mode(&self, mode: PowerMode) -> bool;
+    async fn change_performance_mode(&self, mode: PowerMode) -> anyhow::Result<()>;
 
     /// Returns all available performance modes on the system
     async fn available_modes(&self) -> Vec<PowerMode>;
 }
 
 /// Performance modes
-#[derive(PartialEq, EnumString, Debug)]
+#[derive(PartialEq, EnumString, Debug, Display)]
 pub enum PowerMode {
     #[strum(serialize = "performance")]
     Performance,
@@ -67,19 +69,23 @@ impl PowerHandle for GnomePowerHandle {
         }
     }
 
-    async fn change_performance_mode(&self, mode: PowerMode) -> bool {
+    async fn change_performance_mode(&self, mode: PowerMode) -> anyhow::Result<()> {
         let gnome_identifier = match mode {
             PowerMode::Performance => "performance",
             PowerMode::Balanced => "balanced",
             PowerMode::PowerSaver => "power-save",
         };
 
-        TokioCommand::new(PP_CTL)
+        let success = TokioCommand::new(PP_CTL)
             .args(["set", gnome_identifier])
             .output()
             .await
-            .map(|output| output.status.success())
-            .unwrap_or(false)
+            .map(|output| output.status.success())?;
+        if !success {
+            Err(anyhow!("Failed to set power-saver mode"))
+        } else {
+            Ok(())
+        }
     }
 
     async fn available_modes(&self) -> Vec<PowerMode> {
@@ -122,11 +128,11 @@ impl PowerHandle for LegacyPowerHandle {
         }
     }
 
-    async fn change_performance_mode(&self, mode: PowerMode) -> bool {
+    async fn change_performance_mode(&self, mode: PowerMode) -> anyhow::Result<()> {
         let available_modes = self.available_modes().await;
 
         if !available_modes.contains(&mode) {
-            return false;
+            return Err(anyhow!("Power mode {} is not available", mode));
         }
 
         let legacy_idenitfier = match mode {
@@ -134,42 +140,44 @@ impl PowerHandle for LegacyPowerHandle {
             PowerMode::PowerSaver => "powersave",
         };
 
-        let mut all_success = true;
-
         let mut cpu_dirs = match tokio::fs::read_dir("/sys/devices/system/cpu").await {
             Ok(dir) => dir,
-            Err(_) => return false,
+            Err(_) => return Err(anyhow!("Failed to read dir /sys/devices/system/cpu")),
         };
 
         loop {
             let entry_opt = match cpu_dirs.next_entry().await {
                 Ok(entry) => entry,
-                Err(_) => continue,
+                Err(_) => {
+                    return Err(anyhow!(
+                        "Failed to read directory entry from /sys/devices/system/cpu"
+                    ));
+                }
             };
 
             if let Some(entry) = entry_opt {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
 
-                if name_str.starts_with("cpu") && name_str[3..].parse::<u32>().is_ok() {
-                    let governor_path = format!(
-                        "/sys/devices/system/cpu/{}/cpufreq/scaling_governor",
-                        name_str
-                    );
+                if !name_str.starts_with("cpu") {
+                    continue;
+                }
+
+                if let Ok(core) = name_str[3..].parse::<u32>() {
+                    let governor_path =
+                        format!("/sys/devices/system/cpu/{}/cpufreq/scaling_governor", core);
 
                     if tokio::fs::write(&governor_path, legacy_idenitfier)
                         .await
                         .is_err()
                     {
-                        all_success = false;
+                        return Err(anyhow!("Failed to write to {}", governor_path));
                     }
                 }
             } else {
-                break;
+                return Ok(());
             }
         }
-
-        all_success
     }
 
     async fn available_modes(&self) -> Vec<PowerMode> {
@@ -217,9 +225,54 @@ impl PowerHandleFactory {
     }
 }
 
-/// TODO: Implement this
 #[derive(Default)]
 struct PerformanceTest;
+
+impl PerformanceTest {
+    async fn try_execute(&self) -> Option<CheckStatus> {
+        let handle = PowerHandleFactory::default().build_power_handle().await?;
+        let mode = handle.query_performance_mode().await?;
+        if mode != PowerMode::Performance {
+            Some(CheckStatus::Warning {
+                message: format!("Power mode is not performance but {}", mode),
+                fixable: true,
+            })
+        } else {
+            Some(CheckStatus::Pass("Power mode is performance".into()))
+        }
+    }
+}
+
+#[async_trait]
+impl DoctorCheck for PerformanceTest {
+    fn name(&self) -> &'static str {
+        "Performance Mode"
+    }
+
+    fn id(&self) -> &'static str {
+        "performance"
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        if let Some(status) = self.try_execute().await {
+            status
+        } else {
+            CheckStatus::Skipped("Could not query performance mode".into())
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Set power mode to performance".into())
+    }
+
+    async fn fix(&self) -> anyhow::Result<()> {
+        let handle = PowerHandleFactory::default()
+            .build_power_handle()
+            .await
+            .ok_or_else(|| anyhow!("Failed to build power handle"))?;
+        handle.change_performance_mode(PowerMode::Performance).await
+    }
+}
 
 #[cfg(test)]
 mod tests {
