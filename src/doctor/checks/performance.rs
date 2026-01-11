@@ -1,3 +1,4 @@
+use crate::common::deps;
 use crate::doctor::{CheckStatus, DoctorCheck, PrivilegeLevel};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
@@ -192,12 +193,7 @@ pub struct PowerHandleFactory;
 impl PowerHandleFactory {
     async fn build_power_handle(&self) -> anyhow::Result<Box<dyn PowerHandle>> {
         // We check if powerprofilesctl is available
-        let profiled_power = TokioCommand::new("which")
-            .arg("powerprofilesctl")
-            .output()
-            .await
-            .map(|output| output.status.success())
-            .unwrap_or(false);
+        let profiled_power = deps::POWERPROFILESDAEMON.is_installed();
         if profiled_power {
             return Ok(Box::new(GnomePowerHandle::default()));
         }
