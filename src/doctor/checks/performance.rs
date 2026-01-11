@@ -23,7 +23,7 @@ use tokio::process::Command as TokioCommand;
 #[async_trait]
 pub trait PowerHandle: Send + Sync {
     /// Retrieves the current performance mode
-    async fn query_performance_mode(&self) -> Option<PowerMode>;
+    async fn query_performance_mode(&self) -> anyhow::Result<PowerMode>;
 
     /// Changes the performance mode, might require sudo
     /// Returns true on success
@@ -53,19 +53,13 @@ pub struct GnomePowerHandle;
 
 #[async_trait]
 impl PowerHandle for GnomePowerHandle {
-    async fn query_performance_mode(&self) -> Option<PowerMode> {
-        let output = TokioCommand::new(PP_CTL).arg("get").output().await;
-
-        match output {
-            Ok(output) => {
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    PowerMode::from_str(stdout.as_ref().trim()).ok()
-                } else {
-                    None
-                }
-            }
-            Err(_) => None,
+    async fn query_performance_mode(&self) -> anyhow::Result<PowerMode> {
+        let output = TokioCommand::new(PP_CTL).arg("get").output().await?;
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Ok(PowerMode::from_str(stdout.as_ref().trim())?)
+        } else {
+            Err(anyhow!("{} get returned non-zero value", PP_CTL))
         }
     }
 
@@ -119,13 +113,11 @@ pub struct LegacyPowerHandle;
 
 #[async_trait]
 impl PowerHandle for LegacyPowerHandle {
-    async fn query_performance_mode(&self) -> Option<PowerMode> {
+    async fn query_performance_mode(&self) -> anyhow::Result<PowerMode> {
         const GOVERNOR_PATH: &str = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor";
 
-        match tokio::fs::read_to_string(GOVERNOR_PATH).await {
-            Ok(content) => PowerMode::from_str(content.trim()).ok(),
-            Err(_) => None,
-        }
+        let content = tokio::fs::read_to_string(GOVERNOR_PATH).await?;
+        Ok(PowerMode::from_str(content.trim())?)
     }
 
     async fn change_performance_mode(&self, mode: PowerMode) -> anyhow::Result<()> {
@@ -198,7 +190,7 @@ impl PowerHandle for LegacyPowerHandle {
 pub struct PowerHandleFactory;
 
 impl PowerHandleFactory {
-    async fn build_power_handle(&self) -> Option<Box<dyn PowerHandle>> {
+    async fn build_power_handle(&self) -> anyhow::Result<Box<dyn PowerHandle>> {
         // We check if powerprofilesctl is available
         let profiled_power = TokioCommand::new("which")
             .arg("powerprofilesctl")
@@ -207,7 +199,7 @@ impl PowerHandleFactory {
             .map(|output| output.status.success())
             .unwrap_or(false);
         if profiled_power {
-            return Some(Box::new(GnomePowerHandle::default()));
+            return Ok(Box::new(GnomePowerHandle::default()));
         }
 
         // If not, we check if we have access to the sysfiles
@@ -216,10 +208,10 @@ impl PowerHandleFactory {
                 .await
                 .is_ok();
         if sys_available {
-            Some(Box::new(LegacyPowerHandle::default()))
+            Ok(Box::new(LegacyPowerHandle::default()))
         } else {
             // Unfortunately we have no way to control power management
-            None
+            Err(anyhow!("Power management is not available"))
         }
     }
 }
@@ -228,16 +220,16 @@ impl PowerHandleFactory {
 pub struct PerformanceTest;
 
 impl PerformanceTest {
-    async fn try_execute(&self) -> Option<CheckStatus> {
+    async fn try_execute(&self) -> anyhow::Result<CheckStatus> {
         let handle = PowerHandleFactory::default().build_power_handle().await?;
         let mode = handle.query_performance_mode().await?;
         if mode != PowerMode::Performance {
-            Some(CheckStatus::Warning {
+            Ok(CheckStatus::Warning {
                 message: format!("Power mode is not performance but {}", mode),
                 fixable: true,
             })
         } else {
-            Some(CheckStatus::Pass("Power mode is performance".into()))
+            Ok(CheckStatus::Pass("Power mode is performance".into()))
         }
     }
 }
@@ -253,7 +245,7 @@ impl DoctorCheck for PerformanceTest {
     }
 
     async fn execute(&self) -> CheckStatus {
-        if let Some(status) = self.try_execute().await {
+        if let Ok(status) = self.try_execute().await {
             status
         } else {
             CheckStatus::Skipped("Could not query performance mode".into())
@@ -265,10 +257,7 @@ impl DoctorCheck for PerformanceTest {
     }
 
     async fn fix(&self) -> anyhow::Result<()> {
-        let handle = PowerHandleFactory::default()
-            .build_power_handle()
-            .await
-            .ok_or_else(|| anyhow!("Failed to build power handle"))?;
+        let handle = PowerHandleFactory::default().build_power_handle().await?;
         handle.change_performance_mode(PowerMode::Performance).await
     }
 
