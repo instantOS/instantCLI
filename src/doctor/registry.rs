@@ -30,6 +30,7 @@ impl CheckRegistry {
         registry.register::<BatCheck>("bat-cache");
         registry.register::<GitConfigCheck>("git-config");
         registry.register::<ShellCompletionCheck>("shell-completions");
+        registry.register::<PipewireSessionManagerCheck>("pipewire-session-manager");
 
         registry
     }

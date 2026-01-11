@@ -182,9 +182,7 @@ pub static YAZI: Dependency = Dependency {
 pub static SWWW: Dependency = Dependency {
     name: "swww",
     description: Some("Wayland wallpaper daemon for Hyprland"),
-    packages: &[
-        PackageDefinition::new("swww", PackageManager::Pacman),
-    ],
+    packages: &[PackageDefinition::new("swww", PackageManager::Pacman)],
     tests: &[InstallTest::WhichSucceeds("swww")],
 };
 

@@ -1,6 +1,7 @@
 //! Health check implementations for the doctor module
 //!
 //! This module has been refactored into multiple files by functionality:
+//! - audio.rs: Audio system checks (pipewire session manager)
 //! - network.rs: Network-related checks (internet, repository configuration)
 //! - locale.rs: Locale and language configuration checks
 //! - system.rs: System-level checks (swap, updates)
@@ -12,6 +13,7 @@
 
 use crate::doctor::{CheckStatus, DoctorCheck, PrivilegeLevel};
 
+pub mod audio;
 pub mod completions;
 pub mod display;
 pub mod locale;
@@ -23,6 +25,7 @@ pub mod system;
 pub mod tools;
 
 // Re-export all check types for easy access
+pub use audio::PipewireSessionManagerCheck;
 pub use completions::ShellCompletionCheck;
 pub use display::SwayDisplayCheck;
 pub use locale::LocaleCheck;
