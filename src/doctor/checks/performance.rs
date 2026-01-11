@@ -1,5 +1,5 @@
 use crate::doctor::{CheckStatus, DoctorCheck};
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use std::str::FromStr;
 use strum_macros::{Display, EnumString};
@@ -164,15 +164,14 @@ impl PowerHandle for LegacyPowerHandle {
                 }
 
                 if let Ok(core) = name_str[3..].parse::<u32>() {
-                    let governor_path =
-                        format!("/sys/devices/system/cpu/{}/cpufreq/scaling_governor", core);
+                    let governor_path = format!(
+                        "/sys/devices/system/cpu/cpu{}/cpufreq/scaling_governor",
+                        core
+                    );
 
-                    if tokio::fs::write(&governor_path, legacy_idenitfier)
+                    tokio::fs::write(&governor_path, legacy_idenitfier)
                         .await
-                        .is_err()
-                    {
-                        return Err(anyhow!("Failed to write to {}", governor_path));
-                    }
+                        .with_context(|| format!("writing to {}", governor_path))?;
                 }
             } else {
                 return Ok(());
