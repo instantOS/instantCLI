@@ -1,13 +1,30 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+/// Check if swww is installed
+pub fn is_swww_installed() -> bool {
+    Command::new("which")
+        .arg("swww")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Apply wallpaper on Hyprland using swww
 pub fn apply_wallpaper(path: &str) -> Result<()> {
+    // Check if swww is installed
+    if !is_swww_installed() {
+        anyhow::bail!(
+            "swww is not installed. Install it with: pacman -S swww\n\
+             swww is required for wallpaper support on Hyprland."
+        );
+    }
+
     // Check if swww daemon is running by querying it
     let query = Command::new("swww")
         .arg("query")
         .output()
-        .context("Failed to run swww query - is swww installed?")?;
+        .context("Failed to run swww query")?;
 
     // If daemon is not running, start it
     if !query.status.success() {

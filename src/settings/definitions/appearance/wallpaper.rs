@@ -5,14 +5,32 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::common::compositor::CompositorType;
+use crate::common::package::{InstallResult, ensure_all};
 use crate::menu_utils::{FzfWrapper, MenuWrapper};
 use crate::settings::context::SettingsContext;
-use crate::settings::deps::{YAZI, ZENITY};
+use crate::settings::deps::{SWWW, YAZI, ZENITY};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, OptionalStringSettingKey};
 use crate::ui::prelude::*;
 
 use super::common::pick_color_with_zenity;
+
+/// Ensure swww is installed if running on Hyprland
+/// Returns Ok(true) if deps are satisfied, Ok(false) if user declined installation
+fn ensure_hyprland_deps() -> Result<bool> {
+    let compositor = CompositorType::detect();
+    if matches!(compositor, CompositorType::Hyprland) {
+        match ensure_all(&[&SWWW])? {
+            InstallResult::Installed | InstallResult::AlreadyInstalled => Ok(true),
+            InstallResult::Declined
+            | InstallResult::NotAvailable { .. }
+            | InstallResult::Failed { .. } => Ok(false),
+        }
+    } else {
+        Ok(true)
+    }
+}
 
 // Color wallpaper settings
 const WALLPAPER_BG_COLOR_KEY: OptionalStringSettingKey =
@@ -38,6 +56,11 @@ impl Setting for SetWallpaper {
     }
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
+        // Ensure swww is installed if on Hyprland
+        if !ensure_hyprland_deps()? {
+            return Ok(());
+        }
+
         let path = MenuWrapper::file_picker()
             .hint("Select a wallpaper image")
             .pick_one()?;
@@ -118,6 +141,11 @@ impl Setting for RandomWallpaper {
     }
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
+        // Ensure swww is installed if on Hyprland
+        if !ensure_hyprland_deps()? {
+            return Ok(());
+        }
+
         let exe = std::env::current_exe().context("Failed to get current executable path")?;
         let status = Command::new(exe)
             .args(["wallpaper", "random"])
@@ -218,6 +246,11 @@ impl Setting for ApplyColoredWallpaper {
     }
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
+        // Ensure swww is installed if on Hyprland
+        if !ensure_hyprland_deps()? {
+            return Ok(());
+        }
+
         let exe = std::env::current_exe().context("Failed to get current executable path")?;
         let status = Command::new(exe)
             .args(["wallpaper", "colored"])

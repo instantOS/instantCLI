@@ -179,6 +179,15 @@ pub static YAZI: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("yazi")],
 };
 
+pub static SWWW: Dependency = Dependency {
+    name: "swww",
+    description: Some("Wayland wallpaper daemon for Hyprland"),
+    packages: &[
+        PackageDefinition::new("swww", PackageManager::Pacman),
+    ],
+    tests: &[InstallTest::WhichSucceeds("swww")],
+};
+
 pub static ZENITY: Dependency = Dependency {
     name: "Zenity dialogs",
     description: Some("GTK dialog utility"),
