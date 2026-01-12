@@ -121,6 +121,8 @@ pub enum DotCommands {
         #[arg(long)]
         list: bool,
     },
+    /// Interactive dotfile repository menu
+    Menu,
 }
 
 #[derive(Subcommand, Debug)]
@@ -330,6 +332,9 @@ pub fn handle_dot_command(
             super::operations::alternative::handle_alternative(
                 &config, path, *reset, *create, *list,
             )?;
+        }
+        DotCommands::Menu => {
+            super::menu::dot_menu(&config, &db, debug)?;
         }
     }
 

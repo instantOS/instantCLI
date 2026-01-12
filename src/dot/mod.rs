@@ -5,6 +5,7 @@ pub mod db;
 pub mod dotfile;
 pub mod git;
 pub mod localrepo;
+pub mod menu;
 pub mod meta;
 pub mod override_config;
 pub mod repo;
