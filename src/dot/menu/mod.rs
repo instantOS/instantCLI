@@ -562,14 +562,14 @@ fn handle_manage_subdirs(
         let mut config = Config::load(None)?;
         let db = Database::new(config.database_path().to_path_buf())?;
 
-        if is_active {
+        let result = if is_active {
             let clone_args = RepoCommands::Subdirs {
                 command: crate::dot::repo::cli::SubdirCommands::Disable {
                     name: repo_name.to_string(),
                     subdir: selected_subdir.clone(),
                 },
             };
-            crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
+            crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)
         } else {
             let clone_args = RepoCommands::Subdirs {
                 command: crate::dot::repo::cli::SubdirCommands::Enable {
@@ -577,7 +577,12 @@ fn handle_manage_subdirs(
                     subdir: selected_subdir.clone(),
                 },
             };
-            crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
+            crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)
+        };
+
+        // Handle errors gracefully - show message and continue menu loop
+        if let Err(e) = result {
+            FzfWrapper::message(&format!("Error: {}", e))?;
         }
 
         // Loop continues to show updated list
