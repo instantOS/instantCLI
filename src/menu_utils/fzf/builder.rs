@@ -745,13 +745,49 @@ impl FzfBuilder {
             lines.push(format!("{surface}{SEPARATOR}{RESET}"));
         }
 
-        // Add message if present
+        // Add message if present (with text wrapping)
         if let Some(header) = message {
             let text_color = hex_to_ansi_fg(colors::TEXT);
-            lines.push(format!("{text_color}{}{RESET}", header.to_fzf_string()));
+            let msg_text = header.to_fzf_string();
+            // Use terminal width for wrapping, with padding for margins
+            let wrap_width = get_terminal_dimensions()
+                .map(|(cols, _)| (cols as usize).saturating_sub(10))
+                .unwrap_or(60)
+                .max(40); // Minimum 40 chars
+            for wrapped_line in Self::wrap_text(&msg_text, wrap_width) {
+                lines.push(format!("{text_color}{wrapped_line}{RESET}"));
+            }
         }
 
         lines.join("\n")
+    }
+
+    /// Wrap text at word boundaries to fit within max_width characters
+    fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+        let mut lines = Vec::new();
+        let mut current_line = String::new();
+
+        for word in text.split_whitespace() {
+            if current_line.is_empty() {
+                current_line = word.to_string();
+            } else if current_line.len() + 1 + word.len() <= max_width {
+                current_line.push(' ');
+                current_line.push_str(word);
+            } else {
+                lines.push(current_line);
+                current_line = word.to_string();
+            }
+        }
+
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
+
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+
+        lines
     }
 
     fn execute_checklist<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
