@@ -20,7 +20,9 @@ pub enum DotMenuEntry {
 impl FzfSelectable for DotMenuEntry {
     fn fzf_display_text(&self) -> String {
         match self {
-            DotMenuEntry::Repo(name) => name.clone(),
+            DotMenuEntry::Repo(name) => {
+                format!("{} {}", format_icon_colored(NerdFont::Folder, colors::MAUVE), name)
+            }
             DotMenuEntry::AddRepo => {
                 format!("{} Add Repo", format_icon_colored(NerdFont::Plus, colors::GREEN))
             }
@@ -64,8 +66,7 @@ impl FzfSelectable for DotMenuEntry {
 /// Repo action for individual repository menu
 #[derive(Debug, Clone)]
 enum RepoAction {
-    Enable,
-    Disable,
+    Toggle,
     ManageSubdirs,
     ShowInfo,
     Remove,
@@ -134,32 +135,28 @@ fn build_repo_action_menu(repo_name: &str, config: &Config) -> Vec<RepoActionIte
 
     let mut actions = Vec::new();
 
-    // Enable/Disable
-    if is_enabled {
-        actions.push(RepoActionItem {
-            display: format!(
-                "{} Disable",
-                format_icon_colored(NerdFont::ToggleOff, colors::RED)
-            ),
-            preview: format!(
-                "Disable '{}'.\n\nDisabled repositories won't be applied during 'ins dot apply'.",
-                repo_name
-            ),
-            action: RepoAction::Disable,
-        });
+    // Toggle enable/disable
+    let (icon, color, text, preview) = if is_enabled {
+        (
+            NerdFont::ToggleOff,
+            colors::RED,
+            "Disable",
+            format!("Disable '{}'.\n\nDisabled repositories won't be applied during 'ins dot apply'.", repo_name),
+        )
     } else {
-        actions.push(RepoActionItem {
-            display: format!(
-                "{} Enable",
-                format_icon_colored(NerdFont::ToggleOn, colors::GREEN)
-            ),
-            preview: format!(
-                "Enable '{}'.\n\nEnabled repositories will be applied during 'ins dot apply'.",
-                repo_name
-            ),
-            action: RepoAction::Enable,
-        });
-    }
+        (
+            NerdFont::ToggleOn,
+            colors::GREEN,
+            "Enable",
+            format!("Enable '{}'.\n\nEnabled repositories will be applied during 'ins dot apply'.", repo_name),
+        )
+    };
+
+    actions.push(RepoActionItem {
+        display: format!("{} {}", format_icon_colored(icon, color), text),
+        preview,
+        action: RepoAction::Toggle,
+    });
 
     // Manage subdirs
     actions.push(RepoActionItem {
@@ -315,7 +312,7 @@ fn select_dot_menu_entry(config: &Config, db: &Database) -> Result<Option<DotMen
                         .bullet("Prompt for repository URL")
                         .bullet("Clone the repository")
                         .bullet("Apply dotfiles from the new repo")
-                        .build()
+                        .build_string()
                 }
                 DotMenuEntry::CloseMenu => {
                     PreviewBuilder::new()
@@ -324,7 +321,7 @@ fn select_dot_menu_entry(config: &Config, db: &Database) -> Result<Option<DotMen
                         .blank()
                         .text("This will exit the interactive menu")
                         .text("and return to the command prompt")
-                        .build()
+                        .build_string()
                 }
             },
         })
@@ -424,19 +421,27 @@ fn handle_repo_actions(repo_name: &str, config: &Config, db: &Database, debug: b
         };
 
         match action {
-            RepoAction::Enable => {
+            RepoAction::Toggle => {
+                // Determine current state and toggle
+                let is_enabled = config
+                    .repos
+                    .iter()
+                    .find(|r| r.name == repo_name)
+                    .map(|r| r.enabled)
+                    .unwrap_or(false);
+
                 let mut config = Config::load(None)?;
                 let db = Database::new(config.database_path().to_path_buf())?;
-                let clone_args = RepoCommands::Enable { name: repo_name.to_string() };
-                crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
-                FzfWrapper::message(&format!("Repository '{}' has been enabled", repo_name))?;
-            }
-            RepoAction::Disable => {
-                let mut config = Config::load(None)?;
-                let db = Database::new(config.database_path().to_path_buf())?;
-                let clone_args = RepoCommands::Disable { name: repo_name.to_string() };
-                crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
-                FzfWrapper::message(&format!("Repository '{}' has been disabled", repo_name))?;
+
+                if is_enabled {
+                    let clone_args = RepoCommands::Disable { name: repo_name.to_string() };
+                    crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
+                    FzfWrapper::message(&format!("Repository '{}' has been disabled", repo_name))?;
+                } else {
+                    let clone_args = RepoCommands::Enable { name: repo_name.to_string() };
+                    crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
+                    FzfWrapper::message(&format!("Repository '{}' has been enabled", repo_name))?;
+                }
             }
             RepoAction::ManageSubdirs => {
                 handle_manage_subdirs(repo_name, config, db, debug)?;

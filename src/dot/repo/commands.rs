@@ -701,13 +701,6 @@ fn disable_subdirectory(config: &mut Config, name: &str, subdir: &str) -> Result
 
     active.retain(|s| s != subdir);
 
-    if active.is_empty() {
-        return Err(anyhow::anyhow!(
-            "Cannot disable '{}' - at least one subdirectory must remain active",
-            subdir
-        ));
-    }
-
     config.set_active_subdirs(name, active, None)?;
 
     println!(
