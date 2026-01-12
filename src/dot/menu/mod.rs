@@ -348,17 +348,78 @@ impl FzfSelectable for DotMenuItem {
 fn handle_add_repo(config: &Config, db: &Database, debug: bool) -> Result<()> {
     use crate::menu_utils::FzfResult;
 
-    // Prompt for URL with example ghost text
-    let url = match FzfWrapper::builder()
-        .input()
-        .prompt("Repository URL")
-        .ghost("https://github.com/instantOS/dotfiles")
-        .input_result()?
-    {
-        FzfResult::Selected(s) if !s.is_empty() => s,
-        FzfResult::Selected(_) => return Ok(()), // Empty input, cancel
-        FzfResult::Cancelled => return Ok(()),
-        _ => return Ok(()),
+    const DEFAULT_REPO: &str = "https://github.com/instantOS/dotfiles";
+
+    // Loop for URL input (allows "enter another URL" option)
+    let url = loop {
+        // Prompt for URL with example ghost text
+        match FzfWrapper::builder()
+            .input()
+            .prompt("Repository URL")
+            .ghost(DEFAULT_REPO)
+            .input_result()?
+        {
+            FzfResult::Selected(s) if !s.is_empty() => break s,
+            FzfResult::Cancelled => return Ok(()),
+            FzfResult::Selected(_) => {
+                // Empty input - show choice menu
+                #[derive(Clone)]
+                enum EmptyUrlChoice {
+                    UseDefault,
+                    GoBack,
+                    EnterAnother,
+                }
+
+                impl crate::menu_utils::FzfSelectable for EmptyUrlChoice {
+                    fn fzf_display_text(&self) -> String {
+                        match self {
+                            EmptyUrlChoice::UseDefault => format!(
+                                "{} Use default (instantOS/dotfiles)",
+                                format_icon_colored(NerdFont::Check, colors::GREEN)
+                            ),
+                            EmptyUrlChoice::GoBack => format!("{} Go back", format_back_icon()),
+                            EmptyUrlChoice::EnterAnother => format!(
+                                "{} Enter another URL",
+                                format_icon_colored(NerdFont::Edit, colors::BLUE)
+                            ),
+                        }
+                    }
+                    fn fzf_key(&self) -> String {
+                        match self {
+                            EmptyUrlChoice::UseDefault => "default".to_string(),
+                            EmptyUrlChoice::GoBack => "back".to_string(),
+                            EmptyUrlChoice::EnterAnother => "another".to_string(),
+                        }
+                    }
+                    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+                        crate::menu::protocol::FzfPreview::None
+                    }
+                }
+
+                let choices = vec![
+                    EmptyUrlChoice::UseDefault,
+                    EmptyUrlChoice::GoBack,
+                    EmptyUrlChoice::EnterAnother,
+                ];
+
+                match FzfWrapper::builder()
+                    .header(Header::fancy("No URL entered"))
+                    .prompt("Select")
+                    .args(fzf_mocha_args())
+                    .select(choices)?
+                {
+                    FzfResult::Selected(EmptyUrlChoice::UseDefault) => {
+                        break DEFAULT_REPO.to_string();
+                    }
+                    FzfResult::Selected(EmptyUrlChoice::GoBack) | FzfResult::Cancelled => {
+                        return Ok(());
+                    }
+                    FzfResult::Selected(EmptyUrlChoice::EnterAnother) => continue,
+                    _ => return Ok(()),
+                }
+            }
+            _ => return Ok(()),
+        }
     };
 
     // Optionally prompt for name

@@ -590,7 +590,6 @@ pub enum MenuCommands {
     /// Show a message dialog with an OK button
     Message {
         /// Message to display
-        #[arg(long)]
         message: String,
         /// Optional title for the message
         #[arg(long)]
