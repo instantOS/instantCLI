@@ -74,6 +74,8 @@ impl FzfSelectable for DotMenuEntry {
 #[derive(Debug, Clone)]
 enum RepoAction {
     Toggle,
+    BumpPriority,
+    LowerPriority,
     ManageSubdirs,
     ShowInfo,
     Remove,
@@ -107,6 +109,15 @@ fn build_repo_action_menu(repo_name: &str, config: &Config) -> Vec<RepoActionIte
 
     let is_enabled = repo_config.map(|r| r.enabled).unwrap_or(false);
 
+    // Find current priority position (1-indexed)
+    let current_position = config
+        .repos
+        .iter()
+        .position(|r| r.name == repo_name)
+        .map(|i| i + 1)
+        .unwrap_or(1);
+    let total_repos = config.repos.len();
+
     let mut actions = Vec::new();
 
     // Toggle enable/disable
@@ -137,6 +148,40 @@ fn build_repo_action_menu(repo_name: &str, config: &Config) -> Vec<RepoActionIte
         preview,
         action: RepoAction::Toggle,
     });
+
+    // Priority: Bump up (only if not already at top)
+    if current_position > 1 {
+        actions.push(RepoActionItem {
+            display: format!(
+                "{} Bump Priority",
+                format_icon_colored(NerdFont::ArrowUp, colors::PEACH)
+            ),
+            preview: format!(
+                "Move '{}' up in priority.\n\nCurrent: P{} → New: P{}\n\nHigher priority repos override lower ones for the same file.",
+                repo_name,
+                current_position,
+                current_position - 1
+            ),
+            action: RepoAction::BumpPriority,
+        });
+    }
+
+    // Priority: Lower down (only if not already at bottom)
+    if current_position < total_repos {
+        actions.push(RepoActionItem {
+            display: format!(
+                "{} Lower Priority",
+                format_icon_colored(NerdFont::ArrowDown, colors::LAVENDER)
+            ),
+            preview: format!(
+                "Move '{}' down in priority.\n\nCurrent: P{} → New: P{}\n\nHigher priority repos override lower ones for the same file.",
+                repo_name,
+                current_position,
+                current_position + 1
+            ),
+            action: RepoAction::LowerPriority,
+        });
+    }
 
     // Manage subdirs
     actions.push(RepoActionItem {
@@ -211,6 +256,22 @@ fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> String
             colors::TEXT,
             Some(NerdFont::GitBranch),
             &format!("Branch: {}", branch),
+        );
+    }
+
+    // Priority
+    let priority = config
+        .repos
+        .iter()
+        .position(|r| r.name == repo_name)
+        .map(|i| i + 1)
+        .unwrap_or(0);
+
+    if priority > 0 {
+        builder = builder.line(
+            colors::PEACH,
+            Some(NerdFont::ArrowUp),
+            &format!("Priority: P{}", priority),
         );
     }
 
@@ -518,6 +579,34 @@ fn handle_repo_actions(repo_name: &str, config: &Config, db: &Database, debug: b
                         debug,
                     )?;
                     FzfWrapper::message(&format!("Repository '{}' has been enabled", repo_name))?;
+                }
+            }
+            RepoAction::BumpPriority => {
+                let mut config = Config::load(None)?;
+                match config.move_repo_up(repo_name, None) {
+                    Ok(new_pos) => {
+                        FzfWrapper::message(&format!(
+                            "Repository '{}' moved to priority P{}",
+                            repo_name, new_pos
+                        ))?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Error: {}", e))?;
+                    }
+                }
+            }
+            RepoAction::LowerPriority => {
+                let mut config = Config::load(None)?;
+                match config.move_repo_down(repo_name, None) {
+                    Ok(new_pos) => {
+                        FzfWrapper::message(&format!(
+                            "Repository '{}' moved to priority P{}",
+                            repo_name, new_pos
+                        ))?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Error: {}", e))?;
+                    }
                 }
             }
             RepoAction::ManageSubdirs => {
