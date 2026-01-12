@@ -21,10 +21,17 @@ impl FzfSelectable for DotMenuEntry {
     fn fzf_display_text(&self) -> String {
         match self {
             DotMenuEntry::Repo(name) => {
-                format!("{} {}", format_icon_colored(NerdFont::Folder, colors::MAUVE), name)
+                format!(
+                    "{} {}",
+                    format_icon_colored(NerdFont::Folder, colors::MAUVE),
+                    name
+                )
             }
             DotMenuEntry::AddRepo => {
-                format!("{} Add Repo", format_icon_colored(NerdFont::Plus, colors::GREEN))
+                format!(
+                    "{} Add Repo",
+                    format_icon_colored(NerdFont::Plus, colors::GREEN)
+                )
             }
             DotMenuEntry::CloseMenu => format!("{} Close Menu", format_back_icon()),
         }
@@ -94,42 +101,9 @@ impl FzfSelectable for RepoActionItem {
     }
 }
 
-/// Subdirectory action for managing subdirs
-#[derive(Debug, Clone)]
-enum SubdirAction {
-    Enable,
-    Disable,
-    Back,
-}
-
-#[derive(Clone)]
-struct SubdirActionItem {
-    display: String,
-    preview: String,
-    action: SubdirAction,
-    subdir: String,
-}
-
-impl FzfSelectable for SubdirActionItem {
-    fn fzf_display_text(&self) -> String {
-        self.display.clone()
-    }
-
-    fn fzf_key(&self) -> String {
-        self.display.clone()
-    }
-
-    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-        crate::menu::protocol::FzfPreview::Text(self.preview.clone())
-    }
-}
-
 /// Build the repo action menu items
 fn build_repo_action_menu(repo_name: &str, config: &Config) -> Vec<RepoActionItem> {
-    let repo_config = config
-        .repos
-        .iter()
-        .find(|r| r.name == repo_name);
+    let repo_config = config.repos.iter().find(|r| r.name == repo_name);
 
     let is_enabled = repo_config.map(|r| r.enabled).unwrap_or(false);
 
@@ -141,14 +115,20 @@ fn build_repo_action_menu(repo_name: &str, config: &Config) -> Vec<RepoActionIte
             NerdFont::ToggleOff,
             colors::RED,
             "Disable",
-            format!("Disable '{}'.\n\nDisabled repositories won't be applied during 'ins dot apply'.", repo_name),
+            format!(
+                "Disable '{}'.\n\nDisabled repositories won't be applied during 'ins dot apply'.",
+                repo_name
+            ),
         )
     } else {
         (
             NerdFont::ToggleOn,
             colors::GREEN,
             "Enable",
-            format!("Enable '{}'.\n\nEnabled repositories will be applied during 'ins dot apply'.", repo_name),
+            format!(
+                "Enable '{}'.\n\nEnabled repositories will be applied during 'ins dot apply'.",
+                repo_name
+            ),
         )
     };
 
@@ -219,11 +199,19 @@ fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> String
     let mut builder = PreviewBuilder::new()
         .title(colors::SKY, repo_name)
         .blank()
-        .line(colors::TEXT, Some(NerdFont::Link), &format!("URL: {}", repo_config.url));
+        .line(
+            colors::TEXT,
+            Some(NerdFont::Link),
+            &format!("URL: {}", repo_config.url),
+        );
 
     // Branch
     if let Some(branch) = &repo_config.branch {
-        builder = builder.line(colors::TEXT, Some(NerdFont::GitBranch), &format!("Branch: {}", branch));
+        builder = builder.line(
+            colors::TEXT,
+            Some(NerdFont::GitBranch),
+            &format!("Branch: {}", branch),
+        );
     }
 
     // Status
@@ -242,11 +230,7 @@ fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> String
     } else {
         NerdFont::ToggleOff
     };
-    builder = builder.line(
-        status_color,
-        Some(status_icon),
-        status_text,
-    );
+    builder = builder.line(status_color, Some(status_icon), status_text);
 
     // Read-only
     if repo_config.read_only {
@@ -255,11 +239,9 @@ fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> String
 
     // Try to get more info from LocalRepo
     if let Ok(local_repo) = repo_manager.get_repository_info(repo_name) {
-        builder = builder.blank().line(
-            colors::MAUVE,
-            Some(NerdFont::Folder),
-            "Subdirectories",
-        );
+        builder = builder
+            .blank()
+            .line(colors::MAUVE, Some(NerdFont::Folder), "Subdirectories");
 
         if local_repo.meta.dots_dirs.is_empty() {
             builder = builder.indented_line(colors::SUBTEXT0, None, "No subdirectories configured");
@@ -278,7 +260,11 @@ fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> String
         // Local path
         if let Ok(local_path) = local_repo.local_path(config) {
             let tilde_path = local_path.display().to_string();
-            builder = builder.blank().indented_line(colors::TEXT, Some(NerdFont::Folder), &format!("Local: {}", tilde_path));
+            builder = builder.blank().indented_line(
+                colors::TEXT,
+                Some(NerdFont::Folder),
+                &format!("Local: {}", tilde_path),
+            );
         }
     }
 
@@ -303,26 +289,22 @@ fn select_dot_menu_entry(config: &Config, db: &Database) -> Result<Option<DotMen
             entry: entry.clone(),
             preview: match &entry {
                 DotMenuEntry::Repo(name) => build_repo_preview(name, config, db),
-                DotMenuEntry::AddRepo => {
-                    PreviewBuilder::new()
-                        .header(NerdFont::Plus, "Add Repository")
-                        .text("Clone a new dotfile repository")
-                        .blank()
-                        .text("This will:")
-                        .bullet("Prompt for repository URL")
-                        .bullet("Clone the repository")
-                        .bullet("Apply dotfiles from the new repo")
-                        .build_string()
-                }
-                DotMenuEntry::CloseMenu => {
-                    PreviewBuilder::new()
-                        .header(NerdFont::Cross, "Close Menu")
-                        .text("Close the dotfile menu")
-                        .blank()
-                        .text("This will exit the interactive menu")
-                        .text("and return to the command prompt")
-                        .build_string()
-                }
+                DotMenuEntry::AddRepo => PreviewBuilder::new()
+                    .header(NerdFont::Plus, "Add Repository")
+                    .text("Clone a new dotfile repository")
+                    .blank()
+                    .text("This will:")
+                    .bullet("Prompt for repository URL")
+                    .bullet("Clone the repository")
+                    .bullet("Apply dotfiles from the new repo")
+                    .build_string(),
+                DotMenuEntry::CloseMenu => PreviewBuilder::new()
+                    .header(NerdFont::Cross, "Close Menu")
+                    .text("Close the dotfile menu")
+                    .blank()
+                    .text("This will exit the interactive menu")
+                    .text("and return to the command prompt")
+                    .build_string(),
             },
         })
         .collect();
@@ -434,12 +416,26 @@ fn handle_repo_actions(repo_name: &str, config: &Config, db: &Database, debug: b
                 let db = Database::new(config.database_path().to_path_buf())?;
 
                 if is_enabled {
-                    let clone_args = RepoCommands::Disable { name: repo_name.to_string() };
-                    crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
+                    let clone_args = RepoCommands::Disable {
+                        name: repo_name.to_string(),
+                    };
+                    crate::dot::repo::commands::handle_repo_command(
+                        &mut config,
+                        &db,
+                        &clone_args,
+                        debug,
+                    )?;
                     FzfWrapper::message(&format!("Repository '{}' has been disabled", repo_name))?;
                 } else {
-                    let clone_args = RepoCommands::Enable { name: repo_name.to_string() };
-                    crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
+                    let clone_args = RepoCommands::Enable {
+                        name: repo_name.to_string(),
+                    };
+                    crate::dot::repo::commands::handle_repo_command(
+                        &mut config,
+                        &db,
+                        &clone_args,
+                        debug,
+                    )?;
                     FzfWrapper::message(&format!("Repository '{}' has been enabled", repo_name))?;
                 }
             }
@@ -449,8 +445,15 @@ fn handle_repo_actions(repo_name: &str, config: &Config, db: &Database, debug: b
             RepoAction::ShowInfo => {
                 let mut config = Config::load(None)?;
                 let db = Database::new(config.database_path().to_path_buf())?;
-                let clone_args = RepoCommands::Info { name: repo_name.to_string() };
-                crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
+                let clone_args = RepoCommands::Info {
+                    name: repo_name.to_string(),
+                };
+                crate::dot::repo::commands::handle_repo_command(
+                    &mut config,
+                    &db,
+                    &clone_args,
+                    debug,
+                )?;
                 FzfWrapper::input("Press Enter to continue")?;
             }
             RepoAction::Remove => {
@@ -480,7 +483,12 @@ fn handle_repo_actions(repo_name: &str, config: &Config, db: &Database, debug: b
                         name: repo_name.to_string(),
                         keep_files,
                     };
-                    crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
+                    crate::dot::repo::commands::handle_repo_command(
+                        &mut config,
+                        &db,
+                        &clone_args,
+                        debug,
+                    )?;
                     return Ok(()); // Exit repo menu after removing
                 }
             }
@@ -490,125 +498,71 @@ fn handle_repo_actions(repo_name: &str, config: &Config, db: &Database, debug: b
 }
 
 /// Handle managing subdirs
-fn handle_manage_subdirs(repo_name: &str, config: &Config, db: &Database, debug: bool) -> Result<()> {
-    // Load the repo to get available subdirs
-    let local_repo = match LocalRepo::new(config, repo_name.to_string()) {
-        Ok(repo) => repo,
-        Err(e) => {
-            FzfWrapper::message(&format!("Failed to load repository: {}", e))?;
-            return Ok(());
-        }
-    };
+fn handle_manage_subdirs(
+    repo_name: &str,
+    config: &Config,
+    _db: &Database,
+    debug: bool,
+) -> Result<()> {
+    loop {
+        // Reload config to get current state
+        let config = Config::load(None)?;
 
-    let repo_config = match config.repos.iter().find(|r| r.name == repo_name) {
-        Some(rc) => rc,
-        None => {
-            FzfWrapper::message("Repository not found in config")?;
-            return Ok(());
-        }
-    };
-
-    let active_subdirs = config.get_active_subdirs(repo_name);
-
-    // Build subdir items
-    let mut subdir_items: Vec<SubdirMenuItem> = local_repo
-        .meta
-        .dots_dirs
-        .iter()
-        .map(|subdir| {
-            let is_active = active_subdirs.contains(subdir);
-            SubdirMenuItem {
-                subdir: subdir.clone(),
-                is_active,
+        // Load the repo to get available subdirs
+        let local_repo = match LocalRepo::new(&config, repo_name.to_string()) {
+            Ok(repo) => repo,
+            Err(e) => {
+                FzfWrapper::message(&format!("Failed to load repository: {}", e))?;
+                return Ok(());
             }
-        })
-        .collect();
+        };
 
-    // Add back option
-    subdir_items.push(SubdirMenuItem {
-        subdir: "..".to_string(),
-        is_active: false,
-    });
+        let active_subdirs = config.get_active_subdirs(repo_name);
 
-    let selection = FzfWrapper::builder()
-        .header(Header::fancy(&format!("Subdirectories: {}", repo_name)))
-        .prompt("Select subdirectory")
-        .args(fzf_mocha_args())
-        .responsive_layout()
-        .select(subdir_items)?;
+        // Build subdir items
+        let mut subdir_items: Vec<SubdirMenuItem> = local_repo
+            .meta
+            .dots_dirs
+            .iter()
+            .map(|subdir| {
+                let is_active = active_subdirs.contains(subdir);
+                SubdirMenuItem {
+                    subdir: subdir.clone(),
+                    is_active,
+                }
+            })
+            .collect();
 
-    let selected_subdir = match selection {
-        FzfResult::Selected(item) => item.subdir,
-        FzfResult::Cancelled => return Ok(()),
-        _ => return Ok(()),
-    };
-
-    if selected_subdir == ".." {
-        return Ok(());
-    }
-
-    // Show action menu for this subdir
-    let is_active = active_subdirs.contains(&selected_subdir);
-    let mut actions = Vec::new();
-
-    if is_active {
-        actions.push(SubdirActionItem {
-            display: format!("{} Disable", format_icon_colored(NerdFont::ToggleOff, colors::RED)),
-            preview: format!(
-                "Disable '{}'.\n\nThis subdirectory won't be applied during 'ins dot apply'.",
-                selected_subdir
-            ),
-            action: SubdirAction::Disable,
-            subdir: selected_subdir.clone(),
+        // Add back option
+        subdir_items.push(SubdirMenuItem {
+            subdir: "..".to_string(),
+            is_active: false,
         });
-    } else {
-        actions.push(SubdirActionItem {
-            display: format!("{} Enable", format_icon_colored(NerdFont::ToggleOn, colors::GREEN)),
-            preview: format!(
-                "Enable '{}'.\n\nThis subdirectory will be applied during 'ins dot apply'.",
-                selected_subdir
-            ),
-            action: SubdirAction::Enable,
-            subdir: selected_subdir.clone(),
-        });
-    }
 
-    actions.push(SubdirActionItem {
-        display: format!("{} Back", format_back_icon()),
-        preview: "Return to subdirectory selection".to_string(),
-        action: SubdirAction::Back,
-        subdir: selected_subdir.clone(),
-    });
+        let selection = FzfWrapper::builder()
+            .header(Header::fancy(&format!("Subdirectories: {}", repo_name)))
+            .prompt("Select subdirectory")
+            .args(fzf_mocha_args())
+            .responsive_layout()
+            .select(subdir_items)?;
 
-    let result = FzfWrapper::builder()
-        .header(Header::fancy(&format!("Subdir: {}", selected_subdir)))
-        .prompt("Select action")
-        .args(fzf_mocha_args())
-        .responsive_layout()
-        .select_padded(actions)?;
+        let selected_subdir = match selection {
+            FzfResult::Selected(item) => item.subdir,
+            FzfResult::Cancelled => return Ok(()),
+            _ => return Ok(()),
+        };
 
-    let action = match result {
-        FzfResult::Selected(item) => item.action,
-        FzfResult::Cancelled => return Ok(()),
-        _ => return Ok(()),
-    };
-
-    match action {
-        SubdirAction::Enable => {
-            let mut config = Config::load(None)?;
-            let db = Database::new(config.database_path().to_path_buf())?;
-            let clone_args = RepoCommands::Subdirs {
-                command: crate::dot::repo::cli::SubdirCommands::Enable {
-                    name: repo_name.to_string(),
-                    subdir: selected_subdir.clone(),
-                },
-            };
-            crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
-            FzfWrapper::message(&format!("Enabled '{}' for '{}'", selected_subdir, repo_name))?;
+        if selected_subdir == ".." {
+            return Ok(());
         }
-        SubdirAction::Disable => {
-            let mut config = Config::load(None)?;
-            let db = Database::new(config.database_path().to_path_buf())?;
+
+        // Determine current state and toggle
+        let is_active = active_subdirs.contains(&selected_subdir);
+
+        let mut config = Config::load(None)?;
+        let db = Database::new(config.database_path().to_path_buf())?;
+
+        if is_active {
             let clone_args = RepoCommands::Subdirs {
                 command: crate::dot::repo::cli::SubdirCommands::Disable {
                     name: repo_name.to_string(),
@@ -616,12 +570,18 @@ fn handle_manage_subdirs(repo_name: &str, config: &Config, db: &Database, debug:
                 },
             };
             crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
-            FzfWrapper::message(&format!("Disabled '{}' for '{}'", selected_subdir, repo_name))?;
+        } else {
+            let clone_args = RepoCommands::Subdirs {
+                command: crate::dot::repo::cli::SubdirCommands::Enable {
+                    name: repo_name.to_string(),
+                    subdir: selected_subdir.clone(),
+                },
+            };
+            crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
         }
-        SubdirAction::Back => return Ok(()),
-    }
 
-    Ok(())
+        // Loop continues to show updated list
+    }
 }
 
 #[derive(Clone)]
@@ -655,12 +615,20 @@ impl FzfSelectable for SubdirMenuItem {
             FzfPreview::Text("Return to repo menu".to_string())
         } else {
             let status = if self.is_active { "Active" } else { "Inactive" };
-            let status_color = if self.is_active { colors::GREEN } else { colors::RED };
+            let status_color = if self.is_active {
+                colors::GREEN
+            } else {
+                colors::RED
+            };
             FzfPreview::Text(
                 PreviewBuilder::new()
                     .line(status_color, None, &format!("Status: {}", status))
-                    .indented_line(colors::TEXT, None, &format!("Path: {}/dots/{}", self.subdir, self.subdir))
-                    .build_string()
+                    .indented_line(
+                        colors::TEXT,
+                        None,
+                        &format!("Path: {}/dots/{}", self.subdir, self.subdir),
+                    )
+                    .build_string(),
             )
         }
     }
