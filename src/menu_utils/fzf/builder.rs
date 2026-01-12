@@ -656,14 +656,14 @@ impl FzfBuilder {
         cmd.env_remove("FZF_DEFAULT_OPTS");
         cmd.arg("--layout").arg("reverse");
         cmd.arg("--wrap");
+        cmd.arg("--read0"); // NUL-separated for multi-line items
+        cmd.arg("--ansi");
+        cmd.arg("--highlight-line");
 
-        if let Some(title) = &title {
-            if let Some(header) = &self.header {
-                cmd.arg("--header")
-                    .arg(format!("{title}\n\n{}", header.to_fzf_string()));
-            }
-        } else if let Some(header) = &self.header {
-            cmd.arg("--header").arg(header.to_fzf_string());
+        // Build styled header with title and message
+        let header_text = Self::format_message_header(title.as_deref(), self.header.as_ref());
+        if !header_text.is_empty() {
+            cmd.arg("--header").arg(header_text);
         }
 
         // Hide input field since message dialogs don't need text input
@@ -672,6 +672,9 @@ impl FzfBuilder {
         for arg in &self.additional_args {
             cmd.arg(arg);
         }
+
+        // Create styled OK button with catppuccin colors
+        let ok_styled = Self::format_styled_button(&ok_text, crate::ui::catppuccin::colors::GREEN);
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -683,7 +686,7 @@ impl FzfBuilder {
         let _ = crate::menu::server::register_menu_process(pid);
 
         if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(ok_text.as_bytes())?;
+            stdin.write_all(ok_styled.as_bytes())?;
         }
 
         let output = child.wait_with_output()?;
@@ -700,6 +703,55 @@ impl FzfBuilder {
         }
 
         Ok(())
+    }
+
+    /// Format a styled button with icon badge sampling from catppuccin colors
+    fn format_styled_button(text: &str, color: &str) -> String {
+        use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
+        use crate::ui::nerd_font::NerdFont;
+
+        let bg = hex_to_ansi_bg(color);
+        let fg = hex_to_ansi_fg(colors::CRUST);
+        let reset = "\x1b[49;39m";
+
+        // Create the display line with icon badge
+        let icon = char::from(NerdFont::Check);
+        let display_line = format!("{bg}{fg}   {icon}   {reset}  {text}");
+
+        // Create padding lines with shadow effect
+        let (top_padding, bottom_with_shadow) = extract_icon_padding(&display_line);
+
+        // Multi-line padded item
+        format!("{top_padding}\n  {display_line}\n{bottom_with_shadow}")
+    }
+
+    /// Format a styled message header with title and separator (inspired by PreviewBuilder)
+    fn format_message_header(title: Option<&str>, message: Option<&Header>) -> String {
+        use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
+
+        const RESET: &str = "\x1b[0m";
+        const SEPARATOR: &str = "───────────────────────────────────";
+
+        let mut lines = Vec::new();
+
+        // Add styled title if present
+        if let Some(t) = title {
+            let mauve = hex_to_ansi_fg(colors::MAUVE);
+            let bold = "\x1b[1m";
+            lines.push(format!("{bold}{mauve}{t}{RESET}"));
+
+            // Add separator below title
+            let surface = hex_to_ansi_fg(colors::SURFACE1);
+            lines.push(format!("{surface}{SEPARATOR}{RESET}"));
+        }
+
+        // Add message if present
+        if let Some(header) = message {
+            let text_color = hex_to_ansi_fg(colors::TEXT);
+            lines.push(format!("{text_color}{}{RESET}", header.to_fzf_string()));
+        }
+
+        lines.join("\n")
     }
 
     fn execute_checklist<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
