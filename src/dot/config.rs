@@ -281,6 +281,81 @@ impl Config {
 
         false
     }
+
+    /// Move a repository up in priority (earlier in list = higher priority)
+    /// Returns the new priority position (1-indexed)
+    pub fn move_repo_up(&mut self, repo_name: &str, custom_path: Option<&str>) -> Result<usize> {
+        let index = self
+            .repos
+            .iter()
+            .position(|r| r.name == repo_name)
+            .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", repo_name))?;
+
+        if index == 0 {
+            return Err(anyhow::anyhow!(
+                "Repository '{}' is already at highest priority",
+                repo_name
+            ));
+        }
+
+        self.repos.swap(index, index - 1);
+        self.save(custom_path)?;
+        Ok(index) // New position (1-indexed: was index+1, now index)
+    }
+
+    /// Move a repository down in priority (later in list = lower priority)
+    /// Returns the new priority position (1-indexed)
+    pub fn move_repo_down(&mut self, repo_name: &str, custom_path: Option<&str>) -> Result<usize> {
+        let index = self
+            .repos
+            .iter()
+            .position(|r| r.name == repo_name)
+            .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", repo_name))?;
+
+        if index >= self.repos.len() - 1 {
+            return Err(anyhow::anyhow!(
+                "Repository '{}' is already at lowest priority",
+                repo_name
+            ));
+        }
+
+        self.repos.swap(index, index + 1);
+        self.save(custom_path)?;
+        Ok(index + 2) // New position (1-indexed: was index+1, now index+2)
+    }
+
+    /// Set a repository to a specific priority position (1-indexed)
+    /// Position 1 = highest priority (first in list)
+    pub fn set_repo_priority(
+        &mut self,
+        repo_name: &str,
+        position: usize,
+        custom_path: Option<&str>,
+    ) -> Result<()> {
+        if position == 0 || position > self.repos.len() {
+            return Err(anyhow::anyhow!(
+                "Invalid priority position {}. Must be between 1 and {}",
+                position,
+                self.repos.len()
+            ));
+        }
+
+        let current_index = self
+            .repos
+            .iter()
+            .position(|r| r.name == repo_name)
+            .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", repo_name))?;
+
+        let target_index = position - 1;
+
+        if current_index == target_index {
+            return Ok(()); // Already at target position
+        }
+
+        let repo = self.repos.remove(current_index);
+        self.repos.insert(target_index, repo);
+        self.save(custom_path)
+    }
 }
 
 /// Extract a repository name from a git URL by removing the .git suffix

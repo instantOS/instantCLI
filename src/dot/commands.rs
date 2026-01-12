@@ -124,6 +124,11 @@ pub enum DotCommands {
         #[arg(long)]
         list: bool,
     },
+    /// Manage repository priority order
+    Priority {
+        #[command(subcommand)]
+        command: PriorityCommands,
+    },
     /// Interactive dotfile repository menu
     Menu,
 }
@@ -143,6 +148,32 @@ pub enum IgnoreCommands {
         path: String,
     },
     /// List all ignored paths
+    List,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PriorityCommands {
+    /// Increase repository priority (move earlier in list)
+    Bump {
+        /// Repository name
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: String,
+    },
+    /// Decrease repository priority (move later in list)
+    Lower {
+        /// Repository name
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: String,
+    },
+    /// Set repository to a specific priority position
+    Set {
+        /// Repository name
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: String,
+        /// Priority position (1 = highest priority)
+        position: usize,
+    },
+    /// List repositories in priority order
     List,
 }
 
@@ -252,6 +283,106 @@ fn handle_ignore_command(
     Ok(())
 }
 
+fn handle_priority_command(
+    config: &mut Config,
+    command: &PriorityCommands,
+    config_path: Option<&str>,
+) -> Result<()> {
+    match command {
+        PriorityCommands::Bump { name } => {
+            let new_pos = config.move_repo_up(name, config_path)?;
+            emit(
+                Level::Success,
+                "dot.priority.bump",
+                &format!(
+                    "{} Moved repository '{}' up to priority P{}",
+                    char::from(NerdFont::Check),
+                    name.cyan(),
+                    new_pos
+                ),
+                Some(serde_json::json!({
+                    "name": name,
+                    "new_priority": new_pos
+                })),
+            );
+        }
+        PriorityCommands::Lower { name } => {
+            let new_pos = config.move_repo_down(name, config_path)?;
+            emit(
+                Level::Success,
+                "dot.priority.lower",
+                &format!(
+                    "{} Moved repository '{}' down to priority P{}",
+                    char::from(NerdFont::Check),
+                    name.cyan(),
+                    new_pos
+                ),
+                Some(serde_json::json!({
+                    "name": name,
+                    "new_priority": new_pos
+                })),
+            );
+        }
+        PriorityCommands::Set { name, position } => {
+            config.set_repo_priority(name, *position, config_path)?;
+            emit(
+                Level::Success,
+                "dot.priority.set",
+                &format!(
+                    "{} Set repository '{}' to priority P{}",
+                    char::from(NerdFont::Check),
+                    name.cyan(),
+                    position
+                ),
+                Some(serde_json::json!({
+                    "name": name,
+                    "priority": position
+                })),
+            );
+        }
+        PriorityCommands::List => {
+            if config.repos.is_empty() {
+                emit(
+                    Level::Info,
+                    "dot.priority.list.empty",
+                    &format!("{} No repositories configured", char::from(NerdFont::Info)),
+                    None,
+                );
+            } else {
+                emit(
+                    Level::Info,
+                    "dot.priority.list.header",
+                    &format!(
+                        "{} Repository priority order (first = highest):",
+                        char::from(NerdFont::List)
+                    ),
+                    None,
+                );
+                for (i, repo) in config.repos.iter().enumerate() {
+                    let priority = format!("[P{}]", i + 1).bright_purple().bold();
+                    let status = if repo.enabled {
+                        "".to_string()
+                    } else {
+                        " (disabled)".yellow().to_string()
+                    };
+                    emit(
+                        Level::Info,
+                        "dot.priority.list.item",
+                        &format!("  {} {}{}", priority, repo.name.cyan(), status),
+                        Some(serde_json::json!({
+                            "priority": i + 1,
+                            "name": repo.name,
+                            "enabled": repo.enabled
+                        })),
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub fn handle_dot_command(
     command: &DotCommands,
     config_path: Option<&str>,
@@ -339,6 +470,9 @@ pub fn handle_dot_command(
             super::operations::alternative::handle_alternative(
                 &config, path, *reset, *create, *list,
             )?;
+        }
+        DotCommands::Priority { command } => {
+            handle_priority_command(&mut config, command, config_path)?;
         }
         DotCommands::Menu => {
             super::menu::dot_menu(&config, &db, debug)?;

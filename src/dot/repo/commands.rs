@@ -723,6 +723,14 @@ fn disable_subdirectory(config: &mut Config, name: &str, subdir: &str) -> Result
         return Ok(());
     }
 
+    // Check if this is the last active subdir
+    if active.len() == 1 {
+        return Err(anyhow::anyhow!(
+            "Cannot disable the last active subdirectory '{}'. At least one subdirectory must remain active.",
+            subdir
+        ));
+    }
+
     active.retain(|s| s != subdir);
 
     config.set_active_subdirs(name, active, None)?;
