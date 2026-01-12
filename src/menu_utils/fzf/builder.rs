@@ -769,37 +769,49 @@ impl FzfBuilder {
             for wrapped_line in Self::wrap_text(&msg_text, wrap_width) {
                 lines.push(format!("{text_color}{wrapped_line}{RESET}"));
             }
+            // Add blank lines to separate from OK button
+            lines.push(String::new());
+            lines.push(String::new());
         }
 
         lines.join("\n")
     }
 
-    /// Wrap text at word boundaries to fit within max_width characters
+    /// Wrap text at word boundaries to fit within max_width characters.
+    /// Preserves existing newlines in the input text.
     fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
-        let mut lines = Vec::new();
-        let mut current_line = String::new();
+        let mut output_lines = Vec::new();
 
-        for word in text.split_whitespace() {
-            if current_line.is_empty() {
-                current_line = word.to_string();
-            } else if current_line.len() + 1 + word.len() <= max_width {
-                current_line.push(' ');
-                current_line.push_str(word);
-            } else {
-                lines.push(current_line);
-                current_line = word.to_string();
+        // Process each input line separately to preserve newlines
+        for input_line in text.lines() {
+            if input_line.is_empty() {
+                output_lines.push(String::new());
+                continue;
+            }
+
+            // Wrap this single line if needed
+            let mut current_line = String::new();
+            for word in input_line.split_whitespace() {
+                if current_line.is_empty() {
+                    current_line = word.to_string();
+                } else if current_line.len() + 1 + word.len() <= max_width {
+                    current_line.push(' ');
+                    current_line.push_str(word);
+                } else {
+                    output_lines.push(current_line);
+                    current_line = word.to_string();
+                }
+            }
+            if !current_line.is_empty() {
+                output_lines.push(current_line);
             }
         }
 
-        if !current_line.is_empty() {
-            lines.push(current_line);
+        if output_lines.is_empty() {
+            output_lines.push(String::new());
         }
 
-        if lines.is_empty() {
-            lines.push(String::new());
-        }
-
-        lines
+        output_lines
     }
 
     fn execute_checklist<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {

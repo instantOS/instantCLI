@@ -524,18 +524,16 @@ fn handle_repo_actions(repo_name: &str, config: &Config, db: &Database, debug: b
                 handle_manage_subdirs(repo_name, config, db, debug)?;
             }
             RepoAction::ShowInfo => {
-                let mut config = Config::load(None)?;
+                // Build the info string using the preview builder
+                let config = Config::load(None)?;
                 let db = Database::new(config.database_path().to_path_buf())?;
-                let clone_args = RepoCommands::Info {
-                    name: repo_name.to_string(),
-                };
-                crate::dot::repo::commands::handle_repo_command(
-                    &mut config,
-                    &db,
-                    &clone_args,
-                    debug,
-                )?;
-                FzfWrapper::input("Press Enter to continue")?;
+                let info_text = build_repo_preview(repo_name, &config, &db);
+
+                // Display in a message dialog
+                FzfWrapper::builder()
+                    .message(&info_text)
+                    .title(repo_name)
+                    .message_dialog()?;
             }
             RepoAction::Remove => {
                 let confirm = FzfWrapper::builder()
