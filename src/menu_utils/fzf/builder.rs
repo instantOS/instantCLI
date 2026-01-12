@@ -17,6 +17,7 @@ pub struct FzfBuilder {
     dialog_type: DialogType,
     initial_cursor: Option<InitialCursor>,
     initial_query: Option<String>,
+    ghost_text: Option<String>,
     responsive_layout: bool,
 }
 
@@ -50,6 +51,7 @@ impl FzfBuilder {
             dialog_type: DialogType::Selection,
             initial_cursor: None,
             initial_query: None,
+            ghost_text: None,
             responsive_layout: false,
         }
     }
@@ -101,6 +103,12 @@ impl FzfBuilder {
     pub fn input(mut self) -> Self {
         self.dialog_type = DialogType::Input;
         self.additional_args = Self::input_args();
+        self
+    }
+
+    /// Set ghost/placeholder text shown when input is empty
+    pub fn ghost<S: Into<String>>(mut self, text: S) -> Self {
+        self.ghost_text = Some(text.into());
         self
     }
 
@@ -440,6 +448,10 @@ impl FzfBuilder {
 
         if let Some(query) = &self.initial_query {
             cmd.arg("-q").arg(query);
+        }
+
+        if let Some(ghost) = &self.ghost_text {
+            cmd.arg("--ghost").arg(ghost);
         }
 
         for arg in &self.additional_args {

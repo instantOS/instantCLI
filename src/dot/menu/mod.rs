@@ -346,23 +346,43 @@ impl FzfSelectable for DotMenuItem {
 
 /// Handle adding a new repository
 fn handle_add_repo(config: &Config, db: &Database, debug: bool) -> Result<()> {
-    // Prompt for URL
-    let url = FzfWrapper::input("Repository URL")?;
+    use crate::menu_utils::FzfResult;
+
+    // Prompt for URL with example ghost text
+    let url = match FzfWrapper::builder()
+        .input()
+        .prompt("Repository URL")
+        .ghost("https://github.com/instantOS/dotfiles")
+        .input_result()?
+    {
+        FzfResult::Selected(s) if !s.is_empty() => s,
+        FzfResult::Selected(_) => return Ok(()), // Empty input, cancel
+        FzfResult::Cancelled => return Ok(()),
+        _ => return Ok(()),
+    };
 
     // Optionally prompt for name
-    let name_input = FzfWrapper::input("Repository name (optional, press Enter to skip)")?;
-    let name = if name_input.is_empty() {
-        None
-    } else {
-        Some(name_input)
+    let name = match FzfWrapper::builder()
+        .input()
+        .prompt("Repository name (optional)")
+        .input_result()?
+    {
+        FzfResult::Selected(s) if !s.is_empty() => Some(s),
+        FzfResult::Selected(_) => None,
+        FzfResult::Cancelled => return Ok(()),
+        _ => None,
     };
 
     // Optionally prompt for branch
-    let branch_input = FzfWrapper::input("Branch (optional, press Enter to skip)")?;
-    let branch = if branch_input.is_empty() {
-        None
-    } else {
-        Some(branch_input)
+    let branch = match FzfWrapper::builder()
+        .input()
+        .prompt("Branch (optional)")
+        .input_result()?
+    {
+        FzfResult::Selected(s) if !s.is_empty() => Some(s),
+        FzfResult::Selected(_) => None,
+        FzfResult::Cancelled => return Ok(()),
+        _ => None,
     };
 
     // Use the existing clone command
