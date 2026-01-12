@@ -174,6 +174,22 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 }
             }
         }
+        MenuCommands::Message {
+            ref message,
+            ref title,
+        } => {
+            let mut builder = FzfWrapper::builder().message(message);
+            if let Some(t) = title {
+                builder = builder.title(t);
+            }
+            match builder.message_dialog() {
+                Ok(_) => Ok(0),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    Ok(1)
+                }
+            }
+        }
         MenuCommands::Choice {
             ref prompt,
             ref items,
@@ -570,6 +586,15 @@ pub enum MenuCommands {
         /// Use GUI menu server instead of local fzf
         #[arg(long)]
         gui: bool,
+    },
+    /// Show a message dialog with an OK button
+    Message {
+        /// Message to display
+        #[arg(long)]
+        message: String,
+        /// Optional title for the message
+        #[arg(long)]
+        title: Option<String>,
     },
     /// Show selection menu and output choice(s) to stdout
     Choice {

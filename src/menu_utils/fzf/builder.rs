@@ -666,7 +666,8 @@ impl FzfBuilder {
             cmd.arg("--header").arg(header.to_fzf_string());
         }
 
-        cmd.arg("--prompt").arg("- ");
+        // Hide input field since message dialogs don't need text input
+        cmd.arg("--no-input");
 
         for arg in &self.additional_args {
             cmd.arg(arg);
