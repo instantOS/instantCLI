@@ -64,6 +64,7 @@ pub fn show_single_file_status(
     all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
     cfg: &config::Config,
     db: &crate::dot::db::Database,
+    show_sources: bool,
 ) -> Result<()> {
     let target_path = crate::dot::resolve_dotfile_path(path_str)?;
 
@@ -237,6 +238,7 @@ pub fn show_status_summary(
     cfg: &config::Config,
     db: &crate::dot::db::Database,
     show_all: bool,
+    show_sources: bool,
 ) -> Result<()> {
     let home = dirs::home_dir().context("Failed to get home directory")?;
 
@@ -244,8 +246,17 @@ pub fn show_status_summary(
     let (files_by_status, summary) = categorize_files_and_get_summary(all_dotfiles, cfg, db);
 
     match get_output_format() {
-        OutputFormat::Json => show_json_status(&files_by_status, &summary, show_all),
-        OutputFormat::Text => show_text_status(&files_by_status, &summary, show_all, &home),
+        OutputFormat::Json => {
+            show_json_status(&files_by_status, &summary, show_all, show_sources, cfg)
+        }
+        OutputFormat::Text => show_text_status(
+            &files_by_status,
+            &summary,
+            show_all,
+            show_sources,
+            &home,
+            cfg,
+        ),
     }
 
     Ok(())
@@ -311,8 +322,19 @@ fn show_json_status(
     files_by_status: &HashMap<DotFileStatus, Vec<FileInfo>>,
     summary: &StatusSummary,
     show_all: bool,
+    show_sources: bool,
+    cfg: &config::Config,
 ) {
     let home = dirs::home_dir().unwrap_or_default();
+
+    // Helper function to get priority number for a repo
+    let get_priority = |repo_name: &str| -> usize {
+        cfg.repos
+            .iter()
+            .position(|r| r.name == repo_name)
+            .map(|p| p + 1)
+            .unwrap_or(0)
+    };
 
     let modified_files: Vec<_> = files_by_status
         .get(&DotFileStatus::Modified)
@@ -323,12 +345,18 @@ fn show_json_status(
                 .target_path
                 .strip_prefix(&home)
                 .unwrap_or(&file_info.target_path);
-            serde_json::json!({
+            let priority = get_priority(file_info.repo_name.as_str());
+            let mut json_val = serde_json::json!({
                 "path": format!("~/{}", relative_path.display()),
                 "status": "modified",
                 "repo": file_info.repo_name.as_str(),
                 "dotfile_dir": file_info.dotfile_dir
-            })
+            });
+            if show_sources {
+                json_val["priority"] = serde_json::json!(priority);
+                json_val["override"] = serde_json::json!(file_info.is_overridden);
+            }
+            json_val
         })
         .collect();
 
@@ -341,12 +369,18 @@ fn show_json_status(
                 .target_path
                 .strip_prefix(&home)
                 .unwrap_or(&file_info.target_path);
-            serde_json::json!({
+            let priority = get_priority(file_info.repo_name.as_str());
+            let mut json_val = serde_json::json!({
                 "path": format!("~/{}", relative_path.display()),
                 "status": "outdated",
                 "repo": file_info.repo_name.as_str(),
                 "dotfile_dir": file_info.dotfile_dir
-            })
+            });
+            if show_sources {
+                json_val["priority"] = serde_json::json!(priority);
+                json_val["override"] = serde_json::json!(file_info.is_overridden);
+            }
+            json_val
         })
         .collect();
 
@@ -360,12 +394,18 @@ fn show_json_status(
                     .target_path
                     .strip_prefix(&home)
                     .unwrap_or(&file_info.target_path);
-                serde_json::json!({
+                let priority = get_priority(file_info.repo_name.as_str());
+                let mut json_val = serde_json::json!({
                     "path": format!("~/{}", relative_path.display()),
                     "status": "clean",
                     "repo": file_info.repo_name.as_str(),
                     "dotfile_dir": file_info.dotfile_dir
-                })
+                });
+                if show_sources {
+                    json_val["priority"] = serde_json::json!(priority);
+                    json_val["override"] = serde_json::json!(file_info.is_overridden);
+                }
+                json_val
             })
             .collect()
     } else {
@@ -380,7 +420,8 @@ fn show_json_status(
         "modified_files": modified_files,
         "outdated_files": outdated_files,
         "clean_files": clean_files,
-        "show_all": show_all
+        "show_all": show_all,
+        "show_sources": show_sources
     });
 
     emit(
@@ -396,8 +437,19 @@ fn show_text_status(
     files_by_status: &HashMap<DotFileStatus, Vec<FileInfo>>,
     summary: &StatusSummary,
     show_all: bool,
+    show_sources: bool,
     home: &PathBuf,
+    cfg: &config::Config,
 ) {
+    // Helper function to get priority number for a repo
+    let get_priority = |repo_name: &str| -> usize {
+        cfg.repos
+            .iter()
+            .position(|r| r.name == repo_name)
+            .map(|p| p + 1)
+            .unwrap_or(0)
+    };
+
     // Show summary
     println!("Total tracked: {} files", summary.total_files);
     println!("{} Clean: {} files", "✓".green(), summary.clean_count);
@@ -419,11 +471,11 @@ fn show_text_status(
         println!();
 
         if let Some(modified_files) = files_by_status.get(&DotFileStatus::Modified) {
-            show_modified_files(modified_files, home);
+            show_modified_files(modified_files, home, show_sources, &get_priority);
         }
 
         if let Some(outdated_files) = files_by_status.get(&DotFileStatus::Outdated) {
-            show_outdated_files(outdated_files, home);
+            show_outdated_files(outdated_files, home, show_sources, &get_priority);
         }
     }
 
@@ -432,7 +484,7 @@ fn show_text_status(
         && summary.clean_count > 0
         && let Some(clean_files) = files_by_status.get(&DotFileStatus::Clean)
     {
-        show_clean_files(clean_files, home);
+        show_clean_files(clean_files, home, show_sources, &get_priority);
     }
 
     // Show action suggestions
@@ -444,7 +496,12 @@ fn show_text_status(
 }
 
 /// Show modified files section
-fn show_modified_files(files: &[FileInfo], home: &PathBuf) {
+fn show_modified_files(
+    files: &[FileInfo],
+    home: &PathBuf,
+    show_sources: bool,
+    get_priority: &dyn Fn(&str) -> usize,
+) {
     println!("{}", " Modified files:".yellow().bold());
     for file_info in files {
         let relative_path = file_info
@@ -457,20 +514,38 @@ fn show_modified_files(files: &[FileInfo], home: &PathBuf) {
         } else {
             ""
         };
-        println!(
-            "  {} -> {} ({}: {}{})",
-            tilde_path,
-            "modified".yellow(),
-            file_info.repo_name,
-            file_info.dotfile_dir,
-            override_indicator.magenta()
-        );
+
+        if show_sources {
+            let priority = get_priority(file_info.repo_name.as_str());
+            println!(
+                "  {} → {} / {} (P{}){}",
+                tilde_path,
+                file_info.repo_name.as_str().bright_purple(),
+                file_info.dotfile_dir,
+                priority,
+                override_indicator.magenta()
+            );
+        } else {
+            println!(
+                "  {} -> {} ({}: {}{})",
+                tilde_path,
+                "modified".yellow(),
+                file_info.repo_name,
+                file_info.dotfile_dir,
+                override_indicator.magenta()
+            );
+        }
     }
     println!();
 }
 
 /// Show outdated files section
-fn show_outdated_files(files: &[FileInfo], home: &PathBuf) {
+fn show_outdated_files(
+    files: &[FileInfo],
+    home: &PathBuf,
+    show_sources: bool,
+    get_priority: &dyn Fn(&str) -> usize,
+) {
     println!("{}", "Outdated files:".blue().bold());
     for file_info in files {
         let relative_path = file_info
@@ -483,20 +558,38 @@ fn show_outdated_files(files: &[FileInfo], home: &PathBuf) {
         } else {
             ""
         };
-        println!(
-            "  {} -> {} ({}: {}{})",
-            tilde_path,
-            "outdated".blue(),
-            file_info.repo_name,
-            file_info.dotfile_dir,
-            override_indicator.magenta()
-        );
+
+        if show_sources {
+            let priority = get_priority(file_info.repo_name.as_str());
+            println!(
+                "  {} → {} / {} (P{}){}",
+                tilde_path,
+                file_info.repo_name.as_str().bright_purple(),
+                file_info.dotfile_dir,
+                priority,
+                override_indicator.magenta()
+            );
+        } else {
+            println!(
+                "  {} -> {} ({}: {}{})",
+                tilde_path,
+                "outdated".blue(),
+                file_info.repo_name,
+                file_info.dotfile_dir,
+                override_indicator.magenta()
+            );
+        }
     }
     println!();
 }
 
 /// Show clean files section
-fn show_clean_files(files: &[FileInfo], home: &PathBuf) {
+fn show_clean_files(
+    files: &[FileInfo],
+    home: &PathBuf,
+    show_sources: bool,
+    get_priority: &dyn Fn(&str) -> usize,
+) {
     println!("{}", "Clean files:".green().bold());
     for file_info in files {
         let relative_path = file_info
@@ -509,14 +602,27 @@ fn show_clean_files(files: &[FileInfo], home: &PathBuf) {
         } else {
             ""
         };
-        println!(
-            "  {} -> {} ({}: {}{})",
-            tilde_path,
-            "clean".green(),
-            file_info.repo_name,
-            file_info.dotfile_dir,
-            override_indicator.magenta()
-        );
+
+        if show_sources {
+            let priority = get_priority(file_info.repo_name.as_str());
+            println!(
+                "  {} → {} / {} (P{}){}",
+                tilde_path,
+                file_info.repo_name.as_str().bright_purple(),
+                file_info.dotfile_dir,
+                priority,
+                override_indicator.magenta()
+            );
+        } else {
+            println!(
+                "  {} -> {} ({}: {}{})",
+                tilde_path,
+                "clean".green(),
+                file_info.repo_name,
+                file_info.dotfile_dir,
+                override_indicator.magenta()
+            );
+        }
     }
     println!();
 }

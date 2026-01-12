@@ -53,6 +53,9 @@ pub enum DotCommands {
         /// Show all dotfiles including clean ones
         #[arg(long)]
         all: bool,
+        /// Show which repository/subdirectory each dotfile comes from
+        #[arg(long)]
+        show_sources: bool,
     },
     /// Initialize the current git repo or bootstrap a default dotfile repo when outside git
     Init {
@@ -282,8 +285,12 @@ pub fn handle_dot_command(
         DotCommands::Update { no_apply } => {
             super::update_all(&config, debug, &db, !*no_apply)?;
         }
-        DotCommands::Status { path, all } => {
-            super::status_all(&config, path.as_deref(), &db, *all)?;
+        DotCommands::Status {
+            path,
+            all,
+            show_sources,
+        } => {
+            super::status_all(&config, path.as_deref(), &db, *all, *show_sources)?;
         }
         DotCommands::Init {
             name,
@@ -312,7 +319,7 @@ pub fn handle_dot_command(
             let pulled_commits = super::git_pull_all(&config, args, debug)?;
             if pulled_commits {
                 println!();
-                super::status_all(&config, None, &db, false)?;
+                super::status_all(&config, None, &db, false, false)?;
                 println!(
                     "\n{} New commits were pulled. Use {} to apply the changes.",
                     char::from(NerdFont::Info).to_string().blue(),

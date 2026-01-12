@@ -123,7 +123,13 @@ fn list_repositories(config: &Config, db: &Database) -> Result<()> {
         }
         OutputFormat::Text => {
             println!("Configured repositories:");
-            for repo_config in &config.repos {
+            let total_repos = config.repos.len();
+
+            for (index, repo_config) in config.repos.iter().enumerate() {
+                // Priority: P1 = highest (first repo), P2 = second highest, etc.
+                let priority = index + 1;
+                let priority_label = format!("[P{}]", priority).bright_purple().bold();
+
                 let status = if repo_config.enabled {
                     "enabled".green()
                 } else {
@@ -142,22 +148,40 @@ fn list_repositories(config: &Config, db: &Database) -> Result<()> {
                     .map(|b| format!(" ({b})"))
                     .unwrap_or_default();
 
+                // Show subdir priority when multiple active subdirs
                 let active_subdirs = if repo_config.active_subdirectories.is_empty() {
                     "dots".to_string()
                 } else {
-                    repo_config.active_subdirectories.join(", ")
+                    let subdirs = repo_config.active_subdirectories.join(", ");
+                    if repo_config.active_subdirectories.len() > 1 {
+                        // Show priority order for multiple subdirs
+                        format!("{} (priority: first=highest)", subdirs)
+                    } else {
+                        subdirs
+                    }
                 };
 
                 // Get local path in tilde notation
                 let local_path = get_local_path_tilde(config, &repo_manager, &repo_config.name);
 
+                // Overall priority hint
+                let priority_hint = if priority == 1 && total_repos > 1 {
+                    format!(" {}", "(highest priority)".dimmed())
+                } else if priority == total_repos && total_repos > 1 {
+                    format!(" {}", "(lowest priority)".dimmed())
+                } else {
+                    String::new()
+                };
+
                 println!(
-                    "  {}{} - {} [{}]{}",
+                    "  {} {}{} - {} [{}]{}{}",
+                    priority_label,
                     repo_config.name.cyan(),
                     branch_info,
                     repo_config.url,
                     status,
-                    read_only
+                    read_only,
+                    priority_hint
                 );
                 println!("    Local path: {}", local_path.dimmed());
                 println!("    Active subdirs: {active_subdirs}");

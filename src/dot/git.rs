@@ -18,15 +18,16 @@ pub fn status_all(
     path: Option<&str>,
     db: &crate::dot::db::Database,
     show_all: bool,
+    show_sources: bool,
 ) -> anyhow::Result<()> {
     let all_dotfiles = crate::dot::get_all_dotfiles(cfg, db)?;
 
     if let Some(path_str) = path {
         // Show status for specific path
-        show_single_file_status(path_str, &all_dotfiles, cfg, db)?;
+        show_single_file_status(path_str, &all_dotfiles, cfg, db, show_sources)?;
     } else {
         // Show summary and file list
-        show_status_summary(&all_dotfiles, cfg, db, show_all)?;
+        show_status_summary(&all_dotfiles, cfg, db, show_all, show_sources)?;
     }
 
     Ok(())

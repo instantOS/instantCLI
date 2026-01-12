@@ -146,14 +146,22 @@ pub fn scan_directory_for_dotfiles(dir_path: &Path, home_path: &Path) -> Result<
     Ok(dotfiles)
 }
 
-/// Helper function to merge dotfiles with later repos overriding earlier ones
+/// Helper function to merge dotfiles with earlier repos overriding later ones
+///
+/// This provides a unified priority system where "higher in the list = higher priority".
+/// The first repository in the config has the highest priority (P1), and later repos
+/// are overridden by earlier ones.
 pub fn merge_dotfiles(dotfiles_list: Vec<Vec<Dotfile>>) -> HashMap<PathBuf, Dotfile> {
     let mut filemap = HashMap::new();
 
-    // Process in order - later repos override earlier ones
-    for dotfiles in dotfiles_list {
+    // Reverse iteration - earlier repos override later ones
+    // This means P1 (first repo) has highest priority
+    for dotfiles in dotfiles_list.into_iter().rev() {
         for dotfile in dotfiles {
-            filemap.insert(dotfile.target_path.clone(), dotfile);
+            // Only insert if key doesn't exist (earlier repos win)
+            filemap
+                .entry(dotfile.target_path.clone())
+                .or_insert(dotfile);
         }
     }
 

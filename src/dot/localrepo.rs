@@ -109,8 +109,9 @@ impl LocalRepo {
     /// - available_subdirs: All subdirectories configured in the repo metadata
     /// - active_subdirs: Subdirectories that should be marked as active (from config)
     ///
-    /// This creates DotfileDir instances for ALL available subdirectories,
-    /// using active_subdirs only to determine which ones should be active.
+    /// This creates DotfileDir instances for ALL available subdirectories.
+    /// The ORDER of active_subdirs determines priority - earlier entries have higher priority.
+    /// This provides a unified priority system where "higher in the list = higher priority".
     fn dotfile_dirs_from_path(
         repo_path: &Path,
         available_subdirs: &[String],
@@ -118,10 +119,21 @@ impl LocalRepo {
     ) -> Result<Vec<DotfileDir>> {
         let mut dotfile_dirs = Vec::new();
 
+        // Phase 1: Active subdirs in priority order (from config)
+        // Earlier entries have higher priority
+        for subdir_name in active_subdirs {
+            if available_subdirs.contains(subdir_name) {
+                let dotfile_dir = DotfileDir::new(subdir_name, repo_path, true)?;
+                dotfile_dirs.push(dotfile_dir);
+            }
+        }
+
+        // Phase 2: Inactive subdirs (not used, but tracked)
         for subdir_name in available_subdirs {
-            let is_active = active_subdirs.contains(subdir_name);
-            let dotfile_dir = DotfileDir::new(subdir_name, repo_path, is_active)?;
-            dotfile_dirs.push(dotfile_dir);
+            if !active_subdirs.contains(subdir_name) {
+                let dotfile_dir = DotfileDir::new(subdir_name, repo_path, false)?;
+                dotfile_dirs.push(dotfile_dir);
+            }
         }
 
         Ok(dotfile_dirs)
