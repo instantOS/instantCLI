@@ -701,6 +701,17 @@ fn handle_manage_subdirs(
             })
             .collect();
 
+        // Add "Add Dotfile Dir" option (only for non-read-only repos)
+        let repo_config = config.repos.iter().find(|r| r.name == repo_name);
+        let is_read_only = repo_config.map(|r| r.read_only).unwrap_or(false);
+
+        if !is_read_only {
+            subdir_items.push(SubdirMenuItem {
+                subdir: "__add_new__".to_string(),
+                is_active: false,
+            });
+        }
+
         // Add back option
         subdir_items.push(SubdirMenuItem {
             subdir: "..".to_string(),
@@ -722,6 +733,36 @@ fn handle_manage_subdirs(
 
         if selected_subdir == ".." {
             return Ok(());
+        }
+
+        // Handle add new subdirectory
+        if selected_subdir == "__add_new__" {
+            // Prompt for new directory name
+            let new_dir = match FzfWrapper::builder()
+                .input()
+                .prompt("New dotfile directory name")
+                .ghost("e.g. themes, config, scripts")
+                .input_result()?
+            {
+                FzfResult::Selected(s) if !s.trim().is_empty() => s.trim().to_string(),
+                FzfResult::Cancelled => continue,
+                _ => continue,
+            };
+
+            // Get repo path and add the directory
+            let local_path = local_repo.local_path(&config)?;
+            match crate::dot::meta::add_dots_dir(&local_path, &new_dir) {
+                Ok(()) => {
+                    FzfWrapper::message(&format!(
+                        "Created dotfile directory '{}'. Enable it to start using.",
+                        new_dir
+                    ))?;
+                }
+                Err(e) => {
+                    FzfWrapper::message(&format!("Error: {}", e))?;
+                }
+            }
+            continue;
         }
 
         // Determine current state and toggle
@@ -767,6 +808,11 @@ impl FzfSelectable for SubdirMenuItem {
     fn fzf_display_text(&self) -> String {
         if self.subdir == ".." {
             format!("{} Back", format_back_icon())
+        } else if self.subdir == "__add_new__" {
+            format!(
+                "{} Add Dotfile Dir",
+                format_icon_colored(NerdFont::Plus, colors::GREEN)
+            )
         } else {
             let icon = if self.is_active {
                 format_icon_colored(NerdFont::Check, colors::GREEN)
@@ -786,6 +832,18 @@ impl FzfSelectable for SubdirMenuItem {
 
         if self.subdir == ".." {
             FzfPreview::Text("Return to repo menu".to_string())
+        } else if self.subdir == "__add_new__" {
+            FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Plus, "Add Dotfile Directory")
+                    .text("Create a new dotfile directory in this repository.")
+                    .blank()
+                    .text("This will:")
+                    .bullet("Create the directory in the repository")
+                    .bullet("Add it to instantdots.toml")
+                    .bullet("You can then enable it from this menu")
+                    .build_string(),
+            )
         } else {
             let status = if self.is_active { "Active" } else { "Inactive" };
             let status_color = if self.is_active {

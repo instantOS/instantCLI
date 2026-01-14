@@ -34,6 +34,57 @@ pub fn read_meta(repo_path: &Path) -> Result<RepoMetaData> {
     Ok(meta)
 }
 
+/// Write updated metadata to instantdots.toml
+pub fn update_meta(repo_path: &Path, meta: &RepoMetaData) -> Result<()> {
+    let toml_path = repo_path.join("instantdots.toml");
+    let toml = toml::to_string_pretty(meta).context("serializing instantdots.toml")?;
+    fs::write(&toml_path, toml).with_context(|| format!("writing {}", toml_path.display()))?;
+    Ok(())
+}
+
+/// Add a new dotfile directory to a repository's instantdots.toml
+///
+/// This function:
+/// 1. Reads the current instantdots.toml
+/// 2. Adds the new directory name to dots_dirs if not already present
+/// 3. Creates the directory on disk if it doesn't exist
+/// 4. Writes the updated instantdots.toml
+pub fn add_dots_dir(repo_path: &Path, new_dir: &str) -> Result<()> {
+    // Validate directory name
+    let new_dir = new_dir.trim();
+    if new_dir.is_empty() {
+        anyhow::bail!("Directory name cannot be empty");
+    }
+    if new_dir.contains('/') || new_dir.contains('\\') {
+        anyhow::bail!("Directory name cannot contain path separators");
+    }
+
+    // Read existing metadata
+    let mut meta = read_meta(repo_path)?;
+
+    // Check if already exists
+    if meta.dots_dirs.contains(&new_dir.to_string()) {
+        anyhow::bail!(
+            "Dotfile directory '{}' already exists in this repository",
+            new_dir
+        );
+    }
+
+    // Create directory if not exists
+    let dir_path = repo_path.join(new_dir);
+    if !dir_path.exists() {
+        fs::create_dir_all(&dir_path)
+            .with_context(|| format!("creating directory {}", dir_path.display()))?;
+    }
+
+    // Update metadata
+    meta.dots_dirs.push(new_dir.to_string());
+
+    // Write back
+    update_meta(repo_path, &meta)?;
+    Ok(())
+}
+
 /// Input structure for gathering repository metadata from user.
 ///
 /// # Adding New Fields to instantdots.toml

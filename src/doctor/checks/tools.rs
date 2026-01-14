@@ -319,6 +319,7 @@ impl DoctorCheck for FzfVersionCheck {
             "zoxide@latest",
             "lazygit@latest",
             "delta@latest",
+            "yazi@latest",
         ];
 
         for tool in tools {
