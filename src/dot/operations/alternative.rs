@@ -18,12 +18,101 @@ use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::prelude::*;
 use crate::ui::preview::PreviewBuilder;
 
+/// Menu item for alternative selection
+#[derive(Clone)]
+enum AlternativeMenuItem {
+    /// Select a specific source
+    Source(SourceSelectItem),
+    /// Remove the current override (revert to default)
+    RemoveOverride {
+        /// The source that will become active after removing override
+        default_source: DotfileSource,
+    },
+}
+
 /// Wrapper for DotfileSource to implement FzfSelectable
 #[derive(Clone)]
 struct SourceSelectItem {
     source: DotfileSource,
     is_current: bool,
     exists: bool,
+}
+
+impl FzfSelectable for AlternativeMenuItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            AlternativeMenuItem::Source(item) => {
+                let current = if item.is_current { " (current)" } else { "" };
+                let status = if item.exists { "" } else { " [new]" };
+                format!(
+                    "{} {} / {}{}{}",
+                    format_icon_colored(NerdFont::Folder, colors::MAUVE),
+                    item.source.repo_name,
+                    item.source.subdir_name,
+                    current,
+                    status
+                )
+            }
+            AlternativeMenuItem::RemoveOverride { default_source } => {
+                format!(
+                    "{} Remove Override → {} / {}",
+                    format_icon_colored(NerdFont::Trash, colors::RED),
+                    default_source.repo_name,
+                    default_source.subdir_name
+                )
+            }
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            AlternativeMenuItem::Source(item) => {
+                format!("{}:{}", item.source.repo_name, item.source.subdir_name)
+            }
+            AlternativeMenuItem::RemoveOverride { .. } => "!__remove_override__".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        match self {
+            AlternativeMenuItem::Source(item) => {
+                let mut builder = PreviewBuilder::new()
+                    .header(NerdFont::Folder, &format!("{} / {}", item.source.repo_name, item.source.subdir_name));
+
+                if item.is_current {
+                    builder = builder
+                        .blank()
+                        .line(colors::GREEN, Some(NerdFont::Check), "Currently selected source");
+                }
+
+                if !item.exists {
+                    builder = builder
+                        .blank()
+                        .line(colors::YELLOW, Some(NerdFont::Plus), "File will be created in this location");
+                }
+
+                builder = builder
+                    .blank()
+                    .line(colors::TEXT, Some(NerdFont::File), &format!("Path: {}", item.source.source_path.display()));
+
+                crate::menu::protocol::FzfPreview::Text(builder.build_string())
+            }
+            AlternativeMenuItem::RemoveOverride { default_source } => {
+                crate::menu::protocol::FzfPreview::Text(
+                    PreviewBuilder::new()
+                        .header(NerdFont::Trash, "Remove Override")
+                        .blank()
+                        .text("Remove the manual override for this file.")
+                        .blank()
+                        .line(colors::PEACH, Some(NerdFont::ArrowRight), "After removal, the file will be sourced from:")
+                        .indented_line(colors::GREEN, None, &format!("{} / {}", default_source.repo_name, default_source.subdir_name))
+                        .blank()
+                        .text("This is the default based on repository priority.")
+                        .build_string()
+                )
+            }
+        }
+    }
 }
 
 impl FzfSelectable for SourceSelectItem {
@@ -277,8 +366,11 @@ fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &s
     let overrides = OverrideConfig::load()?;
     let current_override = overrides.get_override(target_path);
 
+    // The default source (without override) is the last one in the list (highest priority wins)
+    let default_source = sources.last().cloned();
+
     // Build selection items
-    let items: Vec<SourceSelectItem> = sources
+    let source_items: Vec<SourceSelectItem> = sources
         .into_iter()
         .map(|source| {
             let is_current = current_override
@@ -293,7 +385,7 @@ fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &s
         .collect();
 
     // Check if current file is modified by user BEFORE showing picker
-    if !ensure_safe_to_switch(target_path, &items)? {
+    if !ensure_safe_to_switch(target_path, &source_items)? {
         emit(
             Level::Error,
             "dot.alternative.modified",
@@ -308,11 +400,34 @@ fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &s
         return Ok(());
     }
 
+    // Build menu items
+    let mut menu_items: Vec<AlternativeMenuItem> = source_items
+        .into_iter()
+        .map(AlternativeMenuItem::Source)
+        .collect();
+
+    // Add "Remove Override" option if there's an active override
+    if current_override.is_some() {
+        if let Some(default) = default_source {
+            menu_items.push(AlternativeMenuItem::RemoveOverride {
+                default_source: default,
+            });
+        }
+    }
+
     // Show picker
     let prompt = format!("Select source for {}: ", display_path);
-    match FzfWrapper::builder().prompt(prompt).select(items)? {
-        FzfResult::Selected(item) => {
+    match FzfWrapper::builder()
+        .prompt(prompt)
+        .args(fzf_mocha_args())
+        .responsive_layout()
+        .select(menu_items)?
+    {
+        FzfResult::Selected(AlternativeMenuItem::Source(item)) => {
             apply_alternative_selection(config, target_path, display_path, &item)?;
+        }
+        FzfResult::Selected(AlternativeMenuItem::RemoveOverride { default_source }) => {
+            apply_remove_override(config, target_path, display_path, &default_source)?;
         }
         FzfResult::Cancelled => {
             emit(
@@ -327,6 +442,61 @@ fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &s
         }
         _ => {}
     }
+
+    Ok(())
+}
+
+/// Apply the removal of an override and switch to default source
+fn apply_remove_override(
+    config: &Config,
+    target_path: &Path,
+    display_path: &str,
+    default_source: &DotfileSource,
+) -> Result<()> {
+    let db = crate::dot::db::Database::new(config.database_path().to_path_buf())?;
+    let mut overrides = OverrideConfig::load()?;
+
+    // Remove the override
+    if !overrides.remove_override(target_path)? {
+        emit(
+            Level::Info,
+            "dot.alternative.no_override",
+            &format!(
+                "{} No override exists for {}",
+                char::from(NerdFont::Info),
+                display_path.cyan()
+            ),
+            None,
+        );
+        return Ok(());
+    }
+
+    // Apply the default source
+    let new_dotfile = crate::dot::Dotfile {
+        source_path: default_source.source_path.clone(),
+        target_path: target_path.to_path_buf(),
+    };
+    new_dotfile.reset(&db)?;
+
+    emit(
+        Level::Success,
+        "dot.alternative.reset",
+        &format!(
+            "{} Removed override for {} → now sourced from {} / {}",
+            char::from(NerdFont::Check),
+            display_path.cyan(),
+            default_source.repo_name.green(),
+            default_source.subdir_name.green()
+        ),
+        Some(serde_json::json!({
+            "target": display_path,
+            "action": "reset",
+            "new_source": {
+                "repo": default_source.repo_name,
+                "subdir": default_source.subdir_name
+            }
+        })),
+    );
 
     Ok(())
 }
