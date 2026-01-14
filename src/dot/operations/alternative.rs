@@ -14,7 +14,7 @@ use crate::dot::localrepo::LocalRepo;
 use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
 use crate::dot::utils::resolve_dotfile_path;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
-use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::prelude::*;
 use crate::ui::preview::PreviewBuilder;
 
@@ -28,6 +28,8 @@ enum AlternativeMenuItem {
         /// The source that will become active after removing override
         default_source: DotfileSource,
     },
+    /// Go back without making changes
+    Back,
 }
 
 /// Wrapper for DotfileSource to implement FzfSelectable
@@ -61,6 +63,9 @@ impl FzfSelectable for AlternativeMenuItem {
                     default_source.subdir_name
                 )
             }
+            AlternativeMenuItem::Back => {
+                format!("{} Back", format_back_icon())
+            }
         }
     }
 
@@ -70,6 +75,7 @@ impl FzfSelectable for AlternativeMenuItem {
                 format!("{}:{}", item.source.repo_name, item.source.subdir_name)
             }
             AlternativeMenuItem::RemoveOverride { .. } => "!__remove_override__".to_string(),
+            AlternativeMenuItem::Back => "!__back__".to_string(),
         }
     }
 
@@ -130,6 +136,13 @@ impl FzfSelectable for AlternativeMenuItem {
                         .build_string(),
                 )
             }
+            AlternativeMenuItem::Back => crate::menu::protocol::FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::ArrowLeft, "Back")
+                    .blank()
+                    .text("Return without making changes.")
+                    .build_string(),
+            ),
         }
     }
 }
@@ -585,6 +598,9 @@ fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &s
         }
     }
 
+    // Add Back option
+    menu_items.push(AlternativeMenuItem::Back);
+
     // Show picker
     let prompt = format!("Select source for {}: ", display_path);
     match FzfWrapper::builder()
@@ -599,6 +615,7 @@ fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &s
         FzfResult::Selected(AlternativeMenuItem::RemoveOverride { default_source }) => {
             apply_remove_override(config, target_path, display_path, &default_source)?;
         }
+        FzfResult::Selected(AlternativeMenuItem::Back) => {}
         FzfResult::Cancelled => {
             emit(
                 Level::Info,
