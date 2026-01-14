@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::dot::config::Config;
 use crate::dot::db::Database;
-use crate::dot::repo::{cli::RepoCommands, RepositoryManager};
+use crate::dot::repo::{RepositoryManager, cli::RepoCommands};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -425,7 +425,7 @@ pub fn handle_repo_actions(
             }
             RepoAction::Remove => {
                 let confirm = FzfWrapper::builder()
-                    .confirm(&format!(
+                    .confirm(format!(
                         "Remove repository '{}'?\n\nThis will remove it from your configuration.",
                         repo_name
                     ))
@@ -471,7 +471,7 @@ pub fn handle_repo_actions(
                 if is_read_only {
                     // Making writable - show warning
                     let confirm = FzfWrapper::builder()
-                        .confirm(&format!(
+                        .confirm(format!(
                             "Make '{}' writable?\n\n\
 ⚠️  WARNING: This will allow the repository to diverge from upstream.\n\
 You may be unable to receive updates without manual work.\n\n\
