@@ -303,12 +303,21 @@ fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> String
         .position(|r| r.name == repo_name)
         .map(|i| i + 1)
         .unwrap_or(0);
+    let total_repos = config.repos.len();
 
     if priority > 0 {
+        let label = if priority == 1 && total_repos > 1 {
+            " (highest priority)"
+        } else if priority == total_repos && total_repos > 1 {
+            " (lowest priority)"
+        } else {
+            ""
+        };
+
         builder = builder.line(
             colors::PEACH,
             Some(NerdFont::ArrowUp),
-            &format!("Priority: P{}", priority),
+            &format!("Priority: P{}{}", priority, label),
         );
     }
 
