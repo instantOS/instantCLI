@@ -658,12 +658,20 @@ fn handle_plain_name_input(name: &str) -> Result<AddRepoInputResult> {
     {
         FzfResult::Selected(PlainNameChoice::CreateLocal) => {
             let mut config = Config::load(None)?;
-            crate::dot::meta::handle_init_command(
-                &mut config,
-                std::path::Path::new("."),
-                Some(name),
-                false,
-            )?;
+            match crate::dot::meta::create_local_repo(&mut config, Some(name), false) {
+                Ok(outcome) => {
+                    if let crate::dot::meta::InitOutcome::CreatedDefault { info } = outcome {
+                        FzfWrapper::message(&format!(
+                            "Created local repository '{}'\n\nLocation: {}",
+                            info.name,
+                            info.path.display()
+                        ))?;
+                    }
+                }
+                Err(e) => {
+                    FzfWrapper::message(&format!("Error creating repository: {}", e))?;
+                }
+            }
             Ok(AddRepoInputResult::LocalCreated)
         }
         FzfResult::Selected(PlainNameChoice::EnterAnother) => Ok(AddRepoInputResult::TryAgain),

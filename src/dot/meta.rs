@@ -460,7 +460,7 @@ pub fn init_or_create_default_repo(
         return Ok(outcome);
     }
 
-    create_new_default_repo(config, name, non_interactive)
+    create_local_repo(config, name, non_interactive)
 }
 
 fn handle_existing_git_repo(
@@ -505,7 +505,7 @@ fn check_already_configured(config: &Config) -> Option<InitOutcome> {
     None
 }
 
-fn create_new_default_repo(
+pub fn create_local_repo(
     config: &mut Config,
     name: Option<&str>,
     non_interactive: bool,
