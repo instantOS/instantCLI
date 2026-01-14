@@ -28,8 +28,10 @@ enum AlternativeMenuItem {
         /// The source that will become active after removing override
         default_source: DotfileSource,
     },
-    /// Go back without making changes
+    /// Go back to previous menu
     Back,
+    /// Cancel/close when invoked directly from CLI
+    Cancel,
 }
 
 /// Wrapper for DotfileSource to implement FzfSelectable
@@ -66,6 +68,12 @@ impl FzfSelectable for AlternativeMenuItem {
             AlternativeMenuItem::Back => {
                 format!("{} Back", format_back_icon())
             }
+            AlternativeMenuItem::Cancel => {
+                format!(
+                    "{} Cancel",
+                    format_icon_colored(NerdFont::Cross, colors::OVERLAY0)
+                )
+            }
         }
     }
 
@@ -75,7 +83,7 @@ impl FzfSelectable for AlternativeMenuItem {
                 format!("{}:{}", item.source.repo_name, item.source.subdir_name)
             }
             AlternativeMenuItem::RemoveOverride { .. } => "!__remove_override__".to_string(),
-            AlternativeMenuItem::Back => "!__back__".to_string(),
+            AlternativeMenuItem::Back | AlternativeMenuItem::Cancel => "!__back__".to_string(),
         }
     }
 
@@ -140,7 +148,14 @@ impl FzfSelectable for AlternativeMenuItem {
                 PreviewBuilder::new()
                     .header(NerdFont::ArrowLeft, "Back")
                     .blank()
-                    .text("Return without making changes.")
+                    .text("Return to previous menu.")
+                    .build_string(),
+            ),
+            AlternativeMenuItem::Cancel => crate::menu::protocol::FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Cross, "Cancel")
+                    .blank()
+                    .text("Exit without making changes.")
                     .build_string(),
             ),
         }
@@ -354,8 +369,8 @@ fn handle_directory_alternatives(config: &Config, dir_path: &Path) -> Result<()>
         _ => return Ok(()),
     };
 
-    // Now handle the selected file using the existing logic
-    handle_file_alternative(config, &selected.target_path, &selected.display_path)
+    // Now handle the selected file using the existing logic (from menu context)
+    handle_file_alternative(config, &selected.target_path, &selected.display_path, true)
 }
 
 /// Handle --list flag for a directory (list all alternatives for all dotfiles)
@@ -440,7 +455,12 @@ fn handle_directory_list(config: &Config, dir_path: &Path) -> Result<()> {
 }
 
 /// Handle alternative selection for a specific file
-fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &str) -> Result<()> {
+fn handle_file_alternative(
+    config: &Config,
+    target_path: &Path,
+    display_path: &str,
+    from_menu: bool,
+) -> Result<()> {
     // Find all sources for this file
     let sources = find_all_sources(config, target_path)?;
 
@@ -598,8 +618,12 @@ fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &s
         }
     }
 
-    // Add Back option
-    menu_items.push(AlternativeMenuItem::Back);
+    // Add Back/Cancel option based on context
+    menu_items.push(if from_menu {
+        AlternativeMenuItem::Back
+    } else {
+        AlternativeMenuItem::Cancel
+    });
 
     // Show picker
     let prompt = format!("Select source for {}: ", display_path);
@@ -615,7 +639,7 @@ fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &s
         FzfResult::Selected(AlternativeMenuItem::RemoveOverride { default_source }) => {
             apply_remove_override(config, target_path, display_path, &default_source)?;
         }
-        FzfResult::Selected(AlternativeMenuItem::Back) => {}
+        FzfResult::Selected(AlternativeMenuItem::Back | AlternativeMenuItem::Cancel) => {}
         FzfResult::Cancelled => {
             emit(
                 Level::Info,
@@ -733,8 +757,8 @@ pub fn handle_alternative(
         return handle_create(config, &target_path, &display_path, &sources);
     }
 
-    // Delegate to the file handler
-    handle_file_alternative(config, &target_path, &display_path)
+    // Delegate to the file handler (direct CLI invocation)
+    handle_file_alternative(config, &target_path, &display_path, false)
 }
 
 /// Handle --list flag
