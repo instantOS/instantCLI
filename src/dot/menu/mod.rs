@@ -77,6 +77,7 @@ enum RepoAction {
     BumpPriority,
     LowerPriority,
     ManageSubdirs,
+    ToggleReadOnly,
     ShowInfo,
     Remove,
     Back,
@@ -194,6 +195,42 @@ fn build_repo_action_menu(repo_name: &str, config: &Config) -> Vec<RepoActionIte
             repo_name
         ),
         action: RepoAction::ManageSubdirs,
+    });
+
+    // Toggle read-only
+    let is_read_only = repo_config.map(|r| r.read_only).unwrap_or(false);
+    let (ro_icon, ro_color, ro_text, ro_preview) = if is_read_only {
+        (
+            NerdFont::Lock,
+            colors::YELLOW,
+            "Make Writable",
+            format!(
+                "Make '{}' writable.\n\n\
+⚠️  WARNING: This will allow the repository to diverge from upstream.\n\
+You may be unable to receive updates without manual work.\n\n\
+Consider adding your own dotfile repository on top instead.\n\
+See: https://instantos.io/docs/insdot.html",
+                repo_name
+            ),
+        )
+    } else {
+        (
+            NerdFont::Lock,
+            colors::GREEN,
+            "Make Read-Only",
+            format!(
+                "Make '{}' read-only.\n\n\
+Read-only repositories cannot be modified by 'ins dot add'.\n\
+This helps keep the repository in sync with upstream.",
+                repo_name
+            ),
+        )
+    };
+
+    actions.push(RepoActionItem {
+        display: format!("{} {}", format_icon_colored(ro_icon, ro_color), ro_text),
+        preview: ro_preview,
+        action: RepoAction::ToggleReadOnly,
     });
 
     // Show info
@@ -894,6 +931,48 @@ fn handle_repo_actions(repo_name: &str, config: &Config, db: &Database, debug: b
                 }
             }
             RepoAction::Back => return Ok(()),
+            RepoAction::ToggleReadOnly => {
+                let is_read_only = config
+                    .repos
+                    .iter()
+                    .find(|r| r.name == repo_name)
+                    .map(|r| r.read_only)
+                    .unwrap_or(false);
+
+                if is_read_only {
+                    // Making writable - show warning
+                    let confirm = FzfWrapper::builder()
+                        .confirm(&format!(
+                            "Make '{}' writable?\n\n\
+⚠️  WARNING: This will allow the repository to diverge from upstream.\n\
+You may be unable to receive updates without manual work.\n\n\
+Consider adding your own dotfile repository on top instead.\n\
+See: https://instantos.io/docs/insdot.html",
+                            repo_name
+                        ))
+                        .yes_text("Make Writable")
+                        .no_text("Cancel")
+                        .confirm_dialog()?;
+
+                    if matches!(confirm, ConfirmResult::Yes) {
+                        let mut config = Config::load(None)?;
+                        crate::dot::repo::commands::set_read_only_status(
+                            &mut config,
+                            repo_name,
+                            false,
+                        )?;
+                        FzfWrapper::message(&format!(
+                            "Repository '{}' is now writable",
+                            repo_name
+                        ))?;
+                    }
+                } else {
+                    // Making read-only
+                    let mut config = Config::load(None)?;
+                    crate::dot::repo::commands::set_read_only_status(&mut config, repo_name, true)?;
+                    FzfWrapper::message(&format!("Repository '{}' is now read-only", repo_name))?;
+                }
+            }
         }
     }
 }

@@ -650,7 +650,7 @@ fn apply_all_repos(config: &Config, db: &Database) -> Result<()> {
 }
 
 /// Set read-only status for a repository
-fn set_read_only_status(config: &mut Config, name: &str, read_only: bool) -> Result<()> {
+pub fn set_read_only_status(config: &mut Config, name: &str, read_only: bool) -> Result<()> {
     for repo in &mut config.repos {
         if repo.name == name {
             repo.read_only = read_only;
