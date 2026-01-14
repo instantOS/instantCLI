@@ -195,9 +195,14 @@ pub trait DoctorCheck: Send + Sync {
 }
 
 pub mod checks;
-pub mod command;
+pub mod cli;
+pub mod fix;
 pub mod privileges;
 pub mod registry;
+pub mod run;
+pub mod ui;
+
+pub use cli::handle_doctor_command;
 
 pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> Vec<CheckResult> {
     use privileges::skip_reason_for_privilege_level;

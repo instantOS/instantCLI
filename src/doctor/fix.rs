@@ -1,303 +1,25 @@
 use super::privileges::{PrivilegeError, check_privilege_requirements, escalate_for_fix};
 use super::registry::REGISTRY;
-use super::{CheckResult, DoctorCheck, DoctorCommands, run_all_checks};
-use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
-use crate::ui::catppuccin::{colors, fzf_mocha_args};
+use super::ui::{
+    DoctorMenuItem, FixableIssue, MenuAction, build_fix_menu_items, should_escalate,
+    show_all_check_results,
+};
+use super::{DoctorCheck, PrivilegeLevel, run_all_checks};
+use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::{Level, prelude::*};
-use anyhow::{Result, anyhow, bail};
-use colored::*;
+use anyhow::{Result, anyhow};
 
-/// Struct representing a fixable issue for FZF menu display
-#[derive(Clone)]
-struct FixableIssue {
-    name: String,
-    check_id: String,
-    status: String, // "FAIL" or "WARN"
-    message: String,
-    fix_message: Option<String>,
-}
-
-impl FzfSelectable for FixableIssue {
-    fn fzf_display_text(&self) -> String {
-        use crate::ui::catppuccin::{colors, format_icon_colored};
-
-        // Menu action items use styled icon badges
-        match self.check_id.as_str() {
-            "__VIEW_ALL__" => {
-                format!(
-                    "{} View All Check Results",
-                    format_icon_colored(NerdFont::List, colors::BLUE)
-                )
-            }
-            "__ALL__" => {
-                format!(
-                    "{} {}",
-                    format_icon_colored(NerdFont::Wrench, colors::GREEN),
-                    self.name
-                )
-            }
-            "__CLOSE__" => {
-                format!(
-                    "{} Close",
-                    format_icon_colored(NerdFont::Cross, colors::OVERLAY1)
-                )
-            }
-            _ => {
-                // Regular fixable issues with status indicator
-                let (icon, color) = match self.status.as_str() {
-                    "FAIL" => (NerdFont::CrossCircle, colors::RED),
-                    "WARN" => (NerdFont::Warning, colors::YELLOW),
-                    _ => (NerdFont::Info, colors::BLUE),
-                };
-                format!(
-                    "{} {} {}",
-                    format_icon_colored(icon, color),
-                    self.status,
-                    self.name
-                )
-            }
-        }
-    }
-
-    fn fzf_preview(&self) -> FzfPreview {
-        use crate::ui::preview::PreviewBuilder;
-
-        // Choose icon based on status
-        let icon = match self.status.as_str() {
-            "FAIL" => NerdFont::CrossCircle,
-            "WARN" => NerdFont::Warning,
-            "ALL" => NerdFont::CheckCircle,
-            "INFO" => NerdFont::Info,
-            _ => NerdFont::Info,
-        };
-
-        let mut builder =
-            PreviewBuilder::new().header(icon, &format!("{} {}", self.status, self.name));
-
-        // Status section
-        if self.check_id == "__VIEW_ALL__" {
-            builder = builder.text(&self.message);
-        } else {
-            builder = builder.field("Current Status", &self.message);
-
-            // Fix section
-            if let Some(fix_msg) = &self.fix_message {
-                builder = builder
-                    .blank()
-                    .line(colors::MAUVE, None, "Available Fix:")
-                    .text(fix_msg);
-            } else if self.check_id != "__ALL__" {
-                builder = builder
-                    .blank()
-                    .subtext("No automatic fix available")
-                    .subtext("Manual intervention may be required");
-            }
-
-            // Check ID for reference
-            if self.check_id != "__ALL__" {
-                builder = builder.blank().subtext(&format!("ID: {}", self.check_id));
-            }
-        }
-
-        builder.build()
-    }
-
-    fn fzf_key(&self) -> String {
-        self.check_id.clone()
-    }
-}
-
-pub async fn handle_doctor_command(command: Option<DoctorCommands>) -> Result<()> {
-    match command {
-        None => run_all_checks_cmd().await,
-        Some(DoctorCommands::List) => list_available_checks().await,
-        Some(DoctorCommands::Run { name }) => run_single_check(&name).await,
-        Some(DoctorCommands::Fix {
-            name,
-            all,
-            choose,
-            batch_ids,
-        }) => {
-            if let Some(ids) = batch_ids {
-                // Internal batch mode - fix specific checks (used after escalation)
-                fix_batch_checks(ids).await
-            } else if choose {
-                fix_interactive().await
-            } else if all {
-                fix_all_checks().await
-            } else if let Some(check_name) = name {
-                fix_single_check(&check_name).await
-            } else {
-                bail!("Either --all, --choose, or a check name must be provided")
-            }
-        }
-    }
-}
-
-async fn run_all_checks_cmd() -> Result<()> {
-    let checks = REGISTRY.all_checks();
-    let results = run_all_checks(checks).await;
-    super::print_results_table(&results);
-
-    // Show available fixes (only for fixable failures)
-    show_available_fixes(&results);
-    Ok(())
-}
-
-async fn list_available_checks() -> Result<()> {
-    let checks = REGISTRY.all_checks();
-    super::print_check_list_table(&checks);
-    Ok(())
-}
-
-fn show_available_fixes(results: &[CheckResult]) {
-    // Include both fixable failures AND fixable warnings
-    let fixable_issues: Vec<_> = results
-        .iter()
-        .filter(|result| {
-            (result.status.needs_fix() || result.status.is_warning()) && result.status.is_fixable()
-        })
-        .collect();
-
-    let non_fixable_failures: Vec<_> = results
-        .iter()
-        .filter(|result| result.status.needs_fix() && !result.status.is_fixable())
-        .collect();
-
-    match get_output_format() {
-        crate::ui::OutputFormat::Json => {
-            if !fixable_issues.is_empty() {
-                let fixes_data: Vec<_> = fixable_issues
-                    .iter()
-                    .map(|result| {
-                        serde_json::json!({
-                            "name": result.name,
-                            "id": result.check_id,
-                            "fix_message": result.fix_message,
-                        })
-                    })
-                    .collect();
-
-                emit(
-                    Level::Info,
-                    "doctor.available_fixes",
-                    &format!(
-                        "{} Available fixes: {} fixable issues detected",
-                        char::from(NerdFont::List),
-                        fixes_data.len()
-                    ),
-                    Some(serde_json::json!({
-                        "fixable": fixes_data,
-                        "count": fixes_data.len(),
-                    })),
-                );
-            }
-
-            if !non_fixable_failures.is_empty() {
-                let manual_data: Vec<_> = non_fixable_failures
-                    .iter()
-                    .map(|result| {
-                        serde_json::json!({
-                            "name": result.name,
-                            "id": result.check_id,
-                            "message": result.status.message(),
-                        })
-                    })
-                    .collect();
-
-                emit(
-                    Level::Info,
-                    "doctor.manual_intervention",
-                    &format!(
-                        "{} Manual intervention required: {} issues need attention",
-                        char::from(NerdFont::Warning),
-                        manual_data.len()
-                    ),
-                    Some(serde_json::json!({
-                        "non_fixable": manual_data,
-                        "count": manual_data.len(),
-                    })),
-                );
-            }
-        }
-        crate::ui::OutputFormat::Text => {
-            if !fixable_issues.is_empty() {
-                let fixes_msg = "\nAvailable fixes:".bold().yellow();
-                println!("{fixes_msg}");
-                for (i, result) in fixable_issues.iter().enumerate() {
-                    if let Some(ref msg) = result.fix_message {
-                        let check_name = result.name.bright_cyan();
-                        let mut lines = msg.lines();
-                        if let Some(first_line) = lines.next() {
-                            println!("  {} {}: {}", i + 1, check_name, first_line);
-                            for line in lines {
-                                println!("     {}", line);
-                            }
-                        }
-                        let run_cmd =
-                            format!("{} doctor fix {}", env!("CARGO_BIN_NAME"), result.check_id)
-                                .bright_white();
-                        println!("     {} {}", "→".green(), run_cmd);
-                    }
-                }
-            }
-
-            if !non_fixable_failures.is_empty() {
-                let manual_msg = "\nRequires manual intervention:".bold().red();
-                println!("{manual_msg}");
-                for (i, result) in non_fixable_failures.iter().enumerate() {
-                    let check_name = result.name.bright_magenta();
-                    println!("  {} {}: {}", i + 1, check_name, result.status.message());
-                }
-            }
-        }
-    }
-}
-
-/// Execute a single health check with validation and display
-/// This function handles validation, privilege checking, execution, and result display
-async fn run_single_check(check_id: &str) -> Result<()> {
+/// Fix a single check by ID
+pub async fn fix_single_check(check_id: &str) -> Result<()> {
     let check = REGISTRY
         .create_check(check_id)
         .ok_or_else(|| anyhow!("Unknown check: {}", check_id))?;
 
-    // Verify privilege requirements for check
-    if let Err(e) = check_privilege_requirements(check.as_ref(), false) {
-        return Err(anyhow!("Privilege error: {}", e));
-    }
-
-    let result = execute_check_logic(check).await;
-    super::print_single_check_result_table(&result);
-    Ok(())
-}
-
-/// Core check execution logic - executes the check and builds the result
-async fn execute_check_logic(check: Box<dyn DoctorCheck + Send + Sync>) -> CheckResult {
-    let name = check.name().to_string();
-    let check_id = check.id().to_string();
-    let status = check.execute().await;
-    let fix_message = check.fix_message();
-
-    CheckResult {
-        name,
-        check_id,
-        status,
-        fix_message,
-    }
-}
-
-async fn fix_single_check(check_id: &str) -> Result<()> {
-    let check = REGISTRY
-        .create_check(check_id)
-        .ok_or_else(|| anyhow!("Unknown check: {}", check_id))?;
-
-    // STEP 1: Determine if we need to adjust privileges
-    // Treat privilege requirements as first-class outcomes to avoid unsafe escalation.
     let check_priv_status = check_privilege_requirements(check.as_ref(), false).err();
     let fix_priv_status = check_privilege_requirements(check.as_ref(), true).err();
 
-    // If either phase must not run as root, bail out early to avoid accidental root execution.
     if matches!(check_priv_status, Some(PrivilegeError::MustNotBeRoot))
         || matches!(fix_priv_status, Some(PrivilegeError::MustNotBeRoot))
     {
@@ -307,7 +29,6 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         ));
     }
 
-    // Fix requires root: offer escalation.
     if matches!(fix_priv_status, Some(PrivilegeError::NeedRoot)) {
         emit(
             Level::Warn,
@@ -334,8 +55,6 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         }
     }
 
-    // Only the check requires root: do NOT escalate automatically.
-    // Running the fix as root could be unsafe for user-session checks.
     if matches!(check_priv_status, Some(PrivilegeError::NeedRoot)) {
         emit(
             Level::Warn,
@@ -349,7 +68,6 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         );
     }
 
-    // STEP 2: Run the check to determine current state
     emit(
         Level::Info,
         "doctor.fix.check",
@@ -362,7 +80,6 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
     );
     let check_result = check.execute().await;
 
-    // STEP 3: Handle check result
     if check_result.is_success() {
         emit(
             Level::Success,
@@ -413,7 +130,6 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
         ));
     }
 
-    // STEP 4: Apply the fix
     emit(
         Level::Warn,
         "doctor.fix.available",
@@ -430,7 +146,11 @@ async fn fix_single_check(check_id: &str) -> Result<()> {
     apply_fix(check, &before_status).await
 }
 
-async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>, before_status: &str) -> Result<()> {
+/// Apply a fix for a check
+pub async fn apply_fix(
+    check: Box<dyn DoctorCheck + Send + Sync>,
+    before_status: &str,
+) -> Result<()> {
     let check_name = check.name();
 
     emit(
@@ -446,7 +166,6 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>, before_status: &st
 
     match check.fix().await {
         Ok(()) => {
-            // Get the after status
             let after_result = check.execute().await;
             let after_status = after_result.status_text().to_string();
 
@@ -470,28 +189,12 @@ async fn apply_fix(check: Box<dyn DoctorCheck + Send + Sync>, before_status: &st
     }
 }
 
-fn should_escalate(check: &dyn DoctorCheck) -> Result<bool> {
-    let message = format!(
-        "Apply fix for '{}'? This requires administrator privileges.\nFix: {}",
-        check.name(),
-        check.fix_message().unwrap_or_default()
-    );
-
-    match FzfWrapper::confirm(&message)
-        .map_err(|e| anyhow::anyhow!("Confirmation failed: {}", e))?
-    {
-        ConfirmResult::Yes => Ok(true),
-        ConfirmResult::No | ConfirmResult::Cancelled => Ok(false),
-    }
-}
-
 /// Fix a check without privilege escalation (for use in batch mode when we already have the right privileges)
-async fn fix_check_without_escalation(check_id: &str) -> Result<()> {
+pub async fn fix_check_without_escalation(check_id: &str) -> Result<()> {
     let check = REGISTRY
         .create_check(check_id)
         .ok_or_else(|| anyhow!("Unknown check: {}", check_id))?;
 
-    // Run the check to determine current state
     emit(
         Level::Info,
         "doctor.fix.check",
@@ -504,7 +207,6 @@ async fn fix_check_without_escalation(check_id: &str) -> Result<()> {
     );
     let check_result = check.execute().await;
 
-    // Handle check result
     if check_result.is_success() {
         emit(
             Level::Success,
@@ -535,13 +237,12 @@ async fn fix_check_without_escalation(check_id: &str) -> Result<()> {
         ));
     }
 
-    // Apply the fix
     let before_status = check_result.status_text().to_string();
     apply_fix(check, &before_status).await
 }
 
 /// Fix a batch of checks (internal mode used after privilege escalation)
-async fn fix_batch_checks(batch_ids: String) -> Result<()> {
+pub async fn fix_batch_checks(batch_ids: String) -> Result<()> {
     let check_ids: Vec<String> = batch_ids.split(',').map(|s| s.to_string()).collect();
 
     emit(
@@ -627,15 +328,12 @@ async fn fix_batch_checks(batch_ids: String) -> Result<()> {
 }
 
 /// Apply fixes for all failing/fixable health checks
-async fn fix_all_checks() -> Result<()> {
-    use super::PrivilegeLevel;
+pub async fn fix_all_checks() -> Result<()> {
     use sudo::RunningAs;
 
-    // Normal mode: Run all checks and group by privilege requirement
     let checks = REGISTRY.all_checks();
     let results = run_all_checks(checks).await;
 
-    // Filter for fixable failures (both Fail and Warning)
     let fixable: Vec<_> = results
         .iter()
         .filter(|r| r.status.is_fixable() && (r.status.needs_fix() || r.status.is_warning()))
@@ -662,10 +360,8 @@ async fn fix_all_checks() -> Result<()> {
         None,
     );
 
-    // Check current privilege level
     let is_root = matches!(sudo::check(), RunningAs::Root);
 
-    // Group fixable checks by their fix privilege requirement
     let mut user_only_checks = Vec::new();
     let mut root_required_checks = Vec::new();
     let mut any_level_checks = Vec::new();
@@ -680,7 +376,6 @@ async fn fix_all_checks() -> Result<()> {
         }
     }
 
-    // Sort each group by priority (Fail before Warning)
     user_only_checks.sort_by_key(|r| r.status.sort_priority());
     root_required_checks.sort_by_key(|r| r.status.sort_priority());
     any_level_checks.sort_by_key(|r| r.status.sort_priority());
@@ -688,7 +383,6 @@ async fn fix_all_checks() -> Result<()> {
     let mut total_success = 0;
     let mut total_failure = 0;
 
-    // Fix user-only checks first (can't run as root)
     if !user_only_checks.is_empty() {
         if is_root {
             emit(
@@ -750,7 +444,6 @@ async fn fix_all_checks() -> Result<()> {
         }
     }
 
-    // Fix any-level checks (prefer to run as user if possible)
     if !any_level_checks.is_empty() {
         emit(
             Level::Info,
@@ -799,10 +492,8 @@ async fn fix_all_checks() -> Result<()> {
         }
     }
 
-    // Handle root-required checks
     if !root_required_checks.is_empty() {
         if is_root {
-            // Already root, fix them directly
             emit(
                 Level::Info,
                 "doctor.fix_all.root_direct",
@@ -849,7 +540,6 @@ async fn fix_all_checks() -> Result<()> {
                 }
             }
         } else {
-            // Not root, escalate once for all root-required checks
             emit(
                 Level::Info,
                 "doctor.fix_all.root_escalate",
@@ -861,7 +551,6 @@ async fn fix_all_checks() -> Result<()> {
                 None,
             );
 
-            // Show which root-required checks will be fixed
             for result in &root_required_checks {
                 emit(
                     Level::Info,
@@ -881,7 +570,6 @@ async fn fix_all_checks() -> Result<()> {
         }
     }
 
-    // Show final summary
     emit(
         Level::Info,
         "doctor.fix_all.summary",
@@ -915,162 +603,26 @@ async fn fix_all_checks() -> Result<()> {
     Ok(())
 }
 
-/// Struct representing a check result for viewing in the "View All Results" menu
-#[derive(Clone)]
-struct ViewableCheck {
-    name: String,
-    check_id: String,
-    status: String,
-    message: String,
-}
-
-impl FzfSelectable for ViewableCheck {
-    fn fzf_display_text(&self) -> String {
-        let icon = match self.status.as_str() {
-            "PASS" => NerdFont::Check,
-            "FAIL" => NerdFont::CrossCircle,
-            "WARN" => NerdFont::Warning,
-            "SKIP" => NerdFont::Minus,
-            _ => NerdFont::Info,
-        };
-
-        format!("[{}] {} {}", char::from(icon), self.status, self.name)
-    }
-
-    fn fzf_preview(&self) -> FzfPreview {
-        use crate::ui::preview::PreviewBuilder;
-
-        // Choose icon based on status
-        let icon = match self.status.as_str() {
-            "PASS" => NerdFont::Check,
-            "FAIL" => NerdFont::CrossCircle,
-            "WARN" => NerdFont::Warning,
-            "SKIP" => NerdFont::Minus,
-            _ => NerdFont::Info,
-        };
-
-        PreviewBuilder::new()
-            .header(icon, &format!("{} {}", self.status, self.name))
-            .field("Status", &self.message)
-            .blank()
-            .subtext(&format!("ID: {}", self.check_id))
-            .build()
-    }
-
-    fn fzf_key(&self) -> String {
-        self.check_id.clone()
-    }
-}
-
-/// Show all check results (including passed and skipped checks) in a menu
-fn show_all_check_results(results: &[CheckResult]) -> Result<()> {
-    let viewable: Vec<_> = results
-        .iter()
-        .map(|r| ViewableCheck {
-            name: r.name.clone(),
-            check_id: r.check_id.clone(),
-            status: r.status.status_text().to_string(),
-            message: r.status.message().to_string(),
-        })
-        .collect();
-
-    FzfWrapper::builder()
-        .prompt("View results:")
-        .header("All Check Results - Use arrow keys to navigate, ESC to return")
-        .args(fzf_mocha_args())
-        .select(viewable)?;
-
-    Ok(())
-}
-
 /// Interactive fix mode: show menu of fixable issues and apply selected fixes
-async fn fix_interactive() -> Result<()> {
-    // Run all checks to find fixable issues
+pub async fn fix_interactive() -> Result<()> {
+    use super::ui::run_success_menu;
+
     let checks = REGISTRY.all_checks();
     let results = run_all_checks(checks).await;
 
-    // Filter for fixable issues (FAIL or WARN with fixable=true)
     let fixable_issues: Vec<_> = results
         .iter()
         .filter(|r| r.status.is_fixable() && (r.status.needs_fix() || r.status.is_warning()))
-        .map(|r| FixableIssue {
-            name: r.name.clone(),
-            check_id: r.check_id.clone(),
-            status: r.status.status_text().to_string(),
-            message: r.status.message().to_string(),
-            fix_message: r.fix_message.clone(),
-        })
+        .map(FixableIssue::from_check_result)
         .collect();
 
     if fixable_issues.is_empty() {
-        // Count successful and skipped checks
-        let success_count = results.iter().filter(|r| r.status.is_success()).count();
-        let skipped_count = results.iter().filter(|r| r.status.is_skipped()).count();
-
-        // Build menu with "View All Results" option
-        let menu_items = vec![
-            FixableIssue {
-                name: "View All Check Results".to_string(),
-                check_id: "__VIEW_ALL__".to_string(),
-                status: "INFO".to_string(),
-                message: "Show status of all checks including passed and skipped".to_string(),
-                fix_message: None,
-            },
-            FixableIssue {
-                name: "Close".to_string(),
-                check_id: "__CLOSE__".to_string(),
-                status: "INFO".to_string(),
-                message: "Exit the diagnostics menu".to_string(),
-                fix_message: None,
-            },
-        ];
-
-        loop {
-            match FzfWrapper::builder()
-                .prompt("Select:")
-                .header(format!(
-                    "{} All systems operational!\n\n✓ {} checks passed\n⊘ {} checks skipped\n\nSelect an option or press Esc to exit",
-                    char::from(NerdFont::Check),
-                    success_count,
-                    skipped_count
-                ))
-                .args(fzf_mocha_args())
-                .select(menu_items.clone())?
-            {
-                FzfResult::Selected(item) if item.check_id == "__VIEW_ALL__" => {
-                    show_all_check_results(&results)?;
-                    // Continue the loop to show the menu again
-                    continue;
-                }
-                _ => {
-                    // Close selected or cancelled
-                    return Ok(());
-                }
-            }
-        }
+        return run_success_menu(&results).await;
     }
 
     loop {
-        // Build menu items
-        let mut menu_items = vec![
-            FixableIssue {
-                name: "View All Check Results".to_string(),
-                check_id: "__VIEW_ALL__".to_string(),
-                status: "INFO".to_string(),
-                message: "Show status of all checks including passed and skipped".to_string(),
-                fix_message: None,
-            },
-            FixableIssue {
-                name: format!("Fix All Issues ({})", fixable_issues.len()),
-                check_id: "__ALL__".to_string(),
-                status: "ALL".to_string(),
-                message: "Apply all available fixes".to_string(),
-                fix_message: None,
-            },
-        ];
-        menu_items.extend(fixable_issues.clone());
+        let menu_items = build_fix_menu_items(fixable_issues.clone());
 
-        // Show FZF multi-select menu
         match FzfWrapper::builder()
             .multi_select(true)
             .prompt("Select issues to fix:")
@@ -1089,23 +641,28 @@ async fn fix_interactive() -> Result<()> {
                     return Ok(());
                 }
 
-                // Check if "View All Results" was selected
-                if selected.iter().any(|i| i.check_id == "__VIEW_ALL__") {
+                if selected.iter().any(|i| i.is_action(MenuAction::ViewAll)) {
                     show_all_check_results(&results)?;
-                    // Continue the loop to show the menu again
                     continue;
                 }
 
-                // Check if "Fix All" was selected
-                let fix_all = selected.iter().any(|i| i.check_id == "__ALL__");
-
-                if fix_all {
-                    // Use existing fix_all_checks logic
+                if selected.iter().any(|i| i.is_action(MenuAction::FixAll)) {
                     return fix_all_checks().await;
-                } else {
-                    // Fix each selected issue
-                    return fix_selected_checks(selected).await;
                 }
+
+                let issues: Vec<FixableIssue> = selected
+                    .into_iter()
+                    .filter_map(|item| {
+                        if let DoctorMenuItem::Issue(issue) = item {
+                            if issue.check_id.is_some() {
+                                return Some(issue);
+                            }
+                        }
+                        None
+                    })
+                    .collect();
+
+                return fix_selected_checks(issues).await;
             }
             FzfResult::Cancelled => {
                 emit(
@@ -1125,23 +682,25 @@ async fn fix_interactive() -> Result<()> {
 }
 
 /// Fix a list of selected checks with proper privilege handling
-async fn fix_selected_checks(selected: Vec<FixableIssue>) -> Result<()> {
-    use super::PrivilegeLevel;
+pub async fn fix_selected_checks(selected: Vec<FixableIssue>) -> Result<()> {
     use sudo::RunningAs;
 
     let is_root = matches!(sudo::check(), RunningAs::Root);
 
-    // Group by privilege requirement
     let mut user_only: Vec<String> = Vec::new();
     let mut root_required: Vec<String> = Vec::new();
     let mut any_level: Vec<String> = Vec::new();
 
     for issue in &selected {
-        if let Some(check) = REGISTRY.create_check(&issue.check_id) {
+        let check_id = match &issue.check_id {
+            Some(id) => id,
+            None => continue,
+        };
+        if let Some(check) = REGISTRY.create_check(check_id) {
             match check.fix_privilege_level() {
-                PrivilegeLevel::User => user_only.push(issue.check_id.clone()),
-                PrivilegeLevel::Root => root_required.push(issue.check_id.clone()),
-                PrivilegeLevel::Any => any_level.push(issue.check_id.clone()),
+                PrivilegeLevel::User => user_only.push(check_id.clone()),
+                PrivilegeLevel::Root => root_required.push(check_id.clone()),
+                PrivilegeLevel::Any => any_level.push(check_id.clone()),
             }
         }
     }
@@ -1149,7 +708,6 @@ async fn fix_selected_checks(selected: Vec<FixableIssue>) -> Result<()> {
     let mut total_success = 0;
     let mut total_failure = 0;
 
-    // Fix user-only checks
     if !user_only.is_empty() {
         if is_root {
             emit(
@@ -1180,7 +738,6 @@ async fn fix_selected_checks(selected: Vec<FixableIssue>) -> Result<()> {
         }
     }
 
-    // Fix any-level checks
     if !any_level.is_empty() {
         for check_id in any_level {
             match fix_single_check(&check_id).await {
@@ -1198,7 +755,6 @@ async fn fix_selected_checks(selected: Vec<FixableIssue>) -> Result<()> {
         }
     }
 
-    // Handle root-required checks
     if !root_required.is_empty() {
         if is_root {
             for check_id in root_required {
@@ -1216,7 +772,6 @@ async fn fix_selected_checks(selected: Vec<FixableIssue>) -> Result<()> {
                 }
             }
         } else {
-            // Escalate for root-required checks
             emit(
                 Level::Info,
                 "doctor.fix_choose.escalate",
@@ -1232,7 +787,6 @@ async fn fix_selected_checks(selected: Vec<FixableIssue>) -> Result<()> {
         }
     }
 
-    // Show summary
     emit(
         Level::Info,
         "doctor.fix_choose.summary",

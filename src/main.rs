@@ -282,7 +282,7 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             )?;
         }
         Some(Commands::Doctor { command }) => {
-            doctor::command::handle_doctor_command(command.clone()).await?;
+            doctor::handle_doctor_command(command.clone()).await?;
         }
         Some(Commands::Menu { command }) => {
             let exit_code = menu::handle_menu_command(command.clone(), cli.debug).await?;
