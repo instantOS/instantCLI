@@ -111,8 +111,8 @@ pub enum DotCommands {
     },
     /// Set or view which repository/subdirectory a dotfile is sourced from
     Alternative {
-        /// Path to the dotfile (target path, e.g. ~/.config/kitty/kitty.conf)
-        #[arg(value_hint = ValueHint::AnyPath)]
+        /// Path to the dotfile or directory (defaults to ~/ to browse all)
+        #[arg(value_hint = ValueHint::AnyPath, default_value = "~")]
         path: String,
         /// Remove the override for this file (use default priority)
         #[arg(long)]
