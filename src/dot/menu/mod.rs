@@ -1186,20 +1186,24 @@ impl FzfSelectable for SubdirMenuItem {
 }
 
 /// Main entry point for the dot menu
-pub fn dot_menu(config: &Config, db: &Database, debug: bool) -> Result<()> {
+pub fn dot_menu(debug: bool) -> Result<()> {
     // Outer loop: main menu
     loop {
-        let entry = match select_dot_menu_entry(config, db)? {
+        // Load config each iteration to pick up changes (e.g., newly added repos)
+        let config = Config::load(None)?;
+        let db = Database::new(config.database_path().to_path_buf())?;
+
+        let entry = match select_dot_menu_entry(&config, &db)? {
             Some(entry) => entry,
             None => return Ok(()),
         };
 
         match entry {
             DotMenuEntry::Repo(repo_name) => {
-                handle_repo_actions(&repo_name, config, db, debug)?;
+                handle_repo_actions(&repo_name, &config, &db, debug)?;
             }
             DotMenuEntry::AddRepo => {
-                handle_add_repo(config, db, debug)?;
+                handle_add_repo(&config, &db, debug)?;
             }
             DotMenuEntry::CloseMenu => return Ok(()),
         }

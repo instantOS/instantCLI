@@ -475,7 +475,7 @@ pub fn handle_dot_command(
             handle_priority_command(&mut config, command, config_path)?;
         }
         DotCommands::Menu => {
-            super::menu::dot_menu(&config, &db, debug)?;
+            super::menu::dot_menu(debug)?;
         }
     }
 
