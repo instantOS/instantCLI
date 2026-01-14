@@ -8,7 +8,33 @@ use tokio::process::Command as TokioCommand;
 pub struct BatCheck;
 
 #[derive(Default)]
+pub struct FzfVersionCheck;
+
+#[derive(Default)]
 pub struct GitConfigCheck;
+
+/// Minimum required fzf version (major, minor, patch)
+const MIN_FZF_VERSION: (u32, u32, u32) = (0, 66, 0);
+
+/// Parse fzf version string like "0.66.0 (debian)" into (major, minor, patch)
+fn parse_fzf_version(version_output: &str) -> Option<(u32, u32, u32)> {
+    // Version output format: "0.66.0 (debian)" or just "0.66.0"
+    let version_part = version_output.split_whitespace().next()?;
+    let parts: Vec<&str> = version_part.split('.').collect();
+    if parts.len() >= 2 {
+        let major = parts[0].parse().ok()?;
+        let minor = parts[1].parse().ok()?;
+        let patch = parts.get(2).and_then(|p| p.parse().ok()).unwrap_or(0);
+        Some((major, minor, patch))
+    } else {
+        None
+    }
+}
+
+/// Compare two version tuples
+fn version_meets_minimum(version: (u32, u32, u32), minimum: (u32, u32, u32)) -> bool {
+    version >= minimum
+}
 
 /// Check if we're running inside a container
 fn is_container() -> bool {
@@ -173,5 +199,145 @@ impl DoctorCheck for BatCheck {
         } else {
             Err(anyhow::anyhow!("'bat cache --build' failed"))
         }
+    }
+}
+
+#[async_trait]
+impl DoctorCheck for FzfVersionCheck {
+    fn name(&self) -> &'static str {
+        "FZF Version"
+    }
+
+    fn id(&self) -> &'static str {
+        "fzf-version"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        // Check if fzf is installed
+        if which::which("fzf").is_err() {
+            return CheckStatus::Fail {
+                message: "fzf is not installed".to_string(),
+                fixable: true,
+            };
+        }
+
+        // Get fzf version
+        let output = TokioCommand::new("fzf").arg("--version").output().await;
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let version_str = String::from_utf8_lossy(&output.stdout);
+                if let Some(version) = parse_fzf_version(&version_str) {
+                    if version_meets_minimum(version, MIN_FZF_VERSION) {
+                        CheckStatus::Pass(format!(
+                            "fzf {}.{}.{} meets minimum requirement",
+                            version.0, version.1, version.2
+                        ))
+                    } else {
+                        CheckStatus::Fail {
+                            message: format!(
+                                "fzf {}.{}.{} is too old (requires {}.{}.{}+)",
+                                version.0,
+                                version.1,
+                                version.2,
+                                MIN_FZF_VERSION.0,
+                                MIN_FZF_VERSION.1,
+                                MIN_FZF_VERSION.2
+                            ),
+                            fixable: true,
+                        }
+                    }
+                } else {
+                    CheckStatus::Warning {
+                        message: format!("Could not parse fzf version: {}", version_str.trim()),
+                        fixable: false,
+                    }
+                }
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                CheckStatus::Fail {
+                    message: format!("fzf --version failed: {}", stderr.trim()),
+                    fixable: false,
+                }
+            }
+            Err(e) => CheckStatus::Fail {
+                message: format!("Failed to run fzf: {}", e),
+                fixable: false,
+            },
+        }
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some(
+            "Install mise and use it to install fzf and other CLI tools (starship, zoxide, lazygit, delta)"
+                .to_string(),
+        )
+    }
+
+    async fn fix(&self) -> Result<()> {
+        let home = std::env::var("HOME").map_err(|_| anyhow::anyhow!("HOME not set"))?;
+        let mise_path = format!("{}/.local/bin/mise", home);
+
+        // Check if mise is installed
+        let mise_installed = which::which("mise").is_ok() || Path::new(&mise_path).exists();
+
+        if !mise_installed {
+            // Install mise using the official installer
+            println!("Installing mise...");
+            let install_status = TokioCommand::new("sh")
+                .arg("-c")
+                .arg("curl https://mise.run | sh")
+                .status()
+                .await?;
+
+            if !install_status.success() {
+                return Err(anyhow::anyhow!("Failed to install mise"));
+            }
+            println!("mise installed successfully");
+        }
+
+        // Determine which mise binary to use
+        let mise_bin = if which::which("mise").is_ok() {
+            "mise".to_string()
+        } else {
+            mise_path
+        };
+
+        // Tools to install
+        let tools = [
+            "fzf@latest",
+            "starship@latest",
+            "zoxide@latest",
+            "lazygit@latest",
+            "delta@latest",
+        ];
+
+        for tool in tools {
+            println!("Installing {}...", tool);
+            let status = TokioCommand::new(&mise_bin)
+                .args(["use", "-g", tool])
+                .status()
+                .await?;
+
+            if !status.success() {
+                return Err(anyhow::anyhow!("Failed to install {}", tool));
+            }
+        }
+
+        println!("All tools installed successfully!");
+        println!(
+            "\nNote: You may need to restart your shell or run 'eval \"$(mise activate)\"' for the tools to be available."
+        );
+
+        Ok(())
     }
 }

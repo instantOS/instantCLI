@@ -36,4 +36,4 @@ pub use storage::{
     PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck, YayCacheCheck,
 };
 pub use system::{PendingUpdatesCheck, SwapCheck};
-pub use tools::{BatCheck, GitConfigCheck};
+pub use tools::{BatCheck, FzfVersionCheck, GitConfigCheck};

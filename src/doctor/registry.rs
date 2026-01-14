@@ -28,6 +28,7 @@ impl CheckRegistry {
         registry.register::<SwayDisplayCheck>("sway-display");
         registry.register::<PolkitAgentCheck>("polkit-agent");
         registry.register::<BatCheck>("bat-cache");
+        registry.register::<FzfVersionCheck>("fzf-version");
         registry.register::<GitConfigCheck>("git-config");
         registry.register::<ShellCompletionCheck>("shell-completions");
         registry.register::<PipewireSessionManagerCheck>("pipewire-session-manager");
