@@ -405,6 +405,34 @@ impl FzfSelectable for DotMenuItem {
     }
 }
 
+/// Classify user input for repository addition
+#[derive(Debug, Clone, PartialEq)]
+enum InputType {
+    /// Valid URL (contains :// or ends with .git)
+    Url(String),
+    /// Shorthand like user/repo
+    Shorthand(String),
+    /// Plain name without slashes
+    PlainName(String),
+}
+
+fn classify_repo_input(input: &str) -> InputType {
+    let input = input.trim();
+
+    // Check for URL patterns
+    if input.contains("://") || input.ends_with(".git") || input.starts_with("git@") {
+        return InputType::Url(input.to_string());
+    }
+
+    // Check for shorthand (contains / but not a URL)
+    if input.contains('/') {
+        return InputType::Shorthand(input.to_string());
+    }
+
+    // Plain name
+    InputType::PlainName(input.to_string())
+}
+
 /// Handle adding a new repository
 fn handle_add_repo(config: &Config, db: &Database, debug: bool) -> Result<()> {
     use crate::menu_utils::FzfResult;
@@ -416,11 +444,161 @@ fn handle_add_repo(config: &Config, db: &Database, debug: bool) -> Result<()> {
         // Prompt for URL with example ghost text
         match FzfWrapper::builder()
             .input()
-            .prompt("Repository URL")
+            .prompt("Repository URL or name")
             .ghost(DEFAULT_REPO)
             .input_result()?
         {
-            FzfResult::Selected(s) if !s.is_empty() => break s,
+            FzfResult::Selected(s) if !s.is_empty() => {
+                match classify_repo_input(&s) {
+                    InputType::Url(url) => break url,
+                    InputType::Shorthand(shorthand) => {
+                        // Show menu for GitHub/GitLab/Codeberg
+                        #[derive(Clone)]
+                        enum ShorthandChoice {
+                            GitHub,
+                            GitLab,
+                            Codeberg,
+                            EnterAnother,
+                            Cancel,
+                        }
+
+                        impl crate::menu_utils::FzfSelectable for ShorthandChoice {
+                            fn fzf_display_text(&self) -> String {
+                                match self {
+                                    ShorthandChoice::GitHub => format!(
+                                        "{} GitHub",
+                                        format_icon_colored(NerdFont::Git, colors::TEXT)
+                                    ),
+                                    ShorthandChoice::GitLab => format!(
+                                        "{} GitLab",
+                                        format_icon_colored(NerdFont::Git, colors::PEACH)
+                                    ),
+                                    ShorthandChoice::Codeberg => format!(
+                                        "{} Codeberg",
+                                        format_icon_colored(NerdFont::Git, colors::BLUE)
+                                    ),
+                                    ShorthandChoice::EnterAnother => format!(
+                                        "{} Enter another URL",
+                                        format_icon_colored(NerdFont::Edit, colors::LAVENDER)
+                                    ),
+                                    ShorthandChoice::Cancel => {
+                                        format!("{} Cancel", format_back_icon())
+                                    }
+                                }
+                            }
+                            fn fzf_key(&self) -> String {
+                                match self {
+                                    ShorthandChoice::GitHub => "github".to_string(),
+                                    ShorthandChoice::GitLab => "gitlab".to_string(),
+                                    ShorthandChoice::Codeberg => "codeberg".to_string(),
+                                    ShorthandChoice::EnterAnother => "another".to_string(),
+                                    ShorthandChoice::Cancel => "cancel".to_string(),
+                                }
+                            }
+                            fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+                                crate::menu::protocol::FzfPreview::None
+                            }
+                        }
+
+                        let choices = vec![
+                            ShorthandChoice::GitHub,
+                            ShorthandChoice::GitLab,
+                            ShorthandChoice::Codeberg,
+                            ShorthandChoice::EnterAnother,
+                            ShorthandChoice::Cancel,
+                        ];
+
+                        match FzfWrapper::builder()
+                            .header(Header::fancy(&format!("Clone '{}' from:", shorthand)))
+                            .prompt("Select host")
+                            .args(fzf_mocha_args())
+                            .select(choices)?
+                        {
+                            FzfResult::Selected(ShorthandChoice::GitHub) => {
+                                break format!("https://github.com/{}.git", shorthand);
+                            }
+                            FzfResult::Selected(ShorthandChoice::GitLab) => {
+                                break format!("https://gitlab.com/{}.git", shorthand);
+                            }
+                            FzfResult::Selected(ShorthandChoice::Codeberg) => {
+                                break format!("https://codeberg.org/{}.git", shorthand);
+                            }
+                            FzfResult::Selected(ShorthandChoice::EnterAnother) => continue,
+                            FzfResult::Selected(ShorthandChoice::Cancel) | FzfResult::Cancelled => {
+                                return Ok(());
+                            }
+                            _ => return Ok(()),
+                        }
+                    }
+                    InputType::PlainName(name) => {
+                        // Show menu for local repo creation
+                        #[derive(Clone)]
+                        enum PlainNameChoice {
+                            CreateLocal,
+                            EnterAnother,
+                            Cancel,
+                        }
+
+                        impl crate::menu_utils::FzfSelectable for PlainNameChoice {
+                            fn fzf_display_text(&self) -> String {
+                                match self {
+                                    PlainNameChoice::CreateLocal => format!(
+                                        "{} Create local repository",
+                                        format_icon_colored(NerdFont::Plus, colors::GREEN)
+                                    ),
+                                    PlainNameChoice::EnterAnother => format!(
+                                        "{} Enter a URL instead",
+                                        format_icon_colored(NerdFont::Edit, colors::LAVENDER)
+                                    ),
+                                    PlainNameChoice::Cancel => {
+                                        format!("{} Cancel", format_back_icon())
+                                    }
+                                }
+                            }
+                            fn fzf_key(&self) -> String {
+                                match self {
+                                    PlainNameChoice::CreateLocal => "create".to_string(),
+                                    PlainNameChoice::EnterAnother => "another".to_string(),
+                                    PlainNameChoice::Cancel => "cancel".to_string(),
+                                }
+                            }
+                            fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+                                crate::menu::protocol::FzfPreview::None
+                            }
+                        }
+
+                        let choices = vec![
+                            PlainNameChoice::CreateLocal,
+                            PlainNameChoice::EnterAnother,
+                            PlainNameChoice::Cancel,
+                        ];
+
+                        match FzfWrapper::builder()
+                            .header(Header::fancy(&format!("'{}' is not a URL", name)))
+                            .prompt("Select action")
+                            .args(fzf_mocha_args())
+                            .select(choices)?
+                        {
+                            FzfResult::Selected(PlainNameChoice::CreateLocal) => {
+                                // Create local repository using existing infrastructure
+                                let mut config = Config::load(None)?;
+                                crate::dot::meta::handle_init_command(
+                                    &mut config,
+                                    &std::path::Path::new("."), // dummy path, will be overridden
+                                    Some(&name),
+                                    false, // interactive
+                                )?;
+                                return Ok(());
+                            }
+                            FzfResult::Selected(PlainNameChoice::EnterAnother) => continue,
+                            FzfResult::Selected(PlainNameChoice::Cancel) | FzfResult::Cancelled => {
+                                return Ok(());
+                            }
+                            _ => return Ok(()),
+                        }
+                    }
+                }
+            }
             FzfResult::Cancelled => return Ok(()),
             FzfResult::Selected(_) => {
                 // Empty input - show choice menu
