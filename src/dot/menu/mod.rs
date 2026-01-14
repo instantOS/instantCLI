@@ -21,6 +21,7 @@ use repo_actions::{build_repo_preview, handle_repo_actions};
 pub enum DotMenuEntry {
     Repo(String),
     AddRepo,
+    AlternateFiles,
     CloseMenu,
 }
 
@@ -40,6 +41,12 @@ impl FzfSelectable for DotMenuEntry {
                     format_icon_colored(NerdFont::Plus, colors::GREEN)
                 )
             }
+            DotMenuEntry::AlternateFiles => {
+                format!(
+                    "{} Alternate Files",
+                    format_icon_colored(NerdFont::List, colors::PEACH)
+                )
+            }
             DotMenuEntry::CloseMenu => format!("{} Close Menu", format_back_icon()),
         }
     }
@@ -48,6 +55,7 @@ impl FzfSelectable for DotMenuEntry {
         match self {
             DotMenuEntry::Repo(name) => name.clone(),
             DotMenuEntry::AddRepo => "!__add_repo__".to_string(),
+            DotMenuEntry::AlternateFiles => "!__alternate_files__".to_string(),
             DotMenuEntry::CloseMenu => "!__close_menu__".to_string(),
         }
     }
@@ -65,6 +73,14 @@ impl FzfSelectable for DotMenuEntry {
                 .bullet("Prompt for repository URL")
                 .bullet("Clone the repository")
                 .bullet("Apply dotfiles from the new repo")
+                .build(),
+            DotMenuEntry::AlternateFiles => PreviewBuilder::new()
+                .header(NerdFont::List, "Alternate Files")
+                .text("Browse dotfiles with multiple sources")
+                .blank()
+                .text("Select which repository or subdirectory")
+                .text("a dotfile should be sourced from when")
+                .text("multiple versions exist.")
                 .build(),
             DotMenuEntry::CloseMenu => PreviewBuilder::new()
                 .header(NerdFont::Cross, "Close Menu")
@@ -107,32 +123,22 @@ fn select_dot_menu_entry(config: &Config, db: &Database) -> Result<Option<DotMen
         .collect();
 
     entries.push(DotMenuEntry::AddRepo);
+    entries.push(DotMenuEntry::AlternateFiles);
     entries.push(DotMenuEntry::CloseMenu);
 
-    // Create entries with custom previews
+    // Create entries with custom previews (Repo gets dynamic preview, others use trait impl)
     let menu_items: Vec<DotMenuItem> = entries
         .into_iter()
-        .map(|entry| DotMenuItem {
-            entry: entry.clone(),
-            preview: match &entry {
+        .map(|entry| {
+            let preview = match &entry {
                 DotMenuEntry::Repo(name) => build_repo_preview(name, config, db),
-                DotMenuEntry::AddRepo => PreviewBuilder::new()
-                    .header(NerdFont::Plus, "Add Repository")
-                    .text("Clone a new dotfile repository")
-                    .blank()
-                    .text("This will:")
-                    .bullet("Prompt for repository URL")
-                    .bullet("Clone the repository")
-                    .bullet("Apply dotfiles from the new repo")
-                    .build_string(),
-                DotMenuEntry::CloseMenu => PreviewBuilder::new()
-                    .header(NerdFont::Cross, "Close Menu")
-                    .text("Close the dotfile menu")
-                    .blank()
-                    .text("This will exit the interactive menu")
-                    .text("and return to the command prompt")
-                    .build_string(),
-            },
+                _ => match entry.fzf_preview() {
+                    crate::menu::protocol::FzfPreview::Text(s) => s,
+                    crate::menu::protocol::FzfPreview::Command(s) => s,
+                    crate::menu::protocol::FzfPreview::None => String::new(),
+                },
+            };
+            DotMenuItem { entry, preview }
         })
         .collect();
 
@@ -169,6 +175,11 @@ pub fn dot_menu(debug: bool) -> Result<()> {
             }
             DotMenuEntry::AddRepo => {
                 handle_add_repo(&config, &db, debug)?;
+            }
+            DotMenuEntry::AlternateFiles => {
+                crate::dot::operations::alternative::handle_alternative(
+                    &config, "~", false, false, false,
+                )?;
             }
             DotMenuEntry::CloseMenu => return Ok(()),
         }
