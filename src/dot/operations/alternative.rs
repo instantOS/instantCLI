@@ -345,6 +345,87 @@ fn handle_directory_alternatives(config: &Config, dir_path: &Path) -> Result<()>
     handle_file_alternative(config, &selected.target_path, &selected.display_path)
 }
 
+/// Handle --list flag for a directory (list all alternatives for all dotfiles)
+fn handle_directory_list(config: &Config, dir_path: &Path) -> Result<()> {
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let display_dir = dir_path
+        .strip_prefix(&home)
+        .map(|p| format!("~/{}", p.display()))
+        .unwrap_or_else(|_| dir_path.display().to_string());
+
+    // Find all dotfiles with alternatives in this directory
+    let dotfiles = find_dotfiles_with_alternatives_in_dir(config, dir_path)?;
+
+    if dotfiles.is_empty() {
+        emit(
+            Level::Info,
+            "dot.alternative.dir.list.empty",
+            &format!(
+                "{} No dotfiles with alternatives found in {}",
+                char::from(NerdFont::Info),
+                display_dir.cyan()
+            ),
+            None,
+        );
+        return Ok(());
+    }
+
+    let overrides = OverrideConfig::load()?;
+
+    emit(
+        Level::Info,
+        "dot.alternative.dir.list.header",
+        &format!(
+            "{} Alternatives for {} dotfiles in {}:",
+            char::from(NerdFont::List),
+            dotfiles.len(),
+            display_dir.cyan()
+        ),
+        None,
+    );
+
+    for dotfile in &dotfiles {
+        let current_override = overrides.get_override(&dotfile.target_path);
+        let last_source_index = dotfile.sources.len() - 1;
+
+        emit(
+            Level::Info,
+            "dot.alternative.dir.list.file",
+            &format!("\n  {}", dotfile.display_path.cyan()),
+            None,
+        );
+
+        for (i, source) in dotfile.sources.iter().enumerate() {
+            let is_override = current_override
+                .map(|o| o.source_repo == source.repo_name && o.source_subdir == source.subdir_name)
+                .unwrap_or(false);
+
+            let is_default = current_override.is_none() && i == last_source_index;
+
+            let status = if is_override {
+                " (current override)".yellow().to_string()
+            } else if is_default {
+                " (current default)".dimmed().to_string()
+            } else {
+                "".to_string()
+            };
+
+            emit(
+                Level::Info,
+                "dot.alternative.dir.list.item",
+                &format!(
+                    "    • {} / {}{}",
+                    source.repo_name.green(),
+                    source.subdir_name.green(),
+                    status
+                ),
+                None,
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Handle alternative selection for a specific file
 fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &str) -> Result<()> {
     // Find all sources for this file
@@ -607,11 +688,14 @@ pub fn handle_alternative(
 
     // Check if target is a directory - if so, browse for dotfiles with alternatives
     if target_path.is_dir() {
-        if reset || create || list {
+        if reset || create {
             return Err(anyhow::anyhow!(
-                "The --reset, --create, and --list flags are not supported for directories.\n\
+                "The --reset and --create flags are not supported for directories.\n\
                  Use them with a specific file path instead."
             ));
+        }
+        if list {
+            return handle_directory_list(config, &target_path);
         }
         return handle_directory_alternatives(config, &target_path);
     }
