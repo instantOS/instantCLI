@@ -433,15 +433,279 @@ fn classify_repo_input(input: &str) -> InputType {
     InputType::PlainName(input.to_string())
 }
 
+// --- Menu choice enums for handle_add_repo ---
+
+/// Choice when user enters a shorthand like "user/repo"
+#[derive(Clone)]
+enum ShorthandChoice {
+    GitHub,
+    GitLab,
+    Codeberg,
+    EnterAnother,
+    Cancel,
+}
+
+impl crate::menu_utils::FzfSelectable for ShorthandChoice {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            ShorthandChoice::GitHub => {
+                format!(
+                    "{} GitHub",
+                    format_icon_colored(NerdFont::Git, colors::TEXT)
+                )
+            }
+            ShorthandChoice::GitLab => format!(
+                "{} GitLab",
+                format_icon_colored(NerdFont::Git, colors::PEACH)
+            ),
+            ShorthandChoice::Codeberg => format!(
+                "{} Codeberg",
+                format_icon_colored(NerdFont::Git, colors::BLUE)
+            ),
+            ShorthandChoice::EnterAnother => format!(
+                "{} Enter another URL",
+                format_icon_colored(NerdFont::Edit, colors::LAVENDER)
+            ),
+            ShorthandChoice::Cancel => format!("{} Cancel", format_back_icon()),
+        }
+    }
+    fn fzf_key(&self) -> String {
+        match self {
+            ShorthandChoice::GitHub => "github".to_string(),
+            ShorthandChoice::GitLab => "gitlab".to_string(),
+            ShorthandChoice::Codeberg => "codeberg".to_string(),
+            ShorthandChoice::EnterAnother => "another".to_string(),
+            ShorthandChoice::Cancel => "cancel".to_string(),
+        }
+    }
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        crate::menu::protocol::FzfPreview::None
+    }
+}
+
+/// Choice when user enters a plain name (not a URL)
+#[derive(Clone)]
+enum PlainNameChoice {
+    CreateLocal,
+    EnterAnother,
+    Cancel,
+}
+
+impl crate::menu_utils::FzfSelectable for PlainNameChoice {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            PlainNameChoice::CreateLocal => format!(
+                "{} Create local repository",
+                format_icon_colored(NerdFont::Plus, colors::GREEN)
+            ),
+            PlainNameChoice::EnterAnother => format!(
+                "{} Enter a URL instead",
+                format_icon_colored(NerdFont::Edit, colors::LAVENDER)
+            ),
+            PlainNameChoice::Cancel => format!("{} Cancel", format_back_icon()),
+        }
+    }
+    fn fzf_key(&self) -> String {
+        match self {
+            PlainNameChoice::CreateLocal => "create".to_string(),
+            PlainNameChoice::EnterAnother => "another".to_string(),
+            PlainNameChoice::Cancel => "cancel".to_string(),
+        }
+    }
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        crate::menu::protocol::FzfPreview::None
+    }
+}
+
+/// Choice when user enters empty input
+#[derive(Clone)]
+enum EmptyInputChoice {
+    UseDefault,
+    GoBack,
+    EnterAnother,
+}
+
+impl crate::menu_utils::FzfSelectable for EmptyInputChoice {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            EmptyInputChoice::UseDefault => format!(
+                "{} Use default (instantOS/dotfiles)",
+                format_icon_colored(NerdFont::Check, colors::GREEN)
+            ),
+            EmptyInputChoice::GoBack => format!("{} Go back", format_back_icon()),
+            EmptyInputChoice::EnterAnother => format!(
+                "{} Enter another URL",
+                format_icon_colored(NerdFont::Edit, colors::BLUE)
+            ),
+        }
+    }
+    fn fzf_key(&self) -> String {
+        match self {
+            EmptyInputChoice::UseDefault => "default".to_string(),
+            EmptyInputChoice::GoBack => "back".to_string(),
+            EmptyInputChoice::EnterAnother => "another".to_string(),
+        }
+    }
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        crate::menu::protocol::FzfPreview::None
+    }
+}
+
+// --- Helper functions for handle_add_repo ---
+
+/// Result of handling user input for repo addition
+enum AddRepoInputResult {
+    /// User provided a URL to clone
+    Url(String),
+    /// User wants to create a local repo (already handled)
+    LocalCreated,
+    /// User wants to enter different input
+    TryAgain,
+    /// User cancelled
+    Cancelled,
+}
+
+/// Handle shorthand input like "user/repo" - show host selection menu
+fn handle_shorthand_input(shorthand: &str) -> Result<AddRepoInputResult> {
+    use crate::menu_utils::FzfResult;
+
+    let choices = vec![
+        ShorthandChoice::GitHub,
+        ShorthandChoice::GitLab,
+        ShorthandChoice::Codeberg,
+        ShorthandChoice::EnterAnother,
+        ShorthandChoice::Cancel,
+    ];
+
+    match FzfWrapper::builder()
+        .header(Header::fancy(&format!("Clone '{}' from:", shorthand)))
+        .prompt("Select host")
+        .args(fzf_mocha_args())
+        .select(choices)?
+    {
+        FzfResult::Selected(ShorthandChoice::GitHub) => Ok(AddRepoInputResult::Url(format!(
+            "https://github.com/{}.git",
+            shorthand
+        ))),
+        FzfResult::Selected(ShorthandChoice::GitLab) => Ok(AddRepoInputResult::Url(format!(
+            "https://gitlab.com/{}.git",
+            shorthand
+        ))),
+        FzfResult::Selected(ShorthandChoice::Codeberg) => Ok(AddRepoInputResult::Url(format!(
+            "https://codeberg.org/{}.git",
+            shorthand
+        ))),
+        FzfResult::Selected(ShorthandChoice::EnterAnother) => Ok(AddRepoInputResult::TryAgain),
+        FzfResult::Selected(ShorthandChoice::Cancel) | FzfResult::Cancelled => {
+            Ok(AddRepoInputResult::Cancelled)
+        }
+        _ => Ok(AddRepoInputResult::Cancelled),
+    }
+}
+
+/// Handle plain name input - offer to create local repo
+fn handle_plain_name_input(name: &str) -> Result<AddRepoInputResult> {
+    use crate::menu_utils::FzfResult;
+
+    let choices = vec![
+        PlainNameChoice::CreateLocal,
+        PlainNameChoice::EnterAnother,
+        PlainNameChoice::Cancel,
+    ];
+
+    match FzfWrapper::builder()
+        .header(Header::fancy(&format!("'{}' is not a URL", name)))
+        .prompt("Select action")
+        .args(fzf_mocha_args())
+        .select(choices)?
+    {
+        FzfResult::Selected(PlainNameChoice::CreateLocal) => {
+            let mut config = Config::load(None)?;
+            crate::dot::meta::handle_init_command(
+                &mut config,
+                std::path::Path::new("."),
+                Some(name),
+                false,
+            )?;
+            Ok(AddRepoInputResult::LocalCreated)
+        }
+        FzfResult::Selected(PlainNameChoice::EnterAnother) => Ok(AddRepoInputResult::TryAgain),
+        FzfResult::Selected(PlainNameChoice::Cancel) | FzfResult::Cancelled => {
+            Ok(AddRepoInputResult::Cancelled)
+        }
+        _ => Ok(AddRepoInputResult::Cancelled),
+    }
+}
+
+/// Handle empty input - offer default repo or retry
+fn handle_empty_input(default_repo: &str) -> Result<AddRepoInputResult> {
+    use crate::menu_utils::FzfResult;
+
+    let choices = vec![
+        EmptyInputChoice::UseDefault,
+        EmptyInputChoice::GoBack,
+        EmptyInputChoice::EnterAnother,
+    ];
+
+    match FzfWrapper::builder()
+        .header(Header::fancy("No URL entered"))
+        .prompt("Select")
+        .args(fzf_mocha_args())
+        .select(choices)?
+    {
+        FzfResult::Selected(EmptyInputChoice::UseDefault) => {
+            Ok(AddRepoInputResult::Url(default_repo.to_string()))
+        }
+        FzfResult::Selected(EmptyInputChoice::GoBack) | FzfResult::Cancelled => {
+            Ok(AddRepoInputResult::Cancelled)
+        }
+        FzfResult::Selected(EmptyInputChoice::EnterAnother) => Ok(AddRepoInputResult::TryAgain),
+        _ => Ok(AddRepoInputResult::Cancelled),
+    }
+}
+
+/// Prompt for optional repository name
+fn prompt_optional_name() -> Result<Option<String>> {
+    use crate::menu_utils::FzfResult;
+
+    match FzfWrapper::builder()
+        .input()
+        .prompt("Repository name (optional)")
+        .input_result()?
+    {
+        FzfResult::Selected(s) if !s.is_empty() => Ok(Some(s)),
+        FzfResult::Selected(_) => Ok(None),
+        FzfResult::Cancelled => Ok(None),
+        _ => Ok(None),
+    }
+}
+
+/// Prompt for optional branch name
+fn prompt_optional_branch() -> Result<Option<String>> {
+    use crate::menu_utils::FzfResult;
+
+    match FzfWrapper::builder()
+        .input()
+        .prompt("Branch (optional)")
+        .input_result()?
+    {
+        FzfResult::Selected(s) if !s.is_empty() => Ok(Some(s)),
+        FzfResult::Selected(_) => Ok(None),
+        FzfResult::Cancelled => Ok(None),
+        _ => Ok(None),
+    }
+}
+
+// --- Main function ---
+
 /// Handle adding a new repository
-fn handle_add_repo(config: &Config, db: &Database, debug: bool) -> Result<()> {
+fn handle_add_repo(_config: &Config, _db: &Database, debug: bool) -> Result<()> {
     use crate::menu_utils::FzfResult;
 
     const DEFAULT_REPO: &str = "https://github.com/instantOS/dotfiles";
 
-    // Loop for URL input (allows "enter another URL" option)
+    // Loop for URL input (allows retrying)
     let url = loop {
-        // Prompt for URL with example ghost text
         match FzfWrapper::builder()
             .input()
             .prompt("Repository URL or name")
@@ -449,211 +713,25 @@ fn handle_add_repo(config: &Config, db: &Database, debug: bool) -> Result<()> {
             .input_result()?
         {
             FzfResult::Selected(s) if !s.is_empty() => {
-                match classify_repo_input(&s) {
-                    InputType::Url(url) => break url,
-                    InputType::Shorthand(shorthand) => {
-                        // Show menu for GitHub/GitLab/Codeberg
-                        #[derive(Clone)]
-                        enum ShorthandChoice {
-                            GitHub,
-                            GitLab,
-                            Codeberg,
-                            EnterAnother,
-                            Cancel,
-                        }
+                let result = match classify_repo_input(&s) {
+                    InputType::Url(url) => AddRepoInputResult::Url(url),
+                    InputType::Shorthand(shorthand) => handle_shorthand_input(&shorthand)?,
+                    InputType::PlainName(name) => handle_plain_name_input(&name)?,
+                };
 
-                        impl crate::menu_utils::FzfSelectable for ShorthandChoice {
-                            fn fzf_display_text(&self) -> String {
-                                match self {
-                                    ShorthandChoice::GitHub => format!(
-                                        "{} GitHub",
-                                        format_icon_colored(NerdFont::Git, colors::TEXT)
-                                    ),
-                                    ShorthandChoice::GitLab => format!(
-                                        "{} GitLab",
-                                        format_icon_colored(NerdFont::Git, colors::PEACH)
-                                    ),
-                                    ShorthandChoice::Codeberg => format!(
-                                        "{} Codeberg",
-                                        format_icon_colored(NerdFont::Git, colors::BLUE)
-                                    ),
-                                    ShorthandChoice::EnterAnother => format!(
-                                        "{} Enter another URL",
-                                        format_icon_colored(NerdFont::Edit, colors::LAVENDER)
-                                    ),
-                                    ShorthandChoice::Cancel => {
-                                        format!("{} Cancel", format_back_icon())
-                                    }
-                                }
-                            }
-                            fn fzf_key(&self) -> String {
-                                match self {
-                                    ShorthandChoice::GitHub => "github".to_string(),
-                                    ShorthandChoice::GitLab => "gitlab".to_string(),
-                                    ShorthandChoice::Codeberg => "codeberg".to_string(),
-                                    ShorthandChoice::EnterAnother => "another".to_string(),
-                                    ShorthandChoice::Cancel => "cancel".to_string(),
-                                }
-                            }
-                            fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-                                crate::menu::protocol::FzfPreview::None
-                            }
-                        }
-
-                        let choices = vec![
-                            ShorthandChoice::GitHub,
-                            ShorthandChoice::GitLab,
-                            ShorthandChoice::Codeberg,
-                            ShorthandChoice::EnterAnother,
-                            ShorthandChoice::Cancel,
-                        ];
-
-                        match FzfWrapper::builder()
-                            .header(Header::fancy(&format!("Clone '{}' from:", shorthand)))
-                            .prompt("Select host")
-                            .args(fzf_mocha_args())
-                            .select(choices)?
-                        {
-                            FzfResult::Selected(ShorthandChoice::GitHub) => {
-                                break format!("https://github.com/{}.git", shorthand);
-                            }
-                            FzfResult::Selected(ShorthandChoice::GitLab) => {
-                                break format!("https://gitlab.com/{}.git", shorthand);
-                            }
-                            FzfResult::Selected(ShorthandChoice::Codeberg) => {
-                                break format!("https://codeberg.org/{}.git", shorthand);
-                            }
-                            FzfResult::Selected(ShorthandChoice::EnterAnother) => continue,
-                            FzfResult::Selected(ShorthandChoice::Cancel) | FzfResult::Cancelled => {
-                                return Ok(());
-                            }
-                            _ => return Ok(()),
-                        }
-                    }
-                    InputType::PlainName(name) => {
-                        // Show menu for local repo creation
-                        #[derive(Clone)]
-                        enum PlainNameChoice {
-                            CreateLocal,
-                            EnterAnother,
-                            Cancel,
-                        }
-
-                        impl crate::menu_utils::FzfSelectable for PlainNameChoice {
-                            fn fzf_display_text(&self) -> String {
-                                match self {
-                                    PlainNameChoice::CreateLocal => format!(
-                                        "{} Create local repository",
-                                        format_icon_colored(NerdFont::Plus, colors::GREEN)
-                                    ),
-                                    PlainNameChoice::EnterAnother => format!(
-                                        "{} Enter a URL instead",
-                                        format_icon_colored(NerdFont::Edit, colors::LAVENDER)
-                                    ),
-                                    PlainNameChoice::Cancel => {
-                                        format!("{} Cancel", format_back_icon())
-                                    }
-                                }
-                            }
-                            fn fzf_key(&self) -> String {
-                                match self {
-                                    PlainNameChoice::CreateLocal => "create".to_string(),
-                                    PlainNameChoice::EnterAnother => "another".to_string(),
-                                    PlainNameChoice::Cancel => "cancel".to_string(),
-                                }
-                            }
-                            fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-                                crate::menu::protocol::FzfPreview::None
-                            }
-                        }
-
-                        let choices = vec![
-                            PlainNameChoice::CreateLocal,
-                            PlainNameChoice::EnterAnother,
-                            PlainNameChoice::Cancel,
-                        ];
-
-                        match FzfWrapper::builder()
-                            .header(Header::fancy(&format!("'{}' is not a URL", name)))
-                            .prompt("Select action")
-                            .args(fzf_mocha_args())
-                            .select(choices)?
-                        {
-                            FzfResult::Selected(PlainNameChoice::CreateLocal) => {
-                                // Create local repository using existing infrastructure
-                                let mut config = Config::load(None)?;
-                                crate::dot::meta::handle_init_command(
-                                    &mut config,
-                                    &std::path::Path::new("."), // dummy path, will be overridden
-                                    Some(&name),
-                                    false, // interactive
-                                )?;
-                                return Ok(());
-                            }
-                            FzfResult::Selected(PlainNameChoice::EnterAnother) => continue,
-                            FzfResult::Selected(PlainNameChoice::Cancel) | FzfResult::Cancelled => {
-                                return Ok(());
-                            }
-                            _ => return Ok(()),
-                        }
-                    }
+                match result {
+                    AddRepoInputResult::Url(url) => break url,
+                    AddRepoInputResult::LocalCreated => return Ok(()),
+                    AddRepoInputResult::TryAgain => continue,
+                    AddRepoInputResult::Cancelled => return Ok(()),
                 }
             }
             FzfResult::Cancelled => return Ok(()),
             FzfResult::Selected(_) => {
-                // Empty input - show choice menu
-                #[derive(Clone)]
-                enum EmptyUrlChoice {
-                    UseDefault,
-                    GoBack,
-                    EnterAnother,
-                }
-
-                impl crate::menu_utils::FzfSelectable for EmptyUrlChoice {
-                    fn fzf_display_text(&self) -> String {
-                        match self {
-                            EmptyUrlChoice::UseDefault => format!(
-                                "{} Use default (instantOS/dotfiles)",
-                                format_icon_colored(NerdFont::Check, colors::GREEN)
-                            ),
-                            EmptyUrlChoice::GoBack => format!("{} Go back", format_back_icon()),
-                            EmptyUrlChoice::EnterAnother => format!(
-                                "{} Enter another URL",
-                                format_icon_colored(NerdFont::Edit, colors::BLUE)
-                            ),
-                        }
-                    }
-                    fn fzf_key(&self) -> String {
-                        match self {
-                            EmptyUrlChoice::UseDefault => "default".to_string(),
-                            EmptyUrlChoice::GoBack => "back".to_string(),
-                            EmptyUrlChoice::EnterAnother => "another".to_string(),
-                        }
-                    }
-                    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-                        crate::menu::protocol::FzfPreview::None
-                    }
-                }
-
-                let choices = vec![
-                    EmptyUrlChoice::UseDefault,
-                    EmptyUrlChoice::GoBack,
-                    EmptyUrlChoice::EnterAnother,
-                ];
-
-                match FzfWrapper::builder()
-                    .header(Header::fancy("No URL entered"))
-                    .prompt("Select")
-                    .args(fzf_mocha_args())
-                    .select(choices)?
-                {
-                    FzfResult::Selected(EmptyUrlChoice::UseDefault) => {
-                        break DEFAULT_REPO.to_string();
-                    }
-                    FzfResult::Selected(EmptyUrlChoice::GoBack) | FzfResult::Cancelled => {
-                        return Ok(());
-                    }
-                    FzfResult::Selected(EmptyUrlChoice::EnterAnother) => continue,
+                // Empty input
+                match handle_empty_input(DEFAULT_REPO)? {
+                    AddRepoInputResult::Url(url) => break url,
+                    AddRepoInputResult::TryAgain => continue,
                     _ => return Ok(()),
                 }
             }
@@ -661,31 +739,10 @@ fn handle_add_repo(config: &Config, db: &Database, debug: bool) -> Result<()> {
         }
     };
 
-    // Optionally prompt for name
-    let name = match FzfWrapper::builder()
-        .input()
-        .prompt("Repository name (optional)")
-        .input_result()?
-    {
-        FzfResult::Selected(s) if !s.is_empty() => Some(s),
-        FzfResult::Selected(_) => None,
-        FzfResult::Cancelled => return Ok(()),
-        _ => None,
-    };
+    let name = prompt_optional_name()?;
+    let branch = prompt_optional_branch()?;
 
-    // Optionally prompt for branch
-    let branch = match FzfWrapper::builder()
-        .input()
-        .prompt("Branch (optional)")
-        .input_result()?
-    {
-        FzfResult::Selected(s) if !s.is_empty() => Some(s),
-        FzfResult::Selected(_) => None,
-        FzfResult::Cancelled => return Ok(()),
-        _ => None,
-    };
-
-    // Use the existing clone command
+    // Clone the repository
     let clone_args = RepoCommands::Clone(crate::dot::repo::cli::CloneArgs {
         url,
         name,
@@ -694,8 +751,6 @@ fn handle_add_repo(config: &Config, db: &Database, debug: bool) -> Result<()> {
         force_write: false,
     });
 
-    // We need a mutable config for this, but we have an immutable reference
-    // So we reload and re-save
     let mut config = Config::load(None)?;
     let db = Database::new(config.database_path().to_path_buf())?;
 
