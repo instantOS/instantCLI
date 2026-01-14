@@ -5,13 +5,18 @@
 
 use anyhow::Result;
 use colored::Colorize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 use crate::dot::config::Config;
+use crate::dot::localrepo::LocalRepo;
 use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
 use crate::dot::utils::resolve_dotfile_path;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::prelude::*;
+use crate::ui::preview::PreviewBuilder;
 
 /// Wrapper for DotfileSource to implement FzfSelectable
 #[derive(Clone)]
@@ -36,36 +41,206 @@ impl FzfSelectable for SourceSelectItem {
     }
 }
 
-/// Handle the alternative command
-pub fn handle_alternative(
+/// A dotfile that has multiple sources available
+#[derive(Clone)]
+struct DotfileWithAlternatives {
+    /// Target path in home directory
+    target_path: PathBuf,
+    /// Display path (with ~ prefix)
+    display_path: String,
+    /// All available sources
+    sources: Vec<DotfileSource>,
+}
+
+impl FzfSelectable for DotfileWithAlternatives {
+    fn fzf_display_text(&self) -> String {
+        format!(
+            "{} {} ({} alternatives)",
+            format_icon_colored(NerdFont::File, colors::SKY),
+            self.display_path,
+            self.sources.len()
+        )
+    }
+
+    fn fzf_key(&self) -> String {
+        self.display_path.clone()
+    }
+
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::File, &self.display_path)
+            .blank()
+            .line(colors::MAUVE, Some(NerdFont::List), "Available sources:");
+
+        for (i, source) in self.sources.iter().enumerate() {
+            builder = builder.indented_line(
+                colors::TEXT,
+                None,
+                &format!("{}. {} / {}", i + 1, source.repo_name, source.subdir_name),
+            );
+        }
+
+        crate::menu::protocol::FzfPreview::Text(builder.build_string())
+    }
+}
+
+/// Find all dotfiles within a directory that have multiple sources (alternatives)
+///
+/// This is done efficiently by scanning the dotfile repos first, NOT the target directory.
+fn find_dotfiles_with_alternatives_in_dir(
     config: &Config,
-    path: &str,
-    reset: bool,
-    create: bool,
-    list: bool,
-) -> Result<()> {
-    let target_path = resolve_dotfile_path(path)?;
+    dir_path: &Path,
+) -> Result<Vec<DotfileWithAlternatives>> {
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
-    let display_path = target_path
+
+    // Map from target_path to list of sources
+    let mut sources_by_target: HashMap<PathBuf, Vec<DotfileSource>> = HashMap::new();
+
+    // Scan all repos and subdirs for dotfiles
+    for repo_config in &config.repos {
+        if !repo_config.enabled {
+            continue;
+        }
+
+        let local_repo = match LocalRepo::new(config, repo_config.name.clone()) {
+            Ok(repo) => repo,
+            Err(_) => continue,
+        };
+
+        for dotfile_dir in &local_repo.dotfile_dirs {
+            // Walk the dotfile directory
+            for entry in WalkDir::new(&dotfile_dir.path)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    let path_str = e.path().to_string_lossy();
+                    !path_str.contains("/.git/") && e.file_type().is_file()
+                })
+            {
+                let source_path = entry.path().to_path_buf();
+
+                // Calculate the target path
+                let relative_path = match source_path.strip_prefix(&dotfile_dir.path) {
+                    Ok(rel) => rel,
+                    Err(_) => continue,
+                };
+                let target_path = home.join(relative_path);
+
+                // Only include files that would be in the specified directory
+                if !target_path.starts_with(dir_path) {
+                    continue;
+                }
+
+                let subdir_name = dotfile_dir
+                    .path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                sources_by_target
+                    .entry(target_path)
+                    .or_default()
+                    .push(DotfileSource {
+                        repo_name: repo_config.name.clone(),
+                        subdir_name,
+                        source_path,
+                    });
+            }
+        }
+    }
+
+    // Filter to only dotfiles with multiple sources
+    let mut results: Vec<DotfileWithAlternatives> = sources_by_target
+        .into_iter()
+        .filter(|(_, sources)| sources.len() > 1)
+        .map(|(target_path, sources)| {
+            let display_path = target_path
+                .strip_prefix(&home)
+                .map(|p| format!("~/{}", p.display()))
+                .unwrap_or_else(|_| target_path.display().to_string());
+            DotfileWithAlternatives {
+                target_path,
+                display_path,
+                sources,
+            }
+        })
+        .collect();
+
+    // Sort by display path for consistent ordering
+    results.sort_by(|a, b| a.display_path.cmp(&b.display_path));
+
+    Ok(results)
+}
+
+/// Handle alternative selection for a directory (browse mode)
+fn handle_directory_alternatives(config: &Config, dir_path: &Path) -> Result<()> {
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let display_dir = dir_path
         .strip_prefix(&home)
         .map(|p| format!("~/{}", p.display()))
-        .unwrap_or_else(|_| target_path.display().to_string());
+        .unwrap_or_else(|_| dir_path.display().to_string());
 
-    // Handle reset flag
-    if reset {
-        return handle_reset(&target_path, &display_path);
+    // Find all dotfiles with alternatives in this directory
+    let dotfiles = find_dotfiles_with_alternatives_in_dir(config, dir_path)?;
+
+    if dotfiles.is_empty() {
+        emit(
+            Level::Info,
+            "dot.alternative.dir.no_alternatives",
+            &format!(
+                "{} No dotfiles with alternatives found in {}",
+                char::from(NerdFont::Info),
+                display_dir.cyan()
+            ),
+            None,
+        );
+        return Ok(());
     }
 
+    emit(
+        Level::Info,
+        "dot.alternative.dir.found",
+        &format!(
+            "{} Found {} dotfiles with alternatives in {}",
+            char::from(NerdFont::Check),
+            dotfiles.len(),
+            display_dir.cyan()
+        ),
+        None,
+    );
+
+    // Show picker to select a dotfile
+    let prompt = format!("Select dotfile in {}: ", display_dir);
+    let selected = match FzfWrapper::builder()
+        .prompt(prompt)
+        .args(fzf_mocha_args())
+        .responsive_layout()
+        .select(dotfiles)?
+    {
+        FzfResult::Selected(item) => item,
+        FzfResult::Cancelled => {
+            emit(
+                Level::Info,
+                "dot.alternative.cancelled",
+                &format!("{} Selection cancelled", char::from(NerdFont::Info)),
+                None,
+            );
+            return Ok(());
+        }
+        FzfResult::Error(e) => {
+            return Err(anyhow::anyhow!("Selection error: {}", e));
+        }
+        _ => return Ok(()),
+    };
+
+    // Now handle the selected file using the existing logic
+    handle_file_alternative(config, &selected.target_path, &selected.display_path)
+}
+
+/// Handle alternative selection for a specific file
+fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &str) -> Result<()> {
     // Find all sources for this file
-    let sources = find_all_sources(config, &target_path)?;
-
-    if list {
-        return handle_list(&target_path, &display_path, &sources);
-    }
-
-    if create {
-        return handle_create(config, &target_path, &display_path, &sources);
-    }
+    let sources = find_all_sources(config, target_path)?;
 
     if sources.is_empty() {
         emit(
@@ -100,7 +275,7 @@ pub fn handle_alternative(
 
     // Load existing overrides to mark current selection
     let overrides = OverrideConfig::load()?;
-    let current_override = overrides.get_override(&target_path);
+    let current_override = overrides.get_override(target_path);
 
     // Build selection items
     let items: Vec<SourceSelectItem> = sources
@@ -118,8 +293,7 @@ pub fn handle_alternative(
         .collect();
 
     // Check if current file is modified by user BEFORE showing picker
-    // If target matches ANY source, it's safe to switch (came from a repo)
-    if !ensure_safe_to_switch(&target_path, &items)? {
+    if !ensure_safe_to_switch(target_path, &items)? {
         emit(
             Level::Error,
             "dot.alternative.modified",
@@ -138,7 +312,7 @@ pub fn handle_alternative(
     let prompt = format!("Select source for {}: ", display_path);
     match FzfWrapper::builder().prompt(prompt).select(items)? {
         FzfResult::Selected(item) => {
-            apply_alternative_selection(config, &target_path, &display_path, &item)?;
+            apply_alternative_selection(config, target_path, display_path, &item)?;
         }
         FzfResult::Cancelled => {
             emit(
@@ -155,6 +329,52 @@ pub fn handle_alternative(
     }
 
     Ok(())
+}
+
+/// Handle the alternative command
+pub fn handle_alternative(
+    config: &Config,
+    path: &str,
+    reset: bool,
+    create: bool,
+    list: bool,
+) -> Result<()> {
+    let target_path = resolve_dotfile_path(path)?;
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+    let display_path = target_path
+        .strip_prefix(&home)
+        .map(|p| format!("~/{}", p.display()))
+        .unwrap_or_else(|_| target_path.display().to_string());
+
+    // Check if target is a directory - if so, browse for dotfiles with alternatives
+    if target_path.is_dir() {
+        if reset || create || list {
+            return Err(anyhow::anyhow!(
+                "The --reset, --create, and --list flags are not supported for directories.\n\
+                 Use them with a specific file path instead."
+            ));
+        }
+        return handle_directory_alternatives(config, &target_path);
+    }
+
+    // Handle reset flag
+    if reset {
+        return handle_reset(&target_path, &display_path);
+    }
+
+    // Find all sources for this file
+    let sources = find_all_sources(config, &target_path)?;
+
+    if list {
+        return handle_list(&target_path, &display_path, &sources);
+    }
+
+    if create {
+        return handle_create(config, &target_path, &display_path, &sources);
+    }
+
+    // Delegate to the file handler
+    handle_file_alternative(config, &target_path, &display_path)
 }
 
 /// Handle --list flag

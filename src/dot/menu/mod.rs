@@ -1132,10 +1132,7 @@ fn handle_subdir_actions(
         let actions = build_subdir_action_menu(repo_name, subdir_name, &config);
 
         let result = FzfWrapper::builder()
-            .header(Header::fancy(&format!(
-                "{} / {}",
-                repo_name, subdir_name
-            )))
+            .header(Header::fancy(&format!("{} / {}", repo_name, subdir_name)))
             .prompt("Select action")
             .args(fzf_mocha_args())
             .responsive_layout()
@@ -1250,7 +1247,10 @@ fn handle_manage_subdirs(
             .map(|subdir| {
                 let is_active = active_subdirs.contains(subdir);
                 let priority = if is_active {
-                    active_subdirs.iter().position(|s| s == subdir).map(|i| i + 1)
+                    active_subdirs
+                        .iter()
+                        .position(|s| s == subdir)
+                        .map(|i| i + 1)
                 } else {
                     None
                 };
@@ -1401,8 +1401,8 @@ impl FzfSelectable for SubdirMenuItem {
             } else {
                 colors::RED
             };
-            let mut builder = PreviewBuilder::new()
-                .line(status_color, None, &format!("Status: {}", status));
+            let mut builder =
+                PreviewBuilder::new().line(status_color, None, &format!("Status: {}", status));
 
             // Add priority info if active
             if let Some(p) = self.priority {
