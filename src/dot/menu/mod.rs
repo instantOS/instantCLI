@@ -994,11 +994,237 @@ See: https://instantos.io/docs/insdot.html",
     }
 }
 
+/// Subdir action for individual subdirectory menu
+#[derive(Debug, Clone)]
+enum SubdirAction {
+    Toggle,
+    BumpPriority,
+    LowerPriority,
+    Back,
+}
+
+#[derive(Clone)]
+struct SubdirActionItem {
+    display: String,
+    preview: String,
+    action: SubdirAction,
+}
+
+impl FzfSelectable for SubdirActionItem {
+    fn fzf_display_text(&self) -> String {
+        self.display.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.display.clone()
+    }
+
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        crate::menu::protocol::FzfPreview::Text(self.preview.clone())
+    }
+}
+
+/// Build the subdir action menu items
+fn build_subdir_action_menu(
+    repo_name: &str,
+    subdir_name: &str,
+    config: &Config,
+) -> Vec<SubdirActionItem> {
+    let active_subdirs = config.get_active_subdirs(repo_name);
+    let is_active = active_subdirs.contains(&subdir_name.to_string());
+
+    // Find current priority position (1-indexed)
+    let current_position = active_subdirs
+        .iter()
+        .position(|s| s == subdir_name)
+        .map(|i| i + 1);
+    let total_active = active_subdirs.len();
+
+    let mut actions = Vec::new();
+
+    // Toggle enable/disable
+    let (icon, color, text, preview) = if is_active {
+        (
+            NerdFont::ToggleOff,
+            colors::RED,
+            "Disable",
+            format!(
+                "Disable '{}'.\\n\\nDisabled subdirectories won't be applied during 'ins dot apply'.",
+                subdir_name
+            ),
+        )
+    } else {
+        (
+            NerdFont::ToggleOn,
+            colors::GREEN,
+            "Enable",
+            format!(
+                "Enable '{}'.\\n\\nEnabled subdirectories will be applied during 'ins dot apply'.",
+                subdir_name
+            ),
+        )
+    };
+
+    actions.push(SubdirActionItem {
+        display: format!("{} {}", format_icon_colored(icon, color), text),
+        preview,
+        action: SubdirAction::Toggle,
+    });
+
+    // Priority options only for active subdirs with more than one active
+    if let Some(pos) = current_position {
+        // Priority: Bump up (only if not already at top and more than one active)
+        if pos > 1 && total_active > 1 {
+            actions.push(SubdirActionItem {
+                display: format!(
+                    "{} Bump Priority",
+                    format_icon_colored(NerdFont::ArrowUp, colors::PEACH)
+                ),
+                preview: format!(
+                    "Move '{}' up in priority.\\n\\nCurrent: P{} → New: P{}\\n\\nHigher priority subdirs override lower ones for the same file.",
+                    subdir_name,
+                    pos,
+                    pos - 1
+                ),
+                action: SubdirAction::BumpPriority,
+            });
+        }
+
+        // Priority: Lower down (only if not already at bottom and more than one active)
+        if pos < total_active && total_active > 1 {
+            actions.push(SubdirActionItem {
+                display: format!(
+                    "{} Lower Priority",
+                    format_icon_colored(NerdFont::ArrowDown, colors::LAVENDER)
+                ),
+                preview: format!(
+                    "Move '{}' down in priority.\\n\\nCurrent: P{} → New: P{}\\n\\nHigher priority subdirs override lower ones for the same file.",
+                    subdir_name,
+                    pos,
+                    pos + 1
+                ),
+                action: SubdirAction::LowerPriority,
+            });
+        }
+    }
+
+    // Back
+    actions.push(SubdirActionItem {
+        display: format!("{} Back", format_back_icon()),
+        preview: "Return to subdirectory selection".to_string(),
+        action: SubdirAction::Back,
+    });
+
+    actions
+}
+
+/// Handle subdir actions
+fn handle_subdir_actions(
+    repo_name: &str,
+    subdir_name: &str,
+    _config: &Config,
+    _db: &Database,
+    debug: bool,
+) -> Result<()> {
+    loop {
+        // Reload config to get current state
+        let config = Config::load(None)?;
+        let actions = build_subdir_action_menu(repo_name, subdir_name, &config);
+
+        let result = FzfWrapper::builder()
+            .header(Header::fancy(&format!(
+                "{} / {}",
+                repo_name, subdir_name
+            )))
+            .prompt("Select action")
+            .args(fzf_mocha_args())
+            .responsive_layout()
+            .select_padded(actions)?;
+
+        let action = match result {
+            FzfResult::Selected(item) => item.action,
+            FzfResult::Cancelled => return Ok(()),
+            _ => return Ok(()),
+        };
+
+        match action {
+            SubdirAction::Toggle => {
+                let active_subdirs = config.get_active_subdirs(repo_name);
+                let is_active = active_subdirs.contains(&subdir_name.to_string());
+
+                let mut config = Config::load(None)?;
+                let db = Database::new(config.database_path().to_path_buf())?;
+
+                let result = if is_active {
+                    let clone_args = RepoCommands::Subdirs {
+                        command: crate::dot::repo::cli::SubdirCommands::Disable {
+                            name: repo_name.to_string(),
+                            subdir: subdir_name.to_string(),
+                        },
+                    };
+                    crate::dot::repo::commands::handle_repo_command(
+                        &mut config,
+                        &db,
+                        &clone_args,
+                        debug,
+                    )
+                } else {
+                    let clone_args = RepoCommands::Subdirs {
+                        command: crate::dot::repo::cli::SubdirCommands::Enable {
+                            name: repo_name.to_string(),
+                            subdir: subdir_name.to_string(),
+                        },
+                    };
+                    crate::dot::repo::commands::handle_repo_command(
+                        &mut config,
+                        &db,
+                        &clone_args,
+                        debug,
+                    )
+                };
+
+                if let Err(e) = result {
+                    FzfWrapper::message(&format!("Error: {}", e))?;
+                }
+            }
+            SubdirAction::BumpPriority => {
+                let mut config = Config::load(None)?;
+                match config.move_subdir_up(repo_name, subdir_name, None) {
+                    Ok(new_pos) => {
+                        FzfWrapper::message(&format!(
+                            "Subdirectory '{}' moved to priority P{}",
+                            subdir_name, new_pos
+                        ))?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Error: {}", e))?;
+                    }
+                }
+            }
+            SubdirAction::LowerPriority => {
+                let mut config = Config::load(None)?;
+                match config.move_subdir_down(repo_name, subdir_name, None) {
+                    Ok(new_pos) => {
+                        FzfWrapper::message(&format!(
+                            "Subdirectory '{}' moved to priority P{}",
+                            subdir_name, new_pos
+                        ))?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Error: {}", e))?;
+                    }
+                }
+            }
+            SubdirAction::Back => return Ok(()),
+        }
+    }
+}
+
 /// Handle managing subdirs
 fn handle_manage_subdirs(
     repo_name: &str,
-    config: &Config,
-    _db: &Database,
+    _config: &Config,
+    db: &Database,
     debug: bool,
 ) -> Result<()> {
     loop {
@@ -1016,16 +1242,23 @@ fn handle_manage_subdirs(
 
         let active_subdirs = config.get_active_subdirs(repo_name);
 
-        // Build subdir items
+        // Build subdir items with priority info
         let mut subdir_items: Vec<SubdirMenuItem> = local_repo
             .meta
             .dots_dirs
             .iter()
             .map(|subdir| {
                 let is_active = active_subdirs.contains(subdir);
+                let priority = if is_active {
+                    active_subdirs.iter().position(|s| s == subdir).map(|i| i + 1)
+                } else {
+                    None
+                };
                 SubdirMenuItem {
                     subdir: subdir.clone(),
                     is_active,
+                    priority,
+                    total_active: active_subdirs.len(),
                 }
             })
             .collect();
@@ -1038,6 +1271,8 @@ fn handle_manage_subdirs(
             subdir_items.push(SubdirMenuItem {
                 subdir: "__add_new__".to_string(),
                 is_active: false,
+                priority: None,
+                total_active: 0,
             });
         }
 
@@ -1045,6 +1280,8 @@ fn handle_manage_subdirs(
         subdir_items.push(SubdirMenuItem {
             subdir: "..".to_string(),
             is_active: false,
+            priority: None,
+            total_active: 0,
         });
 
         let selection = FzfWrapper::builder()
@@ -1094,36 +1331,8 @@ fn handle_manage_subdirs(
             continue;
         }
 
-        // Determine current state and toggle
-        let is_active = active_subdirs.contains(&selected_subdir);
-
-        let mut config = Config::load(None)?;
-        let db = Database::new(config.database_path().to_path_buf())?;
-
-        let result = if is_active {
-            let clone_args = RepoCommands::Subdirs {
-                command: crate::dot::repo::cli::SubdirCommands::Disable {
-                    name: repo_name.to_string(),
-                    subdir: selected_subdir.clone(),
-                },
-            };
-            crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)
-        } else {
-            let clone_args = RepoCommands::Subdirs {
-                command: crate::dot::repo::cli::SubdirCommands::Enable {
-                    name: repo_name.to_string(),
-                    subdir: selected_subdir.clone(),
-                },
-            };
-            crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)
-        };
-
-        // Handle errors gracefully - show message and continue menu loop
-        if let Err(e) = result {
-            FzfWrapper::message(&format!("Error: {}", e))?;
-        }
-
-        // Loop continues to show updated list
+        // Show action menu for the selected subdirectory
+        handle_subdir_actions(repo_name, &selected_subdir, &config, db, debug)?;
     }
 }
 
@@ -1131,6 +1340,8 @@ fn handle_manage_subdirs(
 struct SubdirMenuItem {
     subdir: String,
     is_active: bool,
+    priority: Option<usize>,
+    total_active: usize,
 }
 
 impl FzfSelectable for SubdirMenuItem {
@@ -1148,7 +1359,17 @@ impl FzfSelectable for SubdirMenuItem {
             } else {
                 format_icon_colored(NerdFont::CrossCircle, colors::RED)
             };
-            format!("{} {}", icon, self.subdir)
+            // Show priority if active and there are multiple active subdirs
+            let priority_text = if let Some(p) = self.priority {
+                if self.total_active > 1 {
+                    format!(" [P{}]", p)
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+            format!("{} {}{}", icon, self.subdir, priority_text)
         }
     }
 
@@ -1180,16 +1401,32 @@ impl FzfSelectable for SubdirMenuItem {
             } else {
                 colors::RED
             };
-            FzfPreview::Text(
-                PreviewBuilder::new()
-                    .line(status_color, None, &format!("Status: {}", status))
-                    .indented_line(
-                        colors::TEXT,
-                        None,
-                        &format!("Path: {}/dots/{}", self.subdir, self.subdir),
-                    )
-                    .build_string(),
-            )
+            let mut builder = PreviewBuilder::new()
+                .line(status_color, None, &format!("Status: {}", status));
+
+            // Add priority info if active
+            if let Some(p) = self.priority {
+                let priority_hint = if p == 1 && self.total_active > 1 {
+                    " (highest priority)"
+                } else if p == self.total_active && self.total_active > 1 {
+                    " (lowest priority)"
+                } else {
+                    ""
+                };
+                builder = builder.line(
+                    colors::PEACH,
+                    Some(NerdFont::ArrowUp),
+                    &format!("Priority: P{}{}", p, priority_hint),
+                );
+            }
+
+            builder = builder.indented_line(
+                colors::TEXT,
+                None,
+                &format!("Path: {}/dots/{}", self.subdir, self.subdir),
+            );
+
+            FzfPreview::Text(builder.build_string())
         }
     }
 }

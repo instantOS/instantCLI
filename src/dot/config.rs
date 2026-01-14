@@ -356,6 +356,82 @@ impl Config {
         self.repos.insert(target_index, repo);
         self.save(custom_path)
     }
+
+    /// Move a subdirectory up in priority within a repository (earlier in list = higher priority)
+    /// Returns the new priority position (1-indexed)
+    pub fn move_subdir_up(
+        &mut self,
+        repo_name: &str,
+        subdir_name: &str,
+        custom_path: Option<&str>,
+    ) -> Result<usize> {
+        let repo = self
+            .repos
+            .iter_mut()
+            .find(|r| r.name == repo_name)
+            .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", repo_name))?;
+
+        let index = repo
+            .active_subdirectories
+            .iter()
+            .position(|s| s == subdir_name)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Subdirectory '{}' not found in repository '{}'",
+                    subdir_name,
+                    repo_name
+                )
+            })?;
+
+        if index == 0 {
+            return Err(anyhow::anyhow!(
+                "Subdirectory '{}' is already at highest priority",
+                subdir_name
+            ));
+        }
+
+        repo.active_subdirectories.swap(index, index - 1);
+        self.save(custom_path)?;
+        Ok(index) // New position (1-indexed: was index+1, now index)
+    }
+
+    /// Move a subdirectory down in priority within a repository (later in list = lower priority)
+    /// Returns the new priority position (1-indexed)
+    pub fn move_subdir_down(
+        &mut self,
+        repo_name: &str,
+        subdir_name: &str,
+        custom_path: Option<&str>,
+    ) -> Result<usize> {
+        let repo = self
+            .repos
+            .iter_mut()
+            .find(|r| r.name == repo_name)
+            .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", repo_name))?;
+
+        let index = repo
+            .active_subdirectories
+            .iter()
+            .position(|s| s == subdir_name)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Subdirectory '{}' not found in repository '{}'",
+                    subdir_name,
+                    repo_name
+                )
+            })?;
+
+        if index >= repo.active_subdirectories.len() - 1 {
+            return Err(anyhow::anyhow!(
+                "Subdirectory '{}' is already at lowest priority",
+                subdir_name
+            ));
+        }
+
+        repo.active_subdirectories.swap(index, index + 1);
+        self.save(custom_path)?;
+        Ok(index + 2) // New position (1-indexed: was index+1, now index+2)
+    }
 }
 
 /// Extract a repository name from a git URL by removing the .git suffix
