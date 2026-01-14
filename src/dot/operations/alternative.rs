@@ -76,24 +76,32 @@ impl FzfSelectable for AlternativeMenuItem {
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         match self {
             AlternativeMenuItem::Source(item) => {
-                let mut builder = PreviewBuilder::new()
-                    .header(NerdFont::Folder, &format!("{} / {}", item.source.repo_name, item.source.subdir_name));
+                let mut builder = PreviewBuilder::new().header(
+                    NerdFont::Folder,
+                    &format!("{} / {}", item.source.repo_name, item.source.subdir_name),
+                );
 
                 if item.is_current {
-                    builder = builder
-                        .blank()
-                        .line(colors::GREEN, Some(NerdFont::Check), "Currently selected source");
+                    builder = builder.blank().line(
+                        colors::GREEN,
+                        Some(NerdFont::Check),
+                        "Currently selected source",
+                    );
                 }
 
                 if !item.exists {
-                    builder = builder
-                        .blank()
-                        .line(colors::YELLOW, Some(NerdFont::Plus), "File will be created in this location");
+                    builder = builder.blank().line(
+                        colors::YELLOW,
+                        Some(NerdFont::Plus),
+                        "File will be created in this location",
+                    );
                 }
 
-                builder = builder
-                    .blank()
-                    .line(colors::TEXT, Some(NerdFont::File), &format!("Path: {}", item.source.source_path.display()));
+                builder = builder.blank().line(
+                    colors::TEXT,
+                    Some(NerdFont::File),
+                    &format!("Path: {}", item.source.source_path.display()),
+                );
 
                 crate::menu::protocol::FzfPreview::Text(builder.build_string())
             }
@@ -104,11 +112,22 @@ impl FzfSelectable for AlternativeMenuItem {
                         .blank()
                         .text("Remove the manual override for this file.")
                         .blank()
-                        .line(colors::PEACH, Some(NerdFont::ArrowRight), "After removal, the file will be sourced from:")
-                        .indented_line(colors::GREEN, None, &format!("{} / {}", default_source.repo_name, default_source.subdir_name))
+                        .line(
+                            colors::PEACH,
+                            Some(NerdFont::ArrowRight),
+                            "After removal, the file will be sourced from:",
+                        )
+                        .indented_line(
+                            colors::GREEN,
+                            None,
+                            &format!(
+                                "{} / {}",
+                                default_source.repo_name, default_source.subdir_name
+                            ),
+                        )
                         .blank()
                         .text("This is the default based on repository priority.")
-                        .build_string()
+                        .build_string(),
                 )
             }
         }
@@ -347,18 +366,88 @@ fn handle_file_alternative(config: &Config, target_path: &Path, display_path: &s
 
     if sources.len() == 1 {
         let source = &sources[0];
+
+        // Find other destinations where this file could be added
+        let all_destinations = get_all_destinations(config)?;
+        let other_destinations: Vec<_> = all_destinations
+            .into_iter()
+            .filter(|d| d.repo_name != source.repo_name || d.subdir_name != source.subdir_name)
+            .collect();
+
         emit(
             Level::Info,
             "dot.alternative.single_source",
             &format!(
-                "{} {} is only available from {} / {}",
-                char::from(NerdFont::Info),
+                "{} {} is sourced from {} / {}",
+                char::from(NerdFont::Check),
                 display_path.cyan(),
                 source.repo_name.green(),
                 source.subdir_name.green()
             ),
             None,
         );
+
+        if other_destinations.is_empty() {
+            // No other writable repos available
+            emit(
+                Level::Info,
+                "dot.alternative.no_other_repos",
+                &format!(
+                    "   No other writable repositories to create alternatives.\n   \
+                    Add another repo with {} to enable alternatives.",
+                    "ins dot repo clone <url>".cyan()
+                ),
+                None,
+            );
+        } else {
+            // Show available destinations
+            emit(
+                Level::Info,
+                "dot.alternative.can_add",
+                &format!(
+                    "\n   {} To create an alternative, add it to another location:",
+                    char::from(NerdFont::Info)
+                ),
+                None,
+            );
+
+            emit(
+                Level::Info,
+                "dot.alternative.destination",
+                &format!(
+                    "   {} {}",
+                    char::from(NerdFont::ArrowRight),
+                    format!("ins dot alternative {} --create", display_path).dimmed()
+                ),
+                None,
+            );
+
+            // List available destinations
+            let dest_names: Vec<String> = other_destinations
+                .iter()
+                .take(5)
+                .map(|d| format!("{} / {}", d.repo_name, d.subdir_name))
+                .collect();
+
+            let remaining = other_destinations.len().saturating_sub(5);
+            let suffix = if remaining > 0 {
+                format!(" (+{} more)", remaining)
+            } else {
+                String::new()
+            };
+
+            emit(
+                Level::Info,
+                "dot.alternative.available_destinations",
+                &format!(
+                    "   Available: {}{}",
+                    dest_names.join(", ").dimmed(),
+                    suffix.dimmed()
+                ),
+                None,
+            );
+        }
+
         return Ok(());
     }
 
