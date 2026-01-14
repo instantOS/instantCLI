@@ -12,7 +12,7 @@ impl PipewireSessionManagerCheck {
     fn is_pipewire_active() -> Result<bool> {
         // Check if pipewire daemon is running
         let output = Command::new("systemctl")
-            .args(&["--user", "is-active", "pipewire.service"])
+            .args(["--user", "is-active", "pipewire.service"])
             .output()
             .context("Failed to check pipewire service status")?;
 
@@ -23,7 +23,7 @@ impl PipewireSessionManagerCheck {
         // Check which session manager is running
         // First try wireplumber
         let wp_output = Command::new("systemctl")
-            .args(&["--user", "is-active", "wireplumber.service"])
+            .args(["--user", "is-active", "wireplumber.service"])
             .output()
             .context("Failed to check wireplumber service status")?;
 
@@ -33,7 +33,7 @@ impl PipewireSessionManagerCheck {
 
         // Then try pipewire-media-session
         let pms_output = Command::new("systemctl")
-            .args(&["--user", "is-active", "pipewire-media-session.service"])
+            .args(["--user", "is-active", "pipewire-media-session.service"])
             .output()
             .context("Failed to check pipewire-media-session service status")?;
 

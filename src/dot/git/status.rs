@@ -64,7 +64,7 @@ pub fn show_single_file_status(
     all_dotfiles: &HashMap<PathBuf, crate::dot::Dotfile>,
     cfg: &config::Config,
     db: &crate::dot::db::Database,
-    show_sources: bool,
+    _show_sources: bool,
 ) -> Result<()> {
     let target_path = crate::dot::resolve_dotfile_path(path_str)?;
 

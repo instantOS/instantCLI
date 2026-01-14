@@ -406,7 +406,7 @@ impl FzfSelectable for DotMenuItem {
 }
 
 /// Handle adding a new repository
-fn handle_add_repo(config: &Config, db: &Database, debug: bool) -> Result<()> {
+fn handle_add_repo(_config: &Config, _db: &Database, debug: bool) -> Result<()> {
     use crate::menu_utils::FzfResult;
 
     const DEFAULT_REPO: &str = "https://github.com/instantOS/dotfiles";
@@ -626,7 +626,7 @@ fn handle_repo_actions(repo_name: &str, config: &Config, db: &Database, debug: b
             }
             RepoAction::Remove => {
                 let confirm = FzfWrapper::builder()
-                    .confirm(&format!(
+                    .confirm(format!(
                         "Remove repository '{}'?\n\nThis will remove it from your configuration.",
                         repo_name
                     ))
@@ -668,7 +668,7 @@ fn handle_repo_actions(repo_name: &str, config: &Config, db: &Database, debug: b
 /// Handle managing subdirs
 fn handle_manage_subdirs(
     repo_name: &str,
-    config: &Config,
+    _config: &Config,
     _db: &Database,
     debug: bool,
 ) -> Result<()> {

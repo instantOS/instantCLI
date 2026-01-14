@@ -257,10 +257,7 @@ impl DoctorCheck for FzfVersionCheck {
                     }
                 } else {
                     CheckStatus::Warning {
-                        message: format!(
-                            "Could not parse fzf version: {}",
-                            version_str.trim()
-                        ),
+                        message: format!("Could not parse fzf version: {}", version_str.trim()),
                         fixable: false,
                     }
                 }
@@ -291,8 +288,7 @@ impl DoctorCheck for FzfVersionCheck {
         let mise_path = format!("{}/.local/bin/mise", home);
 
         // Check if mise is installed
-        let mise_installed =
-            which::which("mise").is_ok() || Path::new(&mise_path).exists();
+        let mise_installed = which::which("mise").is_ok() || Path::new(&mise_path).exists();
 
         if !mise_installed {
             // Install mise using the official installer
@@ -317,7 +313,13 @@ impl DoctorCheck for FzfVersionCheck {
         };
 
         // Tools to install
-        let tools = ["fzf@latest", "starship@latest", "zoxide@latest", "lazygit@latest", "delta@latest"];
+        let tools = [
+            "fzf@latest",
+            "starship@latest",
+            "zoxide@latest",
+            "lazygit@latest",
+            "delta@latest",
+        ];
 
         for tool in tools {
             println!("Installing {}...", tool);
@@ -332,7 +334,9 @@ impl DoctorCheck for FzfVersionCheck {
         }
 
         println!("All tools installed successfully!");
-        println!("\nNote: You may need to restart your shell or run 'eval \"$(mise activate)\"' for the tools to be available.");
+        println!(
+            "\nNote: You may need to restart your shell or run 'eval \"$(mise activate)\"' for the tools to be available."
+        );
 
         Ok(())
     }
