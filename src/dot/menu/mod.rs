@@ -658,7 +658,7 @@ fn handle_plain_name_input(name: &str) -> Result<AddRepoInputResult> {
     {
         FzfResult::Selected(PlainNameChoice::CreateLocal) => {
             let mut config = Config::load(None)?;
-            match crate::dot::meta::create_local_repo(&mut config, Some(name), false) {
+            match crate::dot::meta::create_local_repo(&mut config, Some(name), false, true, true) {
                 Ok(outcome) => {
                     if let crate::dot::meta::InitOutcome::CreatedDefault { info } = outcome {
                         FzfWrapper::message(&format!(

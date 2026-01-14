@@ -162,7 +162,12 @@ use crate::menu_utils::{ConfirmResult, FzfWrapper};
 /// Gather repository metadata inputs interactively or non-interactively.
 /// This is the single source of truth for prompting users for repo metadata.
 /// When adding new fields to instantdots.toml, add them here.
-fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoInputs> {
+fn gather_repo_inputs(
+    default_name: &str,
+    non_interactive: bool,
+    skip_name_prompt: bool,
+    skip_readonly_prompt: bool,
+) -> Result<RepoInputs> {
     if non_interactive {
         return Ok(RepoInputs {
             name: default_name.to_string(),
@@ -173,16 +178,20 @@ fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoI
         });
     }
 
-    let name = FzfWrapper::input(&format!("Name [{}]: ", default_name))
-        .map(|s| {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                default_name.to_string()
-            } else {
-                trimmed.to_string()
-            }
-        })
-        .unwrap_or_else(|_| default_name.to_string());
+    let name = if skip_name_prompt {
+        default_name.to_string()
+    } else {
+        FzfWrapper::input(&format!("Name [{}]: ", default_name))
+            .map(|s| {
+                let trimmed = s.trim();
+                if trimmed.is_empty() {
+                    default_name.to_string()
+                } else {
+                    trimmed.to_string()
+                }
+            })
+            .unwrap_or_else(|_| default_name.to_string())
+    };
 
     let author = FzfWrapper::input("Author (optional): ")
         .map(|s| {
@@ -206,7 +215,11 @@ fn gather_repo_inputs(default_name: &str, non_interactive: bool) -> Result<RepoI
         })
         .unwrap_or(None);
 
-    let read_only = matches!(FzfWrapper::confirm("Read-only?"), Ok(ConfirmResult::Yes));
+    let read_only = if skip_readonly_prompt {
+        false
+    } else {
+        matches!(FzfWrapper::confirm("Read-only?"), Ok(ConfirmResult::Yes))
+    };
 
     let dots_dir = FzfWrapper::input("Dotfiles directory [dots]: ")
         .map(|s| {
@@ -280,7 +293,7 @@ pub fn init_repo(repo_path: &Path, name: Option<&str>, non_interactive: bool) ->
         .map(|s| s.trim().to_string())
         .unwrap_or(default_name);
 
-    let mut inputs = gather_repo_inputs(&default_name, non_interactive)?;
+    let mut inputs = gather_repo_inputs(&default_name, non_interactive, false, false)?;
 
     // Check if dots_dir exists, offer to create or rename
     if !non_interactive {
@@ -460,7 +473,7 @@ pub fn init_or_create_default_repo(
         return Ok(outcome);
     }
 
-    create_local_repo(config, name, non_interactive)
+    create_local_repo(config, name, non_interactive, false, false)
 }
 
 fn handle_existing_git_repo(
@@ -509,6 +522,8 @@ pub fn create_local_repo(
     config: &mut Config,
     name: Option<&str>,
     non_interactive: bool,
+    skip_name_prompt: bool,
+    skip_readonly_prompt: bool,
 ) -> Result<InitOutcome> {
     let default_name = name
         .filter(|s| !s.trim().is_empty())
@@ -520,7 +535,12 @@ pub fn create_local_repo(
         println!();
     }
 
-    let inputs = gather_repo_inputs(&default_name, non_interactive)?;
+    let inputs = gather_repo_inputs(
+        &default_name,
+        non_interactive,
+        skip_name_prompt,
+        skip_readonly_prompt,
+    )?;
 
     let (repo_name, repo_path) = determine_repo_path(config, &inputs.name);
 
