@@ -684,7 +684,7 @@ pub fn create_local_repo(
         url: repo_path.to_string_lossy().to_string(),
         name: repo_name.clone(),
         branch: None,
-        active_subdirectories: vec!["dots".to_string()],
+        active_subdirectories: Vec::new(),
         enabled: true,
         read_only: false,
         metadata: None,

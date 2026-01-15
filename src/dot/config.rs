@@ -24,8 +24,8 @@ pub struct Repo {
 }
 
 fn default_active_subdirs() -> Vec<String> {
-    // By default, only the first subdirectory is active
-    vec!["dots".to_string()]
+    // Empty means "auto-detect" (enable all existing subdirs for the repo)
+    Vec::new()
 }
 
 fn default_enabled() -> bool {
@@ -109,12 +109,69 @@ impl Config {
             .find(|repo| repo.name == repo_name)
             .map(|repo| {
                 if repo.active_subdirectories.is_empty() {
-                    default_active_subdirs()
+                    self.detect_repo_subdirs(repo)
                 } else {
                     repo.active_subdirectories.clone()
                 }
             })
-            .unwrap_or_else(default_active_subdirs)
+            .unwrap_or_default()
+    }
+
+    fn detect_repo_subdirs(&self, repo: &Repo) -> Vec<String> {
+        let repo_path = self.repos_path().join(&repo.name);
+
+        let mut subdirs = Vec::new();
+
+        let (metadata_dirs, metadata_present) = if let Some(meta) = &repo.metadata {
+            (Some(meta.dots_dirs.clone()), true)
+        } else {
+            let meta_path = repo_path.join("instantdots.toml");
+            if meta_path.exists() {
+                (
+                    crate::dot::meta::read_meta(&repo_path)
+                        .ok()
+                        .map(|meta| meta.dots_dirs),
+                    true,
+                )
+            } else {
+                (None, false)
+            }
+        };
+
+        if let Some(dirs) = metadata_dirs {
+            for dir in dirs {
+                let dir_path = repo_path.join(&dir);
+                if dir_path.is_dir() {
+                    subdirs.push(dir);
+                }
+            }
+        }
+
+        if subdirs.is_empty() && !metadata_present {
+            if let Ok(entries) = fs::read_dir(&repo_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if !path.is_dir() {
+                        continue;
+                    }
+
+                    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                        continue;
+                    };
+
+                    if name == ".git" {
+                        continue;
+                    }
+
+                    subdirs.push(name.to_string());
+                }
+
+                subdirs.sort();
+                subdirs.dedup();
+            }
+        }
+
+        subdirs
     }
 
     /// Get all writable repositories

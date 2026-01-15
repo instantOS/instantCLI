@@ -37,7 +37,7 @@ mod tests {
             url: "https://example.com/repo.git".to_string(),
             name: "repo".to_string(), // Folder name
             branch: None,
-            active_subdirectories: vec![".".to_string()],
+            active_subdirectories: Vec::new(),
             enabled: true,
             read_only: false,
             metadata: Some(metadata.clone()),
@@ -73,7 +73,7 @@ mod tests {
             url: "https://example.com/repo.git".to_string(),
             name: "repo".to_string(),
             branch: None,
-            active_subdirectories: vec!["dots".to_string()],
+            active_subdirectories: Vec::new(),
             enabled: true,
             read_only: false,
             metadata: None,
@@ -86,5 +86,39 @@ mod tests {
         assert_eq!(local_repo.meta.name, "file-repo");
         assert_eq!(local_repo.dotfile_dirs.len(), 1);
         assert_eq!(local_repo.dotfile_dirs[0].path, repo_path.join("dots"));
+    }
+
+    #[test]
+    fn test_repo_with_empty_metadata_is_disabled() {
+        let dir = tempdir().unwrap();
+        let repo_path = dir.path().join("repo");
+        fs::create_dir_all(&repo_path).unwrap();
+
+        let toml_content = r#"
+            name = "empty-repo"
+            dots_dirs = []
+        "#;
+        fs::write(repo_path.join("instantdots.toml"), toml_content).unwrap();
+        fs::create_dir_all(repo_path.join("dots")).unwrap();
+
+        let mut config = Config::default();
+        config.repos_dir = crate::common::TildePath::new(dir.path().to_path_buf());
+
+        let repo_config = Repo {
+            url: "https://example.com/repo.git".to_string(),
+            name: "repo".to_string(),
+            branch: None,
+            active_subdirectories: Vec::new(),
+            enabled: true,
+            read_only: false,
+            metadata: None,
+        };
+
+        config.repos.push(repo_config);
+
+        let local_repo = LocalRepo::new(&config, "repo".to_string()).unwrap();
+
+        assert_eq!(local_repo.meta.name, "empty-repo");
+        assert!(local_repo.dotfile_dirs.is_empty());
     }
 }

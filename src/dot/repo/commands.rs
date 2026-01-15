@@ -98,11 +98,11 @@ fn list_repositories(config: &Config, db: &Database) -> Result<()> {
                         "url": repo_config.url,
                         "branch": repo_config.branch,
                         "enabled": repo_config.enabled,
-                        "active_subdirectories": if repo_config.active_subdirectories.is_empty() {
-                            vec!["dots"]
-                        } else {
-                            repo_config.active_subdirectories.iter().map(|s| s.as_str()).collect::<Vec<_>>()
-                        },
+                        "active_subdirectories": config
+                            .get_active_subdirs(&repo_config.name)
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<_>>(),
                         "read_only": repo_config.read_only,
                         "local_path": local_path
                     })
@@ -149,11 +149,18 @@ fn list_repositories(config: &Config, db: &Database) -> Result<()> {
                     .unwrap_or_default();
 
                 // Show subdir priority when multiple active subdirs
-                let active_subdirs = if repo_config.active_subdirectories.is_empty() {
-                    "dots".to_string()
+                let effective_active_subdirs = config.get_active_subdirs(&repo_config.name);
+                let active_subdirs = if effective_active_subdirs.is_empty() {
+                    let repo_path = config.repos_path().join(&repo_config.name);
+                    if repo_path.join("instantdots.toml").exists() || repo_config.metadata.is_some()
+                    {
+                        "(none configured)".to_string()
+                    } else {
+                        "(none detected)".to_string()
+                    }
                 } else {
-                    let subdirs = repo_config.active_subdirectories.join(", ");
-                    if repo_config.active_subdirectories.len() > 1 {
+                    let subdirs = effective_active_subdirs.join(", ");
+                    if effective_active_subdirs.len() > 1 {
                         // Show priority order for multiple subdirs
                         format!("{} (priority: first=highest)", subdirs)
                     } else {
@@ -288,7 +295,7 @@ pub fn clone_repository(
         url: url.to_string(),
         name: repo_name.clone(),
         branch: branch.map(|s| s.to_string()),
-        active_subdirectories: vec!["dots".to_string()],
+        active_subdirectories: Vec::new(),
         enabled: true,
         read_only: read_only_flag,
         metadata: None,
