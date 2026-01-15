@@ -3,11 +3,7 @@ use std::process::Command;
 
 /// Check if swww is installed
 pub fn is_swww_installed() -> bool {
-    Command::new("which")
-        .arg("swww")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    which::which("swww").is_ok()
 }
 
 /// Apply wallpaper on Hyprland using swww

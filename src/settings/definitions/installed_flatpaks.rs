@@ -37,7 +37,7 @@ impl Setting for ManageInstalledFlatpaks {
 fn run_installed_flatpaks_manager() -> Result<()> {
     println!("Starting installed Flatpak manager...");
 
-    if !is_flatpak_available() {
+    if !PackageManager::Flatpak.is_available() {
         anyhow::bail!("Flatpak is not available on this system");
     }
 
@@ -132,13 +132,4 @@ fn run_installed_flatpaks_manager() -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Check if flatpak is available on the system
-fn is_flatpak_available() -> bool {
-    std::process::Command::new("which")
-        .arg("flatpak")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
 }

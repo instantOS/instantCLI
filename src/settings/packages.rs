@@ -308,7 +308,8 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
                 return Ok(());
             }
 
-            install_apt_packages(&packages, debug)?;
+            let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+            install_package_names(manager, &refs)?;
 
             println!("✓ Package installation completed successfully!");
         }
@@ -319,7 +320,7 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
                 println!("Selected package: {}", package_name);
             }
 
-            install_apt_packages(&[package_name], debug)?;
+            install_package_names(manager, &[&package_name])?;
 
             println!("✓ Package installation completed successfully!");
         }

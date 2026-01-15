@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 
+use crate::common::package::{PackageManager, install_package_names};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
@@ -38,7 +39,7 @@ fn run_flatpak_installer_action(_ctx: &mut SettingsContext) -> Result<()> {
     println!("Starting Flatpak app installer...");
 
     // Check if flatpak is available
-    if !is_flatpak_available() {
+    if !PackageManager::Flatpak.is_available() {
         anyhow::bail!("Flatpak is not available on this system");
     }
 
@@ -106,7 +107,8 @@ fn run_flatpak_installer_action(_ctx: &mut SettingsContext) -> Result<()> {
             }
 
             // Install apps
-            install_flatpak_apps(&app_ids)?;
+            let refs: Vec<&str> = app_ids.iter().map(|s| s.as_str()).collect();
+            install_package_names(PackageManager::Flatpak, &refs)?;
 
             println!("✓ Flatpak app installation completed successfully!");
         }
@@ -115,7 +117,7 @@ fn run_flatpak_installer_action(_ctx: &mut SettingsContext) -> Result<()> {
             let app_id = line.split('\t').nth(1).unwrap_or(&line).to_string();
 
             println!("Installing Flatpak app: {}", app_id);
-            install_flatpak_apps(&[app_id])?;
+            install_package_names(PackageManager::Flatpak, &[&app_id])?;
             println!("✓ Flatpak app installation completed successfully!");
         }
         crate::menu_utils::FzfResult::Cancelled => {
@@ -123,41 +125,6 @@ fn run_flatpak_installer_action(_ctx: &mut SettingsContext) -> Result<()> {
         }
         crate::menu_utils::FzfResult::Error(err) => {
             anyhow::bail!("App selection failed: {}", err);
-        }
-    }
-
-    Ok(())
-}
-
-/// Check if flatpak is available on the system
-fn is_flatpak_available() -> bool {
-    std::process::Command::new("which")
-        .arg("flatpak")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
-/// Install Flatpak apps
-fn install_flatpak_apps(app_ids: &[String]) -> Result<()> {
-    if app_ids.is_empty() {
-        return Ok(());
-    }
-
-    println!("Installing Flatpak apps...");
-
-    for app_id in app_ids {
-        println!("Installing {}...", app_id);
-
-        let status = std::process::Command::new("flatpak")
-            .arg("install")
-            .arg("--assumeyes") // Automatically answer yes to prompts
-            .arg("--system") // Install system-wide (default)
-            .arg(app_id)
-            .status()?;
-
-        if !status.success() {
-            eprintln!("Warning: Failed to install {}", app_id);
         }
     }
 
