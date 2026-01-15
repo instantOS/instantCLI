@@ -30,6 +30,7 @@ mod tests {
             description: None,
             read_only: None,
             dots_dirs: vec![".".to_string()],
+            units: vec![],
         };
 
         let repo_config = Repo {

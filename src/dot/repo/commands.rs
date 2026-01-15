@@ -231,6 +231,7 @@ fn configure_external_repo(config: &mut Config, repo_name: &str, read_only: bool
                 description: None,
                 read_only: if read_only { Some(true) } else { None },
                 dots_dirs: vec![".".to_string()],
+                units: vec![],
             });
             break;
         }

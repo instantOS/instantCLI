@@ -13,6 +13,7 @@ pub mod repo;
 // New organized modules
 pub mod operations;
 pub mod types;
+pub mod units;
 pub mod utils;
 
 #[cfg(test)]

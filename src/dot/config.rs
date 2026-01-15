@@ -73,6 +73,10 @@ pub struct Config {
     pub database_dir: TildePath,
     #[serde(default)]
     pub ignored_paths: Vec<String>,
+    /// Global dotfile units - directories treated as atomic.
+    /// Combined with per-repo units from instantdots.toml.
+    #[serde(default)]
+    pub units: Vec<String>,
 }
 
 impl Default for Config {
@@ -84,6 +88,7 @@ impl Default for Config {
             repos_dir: default_repos_dir(),
             database_dir: default_database_dir(),
             ignored_paths: Vec::new(),
+            units: Vec::new(),
         }
     }
 }
@@ -280,6 +285,25 @@ impl Config {
         }
 
         false
+    }
+
+    /// Add a directory to the global units list
+    pub fn add_unit(&mut self, path: String, custom_path: Option<&str>) -> Result<()> {
+        if self.units.contains(&path) {
+            return Err(anyhow::anyhow!("Path '{}' is already a unit", path));
+        }
+        self.units.push(path);
+        self.save(custom_path)
+    }
+
+    /// Remove a directory from the global units list
+    pub fn remove_unit(&mut self, path: &str, custom_path: Option<&str>) -> Result<()> {
+        let original_len = self.units.len();
+        self.units.retain(|p| p != path);
+        if self.units.len() == original_len {
+            return Err(anyhow::anyhow!("Path '{}' is not in the units list", path));
+        }
+        self.save(custom_path)
     }
 
     /// Move a repository up in priority (earlier in list = higher priority)
