@@ -363,9 +363,9 @@ pub trait Setting: Send + Sync + 'static {
                 let current = ctx.string(key);
                 SettingState::Choice {
                     current_label: if current.is_empty() {
-                        "Not set"
+                        "Not set".to_owned()
                     } else {
-                        Box::leak(current.into_boxed_str())
+                        current
                     },
                 }
             }
@@ -376,10 +376,10 @@ pub trait Setting: Send + Sync + 'static {
 }
 
 /// State of a setting for display
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum SettingState {
     Toggle { enabled: bool },
-    Choice { current_label: &'static str },
+    Choice { current_label: String },
     Action,
     Command,
 }

@@ -42,7 +42,7 @@ use crate::settings::setting::SettingState;
 // SettingState moved to crate::settings::setting
 
 /// Display item for a setting
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct SettingItem {
     pub setting: &'static dyn Setting,
     pub state: SettingState,
@@ -64,7 +64,7 @@ pub struct SubCategoryItem {
 }
 
 /// Search result item
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct SearchItem {
     pub setting: &'static dyn Setting,
     pub state: SettingState,
@@ -218,9 +218,9 @@ impl FzfSelectable for SettingItem {
             .unwrap_or(Category::System);
         let icon_color = meta.icon_color.unwrap_or_else(|| category.color());
 
-        match self.state {
+        match &self.state {
             SettingState::Toggle { enabled } => {
-                let status = if enabled { "[ON]" } else { "[OFF]" };
+                let status = if *enabled { "[ON]" } else { "[OFF]" };
                 format!(
                     "{} {} {}",
                     format_icon_colored(meta.icon, icon_color),
@@ -306,9 +306,9 @@ impl FzfSelectable for SearchItem {
             .unwrap_or(Category::System);
         let icon_color = meta.icon_color.unwrap_or_else(|| category.color());
 
-        match self.state {
+        match &self.state {
             SettingState::Toggle { enabled } => {
-                let status = if enabled { "[ON]" } else { "[OFF]" };
+                let status = if *enabled { "[ON]" } else { "[OFF]" };
                 format!(
                     "{} {} {}",
                     format_icon_colored(meta.icon, icon_color),
@@ -342,15 +342,15 @@ impl FzfSelectable for SearchItem {
         let meta = self.setting.metadata();
         let mut lines = vec![meta.summary.to_string()];
 
-        if let SettingState::Toggle { enabled } = self.state {
+        if let SettingState::Toggle { enabled } = &self.state {
             lines.push(String::new());
             lines.push(format!(
                 "Current state: {}",
-                if enabled { "Enabled" } else { "Disabled" }
+                if *enabled { "Enabled" } else { "Disabled" }
             ));
             lines.push(format!(
                 "Select to {}.",
-                if enabled { "disable" } else { "enable" }
+                if *enabled { "disable" } else { "enable" }
             ));
         }
 
