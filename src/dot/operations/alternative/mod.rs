@@ -558,15 +558,77 @@ fn handle_destination_selected(
         return Ok(true); // Continue loop
     }
 
-    let db = Database::new(config.database_path().to_path_buf())?;
-    add_to_destination(config, &db, path, &item.source)?;
+    let db = match Database::new(config.database_path().to_path_buf()) {
+        Ok(db) => db,
+        Err(e) => {
+            FzfWrapper::message(&format!("Failed to open database: {}", e))?;
+            return Ok(true); // Continue loop - let user try again
+        }
+    };
 
-    let mut overrides = OverrideConfig::load()?;
-    overrides.set_override(
+    if let Err(e) = add_to_destination(config, &db, path, &item.source) {
+        FzfWrapper::message(&format!(
+            "Failed to add '{}' to {} / {}:\n\n{}",
+            display, item.source.repo_name, item.source.subdir_name, e
+        ))?;
+        return Ok(true); // Continue loop - let user try again
+    }
+
+    // Reload config and check how many sources exist now
+    let config = Config::load(None)?;
+    let sources = find_all_sources(&config, path)?;
+
+    if sources.len() <= 1 {
+        // Only one source exists - this isn't an "alternative", just tracking the file
+        // Don't set an override since there's nothing to override
+        FzfWrapper::message(&format!(
+            "Added '{}' to {} / {}\n\n\
+            Note: This file is now tracked, but has no alternatives.\n\
+            An override is only needed when multiple sources exist.",
+            display, item.source.repo_name, item.source.subdir_name
+        ))?;
+        return Ok(false);
+    }
+
+    // Multiple sources exist - set the override to use the new location
+    let mut overrides = match OverrideConfig::load() {
+        Ok(o) => o,
+        Err(e) => {
+            FzfWrapper::message(&format!(
+                "File was copied but failed to load overrides: {}\n\n\
+                The file exists at {} / {} but won't be set as the active source.\n\
+                Use 'ins dot alternative {}' to switch sources.",
+                e, item.source.repo_name, item.source.subdir_name, display
+            ))?;
+            return Ok(false);
+        }
+    };
+
+    if let Err(e) = overrides.set_override(
         path.to_path_buf(),
         item.source.repo_name.clone(),
         item.source.subdir_name.clone(),
-    )?;
+    ) {
+        FzfWrapper::message(&format!(
+            "File was copied but failed to set override: {}\n\n\
+            The file exists at {} / {} but won't be set as the active source.\n\
+            Use 'ins dot alternative {}' to switch sources.",
+            e, item.source.repo_name, item.source.subdir_name, display
+        ))?;
+        return Ok(false);
+    }
+
+    // Show success message for creating an alternative
+    FzfWrapper::message(&format!(
+        "Created alternative for '{}' at {} / {}\n\n\
+        This location is now set as the active source.\n\
+        {} source(s) available - use 'ins dot alternative {}' to switch.",
+        display,
+        item.source.repo_name,
+        item.source.subdir_name,
+        sources.len(),
+        display
+    ))?;
 
     Ok(false) // Exit loop - file was added
 }

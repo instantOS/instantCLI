@@ -165,6 +165,15 @@ pub fn add_to_destination(
     target_path: &Path,
     dest: &DotfileSource,
 ) -> Result<()> {
+    // Ensure the target file exists before attempting to copy
+    if !target_path.exists() {
+        anyhow::bail!(
+            "Target file does not exist: {}\n\
+            Cannot create an alternative for a file that doesn't exist.",
+            target_path.display()
+        );
+    }
+
     let relative = target_path.strip_prefix(home_dir()).unwrap_or(target_path);
     let dest_path = dest.source_path.join(relative);
 

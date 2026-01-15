@@ -1,6 +1,6 @@
 //! Dotfile discovery - scanning repos to find dotfiles and their sources.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -8,7 +8,7 @@ use walkdir::WalkDir;
 
 use crate::dot::config::Config;
 use crate::dot::localrepo::LocalRepo;
-use crate::dot::override_config::DotfileSource;
+use crate::dot::override_config::{DotfileSource, OverrideConfig};
 
 /// A dotfile with all its available sources across repos.
 #[derive(Clone)]
@@ -84,14 +84,27 @@ pub fn discover_dotfiles(
         }
     }
 
-    let min_sources = match filter {
-        DiscoveryFilter::All => 1,
-        DiscoveryFilter::WithAlternatives => 2,
-    };
+    // Load overrides to include files with explicit overrides even if they only have 1 source
+    let overridden_paths: HashSet<PathBuf> = OverrideConfig::load()
+        .map(|o| {
+            o.overrides
+                .iter()
+                .map(|ov| ov.target_path.as_path().to_path_buf())
+                .collect()
+        })
+        .unwrap_or_default();
 
     let mut results: Vec<DiscoveredDotfile> = sources_by_target
         .into_iter()
-        .filter(|(_, sources)| sources.len() >= min_sources)
+        .filter(|(target_path, sources)| {
+            match filter {
+                DiscoveryFilter::All => sources.len() >= 1,
+                DiscoveryFilter::WithAlternatives => {
+                    // Include if: has 2+ sources OR has an override set
+                    sources.len() >= 2 || overridden_paths.contains(target_path)
+                }
+            }
+        })
         .map(|(target_path, sources)| DiscoveredDotfile {
             display_path: to_display_path(&target_path),
             target_path,
