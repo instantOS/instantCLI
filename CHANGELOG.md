@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2](https://github.com/instantOS/instantCLI/compare/v0.12.1...v0.12.2) - 2026-01-15
+
+### Fixed
+
+- fix menu loop
+- fix dotfile dir being hidden
+- fix which
+
+### Other
+
+- fmt
+- add dotfiles to settings
+- better alternative creation
+- better orphan handling
+- better error handling
+- refactor alternative menu
+- better override preview
+- pick up on odd overrides
+- better preselection
+- better menu loop
+- get rid of insane type
+- make clippy happy
+- more sane destination menu
+- add new file tracker for alternative menu
+- add better alternative menu
+- better subdir menu editing
+- refactor add menu
+- refactor ins dot alternative
+- ins dot alternative create now supports dirs
+- remove redundant code
+- more refactors
+- remove redundant helpers
+- remove redundant helpers
+- better package manager abstraction
+- flatpak manage setting
+- refactor doctor command
+- better terminology
+- add back option to menu
+- add alternate files option to ins dot menu
+- add support for listing alternatives in directory
+
 ## [0.12.1](https://github.com/instantOS/instantCLI/compare/v0.12.0...v0.12.1) - 2026-01-14
 
 ### Other
