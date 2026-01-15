@@ -202,7 +202,7 @@ async fn handle_install_command(_debug: bool) -> Result<()> {
     ))
     .await;
 
-    if let Err(_) = exec_result {
+    if exec_result.is_err() {
         // Try to upload logs if forced or requested
         if let Ok(context) = crate::arch::engine::InstallContext::load(DEFAULT_QUESTIONS_FILE) {
             crate::arch::logging::process_log_upload(&context);

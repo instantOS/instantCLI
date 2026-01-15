@@ -132,10 +132,10 @@ impl GpuKind {
 
 impl SystemInfo {
     pub fn detect() -> Self {
-        let mut info = SystemInfo::default();
-
-        // Internet check
-        info.internet_connected = crate::common::network::check_internet();
+        let mut info = SystemInfo {
+            internet_connected: crate::common::network::check_internet(),
+            ..Default::default()
+        };
 
         // Boot mode check
         if std::path::Path::new("/sys/firmware/efi/fw_platform_size").exists() {

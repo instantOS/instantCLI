@@ -168,9 +168,10 @@ fn apply_swap_escape_setting_impl(
             let mut applied_successfully = false;
 
             // Method 1: Try to restart kxkb daemon (KDE 5)
-            if let Ok(_) = std::process::Command::new("killall")
+            if std::process::Command::new("killall")
                 .args(["-USR1", "kxkb"])
                 .status()
+                .is_ok()
             {
                 applied_successfully = true;
             }
