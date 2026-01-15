@@ -570,6 +570,15 @@ fn handle_add_subdir(config: &Config, repo_name: &str) -> Result<bool> {
 
     match crate::dot::meta::add_dots_dir(&local_path, &new_dir) {
         Ok(()) => {
+            // Also add to global config's active_subdirectories so it shows up in the menu
+            let mut config = Config::load(None)?;
+            if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name)
+                && !repo.active_subdirectories.contains(&new_dir)
+            {
+                repo.active_subdirectories.push(new_dir.clone());
+                config.save(None)?;
+            }
+
             emit(
                 Level::Success,
                 "dot.alternative.subdir_created",
@@ -622,6 +631,7 @@ fn pick_new_file_to_track() -> Result<Option<std::path::PathBuf>> {
         .start_dir(&home)
         .scope(FilePickerScope::Files)
         .hint("Select a file to track as a dotfile")
+        .show_hidden(true)
         .pick_one()
     {
         Ok(Some(path)) => {

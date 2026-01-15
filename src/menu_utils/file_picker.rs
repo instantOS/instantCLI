@@ -20,7 +20,7 @@ fn yazi_config_dir() -> PathBuf {
     base
 }
 
-fn ensure_yazi_config() -> Result<PathBuf> {
+fn ensure_yazi_config(show_hidden: bool) -> Result<PathBuf> {
     let dir = yazi_config_dir();
     fs::create_dir_all(&dir).with_context(|| {
         format!(
@@ -31,6 +31,13 @@ fn ensure_yazi_config() -> Result<PathBuf> {
 
     let init_path = dir.join("init.lua");
     write_if_changed(&init_path, YAZI_INIT_LUA)?;
+
+    let config_path = dir.join("yazi.toml");
+    let config_content = format!(
+        "[manager]\nshow_hidden = {}\n",
+        if show_hidden { "true" } else { "false" }
+    );
+    write_if_changed(&config_path, &config_content)?;
 
     Ok(dir)
 }
@@ -83,6 +90,7 @@ pub struct FilePickerBuilder {
     scope: FilePickerScope,
     multi: bool,
     custom_hint: Option<String>,
+    show_hidden: bool,
 }
 
 impl FilePickerBuilder {
@@ -92,6 +100,7 @@ impl FilePickerBuilder {
             scope: FilePickerScope::Files,
             multi: false,
             custom_hint: None,
+            show_hidden: false,
         }
     }
 
@@ -115,6 +124,11 @@ impl FilePickerBuilder {
         self
     }
 
+    pub fn show_hidden(mut self, show: bool) -> Self {
+        self.show_hidden = show;
+        self
+    }
+
     pub fn pick(self) -> Result<FilePickerResult> {
         self.run_yazi()
     }
@@ -131,7 +145,7 @@ impl FilePickerBuilder {
         let yazi_path = which("yazi")
             .context("`yazi` command was not found. Install it to use the menu file picker.")?;
 
-        let config_dir = ensure_yazi_config()?;
+        let config_dir = ensure_yazi_config(self.show_hidden)?;
         let mut preselect: Option<PathBuf> = None;
 
         loop {
