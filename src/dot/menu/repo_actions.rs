@@ -20,6 +20,7 @@ pub enum RepoAction {
     LowerPriority,
     ManageSubdirs,
     ToggleReadOnly,
+    OpenInLazygit,
     ShowInfo,
     Remove,
     Back,
@@ -175,6 +176,19 @@ This helps keep the repository in sync with upstream.",
         action: RepoAction::ToggleReadOnly,
     });
 
+    // Open in Lazygit
+    actions.push(RepoActionItem {
+        display: format!(
+            "{} Open in Lazygit",
+            format_icon_colored(NerdFont::GitBranch, colors::PEACH)
+        ),
+        preview: format!(
+            "Open '{}' in Lazygit.\n\nLazygit is a terminal UI for git commands.\nYou can view commits, branches, and manage the repository.",
+            repo_name
+        ),
+        action: RepoAction::OpenInLazygit,
+    });
+
     // Show info
     actions.push(RepoActionItem {
         display: format!(
@@ -220,9 +234,7 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
         None => return format!("Repository '{}' not found in config", repo_name),
     };
 
-    let mut builder = PreviewBuilder::new()
-        .title(colors::SKY, repo_name)
-        .blank();
+    let mut builder = PreviewBuilder::new().title(colors::SKY, repo_name).blank();
 
     // Show external repo status if applicable
     if repo_config.metadata.is_some() {
@@ -487,6 +499,17 @@ pub fn handle_repo_actions(
                 }
             }
             RepoAction::Back => return Ok(()),
+            RepoAction::OpenInLazygit => {
+                let repo_manager = RepositoryManager::new(config, db);
+                if let Ok(local_repo) = repo_manager.get_repository_info(repo_name)
+                    && let Ok(repo_path) = local_repo.local_path(config)
+                {
+                    // Spawn lazygit in the repo directory
+                    std::process::Command::new("lazygit")
+                        .current_dir(&repo_path)
+                        .status()?;
+                }
+            }
             RepoAction::ToggleReadOnly => {
                 let is_read_only = config
                     .repos

@@ -357,10 +357,10 @@ fn handle_delete_subdir(repo_name: &str, subdir_name: &str, config: &Config) -> 
 
     // External repos have a fixed structure and cannot have subdirectories removed
     if local_repo.is_external(config) {
-        FzfWrapper::message(&format!(
+        FzfWrapper::message(
             "External repositories use a fixed structure ('.') and cannot have subdirectories added or removed.\n\n\
-            To manage subdirectories, convert to a native instantCLI repo by adding an instantdots.toml file."
-        ))?;
+            To manage subdirectories, convert to a native instantCLI repo by adding an instantdots.toml file.",
+        )?;
         return Ok(());
     }
 

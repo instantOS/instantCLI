@@ -30,7 +30,7 @@ impl FzfSelectable for DotMenuEntry {
         match self {
             DotMenuEntry::Repo(name, is_external) => {
                 let badge = if *is_external {
-                    format!(" \x1b[33m[external]\x1b[0m")
+                    " \x1b[33m[external]\x1b[0m".to_string()
                 } else {
                     String::new()
                 };
