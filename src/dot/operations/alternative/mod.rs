@@ -494,7 +494,11 @@ fn create_flow(
             .select(menu)?
         {
             FzfResult::Selected(CreateMenuItem::Destination(item)) => {
-                return handle_destination_selected(&config, path, display, &item);
+                if handle_destination_selected(&config, path, display, &item)? {
+                    // File already exists - loop back to show menu again
+                    continue;
+                }
+                return Ok(());
             }
             FzfResult::Selected(CreateMenuItem::AddSubdir { repo_name }) => {
                 if handle_add_subdir(&config, &repo_name)? {
@@ -518,32 +522,34 @@ fn create_flow(
     }
 }
 
+/// Handle selecting a destination. Returns true if file already exists (should loop back to menu).
 fn handle_destination_selected(
     config: &Config,
     path: &Path,
     display: &str,
     item: &SourceOption,
-) -> Result<()> {
+) -> Result<bool> {
     if item.exists {
-        // File already exists at this destination - inform the user
+        // File already exists at this destination - inform the user and loop back
         FzfWrapper::message(&format!(
             "'{}' already exists at {} / {}\n\nThis location is already tracked as an alternative.\n\
             Use the alternative selection menu to switch sources.",
             display, item.source.repo_name, item.source.subdir_name
         ))?;
-        return Ok(());
-    } else {
-        let db = Database::new(config.database_path().to_path_buf())?;
-        add_to_destination(config, &db, path, &item.source)?;
-
-        let mut overrides = OverrideConfig::load()?;
-        overrides.set_override(
-            path.to_path_buf(),
-            item.source.repo_name.clone(),
-            item.source.subdir_name.clone(),
-        )?;
+        return Ok(true);
     }
-    Ok(())
+
+    let db = Database::new(config.database_path().to_path_buf())?;
+    add_to_destination(config, &db, path, &item.source)?;
+
+    let mut overrides = OverrideConfig::load()?;
+    overrides.set_override(
+        path.to_path_buf(),
+        item.source.repo_name.clone(),
+        item.source.subdir_name.clone(),
+    )?;
+
+    Ok(false)
 }
 
 /// Handle adding a new subdir to a repo. Returns true if successful (should refresh menu).
