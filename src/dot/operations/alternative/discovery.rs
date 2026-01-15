@@ -12,7 +12,7 @@ use crate::dot::config::Config;
 use crate::dot::localrepo::LocalRepo;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::ui::nerd_font::NerdFont;
-use crate::ui::{emit, Level};
+use crate::ui::{Level, emit};
 
 /// A dotfile with all its available sources across repos.
 #[derive(Clone)]

@@ -159,7 +159,18 @@ impl LocalRepo {
         git::current_branch(&repo).context("Failed to get current branch")
     }
 
+    /// Get subdirs that are enabled in config but not in metadata's dots_dirs.
+    /// These are "orphaned" subdirs that may indicate a configuration mismatch.
+    pub fn get_orphaned_active_subdirs(&self, config: &Config) -> Vec<String> {
+        let active_subdirs = config.get_active_subdirs(&self.name);
+        active_subdirs
+            .into_iter()
+            .filter(|subdir| !self.meta.dots_dirs.contains(subdir))
+            .collect()
+    }
+
     /// Convert a target path (in home directory) to source path (in repo)
+
     #[allow(dead_code)]
     pub fn target_to_source(&self, target_path: &Path) -> Result<Option<PathBuf>> {
         let home = std::path::PathBuf::from(shellexpand::tilde("~").to_string());

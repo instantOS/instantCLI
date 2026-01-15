@@ -549,6 +549,32 @@ fn show_repository_info(config: &Config, db: &Database, name: &str) -> Result<()
         );
     }
 
+    // Warn about orphaned subdirs (enabled in config but not in metadata)
+    let orphaned = local_repo.get_orphaned_active_subdirs(config);
+    if !orphaned.is_empty() {
+        let repo_path = local_repo.local_path(config)?;
+        let metadata_path = repo_path.join("instantdots.toml");
+        println!();
+        println!(
+            "{} {}",
+            char::from(NerdFont::Warning),
+            "Orphaned Subdirectories".bold().yellow()
+        );
+        for subdir in &orphaned {
+            println!(
+                "  {} '{}' is enabled but not in metadata",
+                char::from(NerdFont::Warning).to_string().yellow(),
+                subdir
+            );
+            println!(
+                "     Fix: {} or add '{}' to {}",
+                format!("ins dot repo subdirs disable {} {}", name, subdir).dimmed(),
+                subdir,
+                metadata_path.display()
+            );
+        }
+    }
+
     Ok(())
 }
 
