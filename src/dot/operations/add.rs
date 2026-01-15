@@ -208,7 +208,7 @@ fn add_with_destination_picker(
 
     // Find existing sources for this file
     let existing_sources = find_all_sources(config, target_path)?;
-    let all_destinations = get_all_destinations(config)?;
+    let all_destinations = get_all_destinations(config);
 
     if all_destinations.is_empty() {
         emit(
