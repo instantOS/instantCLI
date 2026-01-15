@@ -165,7 +165,6 @@ pub enum MenuItem {
     Back,
 }
 
-
 impl FzfSelectable for MenuItem {
     fn fzf_display_text(&self) -> String {
         match self {
@@ -279,7 +278,6 @@ impl FzfSelectable for MenuItem {
             ),
         }
     }
-
 }
 
 impl FzfSelectable for DiscoveredDotfile {

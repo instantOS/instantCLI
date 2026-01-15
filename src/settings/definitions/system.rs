@@ -90,6 +90,38 @@ impl Setting for SystemDoctor {
 }
 
 // ============================================================================
+// Dotfile Manager (runs ins dot menu for interactive dotfile management)
+// ============================================================================
+
+pub struct DotfileManager;
+
+impl Setting for DotfileManager {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("system.dotfiles")
+            .title("Dotfile Manager")
+            .icon(NerdFont::File)
+            .summary("Manage dotfile repositories, subdirectories, and file sources.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        ctx.emit_info("settings.command.launching", "Opening dotfile manager...");
+
+        cmd!(env!("CARGO_BIN_NAME"), "dot", "menu")
+            .run()
+            .context("running dotfile menu")?;
+
+        Ok(())
+    }
+}
+
+
+// ============================================================================
 // Cockpit (uses custom launch logic, can't use macro)
 // ============================================================================
 
