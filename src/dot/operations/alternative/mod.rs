@@ -492,11 +492,11 @@ fn create_new_subdir(config: &Config, repo_name: &str) -> Result<bool> {
         Ok(()) => {
             // Add to global config
             let mut config = Config::load(None)?;
-            if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name) {
-                if !repo.active_subdirectories.contains(&new_dir) {
-                    repo.active_subdirectories.push(new_dir.clone());
-                    config.save(None)?;
-                }
+            if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name)
+                && !repo.active_subdirectories.contains(&new_dir)
+            {
+                repo.active_subdirectories.push(new_dir.clone());
+                config.save(None)?;
             }
 
             emit(
@@ -703,12 +703,15 @@ fn run_source_selection_menu(
 
     let mut menu: Vec<MenuItem> = items.into_iter().map(MenuItem::Source).collect();
 
-    if current.is_some() {
-        if let Some(default) = default_source {
-            menu.push(MenuItem::RemoveOverride {
-                default_source: default,
-            });
-        }
+    // Add Create Alternative option
+    menu.push(MenuItem::CreateAlternative);
+
+    if current.is_some()
+        && let Some(default) = default_source
+    {
+        menu.push(MenuItem::RemoveOverride {
+            default_source: default,
+        });
     }
     menu.push(MenuItem::Back);
 
@@ -723,6 +726,10 @@ fn run_source_selection_menu(
             set_alternative(&config, path, display, &item)?;
             Ok(Flow::Done)
         }
+        FzfResult::Selected(MenuItem::CreateAlternative) => {
+            let sources = find_all_sources(&config, path)?;
+            run_create_flow(path, display, &sources)
+        }
         FzfResult::Selected(MenuItem::RemoveOverride { default_source }) => {
             remove_override(&config, path, display, &default_source)?;
             Ok(Flow::Done)
@@ -732,6 +739,7 @@ fn run_source_selection_menu(
         _ => Ok(Flow::Cancelled),
     }
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utility Functions

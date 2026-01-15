@@ -160,10 +160,11 @@ impl FzfSelectable for CreateMenuItem {
 #[derive(Clone)]
 pub enum MenuItem {
     Source(SourceOption),
+    CreateAlternative,
     RemoveOverride { default_source: DotfileSource },
     Back,
-    Cancel,
 }
+
 
 impl FzfSelectable for MenuItem {
     fn fzf_display_text(&self) -> String {
@@ -180,6 +181,12 @@ impl FzfSelectable for MenuItem {
                     status
                 )
             }
+            MenuItem::CreateAlternative => {
+                format!(
+                    "{} Create Alternative...",
+                    format_icon_colored(NerdFont::Plus, colors::GREEN)
+                )
+            }
             MenuItem::RemoveOverride { default_source } => {
                 format!(
                     "{} Remove Override -> {} / {}",
@@ -189,12 +196,6 @@ impl FzfSelectable for MenuItem {
                 )
             }
             MenuItem::Back => format!("{} Back", format_back_icon()),
-            MenuItem::Cancel => {
-                format!(
-                    "{} Cancel",
-                    format_icon_colored(NerdFont::Cross, colors::OVERLAY0)
-                )
-            }
         }
     }
 
@@ -203,8 +204,9 @@ impl FzfSelectable for MenuItem {
             MenuItem::Source(item) => {
                 format!("{}:{}", item.source.repo_name, item.source.subdir_name)
             }
+            MenuItem::CreateAlternative => "!__create_alternative__".to_string(),
             MenuItem::RemoveOverride { .. } => "!__remove_override__".to_string(),
-            MenuItem::Back | MenuItem::Cancel => "!__back__".to_string(),
+            MenuItem::Back => "!__back__".to_string(),
         }
     }
 
@@ -236,6 +238,15 @@ impl FzfSelectable for MenuItem {
                 );
                 FzfPreview::Text(b.build_string())
             }
+            MenuItem::CreateAlternative => FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Plus, "Create Alternative")
+                    .blank()
+                    .text("Add this file to another repository or subdirectory.")
+                    .blank()
+                    .text("This creates a new alternative source for the file.")
+                    .build_string(),
+            ),
             MenuItem::RemoveOverride { default_source } => FzfPreview::Text(
                 PreviewBuilder::new()
                     .header(NerdFont::Trash, "Remove Override")
@@ -266,15 +277,9 @@ impl FzfSelectable for MenuItem {
                     .text("Return to previous menu.")
                     .build_string(),
             ),
-            MenuItem::Cancel => FzfPreview::Text(
-                PreviewBuilder::new()
-                    .header(NerdFont::Cross, "Cancel")
-                    .blank()
-                    .text("Exit without making changes.")
-                    .build_string(),
-            ),
         }
     }
+
 }
 
 impl FzfSelectable for DiscoveredDotfile {

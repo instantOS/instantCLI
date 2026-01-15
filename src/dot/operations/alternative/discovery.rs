@@ -104,7 +104,7 @@ pub fn discover_dotfiles(
         .into_iter()
         .filter(|(target_path, sources)| {
             match filter {
-                DiscoveryFilter::All => sources.len() >= 1,
+                DiscoveryFilter::All => !sources.is_empty(),
                 DiscoveryFilter::WithAlternatives => {
                     // Include if: has 2+ sources OR has an override set
                     sources.len() >= 2 || overridden_paths.contains(target_path)
