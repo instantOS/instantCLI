@@ -220,6 +220,93 @@ impl FzfSelectable for DotfileWithAlternatives {
     }
 }
 
+/// Find all dotfiles within a directory (for create mode)
+///
+/// This finds ALL dotfiles that exist in any repo, regardless of how many sources they have.
+fn find_all_dotfiles_in_dir(
+    config: &Config,
+    dir_path: &Path,
+) -> Result<Vec<DotfileWithAlternatives>> {
+    let home = PathBuf::from(shellexpand::tilde("~").to_string());
+
+    // Map from target_path to list of sources
+    let mut sources_by_target: HashMap<PathBuf, Vec<DotfileSource>> = HashMap::new();
+
+    // Scan all repos and subdirs for dotfiles
+    for repo_config in &config.repos {
+        if !repo_config.enabled {
+            continue;
+        }
+
+        let local_repo = match LocalRepo::new(config, repo_config.name.clone()) {
+            Ok(repo) => repo,
+            Err(_) => continue,
+        };
+
+        for dotfile_dir in &local_repo.dotfile_dirs {
+            // Walk the dotfile directory
+            for entry in WalkDir::new(&dotfile_dir.path)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    let path_str = e.path().to_string_lossy();
+                    !path_str.contains("/.git/") && e.file_type().is_file()
+                })
+            {
+                let source_path = entry.path().to_path_buf();
+
+                // Calculate the target path
+                let relative_path = match source_path.strip_prefix(&dotfile_dir.path) {
+                    Ok(rel) => rel,
+                    Err(_) => continue,
+                };
+                let target_path = home.join(relative_path);
+
+                // Only include files that would be in the specified directory
+                if !target_path.starts_with(dir_path) {
+                    continue;
+                }
+
+                let subdir_name = dotfile_dir
+                    .path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                sources_by_target
+                    .entry(target_path)
+                    .or_default()
+                    .push(DotfileSource {
+                        repo_name: repo_config.name.clone(),
+                        subdir_name,
+                        source_path,
+                    });
+            }
+        }
+    }
+
+    // Include ALL dotfiles (not just ones with multiple sources)
+    let mut results: Vec<DotfileWithAlternatives> = sources_by_target
+        .into_iter()
+        .map(|(target_path, sources)| {
+            let display_path = target_path
+                .strip_prefix(&home)
+                .map(|p| format!("~/{}", p.display()))
+                .unwrap_or_else(|_| target_path.display().to_string());
+            DotfileWithAlternatives {
+                target_path,
+                display_path,
+                sources,
+            }
+        })
+        .collect();
+
+    // Sort by display path for consistent ordering
+    results.sort_by(|a, b| a.display_path.cmp(&b.display_path));
+
+    Ok(results)
+}
+
 /// Find all dotfiles within a directory that have multiple sources (alternatives)
 ///
 /// This is done efficiently by scanning the dotfile repos first, NOT the target directory.
@@ -309,38 +396,62 @@ fn find_dotfiles_with_alternatives_in_dir(
 }
 
 /// Handle alternative selection for a directory (browse mode)
-fn handle_directory_alternatives(config: &Config, dir_path: &Path) -> Result<()> {
+fn handle_directory_alternatives(
+    config: &Config,
+    dir_path: &Path,
+    create_mode: bool,
+) -> Result<()> {
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
     let display_dir = dir_path
         .strip_prefix(&home)
         .map(|p| format!("~/{}", p.display()))
         .unwrap_or_else(|_| dir_path.display().to_string());
 
-    // Find all dotfiles with alternatives in this directory
-    let dotfiles = find_dotfiles_with_alternatives_in_dir(config, dir_path)?;
+    // In create mode, find ALL dotfiles (not just ones with alternatives)
+    // In switch mode, find only dotfiles with alternatives
+    let dotfiles = if create_mode {
+        find_all_dotfiles_in_dir(config, dir_path)?
+    } else {
+        find_dotfiles_with_alternatives_in_dir(config, dir_path)?
+    };
 
     if dotfiles.is_empty() {
-        emit(
-            Level::Info,
-            "dot.alternative.dir.no_alternatives",
-            &format!(
+        let message = if create_mode {
+            format!(
+                "{} No dotfiles found in {}",
+                char::from(NerdFont::Info),
+                display_dir.cyan()
+            )
+        } else {
+            format!(
                 "{} No dotfiles with alternatives found in {}",
                 char::from(NerdFont::Info),
                 display_dir.cyan()
-            ),
+            )
+        };
+        emit(
+            Level::Info,
+            "dot.alternative.dir.no_alternatives",
+            &message,
             None,
         );
         return Ok(());
     }
 
+    let action = if create_mode {
+        "create alternative for"
+    } else {
+        "switch source for"
+    };
     emit(
         Level::Info,
         "dot.alternative.dir.found",
         &format!(
-            "{} Found {} dotfiles with alternatives in {}",
+            "{} Found {} dotfiles in {} (select to {})",
             char::from(NerdFont::Check),
             dotfiles.len(),
-            display_dir.cyan()
+            display_dir.cyan(),
+            action
         ),
         None,
     );
@@ -369,8 +480,19 @@ fn handle_directory_alternatives(config: &Config, dir_path: &Path) -> Result<()>
         _ => return Ok(()),
     };
 
-    // Now handle the selected file using the existing logic (from menu context)
-    handle_file_alternative(config, &selected.target_path, &selected.display_path, true)
+    // In create mode, go directly to creation flow
+    // In switch mode, use the normal file alternative flow
+    if create_mode {
+        let sources = find_all_sources(config, &selected.target_path)?;
+        handle_create(
+            config,
+            &selected.target_path,
+            &selected.display_path,
+            &sources,
+        )
+    } else {
+        handle_file_alternative(config, &selected.target_path, &selected.display_path, true)
+    }
 }
 
 /// Handle --list flag for a directory (list all alternatives for all dotfiles)
@@ -727,18 +849,20 @@ pub fn handle_alternative(
         .map(|p| format!("~/{}", p.display()))
         .unwrap_or_else(|_| target_path.display().to_string());
 
-    // Check if target is a directory - if so, browse for dotfiles with alternatives
+    // Check if target is a directory
     if target_path.is_dir() {
-        if reset || create {
+        // --reset doesn't make sense for directories, but --create does
+        if reset {
             return Err(anyhow::anyhow!(
-                "The --reset and --create flags are not supported for directories.\n\
-                 Use them with a specific file path instead."
+                "The --reset flag is not supported for directories.\n\
+                 Use it with a specific file path instead."
             ));
         }
         if list {
             return handle_directory_list(config, &target_path);
         }
-        return handle_directory_alternatives(config, &target_path);
+        // Browse and select dotfiles, then either switch or create based on --create flag
+        return handle_directory_alternatives(config, &target_path, create);
     }
 
     // Handle reset flag
