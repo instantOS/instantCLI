@@ -18,16 +18,28 @@ pub fn install_packages(manager: PackageManager, packages: &[PackageToInstall]) 
         .map(|p| p.package_def.package_name)
         .collect();
 
+    install_package_names(manager, &package_names)
+}
+
+/// Install packages by name using the specified package manager.
+///
+/// This is a simpler interface for interactive UIs that work with raw package names
+/// rather than `PackageToInstall` structs.
+pub fn install_package_names(manager: PackageManager, packages: &[&str]) -> Result<()> {
+    if packages.is_empty() {
+        return Ok(());
+    }
+
     match manager {
-        PackageManager::Pacman => install_pacman(&package_names),
-        PackageManager::Apt => install_apt(&package_names),
-        PackageManager::Dnf => install_dnf(&package_names),
-        PackageManager::Zypper => install_zypper(&package_names),
-        PackageManager::Flatpak => install_flatpak(&package_names),
-        PackageManager::Aur => install_aur(&package_names),
-        PackageManager::Cargo => install_cargo(&package_names),
-        PackageManager::Snap => install_snap(&package_names),
-        PackageManager::Pkg => install_pkg(&package_names),
+        PackageManager::Pacman => install_pacman(packages),
+        PackageManager::Apt => install_apt(packages),
+        PackageManager::Dnf => install_dnf(packages),
+        PackageManager::Zypper => install_zypper(packages),
+        PackageManager::Flatpak => install_flatpak(packages),
+        PackageManager::Aur => install_aur(packages),
+        PackageManager::Cargo => install_cargo(packages),
+        PackageManager::Snap => install_snap(packages),
+        PackageManager::Pkg => install_pkg(packages),
     }
 }
 

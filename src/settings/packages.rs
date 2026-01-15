@@ -1,8 +1,8 @@
 use super::SettingsContext;
 use crate::common::distro::OperatingSystem;
+use crate::common::package::{PackageManager, detect_aur_helper, install_package_names};
 use crate::menu_utils::{FzfResult, FzfWrapper};
 use anyhow::{Context, Result};
-use std::process::Command;
 
 /// Run the interactive package installer as a settings action
 /// This dispatches to the appropriate package manager based on the detected OS.
@@ -58,7 +58,7 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
 
     // Check what package managers are available
     let aur_helper = detect_aur_helper();
-    let has_pacman = is_pacman_available();
+    let has_pacman = PackageManager::Pacman.is_available();
 
     if !has_pacman && aur_helper.is_none() {
         anyhow::bail!("Neither pacman nor an AUR helper is available on this system");
@@ -83,11 +83,14 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
 
     // Determine preview command
     // If we have an AUR helper, it can usually preview both repo and AUR packages
-    let preview_cmd = if let Some(ref helper) = aur_helper {
+    let preview_cmd = if let Some(helper) = aur_helper {
         format!("{} -Sii {{2}}", helper)
     } else {
         "pacman -Sii {2}".to_string()
     };
+    
+    // Re-detect for later use (consumed above)
+    let aur_helper = detect_aur_helper();
 
     let result = FzfWrapper::builder()
         .multi_select(true)
@@ -158,13 +161,15 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
 
             // Install Repo packages first
             if !pacman_packages.is_empty() {
-                install_pacman_packages(&pacman_packages, debug)?;
+                let refs: Vec<&str> = pacman_packages.iter().map(|s| s.as_str()).collect();
+                install_package_names(PackageManager::Pacman, &refs)?;
             }
 
             // Install AUR packages
             if !aur_packages.is_empty() {
-                if let Some(helper) = aur_helper {
-                    install_aur_packages(&aur_packages, &helper, debug)?;
+                if aur_helper.is_some() {
+                    let refs: Vec<&str> = aur_packages.iter().map(|s| s.as_str()).collect();
+                    install_package_names(PackageManager::Aur, &refs)?;
                 } else {
                     println!(
                         "Warning: AUR packages selected but no AUR helper found. Skipping: {:?}",
@@ -183,10 +188,10 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
             }
 
             match source {
-                PackageSource::Pacman => install_pacman_packages(&[name], debug)?,
+                PackageSource::Pacman => install_package_names(PackageManager::Pacman, &[&name])?,
                 PackageSource::AUR => {
-                    if let Some(helper) = aur_helper {
-                        install_aur_packages(&[name], &helper, debug)?;
+                    if aur_helper.is_some() {
+                        install_package_names(PackageManager::Aur, &[&name])?;
                     } else {
                         println!("Warning: AUR package selected but no AUR helper found.");
                     }

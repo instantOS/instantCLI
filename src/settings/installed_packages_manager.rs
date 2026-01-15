@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 
 use crate::common::distro::OperatingSystem;
-use crate::common::package::{PackageManager, uninstall_packages};
+use crate::common::package::{PackageManager, detect_aur_helper, uninstall_packages};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
 
 /// Run the installed packages manager
@@ -34,17 +34,18 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
         println!("Starting Debian package manager...");
     }
 
-    let termux = is_termux();
-    let has_apt = is_apt_available();
-    let has_pkg = is_pkg_available();
+    let os = OperatingSystem::detect();
+    let is_termux = matches!(os, OperatingSystem::Termux);
 
     // Validate package manager availability
-    if termux {
-        if !has_pkg {
-            anyhow::bail!("pkg is not available on this Termux system");
-        }
-    } else if !has_apt {
-        anyhow::bail!("apt is not available on this system");
+    let manager = if is_termux {
+        PackageManager::Pkg
+    } else {
+        PackageManager::Apt
+    };
+
+    if !manager.is_available() {
+        anyhow::bail!("{} is not available on this system", manager);
     }
 
     // List installed packages (one package per line)
@@ -54,7 +55,7 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
     let preview_cmd = "apt show {1} 2>/dev/null";
 
     // FZF prompt customization
-    let prompt = if termux {
+    let prompt = if is_termux {
         "Select Termux packages to uninstall"
     } else {
         "Select packages to uninstall"
@@ -113,11 +114,6 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
                 return Ok(());
             }
 
-            let manager = if is_termux() {
-                PackageManager::Pkg
-            } else {
-                PackageManager::Apt
-            };
             let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
             uninstall_packages(manager, &refs)?;
 
@@ -147,11 +143,6 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
                 return Ok(());
             }
 
-            let manager = if is_termux() {
-                PackageManager::Pkg
-            } else {
-                PackageManager::Apt
-            };
             uninstall_packages(manager, &[&package_name])?;
 
             println!("✓ Package uninstallation completed successfully!");
@@ -167,21 +158,6 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
     Ok(())
 }
 
-/// Check if apt is available on the system
-fn is_apt_available() -> bool {
-    which::which("apt").is_ok()
-}
-
-/// Check if running on Termux
-fn is_termux() -> bool {
-    std::env::var("TERMUX_VERSION").is_ok()
-}
-
-/// Check if pkg (Termux package manager) is available
-fn is_pkg_available() -> bool {
-    which::which("pkg").is_ok()
-}
-
 // ============================================================================
 // Arch Package Manager
 // ============================================================================
@@ -192,10 +168,10 @@ fn run_arch_package_manager(debug: bool) -> Result<()> {
         println!("Starting Arch package manager...");
     }
 
-    let aur_helper = detect_aur_helper();
-    let has_pacman = is_pacman_available();
+    let has_pacman = PackageManager::Pacman.is_available();
+    let has_aur = detect_aur_helper().is_some();
 
-    if !has_pacman && aur_helper.is_none() {
+    if !has_pacman && !has_aur {
         anyhow::bail!("Neither pacman nor an AUR helper is available on this system");
     }
 
@@ -300,19 +276,4 @@ fn run_arch_package_manager(debug: bool) -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Detect available AUR helper (yay, paru, etc.)
-fn detect_aur_helper() -> Option<String> {
-    const AUR_HELPERS: &[&str] = &["yay", "paru", "pikaur", "trizen"];
-
-    AUR_HELPERS
-        .iter()
-        .find(|&&helper| which::which(helper).is_ok())
-        .map(|s| s.to_string())
-}
-
-/// Check if pacman is available on the system
-fn is_pacman_available() -> bool {
-    which::which("pacman").is_ok()
 }
