@@ -85,6 +85,11 @@ pub enum DotCommands {
         #[command(subcommand)]
         command: IgnoreCommands,
     },
+    /// Manage dotfile units
+    Unit {
+        #[command(subcommand)]
+        command: UnitCommands,
+    },
     /// Commit changes in all writable repositories
     Commit {
         /// Arguments to pass to git commit (e.g. "-m 'message'")
@@ -148,6 +153,22 @@ pub enum IgnoreCommands {
         path: String,
     },
     /// List all ignored paths
+    List,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum UnitCommands {
+    /// Add a unit directory (relative to ~)
+    Add {
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+    },
+    /// Remove a unit directory
+    Remove {
+        #[arg(value_hint = ValueHint::AnyPath)]
+        path: String,
+    },
+    /// List configured unit directories
     List,
 }
 
@@ -273,6 +294,101 @@ fn handle_ignore_command(
                         Some(serde_json::json!({
                             "index": i + 1,
                             "path": path
+                        })),
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn normalize_unit_path(path: &str) -> Result<String> {
+    if path.starts_with('~') {
+        Ok(path.to_string())
+    } else if path.starts_with('/') {
+        let home = shellexpand::tilde("~").to_string();
+        if path.starts_with(&home) {
+            Ok(format!("~{}", path.strip_prefix(&home).unwrap_or(path)))
+        } else {
+            Err(anyhow::anyhow!(
+                "Path must be within home directory. Use ~ or relative paths."
+            ))
+        }
+    } else {
+        Ok(format!("~/{}", path.trim_start_matches('/')))
+    }
+}
+
+fn handle_unit_command(
+    config: &mut Config,
+    command: &UnitCommands,
+    config_path: Option<&str>,
+) -> Result<()> {
+    match command {
+        UnitCommands::Add { path } => {
+            let normalized_path = normalize_unit_path(path)?;
+            config.add_unit(normalized_path.clone(), config_path)?;
+            emit(
+                Level::Success,
+                "dot.unit.added",
+                &format!(
+                    "{} Added {} to units",
+                    char::from(NerdFont::Check),
+                    normalized_path.green()
+                ),
+                Some(serde_json::json!({
+                    "path": normalized_path,
+                    "action": "added"
+                })),
+            );
+        }
+        UnitCommands::Remove { path } => {
+            let normalized_path = normalize_unit_path(path)?;
+            config.remove_unit(&normalized_path, config_path)?;
+            emit(
+                Level::Success,
+                "dot.unit.removed",
+                &format!(
+                    "{} Removed {} from units",
+                    char::from(NerdFont::Check),
+                    normalized_path.green()
+                ),
+                Some(serde_json::json!({
+                    "path": normalized_path,
+                    "action": "removed"
+                })),
+            );
+        }
+        UnitCommands::List => {
+            if config.units.is_empty() {
+                emit(
+                    Level::Info,
+                    "dot.unit.list.empty",
+                    &format!(
+                        "{} No unit directories configured",
+                        char::from(NerdFont::Info)
+                    ),
+                    None,
+                );
+            } else {
+                emit(
+                    Level::Info,
+                    "dot.unit.list.header",
+                    &format!("{} Unit directories:", char::from(NerdFont::List)),
+                    Some(serde_json::json!({
+                        "count": config.units.len()
+                    })),
+                );
+                for (i, unit) in config.units.iter().enumerate() {
+                    emit(
+                        Level::Info,
+                        "dot.unit.list.item",
+                        &format!("  {} {}", i + 1, unit.cyan()),
+                        Some(serde_json::json!({
+                            "index": i + 1,
+                            "path": unit
                         })),
                     );
                 }
@@ -439,6 +555,9 @@ pub fn handle_dot_command(
         }
         DotCommands::Ignore { command } => {
             handle_ignore_command(&mut config, command, config_path)?;
+        }
+        DotCommands::Unit { command } => {
+            handle_unit_command(&mut config, command, config_path)?;
         }
         DotCommands::Commit { args } => {
             super::git_commit_all(&config, args, debug)?;
