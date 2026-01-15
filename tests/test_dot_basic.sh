@@ -72,6 +72,7 @@ main() {
 	assert_json_field "${repo_list_json}" ".data.repos[0].name" "basic-test"
 	assert_json_field "${repo_list_json}" ".data.repos[0].enabled" "true"
 	assert_json_field "${repo_list_json}" ".data.repos[0].active_subdirectories[0]" "dots"
+	assert_json_field "${repo_list_json}" ".data.repos[0].active_subdirectories | length" "1"
 
 	# Test dot status JSON output (before apply)
 	echo "Testing dot status JSON output before apply..."

@@ -296,10 +296,27 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
             builder = builder.indented_line(colors::SUBTEXT0, None, "No subdirectories configured");
         } else {
             let available = local_repo.meta.dots_dirs.join(", ");
-            let active = if repo_config.active_subdirectories.is_empty() {
-                "dots".to_string()
+            let active = if let Some(active_subdirs) = &repo_config.active_subdirectories {
+                if active_subdirs.is_empty() {
+                    "(none configured)".to_string()
+                } else {
+                    active_subdirs.join(", ")
+                }
+            } else if local_repo.meta.dots_dirs.is_empty() {
+                "(none configured)".to_string()
             } else {
-                repo_config.active_subdirectories.join(", ")
+                let repo_path = config.repos_path().join(&repo_config.name);
+                let effective_active = config.resolve_active_subdirs(repo_config);
+                if effective_active.is_empty() {
+                    if repo_path.join("instantdots.toml").exists() || repo_config.metadata.is_some()
+                    {
+                        "(none configured)".to_string()
+                    } else {
+                        "(none detected)".to_string()
+                    }
+                } else {
+                    effective_active.join(", ")
+                }
             };
             builder = builder
                 .indented_line(colors::TEXT, None, &format!("Available: {}", available))

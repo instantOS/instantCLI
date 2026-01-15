@@ -492,11 +492,12 @@ fn create_new_subdir(config: &Config, repo_name: &str) -> Result<bool> {
         Ok(()) => {
             // Add to global config
             let mut config = Config::load(None)?;
-            if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name)
-                && !repo.active_subdirectories.contains(&new_dir)
-            {
-                repo.active_subdirectories.push(new_dir.clone());
-                config.save(None)?;
+            if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name) {
+                let active_subdirs = repo.active_subdirectories.get_or_insert_with(Vec::new);
+                if !active_subdirs.contains(&new_dir) {
+                    active_subdirs.push(new_dir.clone());
+                    config.save(None)?;
+                }
             }
 
             emit(

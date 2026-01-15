@@ -13,19 +13,14 @@ pub struct Repo {
     pub url: String,
     pub name: String,
     pub branch: Option<String>,
-    #[serde(default = "default_active_subdirs")]
-    pub active_subdirectories: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_subdirectories: Option<Vec<String>>,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
     #[serde(default = "default_read_only")]
     pub read_only: bool,
     /// Optional metadata for repositories that don't have an instantdots.toml file (e.g. yadm/stow)
     pub metadata: Option<crate::dot::types::RepoMetaData>,
-}
-
-fn default_active_subdirs() -> Vec<String> {
-    // Empty means "auto-detect" (enable all existing subdirs for the repo)
-    Vec::new()
 }
 
 fn default_enabled() -> bool {
@@ -107,73 +102,78 @@ impl Config {
         self.repos
             .iter()
             .find(|repo| repo.name == repo_name)
-            .map(|repo| {
-                if repo.active_subdirectories.is_empty() {
-                    self.detect_repo_subdirs(repo)
-                } else {
-                    repo.active_subdirectories.clone()
-                }
-            })
+            .map(|repo| self.resolve_active_subdirs(repo))
             .unwrap_or_default()
     }
 
-    fn detect_repo_subdirs(&self, repo: &Repo) -> Vec<String> {
-        let repo_path = self.repos_path().join(&repo.name);
-
-        let mut subdirs = Vec::new();
-
-        let (metadata_dirs, metadata_present) = if let Some(meta) = &repo.metadata {
-            (Some(meta.dots_dirs.clone()), true)
-        } else {
-            let meta_path = repo_path.join("instantdots.toml");
-            if meta_path.exists() {
-                (
-                    crate::dot::meta::read_meta(&repo_path)
-                        .ok()
-                        .map(|meta| meta.dots_dirs),
-                    true,
-                )
-            } else {
-                (None, false)
-            }
-        };
-
-        if let Some(dirs) = metadata_dirs {
-            for dir in dirs {
-                let dir_path = repo_path.join(&dir);
-                if dir_path.is_dir() {
-                    subdirs.push(dir);
-                }
-            }
+    pub fn resolve_active_subdirs(&self, repo: &Repo) -> Vec<String> {
+        if let Some(subdirs) = &repo.active_subdirectories {
+            return subdirs.clone();
         }
 
-        if subdirs.is_empty() && !metadata_present {
-            if let Ok(entries) = fs::read_dir(&repo_path) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if !path.is_dir() {
-                        continue;
-                    }
+        let repo_path = self.repos_path().join(&repo.name);
+        let meta = if let Some(meta) = &repo.metadata {
+            Some(meta.clone())
+        } else if repo_path.join("instantdots.toml").exists() {
+            crate::dot::meta::read_meta(&repo_path).ok()
+        } else {
+            None
+        };
 
-                    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                        continue;
-                    };
+        match meta {
+            Some(meta) => self.resolve_active_subdirs_from_meta(&repo_path, &meta),
+            None => self.detect_repo_subdirs(&repo_path),
+        }
+    }
 
-                    if name == ".git" {
-                        continue;
-                    }
+    fn resolve_active_subdirs_from_meta(
+        &self,
+        repo_path: &Path,
+        meta: &crate::dot::types::RepoMetaData,
+    ) -> Vec<String> {
+        if let Some(default_active) = meta.default_active_subdirs.as_ref() {
+            return default_active
+                .iter()
+                .filter(|dir| meta.dots_dirs.contains(*dir))
+                .filter(|dir| repo_path.join(dir).is_dir())
+                .cloned()
+                .collect();
+        }
 
-                    subdirs.push(name.to_string());
+        meta.dots_dirs
+            .iter()
+            .filter(|dir| repo_path.join(dir).is_dir())
+            .cloned()
+            .collect()
+    }
+
+    fn detect_repo_subdirs(&self, repo_path: &Path) -> Vec<String> {
+        let mut subdirs = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(repo_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
                 }
 
-                subdirs.sort();
-                subdirs.dedup();
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+
+                if name == ".git" {
+                    continue;
+                }
+
+                subdirs.push(name.to_string());
             }
+
+            subdirs.sort();
+            subdirs.dedup();
         }
 
         subdirs
     }
-
     /// Get all writable repositories
     pub fn get_writable_repos(&self) -> Vec<&Repo> {
         self.repos.iter().filter(|r| !r.read_only).collect()
@@ -253,7 +253,7 @@ impl Config {
     ) -> Result<()> {
         for repo in &mut self.repos {
             if repo.name == repo_name {
-                repo.active_subdirectories = subdirs;
+                repo.active_subdirectories = Some(subdirs);
                 return self.save(custom_path);
             }
         }
@@ -452,13 +452,20 @@ impl Config {
             .find(|r| r.name == repo_name)
             .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", repo_name))?;
 
-        let index = repo
-            .active_subdirectories
+        let active_subdirs = repo.active_subdirectories.as_mut().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Subdirectory '{}' is not configured in dots.toml for '{}'",
+                subdir_name,
+                repo_name
+            )
+        })?;
+
+        let index = active_subdirs
             .iter()
             .position(|s| s == subdir_name)
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Subdirectory '{}' not found in repository '{}'",
+                    "Subdirectory '{}' is not configured in dots.toml for '{}'",
                     subdir_name,
                     repo_name
                 )
@@ -471,7 +478,7 @@ impl Config {
             ));
         }
 
-        repo.active_subdirectories.swap(index, index - 1);
+        active_subdirs.swap(index, index - 1);
         self.save(custom_path)?;
         Ok(index) // New position (1-indexed: was index+1, now index)
     }
@@ -490,26 +497,33 @@ impl Config {
             .find(|r| r.name == repo_name)
             .ok_or_else(|| anyhow::anyhow!("Repository '{}' not found", repo_name))?;
 
-        let index = repo
-            .active_subdirectories
+        let active_subdirs = repo.active_subdirectories.as_mut().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Subdirectory '{}' is not configured in dots.toml for '{}'",
+                subdir_name,
+                repo_name
+            )
+        })?;
+
+        let index = active_subdirs
             .iter()
             .position(|s| s == subdir_name)
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Subdirectory '{}' not found in repository '{}'",
+                    "Subdirectory '{}' is not configured in dots.toml for '{}'",
                     subdir_name,
                     repo_name
                 )
             })?;
 
-        if index >= repo.active_subdirectories.len() - 1 {
+        if index >= active_subdirs.len() - 1 {
             return Err(anyhow::anyhow!(
                 "Subdirectory '{}' is already at lowest priority",
                 subdir_name
             ));
         }
 
-        repo.active_subdirectories.swap(index, index + 1);
+        active_subdirs.swap(index, index + 1);
         self.save(custom_path)?;
         Ok(index + 2) // New position (1-indexed: was index+1, now index+2)
     }

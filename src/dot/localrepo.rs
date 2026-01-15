@@ -90,8 +90,12 @@ impl LocalRepo {
         let active_subdirs = cfg.get_active_subdirs(&name);
 
         // Create dotfile_dirs
-        let dotfile_dirs =
-            Self::dotfile_dirs_from_path(&local_path, &meta.dots_dirs, &active_subdirs)?;
+        let dotfile_dirs = Self::dotfile_dirs_from_path(
+            &local_path,
+            &meta.dots_dirs,
+            &active_subdirs,
+            repo_config.active_subdirectories.as_ref(),
+        )?;
 
         Ok(LocalRepo {
             url: repo_config.url.clone(),
@@ -123,12 +127,14 @@ impl LocalRepo {
         repo_path: &Path,
         available_subdirs: &[String],
         active_subdirs: &[String],
+        configured_subdirs: Option<&Vec<String>>,
     ) -> Result<Vec<DotfileDir>> {
         let mut dotfile_dirs = Vec::new();
         let mut added_subdirs = std::collections::HashSet::new();
 
-        // Phase 1: Active subdirs in priority order (from config)
-        // Earlier entries have higher priority
+        // Phase 1: Active subdirs in priority order
+        // - If configured in global config: mark active
+        // - If inferred from metadata defaults: include but treat as inactive
         // Include if in metadata OR if the directory exists on disk
         for subdir_name in active_subdirs {
             let in_metadata = available_subdirs.contains(subdir_name);
@@ -136,7 +142,10 @@ impl LocalRepo {
             let exists_on_disk = subdir_path.exists();
 
             if in_metadata || exists_on_disk {
-                let dotfile_dir = DotfileDir::new_no_create(subdir_name, repo_path, true)?;
+                let is_active = configured_subdirs
+                    .map(|configured| configured.contains(subdir_name))
+                    .unwrap_or(false);
+                let dotfile_dir = DotfileDir::new_no_create(subdir_name, repo_path, is_active)?;
                 dotfile_dirs.push(dotfile_dir);
                 added_subdirs.insert(subdir_name.clone());
             }

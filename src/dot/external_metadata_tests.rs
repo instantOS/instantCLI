@@ -30,6 +30,7 @@ mod tests {
             description: None,
             read_only: None,
             dots_dirs: vec![".".to_string()],
+            default_active_subdirs: None,
             units: vec![],
         };
 
@@ -37,7 +38,7 @@ mod tests {
             url: "https://example.com/repo.git".to_string(),
             name: "repo".to_string(), // Folder name
             branch: None,
-            active_subdirectories: Vec::new(),
+            active_subdirectories: None,
             enabled: true,
             read_only: false,
             metadata: Some(metadata.clone()),
@@ -73,7 +74,7 @@ mod tests {
             url: "https://example.com/repo.git".to_string(),
             name: "repo".to_string(),
             branch: None,
-            active_subdirectories: Vec::new(),
+            active_subdirectories: None,
             enabled: true,
             read_only: false,
             metadata: None,
@@ -97,6 +98,7 @@ mod tests {
         let toml_content = r#"
             name = "empty-repo"
             dots_dirs = []
+            default_active_subdirs = []
         "#;
         fs::write(repo_path.join("instantdots.toml"), toml_content).unwrap();
         fs::create_dir_all(repo_path.join("dots")).unwrap();
@@ -108,7 +110,7 @@ mod tests {
             url: "https://example.com/repo.git".to_string(),
             name: "repo".to_string(),
             branch: None,
-            active_subdirectories: Vec::new(),
+            active_subdirectories: None,
             enabled: true,
             read_only: false,
             metadata: None,

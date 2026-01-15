@@ -99,7 +99,7 @@ fn list_repositories(config: &Config, db: &Database) -> Result<()> {
                         "branch": repo_config.branch,
                         "enabled": repo_config.enabled,
                         "active_subdirectories": config
-                            .get_active_subdirs(&repo_config.name)
+                            .resolve_active_subdirs(repo_config)
                             .iter()
                             .map(|s| s.as_str())
                             .collect::<Vec<_>>(),
@@ -149,7 +149,7 @@ fn list_repositories(config: &Config, db: &Database) -> Result<()> {
                     .unwrap_or_default();
 
                 // Show subdir priority when multiple active subdirs
-                let effective_active_subdirs = config.get_active_subdirs(&repo_config.name);
+                let effective_active_subdirs = config.resolve_active_subdirs(repo_config);
                 let active_subdirs = if effective_active_subdirs.is_empty() {
                     let repo_path = config.repos_path().join(&repo_config.name);
                     if repo_path.join("instantdots.toml").exists() || repo_config.metadata.is_some()
@@ -231,13 +231,14 @@ fn configure_external_repo(config: &mut Config, repo_name: &str, read_only: bool
 
     for repo in &mut config.repos {
         if repo.name == repo_name {
-            repo.active_subdirectories = vec![".".to_string()];
+            repo.active_subdirectories = Some(vec![".".to_string()]);
             repo.metadata = Some(crate::dot::types::RepoMetaData {
                 name: repo_name.to_string(),
                 author: None,
                 description: None,
                 read_only: if read_only { Some(true) } else { None },
                 dots_dirs: vec![".".to_string()],
+                default_active_subdirs: None,
                 units: vec![],
             });
             break;
@@ -295,7 +296,7 @@ pub fn clone_repository(
         url: url.to_string(),
         name: repo_name.clone(),
         branch: branch.map(|s| s.to_string()),
-        active_subdirectories: Vec::new(),
+        active_subdirectories: None,
         enabled: true,
         read_only: read_only_flag,
         metadata: None,
@@ -539,7 +540,11 @@ fn show_repository_info(config: &Config, db: &Database, name: &str) -> Result<()
         } else {
             "Inactive".yellow().to_string()
         };
-        let configured = repo_config.active_subdirectories.contains(&dir_name);
+        let configured = repo_config
+            .active_subdirectories
+            .as_ref()
+            .map(|subdirs| subdirs.contains(&dir_name))
+            .unwrap_or(false);
         let configured_label = if configured {
             "configured".blue().to_string()
         } else {
@@ -650,7 +655,9 @@ fn list_subdirectories(
         };
         let configured = repo_config
             .active_subdirectories
-            .contains(&dir_name.to_string());
+            .as_ref()
+            .map(|subdirs| subdirs.contains(&dir_name.to_string()))
+            .unwrap_or(false);
         let configured_status = if configured {
             "configured".blue()
         } else {

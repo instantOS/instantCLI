@@ -180,6 +180,7 @@ pub fn remove_dots_dir(repo_path: &Path, dir_name: &str, delete_files: bool) -> 
 ///     description: Option<String>,
 ///     license: Option<String>,  // <-- Add here
 ///     dots_dirs: Vec<String>,
+///     default_active_subdirs: Option<Vec<String>>,
 /// }
 /// let meta = MetaWrite {
 ///     name: inputs.name.clone(),
@@ -187,6 +188,7 @@ pub fn remove_dots_dir(repo_path: &Path, dir_name: &str, delete_files: bool) -> 
 ///     description: inputs.description.clone(),
 ///     license: inputs.license.clone(),  // <-- Include in construction
 ///     dots_dirs: vec!["dots".to_string()],
+///     default_active_subdirs: None,
 /// };
 ///
 /// // 4. In RepoMetaData (for reading):
@@ -197,6 +199,8 @@ pub fn remove_dots_dir(repo_path: &Path, dir_name: &str, delete_files: bool) -> 
 ///     pub license: Option<String>,  // <-- Add here
 ///     #[serde(default = "default_dots_dirs")]
 ///     pub dots_dirs: Vec<String>,
+///     #[serde(default)]
+///     pub default_active_subdirs: Option<Vec<String>>,
 /// }
 /// ```
 struct RepoInputs {
@@ -304,6 +308,7 @@ fn write_instantdots_toml(repo_path: &Path, inputs: &RepoInputs) -> Result<()> {
         description: Option<String>,
         read_only: Option<bool>,
         dots_dirs: Vec<String>,
+        default_active_subdirs: Option<Vec<String>>,
     }
 
     let meta = MetaWrite {
@@ -312,6 +317,7 @@ fn write_instantdots_toml(repo_path: &Path, inputs: &RepoInputs) -> Result<()> {
         description: inputs.description.clone(),
         read_only: if inputs.read_only { Some(true) } else { None },
         dots_dirs: vec![inputs.dots_dir.clone()],
+        default_active_subdirs: None,
     };
 
     let toml = toml::to_string_pretty(&meta).context("serializing instantdots.toml")?;
@@ -684,7 +690,7 @@ pub fn create_local_repo(
         url: repo_path.to_string_lossy().to_string(),
         name: repo_name.clone(),
         branch: None,
-        active_subdirectories: Vec::new(),
+        active_subdirectories: None,
         enabled: true,
         read_only: false,
         metadata: None,

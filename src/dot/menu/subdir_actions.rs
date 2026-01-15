@@ -49,14 +49,18 @@ fn build_subdir_action_menu(
     config: &Config,
 ) -> Vec<SubdirActionItem> {
     let active_subdirs = config.get_active_subdirs(repo_name);
+    let configured_subdirs = config
+        .repos
+        .iter()
+        .find(|r| r.name == repo_name)
+        .and_then(|repo| repo.active_subdirectories.as_ref());
     let is_active = active_subdirs.contains(&subdir_name.to_string());
 
-    // Find current priority position (1-indexed)
-    let current_position = active_subdirs
-        .iter()
-        .position(|s| s == subdir_name)
+    // Find current priority position (1-indexed) only for configured subdirs
+    let current_position = configured_subdirs
+        .and_then(|subdirs| subdirs.iter().position(|s| s == subdir_name))
         .map(|i| i + 1);
-    let total_active = active_subdirs.len();
+    let total_active = configured_subdirs.map(|subdirs| subdirs.len()).unwrap_or(0);
 
     let mut actions = Vec::new();
 
@@ -127,16 +131,17 @@ fn build_subdir_action_menu(
     }
 
     // Delete (only show if more than one subdir exists)
-    let all_subdirs = &config
+    let all_subdirs = config
         .repos
         .iter()
         .find(|r| r.name == repo_name)
-        .map(|r| r.active_subdirectories.len())
+        .and_then(|r| r.active_subdirectories.as_ref())
+        .map(|subdirs| subdirs.len())
         .unwrap_or(0);
 
     // Check if this is the only subdir in the repo's instantdots.toml
     // We approximate this by checking if there are multiple subdirs total
-    if *all_subdirs > 1 || !is_active {
+    if all_subdirs > 1 || !is_active {
         actions.push(SubdirActionItem {
             display: format!(
                 "{} Delete",
@@ -372,8 +377,10 @@ fn handle_delete_subdir(repo_name: &str, subdir_name: &str, config: &Config) -> 
                 Ok(_) => {
                     // Also remove from active_subdirectories in global config
                     let mut config = Config::load(None)?;
-                    if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name) {
-                        repo.active_subdirectories.retain(|s| s != subdir_name);
+                    if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name)
+                        && let Some(active_subdirs) = repo.active_subdirectories.as_mut()
+                    {
+                        active_subdirs.retain(|s| s != subdir_name);
                         config.save(None)?;
                     }
                     FzfWrapper::message(&format!(
@@ -391,8 +398,10 @@ fn handle_delete_subdir(repo_name: &str, subdir_name: &str, config: &Config) -> 
                 Ok(_) => {
                     // Also remove from active_subdirectories in global config
                     let mut config = Config::load(None)?;
-                    if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name) {
-                        repo.active_subdirectories.retain(|s| s != subdir_name);
+                    if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name)
+                        && let Some(active_subdirs) = repo.active_subdirectories.as_mut()
+                    {
+                        active_subdirs.retain(|s| s != subdir_name);
                         config.save(None)?;
                     }
                     FzfWrapper::message(&format!(
@@ -447,6 +456,8 @@ impl FzfSelectable for SubdirMenuItem {
                 } else {
                     String::new()
                 }
+            } else if self.is_active {
+                " [default]".to_string()
             } else {
                 String::new()
             };
@@ -519,6 +530,8 @@ impl FzfSelectable for SubdirMenuItem {
                     Some(NerdFont::ArrowUp),
                     &format!("Priority: P{}{}", p, priority_hint),
                 );
+            } else if self.is_active {
+                builder = builder.line(colors::PEACH, Some(NerdFont::Info), "Default active");
             }
 
             builder = builder.indented_line(
@@ -553,6 +566,11 @@ pub fn handle_manage_subdirs(
         };
 
         let active_subdirs = config.get_active_subdirs(repo_name);
+        let configured_subdirs = config
+            .repos
+            .iter()
+            .find(|r| r.name == repo_name)
+            .and_then(|repo| repo.active_subdirectories.as_ref());
 
         // Build subdir items with priority info
         let mut subdir_items: Vec<SubdirMenuItem> = local_repo
@@ -561,6 +579,9 @@ pub fn handle_manage_subdirs(
             .iter()
             .map(|subdir| {
                 let is_active = active_subdirs.contains(subdir);
+                let is_configured = configured_subdirs
+                    .map(|subdirs| subdirs.contains(subdir))
+                    .unwrap_or(false);
                 let priority = if is_active {
                     active_subdirs
                         .iter()
@@ -574,7 +595,11 @@ pub fn handle_manage_subdirs(
                     is_active,
                     is_orphaned: false,
                     priority,
-                    total_active: active_subdirs.len(),
+                    total_active: if is_configured {
+                        active_subdirs.len()
+                    } else {
+                        0
+                    },
                 }
             })
             .collect();
@@ -760,8 +785,10 @@ fn handle_orphaned_subdir_actions(
     match action {
         OrphanedAction::Disable => {
             let mut config = Config::load(None)?;
-            if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name) {
-                repo.active_subdirectories.retain(|s| s != subdir_name);
+            if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name)
+                && let Some(active_subdirs) = repo.active_subdirectories.as_mut()
+            {
+                active_subdirs.retain(|s| s != subdir_name);
                 config.save(None)?;
                 FzfWrapper::message(&format!("Disabled '{}'. Mismatch resolved.", subdir_name))?;
             }

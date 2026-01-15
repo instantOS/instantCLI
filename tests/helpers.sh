@@ -86,6 +86,7 @@ EOF
 	cat >"${repo_dir}/instantdots.toml" <<EOF
 name = "${repo_name}"
 description = "Sample repository for tests"
+dots_dirs = ["dots"]
 EOF
 
 	(cd "${repo_dir}" && git add . >/dev/null && git commit -qm "Initial commit" && git branch -m main >/dev/null)

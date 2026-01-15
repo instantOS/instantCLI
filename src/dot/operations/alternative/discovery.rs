@@ -149,7 +149,9 @@ pub fn get_destinations(config: &Config) -> Vec<DotfileSource> {
             }
         };
 
-        for subdir in &repo.active_subdirectories {
+        let active_subdirs = repo.active_subdirectories.as_deref().unwrap_or(&[]);
+
+        for subdir in active_subdirs {
             if valid_subdirs.contains(subdir) {
                 // Valid destination - in metadata
                 destinations.push(DotfileSource {

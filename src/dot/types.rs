@@ -13,6 +13,8 @@ pub struct RepoMetaData {
     pub read_only: Option<bool>,
     #[serde(default = "default_dots_dirs")]
     pub dots_dirs: Vec<String>,
+    #[serde(default)]
+    pub default_active_subdirs: Option<Vec<String>>,
     /// Directories that should be treated as atomic units.
     /// If any file in a unit is modified, all files in that unit are treated as modified.
     #[serde(default)]
