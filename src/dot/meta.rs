@@ -85,6 +85,56 @@ pub fn add_dots_dir(repo_path: &Path, new_dir: &str) -> Result<()> {
     Ok(())
 }
 
+/// Remove a dotfile directory from a repository's instantdots.toml
+///
+/// This function:
+/// 1. Reads the current instantdots.toml
+/// 2. Removes the directory name from dots_dirs
+/// 3. Optionally deletes the directory from disk
+/// 4. Writes the updated instantdots.toml
+///
+/// Returns the path to the removed directory (for git operations)
+pub fn remove_dots_dir(repo_path: &Path, dir_name: &str, delete_files: bool) -> Result<PathBuf> {
+    let dir_name = dir_name.trim();
+    if dir_name.is_empty() {
+        anyhow::bail!("Directory name cannot be empty");
+    }
+
+    // Read existing metadata
+    let mut meta = read_meta(repo_path)?;
+
+    // Check if it exists
+    if !meta.dots_dirs.contains(&dir_name.to_string()) {
+        anyhow::bail!(
+            "Dotfile directory '{}' does not exist in this repository",
+            dir_name
+        );
+    }
+
+    // Don't allow removing the last subdir
+    if meta.dots_dirs.len() == 1 {
+        anyhow::bail!(
+            "Cannot remove '{}' - it's the only dotfile directory in this repository",
+            dir_name
+        );
+    }
+
+    let dir_path = repo_path.join(dir_name);
+
+    // Remove from metadata
+    meta.dots_dirs.retain(|d| d != dir_name);
+
+    // Optionally delete the directory
+    if delete_files && dir_path.exists() {
+        fs::remove_dir_all(&dir_path)
+            .with_context(|| format!("deleting directory {}", dir_path.display()))?;
+    }
+
+    // Write back
+    update_meta(repo_path, &meta)?;
+    Ok(dir_path)
+}
+
 /// Input structure for gathering repository metadata from user.
 ///
 /// # Adding New Fields to instantdots.toml

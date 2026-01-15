@@ -17,6 +17,7 @@ enum SubdirAction {
     Toggle,
     BumpPriority,
     LowerPriority,
+    Delete,
     Back,
 }
 
@@ -125,6 +126,33 @@ fn build_subdir_action_menu(
         }
     }
 
+    // Delete (only show if more than one subdir exists)
+    let all_subdirs = &config
+        .repos
+        .iter()
+        .find(|r| r.name == repo_name)
+        .map(|r| r.active_subdirectories.len())
+        .unwrap_or(0);
+
+    // Check if this is the only subdir in the repo's instantdots.toml
+    // We approximate this by checking if there are multiple subdirs total
+    if *all_subdirs > 1 || !is_active {
+        actions.push(SubdirActionItem {
+            display: format!(
+                "{} Delete",
+                format_icon_colored(NerdFont::Trash, colors::RED)
+            ),
+            preview: format!(
+                "Remove '{}' from this repository.\n\n\
+                You'll be asked whether to:\n\
+                • Keep files (just remove from config)\n\
+                • Delete files (remove from disk too)",
+                subdir_name
+            ),
+            action: SubdirAction::Delete,
+        });
+    }
+
     // Back
     actions.push(SubdirActionItem {
         display: format!("{} Back", format_back_icon()),
@@ -229,9 +257,155 @@ fn handle_subdir_actions(
                     }
                 }
             }
+            SubdirAction::Delete => {
+                return handle_delete_subdir(repo_name, subdir_name, &config);
+            }
             SubdirAction::Back => return Ok(()),
         }
     }
+}
+
+/// Delete confirmation choice
+#[derive(Clone)]
+enum DeleteChoice {
+    KeepFiles,
+    DeleteFiles,
+    Cancel,
+}
+
+impl FzfSelectable for DeleteChoice {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            DeleteChoice::KeepFiles => format!(
+                "{} Keep files (remove from config only)",
+                format_icon_colored(NerdFont::File, colors::YELLOW)
+            ),
+            DeleteChoice::DeleteFiles => format!(
+                "{} Delete files from disk",
+                format_icon_colored(NerdFont::Trash, colors::RED)
+            ),
+            DeleteChoice::Cancel => format!("{} Cancel", format_back_icon()),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            DeleteChoice::KeepFiles => "keep".to_string(),
+            DeleteChoice::DeleteFiles => "delete".to_string(),
+            DeleteChoice::Cancel => "cancel".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        use crate::menu::protocol::FzfPreview;
+        match self {
+            DeleteChoice::KeepFiles => FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::File, "Keep Files")
+                    .blank()
+                    .text("Remove this directory from the repository config,")
+                    .text("but keep the files on disk.")
+                    .blank()
+                    .text("The directory will no longer be recognized as a")
+                    .text("dotfile source, but you can add it back later.")
+                    .build_string(),
+            ),
+            DeleteChoice::DeleteFiles => FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Trash, "Delete Files")
+                    .blank()
+                    .line(colors::RED, Some(NerdFont::Warning), "This will permanently delete:")
+                    .bullet("The directory and all its contents")
+                    .bullet("Any dotfiles stored in this location")
+                    .blank()
+                    .text("This action cannot be undone!")
+                    .build_string(),
+            ),
+            DeleteChoice::Cancel => FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::ArrowLeft, "Cancel")
+                    .blank()
+                    .text("Go back without making changes.")
+                    .build_string(),
+            ),
+        }
+    }
+}
+
+/// Handle deleting a subdirectory
+fn handle_delete_subdir(repo_name: &str, subdir_name: &str, config: &Config) -> Result<()> {
+    // Get the local repo path
+    let local_repo = LocalRepo::new(config, repo_name.to_string())?;
+    let repo_path = local_repo.local_path(config)?;
+
+    // Check how many subdirs exist
+    let meta = crate::dot::meta::read_meta(&repo_path)?;
+    if meta.dots_dirs.len() <= 1 {
+        FzfWrapper::message(&format!(
+            "Cannot delete '{}' - it's the only dotfile directory in this repository.",
+            subdir_name
+        ))?;
+        return Ok(());
+    }
+
+    // Show confirmation with options
+    let choices = vec![
+        DeleteChoice::KeepFiles,
+        DeleteChoice::DeleteFiles,
+        DeleteChoice::Cancel,
+    ];
+
+    let result = FzfWrapper::builder()
+        .header(Header::fancy(&format!("Delete '{}'?", subdir_name)))
+        .prompt("How do you want to remove this directory?")
+        .args(fzf_mocha_args())
+        .responsive_layout()
+        .select(choices)?;
+
+    match result {
+        FzfResult::Selected(DeleteChoice::KeepFiles) => {
+            match crate::dot::meta::remove_dots_dir(&repo_path, subdir_name, false) {
+                Ok(_) => {
+                    // Also remove from active_subdirectories in global config
+                    let mut config = Config::load(None)?;
+                    if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name) {
+                        repo.active_subdirectories.retain(|s| s != subdir_name);
+                        config.save(None)?;
+                    }
+                    FzfWrapper::message(&format!(
+                        "Removed '{}' from config. Files kept on disk.",
+                        subdir_name
+                    ))?;
+                }
+                Err(e) => {
+                    FzfWrapper::message(&format!("Error: {}", e))?;
+                }
+            }
+        }
+        FzfResult::Selected(DeleteChoice::DeleteFiles) => {
+            match crate::dot::meta::remove_dots_dir(&repo_path, subdir_name, true) {
+                Ok(_) => {
+                    // Also remove from active_subdirectories in global config
+                    let mut config = Config::load(None)?;
+                    if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name) {
+                        repo.active_subdirectories.retain(|s| s != subdir_name);
+                        config.save(None)?;
+                    }
+                    FzfWrapper::message(&format!(
+                        "Deleted '{}' and all its contents.",
+                        subdir_name
+                    ))?;
+                }
+                Err(e) => {
+                    FzfWrapper::message(&format!("Error: {}", e))?;
+                }
+            }
+        }
+        FzfResult::Selected(DeleteChoice::Cancel) | FzfResult::Cancelled => {}
+        _ => {}
+    }
+
+    Ok(())
 }
 
 #[derive(Clone)]
