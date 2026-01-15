@@ -189,3 +189,12 @@ pub struct DualBootFeasibility {
     /// Reason why dual boot is not feasible (if applicable)
     pub reason: Option<String>,
 }
+
+/// Combined disk information and feasibility analysis
+#[derive(Debug, Clone)]
+pub struct DiskAnalysis {
+    /// The disk information
+    pub disk: DiskInfo,
+    /// Dual boot feasibility for this disk
+    pub feasibility: DualBootFeasibility,
+}

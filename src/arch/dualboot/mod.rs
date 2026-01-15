@@ -13,7 +13,7 @@ pub mod verification;
 
 // Re-exports
 // From detection module
-pub use detection::{check_all_disks_feasibility, detect_disks};
+pub use detection::{analyze_all_disks, detect_disks};
 
 // From display module
 pub use display::display_disks;

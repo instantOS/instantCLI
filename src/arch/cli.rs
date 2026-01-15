@@ -225,7 +225,7 @@ async fn handle_install_command(_debug: bool) -> Result<()> {
 
 /// Handle dual boot info display
 async fn handle_dualboot_info() -> Result<()> {
-    use crate::arch::dualboot::{check_all_disks_feasibility, display_disks};
+    use crate::arch::dualboot::{analyze_all_disks, display_disks};
     use crate::ui::nerd_font::NerdFont;
 
     println!();
@@ -237,13 +237,15 @@ async fn handle_dualboot_info() -> Result<()> {
     println!("  {}", "─".repeat(50).bright_black());
     println!();
 
-    match check_all_disks_feasibility() {
-        Ok((disks, feasibility_results)) => {
+    match analyze_all_disks() {
+        Ok(analyses) => {
             let mut any_feasible = false;
 
             // Show feasibility summary first
             println!("  {}", "Feasibility Summary:".bold());
-            for (disk, feasibility) in &feasibility_results {
+            for analysis in &analyses {
+                let disk = &analysis.disk.device;
+                let feasibility = &analysis.feasibility;
                 if feasibility.feasible {
                     any_feasible = true;
                     // Show different message depending on whether feasibility
@@ -331,12 +333,13 @@ async fn handle_dualboot_info() -> Result<()> {
             println!();
 
             // Show detailed disk information
-            if disks.is_empty() {
+            if analyses.is_empty() {
                 println!(
                     "  {} No disks detected. Are you running as root?",
                     NerdFont::Warning.to_string().yellow()
                 );
             } else {
+                let disks: Vec<_> = analyses.iter().map(|a| &a.disk).collect();
                 display_disks(&disks);
             }
         }

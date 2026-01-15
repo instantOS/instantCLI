@@ -8,7 +8,7 @@ use crate::arch::dualboot::os_detection::detect_os_from_info;
 use crate::arch::dualboot::parsing;
 use crate::arch::dualboot::types::format_size;
 use crate::arch::dualboot::types::{
-    DiskInfo, DualBootFeasibility, MIN_ESP_SIZE, PartitionTableType, ResizeInfo,
+    DiskAnalysis, DiskInfo, MIN_ESP_SIZE, PartitionTableType, ResizeInfo,
 };
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -113,17 +113,18 @@ fn get_largest_free_region(device: &str, disk_size_bytes: Option<u64>) -> Option
 // OS detection functions have been moved to os_detection/ module
 
 /// Check dual boot feasibility for all detected disks
-pub fn check_all_disks_feasibility() -> Result<(Vec<DiskInfo>, Vec<(String, DualBootFeasibility)>)>
-{
+pub fn analyze_all_disks() -> Result<Vec<DiskAnalysis>> {
     let disks = detect_disks()?;
-    let mut results = Vec::new();
 
-    for disk in &disks {
-        let feasibility = feasibility::check_disk_dualboot_feasibility(disk);
-        results.push((disk.device.clone(), feasibility));
-    }
+    let results = disks
+        .into_iter()
+        .map(|disk| {
+            let feasibility = feasibility::check_disk_dualboot_feasibility(&disk);
+            DiskAnalysis { disk, feasibility }
+        })
+        .collect();
 
-    Ok((disks, results))
+    Ok(results)
 }
 
 // parse_partition and is_efi_partition have been moved to parsing/lsblk.rs

@@ -9,7 +9,7 @@ use colored::Colorize;
 use super::{DiskInfo, OSType, PartitionInfo};
 
 /// Display all detected disks with their partitions
-pub fn display_disks(disks: &[DiskInfo]) {
+pub fn display_disks(disks: &[&DiskInfo]) {
     if disks.is_empty() {
         println!(
             "  {} {}",
