@@ -178,6 +178,16 @@ impl LocalRepo {
             .collect()
     }
 
+    /// Check if this is an external repo (metadata from config, not instantdots.toml)
+    pub fn is_external(&self, config: &Config) -> bool {
+        config
+            .repos
+            .iter()
+            .find(|r| r.name == self.name)
+            .map(|r| r.metadata.is_some())
+            .unwrap_or(false)
+    }
+
     /// Convert a target path (in home directory) to source path (in repo)
 
     #[allow(dead_code)]

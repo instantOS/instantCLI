@@ -222,12 +222,22 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
 
     let mut builder = PreviewBuilder::new()
         .title(colors::SKY, repo_name)
-        .blank()
-        .line(
-            colors::TEXT,
-            Some(NerdFont::Link),
-            &format!("URL: {}", repo_config.url),
+        .blank();
+
+    // Show external repo status if applicable
+    if repo_config.metadata.is_some() {
+        builder = builder.line(
+            colors::YELLOW,
+            Some(NerdFont::Info),
+            "External (Yadm/Stow compatible - metadata in config)",
         );
+    }
+
+    builder = builder.line(
+        colors::TEXT,
+        Some(NerdFont::Link),
+        &format!("URL: {}", repo_config.url),
+    );
 
     // Branch
     if let Some(branch) = &repo_config.branch {

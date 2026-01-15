@@ -19,7 +19,7 @@ use repo_actions::{build_repo_preview, handle_repo_actions};
 /// Menu entry for dotfile main menu
 #[derive(Debug, Clone)]
 pub enum DotMenuEntry {
-    Repo(String),
+    Repo(String, bool), // name, is_external
     AddRepo,
     AlternateFiles,
     CloseMenu,
@@ -28,11 +28,17 @@ pub enum DotMenuEntry {
 impl FzfSelectable for DotMenuEntry {
     fn fzf_display_text(&self) -> String {
         match self {
-            DotMenuEntry::Repo(name) => {
+            DotMenuEntry::Repo(name, is_external) => {
+                let badge = if *is_external {
+                    format!(" \x1b[33m[external]\x1b[0m")
+                } else {
+                    String::new()
+                };
                 format!(
-                    "{} {}",
+                    "{} {}{}",
                     format_icon_colored(NerdFont::Folder, colors::MAUVE),
-                    name
+                    name,
+                    badge
                 )
             }
             DotMenuEntry::AddRepo => {
@@ -53,7 +59,7 @@ impl FzfSelectable for DotMenuEntry {
 
     fn fzf_key(&self) -> String {
         match self {
-            DotMenuEntry::Repo(name) => name.clone(),
+            DotMenuEntry::Repo(name, _) => name.clone(),
             DotMenuEntry::AddRepo => "!__add_repo__".to_string(),
             DotMenuEntry::AlternateFiles => "!__alternate_files__".to_string(),
             DotMenuEntry::CloseMenu => "!__close_menu__".to_string(),
@@ -64,7 +70,7 @@ impl FzfSelectable for DotMenuEntry {
         use crate::menu::protocol::FzfPreview;
 
         match self {
-            DotMenuEntry::Repo(_) => FzfPreview::Text("Repository information".to_string()),
+            DotMenuEntry::Repo(_, _) => FzfPreview::Text("Repository information".to_string()),
             DotMenuEntry::AddRepo => PreviewBuilder::new()
                 .header(NerdFont::Plus, "Add Repository")
                 .text("Clone a new dotfile repository")
@@ -119,7 +125,7 @@ fn select_dot_menu_entry(config: &Config, db: &Database) -> Result<Option<DotMen
     let mut entries: Vec<DotMenuEntry> = config
         .repos
         .iter()
-        .map(|r| DotMenuEntry::Repo(r.name.clone()))
+        .map(|r| DotMenuEntry::Repo(r.name.clone(), r.metadata.is_some()))
         .collect();
 
     entries.push(DotMenuEntry::AddRepo);
@@ -131,7 +137,7 @@ fn select_dot_menu_entry(config: &Config, db: &Database) -> Result<Option<DotMen
         .into_iter()
         .map(|entry| {
             let preview = match &entry {
-                DotMenuEntry::Repo(name) => build_repo_preview(name, config, db),
+                DotMenuEntry::Repo(name, _) => build_repo_preview(name, config, db),
                 _ => match entry.fzf_preview() {
                     crate::menu::protocol::FzfPreview::Text(s) => s,
                     crate::menu::protocol::FzfPreview::Command(s) => s,
@@ -170,7 +176,7 @@ pub fn dot_menu(debug: bool) -> Result<()> {
         };
 
         match entry {
-            DotMenuEntry::Repo(repo_name) => {
+            DotMenuEntry::Repo(repo_name, _) => {
                 handle_repo_actions(&repo_name, &config, &db, debug)?;
             }
             DotMenuEntry::AddRepo => {

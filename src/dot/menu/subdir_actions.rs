@@ -130,7 +130,7 @@ fn build_subdir_action_menu(
         }
     }
 
-    // Delete (only show if more than one subdir exists)
+    // Delete (only show if more than one subdir exists AND not an external repo)
     let all_subdirs = config
         .repos
         .iter()
@@ -139,9 +139,17 @@ fn build_subdir_action_menu(
         .map(|subdirs| subdirs.len())
         .unwrap_or(0);
 
+    let is_external = config
+        .repos
+        .iter()
+        .find(|r| r.name == repo_name)
+        .map(|r| r.metadata.is_some())
+        .unwrap_or(false);
+
     // Check if this is the only subdir in the repo's instantdots.toml
     // We approximate this by checking if there are multiple subdirs total
-    if all_subdirs > 1 || !is_active {
+    // Skip for external repos (they have a fixed structure)
+    if (all_subdirs > 1 || !is_active) && !is_external {
         actions.push(SubdirActionItem {
             display: format!(
                 "{} Delete",
@@ -346,6 +354,15 @@ fn handle_delete_subdir(repo_name: &str, subdir_name: &str, config: &Config) -> 
     // Get the local repo path
     let local_repo = LocalRepo::new(config, repo_name.to_string())?;
     let repo_path = local_repo.local_path(config)?;
+
+    // External repos have a fixed structure and cannot have subdirectories removed
+    if local_repo.is_external(config) {
+        FzfWrapper::message(&format!(
+            "External repositories use a fixed structure ('.') and cannot have subdirectories added or removed.\n\n\
+            To manage subdirectories, convert to a native instantCLI repo by adding an instantdots.toml file."
+        ))?;
+        return Ok(());
+    }
 
     // Check how many subdirs exist
     let meta = crate::dot::meta::read_meta(&repo_path)?;
@@ -604,11 +621,12 @@ pub fn handle_manage_subdirs(
             })
             .collect();
 
-        // Add "Add Dotfile Dir" option (only for non-read-only repos)
+        // Add "Add Dotfile Dir" option (only for non-read-only, non-external repos)
         let repo_config = config.repos.iter().find(|r| r.name == repo_name);
         let is_read_only = repo_config.map(|r| r.read_only).unwrap_or(false);
+        let is_external = local_repo.is_external(&config);
 
-        if !is_read_only {
+        if !is_read_only && !is_external {
             subdir_items.push(SubdirMenuItem {
                 subdir: "__add_new__".to_string(),
                 is_active: false,
