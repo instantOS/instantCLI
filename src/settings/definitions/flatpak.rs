@@ -30,12 +30,12 @@ impl Setting for InstallFlatpakApps {
     }
 
     fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
-        run_flatpak_installer_action(_ctx)
+        run_flatpak_installer()
     }
 }
 
-/// Run the interactive Flatpak installer as a settings action
-fn run_flatpak_installer_action(_ctx: &mut SettingsContext) -> Result<()> {
+/// Run the interactive Flatpak installer
+fn run_flatpak_installer() -> Result<()> {
     println!("Starting Flatpak app installer...");
 
     // Check if flatpak is available

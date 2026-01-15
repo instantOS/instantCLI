@@ -536,12 +536,7 @@ impl DoctorCheck for YayCacheCheck {
         }
 
         // Check if yay is installed
-        let yay_installed = TokioCommand::new("which")
-            .arg("yay")
-            .output()
-            .await
-            .map(|output| output.status.success())
-            .unwrap_or(false);
+        let yay_installed = which::which("yay").is_ok();
 
         if !yay_installed {
             return CheckStatus::Skipped("Yay is not installed".to_string());

@@ -599,13 +599,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     use crate::menu_utils::FzfResult;
 
     // Check if xdg-mime is available
-    if Command::new("which")
-        .arg("xdg-mime")
-        .output()
-        .ok()
-        .and_then(|o| if o.status.success() { Some(()) } else { None })
-        .is_none()
-    {
+    if which::which("xdg-mime").is_err() {
         emit(
             Level::Error,
             "settings.defaultapps.no_xdg_mime",

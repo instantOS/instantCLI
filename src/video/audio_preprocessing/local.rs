@@ -22,24 +22,6 @@ impl LocalPreprocessor {
         Self
     }
 
-    /// Check if uvx is available
-    fn check_uvx() -> bool {
-        Command::new("which")
-            .arg("uvx")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    }
-
-    /// Check if ffmpeg is available (for audio extraction)
-    fn check_ffmpeg() -> bool {
-        Command::new("which")
-            .arg("ffmpeg")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-    }
-
     /// Extract audio to WAV format for DeepFilterNet processing
     fn extract_audio_to_wav(input: &Path, output: &Path) -> Result<()> {
         let status = Command::new("ffmpeg")
@@ -253,6 +235,6 @@ impl AudioPreprocessor for LocalPreprocessor {
     }
 
     fn is_available(&self) -> bool {
-        Self::check_uvx() && Self::check_ffmpeg()
+        which::which("uvx").is_ok() && which::which("ffmpeg").is_ok()
     }
 }

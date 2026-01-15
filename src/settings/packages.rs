@@ -88,7 +88,7 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
     } else {
         "pacman -Sii {2}".to_string()
     };
-    
+
     // Re-detect for later use (consumed above)
     let aur_helper = detect_aur_helper();
 

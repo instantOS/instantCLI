@@ -1,15 +1,10 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-/// Check if swww is installed
-pub fn is_swww_installed() -> bool {
-    which::which("swww").is_ok()
-}
-
 /// Apply wallpaper on Hyprland using swww
 pub fn apply_wallpaper(path: &str) -> Result<()> {
     // Check if swww is installed
-    if !is_swww_installed() {
+    if which::which("swww").is_err() {
         anyhow::bail!(
             "swww is not installed. Install it with: pacman -S swww\n\
              swww is required for wallpaper support on Hyprland."
