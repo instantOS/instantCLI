@@ -210,138 +210,9 @@ fn run_unified_package_installer(debug: bool) -> Result<()> {
     Ok(())
 }
 
-/// Detect available AUR helper (yay, paru, etc.)
-fn detect_aur_helper() -> Option<String> {
-    const AUR_HELPERS: &[&str] = &["yay", "paru", "pikaur", "trizen"];
-
-    AUR_HELPERS
-        .iter()
-        .find(|&&helper| which::which(helper).is_ok())
-        .map(|&s| s.to_string())
-}
-
-/// Check if pacman is available on the system
-fn is_pacman_available() -> bool {
-    which::which("pacman").is_ok()
-}
-
-/// Install pacman packages
-fn install_pacman_packages(packages: &[String], debug: bool) -> Result<()> {
-    if packages.is_empty() {
-        return Ok(());
-    }
-
-    if debug {
-        println!("Installing pacman packages: {}", packages.join(" "));
-    }
-
-    println!("Installing repository packages...");
-
-    let status = Command::new("sudo")
-        .arg("pacman")
-        .arg("-S")
-        .arg("--noconfirm")
-        .args(packages)
-        .status()
-        .context("Failed to execute pacman")?;
-
-    if !status.success() {
-        anyhow::bail!("Pacman package installation failed");
-    }
-
-    Ok(())
-}
-
-/// Install AUR packages using the available AUR helper
-fn install_aur_packages(packages: &[String], aur_helper: &str, debug: bool) -> Result<()> {
-    if packages.is_empty() {
-        return Ok(());
-    }
-
-    if debug {
-        println!(
-            "Installing AUR packages with {}: {}",
-            aur_helper,
-            packages.join(" ")
-        );
-    }
-
-    println!("Installing AUR packages...");
-
-    let status = Command::new(aur_helper)
-        .arg("-S")
-        .arg("--noconfirm")
-        .args(packages)
-        .status()
-        .context(format!("Failed to execute {}", aur_helper))?;
-
-    if !status.success() {
-        anyhow::bail!("AUR package installation failed");
-    }
-
-    Ok(())
-}
-
 // ============================================================================
 // Debian/Ubuntu Package Installer
 // ============================================================================
-
-/// Check if apt is available on the system
-fn is_apt_available() -> bool {
-    which::which("apt").is_ok()
-}
-
-/// Check if running on Termux
-fn is_termux() -> bool {
-    std::env::var("TERMUX_VERSION").is_ok()
-}
-
-/// Check if pkg (Termux package manager) is available
-fn is_pkg_available() -> bool {
-    which::which("pkg").is_ok()
-}
-
-/// Install apt/pkg packages
-fn install_apt_packages(packages: &[String], debug: bool) -> Result<()> {
-    if packages.is_empty() {
-        return Ok(());
-    }
-
-    if debug {
-        println!("Installing apt packages: {}", packages.join(" "));
-    }
-
-    let is_termux = is_termux();
-    println!(
-        "Installing {}packages...",
-        if is_termux { "" } else { "repository " }
-    );
-
-    let status = if is_termux {
-        // Termux: no sudo needed, use pkg
-        Command::new("pkg")
-            .arg("install")
-            .arg("-y")
-            .args(packages)
-            .status()
-            .context("Failed to execute pkg")?
-    } else {
-        // Debian/Ubuntu: use sudo apt
-        Command::new("sudo")
-            .arg("apt")
-            .arg("install")
-            .arg("-y")
-            .args(packages)
-            .status()
-            .context("Failed to execute apt")?
-    };
-
-    if !status.success() {
-        anyhow::bail!("Package installation failed");
-    }
-
-    Ok(())
-}
 
 /// Run the unified Debian/Ubuntu package installer
 fn run_debian_package_installer(debug: bool) -> Result<()> {
@@ -349,17 +220,18 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
         println!("Starting Debian package installer...");
     }
 
-    let termux = is_termux();
-    let has_apt = is_apt_available();
-    let has_pkg = is_pkg_available();
+    let os = OperatingSystem::detect();
+    let is_termux = matches!(os, OperatingSystem::Termux);
 
     // Validate package manager availability
-    if termux {
-        if !has_pkg {
-            anyhow::bail!("pkg is not available on this Termux system");
-        }
-    } else if !has_apt {
-        anyhow::bail!("apt is not available on this system");
+    let manager = if is_termux {
+        PackageManager::Pkg
+    } else {
+        PackageManager::Apt
+    };
+
+    if !manager.is_available() {
+        anyhow::bail!("{} is not available on this system", manager);
     }
 
     // Construct the list command - only package names, descriptions in preview
@@ -371,7 +243,7 @@ fn run_debian_package_installer(debug: bool) -> Result<()> {
     let preview_cmd = "apt show {1} 2>/dev/null";
 
     // FZF prompt customization
-    let prompt = if termux {
+    let prompt = if is_termux {
         "Select Termux packages to install"
     } else {
         "Select packages to install"
