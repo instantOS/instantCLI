@@ -3,11 +3,9 @@
 //! Interactive package browser and uninstaller for installed system packages.
 
 use anyhow::{Context, Result};
-use std::process::Command;
 
 use crate::common::distro::OperatingSystem;
-use crate::common::package::PackageManager;
-use crate::common::package::uninstall_packages;
+use crate::common::package::{PackageManager, uninstall_packages};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
 
 /// Run the installed packages manager
@@ -115,7 +113,13 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
                 return Ok(());
             }
 
-            uninstall_apt_packages(&packages, debug)?;
+            let manager = if is_termux() {
+                PackageManager::Pkg
+            } else {
+                PackageManager::Apt
+            };
+            let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+            uninstall_packages(manager, &refs)?;
 
             println!("✓ Package uninstallation completed successfully!");
         }
@@ -143,7 +147,12 @@ fn run_debian_package_manager(debug: bool) -> Result<()> {
                 return Ok(());
             }
 
-            uninstall_apt_packages(&[package_name], debug)?;
+            let manager = if is_termux() {
+                PackageManager::Pkg
+            } else {
+                PackageManager::Apt
+            };
+            uninstall_packages(manager, &[&package_name])?;
 
             println!("✓ Package uninstallation completed successfully!");
         }
@@ -171,50 +180,6 @@ fn is_termux() -> bool {
 /// Check if pkg (Termux package manager) is available
 fn is_pkg_available() -> bool {
     which::which("pkg").is_ok()
-}
-
-/// Uninstall apt/pkg packages
-fn uninstall_apt_packages(packages: &[String], debug: bool) -> Result<()> {
-    if packages.is_empty() {
-        return Ok(());
-    }
-
-    if debug {
-        println!("Uninstalling apt packages: {}", packages.join(" "));
-    }
-
-    let is_termux = is_termux();
-
-    println!(
-        "Uninstalling {}package{}...",
-        if is_termux { "" } else { "repository " },
-        if packages.len() == 1 { "" } else { "s" }
-    );
-
-    let status = if is_termux {
-        // Termux: no sudo needed, use pkg
-        Command::new("pkg")
-            .arg("uninstall")
-            .arg("-y")
-            .args(packages)
-            .status()
-            .context("Failed to execute pkg")?
-    } else {
-        // Debian/Ubuntu: use sudo apt
-        Command::new("sudo")
-            .arg("apt")
-            .arg("remove")
-            .arg("-y")
-            .args(packages)
-            .status()
-            .context("Failed to execute apt")?
-    };
-
-    if !status.success() {
-        anyhow::bail!("Package uninstallation failed");
-    }
-
-    Ok(())
 }
 
 // ============================================================================
@@ -293,7 +258,8 @@ fn run_arch_package_manager(debug: bool) -> Result<()> {
                 return Ok(());
             }
 
-            uninstall_pacman_packages(&packages, debug)?;
+            let refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
+            uninstall_packages(PackageManager::Pacman, &refs)?;
 
             println!("✓ Package uninstallation completed successfully!");
         }
@@ -321,7 +287,7 @@ fn run_arch_package_manager(debug: bool) -> Result<()> {
                 return Ok(());
             }
 
-            uninstall_pacman_packages(&[package_name], debug)?;
+            uninstall_packages(PackageManager::Pacman, &[&package_name])?;
 
             println!("✓ Package uninstallation completed successfully!");
         }
@@ -349,66 +315,4 @@ fn detect_aur_helper() -> Option<String> {
 /// Check if pacman is available on the system
 fn is_pacman_available() -> bool {
     which::which("pacman").is_ok()
-}
-
-/// Uninstall pacman packages
-fn uninstall_pacman_packages(packages: &[String], debug: bool) -> Result<()> {
-    if packages.is_empty() {
-        return Ok(());
-    }
-
-    if debug {
-        println!("Uninstalling pacman packages: {}", packages.join(" "));
-    }
-
-    println!(
-        "Uninstalling package{}...",
-        if packages.len() == 1 { "" } else { "s" }
-    );
-
-    let status = Command::new("sudo")
-        .arg("pacman")
-        .arg("-R")
-        .arg("--noconfirm")
-        .args(packages)
-        .status()
-        .context("Failed to execute pacman")?;
-
-    if !status.success() {
-        anyhow::bail!("Pacman package uninstallation failed");
-    }
-
-    Ok(())
-}
-
-// ============================================================================
-// Package Manager Abstraction Support (for future use)
-// ============================================================================
-
-/// Uninstall packages using the package manager abstraction
-///
-/// This function is provided for consistency with the rest of the codebase
-/// but the individual implementations above are more efficient as they
-/// avoid converting between String and &str.
-pub fn uninstall_with_manager(
-    manager: PackageManager,
-    packages: Vec<String>,
-    debug: bool,
-) -> Result<()> {
-    if packages.is_empty() {
-        return Ok(());
-    }
-
-    if debug {
-        println!(
-            "Uninstalling packages with {:?}: {}",
-            manager,
-            packages.join(" ")
-        );
-    }
-
-    // Convert Vec<String> to Vec<&str>
-    let package_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
-
-    uninstall_packages(manager, &package_refs)
 }
