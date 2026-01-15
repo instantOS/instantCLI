@@ -3,14 +3,16 @@ use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 use anyhow::Result;
 
+type ContextPredicate = dyn Fn(&InstallContext) -> bool + Send + Sync;
+
 pub struct BooleanQuestion {
     pub id: QuestionId,
     pub prompt: String,
     pub icon: NerdFont,
     pub is_optional: bool,
     pub default_yes: bool,
-    pub dynamic_default: Option<Box<dyn Fn(&InstallContext) -> bool + Send + Sync>>,
-    pub should_ask_predicate: Option<Box<dyn Fn(&InstallContext) -> bool + Send + Sync>>,
+    pub dynamic_default: Option<Box<ContextPredicate>>,
+    pub should_ask_predicate: Option<Box<ContextPredicate>>,
 }
 
 impl BooleanQuestion {
