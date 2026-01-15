@@ -15,7 +15,7 @@ use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
 use crate::dot::utils::resolve_dotfile_path;
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
@@ -387,7 +387,7 @@ fn select_flow(config: &Config, path: &Path, display: &str, from_menu: bool) -> 
     }
 
     if sources.len() == 1 {
-        return show_single_source(config, display, &sources[0]);
+        return show_single_source(config, path, display, &sources[0], from_menu);
     }
 
     let overrides = OverrideConfig::load()?;
@@ -781,7 +781,127 @@ fn list_file(path: &Path, display: &str, sources: &[DotfileSource]) -> Result<()
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn show_single_source(config: &Config, display: &str, source: &DotfileSource) -> Result<()> {
+fn show_single_source(
+    config: &Config,
+    path: &Path,
+    display: &str,
+    source: &DotfileSource,
+    from_menu: bool,
+) -> Result<()> {
+    // Check if there's an unnecessary override (only 1 source but override is set)
+    let overrides = OverrideConfig::load()?;
+    let has_override = overrides.get_override(path).is_some();
+
+    if has_override {
+        // Offer to remove the unnecessary override
+        if from_menu {
+            #[derive(Clone)]
+            enum SingleSourceChoice {
+                RemoveOverride,
+                Back,
+            }
+
+            impl FzfSelectable for SingleSourceChoice {
+                fn fzf_display_text(&self) -> String {
+                    match self {
+                        SingleSourceChoice::RemoveOverride => format!(
+                            "{} Remove unnecessary override",
+                            crate::ui::catppuccin::format_icon_colored(
+                                NerdFont::Trash,
+                                crate::ui::catppuccin::colors::YELLOW
+                            )
+                        ),
+                        SingleSourceChoice::Back => {
+                            format!("{} Back", crate::ui::catppuccin::format_back_icon())
+                        }
+                    }
+                }
+
+                fn fzf_key(&self) -> String {
+                    match self {
+                        SingleSourceChoice::RemoveOverride => "remove".to_string(),
+                        SingleSourceChoice::Back => "back".to_string(),
+                    }
+                }
+
+                fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+                    use crate::ui::preview::PreviewBuilder;
+                    match self {
+                        SingleSourceChoice::RemoveOverride => {
+                            crate::menu::protocol::FzfPreview::Text(
+                                PreviewBuilder::new()
+                                    .header(NerdFont::Warning, "Unnecessary Override")
+                                    .blank()
+                                    .text("This file has an override set, but only one source exists.")
+                                    .blank()
+                                    .text("The override is not needed because there are no")
+                                    .text("alternatives to choose from.")
+                                    .blank()
+                                    .text("Removing it will clean up the configuration.")
+                                    .build_string(),
+                            )
+                        }
+                        SingleSourceChoice::Back => crate::menu::protocol::FzfPreview::Text(
+                            PreviewBuilder::new()
+                                .header(NerdFont::ArrowLeft, "Back")
+                                .blank()
+                                .text("Return to previous menu.")
+                                .build_string(),
+                        ),
+                    }
+                }
+            }
+
+            let choices = vec![SingleSourceChoice::RemoveOverride, SingleSourceChoice::Back];
+
+            match FzfWrapper::builder()
+                .header(Header::fancy(&format!(
+                    "{} (only 1 source, has override)",
+                    display
+                )))
+                .prompt("This file has an unnecessary override: ")
+                .args(fzf_mocha_args())
+                .responsive_layout()
+                .select(choices)?
+            {
+                FzfResult::Selected(SingleSourceChoice::RemoveOverride) => {
+                    let mut overrides = OverrideConfig::load()?;
+                    overrides.remove_override(path)?;
+                    FzfWrapper::message(&format!(
+                        "Removed override for '{}'\n\n\
+                        The file is still tracked at {} / {}",
+                        display, source.repo_name, source.subdir_name
+                    ))?;
+                }
+                _ => {}
+            }
+            return Ok(());
+        } else {
+            // Non-menu context - show warning via emit
+            emit(
+                Level::Warn,
+                "dot.alternative.unnecessary_override",
+                &format!(
+                    "{} {} has an override but only 1 source exists",
+                    char::from(NerdFont::Warning),
+                    display.yellow()
+                ),
+                None,
+            );
+            emit(
+                Level::Info,
+                "dot.alternative.remove_hint",
+                &format!(
+                    "   Use '{}' to remove the unnecessary override",
+                    format!("ins dot alternative {}", display).cyan()
+                ),
+                None,
+            );
+            return Ok(());
+        }
+    }
+
+    // Normal case: single source, no override
     emit(
         Level::Info,
         "dot.alternative.single_source",

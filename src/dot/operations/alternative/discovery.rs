@@ -16,6 +16,8 @@ pub struct DiscoveredDotfile {
     pub target_path: PathBuf,
     pub display_path: String,
     pub sources: Vec<DotfileSource>,
+    /// Whether this file has an override set (even if only 1 source exists)
+    pub has_override: bool,
 }
 
 /// Filter for dotfile discovery.
@@ -105,10 +107,14 @@ pub fn discover_dotfiles(
                 }
             }
         })
-        .map(|(target_path, sources)| DiscoveredDotfile {
-            display_path: to_display_path(&target_path),
-            target_path,
-            sources,
+        .map(|(target_path, sources)| {
+            let has_override = overridden_paths.contains(&target_path);
+            DiscoveredDotfile {
+                display_path: to_display_path(&target_path),
+                has_override,
+                target_path,
+                sources,
+            }
         })
         .collect();
 

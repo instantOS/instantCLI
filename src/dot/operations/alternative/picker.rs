@@ -279,11 +279,23 @@ impl FzfSelectable for MenuItem {
 
 impl FzfSelectable for DiscoveredDotfile {
     fn fzf_display_text(&self) -> String {
+        // Show warning indicator if there's an override but only 1 source
+        let warning = if self.has_override && self.sources.len() == 1 {
+            format!(
+                " {}",
+                format_icon_colored(NerdFont::Warning, colors::YELLOW)
+            )
+        } else {
+            String::new()
+        };
+
         format!(
-            "{} {} ({} sources)",
+            "{} {} ({} source{}){}",
             format_icon_colored(NerdFont::File, colors::SKY),
             self.display_path,
-            self.sources.len()
+            self.sources.len(),
+            if self.sources.len() == 1 { "" } else { "s" },
+            warning
         )
     }
 
@@ -294,8 +306,23 @@ impl FzfSelectable for DiscoveredDotfile {
     fn fzf_preview(&self) -> FzfPreview {
         let mut b = PreviewBuilder::new()
             .header(NerdFont::File, &self.display_path)
-            .blank()
-            .line(colors::MAUVE, Some(NerdFont::List), "Available sources:");
+            .blank();
+
+        // Show warning if there's an override but only 1 source
+        if self.has_override && self.sources.len() == 1 {
+            b = b
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Warning),
+                    "Unnecessary override detected",
+                )
+                .blank()
+                .text("This file has an override set, but only one source exists.")
+                .text("The override is not needed - select to remove it.")
+                .blank();
+        }
+
+        b = b.line(colors::MAUVE, Some(NerdFont::List), "Available sources:");
 
         for (i, source) in self.sources.iter().enumerate() {
             b = b.indented_line(
