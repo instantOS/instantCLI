@@ -36,7 +36,7 @@ pub use apply::add_to_destination;
 pub fn pick_destination_and_add(config: &Config, path: &Path) -> Result<bool> {
     let display = to_display_path(path);
     let existing = find_all_sources(config, path)?;
-    create_flow(config, path, &display, &existing).map(|()| true)
+    create_flow(config, path, &display, &existing)
 }
 
 /// CLI action for the alternative command.
@@ -122,6 +122,9 @@ fn browse_directory(config: &Config, dir: &Path, display: &str, create_mode: boo
         return offer_create_alternative(config, dir, display);
     }
 
+    // Track display path to preselect after adding a file
+    let mut preselect_query: Option<String> = None;
+
     loop {
         // Reload config and rediscover dotfiles each iteration to pick up newly tracked files
         let config = Config::load(None)?;
@@ -156,23 +159,33 @@ fn browse_directory(config: &Config, dir: &Path, display: &str, create_mode: boo
         // Add dotfiles after the action items
         menu.extend(dotfiles.into_iter().map(BrowseMenuItem::Dotfile));
 
-        let selection = FzfWrapper::builder()
+        // Build FZF with optional preselection query
+        let mut builder = FzfWrapper::builder()
             .prompt(format!("Select dotfile in {}: ", display))
             .args(fzf_mocha_args())
-            .responsive_layout()
-            .select(menu)?;
+            .responsive_layout();
+
+        if let Some(query) = preselect_query.take() {
+            builder = builder.query(query);
+        }
+
+        let selection = builder.select(menu)?;
 
         match selection {
             FzfResult::Selected(BrowseMenuItem::Dotfile(selected)) => {
                 if create_mode {
                     let sources = find_all_sources(&config, &selected.target_path)?;
-                    create_flow(
+                    let file_display = selected.display_path.clone();
+                    if create_flow(
                         &config,
                         &selected.target_path,
                         &selected.display_path,
                         &sources,
-                    )?;
-                    // Loop back to show updated menu with newly tracked file
+                    )? {
+                        // File was added - preselect it in the menu
+                        preselect_query = Some(file_display);
+                    }
+                    // Loop back to show updated menu
                     continue;
                 } else {
                     return select_flow(
@@ -187,8 +200,10 @@ fn browse_directory(config: &Config, dir: &Path, display: &str, create_mode: boo
                 if let Some(path) = pick_new_file_to_track()? {
                     let display_path = to_display_path(&path);
                     let sources = find_all_sources(&config, &path)?;
-                    create_flow(&config, &path, &display_path, &sources)?;
-                    // Loop back to show updated menu with newly tracked file
+                    if create_flow(&config, &path, &display_path, &sources)? {
+                        // File was added - preselect it in the menu
+                        preselect_query = Some(display_path);
+                    }
                 }
                 continue;
             }
@@ -347,7 +362,8 @@ fn handle_file(config: &Config, path: &Path, display: &str, action: Action) -> R
         }
         Action::Create => {
             let sources = find_all_sources(config, path)?;
-            create_flow(config, path, display, &sources)
+            create_flow(config, path, display, &sources)?;
+            Ok(())
         }
         Action::Select => select_flow(config, path, display, false),
     }
@@ -445,12 +461,13 @@ fn select_flow(config: &Config, path: &Path, display: &str, from_menu: bool) -> 
     }
 }
 
+/// Run the destination selection flow. Returns true if a file was successfully added.
 fn create_flow(
     _config: &Config,
     path: &Path,
     display: &str,
     existing: &[DotfileSource],
-) -> Result<()> {
+) -> Result<bool> {
     use std::collections::HashSet;
 
     loop {
@@ -498,31 +515,33 @@ fn create_flow(
                     // File already exists - loop back to show menu again
                     continue;
                 }
-                return Ok(());
+                // File was successfully added
+                return Ok(true);
             }
             FzfResult::Selected(CreateMenuItem::AddSubdir { repo_name }) => {
                 if handle_add_subdir(&config, &repo_name)? {
                     continue; // Loop back to show updated menu
                 }
-                return Ok(());
+                return Ok(false);
             }
             FzfResult::Selected(CreateMenuItem::CloneRepo) => {
                 if handle_clone_repo()? {
                     continue; // Loop back to show updated menu
                 }
-                return Ok(());
+                return Ok(false);
             }
             FzfResult::Selected(CreateMenuItem::Cancel) | FzfResult::Cancelled => {
                 emit_cancelled();
-                return Ok(());
+                return Ok(false);
             }
             FzfResult::Error(e) => return Err(anyhow::anyhow!("Selection error: {}", e)),
-            _ => return Ok(()),
+            _ => return Ok(false),
         }
     }
 }
 
-/// Handle selecting a destination. Returns true if file already exists (should loop back to menu).
+/// Handle selecting a destination. Returns true if should continue loop (file already exists),
+/// false if file was successfully added (should exit loop).
 fn handle_destination_selected(
     config: &Config,
     path: &Path,
@@ -536,7 +555,7 @@ fn handle_destination_selected(
             Use the alternative selection menu to switch sources.",
             display, item.source.repo_name, item.source.subdir_name
         ))?;
-        return Ok(true);
+        return Ok(true); // Continue loop
     }
 
     let db = Database::new(config.database_path().to_path_buf())?;
@@ -549,10 +568,11 @@ fn handle_destination_selected(
         item.source.subdir_name.clone(),
     )?;
 
-    Ok(false)
+    Ok(false) // Exit loop - file was added
 }
 
-/// Handle adding a new subdir to a repo. Returns true if successful (should refresh menu).
+/// Handle adding a new subdir to a repo. Returns true if should continue loop (subdir created),
+/// false if cancelled (should exit loop).
 fn handle_add_subdir(config: &Config, repo_name: &str) -> Result<bool> {
     use crate::dot::localrepo::LocalRepo;
 
@@ -609,7 +629,8 @@ fn handle_add_subdir(config: &Config, repo_name: &str) -> Result<bool> {
     }
 }
 
-/// Handle cloning a new repo. Returns true if successful (should refresh menu).
+/// Handle cloning a new repo. Returns true if should continue loop (repo cloned),
+/// false if cancelled (should exit loop).
 fn handle_clone_repo() -> Result<bool> {
     // Delegate to the existing add_repo menu flow
     let config = Config::load(None)?;
