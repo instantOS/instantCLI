@@ -93,13 +93,6 @@ impl PackageManager {
         }
     }
 
-    /// Get the native package manager for the current system (convenience method).
-    ///
-    /// This is a shorthand for `OperatingSystem::detect().native_package_manager()`.
-    pub fn native_for_current_os() -> Option<Self> {
-        OperatingSystem::detect().native_package_manager()
-    }
-
     /// Get the install command prefix for this package manager.
     ///
     /// Returns the command and base arguments used to install packages.

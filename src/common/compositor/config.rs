@@ -81,11 +81,6 @@ impl WmConfigManager {
         }
     }
 
-    /// Get the window manager type.
-    pub fn wm(&self) -> WindowManager {
-        self.wm
-    }
-
     /// Get the path to the shared config file.
     pub fn config_path(&self) -> &PathBuf {
         &self.config_path
