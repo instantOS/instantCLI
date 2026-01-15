@@ -195,7 +195,7 @@ This helps keep the repository in sync with upstream.",
             format_icon_colored(NerdFont::Trash, colors::RED)
         ),
         preview: format!(
-            "Remove '{}' from your configuration.\n\nThis will remove the repository from your config. Use --keep-files when removing to preserve local files.",
+            "Remove '{}' from your configuration.\n\nYou'll be asked whether to:\n• Keep files (just remove from config)\n• Delete files (remove from disk too)",
             repo_name
         ),
         action: RepoAction::Remove,

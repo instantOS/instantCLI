@@ -110,13 +110,17 @@ fn browse_directory(config: &Config, dir: &Path, display: &str, create_mode: boo
     let dotfiles = discover_dotfiles(config, dir, filter)?;
 
     if dotfiles.is_empty() {
-        let msg = if create_mode {
-            format!("No dotfiles found in {}", display.cyan())
-        } else {
-            format!("No dotfiles with alternatives in {}", display.cyan())
-        };
-        emit(Level::Info, "dot.alternative.empty", &msg, None);
-        return Ok(());
+        if create_mode {
+            emit(
+                Level::Info,
+                "dot.alternative.empty",
+                &format!("No dotfiles found in {}", display.cyan()),
+                None,
+            );
+            return Ok(());
+        }
+        // No alternatives found - offer to create one
+        return offer_create_alternative(config, dir, display);
     }
 
     let action = if create_mode {
@@ -162,6 +166,95 @@ fn browse_directory(config: &Config, dir: &Path, display: &str, create_mode: boo
         )
     } else {
         select_flow(config, &selected.target_path, &selected.display_path, true)
+    }
+}
+
+/// Offer to create a new alternative when none exist
+fn offer_create_alternative(config: &Config, dir: &Path, display: &str) -> Result<()> {
+    use crate::menu_utils::Header;
+
+    #[derive(Clone)]
+    enum Choice {
+        CreateAlternative,
+        Cancel,
+    }
+
+    impl crate::menu_utils::FzfSelectable for Choice {
+        fn fzf_display_text(&self) -> String {
+            match self {
+                Choice::CreateAlternative => format!(
+                    "{} Create new alternative...",
+                    crate::ui::catppuccin::format_icon_colored(NerdFont::Plus, crate::ui::catppuccin::colors::GREEN)
+                ),
+                Choice::Cancel => format!(
+                    "{} Cancel",
+                    crate::ui::catppuccin::format_icon_colored(NerdFont::Cross, crate::ui::catppuccin::colors::OVERLAY0)
+                ),
+            }
+        }
+
+        fn fzf_key(&self) -> String {
+            match self {
+                Choice::CreateAlternative => "create".to_string(),
+                Choice::Cancel => "cancel".to_string(),
+            }
+        }
+
+        fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+            use crate::ui::preview::PreviewBuilder;
+            match self {
+                Choice::CreateAlternative => crate::menu::protocol::FzfPreview::Text(
+                    PreviewBuilder::new()
+                        .header(NerdFont::Plus, "Create Alternative")
+                        .blank()
+                        .text("Add a dotfile to a new repository location.")
+                        .blank()
+                        .text("This lets you:")
+                        .bullet("Copy a dotfile to another repo")
+                        .bullet("Create themed variations")
+                        .bullet("Set up machine-specific configs")
+                        .build_string(),
+                ),
+                Choice::Cancel => crate::menu::protocol::FzfPreview::Text(
+                    PreviewBuilder::new()
+                        .header(NerdFont::Cross, "Cancel")
+                        .blank()
+                        .text("Exit without making changes.")
+                        .build_string(),
+                ),
+            }
+        }
+    }
+
+    emit(
+        Level::Info,
+        "dot.alternative.none_found",
+        &format!(
+            "{} No dotfiles with alternatives in {}",
+            char::from(NerdFont::Info),
+            display.cyan()
+        ),
+        None,
+    );
+
+    let choices = vec![Choice::CreateAlternative, Choice::Cancel];
+
+    match FzfWrapper::builder()
+        .header(Header::fancy("No alternatives found"))
+        .prompt("Select action: ")
+        .args(fzf_mocha_args())
+        .responsive_layout()
+        .select(choices)?
+    {
+        FzfResult::Selected(Choice::CreateAlternative) => {
+            // Switch to create mode - show all dotfiles
+            browse_directory(config, dir, display, true)
+        }
+        FzfResult::Selected(Choice::Cancel) | FzfResult::Cancelled => {
+            emit_cancelled();
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 

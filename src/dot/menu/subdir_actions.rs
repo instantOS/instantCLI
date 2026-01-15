@@ -314,7 +314,11 @@ impl FzfSelectable for DeleteChoice {
                 PreviewBuilder::new()
                     .header(NerdFont::Trash, "Delete Files")
                     .blank()
-                    .line(colors::RED, Some(NerdFont::Warning), "This will permanently delete:")
+                    .line(
+                        colors::RED,
+                        Some(NerdFont::Warning),
+                        "This will permanently delete:",
+                    )
                     .bullet("The directory and all its contents")
                     .bullet("Any dotfiles stored in this location")
                     .blank()
