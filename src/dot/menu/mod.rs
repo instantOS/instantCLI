@@ -1,6 +1,6 @@
 //! Interactive dot menu for managing dotfile repositories
 
-mod add_repo;
+pub mod add_repo;
 mod repo_actions;
 mod subdir_actions;
 

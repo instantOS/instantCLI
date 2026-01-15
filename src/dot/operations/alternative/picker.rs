@@ -32,6 +32,130 @@ impl FzfSelectable for SourceOption {
     }
 }
 
+/// Menu item for destination selection (--create flow).
+#[derive(Clone)]
+pub enum CreateMenuItem {
+    /// Select existing destination.
+    Destination(SourceOption),
+    /// Add a new dotfile subdir to a repo.
+    AddSubdir { repo_name: String },
+    /// Clone a new repository.
+    CloneRepo,
+    /// Cancel.
+    Cancel,
+}
+
+impl FzfSelectable for CreateMenuItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            CreateMenuItem::Destination(item) => {
+                let status = if item.exists { "" } else { " [new]" };
+                format!(
+                    "{} {} / {}{}",
+                    format_icon_colored(NerdFont::Folder, colors::MAUVE),
+                    item.source.repo_name,
+                    item.source.subdir_name,
+                    status
+                )
+            }
+            CreateMenuItem::AddSubdir { repo_name } => {
+                format!(
+                    "{} {} / <new subdir>",
+                    format_icon_colored(NerdFont::Plus, colors::GREEN),
+                    repo_name
+                )
+            }
+            CreateMenuItem::CloneRepo => {
+                format!(
+                    "{} Clone new repository...",
+                    format_icon_colored(NerdFont::Download, colors::BLUE)
+                )
+            }
+            CreateMenuItem::Cancel => {
+                format!(
+                    "{} Cancel",
+                    format_icon_colored(NerdFont::Cross, colors::OVERLAY0)
+                )
+            }
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            CreateMenuItem::Destination(item) => {
+                format!("{}:{}", item.source.repo_name, item.source.subdir_name)
+            }
+            CreateMenuItem::AddSubdir { repo_name } => format!("!__add_subdir__:{}", repo_name),
+            CreateMenuItem::CloneRepo => "!__clone_repo__".to_string(),
+            CreateMenuItem::Cancel => "!__cancel__".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            CreateMenuItem::Destination(item) => {
+                let mut b = PreviewBuilder::new().header(
+                    NerdFont::Folder,
+                    &format!("{} / {}", item.source.repo_name, item.source.subdir_name),
+                );
+                if !item.exists {
+                    b = b.blank().line(
+                        colors::YELLOW,
+                        Some(NerdFont::Plus),
+                        "File will be created in this location",
+                    );
+                } else {
+                    b = b.blank().line(
+                        colors::PEACH,
+                        Some(NerdFont::Info),
+                        "File already exists here - will set as active source",
+                    );
+                }
+                b = b.blank().line(
+                    colors::TEXT,
+                    Some(NerdFont::File),
+                    &format!("Path: {}", item.source.source_path.display()),
+                );
+                FzfPreview::Text(b.build_string())
+            }
+            CreateMenuItem::AddSubdir { repo_name } => FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Plus, "Add Dotfile Directory")
+                    .blank()
+                    .text(&format!(
+                        "Create a new dotfile directory in '{}'.",
+                        repo_name
+                    ))
+                    .blank()
+                    .text("This will:")
+                    .bullet("Create the directory in the repository")
+                    .bullet("Add it to instantdots.toml")
+                    .bullet("Copy your file there")
+                    .build_string(),
+            ),
+            CreateMenuItem::CloneRepo => FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Download, "Clone Repository")
+                    .blank()
+                    .text("Clone a new dotfile repository.")
+                    .blank()
+                    .text("You can enter:")
+                    .bullet("A full URL (https://github.com/...)")
+                    .bullet("A shorthand (user/repo)")
+                    .bullet("A name to create locally")
+                    .build_string(),
+            ),
+            CreateMenuItem::Cancel => FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Cross, "Cancel")
+                    .blank()
+                    .text("Exit without making changes.")
+                    .build_string(),
+            ),
+        }
+    }
+}
+
 /// Menu item for alternative selection.
 #[derive(Clone)]
 pub enum MenuItem {

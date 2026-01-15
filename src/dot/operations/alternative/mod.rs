@@ -21,11 +21,24 @@ use crate::ui::prelude::*;
 
 use apply::{is_safe_to_switch, remove_override, reset_override, set_alternative};
 use discovery::{DiscoveryFilter, discover_dotfiles, get_destinations, to_display_path};
-use picker::{MenuItem, SourceOption};
+use picker::{CreateMenuItem, MenuItem, SourceOption};
 
 // Re-export for external use (add command uses these)
 pub use apply::add_to_destination;
 pub use discovery::get_destinations as get_all_destinations;
+
+/// Pick a destination and add a file there (shared by `add --choose` and `alternative --create`).
+///
+/// Shows an FZF picker with all available destinations plus options to:
+/// - Add a new dotfile subdir to an existing repo
+/// - Clone a new repository
+///
+/// Returns Ok(true) if the file was added, Ok(false) if cancelled.
+pub fn pick_destination_and_add(config: &Config, path: &Path) -> Result<bool> {
+    let display = to_display_path(path);
+    let existing = find_all_sources(config, path)?;
+    create_flow(config, path, &display, &existing).map(|()| true)
+}
 
 /// CLI action for the alternative command.
 pub enum Action {
@@ -306,81 +319,171 @@ fn create_flow(
     display: &str,
     existing: &[DotfileSource],
 ) -> Result<()> {
-    let destinations = get_destinations(config);
+    use std::collections::HashSet;
 
-    if destinations.is_empty() {
+    loop {
+        // Reload config to pick up any new repos/subdirs
+        let config = Config::load(None)?;
+        let destinations = get_destinations(&config);
+
+        // Build menu items
+        let mut menu: Vec<CreateMenuItem> = destinations
+            .iter()
+            .map(|dest| {
+                let exists = existing
+                    .iter()
+                    .any(|s| s.repo_name == dest.repo_name && s.subdir_name == dest.subdir_name);
+                CreateMenuItem::Destination(SourceOption {
+                    source: dest.clone(),
+                    is_current: false,
+                    exists,
+                })
+            })
+            .collect();
+
+        // Add "new subdir" option for each writable repo (deduplicated)
+        let repos_with_subdirs: HashSet<_> = destinations.iter().map(|d| &d.repo_name).collect();
+        for repo in config.repos.iter().filter(|r| r.enabled && !r.read_only) {
+            if repos_with_subdirs.contains(&repo.name) {
+                menu.push(CreateMenuItem::AddSubdir {
+                    repo_name: repo.name.clone(),
+                });
+            }
+        }
+
+        // Add clone repo option
+        menu.push(CreateMenuItem::CloneRepo);
+        menu.push(CreateMenuItem::Cancel);
+
+        match FzfWrapper::builder()
+            .prompt(format!("Select destination for {}: ", display))
+            .args(fzf_mocha_args())
+            .responsive_layout()
+            .select(menu)?
+        {
+            FzfResult::Selected(CreateMenuItem::Destination(item)) => {
+                return handle_destination_selected(&config, path, display, &item);
+            }
+            FzfResult::Selected(CreateMenuItem::AddSubdir { repo_name }) => {
+                if handle_add_subdir(&config, &repo_name)? {
+                    continue; // Loop back to show updated menu
+                }
+                return Ok(());
+            }
+            FzfResult::Selected(CreateMenuItem::CloneRepo) => {
+                if handle_clone_repo()? {
+                    continue; // Loop back to show updated menu
+                }
+                return Ok(());
+            }
+            FzfResult::Selected(CreateMenuItem::Cancel) | FzfResult::Cancelled => {
+                emit_cancelled();
+                return Ok(());
+            }
+            FzfResult::Error(e) => return Err(anyhow::anyhow!("Selection error: {}", e)),
+            _ => return Ok(()),
+        }
+    }
+}
+
+fn handle_destination_selected(
+    config: &Config,
+    path: &Path,
+    display: &str,
+    item: &SourceOption,
+) -> Result<()> {
+    if item.exists {
+        let mut overrides = OverrideConfig::load()?;
+        overrides.set_override(
+            path.to_path_buf(),
+            item.source.repo_name.clone(),
+            item.source.subdir_name.clone(),
+        )?;
         emit(
-            Level::Warn,
-            "dot.alternative.no_repos",
+            Level::Success,
+            "dot.alternative.set",
             &format!(
-                "{} No writable repositories configured",
-                char::from(NerdFont::Warning)
+                "{} {} now sourced from {} / {}",
+                char::from(NerdFont::Check),
+                display.cyan(),
+                item.source.repo_name.green(),
+                item.source.subdir_name.green()
             ),
             None,
         );
-        return Ok(());
+    } else {
+        let db = Database::new(config.database_path().to_path_buf())?;
+        add_to_destination(config, &db, path, &item.source)?;
+
+        let mut overrides = OverrideConfig::load()?;
+        overrides.set_override(
+            path.to_path_buf(),
+            item.source.repo_name.clone(),
+            item.source.subdir_name.clone(),
+        )?;
     }
+    Ok(())
+}
 
-    let items: Vec<SourceOption> = destinations
-        .into_iter()
-        .map(|dest| {
-            let exists = existing
-                .iter()
-                .any(|s| s.repo_name == dest.repo_name && s.subdir_name == dest.subdir_name);
-            SourceOption {
-                source: dest,
-                is_current: false,
-                exists,
-            }
-        })
-        .collect();
+/// Handle adding a new subdir to a repo. Returns true if successful (should refresh menu).
+fn handle_add_subdir(config: &Config, repo_name: &str) -> Result<bool> {
+    use crate::dot::localrepo::LocalRepo;
 
-    match FzfWrapper::builder()
-        .prompt(format!("Select destination for {}: ", display))
-        .select(items)?
+    let new_dir = match FzfWrapper::builder()
+        .prompt("New dotfile directory name: ")
+        .args(fzf_mocha_args())
+        .input()
+        .input_result()?
     {
-        FzfResult::Selected(item) => {
-            if item.exists {
-                // Already exists, just set override
-                let mut overrides = OverrideConfig::load()?;
-                overrides.set_override(
-                    path.to_path_buf(),
-                    item.source.repo_name.clone(),
-                    item.source.subdir_name.clone(),
-                )?;
-                emit(
-                    Level::Success,
-                    "dot.alternative.set",
-                    &format!(
-                        "{} {} now sourced from {} / {}",
-                        char::from(NerdFont::Check),
-                        display.cyan(),
-                        item.source.repo_name.green(),
-                        item.source.subdir_name.green()
-                    ),
-                    None,
-                );
-            } else {
-                // Copy file to destination
-                let db = Database::new(config.database_path().to_path_buf())?;
-                add_to_destination(config, &db, path, &item.source)?;
+        FzfResult::Selected(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => return Ok(false),
+    };
 
-                let mut overrides = OverrideConfig::load()?;
-                overrides.set_override(
-                    path.to_path_buf(),
-                    item.source.repo_name.clone(),
-                    item.source.subdir_name.clone(),
-                )?;
-            }
-            Ok(())
+    let local_repo = LocalRepo::new(config, repo_name.to_string())?;
+    let local_path = local_repo.local_path(config)?;
+
+    match crate::dot::meta::add_dots_dir(&local_path, &new_dir) {
+        Ok(()) => {
+            emit(
+                Level::Success,
+                "dot.alternative.subdir_created",
+                &format!(
+                    "{} Created dotfile directory '{}/{}' - now select it",
+                    char::from(NerdFont::Check),
+                    repo_name.green(),
+                    new_dir.green()
+                ),
+                None,
+            );
+            Ok(true)
         }
-        FzfResult::Cancelled => {
-            emit_cancelled();
-            Ok(())
+        Err(e) => {
+            emit(
+                Level::Error,
+                "dot.alternative.subdir_error",
+                &format!(
+                    "{} Failed to create directory: {}",
+                    char::from(NerdFont::CrossCircle),
+                    e
+                ),
+                None,
+            );
+            Ok(false)
         }
-        FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
-        _ => Ok(()),
     }
+}
+
+/// Handle cloning a new repo. Returns true if successful (should refresh menu).
+fn handle_clone_repo() -> Result<bool> {
+    // Delegate to the existing add_repo menu flow
+    let config = Config::load(None)?;
+    let db = Database::new(config.database_path().to_path_buf())?;
+
+    crate::dot::menu::add_repo::handle_add_repo(&config, &db, false)?;
+
+    // Check if a new repo was added by comparing counts
+    let new_config = Config::load(None)?;
+    Ok(new_config.repos.len() > config.repos.len())
 }
 
 fn list_file(path: &Path, display: &str, sources: &[DotfileSource]) -> Result<()> {
