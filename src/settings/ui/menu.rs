@@ -70,7 +70,7 @@ pub fn run_settings_ui(
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                         continue;
                     }
-                    if navigate_node(&mut ctx, category.title(), &tree, category_cursor)? {
+                    if navigate_node(&mut ctx, category.meta().title, &tree, category_cursor)? {
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                     } else {
                         break;
@@ -87,7 +87,7 @@ pub fn run_settings_ui(
             },
             InitialView::Category(category, cursor) => {
                 let tree = build_tree(category);
-                if navigate_node(&mut ctx, category.title(), &tree, cursor)? {
+                if navigate_node(&mut ctx, category.meta().title, &tree, cursor)? {
                     initial_view = InitialView::MainMenu(None);
                 } else {
                     break;

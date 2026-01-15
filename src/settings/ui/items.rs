@@ -101,10 +101,11 @@ impl FzfSelectable for SubCategoryItem {
 
 impl FzfSelectable for CategoryItem {
     fn fzf_display_text(&self) -> String {
+        let meta = self.category.meta();
         format!(
             "{} {} ({} settings)",
-            format_icon_colored(self.category.icon(), self.category.color()),
-            self.category.title(),
+            format_icon_colored(meta.icon, meta.color),
+            meta.title,
             self.settings.len()
         )
     }
@@ -112,6 +113,7 @@ impl FzfSelectable for CategoryItem {
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 
+        let cat_meta = self.category.meta();
         let reset = "\x1b[0m";
         let mauve = hex_to_ansi_fg(colors::MAUVE);
         let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
@@ -124,14 +126,14 @@ impl FzfSelectable for CategoryItem {
         lines.push(String::new());
         lines.push(format!(
             "{mauve}{}  {}{reset}",
-            char::from(self.category.icon()),
-            self.category.title()
+            char::from(cat_meta.icon),
+            cat_meta.title
         ));
         lines.push(format!(
             "{surface}───────────────────────────────────{reset}"
         ));
         lines.push(String::new());
-        lines.push(format!("{text}{}{reset}", self.category.description()));
+        lines.push(format!("{text}{}{reset}", cat_meta.description));
         lines.push(String::new());
 
         let preview_count = 6.min(self.settings.len());
@@ -216,7 +218,7 @@ impl FzfSelectable for SettingItem {
         let meta = self.setting.metadata();
         let category = crate::settings::category_tree::get_category_for_setting(meta.id)
             .unwrap_or(Category::System);
-        let icon_color = meta.icon_color.unwrap_or_else(|| category.color());
+        let icon_color = meta.icon_color.unwrap_or_else(|| category.meta().color);
 
         match &self.state {
             SettingState::Toggle { enabled } => {
@@ -304,7 +306,7 @@ impl FzfSelectable for SearchItem {
         let path = format_setting_path(self.setting);
         let category = crate::settings::category_tree::get_category_for_setting(meta.id)
             .unwrap_or(Category::System);
-        let icon_color = meta.icon_color.unwrap_or_else(|| category.color());
+        let icon_color = meta.icon_color.unwrap_or_else(|| category.meta().color);
 
         match &self.state {
             SettingState::Toggle { enabled } => {
@@ -373,7 +375,7 @@ pub fn format_setting_path(setting: &dyn Setting) -> String {
     let breadcrumbs =
         crate::settings::category_tree::get_breadcrumbs_for_setting(category, meta.id);
     let mut segments = Vec::with_capacity(2 + breadcrumbs.len());
-    segments.push(category.title().to_string());
+    segments.push(category.meta().title.to_string());
     segments.extend(breadcrumbs);
     segments.push(meta.title.to_string());
     segments.join(" -> ")

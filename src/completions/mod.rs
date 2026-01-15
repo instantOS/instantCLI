@@ -200,7 +200,7 @@ pub fn settings_category_completion(current: &OsStr) -> Vec<CompletionCandidate>
 
     let categories: Vec<String> = Category::all()
         .iter()
-        .map(|cat| cat.id().to_string())
+        .map(|cat| cat.meta().id.to_string())
         .collect();
 
     sort_and_filter(categories, &prefix)

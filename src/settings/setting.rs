@@ -30,121 +30,124 @@ pub enum Category {
     System,
 }
 
+/// Metadata for a category (all properties in one place)
+#[derive(Debug, Clone, Copy)]
+pub struct CategoryMeta {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub icon: NerdFont,
+    pub color: &'static str,
+}
+
 impl Category {
-    pub fn id(&self) -> &'static str {
-        match self {
-            Category::Install => "install",
-            Category::Network => "network",
-            Category::Bluetooth => "bluetooth",
-            Category::Appearance => "appearance",
-            Category::Mouse => "mouse",
-            Category::Desktop => "desktop",
-            Category::Display => "display",
-            Category::Audio => "audio",
-            Category::Apps => "apps",
-            Category::Storage => "storage",
-            Category::Printers => "printers",
-            Category::Users => "users",
-            Category::Language => "language",
-            Category::System => "system",
-        }
-    }
-
-    pub fn title(&self) -> &'static str {
-        match self {
-            Category::Install => "Installation",
-            Category::Network => "Networking",
-            Category::Bluetooth => "Bluetooth",
-            Category::Appearance => "Appearance",
-            Category::Mouse => "Mouse & Touchpad",
-            Category::Desktop => "Desktop",
-            Category::Display => "Display",
-            Category::Audio => "Sound",
-            Category::Apps => "Default Apps",
-            Category::Storage => "Storage",
-            Category::Printers => "Printers",
-            Category::Users => "Users & Accounts",
-            Category::Language => "Language & Region",
-            Category::System => "System & Updates",
-        }
-    }
-
-    pub fn description(&self) -> &'static str {
-        match self {
-            Category::Install => "Installation and setup options.",
-            Category::Network => "WiFi, Ethernet, VPN, and network diagnostics.",
-            Category::Bluetooth => "Pair devices and manage Bluetooth settings.",
-            Category::Appearance => "Themes, wallpaper, brightness, and visual styles.",
-            Category::Mouse => "Pointer speed, scrolling, and button settings.",
-            Category::Desktop => "Desktop behaviour, window management, and layout preferences.",
-            Category::Display => "Monitor resolution, refresh rate, and display configuration.",
-            Category::Audio => "Sound routing tools and audio behaviour.",
-            Category::Apps => "Default applications and file associations.",
-            Category::Storage => "Disk management and auto-mounting.",
-            Category::Printers => "Discover, configure, and manage printers.",
-            Category::Users => "Create and manage user accounts.",
-            Category::Language => "Manage system locales and language defaults.",
-            Category::System => "System administration and maintenance.",
-        }
-    }
-
-    pub fn icon(&self) -> NerdFont {
-        match self {
-            Category::Install => NerdFont::Download,
-            Category::Network => NerdFont::Network,
-            Category::Bluetooth => NerdFont::Bluetooth,
-            Category::Appearance => NerdFont::Palette,
-            Category::Mouse => NerdFont::Mouse,
-            Category::Desktop => NerdFont::Desktop,
-            Category::Display => NerdFont::Monitor,
-            Category::Audio => NerdFont::VolumeUp,
-            Category::Apps => NerdFont::Package,
-            Category::Storage => NerdFont::Database2,
-            Category::Printers => NerdFont::Printer,
-            Category::Users => NerdFont::Users,
-            Category::Language => NerdFont::Globe,
-            Category::System => NerdFont::Server,
-        }
-    }
-
-    pub fn color(&self) -> &'static str {
+    /// Get all metadata for this category
+    pub fn meta(self) -> CategoryMeta {
         use crate::ui::catppuccin::colors;
         match self {
-            Category::Install => colors::BLUE,
-            Category::Network => colors::GREEN,
-            Category::Bluetooth => colors::BLUE,
-            Category::Appearance => colors::LAVENDER,
-            Category::Mouse => colors::PEACH,
-            Category::Desktop => colors::MAUVE,
-            Category::Display => colors::SKY,
-            Category::Audio => colors::TEAL,
-            Category::Apps => colors::SAPPHIRE,
-            Category::Storage => colors::YELLOW,
-            Category::Printers => colors::FLAMINGO,
-            Category::Users => colors::MAROON,
-            Category::Language => colors::ROSEWATER,
-            Category::System => colors::RED,
+            Category::Install => CategoryMeta {
+                id: "install",
+                title: "Installation",
+                description: "Installation and setup options.",
+                icon: NerdFont::Download,
+                color: colors::BLUE,
+            },
+            Category::Network => CategoryMeta {
+                id: "network",
+                title: "Networking",
+                description: "WiFi, Ethernet, VPN, and network diagnostics.",
+                icon: NerdFont::Network,
+                color: colors::GREEN,
+            },
+            Category::Bluetooth => CategoryMeta {
+                id: "bluetooth",
+                title: "Bluetooth",
+                description: "Pair devices and manage Bluetooth settings.",
+                icon: NerdFont::Bluetooth,
+                color: colors::BLUE,
+            },
+            Category::Appearance => CategoryMeta {
+                id: "appearance",
+                title: "Appearance",
+                description: "Themes, wallpaper, brightness, and visual styles.",
+                icon: NerdFont::Palette,
+                color: colors::LAVENDER,
+            },
+            Category::Mouse => CategoryMeta {
+                id: "mouse",
+                title: "Mouse & Touchpad",
+                description: "Pointer speed, scrolling, and button settings.",
+                icon: NerdFont::Mouse,
+                color: colors::PEACH,
+            },
+            Category::Desktop => CategoryMeta {
+                id: "desktop",
+                title: "Desktop",
+                description: "Desktop behaviour, window management, and layout preferences.",
+                icon: NerdFont::Desktop,
+                color: colors::MAUVE,
+            },
+            Category::Display => CategoryMeta {
+                id: "display",
+                title: "Display",
+                description: "Monitor resolution, refresh rate, and display configuration.",
+                icon: NerdFont::Monitor,
+                color: colors::SKY,
+            },
+            Category::Audio => CategoryMeta {
+                id: "audio",
+                title: "Sound",
+                description: "Sound routing tools and audio behaviour.",
+                icon: NerdFont::VolumeUp,
+                color: colors::TEAL,
+            },
+            Category::Apps => CategoryMeta {
+                id: "apps",
+                title: "Default Apps",
+                description: "Default applications and file associations.",
+                icon: NerdFont::Package,
+                color: colors::SAPPHIRE,
+            },
+            Category::Storage => CategoryMeta {
+                id: "storage",
+                title: "Storage",
+                description: "Disk management and auto-mounting.",
+                icon: NerdFont::Database2,
+                color: colors::YELLOW,
+            },
+            Category::Printers => CategoryMeta {
+                id: "printers",
+                title: "Printers",
+                description: "Discover, configure, and manage printers.",
+                icon: NerdFont::Printer,
+                color: colors::FLAMINGO,
+            },
+            Category::Users => CategoryMeta {
+                id: "users",
+                title: "Users & Accounts",
+                description: "Create and manage user accounts.",
+                icon: NerdFont::Users,
+                color: colors::MAROON,
+            },
+            Category::Language => CategoryMeta {
+                id: "language",
+                title: "Language & Region",
+                description: "Manage system locales and language defaults.",
+                icon: NerdFont::Globe,
+                color: colors::ROSEWATER,
+            },
+            Category::System => CategoryMeta {
+                id: "system",
+                title: "System & Updates",
+                description: "System administration and maintenance.",
+                icon: NerdFont::Server,
+                color: colors::RED,
+            },
         }
     }
 
     pub fn from_id(id: &str) -> Option<Category> {
-        match id {
-            "install" => Some(Category::Install),
-            "network" => Some(Category::Network),
-            "bluetooth" => Some(Category::Bluetooth),
-            "appearance" => Some(Category::Appearance),
-            "mouse" => Some(Category::Mouse),
-            "desktop" => Some(Category::Desktop),
-            "display" => Some(Category::Display),
-            "audio" => Some(Category::Audio),
-            "apps" => Some(Category::Apps),
-            "storage" => Some(Category::Storage),
-            "printers" => Some(Category::Printers),
-            "users" => Some(Category::Users),
-            "language" => Some(Category::Language),
-            "system" => Some(Category::System),
-            _ => None,
-        }
+        Self::all().iter().find(|c| c.meta().id == id).copied()
     }
 
     /// All categories in display order
@@ -405,9 +408,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_category_id() {
-        assert_eq!(Category::Desktop.id(), "desktop");
-        assert_eq!(Category::Appearance.id(), "appearance");
+    fn test_category_meta() {
+        assert_eq!(Category::Desktop.meta().id, "desktop");
+        assert_eq!(Category::Appearance.meta().id, "appearance");
+        assert_eq!(Category::Desktop.meta().title, "Desktop");
     }
 
     #[test]

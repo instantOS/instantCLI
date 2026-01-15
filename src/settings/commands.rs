@@ -93,15 +93,16 @@ fn list_settings(categories_only: bool, category_filter: Option<&str>) -> Result
         println!("{}", "Available Categories:".bold());
         println!();
         for category in Category::all() {
+            let meta = category.meta();
             let tree = category_tree(*category);
             let count = collect_settings_from_tree(&tree).len();
             println!(
                 "  {} {} ({} settings)",
-                category.id().cyan(),
-                category.title().bold(),
+                meta.id.cyan(),
+                meta.title.bold(),
                 count
             );
-            println!("    {}", category.description().dimmed());
+            println!("    {}", meta.description.dimmed());
             println!();
         }
         return Ok(());
@@ -110,9 +111,10 @@ fn list_settings(categories_only: bool, category_filter: Option<&str>) -> Result
     if let Some(filter) = category_filter {
         let category = Category::from_id(filter)
             .ok_or_else(|| anyhow::anyhow!("Category '{}' not found", filter))?;
+        let cat_meta = category.meta();
 
-        println!("{} {}", "Category:".bold(), category.title());
-        println!("{}", category.description().dimmed());
+        println!("{} {}", "Category:".bold(), cat_meta.title);
+        println!("{}", cat_meta.description.dimmed());
         println!();
 
         let tree = category_tree(category);
@@ -135,9 +137,10 @@ fn list_settings(categories_only: bool, category_filter: Option<&str>) -> Result
             if settings.is_empty() {
                 continue;
             }
+            let cat_meta = category.meta();
 
-            println!("{} {}", "Category:".bold(), category.title());
-            println!("{}", category.description().dimmed());
+            println!("{} {}", "Category:".bold(), cat_meta.title);
+            println!("{}", cat_meta.description.dimmed());
             println!();
 
             for s in settings {
