@@ -2,13 +2,17 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::Result;
+use colored::Colorize;
 use walkdir::WalkDir;
 
 use crate::dot::config::Config;
 use crate::dot::localrepo::LocalRepo;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::{emit, Level};
 
 /// A dotfile with all its available sources across repos.
 #[derive(Clone)]
@@ -123,21 +127,62 @@ pub fn discover_dotfiles(
 }
 
 /// Get all writable repo/subdir destinations.
+/// Only includes subdirs that are in the repo's metadata (dots_dirs).
+/// Warns if a subdir is in active_subdirectories but not in metadata.
 pub fn get_destinations(config: &Config) -> Vec<DotfileSource> {
-    config
-        .repos
-        .iter()
-        .filter(|r| r.enabled && !r.read_only)
-        .flat_map(|repo| {
-            repo.active_subdirectories
-                .iter()
-                .map(|subdir| DotfileSource {
+    // Track warnings to avoid duplicates within a session
+    static WARNED_INVALID_SUBDIRS: OnceLock<std::sync::Mutex<HashSet<String>>> = OnceLock::new();
+    let warned = WARNED_INVALID_SUBDIRS.get_or_init(|| std::sync::Mutex::new(HashSet::new()));
+
+    let mut destinations = Vec::new();
+
+    for repo in config.repos.iter().filter(|r| r.enabled && !r.read_only) {
+        // Get the valid subdirs from metadata
+        let valid_subdirs: HashSet<String> = if let Some(meta) = &repo.metadata {
+            meta.dots_dirs.iter().cloned().collect()
+        } else {
+            // Try to read metadata from disk
+            let repo_path = config.repos_path().join(&repo.name);
+            match crate::dot::meta::read_meta(&repo_path) {
+                Ok(meta) => meta.dots_dirs.iter().cloned().collect(),
+                Err(_) => HashSet::new(), // No valid subdirs if metadata can't be read
+            }
+        };
+
+        for subdir in &repo.active_subdirectories {
+            if valid_subdirs.contains(subdir) {
+                // Valid destination - in metadata
+                destinations.push(DotfileSource {
                     repo_name: repo.name.clone(),
                     subdir_name: subdir.clone(),
                     source_path: config.repos_path().join(&repo.name).join(subdir),
-                })
-        })
-        .collect()
+                });
+            } else {
+                // Invalid - not in metadata, warn once per session
+                let key = format!("{}:{}", repo.name, subdir);
+                let should_warn = warned
+                    .lock()
+                    .map(|mut set| set.insert(key))
+                    .unwrap_or(false);
+
+                if should_warn {
+                    emit(
+                        Level::Warn,
+                        "dot.destination.invalid_subdir",
+                        &format!(
+                            "{} Subdir '{}' in {} is enabled but not in repo metadata - not available as destination",
+                            char::from(NerdFont::Warning),
+                            subdir.yellow(),
+                            repo.name.cyan()
+                        ),
+                        None,
+                    );
+                }
+            }
+        }
+    }
+
+    destinations
 }
 
 pub fn home_dir() -> PathBuf {

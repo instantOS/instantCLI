@@ -13,14 +13,14 @@ use colored::Colorize;
 
 use crate::dot::config::Config;
 use crate::dot::db::Database;
-use crate::dot::override_config::{find_all_sources, DotfileSource, OverrideConfig};
+use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
 use crate::dot::utils::resolve_dotfile_path;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
 use apply::{is_safe_to_switch, remove_override, reset_override, set_alternative};
-use discovery::{discover_dotfiles, get_destinations, to_display_path, DiscoveryFilter};
+use discovery::{DiscoveryFilter, discover_dotfiles, get_destinations, to_display_path};
 use picker::{BrowseMenuItem, CreateMenuItem, MenuItem, SourceOption};
 
 // Re-export for external use (add command uses these)
@@ -224,10 +224,7 @@ fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Result<()> {
                 if let Some(path) = pick_new_file_to_track()? {
                     let file_display = to_display_path(&path);
                     let sources = find_all_sources(&config, &path)?;
-                    if matches!(
-                        run_create_flow(&path, &file_display, &sources)?,
-                        Flow::Done
-                    ) {
+                    if matches!(run_create_flow(&path, &file_display, &sources)?, Flow::Done) {
                         preselect = Some(file_display);
                     }
                 }
@@ -448,7 +445,7 @@ fn add_file_to_destination(
                 "File was copied but failed to load overrides: {}\n\n\
                 Use 'ins dot alternative {}' to switch sources.",
                 e, display
-            ))
+            ));
         }
     };
 
@@ -829,7 +826,12 @@ fn list_file(path: &Path, display: &str, sources: &[DotfileSource]) -> Result<()
     Ok(())
 }
 
-fn print_sources(path: &Path, display: &str, sources: &[DotfileSource], overrides: &OverrideConfig) {
+fn print_sources(
+    path: &Path,
+    display: &str,
+    sources: &[DotfileSource],
+    overrides: &OverrideConfig,
+) {
     let current = overrides.get_override(path);
     let last = sources.len().saturating_sub(1);
 

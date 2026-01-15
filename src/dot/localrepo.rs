@@ -38,6 +38,13 @@ impl DotfileDir {
 
         Ok(DotfileDir { path, is_active })
     }
+
+    /// Create a DotfileDir without creating the directory if it doesn't exist.
+    /// Used for discovery where we only want to include directories that exist.
+    pub fn new_no_create(name: &str, repo_path: &Path, is_active: bool) -> Result<Self> {
+        let path = repo_path.join(name);
+        Ok(DotfileDir { path, is_active })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -118,20 +125,27 @@ impl LocalRepo {
         active_subdirs: &[String],
     ) -> Result<Vec<DotfileDir>> {
         let mut dotfile_dirs = Vec::new();
+        let mut added_subdirs = std::collections::HashSet::new();
 
         // Phase 1: Active subdirs in priority order (from config)
         // Earlier entries have higher priority
+        // Include if in metadata OR if the directory exists on disk
         for subdir_name in active_subdirs {
-            if available_subdirs.contains(subdir_name) {
-                let dotfile_dir = DotfileDir::new(subdir_name, repo_path, true)?;
+            let in_metadata = available_subdirs.contains(subdir_name);
+            let subdir_path = repo_path.join(subdir_name);
+            let exists_on_disk = subdir_path.exists();
+
+            if in_metadata || exists_on_disk {
+                let dotfile_dir = DotfileDir::new_no_create(subdir_name, repo_path, true)?;
                 dotfile_dirs.push(dotfile_dir);
+                added_subdirs.insert(subdir_name.clone());
             }
         }
 
-        // Phase 2: Inactive subdirs (not used, but tracked)
+        // Phase 2: Inactive subdirs from metadata (not active, but tracked)
         for subdir_name in available_subdirs {
-            if !active_subdirs.contains(subdir_name) {
-                let dotfile_dir = DotfileDir::new(subdir_name, repo_path, false)?;
+            if !added_subdirs.contains(subdir_name) {
+                let dotfile_dir = DotfileDir::new_no_create(subdir_name, repo_path, false)?;
                 dotfile_dirs.push(dotfile_dir);
             }
         }
