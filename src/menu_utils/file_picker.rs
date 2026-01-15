@@ -34,7 +34,7 @@ fn ensure_yazi_config(show_hidden: bool) -> Result<PathBuf> {
 
     let config_path = dir.join("yazi.toml");
     let config_content = format!(
-        "[manager]\nshow_hidden = {}\n",
+        "[mgr]\nshow_hidden = {}\nsort_by = \"natural\"\n",
         if show_hidden { "true" } else { "false" }
     );
     write_if_changed(&config_path, &config_content)?;

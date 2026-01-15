@@ -525,24 +525,13 @@ fn handle_destination_selected(
     item: &SourceOption,
 ) -> Result<()> {
     if item.exists {
-        let mut overrides = OverrideConfig::load()?;
-        overrides.set_override(
-            path.to_path_buf(),
-            item.source.repo_name.clone(),
-            item.source.subdir_name.clone(),
-        )?;
-        emit(
-            Level::Success,
-            "dot.alternative.set",
-            &format!(
-                "{} {} now sourced from {} / {}",
-                char::from(NerdFont::Check),
-                display.cyan(),
-                item.source.repo_name.green(),
-                item.source.subdir_name.green()
-            ),
-            None,
-        );
+        // File already exists at this destination - inform the user
+        FzfWrapper::message(&format!(
+            "'{}' already exists at {} / {}\n\nThis location is already tracked as an alternative.\n\
+            Use the alternative selection menu to switch sources.",
+            display, item.source.repo_name, item.source.subdir_name
+        ))?;
+        return Ok(());
     } else {
         let db = Database::new(config.database_path().to_path_buf())?;
         add_to_destination(config, &db, path, &item.source)?;
