@@ -13,7 +13,6 @@
 use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
-use crate::dot::localrepo::LocalRepo;
 use crate::dot::repo::RepositoryManager;
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};

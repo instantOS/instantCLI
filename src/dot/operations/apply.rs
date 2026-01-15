@@ -1,10 +1,12 @@
 use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
+use crate::dot::units::{find_unit_for_path, get_all_units, get_modified_units};
 use crate::dot::utils::get_all_dotfiles;
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::Colorize;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 /// Result of applying a single dotfile
@@ -16,6 +18,8 @@ enum ApplyAction {
     Updated,
     /// File was skipped (user modified)
     Skipped,
+    /// File was skipped because another file in the same unit was modified
+    SkippedUnit,
     /// File was already up-to-date (no action needed)
     AlreadyUpToDate,
 }
@@ -35,14 +39,52 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
         return Ok(());
     }
 
+    // Get all unit definitions and find which units have modified files
+    let units = get_all_units(config, db)?;
+    let modified_units = get_modified_units(&all_dotfiles, &units, db)?;
+
+    // Track which modified units we've already reported
+    let mut reported_units: HashSet<PathBuf> = HashSet::new();
+
     let mut created_files = Vec::new();
     let mut updated_files = Vec::new();
     let mut skipped_files = Vec::new();
+    let mut skipped_unit_count = 0;
     let mut unchanged_count = 0;
 
     // Apply each dotfile and track the action taken
     for dotfile in all_dotfiles.values() {
-        let action = apply_single_dotfile(dotfile, db)?;
+        // Check if this file belongs to a modified unit
+        let in_modified_unit = find_unit_for_path(&dotfile.target_path, &units)
+            .map(|unit_path| modified_units.contains(&unit_path))
+            .unwrap_or(false);
+
+        let action = if in_modified_unit {
+            // Report the unit skip once per unit
+            if let Some(unit_path) = find_unit_for_path(&dotfile.target_path, &units) {
+                if !reported_units.contains(&unit_path) {
+                    emit(
+                        Level::Warn,
+                        "dot.apply.skipped_unit",
+                        &format!(
+                            "{} Skipped unit ~/{} (contains modified files)",
+                            char::from(NerdFont::ShieldAlert),
+                            unit_path.display().to_string().yellow()
+                        ),
+                        Some(serde_json::json!({
+                            "unit": format!("~/{}", unit_path.display()),
+                            "action": "skipped_unit",
+                            "reason": "unit_modified"
+                        })),
+                    );
+                    reported_units.insert(unit_path);
+                }
+            }
+            ApplyAction::SkippedUnit
+        } else {
+            apply_single_dotfile(dotfile, db)?
+        };
+
         let relative_path = dotfile
             .target_path
             .strip_prefix(&home)
@@ -101,6 +143,9 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
                 );
                 skipped_files.push(path_str);
             }
+            ApplyAction::SkippedUnit => {
+                skipped_unit_count += 1;
+            }
             ApplyAction::AlreadyUpToDate => {
                 unchanged_count += 1;
             }
@@ -114,6 +159,8 @@ pub fn apply_all(config: &Config, db: &Database) -> Result<()> {
         created_files.len(),
         updated_files.len(),
         skipped_files.len(),
+        skipped_unit_count,
+        reported_units.len(),
         unchanged_count,
     );
 
@@ -149,7 +196,14 @@ fn apply_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<ApplyAction>
 }
 
 /// Print summary of apply operation
-fn print_apply_summary(created: usize, updated: usize, skipped: usize, unchanged: usize) {
+fn print_apply_summary(
+    created: usize,
+    updated: usize,
+    skipped: usize,
+    skipped_unit_files: usize,
+    skipped_units: usize,
+    unchanged: usize,
+) {
     separator(false);
 
     let summary_title = if matches!(get_output_format(), OutputFormat::Json) {
@@ -166,14 +220,16 @@ fn print_apply_summary(created: usize, updated: usize, skipped: usize, unchanged
         "created": created,
         "updated": updated,
         "skipped": skipped,
+        "skipped_unit_files": skipped_unit_files,
+        "skipped_units": skipped_units,
         "unchanged": unchanged
     });
 
     if matches!(get_output_format(), OutputFormat::Json) {
         emit(Level::Info, "dot.apply.summary.title", &summary_title, None);
         let summary_text = format!(
-            "  Created: {}\n  Updated: {}\n  Skipped: {}\n  Unchanged: {}",
-            created, updated, skipped, unchanged
+            "  Created: {}\n  Updated: {}\n  Skipped: {}\n  Skipped (units): {} files in {} units\n  Unchanged: {}",
+            created, updated, skipped, skipped_unit_files, skipped_units, unchanged
         );
         emit(
             Level::Info,
@@ -190,36 +246,51 @@ fn print_apply_summary(created: usize, updated: usize, skipped: usize, unchanged
             Some(summary_data),
         );
 
-        let entries = [
+        // Build entries dynamically - only show unit skips if there are any
+        let mut entries: Vec<(Level, Option<char>, &str, String, &str)> = vec![
             (
                 Level::Success,
                 Some(char::from(NerdFont::Check)),
                 "Created",
-                created,
+                created.to_string(),
                 "dot.apply.summary.created",
             ),
             (
                 Level::Success,
                 Some(char::from(NerdFont::Check)),
                 "Updated",
-                updated,
+                updated.to_string(),
                 "dot.apply.summary.updated",
             ),
-            (
+        ];
+
+        if skipped > 0 {
+            entries.push((
                 Level::Warn,
                 Some(char::from(NerdFont::ShieldAlert)),
                 "Skipped",
-                skipped,
+                skipped.to_string(),
                 "dot.apply.summary.skipped",
-            ),
-            (
-                Level::Info,
-                Some(char::from(NerdFont::Clock2)),
-                "Unchanged",
-                unchanged,
-                "dot.apply.summary.unchanged",
-            ),
-        ];
+            ));
+        }
+
+        if skipped_units > 0 {
+            entries.push((
+                Level::Warn,
+                Some(char::from(NerdFont::ShieldAlert)),
+                "Skipped Units",
+                format!("{} files in {} units", skipped_unit_files, skipped_units),
+                "dot.apply.summary.skipped_units",
+            ));
+        }
+
+        entries.push((
+            Level::Info,
+            Some(char::from(NerdFont::Clock2)),
+            "Unchanged",
+            unchanged.to_string(),
+            "dot.apply.summary.unchanged",
+        ));
 
         let label_width = entries
             .iter()
