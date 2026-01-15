@@ -106,9 +106,9 @@ fn browse_directory(config: &Config, dir: &Path, display: &str, create_mode: boo
         DiscoveryFilter::WithAlternatives
     };
 
-    let dotfiles = discover_dotfiles(config, dir, filter)?;
-
-    if dotfiles.is_empty() {
+    // Check once at the start if there are any dotfiles
+    let initial_dotfiles = discover_dotfiles(config, dir, filter)?;
+    if initial_dotfiles.is_empty() {
         if create_mode {
             emit(
                 Level::Info,
@@ -122,55 +122,61 @@ fn browse_directory(config: &Config, dir: &Path, display: &str, create_mode: boo
         return offer_create_alternative(config, dir, display);
     }
 
-    let action = if create_mode {
-        "create alternative"
-    } else {
-        "switch source"
-    };
-    emit(
-        Level::Info,
-        "dot.alternative.found",
-        &format!(
-            "{} Found {} dotfiles in {} (select to {})",
-            char::from(NerdFont::Check),
-            dotfiles.len(),
-            display.cyan(),
-            action
-        ),
-        None,
-    );
-
-    // Build menu items - actions at start so they appear at top in FZF
-    let mut menu: Vec<BrowseMenuItem> = Vec::new();
-
-    if create_mode {
-        menu.push(BrowseMenuItem::PickNewFile);
-    }
-    menu.push(BrowseMenuItem::Cancel);
-
-    // Add dotfiles after the action items
-    menu.extend(dotfiles.into_iter().map(BrowseMenuItem::Dotfile));
-
     loop {
+        // Reload config and rediscover dotfiles each iteration to pick up newly tracked files
+        let config = Config::load(None)?;
+        let dotfiles = discover_dotfiles(&config, dir, filter)?;
+
+        let action = if create_mode {
+            "create alternative"
+        } else {
+            "switch source"
+        };
+        emit(
+            Level::Info,
+            "dot.alternative.found",
+            &format!(
+                "{} Found {} dotfiles in {} (select to {})",
+                char::from(NerdFont::Check),
+                dotfiles.len(),
+                display.cyan(),
+                action
+            ),
+            None,
+        );
+
+        // Build menu items - actions at start so they appear at top in FZF
+        let mut menu: Vec<BrowseMenuItem> = Vec::new();
+
+        if create_mode {
+            menu.push(BrowseMenuItem::PickNewFile);
+        }
+        menu.push(BrowseMenuItem::Cancel);
+
+        // Add dotfiles after the action items
+        menu.extend(dotfiles.into_iter().map(BrowseMenuItem::Dotfile));
+
         let selection = FzfWrapper::builder()
             .prompt(format!("Select dotfile in {}: ", display))
             .args(fzf_mocha_args())
             .responsive_layout()
-            .select(menu.clone())?;
+            .select(menu)?;
 
         match selection {
             FzfResult::Selected(BrowseMenuItem::Dotfile(selected)) => {
                 if create_mode {
-                    let sources = find_all_sources(config, &selected.target_path)?;
-                    return create_flow(
-                        config,
+                    let sources = find_all_sources(&config, &selected.target_path)?;
+                    create_flow(
+                        &config,
                         &selected.target_path,
                         &selected.display_path,
                         &sources,
-                    );
+                    )?;
+                    // Loop back to show updated menu with newly tracked file
+                    continue;
                 } else {
                     return select_flow(
-                        config,
+                        &config,
                         &selected.target_path,
                         &selected.display_path,
                         true,
@@ -180,10 +186,10 @@ fn browse_directory(config: &Config, dir: &Path, display: &str, create_mode: boo
             FzfResult::Selected(BrowseMenuItem::PickNewFile) => {
                 if let Some(path) = pick_new_file_to_track()? {
                     let display_path = to_display_path(&path);
-                    let sources = find_all_sources(config, &path)?;
-                    return create_flow(config, &path, &display_path, &sources);
+                    let sources = find_all_sources(&config, &path)?;
+                    create_flow(&config, &path, &display_path, &sources)?;
+                    // Loop back to show updated menu with newly tracked file
                 }
-                // User cancelled file picker, show menu again
                 continue;
             }
             FzfResult::Selected(BrowseMenuItem::Cancel) | FzfResult::Cancelled => {
