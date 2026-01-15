@@ -12,6 +12,7 @@ pub mod brightness;
 pub mod desktop;
 pub mod display;
 pub mod flatpak;
+pub mod installed_flatpaks;
 pub mod installed_packages;
 pub mod keyboard;
 pub mod language;

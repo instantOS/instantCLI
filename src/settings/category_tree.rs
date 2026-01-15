@@ -47,9 +47,9 @@ impl CategoryNode {
 /// are top-level and which are grouped into subcategories.
 pub fn category_tree(category: Category) -> Vec<CategoryNode> {
     use crate::settings::definitions::{
-        appearance, apps, brightness, desktop, display, flatpak, installed_packages, keyboard,
-        language, mouse, network, packages, printers, storage, swap_escape, system, toggles, users,
-        wiremix,
+        appearance, apps, brightness, desktop, display, flatpak, installed_flatpaks,
+        installed_packages, keyboard, language, mouse, network, packages, printers, storage,
+        swap_escape, system, toggles, users, wiremix,
     };
 
     match category {
@@ -135,6 +135,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&packages::InstallPackages),
             CategoryNode::setting(&installed_packages::ManageInstalledPackages),
             CategoryNode::setting(&flatpak::InstallFlatpakApps),
+            CategoryNode::setting(&installed_flatpaks::ManageInstalledFlatpaks),
         ],
     }
 }

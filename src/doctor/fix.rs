@@ -653,11 +653,10 @@ pub async fn fix_interactive() -> Result<()> {
                 let issues: Vec<FixableIssue> = selected
                     .into_iter()
                     .filter_map(|item| {
-                        if let DoctorMenuItem::Issue(issue) = item {
-                            if issue.check_id.is_some() {
+                        if let DoctorMenuItem::Issue(issue) = item
+                            && issue.check_id.is_some() {
                                 return Some(issue);
                             }
-                        }
                         None
                     })
                     .collect();

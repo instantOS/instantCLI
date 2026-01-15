@@ -219,10 +219,10 @@ impl FzfSelectable for FixableIssue {
                     .subtext("Manual intervention may be required");
             }
 
-            if self.action != Some(MenuAction::FixAll) {
-                if let Some(ref id) = self.check_id {
-                    builder = builder.blank().subtext(&format!("ID: {}", id));
-                }
+            if self.action != Some(MenuAction::FixAll)
+                && let Some(ref id) = self.check_id
+            {
+                builder = builder.blank().subtext(&format!("ID: {}", id));
             }
         }
 

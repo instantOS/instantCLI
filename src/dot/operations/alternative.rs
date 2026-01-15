@@ -610,12 +610,12 @@ fn handle_file_alternative(
         .collect();
 
     // Add "Remove Override" option if there's an active override
-    if current_override.is_some() {
-        if let Some(default) = default_source {
-            menu_items.push(AlternativeMenuItem::RemoveOverride {
-                default_source: default,
-            });
-        }
+    if current_override.is_some()
+        && let Some(default) = default_source
+    {
+        menu_items.push(AlternativeMenuItem::RemoveOverride {
+            default_source: default,
+        });
     }
 
     // Add Back/Cancel option based on context
