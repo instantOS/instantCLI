@@ -307,3 +307,63 @@ impl FzfSelectable for DiscoveredDotfile {
         FzfPreview::Text(b.build_string())
     }
 }
+
+/// Menu item for browsing dotfiles (includes option to pick new file).
+#[derive(Clone)]
+pub enum BrowseMenuItem {
+    /// An existing dotfile.
+    Dotfile(DiscoveredDotfile),
+    /// Pick a new file to track.
+    PickNewFile,
+    /// Cancel.
+    Cancel,
+}
+
+impl FzfSelectable for BrowseMenuItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            BrowseMenuItem::Dotfile(d) => d.fzf_display_text(),
+            BrowseMenuItem::PickNewFile => format!(
+                "{} Track new file...",
+                format_icon_colored(NerdFont::Plus, colors::GREEN)
+            ),
+            BrowseMenuItem::Cancel => format!(
+                "{} Cancel",
+                format_icon_colored(NerdFont::Cross, colors::OVERLAY0)
+            ),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            BrowseMenuItem::Dotfile(d) => d.fzf_key(),
+            BrowseMenuItem::PickNewFile => "!__pick_new__".to_string(),
+            BrowseMenuItem::Cancel => "!__cancel__".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            BrowseMenuItem::Dotfile(d) => d.fzf_preview(),
+            BrowseMenuItem::PickNewFile => FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Plus, "Track New File")
+                    .blank()
+                    .text("Open file picker to select a file from your system.")
+                    .blank()
+                    .text("Use this to:")
+                    .bullet("Add a new dotfile to a repository")
+                    .bullet("Track a config file that isn't managed yet")
+                    .bullet("Create an alternative for any file")
+                    .build_string(),
+            ),
+            BrowseMenuItem::Cancel => FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Cross, "Cancel")
+                    .blank()
+                    .text("Exit without making changes.")
+                    .build_string(),
+            ),
+        }
+    }
+}

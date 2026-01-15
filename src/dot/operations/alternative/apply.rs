@@ -23,10 +23,10 @@ pub fn is_safe_to_switch(target_path: &Path, sources: &[SourceOption]) -> Result
 
     let target_hash = Dotfile::compute_hash(target_path)?;
     for item in sources {
-        if let Ok(source_hash) = Dotfile::compute_hash(&item.source.source_path) {
-            if target_hash == source_hash {
-                return Ok(true);
-            }
+        if let Ok(source_hash) = Dotfile::compute_hash(&item.source.source_path)
+            && target_hash == source_hash
+        {
+            return Ok(true);
         }
     }
     Ok(false)

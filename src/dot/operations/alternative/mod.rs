@@ -21,11 +21,10 @@ use crate::ui::prelude::*;
 
 use apply::{is_safe_to_switch, remove_override, reset_override, set_alternative};
 use discovery::{DiscoveryFilter, discover_dotfiles, get_destinations, to_display_path};
-use picker::{CreateMenuItem, MenuItem, SourceOption};
+use picker::{BrowseMenuItem, CreateMenuItem, MenuItem, SourceOption};
 
 // Re-export for external use (add command uses these)
 pub use apply::add_to_destination;
-pub use discovery::get_destinations as get_all_destinations;
 
 /// Pick a destination and add a file there (shared by `add --choose` and `alternative --create`).
 ///
@@ -141,31 +140,59 @@ fn browse_directory(config: &Config, dir: &Path, display: &str, create_mode: boo
         None,
     );
 
-    let selected = match FzfWrapper::builder()
-        .prompt(format!("Select dotfile in {}: ", display))
-        .args(fzf_mocha_args())
-        .responsive_layout()
-        .select(dotfiles)?
-    {
-        FzfResult::Selected(item) => item,
-        FzfResult::Cancelled => {
-            emit_cancelled();
-            return Ok(());
-        }
-        FzfResult::Error(e) => return Err(anyhow::anyhow!("Selection error: {}", e)),
-        _ => return Ok(()),
-    };
+    // Build menu items - actions at start so they appear at top in FZF
+    let mut menu: Vec<BrowseMenuItem> = Vec::new();
 
     if create_mode {
-        let sources = find_all_sources(config, &selected.target_path)?;
-        create_flow(
-            config,
-            &selected.target_path,
-            &selected.display_path,
-            &sources,
-        )
-    } else {
-        select_flow(config, &selected.target_path, &selected.display_path, true)
+        menu.push(BrowseMenuItem::PickNewFile);
+    }
+    menu.push(BrowseMenuItem::Cancel);
+
+    // Add dotfiles after the action items
+    menu.extend(dotfiles.into_iter().map(BrowseMenuItem::Dotfile));
+
+    loop {
+        let selection = FzfWrapper::builder()
+            .prompt(format!("Select dotfile in {}: ", display))
+            .args(fzf_mocha_args())
+            .responsive_layout()
+            .select(menu.clone())?;
+
+        match selection {
+            FzfResult::Selected(BrowseMenuItem::Dotfile(selected)) => {
+                if create_mode {
+                    let sources = find_all_sources(config, &selected.target_path)?;
+                    return create_flow(
+                        config,
+                        &selected.target_path,
+                        &selected.display_path,
+                        &sources,
+                    );
+                } else {
+                    return select_flow(
+                        config,
+                        &selected.target_path,
+                        &selected.display_path,
+                        true,
+                    );
+                }
+            }
+            FzfResult::Selected(BrowseMenuItem::PickNewFile) => {
+                if let Some(path) = pick_new_file_to_track()? {
+                    let display_path = to_display_path(&path);
+                    let sources = find_all_sources(config, &path)?;
+                    return create_flow(config, &path, &display_path, &sources);
+                }
+                // User cancelled file picker, show menu again
+                continue;
+            }
+            FzfResult::Selected(BrowseMenuItem::Cancel) | FzfResult::Cancelled => {
+                emit_cancelled();
+                return Ok(());
+            }
+            FzfResult::Error(e) => return Err(anyhow::anyhow!("Selection error: {}", e)),
+            _ => return Ok(()),
+        }
     }
 }
 
@@ -184,11 +211,17 @@ fn offer_create_alternative(config: &Config, dir: &Path, display: &str) -> Resul
             match self {
                 Choice::CreateAlternative => format!(
                     "{} Create new alternative...",
-                    crate::ui::catppuccin::format_icon_colored(NerdFont::Plus, crate::ui::catppuccin::colors::GREEN)
+                    crate::ui::catppuccin::format_icon_colored(
+                        NerdFont::Plus,
+                        crate::ui::catppuccin::colors::GREEN
+                    )
                 ),
                 Choice::Cancel => format!(
                     "{} Cancel",
-                    crate::ui::catppuccin::format_icon_colored(NerdFont::Cross, crate::ui::catppuccin::colors::OVERLAY0)
+                    crate::ui::catppuccin::format_icon_colored(
+                        NerdFont::Cross,
+                        crate::ui::catppuccin::colors::OVERLAY0
+                    )
                 ),
             }
         }
@@ -370,12 +403,12 @@ fn select_flow(config: &Config, path: &Path, display: &str, from_menu: bool) -> 
 
     let mut menu: Vec<MenuItem> = items.into_iter().map(MenuItem::Source).collect();
 
-    if current.is_some() {
-        if let Some(default) = default_source {
-            menu.push(MenuItem::RemoveOverride {
-                default_source: default,
-            });
-        }
+    if current.is_some()
+        && let Some(default) = default_source
+    {
+        menu.push(MenuItem::RemoveOverride {
+            default_source: default,
+        });
     }
 
     menu.push(if from_menu {
@@ -407,7 +440,7 @@ fn select_flow(config: &Config, path: &Path, display: &str, from_menu: bool) -> 
 }
 
 fn create_flow(
-    config: &Config,
+    _config: &Config,
     path: &Path,
     display: &str,
     existing: &[DotfileSource],
@@ -577,6 +610,51 @@ fn handle_clone_repo() -> Result<bool> {
     // Check if a new repo was added by comparing counts
     let new_config = Config::load(None)?;
     Ok(new_config.repos.len() > config.repos.len())
+}
+
+/// Pick a new file to track using the yazi file picker.
+fn pick_new_file_to_track() -> Result<Option<std::path::PathBuf>> {
+    use crate::menu_utils::{FilePickerScope, MenuWrapper};
+
+    let home = discovery::home_dir();
+
+    match MenuWrapper::file_picker()
+        .start_dir(&home)
+        .scope(FilePickerScope::Files)
+        .hint("Select a file to track as a dotfile")
+        .pick_one()
+    {
+        Ok(Some(path)) => {
+            // Validate the file is under home directory
+            if !path.starts_with(&home) {
+                emit(
+                    Level::Warn,
+                    "dot.alternative.not_in_home",
+                    &format!(
+                        "{} File must be in your home directory",
+                        char::from(NerdFont::Warning)
+                    ),
+                    None,
+                );
+                return Ok(None);
+            }
+            Ok(Some(path))
+        }
+        Ok(None) => Ok(None),
+        Err(e) => {
+            emit(
+                Level::Error,
+                "dot.alternative.picker_error",
+                &format!(
+                    "{} File picker error: {}",
+                    char::from(NerdFont::CrossCircle),
+                    e
+                ),
+                None,
+            );
+            Ok(None)
+        }
+    }
 }
 
 fn list_file(path: &Path, display: &str, sources: &[DotfileSource]) -> Result<()> {
