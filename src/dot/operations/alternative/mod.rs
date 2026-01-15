@@ -224,7 +224,10 @@ fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Result<()> {
                 if let Some(path) = pick_new_file_to_track()? {
                     let file_display = to_display_path(&path);
                     let sources = find_all_sources(&config, &path)?;
-                    if matches!(run_create_flow(&path, &file_display, &sources)?, Flow::Done) {
+                    let create_result = run_create_flow(&path, &file_display, &sources)?;
+                    if matches!(create_result, Flow::Done) {
+                        preselect = Some(file_display);
+                    } else if matches!(create_result, Flow::Cancelled) {
                         preselect = Some(file_display);
                     }
                 }
@@ -753,6 +756,7 @@ fn pick_new_file_to_track() -> Result<Option<std::path::PathBuf>> {
     match MenuWrapper::file_picker()
         .start_dir(&home)
         .scope(FilePickerScope::Files)
+        .show_hidden(true)
         .hint("Select a file to track as a dotfile")
         .pick_one()
     {
