@@ -6,10 +6,10 @@ use crate::dot::git::add_repo as git_clone_repo;
 use crate::dot::menu::repo_actions::build_repo_preview;
 use crate::dot::repo::RepositoryManager;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
-use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::Level;
-use crate::ui::prelude::*;
+use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::prelude::*;
 use anyhow::{Context, Result};
 use colored::*;
 
@@ -68,11 +68,7 @@ impl FzfSelectable for RepoSelectionItem {
     }
 }
 
-fn select_repo_interactive(
-    config: &Config,
-    db: &Database,
-    prompt: &str,
-) -> Result<Option<String>> {
+fn select_repo_interactive(config: &Config, db: &Database, prompt: &str) -> Result<Option<String>> {
     let items: Vec<RepoSelectionItem> = config
         .repos
         .iter()

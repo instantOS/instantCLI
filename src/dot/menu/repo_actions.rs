@@ -21,6 +21,7 @@ pub enum RepoAction {
     ManageSubdirs,
     ToggleReadOnly,
     OpenInLazygit,
+    OpenInShell,
     ShowInfo,
     Remove,
     Back,
@@ -187,6 +188,19 @@ This helps keep the repository in sync with upstream.",
             repo_name
         ),
         action: RepoAction::OpenInLazygit,
+    });
+
+    // Open in Shell
+    actions.push(RepoActionItem {
+        display: format!(
+            "{} Open in Shell",
+            format_icon_colored(NerdFont::Terminal, colors::GREEN)
+        ),
+        preview: format!(
+            "Open a new shell in '{}'.\n\nYou can use this to manually browse or modify files in the repository.",
+            repo_name
+        ),
+        action: RepoAction::OpenInShell,
     });
 
     // Show info
@@ -506,6 +520,17 @@ pub fn handle_repo_actions(
                 {
                     // Spawn lazygit in the repo directory
                     std::process::Command::new("lazygit")
+                        .current_dir(&repo_path)
+                        .status()?;
+                }
+            }
+            RepoAction::OpenInShell => {
+                let repo_manager = RepositoryManager::new(config, db);
+                if let Ok(local_repo) = repo_manager.get_repository_info(repo_name)
+                    && let Ok(repo_path) = local_repo.local_path(config)
+                {
+                    let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
+                    std::process::Command::new(shell)
                         .current_dir(&repo_path)
                         .status()?;
                 }
