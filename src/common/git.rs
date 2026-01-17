@@ -46,11 +46,39 @@ pub fn current_branch(repo: &Repository) -> Result<String> {
     Ok(head_name.to_string())
 }
 
-/// Fetch a specific branch from origin
+/// Fetch a specific branch from its configured remote (or origin)
 pub fn fetch_branch(repo: &mut Repository, branch: &str) -> Result<()> {
+    // Determine which remote to fetch from
+    let remote_name = if let Ok(local_branch) = repo.find_branch(branch, git2::BranchType::Local) {
+        // Branch exists locally, check upstream
+        if let Ok(_upstream) = local_branch.upstream() {
+            // Upstream exists, get its remote
+            let buf = repo.branch_upstream_remote(&format!("refs/heads/{}", branch));
+            match buf {
+                Ok(buf) => buf.as_str().unwrap_or("origin").to_string(),
+                Err(_) => "origin".to_string(), // Fallback
+            }
+        } else {
+            // Branch exists but has no upstream.
+            // Check if 'origin' exists as a fallback
+            if repo.find_remote("origin").is_ok() {
+                "origin".to_string()
+            } else {
+                return Ok(()); // No upstream, no origin. Skip.
+            }
+        }
+    } else {
+        // Branch does not exist locally. Assume we want to fetch it from origin.
+        if repo.find_remote("origin").is_ok() {
+            "origin".to_string()
+        } else {
+            return Ok(()); // No origin. Skip.
+        }
+    };
+
     let mut remote = repo
-        .find_remote("origin")
-        .context("Failed to find origin remote")?;
+        .find_remote(&remote_name)
+        .context(format!("Failed to find remote '{}'", remote_name))?;
 
     let mut fetch_options = FetchOptions::new();
     fetch_options.remote_callbacks(git2::RemoteCallbacks::new());
@@ -104,6 +132,17 @@ pub fn clean_and_pull(repo: &mut Repository) -> Result<()> {
     // Get current branch
     let branch_name = current_branch(repo)?;
 
+    // Check if upstream exists - if not, we can't pull anything
+    // Use a block to ensure local_branch is dropped before we borrow repo mutably
+    let has_upstream = {
+        let local_branch = repo.find_branch(&branch_name, git2::BranchType::Local)?;
+        local_branch.upstream().is_ok()
+    };
+
+    if !has_upstream {
+        return Ok(());
+    }
+
     // Check if working directory is dirty
     if repo.statuses(None)?.is_empty() {
         // Working directory is clean, just fetch
@@ -122,23 +161,23 @@ pub fn clean_and_pull(repo: &mut Repository) -> Result<()> {
         fetch_branch(repo, &branch_name)?;
     }
 
-    // Get the reference for the remote branch
-    // libgit2 expects a full ref name like refs/remotes/origin/<branch>
-    let remote_branch_name = format!("refs/remotes/origin/{branch_name}");
-    let remote_branch_ref = repo
-        .find_reference(&remote_branch_name)
-        .context("Failed to find remote branch reference")?;
-
-    let remote_commit = remote_branch_ref
+    // Get the upstream branch to reset to
+    // We re-query the branch/upstream because fetch might have updated refs
+    let local_branch = repo.find_branch(&branch_name, git2::BranchType::Local)?;
+    let upstream = local_branch
+        .upstream()
+        .context("Upstream branch not found")?;
+    let upstream_commit = upstream
+        .get()
         .peel_to_commit()
-        .context("Failed to peel remote branch to commit")?;
+        .context("Failed to peel upstream branch to commit")?;
 
-    // Reset local branch to match remote (hard reset)
+    // Reset local branch to match upstream (hard reset)
     repo.set_head(&format!("refs/heads/{branch_name}"))
         .context("Failed to set HEAD")?;
 
-    repo.reset(&remote_commit.into_object(), git2::ResetType::Hard, None)
-        .context("Failed to reset to remote commit")?;
+    repo.reset(&upstream_commit.into_object(), git2::ResetType::Hard, None)
+        .context("Failed to reset to upstream commit")?;
 
     Ok(())
 }
