@@ -46,6 +46,16 @@ pub enum RepoCommands {
         #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
         name: Option<String>,
     },
+    /// Open repository in lazygit
+    Lazygit {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: Option<String>,
+    },
+    /// Open repository in a new shell
+    Shell {
+        #[arg(add = ArgValueCompleter::new(crate::completions::repo_name_completion))]
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

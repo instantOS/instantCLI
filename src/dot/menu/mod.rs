@@ -1,7 +1,7 @@
 //! Interactive dot menu for managing dotfile repositories
 
 pub mod add_repo;
-mod repo_actions;
+pub mod repo_actions;
 mod subdir_actions;
 
 use anyhow::Result;
