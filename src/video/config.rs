@@ -72,6 +72,7 @@ pub struct VideoProjectPaths {
 #[serde(default)]
 pub struct VideoConfig {
     /// Music volume for video processing (0.0-1.0)
+    #[serde(default = "crate::video::config::VideoConfig::default_music_volume")]
     pub music_volume: f32,
     /// Which audio preprocessor to use (local, auphonic, or none)
     pub preprocessor: PreprocessorType,
@@ -93,6 +94,10 @@ impl Default for VideoConfig {
 }
 
 impl VideoConfig {
+    fn default_music_volume() -> f32 {
+        0.2
+    }
+
     pub const DEFAULT_MUSIC_VOLUME: f32 = 0.2;
 
     pub fn load() -> Result<Self> {
@@ -147,14 +152,14 @@ impl VideoConfig {
 documented_config!(VideoConfig {
     // Regular fields with defaults - always populated by serde
     fields: [
-        music_volume: f32 = Self::DEFAULT_MUSIC_VOLUME, "Music volume for video processing (0.0-1.0)",
-        preprocessor: PreprocessorType = PreprocessorType::Local, "Which audio preprocessor to use (local, auphonic, or none)",
+        music_volume, "Music volume for video processing (0.0-1.0)",
+        preprocessor, "Which audio preprocessor to use (local, auphonic, or none)",
     ],
 
     // Optional fields - commented when None
     optional: [
-        auphonic_api_key: String, "Auphonic API key for cloud preprocessing (optional)",
-        auphonic_preset_uuid: String, "Auphonic preset UUID for consistent processing settings (optional)",
+        auphonic_api_key, "Auphonic API key for cloud preprocessing (optional)",
+        auphonic_preset_uuid, "Auphonic preset UUID for consistent processing settings (optional)",
     ],
 
     config_path: Ok(paths::instant_config_dir()?.join("video.toml")),

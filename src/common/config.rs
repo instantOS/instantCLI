@@ -12,16 +12,27 @@
 //!
 //! ```ignore
 //! documented_config!(VideoConfig {
-//!     // Fields with defaults - always written uncommented
-//!     [fields] music_volume: f32 = 0.2, "Music volume (0.0-1.0)"
-//!     [fields] preprocessor: PreprocessorType = Local, "Audio preprocessor"
+//!     // Fields - defaults defined via serde attributes on struct
+//!     [fields] music_volume, "Music volume (0.0-1.0)"
+//!     [fields] preprocessor, "Audio preprocessor"
 //!
 //!     // Optional fields - commented when None
-//!     [optional] auphonic_api_key: String, "Auphonic API key"
-//!     [optional] auphonic_preset_uuid: String, "Preset UUID"
+//!     [optional] auphonic_api_key, "Auphonic API key"
+//!     [optional] auphonic_preset_uuid, "Preset UUID"
 //!
 //!     config_path: || paths::instant_config_dir()?.join("video.toml"),
 //! });
+//!
+//! // On the struct, defaults are defined via serde:
+//! #[derive(Debug, Clone, Serialize, Deserialize)]
+//! #[serde(default)]
+//! pub struct VideoConfig {
+//!     #[serde(default = "Self::default_music_volume")]
+//!     pub music_volume: f32,
+//!     pub preprocessor: PreprocessorType,  // uses Default trait
+//!     pub auphonic_api_key: Option<String>,
+//!     pub auphonic_preset_uuid: Option<String>,
+//! }
 //! ```
 
 use anyhow::{Context, Result};
@@ -162,10 +173,10 @@ macro_rules! documented_config {
     (
         $config_name:ident {
             fields: [
-                $($field:ident: $field_ty:ty = $default:expr, $desc:expr),* $(,)?
+                $($field:ident, $desc:expr),* $(,)?
             ],
             optional: [
-                $($opt_field:ident: $opt_ty:ty, $opt_desc:expr),* $(,)?
+                $($opt_field:ident, $opt_desc:expr),* $(,)?
             ],
             config_path: $path:expr $(,)?
         }
@@ -242,7 +253,7 @@ macro_rules! documented_config {
     (
         $config_name:ident {
             fields: [
-                $($field:ident: $field_ty:ty = $default:expr, $desc:expr),* $(,)?
+                $($field:ident, $desc:expr),* $(,)?
             ],
             config_path: $path:expr $(,)?
         }

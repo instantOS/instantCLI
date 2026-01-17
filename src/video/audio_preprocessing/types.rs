@@ -3,7 +3,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 use std::path::{Path, PathBuf};
 
 /// Type of audio preprocessor to use
