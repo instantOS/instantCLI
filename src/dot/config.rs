@@ -7,6 +7,7 @@ use std::{
 
 use crate::common::TildePath;
 use crate::common::paths;
+use crate::common::config::DocumentedConfig;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
@@ -202,19 +203,7 @@ impl Config {
     /// Load config from default location or custom path
     pub fn load(custom_path: Option<&str>) -> Result<Self> {
         let cfg_path = config_file_path(custom_path)?;
-        let config = if !cfg_path.exists() {
-            let default = Config::default();
-            let toml = toml::to_string_pretty(&default).context("serializing default config")?;
-            fs::write(&cfg_path, toml)
-                .with_context(|| format!("writing default config to {}", cfg_path.display()))?;
-            default
-        } else {
-            let s = fs::read_to_string(&cfg_path)
-                .with_context(|| format!("reading config {}", cfg_path.display()))?;
-            toml::from_str(&s).context("parsing config toml")?
-        };
-
-        Ok(config)
+        <Self as DocumentedConfig>::load_from_path_documented(cfg_path)
     }
 
     /// Save the config to default location or custom path
@@ -553,3 +542,20 @@ pub fn extract_repo_name(repo: &str) -> String {
         .map(|p| p.to_string())
         .unwrap_or_else(|| s.to_string())
 }
+
+// Import macro from crate root
+use crate::documented_config;
+
+// Implement DocumentedConfig trait for Config using the macro
+documented_config!(Config {
+    fields: [
+        clone_depth, "Git clone depth for repositories (default: 1 for shallow clones)",
+        hash_cleanup_days, "Days before old file hashes are cleaned up from database (default: 30)",
+        repos_dir, "Directory where dotfile repositories are stored",
+        database_dir, "Path to the SQLite database storing file hashes",
+        repos, "List of dotfile repositories to manage",
+        ignored_paths, "Paths to ignore during dotfile operations (local overrides)",
+        units, "Global dotfile units - directories treated as atomic (combined with per-repo units)",
+    ],
+    config_path: config_file_path(None),
+});

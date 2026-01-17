@@ -2,11 +2,14 @@ use crate::dot::config;
 use crate::dot::localrepo::DotfileDir;
 use crate::menu_utils::FzfSelectable;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use anyhow::{Context, Result};
 
 /// Repository metadata structure.
 /// This is used for reading from instantdots.toml OR from the main config.
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct RepoMetaData {
+    #[serde(default = "crate::dot::types::RepoMetaData::default_name")]
     pub name: String,
     pub author: Option<String>,
     pub description: Option<String>,
@@ -19,6 +22,26 @@ pub struct RepoMetaData {
     /// If any file in a unit is modified, all files in that unit are treated as modified.
     #[serde(default)]
     pub units: Vec<String>,
+}
+
+impl RepoMetaData {
+    fn default_name() -> String {
+        "dotfiles".to_string()
+    }
+}
+
+impl Default for RepoMetaData {
+    fn default() -> Self {
+        Self {
+            name: Self::default_name(),
+            author: None,
+            description: None,
+            read_only: None,
+            dots_dirs: default_dots_dirs(),
+            default_active_subdirs: None,
+            units: Vec::new(),
+        }
+    }
 }
 
 fn default_dots_dirs() -> Vec<String> {
@@ -96,3 +119,23 @@ impl FzfSelectable for DotsDirSelectItem {
         ))
     }
 }
+
+// Import macro from crate root
+use crate::documented_config;
+
+// Implement DocumentedConfig trait for RepoMetaData using the macro
+// Note: config_path returns a placeholder since instantdots.toml paths are dynamic per-repo
+documented_config!(RepoMetaData {
+    fields: [
+        name, "Repository name (used for identification)",
+        dots_dirs, "Directories containing dotfiles (e.g., ['dots'])",
+        units, "Directories treated as atomic units (all files modified together)",
+    ],
+    optional: [
+        author, "Repository author/maintainer (optional)",
+        description, "Repository description (optional)",
+        read_only, "Whether repository is read-only (optional, default: false)",
+        default_active_subdirs, "Default active subdirectories (optional, defaults to first in dots_dirs)",
+    ],
+    config_path: Ok(std::path::PathBuf::from("instantdots.toml")),
+});

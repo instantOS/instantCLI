@@ -2,12 +2,12 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
-    fs,
     path::{Path, PathBuf},
 };
 
 use crate::common::TildePath;
 use crate::common::paths;
+use crate::common::config::DocumentedConfig;
 
 /// Describes what kind of filesystem element a tracked path represents
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,18 +218,31 @@ pub struct InstalledDependency {
 /// Main game configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstantGameConfig {
+    #[serde(default = "InstantGameConfig::default_repo")]
     pub repo: TildePath,
+    #[serde(default = "InstantGameConfig::default_password")]
     pub repo_password: String,
+    #[serde(default)]
     pub games: Vec<Game>,
     #[serde(default, skip_serializing_if = "RetentionPolicyConfig::is_default")]
     pub retention_policy: RetentionPolicyConfig,
 }
 
+impl InstantGameConfig {
+    fn default_repo() -> TildePath {
+        TildePath::new(PathBuf::new())
+    }
+
+    fn default_password() -> String {
+        "instantgamepassword".to_string()
+    }
+}
+
 impl Default for InstantGameConfig {
     fn default() -> Self {
         Self {
-            repo: TildePath::new(PathBuf::new()),
-            repo_password: "instantgamepassword".to_string(),
+            repo: Self::default_repo(),
+            repo_password: Self::default_password(),
             games: Vec::new(),
             retention_policy: RetentionPolicyConfig::default(),
         }
@@ -256,19 +269,13 @@ pub fn installations_config_path() -> Result<PathBuf> {
 
 impl InstantGameConfig {
     pub fn load() -> Result<Self> {
-        Self::load_from_path(games_config_path()?)
+        let path = games_config_path()?;
+        <Self as DocumentedConfig>::load_from_path_documented(path)
     }
 
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        if !path.exists() {
-            let config = Self::default();
-            config.save()?;
-            return Ok(config);
-        }
-
-        let content = fs::read_to_string(path).context("reading games config")?;
-        let config: Self = toml::from_str(&content).context("parsing games config")?;
+        let config = <Self as DocumentedConfig>::load_from_path_documented(path.to_path_buf())?;
         config.validate()?;
         Ok(config)
     }
@@ -287,14 +294,13 @@ impl InstantGameConfig {
     }
 
     pub fn save(&self) -> Result<()> {
-        self.save_to_path(games_config_path()?)
+        let path = games_config_path()?;
+        self.save_with_documentation(&path)
     }
 
     pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        let content = toml::to_string_pretty(self).context("serializing games config")?;
-        fs::write(path, content).context("writing games config")?;
-        Ok(())
+        self.save_with_documentation(path)
     }
 
     pub fn is_initialized(&self) -> bool {
@@ -304,19 +310,13 @@ impl InstantGameConfig {
 
 impl InstallationsConfig {
     pub fn load() -> Result<Self> {
-        Self::load_from_path(installations_config_path()?)
+        let path = installations_config_path()?;
+        <Self as DocumentedConfig>::load_from_path_documented(path)
     }
 
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        if !path.exists() {
-            let config = Self::default();
-            config.save()?;
-            return Ok(config);
-        }
-
-        let content = fs::read_to_string(path).context("reading installations config")?;
-        let config: Self = toml::from_str(&content).context("parsing installations config")?;
+        let config = <Self as DocumentedConfig>::load_from_path_documented(path.to_path_buf())?;
         config.validate()?;
         Ok(config)
     }
@@ -335,16 +335,37 @@ impl InstallationsConfig {
     }
 
     pub fn save(&self) -> Result<()> {
-        self.save_to_path(installations_config_path()?)
+        let path = installations_config_path()?;
+        self.save_with_documentation(&path)
     }
 
     pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
-        let content = toml::to_string_pretty(self).context("serializing installations config")?;
-        fs::write(path, content).context("writing installations config")?;
-        Ok(())
+        self.save_with_documentation(path)
     }
 }
+
+// Import macro from crate root
+use crate::documented_config;
+
+// Implement DocumentedConfig trait for InstantGameConfig using the macro
+documented_config!(InstantGameConfig {
+    fields: [
+        repo, "Path to restic backup repository",
+        repo_password, "Password for restic repository",
+        games, "List of tracked games",
+        retention_policy, "Backup retention policy (keep-daily, keep-weekly, etc.)",
+    ],
+    config_path: games_config_path(),
+});
+
+// Implement DocumentedConfig trait for InstallationsConfig using the macro
+documented_config!(InstallationsConfig {
+    fields: [
+        installations, "List of game installations on this device",
+    ],
+    config_path: installations_config_path(),
+});
 
 #[cfg(test)]
 mod tests {

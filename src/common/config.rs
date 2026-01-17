@@ -224,7 +224,7 @@ macro_rules! documented_config {
                     )*
                     $(
                         stringify!($opt_field) => match &self.$opt_field {
-                            Some(v) => toml::to_string(v).unwrap_or_else(|_| format!("\"{}\"", v)),
+                            Some(v) => toml::to_string(v).unwrap_or_else(|_| format!("{:?}", v)),
                             None => "\"\"".to_string(),
                         },
                     )*

@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use git2::{Repository, Signature};
-use serde::Serialize;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -8,6 +7,7 @@ use std::{
 
 use crate::dot::config::{self, Config};
 use crate::ui::prelude::*;
+use crate::common::config::DocumentedConfig;
 
 /// Validate that the given path is a git repository
 fn ensure_git_repo(repo_path: &Path) -> Result<()> {
@@ -37,8 +37,8 @@ pub fn read_meta(repo_path: &Path) -> Result<RepoMetaData> {
 /// Write updated metadata to instantdots.toml
 pub fn update_meta(repo_path: &Path, meta: &RepoMetaData) -> Result<()> {
     let toml_path = repo_path.join("instantdots.toml");
-    let toml = toml::to_string_pretty(meta).context("serializing instantdots.toml")?;
-    fs::write(&toml_path, toml).with_context(|| format!("writing {}", toml_path.display()))?;
+    meta.save_with_documentation(&toml_path)
+        .with_context(|| format!("writing {}", toml_path.display()))?;
     Ok(())
 }
 
@@ -301,27 +301,18 @@ fn gather_repo_inputs(
 fn write_instantdots_toml(repo_path: &Path, inputs: &RepoInputs) -> Result<()> {
     let toml_path = repo_path.join("instantdots.toml");
 
-    #[derive(Serialize)]
-    struct MetaWrite {
-        name: String,
-        author: Option<String>,
-        description: Option<String>,
-        read_only: Option<bool>,
-        dots_dirs: Vec<String>,
-        default_active_subdirs: Option<Vec<String>>,
-    }
-
-    let meta = MetaWrite {
+    let meta = RepoMetaData {
         name: inputs.name.clone(),
         author: inputs.author.clone(),
         description: inputs.description.clone(),
         read_only: if inputs.read_only { Some(true) } else { None },
         dots_dirs: vec![inputs.dots_dir.clone()],
         default_active_subdirs: None,
+        units: Vec::new(),
     };
 
-    let toml = toml::to_string_pretty(&meta).context("serializing instantdots.toml")?;
-    fs::write(&toml_path, toml).with_context(|| format!("writing {}", toml_path.display()))?;
+    meta.save_with_documentation(&toml_path)
+        .with_context(|| format!("writing {}", toml_path.display()))?;
     Ok(())
 }
 
