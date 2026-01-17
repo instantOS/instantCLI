@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+// Import macro from crate root (#[macro_export] places it there)
+use crate::documented_config;
+use crate::common::config::DocumentedConfig;
 use crate::common::paths;
 
 pub use super::audio_preprocessing::PreprocessorType;
@@ -68,9 +71,9 @@ pub struct VideoProjectPaths {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VideoConfig {
+    /// Music volume for video processing (0.0-1.0)
     pub music_volume: f32,
     /// Which audio preprocessor to use (local, auphonic, or none)
-    #[serde(default)]
     pub preprocessor: PreprocessorType,
     /// Auphonic API key (only used when preprocessor = auphonic)
     pub auphonic_api_key: Option<String>,
@@ -93,7 +96,7 @@ impl VideoConfig {
     pub const DEFAULT_MUSIC_VOLUME: f32 = 0.2;
 
     pub fn load() -> Result<Self> {
-        Self::load_from_path(video_config_path()?)
+        <Self as DocumentedConfig>::load_from_path_documented(video_config_path()?)
     }
 
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self> {
@@ -139,6 +142,23 @@ impl VideoConfig {
         }
     }
 }
+
+// Implement DocumentedConfig trait for VideoConfig using the macro
+documented_config!(VideoConfig {
+    // Regular fields with defaults - always populated by serde
+    fields: [
+        music_volume: f32 = Self::DEFAULT_MUSIC_VOLUME, "Music volume for video processing (0.0-1.0)",
+        preprocessor: PreprocessorType = PreprocessorType::Local, "Which audio preprocessor to use (local, auphonic, or none)",
+    ],
+
+    // Optional fields - commented when None
+    optional: [
+        auphonic_api_key: String, "Auphonic API key for cloud preprocessing (optional)",
+        auphonic_preset_uuid: String, "Auphonic preset UUID for consistent processing settings (optional)",
+    ],
+
+    config_path: Ok(paths::instant_config_dir()?.join("video.toml")),
+});
 
 fn video_config_path() -> Result<PathBuf> {
     Ok(paths::instant_config_dir()?.join("video.toml"))
