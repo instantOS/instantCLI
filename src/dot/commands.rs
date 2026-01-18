@@ -128,6 +128,15 @@ pub enum DotCommands {
         /// List available alternatives and exit
         #[arg(long)]
         list: bool,
+        /// Set source to REPO or REPO/SUBDIR (non-interactive)
+        #[arg(long, value_name = "REPO[/SUBDIR]")]
+        set: Option<String>,
+        /// Repository name (with --create for non-interactive mode)
+        #[arg(long, requires = "create")]
+        repo: Option<String>,
+        /// Subdirectory name (with --create for non-interactive mode)
+        #[arg(long, requires = "repo")]
+        subdir: Option<String>,
     },
     /// Manage repository priority order
     Priority {
@@ -585,9 +594,19 @@ pub fn handle_dot_command(
             reset,
             create,
             list,
+            set,
+            repo,
+            subdir,
         } => {
             super::operations::alternative::handle_alternative(
-                &config, path, *reset, *create, *list,
+                &config,
+                path,
+                *reset,
+                *create,
+                *list,
+                set.as_deref(),
+                repo.as_deref(),
+                subdir.as_deref(),
             )?;
         }
         DotCommands::Priority { command } => {

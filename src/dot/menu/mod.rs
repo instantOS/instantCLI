@@ -184,7 +184,7 @@ pub fn dot_menu(debug: bool) -> Result<()> {
             }
             DotMenuEntry::AlternateFiles => {
                 crate::dot::operations::alternative::handle_alternative(
-                    &config, "~", false, false, false,
+                    &config, "~", false, false, false, None, None, None,
                 )?;
             }
             DotMenuEntry::CloseMenu => return Ok(()),

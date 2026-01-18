@@ -68,18 +68,55 @@ pub fn pick_destination_and_add(config: &Config, path: &Path) -> Result<bool> {
 
 /// CLI action for the alternative command.
 pub enum Action {
+    /// Interactive source selection menu
     Select,
+    /// Interactive destination picker for creating alternatives
     Create,
+    /// Non-interactive: list alternatives
     List,
+    /// Non-interactive: reset/remove override
     Reset,
+    /// Non-interactive: set source to specific repo[/subdir]
+    SetDirect {
+        repo: String,
+        subdir: Option<String>,
+    },
+    /// Non-interactive: create at specific repo/subdir
+    CreateDirect { repo: String, subdir: String },
 }
 
 impl Action {
-    pub fn from_flags(reset: bool, create: bool, list: bool) -> Self {
+    pub fn from_flags(
+        reset: bool,
+        create: bool,
+        list: bool,
+        set: Option<&str>,
+        repo: Option<&str>,
+        subdir: Option<&str>,
+    ) -> Self {
         if reset {
             Self::Reset
+        } else if let Some(set_value) = set {
+            // Parse "repo" or "repo/subdir" format
+            let (repo, subdir) = if let Some(idx) = set_value.find('/') {
+                let (r, s) = set_value.split_at(idx);
+                (r.to_string(), Some(s[1..].to_string()))
+            } else {
+                (set_value.to_string(), None)
+            };
+            Self::SetDirect { repo, subdir }
         } else if create {
-            Self::Create
+            if let Some(repo_name) = repo {
+                // Non-interactive create with explicit destination
+                let subdir_name = subdir.unwrap_or("dots").to_string();
+                Self::CreateDirect {
+                    repo: repo_name.to_string(),
+                    subdir: subdir_name,
+                }
+            } else {
+                // Interactive create
+                Self::Create
+            }
         } else if list {
             Self::List
         } else {
@@ -95,8 +132,11 @@ pub fn handle_alternative(
     reset: bool,
     create: bool,
     list: bool,
+    set: Option<&str>,
+    repo: Option<&str>,
+    subdir: Option<&str>,
 ) -> Result<()> {
-    let action = Action::from_flags(reset, create, list);
+    let action = Action::from_flags(reset, create, list, set, repo, subdir);
     let target_path = resolve_dotfile_path(path)?;
     let display_path = to_display_path(&target_path);
 
@@ -115,6 +155,12 @@ fn handle_directory(config: &Config, dir: &Path, display: &str, action: Action) 
     match action {
         Action::Reset => Err(anyhow::anyhow!(
             "--reset is not supported for directories. Use it with a specific file."
+        )),
+        Action::SetDirect { .. } => Err(anyhow::anyhow!(
+            "--set is not supported for directories. Use it with a specific file."
+        )),
+        Action::CreateDirect { .. } => Err(anyhow::anyhow!(
+            "--create with --repo is not supported for directories. Use it with a specific file."
         )),
         Action::List => list_directory(config, dir, display),
         Action::Select => run_browse_menu(dir, display, BrowseMode::SelectAlternative),
@@ -320,7 +366,192 @@ fn handle_file(config: &Config, path: &Path, display: &str, action: Action) -> R
             run_select_flow(path, display)?;
             Ok(())
         }
+        Action::SetDirect { repo, subdir } => {
+            handle_set_direct(config, path, display, &repo, subdir.as_deref())
+        }
+        Action::CreateDirect { repo, subdir } => {
+            handle_create_direct(config, path, display, &repo, &subdir)
+        }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Non-Interactive Handlers (--set and --create --repo)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Handle --set REPO[/SUBDIR] flag (non-interactive).
+fn handle_set_direct(
+    config: &Config,
+    path: &Path,
+    display: &str,
+    repo_name: &str,
+    subdir: Option<&str>,
+) -> Result<()> {
+    // Find all sources for this file
+    let sources = find_all_sources(config, path)?;
+
+    if sources.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No sources found for {}. Use --create to add it first.",
+            display
+        ));
+    }
+
+    // Find matching source(s) in the specified repo
+    let matching_sources: Vec<_> = sources
+        .iter()
+        .filter(|s| s.repo_name == repo_name)
+        .collect();
+
+    if matching_sources.is_empty() {
+        let available: Vec<_> = sources.iter().map(|s| &s.repo_name).collect();
+        return Err(anyhow::anyhow!(
+            "Repository '{}' does not contain {}.\nAvailable sources: {:?}",
+            repo_name,
+            display,
+            available
+        ));
+    }
+
+    // Resolve which source to use
+    let source = if let Some(subdir_name) = subdir {
+        // Explicit subdir specified - find exact match
+        matching_sources
+            .iter()
+            .find(|s| s.subdir_name == subdir_name)
+            .ok_or_else(|| {
+                let available_subdirs: Vec<_> =
+                    matching_sources.iter().map(|s| &s.subdir_name).collect();
+                anyhow::anyhow!(
+                    "Subdir '{}' in '{}' does not contain {}.\nAvailable subdirs: {:?}",
+                    subdir_name,
+                    repo_name,
+                    display,
+                    available_subdirs
+                )
+            })?
+    } else {
+        // No subdir specified - use first match
+        matching_sources.first().ok_or_else(|| {
+            anyhow::anyhow!("Repository '{}' does not contain {}", repo_name, display)
+        })?
+    };
+
+    // Create SourceOption for set_alternative
+    let source_option = picker::SourceOption {
+        source: (*source).clone(),
+        is_current: false,
+        exists: true,
+    };
+
+    // Check if safe to switch
+    let all_options: Vec<_> = sources
+        .into_iter()
+        .map(|s| picker::SourceOption {
+            source: s,
+            is_current: false,
+            exists: true,
+        })
+        .collect();
+
+    if !is_safe_to_switch(path, &all_options)? {
+        return Err(anyhow::anyhow!(
+            "Cannot switch {} - file has been modified. Use 'ins dot reset {}' first.",
+            display,
+            display
+        ));
+    }
+
+    // Set the alternative
+    set_alternative(config, path, display, &source_option)?;
+    Ok(())
+}
+
+/// Handle --create --repo REPO --subdir SUBDIR (non-interactive).
+fn handle_create_direct(
+    config: &Config,
+    path: &Path,
+    display: &str,
+    repo_name: &str,
+    subdir_name: &str,
+) -> Result<()> {
+    // Validate the file exists
+    if !path.exists() {
+        return Err(anyhow::anyhow!(
+            "File does not exist: {}\nCannot create an alternative for a non-existent file.",
+            display
+        ));
+    }
+
+    // Find the destination
+    let destinations = get_destinations(config);
+    let dest = destinations
+        .iter()
+        .find(|d| d.repo_name == repo_name && d.subdir_name == subdir_name)
+        .ok_or_else(|| {
+            let available: Vec<String> = destinations
+                .iter()
+                .map(|d| format!("{}/{}", d.repo_name, d.subdir_name))
+                .collect();
+            if available.is_empty() {
+                anyhow::anyhow!(
+                    "No writable destinations available.\n\
+                     Add a writable repository with 'ins dot repo clone <url>'"
+                )
+            } else {
+                anyhow::anyhow!(
+                    "Destination '{}/{}' not found.\nAvailable destinations: {}",
+                    repo_name,
+                    subdir_name,
+                    available.join(", ")
+                )
+            }
+        })?;
+
+    // Check if file already exists at destination
+    let existing = find_all_sources(config, path)?;
+    if existing
+        .iter()
+        .any(|s| s.repo_name == repo_name && s.subdir_name == subdir_name)
+    {
+        return Err(anyhow::anyhow!(
+            "'{}' already exists at {}/{}.\n\
+             Use '--set {}/{}' to switch to it, or choose a different destination.",
+            display,
+            repo_name,
+            subdir_name,
+            repo_name,
+            subdir_name
+        ));
+    }
+
+    // Copy file to destination
+    let db = Database::new(config.database_path().to_path_buf())?;
+    add_to_destination(config, &db, path, dest)?;
+
+    // Set override if multiple sources now exist
+    let sources = find_all_sources(config, path)?;
+    if sources.len() > 1 {
+        let mut overrides = OverrideConfig::load()?;
+        overrides.set_override(
+            path.to_path_buf(),
+            repo_name.to_string(),
+            subdir_name.to_string(),
+        )?;
+
+        emit(
+            Level::Info,
+            "dot.alternative.created_with_override",
+            &format!(
+                "   {} Set as active source ({} alternatives available)",
+                char::from(NerdFont::Info),
+                sources.len()
+            ),
+            None,
+        );
+    }
+
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
