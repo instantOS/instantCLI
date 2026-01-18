@@ -7,6 +7,7 @@ use std::process::Command;
 
 use crate::common::compositor::CompositorType;
 use crate::menu_utils::FzfSelectable;
+use crate::menu_utils::MenuCursor;
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEMAN, PIPER};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
@@ -130,18 +131,6 @@ fn build_layout_items(current: &str) -> Vec<LayoutChoiceDisplay> {
     items
 }
 
-/// Find the cursor position for a given display item
-fn find_cursor_position(
-    items: &[LayoutChoiceDisplay],
-    target: &LayoutChoiceDisplay,
-) -> Option<usize> {
-    items.iter().position(|c| match (c.choice, target.choice) {
-        (None, None) => true,
-        (Some(lhs), Some(rhs)) => lhs.value == rhs.value,
-        _ => false,
-    })
-}
-
 const LAYOUT_OPTIONS: &[LayoutChoice] = &[
     LayoutChoice {
         value: "tile",
@@ -212,15 +201,16 @@ impl Setting for WindowLayout {
             .position(|l| l.value == current)
             .unwrap_or(0);
 
-        let mut cursor = Some(initial_index);
+        let mut cursor = MenuCursor::new();
 
         loop {
             let items = build_layout_items(&ctx.string(Self::KEY));
-            let selection = select_one_with_style_at(items.clone(), cursor)?;
+            let initial_cursor = cursor.initial_index(&items).or(Some(initial_index));
+            let selection = select_one_with_style_at(items.clone(), initial_cursor)?;
 
             match selection {
                 Some(display) => {
-                    cursor = find_cursor_position(&items, &display);
+                    cursor.update(&display, &items);
 
                     match display.choice {
                         Some(choice) => {

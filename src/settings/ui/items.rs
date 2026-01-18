@@ -97,6 +97,10 @@ impl FzfSelectable for SubCategoryItem {
             self.name, self.count
         ))
     }
+
+    fn fzf_key(&self) -> String {
+        self.name.clone()
+    }
 }
 
 impl FzfSelectable for CategoryItem {
@@ -199,6 +203,7 @@ impl FzfSelectable for CategoryMenuItem {
                     format!("{text}Browse all available settings in one{reset}"),
                     format!("{text}searchable list.{reset}"),
                     String::new(),
+                    String::new(),
                     format!("{text}Start typing to filter settings by{reset}"),
                     format!("{text}name, category, or description.{reset}"),
                 ];
@@ -209,6 +214,14 @@ impl FzfSelectable for CategoryMenuItem {
             CategoryMenuItem::Close => {
                 crate::menu_utils::FzfPreview::Text("Exit settings".to_string())
             }
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            CategoryMenuItem::SearchAll => "__search_all__".to_string(),
+            CategoryMenuItem::Category(item) => item.category.meta().id.to_string(),
+            CategoryMenuItem::Close => "__close__".to_string(),
         }
     }
 }
@@ -298,6 +311,14 @@ impl FzfSelectable for CategoryPageItem {
             }
         }
     }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            CategoryPageItem::SubCategory(item) => item.name.clone(),
+            CategoryPageItem::Setting(item) => item.setting.metadata().id.to_string(),
+            CategoryPageItem::Back => "__back__".to_string(),
+        }
+    }
 }
 
 impl FzfSelectable for SearchItem {
@@ -357,6 +378,10 @@ impl FzfSelectable for SearchItem {
         }
 
         crate::menu_utils::FzfPreview::Text(lines.join("\n"))
+    }
+
+    fn fzf_key(&self) -> String {
+        self.setting.metadata().id.to_string()
     }
 }
 

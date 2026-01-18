@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 
+use crate::menu_utils::MenuCursor;
 use crate::settings::setting::{Category, Setting};
 
 use super::super::commands::SettingsNavigation;
@@ -43,15 +44,15 @@ pub fn run_settings_ui(
                 anyhow::bail!("Setting '{}' not found", setting_id);
             }
 
-            InitialView::SearchAll(target_index)
+            InitialView::SearchAll(MenuCursor::with_index(target_index))
         }
         Some(SettingsNavigation::Category(category_id)) => {
             let category = Category::from_id(&category_id)
                 .ok_or_else(|| anyhow::anyhow!("Category '{}' not found", category_id))?;
-            InitialView::Category(category, Some(0))
+            InitialView::Category(category, MenuCursor::with_index(Some(0)))
         }
-        Some(SettingsNavigation::Search) => InitialView::SearchAll(None),
-        None => InitialView::MainMenu(None),
+        Some(SettingsNavigation::Search) => InitialView::SearchAll(MenuCursor::new()),
+        None => InitialView::MainMenu(MenuCursor::new()),
     };
 
     loop {
@@ -77,7 +78,7 @@ pub fn run_settings_ui(
                     }
                 }
                 MenuAction::EnterSearch(main_menu_cursor) => {
-                    if handle_search_all(&mut ctx, None)? {
+                    if handle_search_all(&mut ctx, MenuCursor::new())? {
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                     } else {
                         break;
@@ -88,14 +89,14 @@ pub fn run_settings_ui(
             InitialView::Category(category, cursor) => {
                 let tree = build_tree(category);
                 if navigate_node(&mut ctx, category.meta().title, &tree, cursor)? {
-                    initial_view = InitialView::MainMenu(None);
+                    initial_view = InitialView::MainMenu(MenuCursor::new());
                 } else {
                     break;
                 }
             }
             InitialView::SearchAll(cursor) => {
                 if handle_search_all(&mut ctx, cursor)? {
-                    initial_view = InitialView::MainMenu(Some(0));
+                    initial_view = InitialView::MainMenu(MenuCursor::with_index(Some(0)));
                 } else {
                     break;
                 }
@@ -108,18 +109,18 @@ pub fn run_settings_ui(
 }
 
 enum InitialView {
-    MainMenu(Option<usize>),
-    Category(Category, Option<usize>),
-    SearchAll(Option<usize>),
+    MainMenu(MenuCursor),
+    Category(Category, MenuCursor),
+    SearchAll(MenuCursor),
 }
 
 enum MenuAction {
     EnterCategory {
         category: Category,
-        main_menu_cursor: Option<usize>,
-        category_cursor: Option<usize>,
+        main_menu_cursor: MenuCursor,
+        category_cursor: MenuCursor,
     },
-    EnterSearch(Option<usize>),
+    EnterSearch(MenuCursor),
     Exit,
 }
 
@@ -197,7 +198,7 @@ fn collect_settings_from_tree(
     settings
 }
 
-fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Result<MenuAction> {
+fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<MenuAction> {
     let categories_with_settings = settings_by_category();
 
     if categories_with_settings.is_empty() {
@@ -223,25 +224,22 @@ fn run_main_menu(_ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> R
     }
     menu_items.push(CategoryMenuItem::Close);
 
+    let initial_cursor = cursor.initial_index(&menu_items);
     let selection = select_one_with_style_at(menu_items.clone(), initial_cursor)?;
-    let selected_index = selection.as_ref().and_then(|item| {
-        menu_items.iter().position(|i| match (i, item) {
-            (CategoryMenuItem::SearchAll, CategoryMenuItem::SearchAll) => true,
-            (CategoryMenuItem::Category(a), CategoryMenuItem::Category(b)) => {
-                a.category == b.category
-            }
-            (CategoryMenuItem::Close, CategoryMenuItem::Close) => true,
-            _ => false,
-        })
-    });
 
     let action = match selection {
-        Some(CategoryMenuItem::SearchAll) => MenuAction::EnterSearch(selected_index),
-        Some(CategoryMenuItem::Category(item)) => MenuAction::EnterCategory {
-            category: item.category,
-            main_menu_cursor: selected_index,
-            category_cursor: None,
-        },
+        Some(CategoryMenuItem::SearchAll) => {
+            cursor.update(&CategoryMenuItem::SearchAll, &menu_items);
+            MenuAction::EnterSearch(cursor)
+        }
+        Some(CategoryMenuItem::Category(item)) => {
+            cursor.update(&CategoryMenuItem::Category(item.clone()), &menu_items);
+            MenuAction::EnterCategory {
+                category: item.category,
+                main_menu_cursor: cursor,
+                category_cursor: MenuCursor::new(),
+            }
+        }
         Some(CategoryMenuItem::Close) | None => MenuAction::Exit,
     };
 
@@ -252,7 +250,7 @@ fn navigate_node(
     ctx: &mut SettingsContext,
     title: &str,
     nodes: &[TreeNode],
-    initial_cursor: Option<usize>,
+    mut cursor: MenuCursor,
 ) -> Result<bool> {
     if nodes.is_empty() {
         ctx.emit_info(
@@ -261,8 +259,6 @@ fn navigate_node(
         );
         return Ok(true);
     }
-
-    let mut cursor = initial_cursor;
 
     loop {
         use super::items::SubCategoryItem;
@@ -287,37 +283,34 @@ fn navigate_node(
         entries.push(CategoryPageItem::Back);
 
         // Display selection menu
-        match select_one_with_style_at(entries.clone(), cursor)? {
+        let initial_cursor = cursor.initial_index(&entries);
+        match select_one_with_style_at(entries.clone(), initial_cursor)? {
             Some(CategoryPageItem::SubCategory(sub)) => {
+                cursor.update(&CategoryPageItem::SubCategory(sub.clone()), &entries);
                 // Find the node corresponding to the selection
                 if let Some(idx) = nodes.iter().position(|n| n.name() == sub.name) {
-                    cursor = Some(idx); // Keep cursor on the folder when returning
                     if let TreeNode::Folder { name, children } = &nodes[idx] {
                         // Recurse into subfolder
-                        if !navigate_node(ctx, name, children, None)? {
+                        if !navigate_node(ctx, name, children, MenuCursor::new())? {
                             return Ok(false); // Propagate exit
                         }
                     }
                 }
             }
             Some(CategoryPageItem::Setting(item)) => {
-                // Find index to preserve cursor position
-                if let Some(idx) = nodes
-                    .iter()
-                    .position(|n| n.name() == item.setting.metadata().title)
-                {
-                    cursor = Some(idx);
-                }
+                cursor.update(&CategoryPageItem::Setting(item.clone()), &entries);
                 super::handlers::handle_trait_setting(ctx, item.setting)?;
             }
-            Some(CategoryPageItem::Back) | None => return Ok(true),
+            Some(CategoryPageItem::Back) => {
+                cursor.update(&CategoryPageItem::Back, &entries);
+                return Ok(true);
+            }
+            None => return Ok(true),
         }
     }
 }
 
-pub fn handle_search_all(ctx: &mut SettingsContext, initial_cursor: Option<usize>) -> Result<bool> {
-    let mut cursor = initial_cursor;
-
+pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<bool> {
     loop {
         let mut items = Vec::new();
 
@@ -333,11 +326,10 @@ pub fn handle_search_all(ctx: &mut SettingsContext, initial_cursor: Option<usize
             return Ok(true);
         }
 
-        match select_one_with_style_at(items.clone(), cursor)? {
+        let initial_cursor = cursor.initial_index(&items);
+        match select_one_with_style_at(items.clone(), initial_cursor)? {
             Some(selection) => {
-                cursor = items
-                    .iter()
-                    .position(|i| i.setting.metadata().id == selection.setting.metadata().id);
+                cursor.update(&selection, &items);
                 super::handlers::handle_trait_setting(ctx, selection.setting)?;
             }
             None => return Ok(true),

@@ -3,7 +3,8 @@ use super::FzfSelectable;
 /// Tracks the last selection to restore cursor position across nested menus.
 ///
 /// Uses the item's `fzf_key()` when possible so cursor stays stable even if the
-/// menu reorders its entries between refreshes.
+/// menu reorders its entries between refreshes. Indexes are used as a fallback
+/// when no key is available or a key no longer exists in the refreshed list.
 #[derive(Debug, Default, Clone)]
 pub struct MenuCursor {
     last_key: Option<String>,
@@ -13,6 +14,13 @@ pub struct MenuCursor {
 impl MenuCursor {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_index(index: Option<usize>) -> Self {
+        Self {
+            last_key: None,
+            last_index: index,
+        }
     }
 
     pub fn initial_index<T: FzfSelectable>(&self, items: &[T]) -> Option<usize> {
