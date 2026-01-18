@@ -385,8 +385,9 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
     }
 
     // Outer loop: menu entry selection
+    let mut cursor = MenuCursor::new();
     loop {
-        let entry = match select_game_menu_entry()? {
+        let entry = match select_game_menu_entry(&mut cursor)? {
             Some(entry) => entry,
             None => return Ok(()),
         };

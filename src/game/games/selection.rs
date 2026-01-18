@@ -3,7 +3,7 @@ use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,
 };
 use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, MenuCursor};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
@@ -310,7 +310,7 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
 
 /// Select a game menu entry (game or special action)
 /// Returns Some(entry) if selected, None if cancelled
-pub fn select_game_menu_entry() -> Result<Option<GameMenuEntry>> {
+pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenuEntry>> {
     let config = InstantGameConfig::load().context("Failed to load game configuration")?;
 
     // Build menu entries: special actions first, then games
@@ -325,17 +325,26 @@ pub fn select_game_menu_entry() -> Result<Option<GameMenuEntry>> {
         entries.push(GameMenuEntry::Game(game.name.0.clone()));
     }
 
-    // Show menu
-    let result = FzfWrapper::builder()
+    let mut builder = FzfWrapper::builder()
         .header("Game Menu")
         .prompt("Select")
         .args(crate::ui::catppuccin::fzf_mocha_args())
-        .responsive_layout()
-        .select(entries)
+        .responsive_layout();
+
+    if let Some(index) = cursor.initial_index(&entries) {
+        builder = builder.initial_index(index);
+    }
+
+    // Show menu
+    let result = builder
+        .select(entries.clone())
         .map_err(|e| anyhow::anyhow!("Failed to select from game menu: {}", e))?;
 
     match result {
-        FzfResult::Selected(entry) => Ok(Some(entry)),
+        FzfResult::Selected(entry) => {
+            cursor.update(&entry, &entries);
+            Ok(Some(entry))
+        }
         FzfResult::Cancelled => Ok(None),
         _ => Ok(None),
     }
