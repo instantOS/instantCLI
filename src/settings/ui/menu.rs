@@ -288,12 +288,12 @@ fn navigate_node(
             Some(CategoryPageItem::SubCategory(sub)) => {
                 cursor.update(&CategoryPageItem::SubCategory(sub.clone()), &entries);
                 // Find the node corresponding to the selection
-                if let Some(idx) = nodes.iter().position(|n| n.name() == sub.name) {
-                    if let TreeNode::Folder { name, children } = &nodes[idx] {
-                        // Recurse into subfolder
-                        if !navigate_node(ctx, name, children, MenuCursor::new())? {
-                            return Ok(false); // Propagate exit
-                        }
+                if let Some(idx) = nodes.iter().position(|n| n.name() == sub.name)
+                    && let TreeNode::Folder { name, children } = &nodes[idx]
+                {
+                    // Recurse into subfolder
+                    if !navigate_node(ctx, name, children, MenuCursor::new())? {
+                        return Ok(false); // Propagate exit
                     }
                 }
             }

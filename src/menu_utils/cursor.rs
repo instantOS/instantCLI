@@ -28,22 +28,22 @@ impl MenuCursor {
             return None;
         }
 
-        if let Some(index) = self.last_index {
-            if index < items.len() {
-                if let Some(ref key) = self.last_key {
-                    if items[index].fzf_key() == *key {
-                        return Some(index);
-                    }
-                } else {
+        if let Some(index) = self.last_index
+            && index < items.len()
+        {
+            if let Some(ref key) = self.last_key {
+                if items[index].fzf_key() == *key {
                     return Some(index);
                 }
+            } else {
+                return Some(index);
             }
         }
 
-        if let Some(ref key) = self.last_key {
-            if let Some(index) = items.iter().position(|item| item.fzf_key() == *key) {
-                return Some(index);
-            }
+        if let Some(ref key) = self.last_key
+            && let Some(index) = items.iter().position(|item| item.fzf_key() == *key)
+        {
+            return Some(index);
         }
 
         self.last_index.map(|index| index.min(items.len() - 1))

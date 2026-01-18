@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 
@@ -48,7 +48,14 @@ impl FzfSelectable for MenuItem {
     }
 
     fn fzf_key(&self) -> String {
-        self.display.clone()
+        match self.action {
+            MenuAction::EditName => "edit_name".to_string(),
+            MenuAction::EditDescription => "edit_description".to_string(),
+            MenuAction::EditLaunchCommand => "edit_launch_command".to_string(),
+            MenuAction::EditSavePath => "edit_save_path".to_string(),
+            MenuAction::Save => "save".to_string(),
+            MenuAction::Back => "back".to_string(),
+        }
     }
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
@@ -58,32 +65,25 @@ impl FzfSelectable for MenuItem {
 
 /// Run the main edit menu loop
 pub fn run_edit_menu(game_name: &str, state: &mut EditState) -> Result<()> {
-    let mut last_action: Option<MenuAction> = None;
+    let mut cursor = MenuCursor::new();
 
     loop {
         let menu_items = build_menu_items(state);
-
-        // Find index of last selected action to restore cursor position
-        let initial_index = last_action.as_ref().and_then(|action| {
-            menu_items.iter().position(|item| {
-                std::mem::discriminant(&item.action) == std::mem::discriminant(action)
-            })
-        });
 
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Editing: {}", game_name)))
             .prompt("Select property to edit")
             .args(fzf_mocha_args());
 
-        if let Some(index) = initial_index {
+        if let Some(index) = cursor.initial_index(&menu_items) {
             builder = builder.initial_index(index);
         }
 
-        let selection = builder.select_padded(menu_items)?;
+        let selection = builder.select_padded(menu_items.clone())?;
 
         match selection {
             FzfResult::Selected(item) => {
-                last_action = Some(item.action.clone());
+                cursor.update(&item, &menu_items);
                 if handle_menu_action(item.action, state)? == Flow::Exit {
                     return Ok(());
                 }
