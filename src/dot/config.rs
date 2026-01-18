@@ -141,8 +141,10 @@ impl Config {
                 .collect();
         }
 
+        // Only activate the first directory in dots_dirs by default
         meta.dots_dirs
-            .iter()
+            .first()
+            .into_iter()
             .filter(|dir| repo_path.join(dir).is_dir())
             .cloned()
             .collect()
