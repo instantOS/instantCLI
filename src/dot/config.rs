@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::common::TildePath;
-use crate::common::paths;
 use crate::common::config::DocumentedConfig;
+use crate::common::paths;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Repo {
@@ -549,13 +549,20 @@ use crate::documented_config;
 // Implement DocumentedConfig trait for Config using the macro
 documented_config!(Config {
     fields: [
-        clone_depth, "Git clone depth for repositories (default: 1 for shallow clones)",
-        hash_cleanup_days, "Days before old file hashes are cleaned up from database (default: 30)",
-        repos_dir, "Directory where dotfile repositories are stored",
-        database_dir, "Path to the SQLite database storing file hashes",
-        repos, "List of dotfile repositories to manage",
-        ignored_paths, "Paths to ignore during dotfile operations (local overrides)",
-        units, "Global dotfile units - directories treated as atomic (combined with per-repo units)",
+        clone_depth,
+        "Git clone depth for repositories (default: 1 for shallow clones)",
+        hash_cleanup_days,
+        "Days before old file hashes are cleaned up from database (default: 30)",
+        repos_dir,
+        "Directory where dotfile repositories are stored",
+        database_dir,
+        "Path to the SQLite database storing file hashes",
+        repos,
+        "List of dotfile repositories to manage",
+        ignored_paths,
+        "Paths to ignore during dotfile operations (local overrides)",
+        units,
+        "Global dotfile units - directories treated as atomic (combined with per-repo units)",
     ],
     config_path: config_file_path(None),
 });

@@ -43,7 +43,8 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct ConfigFieldMeta {
     pub name: &'static str,
-    pub default_value: String,
+    /// TOML-serialized default value, or None if serialization failed
+    pub default_value: Option<String>,
     pub description: &'static str,
     pub is_optional: bool,
 }
@@ -78,8 +79,9 @@ pub trait DocumentedConfig: Sized + Default {
         let lines: Vec<&str> = contents.lines().collect();
 
         // Check for custom comments (lines starting with # that aren't our format)
-        let has_custom_comments =
-            lines.iter().any(|l| l.trim().starts_with('#') && !l.contains(" = "));
+        let has_custom_comments = lines
+            .iter()
+            .any(|l| l.trim().starts_with('#') && !l.contains(" = "));
 
         // Safe to regenerate if: no custom comments OR file is very small
         !has_custom_comments || lines.len() <= 3
@@ -101,9 +103,13 @@ pub trait DocumentedConfig: Sized + Default {
             // For optional fields: comment out if None (not set)
             // For regular fields: always write uncommented (serde always populates them)
             if field.is_optional && !self.is_optional_field_set(field.name) {
+                // Skip fields we couldn't serialize a default for
+                let Some(default_val) = &field.default_value else {
+                    continue;
+                };
                 output.push_str(&format!(
                     "# {} = {}  # {}\n",
-                    field.name, field.default_value, field.description
+                    field.name, default_val, field.description
                 ));
             } else {
                 output.push_str(&format!(
@@ -113,8 +119,7 @@ pub trait DocumentedConfig: Sized + Default {
             }
         }
 
-        fs::write(path, output)
-            .with_context(|| format!("writing config to {}", path.display()))?;
+        fs::write(path, output).with_context(|| format!("writing config to {}", path.display()))?;
         Ok(())
     }
 
@@ -188,8 +193,9 @@ macro_rules! documented_config {
                     $(
                         $crate::common::config::ConfigFieldMeta {
                             name: stringify!($field),
-                            default_value: toml::to_string(&default_config.$field)
-                                .unwrap_or_else(|_| "?".to_string()),
+                            default_value: toml::Value::try_from(&default_config.$field)
+                                .map(|v| v.to_string())
+                                .ok(),
                             description: $desc,
                             is_optional: false,
                         },
@@ -197,7 +203,14 @@ macro_rules! documented_config {
                     $(
                         $crate::common::config::ConfigFieldMeta {
                             name: stringify!($opt_field),
-                            default_value: "\"\"".to_string(),
+                            default_value: {
+                                // For Option<T>, serialize the inner T's default
+                                let inner_default = default_config.$opt_field.clone()
+                                    .unwrap_or_default();
+                                toml::Value::try_from(&inner_default)
+                                    .map(|v| v.to_string())
+                                    .ok()
+                            },
                             description: $opt_desc,
                             is_optional: true,
                         },
@@ -218,14 +231,23 @@ macro_rules! documented_config {
                 match field_name {
                     $(
                         stringify!($field) => {
-                            toml::to_string(&self.$field)
+                            toml::Value::try_from(&self.$field)
+                                .map(|v| v.to_string())
                                 .unwrap_or_else(|_| format!("{:?}", self.$field))
                         }
                     )*
                     $(
                         stringify!($opt_field) => match &self.$opt_field {
-                            Some(v) => toml::to_string(v).unwrap_or_else(|_| format!("{:?}", v)),
-                            None => "\"\"".to_string(),
+                            Some(v) => toml::Value::try_from(v)
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|_| format!("{:?}", v)),
+                            None => {
+                                // Use inner type's default for None case
+                                let inner_default = self.$opt_field.clone().unwrap_or_default();
+                                toml::Value::try_from(&inner_default)
+                                    .map(|v| v.to_string())
+                                    .unwrap_or_else(|_| "\"\"".to_string())
+                            }
                         },
                     )*
                     _ => String::new(),
@@ -265,8 +287,9 @@ macro_rules! documented_config {
                     $(
                         $crate::common::config::ConfigFieldMeta {
                             name: stringify!($field),
-                            default_value: toml::to_string(&default_config.$field)
-                                .unwrap_or_else(|_| "?".to_string()),
+                            default_value: toml::Value::try_from(&default_config.$field)
+                                .map(|v| v.to_string())
+                                .ok(),
                             description: $desc,
                             is_optional: false,
                         },
@@ -282,7 +305,8 @@ macro_rules! documented_config {
                 match field_name {
                     $(
                         stringify!($field) => {
-                            toml::to_string(&self.$field)
+                            toml::Value::try_from(&self.$field)
+                                .map(|v| v.to_string())
                                 .unwrap_or_else(|_| format!("{:?}", self.$field))
                         }
                     )*

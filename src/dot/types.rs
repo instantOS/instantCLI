@@ -1,9 +1,9 @@
 use crate::dot::config;
 use crate::dot::localrepo::DotfileDir;
 use crate::menu_utils::FzfSelectable;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use anyhow::{Context, Result};
 
 /// Repository metadata structure.
 /// This is used for reading from instantdots.toml OR from the main config.
@@ -127,15 +127,46 @@ use crate::documented_config;
 // Note: config_path returns a placeholder since instantdots.toml paths are dynamic per-repo
 documented_config!(RepoMetaData {
     fields: [
-        name, "Repository name (used for identification)",
-        dots_dirs, "Directories containing dotfiles (e.g., ['dots'])",
-        units, "Directories treated as atomic units (all files modified together)",
+        name,
+        "Repository name (used for identification)",
+        dots_dirs,
+        "Directories containing dotfiles (e.g., ['dots'])",
+        units,
+        "Directories treated as atomic units (all files modified together)",
     ],
     optional: [
-        author, "Repository author/maintainer (optional)",
-        description, "Repository description (optional)",
-        read_only, "Whether repository is read-only (optional, default: false)",
-        default_active_subdirs, "Default active subdirectories (optional, defaults to first in dots_dirs)",
+        author,
+        "Repository author/maintainer (optional)",
+        description,
+        "Repository description (optional)",
+        read_only,
+        "Whether repository is read-only (optional, default: false)",
+        default_active_subdirs,
+        "Default active subdirectories (optional, defaults to first in dots_dirs)",
     ],
     config_path: Ok(std::path::PathBuf::from("instantdots.toml")),
 });
+
+#[cfg(test)]
+mod documented_config_tests {
+    use super::*;
+    use crate::common::config::DocumentedConfig;
+
+    #[test]
+    fn test_field_metadata_default_values() {
+        let metadata = RepoMetaData::field_metadata();
+
+        let subdirs_field = metadata
+            .iter()
+            .find(|f| f.name == "default_active_subdirs")
+            .unwrap();
+        assert_eq!(
+            subdirs_field.default_value.as_deref(),
+            Some("[]"),
+            "default_active_subdirs should be []"
+        );
+
+        let units_field = metadata.iter().find(|f| f.name == "units").unwrap();
+        assert_eq!(units_field.default_value.as_deref(), Some("[]"));
+    }
+}

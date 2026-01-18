@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::common::TildePath;
-use crate::common::paths;
 use crate::common::config::DocumentedConfig;
+use crate::common::paths;
 
 /// Describes what kind of filesystem element a tracked path represents
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -351,19 +351,21 @@ use crate::documented_config;
 // Implement DocumentedConfig trait for InstantGameConfig using the macro
 documented_config!(InstantGameConfig {
     fields: [
-        repo, "Path to restic backup repository",
-        repo_password, "Password for restic repository",
-        games, "List of tracked games",
-        retention_policy, "Backup retention policy (keep-daily, keep-weekly, etc.)",
+        repo,
+        "Path to restic backup repository",
+        repo_password,
+        "Password for restic repository",
+        games,
+        "List of tracked games",
+        retention_policy,
+        "Backup retention policy (keep-daily, keep-weekly, etc.)",
     ],
     config_path: games_config_path(),
 });
 
 // Implement DocumentedConfig trait for InstallationsConfig using the macro
 documented_config!(InstallationsConfig {
-    fields: [
-        installations, "List of game installations on this device",
-    ],
+    fields: [installations, "List of game installations on this device",],
     config_path: installations_config_path(),
 });
 

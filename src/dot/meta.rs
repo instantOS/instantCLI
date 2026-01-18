@@ -5,9 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::common::config::DocumentedConfig;
 use crate::dot::config::{self, Config};
 use crate::ui::prelude::*;
-use crate::common::config::DocumentedConfig;
 
 /// Validate that the given path is a git repository
 fn ensure_git_repo(repo_path: &Path) -> Result<()> {
