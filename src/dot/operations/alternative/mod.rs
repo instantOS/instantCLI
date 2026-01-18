@@ -15,7 +15,7 @@ use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::override_config::{DotfileSource, OverrideConfig, find_all_sources};
 use crate::dot::utils::resolve_dotfile_path;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 
@@ -200,6 +200,7 @@ fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Result<()> {
     }
 
     // Main menu loop
+    let mut cursor = MenuCursor::new();
     let mut preselect: Option<String> = None;
 
     loop {
@@ -237,12 +238,17 @@ fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Result<()> {
             .args(fzf_mocha_args())
             .responsive_layout();
 
+        if let Some(index) = cursor.initial_index(&menu) {
+            builder = builder.initial_index(index);
+        }
+
         if let Some(q) = preselect.take() {
             builder = builder.query(q);
         }
 
-        match builder.select(menu)? {
+        match builder.select(menu.clone())? {
             FzfResult::Selected(BrowseMenuItem::Dotfile(selected)) => {
+                cursor.update(&BrowseMenuItem::Dotfile(selected.clone()), &menu);
                 let result = match mode {
                     BrowseMode::CreateAlternative => {
                         let sources = find_all_sources(&config, &selected.target_path)?;
@@ -267,6 +273,7 @@ fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Result<()> {
                 }
             }
             FzfResult::Selected(BrowseMenuItem::PickNewFile) => {
+                cursor.update(&BrowseMenuItem::PickNewFile, &menu);
                 if let Some(path) = pick_new_file_to_track()? {
                     let file_display = to_display_path(&path);
                     let sources = find_all_sources(&config, &path)?;
@@ -279,7 +286,12 @@ fn run_browse_menu(dir: &Path, display: &str, mode: BrowseMode) -> Result<()> {
                 }
                 continue;
             }
-            FzfResult::Selected(BrowseMenuItem::Cancel) | FzfResult::Cancelled => {
+            FzfResult::Selected(BrowseMenuItem::Cancel) => {
+                cursor.update(&BrowseMenuItem::Cancel, &menu);
+                emit_cancelled();
+                return Ok(());
+            }
+            FzfResult::Cancelled => {
                 emit_cancelled();
                 return Ok(());
             }
@@ -561,6 +573,8 @@ fn handle_create_direct(
 fn run_create_flow(path: &Path, display: &str, existing: &[DotfileSource]) -> Result<Flow> {
     use std::collections::HashSet;
 
+    let mut cursor = MenuCursor::new();
+
     loop {
         let config = Config::load(None)?;
         let destinations = get_destinations(&config);
@@ -593,31 +607,48 @@ fn run_create_flow(path: &Path, display: &str, existing: &[DotfileSource]) -> Re
         menu.push(CreateMenuItem::CloneRepo);
         menu.push(CreateMenuItem::Cancel);
 
-        match FzfWrapper::builder()
+        let mut builder = FzfWrapper::builder()
             .prompt(format!("Select destination for {}: ", display))
             .args(fzf_mocha_args())
-            .responsive_layout()
-            .select(menu)?
-        {
+            .responsive_layout();
+
+        if let Some(index) = cursor.initial_index(&menu) {
+            builder = builder.initial_index(index);
+        }
+
+        match builder.select(menu.clone())? {
             FzfResult::Selected(CreateMenuItem::Destination(item)) => {
+                cursor.update(&CreateMenuItem::Destination(item.clone()), &menu);
                 match add_file_to_destination(&config, path, display, &item)? {
                     Flow::Continue => continue,
                     other => return Ok(other),
                 }
             }
             FzfResult::Selected(CreateMenuItem::AddSubdir { repo_name }) => {
+                cursor.update(
+                    &CreateMenuItem::AddSubdir {
+                        repo_name: repo_name.clone(),
+                    },
+                    &menu,
+                );
                 if create_new_subdir(&config, &repo_name)? {
                     continue;
                 }
                 return Ok(Flow::Cancelled);
             }
             FzfResult::Selected(CreateMenuItem::CloneRepo) => {
+                cursor.update(&CreateMenuItem::CloneRepo, &menu);
                 if clone_new_repo()? {
                     continue;
                 }
                 return Ok(Flow::Cancelled);
             }
-            FzfResult::Selected(CreateMenuItem::Cancel) | FzfResult::Cancelled => {
+            FzfResult::Selected(CreateMenuItem::Cancel) => {
+                cursor.update(&CreateMenuItem::Cancel, &menu);
+                emit_cancelled();
+                return Ok(Flow::Cancelled);
+            }
+            FzfResult::Cancelled => {
                 emit_cancelled();
                 return Ok(Flow::Cancelled);
             }
@@ -906,6 +937,7 @@ fn run_source_selection_menu(
 ) -> Result<Flow> {
     let current = overrides.get_override(path);
     let default_source = sources.last().cloned();
+    let mut cursor = MenuCursor::new();
 
     let items: Vec<SourceOption> = sources
         .into_iter()
@@ -936,42 +968,63 @@ fn run_source_selection_menu(
         return Ok(Flow::Cancelled);
     }
 
-    let mut menu: Vec<MenuItem> = items.into_iter().map(MenuItem::Source).collect();
+    loop {
+        let mut menu: Vec<MenuItem> = items.clone().into_iter().map(MenuItem::Source).collect();
 
-    // Add Create Alternative option
-    menu.push(MenuItem::CreateAlternative);
+        // Add Create Alternative option
+        menu.push(MenuItem::CreateAlternative);
 
-    if current.is_some()
-        && let Some(default) = default_source
-    {
-        menu.push(MenuItem::RemoveOverride {
-            default_source: default,
-        });
-    }
-    menu.push(MenuItem::Back);
+        if current.is_some()
+            && let Some(default) = default_source.clone()
+        {
+            menu.push(MenuItem::RemoveOverride {
+                default_source: default,
+            });
+        }
+        menu.push(MenuItem::Back);
 
-    let config = Config::load(None)?;
-    match FzfWrapper::builder()
-        .prompt(format!("Select source for {}: ", display))
-        .args(fzf_mocha_args())
-        .responsive_layout()
-        .select(menu)?
-    {
-        FzfResult::Selected(MenuItem::Source(item)) => {
-            set_alternative(&config, path, display, &item)?;
-            Ok(Flow::Done)
+        let config = Config::load(None)?;
+        let mut builder = FzfWrapper::builder()
+            .prompt(format!("Select source for {}: ", display))
+            .args(fzf_mocha_args())
+            .responsive_layout();
+
+        if let Some(index) = cursor.initial_index(&menu) {
+            builder = builder.initial_index(index);
         }
-        FzfResult::Selected(MenuItem::CreateAlternative) => {
-            let sources = find_all_sources(&config, path)?;
-            run_create_flow(path, display, &sources)
+
+        match builder.select(menu.clone())? {
+            FzfResult::Selected(MenuItem::Source(item)) => {
+                cursor.update(&MenuItem::Source(item.clone()), &menu);
+                set_alternative(&config, path, display, &item)?;
+                return Ok(Flow::Done);
+            }
+            FzfResult::Selected(MenuItem::CreateAlternative) => {
+                cursor.update(&MenuItem::CreateAlternative, &menu);
+                let sources = find_all_sources(&config, path)?;
+                match run_create_flow(path, display, &sources)? {
+                    Flow::Continue => continue,
+                    other => return Ok(other),
+                }
+            }
+            FzfResult::Selected(MenuItem::RemoveOverride { default_source }) => {
+                cursor.update(
+                    &MenuItem::RemoveOverride {
+                        default_source: default_source.clone(),
+                    },
+                    &menu,
+                );
+                remove_override(&config, path, display, &default_source)?;
+                return Ok(Flow::Done);
+            }
+            FzfResult::Selected(MenuItem::Back) => {
+                cursor.update(&MenuItem::Back, &menu);
+                return Ok(Flow::Cancelled);
+            }
+            FzfResult::Cancelled => return Ok(Flow::Cancelled),
+            FzfResult::Error(e) => return Err(anyhow::anyhow!("Selection error: {}", e)),
+            _ => return Ok(Flow::Cancelled),
         }
-        FzfResult::Selected(MenuItem::RemoveOverride { default_source }) => {
-            remove_override(&config, path, display, &default_source)?;
-            Ok(Flow::Done)
-        }
-        FzfResult::Selected(MenuItem::Back) | FzfResult::Cancelled => Ok(Flow::Cancelled),
-        FzfResult::Error(e) => Err(anyhow::anyhow!("Selection error: {}", e)),
-        _ => Ok(Flow::Cancelled),
     }
 }
 
