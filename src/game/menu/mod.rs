@@ -11,7 +11,7 @@ use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
 use crate::game::operations::launch_game;
 use crate::game::restic;
 use crate::game::setup;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 
@@ -41,7 +41,14 @@ impl FzfSelectable for GameActionItem {
     }
 
     fn fzf_key(&self) -> String {
-        self.display.clone()
+        match self.action {
+            GameAction::Launch => "launch".to_string(),
+            GameAction::Edit => "edit".to_string(),
+            GameAction::Setup => "setup".to_string(),
+            GameAction::Move => "move".to_string(),
+            GameAction::Checkpoint => "checkpoint".to_string(),
+            GameAction::Back => "back".to_string(),
+        }
     }
 
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
@@ -335,19 +342,27 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
 
     // If a game name is provided, skip the menu and go directly to actions
     if let Some(name) = &provided_game_name {
+        let mut cursor = MenuCursor::new();
+
         loop {
             let state = GameState::load(name)?;
             let actions = build_action_menu(name, &state);
 
-            let selection = FzfWrapper::builder()
+            let mut builder = FzfWrapper::builder()
                 .header(Header::fancy(&format!("Game: {}", name)))
                 .prompt("Select action")
                 .args(fzf_mocha_args())
-                .responsive_layout()
-                .select_padded(actions)?;
+                .responsive_layout();
+
+            if let Some(index) = cursor.initial_index(&actions) {
+                builder = builder.initial_index(index);
+            }
+
+            let selection = builder.select_padded(actions.clone())?;
 
             let result = match selection {
                 FzfResult::Selected(item) => {
+                    cursor.update(&item, &actions);
                     handle_action(item.action, name, &state, exit_after_action)?
                 }
                 FzfResult::Cancelled => {
@@ -389,19 +404,26 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
             }
             GameMenuEntry::Game(game_name) => {
                 // Inner loop: game action menu
+                let mut cursor = MenuCursor::new();
                 loop {
                     let state = GameState::load(&game_name)?;
                     let actions = build_action_menu(&game_name, &state);
 
-                    let selection = FzfWrapper::builder()
+                    let mut builder = FzfWrapper::builder()
                         .header(Header::fancy(&format!("Game: {}", game_name)))
                         .prompt("Select action")
                         .args(fzf_mocha_args())
-                        .responsive_layout()
-                        .select_padded(actions)?;
+                        .responsive_layout();
+
+                    if let Some(index) = cursor.initial_index(&actions) {
+                        builder = builder.initial_index(index);
+                    }
+
+                    let selection = builder.select_padded(actions.clone())?;
 
                     let result = match selection {
                         FzfResult::Selected(item) => {
+                            cursor.update(&item, &actions);
                             handle_action(item.action, &game_name, &state, false)?
                         }
                         FzfResult::Cancelled => ActionResult::Back,
