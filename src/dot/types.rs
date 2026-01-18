@@ -125,27 +125,16 @@ use crate::documented_config;
 
 // Implement DocumentedConfig trait for RepoMetaData using the macro
 // Note: config_path returns a placeholder since instantdots.toml paths are dynamic per-repo
-documented_config!(RepoMetaData {
-    fields: [
-        name,
-        "Repository name (used for identification)",
-        dots_dirs,
-        "Directories containing dotfiles (e.g., ['dots'])",
-        units,
-        "Directories treated as atomic units (all files modified together)",
-    ],
-    optional: [
-        author,
-        "Repository author/maintainer (optional)",
-        description,
-        "Repository description (optional)",
-        read_only,
-        "Whether repository is read-only (optional, default: false)",
-        default_active_subdirs,
-        "Default active subdirectories (optional, defaults to first in dots_dirs)",
-    ],
-    config_path: Ok(std::path::PathBuf::from("instantdots.toml")),
-});
+documented_config!(RepoMetaData,
+    name, "Repository name (used for identification)",
+    author, "Repository author/maintainer",
+    description, "Repository description",
+    read_only, "Whether repository is read-only (default: false)",
+    dots_dirs, "Directories containing dotfiles (e.g., ['dots'])",
+    default_active_subdirs, "Default active subdirectories (defaults to first in dots_dirs)",
+    units, "Directories treated as atomic units (all files modified together)",
+    => Ok(std::path::PathBuf::from("instantdots.toml"))
+);
 
 #[cfg(test)]
 mod documented_config_tests {

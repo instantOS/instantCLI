@@ -149,25 +149,13 @@ impl VideoConfig {
 }
 
 // Implement DocumentedConfig trait for VideoConfig using the macro
-documented_config!(VideoConfig {
-    // Regular fields with defaults - always populated by serde
-    fields: [
-        music_volume,
-        "Music volume for video processing (0.0-1.0)",
-        preprocessor,
-        "Which audio preprocessor to use (local, auphonic, or none)",
-    ],
-
-    // Optional fields - commented when None
-    optional: [
-        auphonic_api_key,
-        "Auphonic API key for cloud preprocessing (optional)",
-        auphonic_preset_uuid,
-        "Auphonic preset UUID for consistent processing settings (optional)",
-    ],
-
-    config_path: Ok(paths::instant_config_dir()?.join("video.toml")),
-});
+documented_config!(VideoConfig,
+    music_volume, "Music volume for video processing (0.0-1.0)",
+    preprocessor, "Which audio preprocessor to use (local, auphonic, or none)",
+    auphonic_api_key, "Auphonic API key for cloud preprocessing",
+    auphonic_preset_uuid, "Auphonic preset UUID for consistent processing settings",
+    => Ok(paths::instant_config_dir()?.join("video.toml"))
+);
 
 fn video_config_path() -> Result<PathBuf> {
     Ok(paths::instant_config_dir()?.join("video.toml"))

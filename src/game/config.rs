@@ -349,25 +349,19 @@ impl InstallationsConfig {
 use crate::documented_config;
 
 // Implement DocumentedConfig trait for InstantGameConfig using the macro
-documented_config!(InstantGameConfig {
-    fields: [
-        repo,
-        "Path to restic backup repository",
-        repo_password,
-        "Password for restic repository",
-        games,
-        "List of tracked games",
-        retention_policy,
-        "Backup retention policy (keep-daily, keep-weekly, etc.)",
-    ],
-    config_path: games_config_path(),
-});
+documented_config!(InstantGameConfig,
+    repo, "Path to restic backup repository",
+    repo_password, "Password for restic repository",
+    games, "List of tracked games",
+    retention_policy, "Backup retention policy (keep-daily, keep-weekly, etc.)",
+    => games_config_path()
+);
 
 // Implement DocumentedConfig trait for InstallationsConfig using the macro
-documented_config!(InstallationsConfig {
-    fields: [installations, "List of game installations on this device",],
-    config_path: installations_config_path(),
-});
+documented_config!(InstallationsConfig,
+    installations, "List of game installations on this device",
+    => installations_config_path()
+);
 
 #[cfg(test)]
 mod tests {
