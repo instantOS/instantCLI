@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::repo::{RepositoryManager, cli::RepoCommands};
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -380,18 +380,28 @@ pub fn handle_repo_actions(
     db: &Database,
     debug: bool,
 ) -> Result<()> {
+    let mut cursor = MenuCursor::new();
+
     loop {
         let actions = build_repo_action_menu(repo_name, config);
 
-        let result = FzfWrapper::builder()
+        let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Repository: {}", repo_name)))
             .prompt("Select action")
             .args(fzf_mocha_args())
-            .responsive_layout()
-            .select_padded(actions)?;
+            .responsive_layout();
+
+        if let Some(index) = cursor.initial_index(&actions) {
+            builder = builder.initial_index(index);
+        }
+
+        let result = builder.select_padded(actions.clone())?;
 
         let action = match result {
-            FzfResult::Selected(item) => item.action,
+            FzfResult::Selected(item) => {
+                cursor.update(&item, &actions);
+                item.action
+            }
             FzfResult::Cancelled => return Ok(()),
             _ => return Ok(()),
         };

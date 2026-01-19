@@ -6,7 +6,7 @@ use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::localrepo::LocalRepo;
 use crate::dot::repo::cli::RepoCommands;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -184,20 +184,30 @@ fn handle_subdir_actions(
     _db: &Database,
     debug: bool,
 ) -> Result<()> {
+    let mut cursor = MenuCursor::new();
+
     loop {
         // Reload config to get current state
         let config = Config::load(None)?;
         let actions = build_subdir_action_menu(repo_name, subdir_name, &config);
 
-        let result = FzfWrapper::builder()
+        let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("{} / {}", repo_name, subdir_name)))
             .prompt("Select action")
             .args(fzf_mocha_args())
-            .responsive_layout()
-            .select_padded(actions)?;
+            .responsive_layout();
+
+        if let Some(index) = cursor.initial_index(&actions) {
+            builder = builder.initial_index(index);
+        }
+
+        let result = builder.select_padded(actions.clone())?;
 
         let action = match result {
-            FzfResult::Selected(item) => item.action,
+            FzfResult::Selected(item) => {
+                cursor.update(&item, &actions);
+                item.action
+            }
             FzfResult::Cancelled => return Ok(()),
             _ => return Ok(()),
         };
@@ -569,6 +579,8 @@ pub fn handle_manage_subdirs(
     db: &Database,
     debug: bool,
 ) -> Result<()> {
+    let mut cursor = MenuCursor::new();
+
     loop {
         // Reload config to get current state
         let config = Config::load(None)?;
@@ -657,15 +669,23 @@ pub fn handle_manage_subdirs(
             total_active: 0,
         });
 
-        let selection = FzfWrapper::builder()
+        let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Subdirectories: {}", repo_name)))
             .prompt("Select subdirectory")
             .args(fzf_mocha_args())
-            .responsive_layout()
-            .select(subdir_items)?;
+            .responsive_layout();
+
+        if let Some(index) = cursor.initial_index(&subdir_items) {
+            builder = builder.initial_index(index);
+        }
+
+        let selection = builder.select(subdir_items.clone())?;
 
         let (selected_subdir, is_orphaned) = match selection {
-            FzfResult::Selected(item) => (item.subdir, item.is_orphaned),
+            FzfResult::Selected(item) => {
+                cursor.update(&item, &subdir_items);
+                (item.subdir, item.is_orphaned)
+            }
             FzfResult::Cancelled => return Ok(()),
             _ => return Ok(()),
         };
@@ -787,15 +807,25 @@ fn handle_orphaned_subdir_actions(
         OrphanedAction::Back,
     ];
 
-    let result = FzfWrapper::builder()
+    let mut cursor = MenuCursor::new();
+
+    let mut builder = FzfWrapper::builder()
         .header(Header::fancy(&format!("Fix: {} [mismatch]", subdir_name)))
         .prompt("Select action")
         .args(fzf_mocha_args())
-        .responsive_layout()
-        .select(actions)?;
+        .responsive_layout();
+
+    if let Some(index) = cursor.initial_index(&actions) {
+        builder = builder.initial_index(index);
+    }
+
+    let result = builder.select(actions.clone())?;
 
     let action = match result {
-        FzfResult::Selected(item) => item,
+        FzfResult::Selected(item) => {
+            cursor.update(&item, &actions);
+            item
+        }
         FzfResult::Cancelled => return Ok(()),
         _ => return Ok(()),
     };

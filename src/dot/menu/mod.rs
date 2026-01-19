@@ -8,7 +8,7 @@ use anyhow::Result;
 
 use crate::dot::config::Config;
 use crate::dot::db::Database;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -121,7 +121,11 @@ impl FzfSelectable for DotMenuItem {
 }
 
 /// Select a menu entry from the main dot menu
-fn select_dot_menu_entry(config: &Config, db: &Database) -> Result<Option<DotMenuEntry>> {
+fn select_dot_menu_entry(
+    config: &Config,
+    db: &Database,
+    cursor: &mut MenuCursor,
+) -> Result<Option<DotMenuEntry>> {
     let mut entries: Vec<DotMenuEntry> = config
         .repos
         .iter()
@@ -134,9 +138,9 @@ fn select_dot_menu_entry(config: &Config, db: &Database) -> Result<Option<DotMen
 
     // Create entries with custom previews (Repo gets dynamic preview, others use trait impl)
     let menu_items: Vec<DotMenuItem> = entries
-        .into_iter()
+        .iter()
         .map(|entry| {
-            let preview = match &entry {
+            let preview = match entry {
                 DotMenuEntry::Repo(name, _) => build_repo_preview(name, config, db),
                 _ => match entry.fzf_preview() {
                     crate::menu::protocol::FzfPreview::Text(s) => s,
@@ -144,19 +148,30 @@ fn select_dot_menu_entry(config: &Config, db: &Database) -> Result<Option<DotMen
                     crate::menu::protocol::FzfPreview::None => String::new(),
                 },
             };
-            DotMenuItem { entry, preview }
+            DotMenuItem {
+                entry: entry.clone(),
+                preview,
+            }
         })
         .collect();
 
-    let result = FzfWrapper::builder()
+    let mut builder = FzfWrapper::builder()
         .header(Header::fancy("Dotfile Menu"))
         .prompt("Select")
         .args(fzf_mocha_args())
-        .responsive_layout()
-        .select(menu_items)?;
+        .responsive_layout();
+
+    if let Some(index) = cursor.initial_index(&entries) {
+        builder = builder.initial_index(index);
+    }
+
+    let result = builder.select(menu_items)?;
 
     match result {
-        FzfResult::Selected(item) => Ok(Some(item.entry)),
+        FzfResult::Selected(item) => {
+            cursor.update(&item.entry, &entries);
+            Ok(Some(item.entry))
+        }
         FzfResult::Cancelled => Ok(None),
         _ => Ok(None),
     }
@@ -164,13 +179,15 @@ fn select_dot_menu_entry(config: &Config, db: &Database) -> Result<Option<DotMen
 
 /// Main entry point for the dot menu
 pub fn dot_menu(debug: bool) -> Result<()> {
+    let mut cursor = MenuCursor::new();
+
     // Outer loop: main menu
     loop {
         // Load config each iteration to pick up changes (e.g., newly added repos)
         let config = Config::load(None)?;
         let db = Database::new(config.database_path().to_path_buf())?;
 
-        let entry = match select_dot_menu_entry(&config, &db)? {
+        let entry = match select_dot_menu_entry(&config, &db, &mut cursor)? {
             Some(entry) => entry,
             None => return Ok(()),
         };
