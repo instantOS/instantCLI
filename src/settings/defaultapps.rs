@@ -879,9 +879,191 @@ pub fn set_default_text_editor(ctx: &mut SettingsContext) -> Result<()> {
     manage_default_app_for_mime(ctx, "text/plain", "Text Editor")
 }
 
-/// Set default image viewer
+/// Common image MIME types that any proper image viewer should support
+const IMAGE_MIME_TYPES: &[&str] = &[
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+    "image/tiff",
+    "image/svg+xml",
+];
+
+/// Set default image viewer for all common image types
 pub fn set_default_image_viewer(ctx: &mut SettingsContext) -> Result<()> {
-    manage_default_app_for_mime(ctx, "image/png", "Image Viewer")
+    manage_default_app_for_mime_types(ctx, IMAGE_MIME_TYPES, "Image Viewer")
+}
+
+/// Helper function to manage default app for multiple MIME types at once.
+/// Only shows applications that can handle ALL specified MIME types.
+fn manage_default_app_for_mime_types(
+    ctx: &mut SettingsContext,
+    mime_types: &[&str],
+    app_name: &str,
+) -> Result<()> {
+    use crate::menu_utils::FzfResult;
+    use crate::settings::installable_packages::{
+        self, ARCHIVE_MANAGERS, FILE_MANAGERS, IMAGE_VIEWERS, InstallableApp, PDF_VIEWERS,
+        TEXT_EDITORS, VIDEO_PLAYERS, WEB_BROWSERS,
+    };
+
+    // Map app_name to corresponding installable packages
+    let installable_apps: Option<&[InstallableApp]> = match app_name {
+        "PDF Viewer" => Some(PDF_VIEWERS),
+        "Image Viewer" => Some(IMAGE_VIEWERS),
+        "Video Player" => Some(VIDEO_PLAYERS),
+        "Text Editor" => Some(TEXT_EDITORS),
+        "Archive Manager" => Some(ARCHIVE_MANAGERS),
+        "File Manager" => Some(FILE_MANAGERS),
+        "Web Browser" => Some(WEB_BROWSERS),
+        _ => None,
+    };
+
+    // Use first MIME type as the "primary" one for querying current default
+    let primary_mime = mime_types.first().copied().unwrap_or("application/octet-stream");
+
+    loop {
+        // Build the MIME map
+        let mime_map = build_mime_to_apps_map().context("Failed to build MIME type map")?;
+
+        // Find applications that can handle ALL specified MIME types
+        let mut app_sets: Vec<BTreeSet<String>> = Vec::new();
+        for mime_type in mime_types {
+            if let Some(apps) = mime_map.get(*mime_type) {
+                app_sets.push(apps.iter().cloned().collect());
+            } else {
+                // If no apps registered for this MIME type, use empty set
+                app_sets.push(BTreeSet::new());
+            }
+        }
+
+        // Intersect all sets to find apps that handle all MIME types
+        let common_apps: BTreeSet<String> = if app_sets.is_empty() {
+            BTreeSet::new()
+        } else {
+            let mut result = app_sets[0].clone();
+            for set in app_sets.iter().skip(1) {
+                result = result.intersection(set).cloned().collect();
+            }
+            result
+        };
+
+        let app_desktop_ids: Vec<String> = common_apps.into_iter().collect();
+
+        // Get current default (based on primary MIME type)
+        let current_default = query_default_app(primary_mime).ok().flatten();
+
+        // Create header text
+        let header_text = format!(
+            "Select default {} application\nCurrent: {}\n(Sets default for {} image types)",
+            app_name,
+            current_default.as_deref().unwrap_or("(none)"),
+            mime_types.len()
+        );
+
+        // Build options list - start with "Install more..." if available
+        let mut options: Vec<String> = Vec::new();
+        let install_more_key = format!("{} Install more...", NerdFont::Package);
+
+        if installable_apps.is_some() {
+            options.push(install_more_key.to_string());
+        }
+
+        // Add separator after install more option
+        if !options.is_empty() && !app_desktop_ids.is_empty() {
+            options.push("─────────────────────".to_string());
+        }
+
+        // Convert to ApplicationInfo with preview data
+        let app_infos: Vec<ApplicationInfo> = app_desktop_ids
+            .iter()
+            .map(|desktop_id| get_application_info(desktop_id))
+            .collect();
+
+        // Add all app display texts
+        for app_info in &app_infos {
+            options.push(app_info.fzf_display_text());
+        }
+
+        if options.is_empty() || (options.len() == 1 && installable_apps.is_some()) {
+            // Only have install more option (or nothing at all)
+            if installable_apps.is_some() {
+                ctx.emit_info(
+                    "settings.defaultapps.no_apps_install",
+                    &format!(
+                        "No {} applications installed that support all image types. Select 'Install more...' to install one.",
+                        app_name
+                    ),
+                );
+            } else {
+                ctx.emit_info(
+                    "settings.defaultapps.no_apps",
+                    &format!(
+                        "No applications found for {} that support all image types. Install an application first.",
+                        app_name
+                    ),
+                );
+                return Ok(());
+            }
+        }
+
+        // Let user select an option
+        let selected = FzfWrapper::builder()
+            .prompt(format!("Select {}: ", app_name))
+            .header(&header_text)
+            .select(options)?;
+
+        match selected {
+            FzfResult::Selected(selection) => {
+                if selection == install_more_key {
+                    if let Some(apps) = installable_apps {
+                        // Show install more menu
+                        let installed =
+                            installable_packages::show_install_more_menu(app_name, apps)?;
+                        if installed {
+                            // Loop back to show updated app list
+                            continue;
+                        }
+                    }
+                    // User cancelled or nothing installed, loop back
+                    continue;
+                } else if selection.starts_with('─') {
+                    // Separator selected, ignore and loop back
+                    continue;
+                } else {
+                    // Find the matching app info
+                    let selected_app_info = app_infos
+                        .iter()
+                        .find(|info| info.fzf_display_text() == selection);
+
+                    if let Some(app_info) = selected_app_info {
+                        let desktop_file = &app_info.desktop_id;
+
+                        // Set the default application for ALL MIME types
+                        for mime_type in mime_types {
+                            set_default_app(mime_type, desktop_file)
+                                .with_context(|| format!("Failed to set default for {}", mime_type))?;
+                        }
+
+                        ctx.notify(
+                            &format!("Default {}", app_name),
+                            &format!(
+                                "Set {} as default for {} image types",
+                                app_info.name.as_deref().unwrap_or(desktop_file),
+                                mime_types.len()
+                            ),
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+            _ => {
+                ctx.emit_info("settings.defaultapps.cancelled", "No changes made.");
+                return Ok(());
+            }
+        }
+    }
 }
 
 /// Set default video player
