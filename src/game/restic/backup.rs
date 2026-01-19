@@ -206,11 +206,11 @@ impl GameBackup {
                 })?;
 
                 // Preserve the original modification time after copy
-                if let Some(mtime) = source_mtime {
-                    if let Ok(file) = fs::File::options().write(true).open(target_path) {
-                        let times = std::fs::FileTimes::new().set_modified(mtime);
-                        let _ = file.set_times(times);
-                    }
+                if let Some(mtime) = source_mtime
+                    && let Ok(file) = fs::File::options().write(true).open(target_path)
+                {
+                    let times = std::fs::FileTimes::new().set_modified(mtime);
+                    let _ = file.set_times(times);
                 }
 
                 // Cleanup temp directory
