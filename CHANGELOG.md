@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3](https://github.com/instantOS/instantCLI/compare/v0.12.2...v0.12.3) - 2026-01-19
+
+### Fixed
+
+- fix game sync bug (file time was lost)
+- fix docs and behavior being different
+- fix docs macro
+- fix bad category architecture
+- fix memory leak
+
+### Other
+
+- better preview builder
+- better default video player setting
+- better add_repo prompt
+- better default image viewer preview
+- better default app settings
+- more cursor tracking
+- more cursor tracking
+- refactor alternative mod.rs
+- track cursor position for `ins game menu`
+- more cursor tracking
+- migrate edit menu
+- migrate settings menu to new cursor system
+- init better menu cursors
+- init better non-interactive alternative
+- cleaner docs macro
+- more documented toml
+- less default shite being added
+- serde stuff
+- better updates for local repos
+- init shell menu entry
+- init lg and shell command
+- open in lazygit option
+- add is_external check for repos
+- type alais
+- add `unit` dot subcommand
+- set new dotfile picker as hidden
+- add default_subdirs
+- remove default dotfile dir thingy
+- refactor apply_all
+- integrate units into apply
+- init dotfile units
+- init plan
+
 ## [0.12.2](https://github.com/instantOS/instantCLI/compare/v0.12.1...v0.12.2) - 2026-01-15
 
 ### Fixed
