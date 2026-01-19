@@ -270,7 +270,7 @@ fn get_mime_type_info(mime_type: &str) -> MimeTypeInfo {
         let (icon, desc) = match prefix {
             "image" => (NerdFont::Image, Some("Image Viewer")),
             "video" => (NerdFont::Video, Some("Video Player")),
-            "audio" => (NerdFont::Music, Some("Music Player")),
+            "audio" => (NerdFont::Music, Some("Audio Player")),
             "text" => (NerdFont::FileText, Some("Text Editor")),
             "application" => (NerdFont::Package, Some("Application")),
             "inode" => (NerdFont::Folder, Some("File Manager")),
@@ -353,11 +353,11 @@ fn get_exact_mime_info(mime_type: &str) -> Option<(NerdFont, &'static str)> {
         "video/x-msvideo" => (NerdFont::Video, "Video Player (AVI)"),
 
         // Audio
-        "audio/mpeg" => (NerdFont::Music, "Music Player (MP3)"),
-        "audio/ogg" => (NerdFont::Music, "Music Player (OGG)"),
-        "audio/flac" => (NerdFont::Music, "Music Player (FLAC)"),
-        "audio/x-wav" => (NerdFont::Music, "Music Player (WAV)"),
-        "audio/aac" => (NerdFont::Music, "Music Player (AAC)"),
+        "audio/mpeg" => (NerdFont::Music, "Audio Player (MP3)"),
+        "audio/ogg" => (NerdFont::Music, "Audio Player (OGG)"),
+        "audio/flac" => (NerdFont::Music, "Audio Player (FLAC)"),
+        "audio/x-wav" => (NerdFont::Music, "Audio Player (WAV)"),
+        "audio/aac" => (NerdFont::Music, "Audio Player (AAC)"),
 
         // Text
         "text/plain" => (NerdFont::FileText, "Text Editor"),
@@ -1080,14 +1080,24 @@ const VIDEO_MIME_TYPES: &[&str] = &[
     "video/ogg",
 ];
 
+/// Common audio MIME types that any proper audio player should support
+const AUDIO_MIME_TYPES: &[&str] = &[
+    "audio/mpeg",
+    "audio/ogg",
+    "audio/flac",
+    "audio/x-wav",
+    "audio/aac",
+    "audio/opus",
+];
+
 /// Set default video player for all common video types
 pub fn set_default_video_player(ctx: &mut SettingsContext) -> Result<()> {
     manage_default_app_for_mime_types(ctx, VIDEO_MIME_TYPES, "Video Player")
 }
 
-/// Set default music player
-pub fn set_default_music_player(ctx: &mut SettingsContext) -> Result<()> {
-    manage_default_app_for_mime(ctx, "audio/mpeg", "Music Player")
+/// Set default audio player for all common audio types
+pub fn set_default_audio_player(ctx: &mut SettingsContext) -> Result<()> {
+    manage_default_app_for_mime_types(ctx, AUDIO_MIME_TYPES, "Audio Player")
 }
 
 /// Set default PDF viewer

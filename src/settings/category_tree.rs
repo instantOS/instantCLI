@@ -102,7 +102,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&apps::DefaultFileManager),
             CategoryNode::setting(&apps::DefaultImageViewer),
             CategoryNode::setting(&apps::DefaultVideoPlayer),
-            CategoryNode::setting(&apps::DefaultMusicPlayer),
+            CategoryNode::setting(&apps::DefaultAudioPlayer),
             CategoryNode::setting(&apps::DefaultPdfViewer),
             CategoryNode::setting(&apps::DefaultArchiveManager),
             CategoryNode::setting(&apps::DefaultEmail),

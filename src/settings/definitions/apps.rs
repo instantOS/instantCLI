@@ -177,15 +177,54 @@ impl Setting for DefaultVideoPlayer {
     }
 }
 
-default_app_setting!(
-    DefaultMusicPlayer,
-    "apps.music_player",
-    "Music Player",
-    NerdFont::Music,
-    None,
-    "Set your default music player for audio files.",
-    defaultapps::set_default_music_player
-);
+pub struct DefaultAudioPlayer;
+
+impl Setting for DefaultAudioPlayer {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("apps.audio_player")
+            .title("Audio Player")
+            .icon(NerdFont::Music)
+            .icon_color(None)
+            .summary("Set your default audio player for music and podcasts.")
+            .requirements(vec![&XDG_UTILS])
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        defaultapps::set_default_audio_player(ctx)
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        const AUDIO_TYPES: &[&str] = &[
+            "audio/mpeg",
+            "audio/ogg",
+            "audio/flac",
+            "audio/x-wav",
+            "audio/aac",
+            "audio/opus",
+        ];
+
+        Some(
+            PreviewBuilder::new()
+                .header(NerdFont::Music, "Audio Player")
+                .subtext("Set your default audio player for music and podcasts.")
+                .blank()
+                .line(colors::TEAL, None, "▸ MIME Types")
+                .bullets(AUDIO_TYPES.iter().copied())
+                .blank()
+                .subtext("Only apps supporting ALL formats are shown.")
+                .blank()
+                .line(colors::TEAL, None, "▸ Current Defaults")
+                .mime_defaults(AUDIO_TYPES.iter().copied())
+                .build_shell_script(),
+        )
+    }
+}
 
 default_app_setting!(
     DefaultPdfViewer,
