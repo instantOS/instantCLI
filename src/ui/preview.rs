@@ -2,6 +2,10 @@
 //!
 //! Provides a fluent API for generating styled preview text with consistent
 //! formatting across all FZF-based menus.
+//!
+//! Two builders are provided:
+//! - [`PreviewBuilder`]: For static preview text (computed at Rust compile/runtime)
+//! - [`PreviewScriptBuilder`]: For dynamic shell-based previews (executed by fzf)
 
 use crate::menu_utils::FzfPreview;
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};

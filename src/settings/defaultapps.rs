@@ -1070,9 +1070,19 @@ fn manage_default_app_for_mime_types(
     }
 }
 
-/// Set default video player
+/// Common video MIME types that any proper video player should support
+const VIDEO_MIME_TYPES: &[&str] = &[
+    "video/mp4",
+    "video/x-matroska",
+    "video/webm",
+    "video/quicktime",
+    "video/x-msvideo",
+    "video/ogg",
+];
+
+/// Set default video player for all common video types
 pub fn set_default_video_player(ctx: &mut SettingsContext) -> Result<()> {
-    manage_default_app_for_mime(ctx, "video/mp4", "Video Player")
+    manage_default_app_for_mime_types(ctx, VIDEO_MIME_TYPES, "Video Player")
 }
 
 /// Set default music player

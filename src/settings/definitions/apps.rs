@@ -143,15 +143,68 @@ done
     }
 }
 
-default_app_setting!(
-    DefaultVideoPlayer,
-    "apps.video_player",
-    "Video Player",
-    NerdFont::Video,
-    None,
-    "Set your default video player for movies and videos.",
-    defaultapps::set_default_video_player
-);
+pub struct DefaultVideoPlayer;
+
+impl Setting for DefaultVideoPlayer {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("apps.video_player")
+            .title("Video Player")
+            .icon(NerdFont::Video)
+            .icon_color(None)
+            .summary("Set your default video player for movies and videos.")
+            .requirements(vec![&XDG_UTILS])
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        defaultapps::set_default_video_player(ctx)
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        Some(
+            r#"bash -c '
+echo "Set your default video player for movies and videos."
+echo ""
+echo "MIME types that will be configured:"
+echo "  • video/mp4 (MP4)"
+echo "  • video/x-matroska (MKV)"
+echo "  • video/webm (WebM)"
+echo "  • video/quicktime (MOV)"
+echo "  • video/x-msvideo (AVI)"
+echo "  • video/ogg (OGG)"
+echo ""
+echo "Only applications that support ALL these formats will be shown."
+echo ""
+echo "Current defaults:"
+for mime in video/mp4 video/x-matroska video/webm video/quicktime video/x-msvideo video/ogg; do
+    app=$(xdg-mime query default "$mime" 2>/dev/null)
+    if [ -n "$app" ]; then
+        name=""
+        for dir in "$HOME/.local/share/applications" "/usr/share/applications" "/var/lib/flatpak/exports/share/applications"; do
+            if [ -f "$dir/$app" ]; then
+                name=$(grep "^Name=" "$dir/$app" 2>/dev/null | head -1 | cut -d= -f2)
+                break
+            fi
+        done
+        if [ -n "$name" ]; then
+            echo "  $mime: $name"
+        else
+            echo "  $mime: $app"
+        fi
+    else
+        echo "  $mime: (not set)"
+    fi
+done
+'"#
+            .to_string(),
+        )
+    }
+}
 
 default_app_setting!(
     DefaultMusicPlayer,

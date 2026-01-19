@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::dot::config::{extract_repo_name, Config};
+use crate::dot::config::{Config, extract_repo_name};
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
