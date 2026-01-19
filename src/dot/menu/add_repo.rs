@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::dot::config::Config;
+use crate::dot::config::{extract_repo_name, Config};
 use crate::dot::db::Database;
 use crate::dot::repo::cli::RepoCommands;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
@@ -271,10 +271,12 @@ fn handle_empty_input(default_repo: &str) -> Result<AddRepoInputResult> {
 }
 
 /// Prompt for optional repository name
-fn prompt_optional_name() -> Result<Option<String>> {
+fn prompt_optional_name(url: &str) -> Result<Option<String>> {
+    let default_name = extract_repo_name(url);
     match FzfWrapper::builder()
         .input()
         .prompt("Repository name (optional)")
+        .ghost(&default_name)
         .input_result()?
     {
         FzfResult::Selected(s) if !s.is_empty() => Ok(Some(s)),
@@ -339,7 +341,7 @@ pub fn handle_add_repo(_config: &Config, _db: &Database, debug: bool) -> Result<
         }
     };
 
-    let name = prompt_optional_name()?;
+    let name = prompt_optional_name(&url)?;
     let branch = prompt_optional_branch()?;
 
     // Clone the repository

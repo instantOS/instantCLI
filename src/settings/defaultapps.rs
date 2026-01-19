@@ -921,7 +921,10 @@ fn manage_default_app_for_mime_types(
     };
 
     // Use first MIME type as the "primary" one for querying current default
-    let primary_mime = mime_types.first().copied().unwrap_or("application/octet-stream");
+    let primary_mime = mime_types
+        .first()
+        .copied()
+        .unwrap_or("application/octet-stream");
 
     loop {
         // Build the MIME map
@@ -1042,8 +1045,9 @@ fn manage_default_app_for_mime_types(
 
                         // Set the default application for ALL MIME types
                         for mime_type in mime_types {
-                            set_default_app(mime_type, desktop_file)
-                                .with_context(|| format!("Failed to set default for {}", mime_type))?;
+                            set_default_app(mime_type, desktop_file).with_context(|| {
+                                format!("Failed to set default for {}", mime_type)
+                            })?;
                         }
 
                         ctx.notify(
