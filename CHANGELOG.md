@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1](https://github.com/instantOS/instantCLI/compare/v0.13.0...v0.13.1) - 2026-01-19
+
+### Other
+
+- improve audio player setting
+- fmt
+
 ## [0.12.2](https://github.com/instantOS/instantCLI/compare/v0.12.1...v0.12.2) - 2026-01-15
 
 ### Fixed
