@@ -193,6 +193,9 @@ impl GameBackup {
                     })?;
                 }
 
+                // Get the modification time from the restored file before copying
+                let source_mtime = fs::metadata(&restored_file).and_then(|m| m.modified()).ok();
+
                 // Move the file to final location
                 fs::copy(&restored_file, target_path).with_context(|| {
                     format!(
@@ -201,6 +204,14 @@ impl GameBackup {
                         target_path.display()
                     )
                 })?;
+
+                // Preserve the original modification time after copy
+                if let Some(mtime) = source_mtime {
+                    if let Ok(file) = fs::File::options().write(true).open(target_path) {
+                        let times = std::fs::FileTimes::new().set_modified(mtime);
+                        let _ = file.set_times(times);
+                    }
+                }
 
                 // Cleanup temp directory
                 let _ = fs::remove_dir_all(&temp_restore);
