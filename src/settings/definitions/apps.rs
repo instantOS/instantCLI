@@ -101,44 +101,29 @@ impl Setting for DefaultImageViewer {
     }
 
     fn preview_command(&self) -> Option<String> {
+        const IMAGE_TYPES: &[&str] = &[
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp",
+            "image/bmp",
+            "image/tiff",
+            "image/svg+xml",
+        ];
+
         Some(
-            r#"bash -c '
-echo "Set your default image viewer for photos and pictures."
-echo ""
-echo "MIME types that will be configured:"
-echo "  • image/png"
-echo "  • image/jpeg"
-echo "  • image/gif"
-echo "  • image/webp"
-echo "  • image/bmp"
-echo "  • image/tiff"
-echo "  • image/svg+xml"
-echo ""
-echo "Only applications that support ALL these formats will be shown."
-echo ""
-echo "Current defaults:"
-for mime in image/png image/jpeg image/gif image/webp image/bmp image/tiff image/svg+xml; do
-    app=$(xdg-mime query default "$mime" 2>/dev/null)
-    if [ -n "$app" ]; then
-        # Try to get app name from desktop file
-        name=""
-        for dir in "$HOME/.local/share/applications" "/usr/share/applications" "/var/lib/flatpak/exports/share/applications"; do
-            if [ -f "$dir/$app" ]; then
-                name=$(grep "^Name=" "$dir/$app" 2>/dev/null | head -1 | cut -d= -f2)
-                break
-            fi
-        done
-        if [ -n "$name" ]; then
-            echo "  $mime: $name"
-        else
-            echo "  $mime: $app"
-        fi
-    else
-        echo "  $mime: (not set)"
-    fi
-done
-'"#
-            .to_string(),
+            PreviewBuilder::new()
+                .header(NerdFont::Image, "Image Viewer")
+                .subtext("Set your default image viewer for photos and pictures.")
+                .blank()
+                .line(colors::TEAL, None, "▸ MIME Types")
+                .bullets(IMAGE_TYPES.iter().copied())
+                .blank()
+                .subtext("Only apps supporting ALL formats are shown.")
+                .blank()
+                .line(colors::TEAL, None, "▸ Current Defaults")
+                .mime_defaults(IMAGE_TYPES.iter().copied())
+                .build_shell_script(),
         )
     }
 }
@@ -166,42 +151,28 @@ impl Setting for DefaultVideoPlayer {
     }
 
     fn preview_command(&self) -> Option<String> {
+        const VIDEO_TYPES: &[&str] = &[
+            "video/mp4",
+            "video/x-matroska",
+            "video/webm",
+            "video/quicktime",
+            "video/x-msvideo",
+            "video/ogg",
+        ];
+
         Some(
-            r#"bash -c '
-echo "Set your default video player for movies and videos."
-echo ""
-echo "MIME types that will be configured:"
-echo "  • video/mp4 (MP4)"
-echo "  • video/x-matroska (MKV)"
-echo "  • video/webm (WebM)"
-echo "  • video/quicktime (MOV)"
-echo "  • video/x-msvideo (AVI)"
-echo "  • video/ogg (OGG)"
-echo ""
-echo "Only applications that support ALL these formats will be shown."
-echo ""
-echo "Current defaults:"
-for mime in video/mp4 video/x-matroska video/webm video/quicktime video/x-msvideo video/ogg; do
-    app=$(xdg-mime query default "$mime" 2>/dev/null)
-    if [ -n "$app" ]; then
-        name=""
-        for dir in "$HOME/.local/share/applications" "/usr/share/applications" "/var/lib/flatpak/exports/share/applications"; do
-            if [ -f "$dir/$app" ]; then
-                name=$(grep "^Name=" "$dir/$app" 2>/dev/null | head -1 | cut -d= -f2)
-                break
-            fi
-        done
-        if [ -n "$name" ]; then
-            echo "  $mime: $name"
-        else
-            echo "  $mime: $app"
-        fi
-    else
-        echo "  $mime: (not set)"
-    fi
-done
-'"#
-            .to_string(),
+            PreviewBuilder::new()
+                .header(NerdFont::Video, "Video Player")
+                .subtext("Set your default video player for movies and videos.")
+                .blank()
+                .line(colors::TEAL, None, "▸ MIME Types")
+                .bullets(VIDEO_TYPES.iter().copied())
+                .blank()
+                .subtext("Only apps supporting ALL formats are shown.")
+                .blank()
+                .line(colors::TEAL, None, "▸ Current Defaults")
+                .mime_defaults(VIDEO_TYPES.iter().copied())
+                .build_shell_script(),
         )
     }
 }

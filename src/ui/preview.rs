@@ -3,9 +3,9 @@
 //! Provides a fluent API for generating styled preview text with consistent
 //! formatting across all FZF-based menus.
 //!
-//! Two builders are provided:
-//! - [`PreviewBuilder`]: For static preview text (computed at Rust compile/runtime)
-//! - [`PreviewScriptBuilder`]: For dynamic shell-based previews (executed by fzf)
+//! The builder can output:
+//! - Static text via [`PreviewBuilder::build`] for inline previews
+//! - Shell scripts via [`PreviewBuilder::build_shell_script`] for `preview_command()`
 
 use crate::menu_utils::FzfPreview;
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
@@ -20,9 +20,21 @@ const SEPARATOR: &str = "──────────────────�
 /// Light separator for subsections
 const LIGHT_SEPARATOR: &str = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄";
 
+/// A line in the preview - either static text or a shell command for dynamic content.
+#[derive(Clone)]
+enum PreviewLine {
+    /// Static text line (pre-formatted with ANSI codes)
+    Static(String),
+    /// Shell command that outputs dynamic content
+    Shell(String),
+}
+
 /// Builder for creating styled FZF preview text.
 ///
-/// # Example
+/// Supports both static previews (rendered at build time) and dynamic shell-based
+/// previews (executed by fzf when the preview is shown).
+///
+/// # Example - Static Preview
 ///
 /// ```ignore
 /// use crate::ui::preview::PreviewBuilder;
@@ -31,16 +43,26 @@ const LIGHT_SEPARATOR: &str = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄�
 /// let preview = PreviewBuilder::new()
 ///     .header(NerdFont::User, "John Doe")
 ///     .field("Status", "Active")
-///     .field("Shell", "/bin/zsh")
-///     .blank()
-///     .separator()
-///     .blank()
-///     .subtext("Groups:")
 ///     .bullets(&["wheel", "video", "audio"])
 ///     .build();
 /// ```
+///
+/// # Example - Shell Script Preview (for preview_command)
+///
+/// ```ignore
+/// let script = PreviewBuilder::new()
+///     .header(NerdFont::Image, "Image Viewer")
+///     .subtext("Configure default image viewer")
+///     .blank()
+///     .shell_loop(
+///         "mime",
+///         &["image/png", "image/jpeg", "image/gif"],
+///         r#"echo "  • $mime""#,
+///     )
+///     .build_shell_script();
+/// ```
 pub struct PreviewBuilder {
-    lines: Vec<String>,
+    lines: Vec<PreviewLine>,
 }
 
 impl PreviewBuilder {
@@ -49,8 +71,12 @@ impl PreviewBuilder {
     /// Starts with a blank line for padding from the preview window border.
     pub fn new() -> Self {
         Self {
-            lines: vec![String::new()],
+            lines: vec![PreviewLine::Static(String::new())],
         }
+    }
+
+    fn push_static(&mut self, s: String) {
+        self.lines.push(PreviewLine::Static(s));
     }
 
     /// Add a styled header with icon and title.
@@ -62,24 +88,23 @@ impl PreviewBuilder {
     pub fn header(mut self, icon: NerdFont, title: &str) -> Self {
         let mauve = hex_to_ansi_fg(colors::MAUVE);
         let surface = hex_to_ansi_fg(colors::SURFACE1);
-        self.lines
-            .push(format!("{mauve}{}  {title}{RESET}", char::from(icon)));
-        self.lines.push(format!("{surface}{SEPARATOR}{RESET}"));
-        self.lines.push(String::new());
+        self.push_static(format!("{mauve}{}  {title}{RESET}", char::from(icon)));
+        self.push_static(format!("{surface}{SEPARATOR}{RESET}"));
+        self.push_static(String::new());
         self
     }
 
     /// Add primary text line in the standard text color.
     pub fn text(mut self, content: &str) -> Self {
         let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.lines.push(format!("{text_color}{content}{RESET}"));
+        self.push_static(format!("{text_color}{content}{RESET}"));
         self
     }
 
     /// Add secondary/muted text line in subtext color.
     pub fn subtext(mut self, content: &str) -> Self {
         let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
-        self.lines.push(format!("{subtext}{content}{RESET}"));
+        self.push_static(format!("{subtext}{content}{RESET}"));
         self
     }
 
@@ -89,7 +114,7 @@ impl PreviewBuilder {
     pub fn field(mut self, label: &str, value: &str) -> Self {
         let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
         let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.lines.push(format!(
+        self.push_static(format!(
             "{subtext}{label}:{RESET} {text_color}{value}{RESET}"
         ));
         self
@@ -99,7 +124,7 @@ impl PreviewBuilder {
     pub fn field_indented(mut self, label: &str, value: &str) -> Self {
         let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
         let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.lines.push(format!(
+        self.push_static(format!(
             "  {subtext}{label}:{RESET} {text_color}{value}{RESET}"
         ));
         self
@@ -116,21 +141,20 @@ impl PreviewBuilder {
         let icon_str = icon
             .map(|i| format!("{} ", char::from(i)))
             .unwrap_or_default();
-        self.lines.push(format!("{fg}{icon_str}{content}{RESET}"));
+        self.push_static(format!("{fg}{icon_str}{content}{RESET}"));
         self
     }
 
     /// Add a light separator line.
     pub fn separator(mut self) -> Self {
         let surface = hex_to_ansi_fg(colors::SURFACE1);
-        self.lines
-            .push(format!("{surface}{LIGHT_SEPARATOR}{RESET}"));
+        self.push_static(format!("{surface}{LIGHT_SEPARATOR}{RESET}"));
         self
     }
 
     /// Add a blank line.
     pub fn blank(mut self) -> Self {
-        self.lines.push(String::new());
+        self.push_static(String::new());
         self
     }
 
@@ -138,13 +162,13 @@ impl PreviewBuilder {
     pub fn title(mut self, color: &str, content: &str) -> Self {
         let fg = hex_to_ansi_fg(color);
         let bold = "\x1b[1m";
-        self.lines.push(format!("{bold}{fg}{content}{RESET}"));
+        self.push_static(format!("{bold}{fg}{content}{RESET}"));
         self
     }
 
     /// Add raw text without any coloring.
     pub fn raw(mut self, content: &str) -> Self {
-        self.lines.push(content.to_string());
+        self.push_static(content.to_string());
         self
     }
 
@@ -154,14 +178,14 @@ impl PreviewBuilder {
         let icon_str = icon
             .map(|i| format!("{} ", char::from(i)))
             .unwrap_or_default();
-        self.lines.push(format!("  {fg}{icon_str}{content}{RESET}"));
+        self.push_static(format!("  {fg}{icon_str}{content}{RESET}"));
         self
     }
 
     /// Add a bullet list item.
     pub fn bullet(mut self, content: &str) -> Self {
         let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.lines.push(format!("{text_color}  • {content}{RESET}"));
+        self.push_static(format!("{text_color}  • {content}{RESET}"));
         self
     }
 
@@ -177,17 +201,150 @@ impl PreviewBuilder {
         self
     }
 
-    /// Build the final FzfPreview.
+    // ========================================================================
+    // Shell/Dynamic content methods (for build_shell_script)
+    // ========================================================================
+
+    /// Add raw shell command(s) for dynamic content.
+    ///
+    /// Only used when building with `build_shell_script()`.
+    /// For static builds, this is converted to a placeholder.
+    pub fn shell(mut self, command: &str) -> Self {
+        self.lines.push(PreviewLine::Shell(command.to_string()));
+        self
+    }
+
+    /// Add a shell loop that iterates over items.
+    ///
+    /// # Arguments
+    /// * `var` - Loop variable name (e.g., "mime")
+    /// * `items` - Items to iterate over
+    /// * `body` - Shell commands to run for each item (can reference $var)
+    pub fn shell_loop<I, S>(mut self, var: &str, items: I, body: &str) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let item_list: Vec<_> = items.into_iter().map(|s| s.as_ref().to_string()).collect();
+        let items_str = item_list.join(" ");
+        let cmd = format!("for {var} in {items_str}; do\n{body}\ndone");
+        self.lines.push(PreviewLine::Shell(cmd));
+        self
+    }
+
+    /// Add a MIME type status display loop.
+    ///
+    /// Generates a shell loop that queries xdg-mime for each type's default app
+    /// and displays it with appropriate coloring.
+    pub fn mime_defaults<I, S>(mut self, mime_types: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let types: Vec<_> = mime_types
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect();
+        let mime_list = types.join(" ");
+
+        let green = hex_to_shell_escape(colors::GREEN);
+        let yellow = hex_to_shell_escape(colors::YELLOW);
+        let subtext = hex_to_shell_escape(colors::SUBTEXT0);
+        let reset = "\\033[0m";
+
+        let cmd = format!(
+            r#"for mime in {mime_list}; do
+    app=$(xdg-mime query default "$mime" 2>/dev/null)
+    if [ -n "$app" ]; then
+        name=""
+        for dir in "$HOME/.local/share/applications" "/usr/share/applications" "/var/lib/flatpak/exports/share/applications"; do
+            if [ -f "$dir/$app" ]; then
+                name=$(grep "^Name=" "$dir/$app" 2>/dev/null | head -1 | cut -d= -f2)
+                break
+            fi
+        done
+        if [ -n "$name" ]; then
+            echo -e "  {subtext}$mime:{reset} {green}$name{reset}"
+        else
+            echo -e "  {subtext}$mime:{reset} {green}$app{reset}"
+        fi
+    else
+        echo -e "  {subtext}$mime:{reset} {yellow}(not set){reset}"
+    fi
+done"#
+        );
+        self.lines.push(PreviewLine::Shell(cmd));
+        self
+    }
+
+    // ========================================================================
+    // Build methods
+    // ========================================================================
+
+    /// Build the final FzfPreview (static text).
+    ///
+    /// Shell commands are rendered as placeholders.
     pub fn build(self) -> FzfPreview {
-        FzfPreview::Text(self.lines.join("\n"))
+        FzfPreview::Text(self.build_string())
     }
 
     /// Build and extract just the text content.
     ///
-    /// Useful when you need a `String` instead of `FzfPreview`.
+    /// Shell commands are rendered as placeholders.
     pub fn build_string(self) -> String {
-        self.lines.join("\n")
+        self.lines
+            .into_iter()
+            .map(|line| match line {
+                PreviewLine::Static(s) => s,
+                PreviewLine::Shell(_) => "(dynamic content)".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
+
+    /// Build a bash script for use with `preview_command()`.
+    ///
+    /// Static lines are converted to echo statements with proper escaping.
+    /// Shell commands are included directly.
+    pub fn build_shell_script(self) -> String {
+        let commands: Vec<String> = self
+            .lines
+            .into_iter()
+            .map(|line| match line {
+                PreviewLine::Static(s) => {
+                    if s.is_empty() {
+                        "echo".to_string()
+                    } else {
+                        // Convert ANSI escapes (\x1b) to shell format (\e)
+                        // Use double quotes for echo - escape $ ` \ " for shell
+                        let shell_escaped = s
+                            .replace('\\', "\\\\") // Escape backslashes
+                            .replace('"', "\\\"") // Escape double quotes
+                            .replace('$', "\\$") // Escape dollar signs
+                            .replace('`', "\\`") // Escape backticks
+                            .replace('\x1b', "\\e"); // Convert ANSI escapes to \e
+                        format!("echo -e \"{shell_escaped}\"")
+                    }
+                }
+                PreviewLine::Shell(cmd) => cmd,
+            })
+            .collect();
+
+        let script = commands.join("\n");
+        format!("bash -c '\n{script}\n'")
+    }
+}
+
+/// Convert hex color to shell escape sequence for use in echo -e
+fn hex_to_shell_escape(hex: &str) -> String {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return String::new();
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+    format!("\\033[38;2;{r};{g};{b}m")
 }
 
 impl Default for PreviewBuilder {
@@ -243,5 +400,17 @@ mod tests {
 
         assert!(text.contains("Hello"));
         assert!(text.contains("World"));
+    }
+
+    #[test]
+    fn test_build_shell_script() {
+        let script = PreviewBuilder::new()
+            .text("Hello")
+            .blank()
+            .text("World")
+            .build_shell_script();
+
+        assert!(script.starts_with("bash -c '"));
+        assert!(script.contains("echo -e"));
     }
 }
