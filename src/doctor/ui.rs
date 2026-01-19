@@ -1,5 +1,7 @@
 use super::CheckResult;
-use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{
+    ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, MenuCursor,
+};
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::prelude::*;
@@ -456,9 +458,10 @@ pub async fn run_success_menu(results: &[CheckResult]) -> Result<()> {
     let skipped_count = results.iter().filter(|r| r.status.is_skipped()).count();
 
     let menu_items = build_success_menu_items();
+    let mut cursor = MenuCursor::new();
 
     loop {
-        match FzfWrapper::builder()
+        let mut builder = FzfWrapper::builder()
             .prompt("Select:")
             .header(format!(
                 "{} All systems operational!\n\n✓ {} checks passed\n⊘ {} checks skipped\n\nSelect an option or press Esc to exit",
@@ -466,16 +469,23 @@ pub async fn run_success_menu(results: &[CheckResult]) -> Result<()> {
                 success_count,
                 skipped_count
             ))
-            .args(fzf_mocha_args())
-            .select(menu_items.clone())?
-        {
+            .args(fzf_mocha_args());
+
+        if let Some(index) = cursor.initial_index(&menu_items) {
+            builder = builder.initial_index(index);
+        }
+
+        match builder.select(menu_items.clone())? {
             FzfResult::Selected(item) if item.is_action(MenuAction::ViewAll) => {
+                cursor.update(&item, &menu_items);
                 show_all_check_results(results)?;
                 continue;
             }
-            _ => {
-                return Ok(());
+            FzfResult::Selected(item) => {
+                cursor.update(&item, &menu_items);
             }
+            _ => {}
         }
+        return Ok(());
     }
 }

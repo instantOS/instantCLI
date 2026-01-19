@@ -1,7 +1,7 @@
 //! UI components for welcome application
 
-use crate::menu_utils::{FzfPreview, FzfSelectable};
-use crate::ui::catppuccin::{colors, format_icon_colored, select_one_with_style};
+use crate::menu_utils::{FzfPreview, FzfSelectable, MenuCursor};
+use crate::ui::catppuccin::{colors, format_icon_colored, select_one_with_style_at};
 use crate::ui::prelude::*;
 use anyhow::Result;
 
@@ -164,6 +164,8 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
         );
     }
 
+    let mut cursor = MenuCursor::new();
+
     loop {
         let has_internet = crate::common::network::check_internet();
 
@@ -183,8 +185,10 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
         items.push(WelcomeItem::DisableAutostart);
         items.push(WelcomeItem::Close);
 
-        match select_one_with_style(items)? {
+        let initial_cursor = cursor.initial_index(&items);
+        match select_one_with_style_at(items.clone(), initial_cursor)? {
             Some(WelcomeItem::InstallInstantOS) => {
+                cursor.update(&WelcomeItem::InstallInstantOS, &items);
                 if let Err(e) = install_instantos(debug) {
                     emit(
                         Level::Error,
@@ -199,6 +203,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                 }
             }
             Some(WelcomeItem::ConfigureNetwork) => {
+                cursor.update(&WelcomeItem::ConfigureNetwork, &items);
                 if let Err(e) = configure_network(debug) {
                     emit(
                         Level::Error,
@@ -213,6 +218,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                 }
             }
             Some(WelcomeItem::OpenWebsite) => {
+                cursor.update(&WelcomeItem::OpenWebsite, &items);
                 if let Err(e) = open_website(debug) {
                     emit(
                         Level::Error,
@@ -227,6 +233,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                 }
             }
             Some(WelcomeItem::OpenSettings) => {
+                cursor.update(&WelcomeItem::OpenSettings, &items);
                 if let Err(e) = open_settings(debug) {
                     emit(
                         Level::Error,
@@ -241,6 +248,7 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                 }
             }
             Some(WelcomeItem::DisableAutostart) => {
+                cursor.update(&WelcomeItem::DisableAutostart, &items);
                 // Check current state using the same helper function for consistency
                 let currently_enabled = get_autostart_state();
 
@@ -286,6 +294,9 @@ pub fn run_welcome_ui(force_live: bool, debug: bool) -> Result<()> {
                 }
             }
             Some(WelcomeItem::Close) | None => {
+                if let Some(selected) = items.last() {
+                    cursor.update(selected, &items);
+                }
                 if debug {
                     emit(Level::Debug, "welcome.close", "Closing welcome UI", None);
                 }
