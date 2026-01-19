@@ -78,15 +78,70 @@ default_app_setting!(
     defaultapps::set_default_text_editor
 );
 
-default_app_setting!(
-    DefaultImageViewer,
-    "apps.image_viewer",
-    "Image Viewer",
-    NerdFont::Image,
-    None,
-    "Set your default image viewer for photos and pictures.",
-    defaultapps::set_default_image_viewer
-);
+pub struct DefaultImageViewer;
+
+impl Setting for DefaultImageViewer {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("apps.image_viewer")
+            .title("Image Viewer")
+            .icon(NerdFont::Image)
+            .icon_color(None)
+            .summary("Set your default image viewer for photos and pictures.")
+            .requirements(vec![&XDG_UTILS])
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        defaultapps::set_default_image_viewer(ctx)
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        Some(
+            r#"bash -c '
+echo "Set your default image viewer for photos and pictures."
+echo ""
+echo "MIME types that will be configured:"
+echo "  • image/png"
+echo "  • image/jpeg"
+echo "  • image/gif"
+echo "  • image/webp"
+echo "  • image/bmp"
+echo "  • image/tiff"
+echo "  • image/svg+xml"
+echo ""
+echo "Only applications that support ALL these formats will be shown."
+echo ""
+echo "Current defaults:"
+for mime in image/png image/jpeg image/gif image/webp image/bmp image/tiff image/svg+xml; do
+    app=$(xdg-mime query default "$mime" 2>/dev/null)
+    if [ -n "$app" ]; then
+        # Try to get app name from desktop file
+        name=""
+        for dir in "$HOME/.local/share/applications" "/usr/share/applications" "/var/lib/flatpak/exports/share/applications"; do
+            if [ -f "$dir/$app" ]; then
+                name=$(grep "^Name=" "$dir/$app" 2>/dev/null | head -1 | cut -d= -f2)
+                break
+            fi
+        done
+        if [ -n "$name" ]; then
+            echo "  $mime: $name"
+        else
+            echo "  $mime: $app"
+        fi
+    else
+        echo "  $mime: (not set)"
+    fi
+done
+'"#
+            .to_string(),
+        )
+    }
+}
 
 default_app_setting!(
     DefaultVideoPlayer,
