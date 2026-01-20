@@ -613,16 +613,26 @@ impl FzfBuilder {
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
         cmd.arg("--layout").arg("reverse");
+        cmd.arg("--wrap");
+        cmd.arg("--read0");
+        cmd.arg("--ansi");
+        cmd.arg("--highlight-line");
+        cmd.arg("--no-input");
+        cmd.arg("--tiebreak=index");
+        cmd.arg("--bind").arg("enter:become(echo {n})");
 
-        if let Some(header) = &self.header {
-            cmd.arg("--header").arg(header.to_fzf_string());
+        let header_text = Self::format_message_header(None, self.header.as_ref());
+        if !header_text.is_empty() {
+            cmd.arg("--header").arg(header_text);
         }
-
-        cmd.arg("--prompt").arg("> ");
 
         for arg in &self.additional_args {
             cmd.arg(arg);
         }
+
+        let yes_styled = Self::format_styled_button(&yes_text, colors::GREEN, NerdFont::Check);
+        let no_styled = Self::format_styled_button(&no_text, colors::RED, NerdFont::Cross);
+        let input = format!("{yes_styled}\0{no_styled}");
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -637,8 +647,7 @@ impl FzfBuilder {
             .stdin
             .take()
             .ok_or_else(|| anyhow::anyhow!("Failed to open stdin"))?;
-        writeln!(stdin, "{yes_text}")?;
-        writeln!(stdin, "{no_text}")?;
+        stdin.write_all(input.as_bytes())?;
         stdin.flush()?;
 
         let output = child.wait_with_output()?;
@@ -659,12 +668,10 @@ impl FzfBuilder {
             return Ok(ConfirmResult::Cancelled);
         }
 
-        if selected_line == yes_text {
-            Ok(ConfirmResult::Yes)
-        } else if selected_line == no_text {
-            Ok(ConfirmResult::No)
-        } else {
-            Ok(ConfirmResult::Cancelled)
+        match selected_line.parse::<usize>() {
+            Ok(0) => Ok(ConfirmResult::Yes),
+            Ok(1) => Ok(ConfirmResult::No),
+            _ => Ok(ConfirmResult::Cancelled),
         }
     }
 
@@ -701,7 +708,7 @@ impl FzfBuilder {
         }
 
         // Create styled OK button with catppuccin colors
-        let ok_styled = Self::format_styled_button(&ok_text, colors::GREEN);
+        let ok_styled = Self::format_styled_button(&ok_text, colors::GREEN, NerdFont::Check);
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -733,13 +740,13 @@ impl FzfBuilder {
     }
 
     /// Format a styled button with icon badge sampling from catppuccin colors
-    fn format_styled_button(text: &str, color: &str) -> String {
+    fn format_styled_button(text: &str, color: &str, icon: NerdFont) -> String {
         let bg = hex_to_ansi_bg(color);
         let fg = hex_to_ansi_fg(colors::CRUST);
         let reset = "\x1b[49;39m";
 
         // Create the display line with icon badge
-        let icon = char::from(NerdFont::Check);
+        let icon = char::from(icon);
         let display_line = format!("{bg}{fg}   {icon}   {reset}  {text}");
 
         // Create padding lines with shadow effect
