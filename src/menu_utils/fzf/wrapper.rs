@@ -152,7 +152,11 @@ fn parse_fzf_output<T: Clone>(
     // Log failures for debugging
     if !result.status.success() {
         check_for_old_fzf_and_exit(&result.stderr);
-        log_fzf_failure(&result.stderr, result.status.code());
+        if crate::ui::is_debug_enabled() {
+            log_fzf_failure(&result.stderr, result.status.code(), |code, message| {
+                crate::ui::emit(crate::ui::Level::Debug, code, message, None);
+            });
+        }
     }
 
     // Parse selected lines
@@ -277,7 +281,11 @@ impl FzfWrapper {
 
                 if !result.status.success() {
                     check_for_old_fzf_and_exit(&result.stderr);
-                    log_fzf_failure(&result.stderr, result.status.code());
+                    if crate::ui::is_debug_enabled() {
+                        log_fzf_failure(&result.stderr, result.status.code(), |code, message| {
+                            crate::ui::emit(crate::ui::Level::Debug, code, message, None);
+                        });
+                    }
                 }
 
                 let stdout = String::from_utf8_lossy(&result.stdout);

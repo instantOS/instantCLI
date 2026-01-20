@@ -1,6 +1,3 @@
-use anyhow::Result;
-
-use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
 
 /// Catppuccin Mocha color palette.
@@ -132,31 +129,4 @@ pub fn fzf_mocha_args() -> Vec<String> {
         format!("--color=border:{}", colors::SURFACE1),
         format!("--color=gutter:{}", colors::BASE),
     ]
-}
-
-pub fn select_one_with_style_at<T>(items: Vec<T>, initial_index: Option<usize>) -> Result<Option<T>>
-where
-    T: crate::menu_utils::FzfSelectable + Clone,
-{
-    let mut builder = FzfWrapper::builder()
-        .prompt(format!("{} ", char::from(NerdFont::Search)))
-        .header("")
-        .args(fzf_mocha_args())
-        .responsive_layout();
-
-    if let Some(index) = initial_index {
-        builder = builder.initial_index(index);
-    }
-
-    match builder.select_padded(items)? {
-        crate::menu_utils::FzfResult::Selected(item) => Ok(Some(item)),
-        _ => Ok(None),
-    }
-}
-
-pub fn select_one_with_style<T>(items: Vec<T>) -> Result<Option<T>>
-where
-    T: crate::menu_utils::FzfSelectable + Clone,
-{
-    select_one_with_style_at(items, None)
 }

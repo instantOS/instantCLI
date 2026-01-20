@@ -1,17 +1,10 @@
 //! Core types and traits for the FZF wrapper
 
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
-use serde::{Deserialize, Serialize};
+
+pub use crate::ui::preview::FzfPreview;
 
 const RESET: &str = "\x1b[0m";
-
-/// Preview content for FZF items
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum FzfPreview {
-    Text(String),
-    Command(String),
-    None,
-}
 
 /// Trait for types that can be displayed in FZF selection menus.
 ///
@@ -120,8 +113,7 @@ impl Header {
             Header::Fancy(text) => {
                 // Inline the fancy header styling (moved from format_styled_header)
                 let reset = "\x1b[0m";
-                let surface =
-                    crate::ui::catppuccin::hex_to_ansi_fg(crate::ui::catppuccin::colors::SURFACE1);
+                let surface = hex_to_ansi_fg(colors::SURFACE1);
                 let separator = "──────────────────────────────────────";
                 format!("\n{surface}{separator}{reset}\n{text}\n{surface}{separator}{reset}\n ")
             }

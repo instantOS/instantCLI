@@ -81,20 +81,20 @@ pub(crate) fn check_for_old_fzf_and_exit(stderr: &[u8]) {
     }
 }
 
-pub(crate) fn log_fzf_failure(stderr: &[u8], exit_code: Option<i32>) {
-    if crate::ui::is_debug_enabled() {
-        let stderr_str = String::from_utf8_lossy(stderr);
-        let code_str = exit_code
-            .map(|c| format!("exit code {}", c))
-            .unwrap_or_else(|| "unknown".to_string());
+pub(crate) fn log_fzf_failure(
+    stderr: &[u8],
+    exit_code: Option<i32>,
+    mut emit_debug: impl FnMut(&str, &str),
+) {
+    let stderr_str = String::from_utf8_lossy(stderr);
+    let code_str = exit_code
+        .map(|c| format!("exit code {}", c))
+        .unwrap_or_else(|| "unknown".to_string());
 
-        crate::ui::emit(
-            crate::ui::Level::Debug,
-            "fzf.execution_failed",
-            &format!("FZF execution failed ({}): {}", code_str, stderr_str.trim()),
-            None,
-        );
-    }
+    emit_debug(
+        "fzf.execution_failed",
+        &format!("FZF execution failed ({}): {}", code_str, stderr_str.trim()),
+    );
 }
 
 /// Extract the icon's colored background from display text and create matching padding.

@@ -4,6 +4,9 @@ use anyhow::{self, Result};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
+use crate::ui::nerd_font::NerdFont;
+
 use super::types::*;
 use super::utils::*;
 use super::wrapper::FzfWrapper;
@@ -249,7 +252,11 @@ impl FzfBuilder {
 
                 if !result.status.success() {
                     check_for_old_fzf_and_exit(&result.stderr);
-                    log_fzf_failure(&result.stderr, result.status.code());
+                    if crate::ui::is_debug_enabled() {
+                        log_fzf_failure(&result.stderr, result.status.code(), |code, message| {
+                            crate::ui::emit(crate::ui::Level::Debug, code, message, None);
+                        });
+                    }
                     return Ok(FzfResult::Cancelled);
                 }
 
@@ -482,7 +489,11 @@ impl FzfBuilder {
 
         if !output.status.success() {
             check_for_old_fzf_and_exit(&output.stderr);
-            log_fzf_failure(&output.stderr, output.status.code());
+            if crate::ui::is_debug_enabled() {
+                log_fzf_failure(&output.stderr, output.status.code(), |code, message| {
+                    crate::ui::emit(crate::ui::Level::Debug, code, message, None);
+                });
+            }
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -635,7 +646,11 @@ impl FzfBuilder {
 
         if !output.status.success() {
             check_for_old_fzf_and_exit(&output.stderr);
-            log_fzf_failure(&output.stderr, output.status.code());
+            if crate::ui::is_debug_enabled() {
+                log_fzf_failure(&output.stderr, output.status.code(), |code, message| {
+                    crate::ui::emit(crate::ui::Level::Debug, code, message, None);
+                });
+            }
             return Ok(ConfirmResult::Cancelled);
         }
 
@@ -686,7 +701,7 @@ impl FzfBuilder {
         }
 
         // Create styled OK button with catppuccin colors
-        let ok_styled = Self::format_styled_button(&ok_text, crate::ui::catppuccin::colors::GREEN);
+        let ok_styled = Self::format_styled_button(&ok_text, colors::GREEN);
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -719,9 +734,6 @@ impl FzfBuilder {
 
     /// Format a styled button with icon badge sampling from catppuccin colors
     fn format_styled_button(text: &str, color: &str) -> String {
-        use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
-        use crate::ui::nerd_font::NerdFont;
-
         let bg = hex_to_ansi_bg(color);
         let fg = hex_to_ansi_fg(colors::CRUST);
         let reset = "\x1b[49;39m";
@@ -739,8 +751,6 @@ impl FzfBuilder {
 
     /// Format a styled message header with title and separator (inspired by PreviewBuilder)
     fn format_message_header(title: Option<&str>, message: Option<&Header>) -> String {
-        use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
-
         const RESET: &str = "\x1b[0m";
         const SEPARATOR: &str = "───────────────────────────────────";
 
@@ -1007,7 +1017,11 @@ impl FzfBuilder {
         // Handle other non-zero exit codes as errors (except code 1 which we handle below)
         if !result.status.success() && exit_code != Some(1) {
             check_for_old_fzf_and_exit(&result.stderr);
-            log_fzf_failure(&result.stderr, exit_code);
+            if crate::ui::is_debug_enabled() {
+                log_fzf_failure(&result.stderr, exit_code, |code, message| {
+                    crate::ui::emit(crate::ui::Level::Debug, code, message, None);
+                });
+            }
             return Ok(ChecklistSelection::Cancelled);
         }
 

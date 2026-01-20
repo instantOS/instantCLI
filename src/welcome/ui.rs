@@ -1,7 +1,8 @@
 //! UI components for welcome application
 
+use crate::menu_utils::select_one_with_style_at;
 use crate::menu_utils::{FzfPreview, FzfSelectable, MenuCursor};
-use crate::ui::catppuccin::{colors, format_icon_colored, select_one_with_style_at};
+use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::prelude::*;
 use anyhow::Result;
 

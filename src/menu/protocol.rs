@@ -263,7 +263,7 @@ impl From<ConfirmResult> for i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::menu_utils::FzfPreview;
+    use crate::ui::preview::FzfPreview;
 
     #[test]
     fn test_request_serialization() {

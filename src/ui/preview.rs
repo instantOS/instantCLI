@@ -7,9 +7,18 @@
 //! - Static text via [`PreviewBuilder::build`] for inline previews
 //! - Shell scripts via [`PreviewBuilder::build_shell_script`] for `preview_command()`
 
-use crate::menu_utils::FzfPreview;
+use serde::{Deserialize, Serialize};
+
 use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
+
+/// Preview content for FZF items.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FzfPreview {
+    Text(String),
+    Command(String),
+    None,
+}
 
 /// ANSI reset sequence
 const RESET: &str = "\x1b[0m";

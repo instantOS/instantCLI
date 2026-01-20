@@ -6,7 +6,7 @@ use anyhow::{Result, bail};
 use crate::menu_utils::{FzfResult, FzfWrapper};
 
 use super::SettingsContext;
-use crate::ui::catppuccin::select_one_with_style;
+use crate::menu_utils::select_one_with_style;
 
 mod locale_gen;
 mod menu;
