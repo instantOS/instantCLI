@@ -376,14 +376,16 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
 /// Handle repo actions
 pub fn handle_repo_actions(
     repo_name: &str,
-    config: &Config,
-    db: &Database,
+    _config: &Config,
+    _db: &Database,
     debug: bool,
 ) -> Result<()> {
     let mut cursor = MenuCursor::new();
 
     loop {
-        let actions = build_repo_action_menu(repo_name, config);
+        let config = Config::load(None)?;
+        let db = Database::new(config.database_path().to_path_buf())?;
+        let actions = build_repo_action_menu(repo_name, &config);
 
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Repository: {}", repo_name)))
@@ -472,12 +474,10 @@ pub fn handle_repo_actions(
                 }
             }
             RepoAction::ManageSubdirs => {
-                handle_manage_subdirs(repo_name, config, db, debug)?;
+                handle_manage_subdirs(repo_name, &config, &db, debug)?;
             }
             RepoAction::ShowInfo => {
                 // Build the info string using the preview builder
-                let config = Config::load(None)?;
-                let db = Database::new(config.database_path().to_path_buf())?;
                 let info_text = build_repo_preview(repo_name, &config, &db);
 
                 // Display in a message dialog
@@ -524,7 +524,7 @@ pub fn handle_repo_actions(
             }
             RepoAction::Back => return Ok(()),
             RepoAction::OpenInLazygit => {
-                let repo_manager = RepositoryManager::new(config, db);
+                let repo_manager = RepositoryManager::new(&config, &db);
                 if let Ok(local_repo) = repo_manager.get_repository_info(repo_name)
                     && let Ok(repo_path) = local_repo.local_path(config)
                 {
@@ -535,7 +535,7 @@ pub fn handle_repo_actions(
                 }
             }
             RepoAction::OpenInShell => {
-                let repo_manager = RepositoryManager::new(config, db);
+                let repo_manager = RepositoryManager::new(&config, &db);
                 if let Ok(local_repo) = repo_manager.get_repository_info(repo_name)
                     && let Ok(repo_path) = local_repo.local_path(config)
                 {
