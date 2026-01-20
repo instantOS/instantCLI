@@ -257,7 +257,7 @@ impl PreviewBuilder {
     app=$(xdg-mime query default "$mime" 2>/dev/null)
     if [ -n "$app" ]; then
         name=""
-        for dir in "$HOME/.local/share/applications" "/usr/share/applications" "/var/lib/flatpak/exports/share/applications"; do
+        for dir in "$HOME/.local/share/applications" "/usr/share/applications" "/var/lib/flatpak/exports/share/applications" "$HOME/.local/share/flatpak/exports/share/applications"; do
             if [ -f "$dir/$app" ]; then
                 name=$(grep "^Name=" "$dir/$app" 2>/dev/null | head -1 | cut -d= -f2)
                 break
