@@ -1,11 +1,100 @@
 use crate::arch::dualboot::feasibility::{check_disk_dualboot_feasibility, is_dualboot_feasible};
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu::slide::run_slider;
-use crate::menu_utils::{FzfWrapper, SliderConfig};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper, SliderConfig};
+use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result};
 
 pub struct DualBootPartitionQuestion;
+
+#[derive(Clone)]
+struct DualBootPartitionOption {
+    info: crate::arch::dualboot::PartitionInfo,
+}
+
+impl DualBootPartitionOption {
+    fn os_label(&self) -> String {
+        self.info
+            .detected_os
+            .as_ref()
+            .map(|os| os.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string())
+    }
+
+    fn fs_label(&self) -> &str {
+        self.info
+            .filesystem
+            .as_ref()
+            .map(|fs| fs.fs_type.as_str())
+            .unwrap_or("unknown")
+    }
+
+    fn mount_label(&self) -> &str {
+        self.info.mount_point.as_deref().unwrap_or("not mounted")
+    }
+}
+
+impl FzfSelectable for DualBootPartitionOption {
+    fn fzf_display_text(&self) -> String {
+        format!(
+            "{} ({}, {})",
+            self.info.device,
+            self.info.size_human(),
+            self.os_label()
+        )
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let resize_info = self.info.resize_info.as_ref();
+        let can_shrink = resize_info.map(|info| info.can_shrink).unwrap_or(false);
+        let resize_status = if can_shrink {
+            "Shrinkable"
+        } else {
+            "Not shrinkable"
+        };
+        let resize_color = if can_shrink {
+            colors::GREEN
+        } else {
+            colors::YELLOW
+        };
+
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::HardDrive, "Partition Details")
+            .subtext("This partition will be resized to make space for Linux.")
+            .blank()
+            .field("Device", &self.info.device)
+            .field("Size", &self.info.size_human())
+            .field("Filesystem", self.fs_label())
+            .field("Detected OS", &self.os_label())
+            .field("Mount", self.mount_label())
+            .blank()
+            .line(resize_color, None, "Resize Support")
+            .field_indented("Status", resize_status);
+
+        if let Some(info) = resize_info {
+            if let Some(min_size) = info.min_size_human() {
+                builder = builder.field_indented("Min size", &min_size);
+            }
+            if let Some(reason) = info.reason.as_deref() {
+                builder = builder.field_indented("Reason", reason);
+            }
+            if !info.prerequisites.is_empty() {
+                builder = builder
+                    .blank()
+                    .line(colors::TEAL, None, "Prerequisites")
+                    .bullets(info.prerequisites.iter());
+            }
+        }
+
+        builder.build()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.info.device.clone()
+    }
+}
 
 #[async_trait::async_trait]
 impl Question for DualBootPartitionQuestion {
@@ -87,18 +176,9 @@ impl Question for DualBootPartitionQuestion {
             }
         }
 
-        let options: Vec<String> = shrinkable_partitions
-            .iter()
-            .map(|p| {
-                let name = p.device.clone();
-                let size = p.size_human();
-                let os = p
-                    .detected_os
-                    .as_ref()
-                    .map(|o| o.name.clone())
-                    .unwrap_or("Unknown".to_string());
-                format!("{} ({}, {})", name, size, os)
-            })
+        let options: Vec<DualBootPartitionOption> = shrinkable_partitions
+            .into_iter()
+            .map(|info| DualBootPartitionOption { info })
             .collect();
 
         let result = FzfWrapper::builder()
@@ -109,10 +189,8 @@ impl Question for DualBootPartitionQuestion {
             .select(options)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(s) => {
-                // Extract device path
-                let device = s.split_whitespace().next().unwrap_or(&s).to_string();
-                Ok(QuestionResult::Answer(device))
+            crate::menu_utils::FzfResult::Selected(option) => {
+                Ok(QuestionResult::Answer(option.info.device))
             }
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),

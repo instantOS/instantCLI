@@ -1,7 +1,235 @@
+use crate::arch::annotations::AnnotatedValue;
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::FzfWrapper;
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 use anyhow::Result;
+
+#[derive(Clone)]
+struct MirrorRegionOption {
+    name: String,
+}
+
+impl MirrorRegionOption {
+    fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+
+impl FzfSelectable for MirrorRegionOption {
+    fn fzf_display_text(&self) -> String {
+        self.name.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        PreviewBuilder::new()
+            .header(NerdFont::Globe, "Mirror Region")
+            .subtext("Select the closest region for faster downloads.")
+            .blank()
+            .field("Region", &self.name)
+            .blank()
+            .line(colors::TEAL, None, "Notes")
+            .bullets([
+                "Used to generate the pacman mirrorlist",
+                "You can change mirrors later",
+            ])
+            .build()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.name.clone()
+    }
+}
+
+#[derive(Clone)]
+struct TimezoneOption {
+    value: String,
+}
+
+impl FzfSelectable for TimezoneOption {
+    fn fzf_display_text(&self) -> String {
+        self.value.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Command(timezone_preview_command())
+    }
+
+    fn fzf_key(&self) -> String {
+        self.value.clone()
+    }
+}
+
+fn timezone_preview_command() -> String {
+    PreviewBuilder::new()
+        .shell("tz=\"$1\"")
+        .shell("if [ -z \"$tz\" ]; then exit 0; fi")
+        .header(NerdFont::Clock, "Timezone")
+        .subtext("Used for system clock and timestamps.")
+        .blank()
+        .line(colors::TEAL, None, "Current Time")
+        .shell("TZ=\"$tz\" date '+  %Y-%m-%d %H:%M:%S (%Z)'")
+        .blank()
+        .line(colors::TEAL, None, "UTC Offset")
+        .shell("TZ=\"$tz\" date '+  UTC %z'")
+        .blank()
+        .line(colors::TEAL, None, "Zoneinfo")
+        .shell("printf '  /usr/share/zoneinfo/%s\\n' \"$tz\"")
+        .build_shell_script()
+}
+
+#[derive(Clone)]
+struct LocaleOption {
+    value: String,
+    annotation: Option<String>,
+}
+
+impl From<AnnotatedValue<String>> for LocaleOption {
+    fn from(value: AnnotatedValue<String>) -> Self {
+        Self {
+            value: value.value,
+            annotation: value.annotation,
+        }
+    }
+}
+
+impl FzfSelectable for LocaleOption {
+    fn fzf_display_text(&self) -> String {
+        match &self.annotation {
+            Some(label) => format!("{} - {}", label, self.value),
+            None => self.value.clone(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Language, "Locale")
+            .subtext("Sets system language and formatting.")
+            .blank()
+            .field("Locale", &self.value);
+
+        if let Some(label) = &self.annotation {
+            builder = builder.field("Language", label);
+        }
+
+        builder
+            .blank()
+            .line(colors::TEAL, None, "Used for")
+            .bullets(["System messages", "Date and number formatting"])
+            .build()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.value.clone()
+    }
+}
+
+#[derive(Clone)]
+struct KeymapOption {
+    value: String,
+    annotation: Option<String>,
+}
+
+impl From<AnnotatedValue<String>> for KeymapOption {
+    fn from(value: AnnotatedValue<String>) -> Self {
+        Self {
+            value: value.value,
+            annotation: value.annotation,
+        }
+    }
+}
+
+impl FzfSelectable for KeymapOption {
+    fn fzf_display_text(&self) -> String {
+        match &self.annotation {
+            Some(label) => format!("{} - {}", label, self.value),
+            None => self.value.clone(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Keyboard, "Keymap")
+            .subtext("Sets the console keyboard layout for the system.")
+            .blank()
+            .field("Keymap", &self.value);
+
+        if let Some(label) = &self.annotation {
+            builder = builder.field("Layout", label);
+        }
+
+        builder
+            .blank()
+            .line(colors::TEAL, None, "Notes")
+            .bullets([
+                "Affects the installer and TTYs",
+                "Desktop layout can be changed later",
+            ])
+            .build()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.value.clone()
+    }
+}
+
+#[derive(Clone)]
+enum KernelOption {
+    Linux,
+    Lts,
+    Zen,
+}
+
+impl KernelOption {
+    fn label(&self) -> &'static str {
+        match self {
+            KernelOption::Linux => "linux",
+            KernelOption::Lts => "linux-lts",
+            KernelOption::Zen => "linux-zen",
+        }
+    }
+
+    fn preview(&self) -> FzfPreview {
+        match self {
+            KernelOption::Linux => PreviewBuilder::new()
+                .header(NerdFont::Gear, "linux")
+                .subtext("The standard Arch kernel with the latest updates.")
+                .blank()
+                .line(colors::TEAL, None, "Best for")
+                .bullets(["Most systems", "Up-to-date hardware support"])
+                .build(),
+            KernelOption::Lts => PreviewBuilder::new()
+                .header(NerdFont::Gear, "linux-lts")
+                .subtext("Long-term support kernel with fewer breaking changes.")
+                .blank()
+                .line(colors::TEAL, None, "Best for")
+                .bullets(["Stability", "Older hardware"])
+                .build(),
+            KernelOption::Zen => PreviewBuilder::new()
+                .header(NerdFont::Gear, "linux-zen")
+                .subtext("Performance-tuned kernel with extra desktop patches.")
+                .blank()
+                .line(colors::TEAL, None, "Best for")
+                .bullets(["Responsive desktop feel", "Gaming"])
+                .build(),
+        }
+    }
+}
+
+impl FzfSelectable for KernelOption {
+    fn fzf_display_text(&self) -> String {
+        self.label().to_string()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.label().to_string()
+    }
+}
 
 pub struct HostnameQuestion;
 
@@ -107,12 +335,17 @@ impl Question for MirrorRegionQuestion {
             return Ok(QuestionResult::Cancelled);
         }
 
+        let options: Vec<MirrorRegionOption> =
+            regions.into_iter().map(MirrorRegionOption::new).collect();
+
         let result = FzfWrapper::builder()
             .header(format!("{} Select Mirror Region", NerdFont::Globe))
-            .select(regions)?;
+            .select(options)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(region) => Ok(QuestionResult::Answer(region)),
+            crate::menu_utils::FzfResult::Selected(region) => {
+                Ok(QuestionResult::Answer(region.name))
+            }
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),
         }
@@ -147,12 +380,17 @@ impl Question for TimezoneQuestion {
             .get::<crate::arch::timezones::TimezonesKey>()
             .unwrap_or_default();
 
+        let options: Vec<TimezoneOption> = timezones
+            .into_iter()
+            .map(|value| TimezoneOption { value })
+            .collect();
+
         let result = FzfWrapper::builder()
             .header(format!("{} Select Timezone", NerdFont::Clock))
-            .select(timezones)?;
+            .select(options)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(tz) => Ok(QuestionResult::Answer(tz)),
+            crate::menu_utils::FzfResult::Selected(tz) => Ok(QuestionResult::Answer(tz.value)),
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),
         }
@@ -191,9 +429,11 @@ impl Question for KeymapQuestion {
             return Ok(QuestionResult::Cancelled);
         }
 
+        let options: Vec<KeymapOption> = keymaps.into_iter().map(KeymapOption::from).collect();
+
         let result = FzfWrapper::builder()
             .header(format!("{} Select Keymap", NerdFont::Keyboard))
-            .select(keymaps)?;
+            .select(options)?;
 
         match result {
             crate::menu_utils::FzfResult::Selected(val) => Ok(QuestionResult::Answer(val.value)),
@@ -228,9 +468,11 @@ impl Question for LocaleQuestion {
             return Ok(QuestionResult::Cancelled);
         }
 
+        let options: Vec<LocaleOption> = locales.into_iter().map(LocaleOption::from).collect();
+
         let result = FzfWrapper::builder()
             .header(format!("{} Select System Locale", NerdFont::Language))
-            .select(locales)?;
+            .select(options)?;
 
         match result {
             crate::menu_utils::FzfResult::Selected(val) => Ok(QuestionResult::Answer(val.value)),
@@ -287,18 +529,16 @@ impl Question for KernelQuestion {
     }
 
     async fn ask(&self, _context: &InstallContext) -> Result<QuestionResult> {
-        let kernels = vec![
-            "linux".to_string(),
-            "linux-lts".to_string(),
-            "linux-zen".to_string(),
-        ];
+        let kernels = vec![KernelOption::Linux, KernelOption::Lts, KernelOption::Zen];
 
         let result = FzfWrapper::builder()
             .header(format!("{} Select Kernel", NerdFont::Gear))
             .select(kernels)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(k) => Ok(QuestionResult::Answer(k)),
+            crate::menu_utils::FzfResult::Selected(k) => {
+                Ok(QuestionResult::Answer(k.label().to_string()))
+            }
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),
         }
