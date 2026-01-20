@@ -204,10 +204,14 @@ pub mod ui;
 
 pub use cli::handle_doctor_command;
 
-pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> Vec<CheckResult> {
+pub async fn run_all_checks(
+    checks: Vec<Box<dyn DoctorCheck + Send + Sync>>,
+    max_concurrency: usize,
+) -> Vec<CheckResult> {
     use privileges::skip_reason_for_privilege_level;
     use std::sync::Arc;
     use sudo::RunningAs;
+    use tokio::task::JoinSet;
 
     // Check privileges once before spawning any tasks
     let is_root = matches!(sudo::check(), RunningAs::Root);
@@ -226,48 +230,67 @@ pub async fn run_all_checks(checks: Vec<Box<dyn DoctorCheck + Send + Sync>>) -> 
     pb.set_message("Running health checks...");
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let mut handles = vec![];
-    for check in checks {
-        let completed = Arc::clone(&completed);
-        let pb = pb.clone();
+    let max_concurrency = max_concurrency.max(1);
+    let mut join_set: JoinSet<(usize, CheckResult)> = JoinSet::new();
+    let mut pending = checks.into_iter().enumerate();
+    let mut results: Vec<Option<CheckResult>> = vec![None; total];
 
-        let handle = tokio::spawn(async move {
-            let name = check.name().to_string();
-            let check_id = check.id().to_string();
-            let fix_message = check.fix_message();
+    let mut spawn_check =
+        |join_set: &mut JoinSet<(usize, CheckResult)>,
+         (index, check): (usize, Box<dyn DoctorCheck + Send + Sync>)| {
+            let completed = Arc::clone(&completed);
+            let pb = pb.clone();
 
-            // Check privilege requirements before running
-            let status = if let Some(skip_reason) =
-                skip_reason_for_privilege_level(check.check_privilege_level(), is_root)
-            {
-                CheckStatus::Skipped(skip_reason.to_string())
-            } else {
-                check.execute().await
-            };
+            join_set.spawn(async move {
+                let name = check.name().to_string();
+                let check_id = check.id().to_string();
+                let fix_message = check.fix_message();
 
-            // Update progress
-            let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
-            pb.set_position(done as u64);
+                // Check privilege requirements before running
+                let status = if let Some(skip_reason) =
+                    skip_reason_for_privilege_level(check.check_privilege_level(), is_root)
+                {
+                    CheckStatus::Skipped(skip_reason.to_string())
+                } else {
+                    check.execute().await
+                };
 
-            CheckResult {
-                name,
-                check_id,
-                status,
-                fix_message,
-            }
-        });
-        handles.push(handle);
+                // Update progress
+                let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                pb.set_position(done as u64);
+
+                (
+                    index,
+                    CheckResult {
+                        name,
+                        check_id,
+                        status,
+                        fix_message,
+                    },
+                )
+            });
+        };
+
+    for _ in 0..max_concurrency {
+        if let Some(item) = pending.next() {
+            spawn_check(&mut join_set, item);
+        } else {
+            break;
+        }
     }
 
-    let mut results = vec![];
-    for handle in handles {
-        if let Ok(result) = handle.await {
-            results.push(result);
+    while let Some(joined) = join_set.join_next().await {
+        if let Ok((index, result)) = joined {
+            results[index] = Some(result);
+        }
+
+        if let Some(item) = pending.next() {
+            spawn_check(&mut join_set, item);
         }
     }
 
     pb.finish_and_clear();
-    results
+    results.into_iter().flatten().collect()
 }
 
 // Unified table output functions

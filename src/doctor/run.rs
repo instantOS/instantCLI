@@ -5,9 +5,9 @@ use super::{CheckResult, DoctorCheck, run_all_checks};
 use anyhow::{Result, anyhow};
 
 /// Run all health checks and display results
-pub async fn run_all_checks_cmd() -> Result<()> {
+pub async fn run_all_checks_cmd(max_concurrency: usize) -> Result<()> {
     let checks = REGISTRY.all_checks();
-    let results = run_all_checks(checks).await;
+    let results = run_all_checks(checks, max_concurrency).await;
     super::print_results_table(&results);
 
     show_available_fixes(&results);

@@ -129,6 +129,9 @@ enum Commands {
     Doctor {
         #[command(subcommand)]
         command: Option<DoctorCommands>,
+        /// Maximum number of doctor checks to run concurrently
+        #[arg(long = "concurrency", default_value_t = 4, value_parser = clap::value_parser!(usize).range(1..))]
+        concurrency: usize,
     },
     /// Development utilities
     Dev {
@@ -281,8 +284,11 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
                 None,
             )?;
         }
-        Some(Commands::Doctor { command }) => {
-            doctor::handle_doctor_command(command.clone()).await?;
+        Some(Commands::Doctor {
+            command,
+            concurrency,
+        }) => {
+            doctor::handle_doctor_command(command.clone(), *concurrency).await?;
         }
         Some(Commands::Menu { command }) => {
             let exit_code = menu::handle_menu_command(command.clone(), cli.debug).await?;

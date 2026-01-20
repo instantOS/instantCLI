@@ -328,11 +328,11 @@ pub async fn fix_batch_checks(batch_ids: String) -> Result<()> {
 }
 
 /// Apply fixes for all failing/fixable health checks
-pub async fn fix_all_checks() -> Result<()> {
+pub async fn fix_all_checks(max_concurrency: usize) -> Result<()> {
     use sudo::RunningAs;
 
     let checks = REGISTRY.all_checks();
-    let results = run_all_checks(checks).await;
+    let results = run_all_checks(checks, max_concurrency).await;
 
     let fixable: Vec<_> = results
         .iter()
@@ -604,11 +604,11 @@ pub async fn fix_all_checks() -> Result<()> {
 }
 
 /// Interactive fix mode: show menu of fixable issues and apply selected fixes
-pub async fn fix_interactive() -> Result<()> {
+pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
     use super::ui::run_success_menu;
 
     let checks = REGISTRY.all_checks();
-    let results = run_all_checks(checks).await;
+    let results = run_all_checks(checks, max_concurrency).await;
 
     let fixable_issues: Vec<_> = results
         .iter()
@@ -647,7 +647,7 @@ pub async fn fix_interactive() -> Result<()> {
                 }
 
                 if selected.iter().any(|i| i.is_action(MenuAction::FixAll)) {
-                    return fix_all_checks().await;
+                    return fix_all_checks(max_concurrency).await;
                 }
 
                 let issues: Vec<FixableIssue> = selected
