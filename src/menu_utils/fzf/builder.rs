@@ -4,7 +4,7 @@ use anyhow::{self, Result};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
+use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_bg, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 
 use super::types::*;
@@ -43,6 +43,36 @@ enum DialogType {
         confirm_text: String,
         allow_empty: bool,
     },
+}
+
+#[derive(Clone)]
+struct ConfirmOption {
+    label: String,
+    color: &'static str,
+    icon: NerdFont,
+    result: ConfirmResult,
+}
+
+impl ConfirmOption {
+    fn new(label: String, color: &'static str, icon: NerdFont, result: ConfirmResult) -> Self {
+        Self {
+            label,
+            color,
+            icon,
+            result,
+        }
+    }
+}
+
+impl FzfSelectable for ConfirmOption {
+    fn fzf_display_text(&self) -> String {
+        let badge = format_icon_colored(self.icon, self.color);
+        format!("{badge}{}", self.label)
+    }
+
+    fn fzf_key(&self) -> String {
+        self.label.clone()
+    }
 }
 impl FzfBuilder {
     pub fn new() -> Self {
@@ -218,9 +248,16 @@ impl FzfBuilder {
         }
 
         let input_text = Self::prepare_padded_input(&items);
-        let preview_dir = Self::prepare_padded_previews(&items)?;
+        let has_preview = items
+            .iter()
+            .any(|item| !matches!(item.fzf_preview(), FzfPreview::None));
+        let preview_dir = if has_preview {
+            Some(Self::prepare_padded_previews(&items)?)
+        } else {
+            None
+        };
 
-        let mut cmd = self.configure_padded_cmd(&preview_dir);
+        let mut cmd = self.configure_padded_cmd(preview_dir.as_deref());
 
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -239,7 +276,9 @@ impl FzfBuilder {
         crate::menu::server::unregister_menu_process(pid);
 
         // Clean up temp preview directory
-        let _ = std::fs::remove_dir_all(&preview_dir);
+        if let Some(dir) = preview_dir.as_ref() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
 
         match output {
             Ok(result) => {
@@ -323,7 +362,7 @@ impl FzfBuilder {
         Ok(preview_dir)
     }
 
-    fn configure_padded_cmd(&self, preview_dir: &std::path::Path) -> Command {
+    fn configure_padded_cmd(&self, preview_dir: Option<&std::path::Path>) -> Command {
         let mut cmd = Command::new("fzf");
         cmd.env_remove("FZF_DEFAULT_OPTS");
 
@@ -341,11 +380,13 @@ impl FzfBuilder {
 
         // Preview command using {n} for the 0-based item index
         // Check for .sh script first (Command preview), then .txt (Text preview)
-        let preview_cmd = format!(
-            "if [ -f {dir}/{{n}}.sh ]; then bash {dir}/{{n}}.sh; elif [ -f {dir}/{{n}}.txt ]; then cat {dir}/{{n}}.txt; fi",
-            dir = preview_dir.display()
-        );
-        cmd.arg("--preview").arg(&preview_cmd);
+        if let Some(dir) = preview_dir {
+            let preview_cmd = format!(
+                "if [ -f {dir}/{{n}}.sh ]; then bash {dir}/{{n}}.sh; elif [ -f {dir}/{{n}}.txt ]; then cat {dir}/{{n}}.txt; fi",
+                dir = dir.display()
+            );
+            cmd.arg("--preview").arg(&preview_cmd);
+        }
 
         // Apply prompt and header
         if let Some(prompt) = &self.prompt {
@@ -599,7 +640,7 @@ impl FzfBuilder {
         Ok(FzfResult::Selected(password.trim().to_string()))
     }
 
-    fn execute_confirm(self) -> Result<ConfirmResult> {
+    fn execute_confirm(mut self) -> Result<ConfirmResult> {
         let (yes_text, no_text) = if let DialogType::Confirmation {
             ref yes_text,
             ref no_text,
@@ -610,67 +651,19 @@ impl FzfBuilder {
             return Ok(ConfirmResult::Cancelled);
         };
 
-        let mut cmd = Command::new("fzf");
-        cmd.env_remove("FZF_DEFAULT_OPTS");
-        cmd.arg("--layout").arg("reverse");
-        cmd.arg("--wrap");
-        cmd.arg("--read0");
-        cmd.arg("--ansi");
-        cmd.arg("--highlight-line");
-        cmd.arg("--no-input");
-        cmd.arg("--tiebreak=index");
-        cmd.arg("--bind").arg("enter:become(echo {n})");
-
         let header_text = Self::format_message_header(None, self.header.as_ref());
         if !header_text.is_empty() {
-            cmd.arg("--header").arg(header_text);
+            self.header = Some(Header::Manual(header_text));
         }
 
-        for arg in &self.additional_args {
-            cmd.arg(arg);
-        }
+        let options = vec![
+            ConfirmOption::new(yes_text, colors::GREEN, NerdFont::Check, ConfirmResult::Yes),
+            ConfirmOption::new(no_text, colors::RED, NerdFont::Cross, ConfirmResult::No),
+        ];
 
-        let yes_styled = Self::format_styled_button(&yes_text, colors::GREEN, NerdFont::Check);
-        let no_styled = Self::format_styled_button(&no_text, colors::RED, NerdFont::Cross);
-        let input = format!("{yes_styled}\0{no_styled}");
-
-        let mut child = cmd
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let pid = child.id();
-        let _ = crate::menu::server::register_menu_process(pid);
-
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("Failed to open stdin"))?;
-        stdin.write_all(input.as_bytes())?;
-        stdin.flush()?;
-
-        let output = child.wait_with_output()?;
-        crate::menu::server::unregister_menu_process(pid);
-
-        if !output.status.success() {
-            check_for_old_fzf_and_exit(&output.stderr);
-            if crate::ui::is_debug_enabled() {
-                log_fzf_failure(&output.stderr, output.status.code(), |code, message| {
-                    crate::ui::emit(crate::ui::Level::Debug, code, message, None);
-                });
-            }
-            return Ok(ConfirmResult::Cancelled);
-        }
-
-        let selected_line = std::str::from_utf8(&output.stdout)?.trim();
-        if selected_line.is_empty() {
-            return Ok(ConfirmResult::Cancelled);
-        }
-
-        match selected_line.parse::<usize>() {
-            Ok(0) => Ok(ConfirmResult::Yes),
-            Ok(1) => Ok(ConfirmResult::No),
+        match self.select_padded(options)? {
+            FzfResult::Selected(option) => Ok(option.result),
+            FzfResult::Cancelled => Ok(ConfirmResult::Cancelled),
             _ => Ok(ConfirmResult::Cancelled),
         }
     }
@@ -1094,6 +1087,7 @@ impl FzfBuilder {
         let mut args = Self::base_args("20%,2%");
         args.push("--info=hidden".to_string());
         args.push("--color=header:-1".to_string());
+        args.push("--no-input".to_string());
         args
     }
 
