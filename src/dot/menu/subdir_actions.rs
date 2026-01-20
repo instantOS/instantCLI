@@ -180,16 +180,14 @@ fn build_subdir_action_menu(
 fn handle_subdir_actions(
     repo_name: &str,
     subdir_name: &str,
-    _config: &Config,
-    _db: &Database,
+    config: &mut Config,
+    db: &Database,
     debug: bool,
 ) -> Result<()> {
     let mut cursor = MenuCursor::new();
 
     loop {
-        // Reload config to get current state
-        let config = Config::load(None)?;
-        let actions = build_subdir_action_menu(repo_name, subdir_name, &config);
+        let actions = build_subdir_action_menu(repo_name, subdir_name, config);
 
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("{} / {}", repo_name, subdir_name)))
@@ -217,9 +215,6 @@ fn handle_subdir_actions(
                 let active_subdirs = config.get_active_subdirs(repo_name);
                 let is_active = active_subdirs.contains(&subdir_name.to_string());
 
-                let mut config = Config::load(None)?;
-                let db = Database::new(config.database_path().to_path_buf())?;
-
                 let result = if is_active {
                     let clone_args = RepoCommands::Subdirs {
                         command: crate::dot::repo::cli::SubdirCommands::Disable {
@@ -227,12 +222,7 @@ fn handle_subdir_actions(
                             subdir: subdir_name.to_string(),
                         },
                     };
-                    crate::dot::repo::commands::handle_repo_command(
-                        &mut config,
-                        &db,
-                        &clone_args,
-                        debug,
-                    )
+                    crate::dot::repo::commands::handle_repo_command(config, db, &clone_args, debug)
                 } else {
                     let clone_args = RepoCommands::Subdirs {
                         command: crate::dot::repo::cli::SubdirCommands::Enable {
@@ -240,12 +230,7 @@ fn handle_subdir_actions(
                             subdir: subdir_name.to_string(),
                         },
                     };
-                    crate::dot::repo::commands::handle_repo_command(
-                        &mut config,
-                        &db,
-                        &clone_args,
-                        debug,
-                    )
+                    crate::dot::repo::commands::handle_repo_command(config, db, &clone_args, debug)
                 };
 
                 if let Err(e) = result {
@@ -253,7 +238,6 @@ fn handle_subdir_actions(
                 }
             }
             SubdirAction::BumpPriority => {
-                let mut config = Config::load(None)?;
                 match config.move_subdir_up(repo_name, subdir_name, None) {
                     Ok(new_pos) => {
                         FzfWrapper::message(&format!(
@@ -267,7 +251,6 @@ fn handle_subdir_actions(
                 }
             }
             SubdirAction::LowerPriority => {
-                let mut config = Config::load(None)?;
                 match config.move_subdir_down(repo_name, subdir_name, None) {
                     Ok(new_pos) => {
                         FzfWrapper::message(&format!(
@@ -281,7 +264,7 @@ fn handle_subdir_actions(
                 }
             }
             SubdirAction::Delete => {
-                return handle_delete_subdir(repo_name, subdir_name, &config);
+                return handle_delete_subdir(repo_name, subdir_name, config);
             }
             SubdirAction::Back => return Ok(()),
         }
@@ -360,7 +343,7 @@ impl FzfSelectable for DeleteChoice {
 }
 
 /// Handle deleting a subdirectory
-fn handle_delete_subdir(repo_name: &str, subdir_name: &str, config: &Config) -> Result<()> {
+fn handle_delete_subdir(repo_name: &str, subdir_name: &str, config: &mut Config) -> Result<()> {
     // Get the local repo path
     let local_repo = LocalRepo::new(config, repo_name.to_string())?;
     let repo_path = local_repo.local_path(config)?;
@@ -403,11 +386,14 @@ fn handle_delete_subdir(repo_name: &str, subdir_name: &str, config: &Config) -> 
             match crate::dot::meta::remove_dots_dir(&repo_path, subdir_name, false) {
                 Ok(_) => {
                     // Also remove from active_subdirectories in global config
-                    let mut config = Config::load(None)?;
+                    let mut should_save = false;
                     if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name)
                         && let Some(active_subdirs) = repo.active_subdirectories.as_mut()
                     {
                         active_subdirs.retain(|s| s != subdir_name);
+                        should_save = true;
+                    }
+                    if should_save {
                         config.save(None)?;
                     }
                     FzfWrapper::message(&format!(
@@ -424,11 +410,14 @@ fn handle_delete_subdir(repo_name: &str, subdir_name: &str, config: &Config) -> 
             match crate::dot::meta::remove_dots_dir(&repo_path, subdir_name, true) {
                 Ok(_) => {
                     // Also remove from active_subdirectories in global config
-                    let mut config = Config::load(None)?;
+                    let mut should_save = false;
                     if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name)
                         && let Some(active_subdirs) = repo.active_subdirectories.as_mut()
                     {
                         active_subdirs.retain(|s| s != subdir_name);
+                        should_save = true;
+                    }
+                    if should_save {
                         config.save(None)?;
                     }
                     FzfWrapper::message(&format!(
@@ -575,18 +564,15 @@ impl FzfSelectable for SubdirMenuItem {
 /// Handle managing subdirs
 pub fn handle_manage_subdirs(
     repo_name: &str,
-    _config: &Config,
+    config: &mut Config,
     db: &Database,
     debug: bool,
 ) -> Result<()> {
     let mut cursor = MenuCursor::new();
 
     loop {
-        // Reload config to get current state
-        let config = Config::load(None)?;
-
         // Load the repo to get available subdirs
-        let local_repo = match LocalRepo::new(&config, repo_name.to_string()) {
+        let local_repo = match LocalRepo::new(config, repo_name.to_string()) {
             Ok(repo) => repo,
             Err(e) => {
                 FzfWrapper::message(&format!("Failed to load repository: {}", e))?;
@@ -599,7 +585,7 @@ pub fn handle_manage_subdirs(
             .repos
             .iter()
             .find(|r| r.name == repo_name)
-            .and_then(|repo| repo.active_subdirectories.as_ref());
+            .and_then(|repo| repo.active_subdirectories.clone());
 
         // Build subdir items with priority info
         let mut subdir_items: Vec<SubdirMenuItem> = local_repo
@@ -609,6 +595,7 @@ pub fn handle_manage_subdirs(
             .map(|subdir| {
                 let is_active = active_subdirs.contains(subdir);
                 let is_configured = configured_subdirs
+                    .as_ref()
                     .map(|subdirs| subdirs.contains(subdir))
                     .unwrap_or(false);
                 let priority = if is_active {
@@ -636,7 +623,7 @@ pub fn handle_manage_subdirs(
         // Add "Add Dotfile Dir" option (only for non-read-only, non-external repos)
         let repo_config = config.repos.iter().find(|r| r.name == repo_name);
         let is_read_only = repo_config.map(|r| r.read_only).unwrap_or(false);
-        let is_external = local_repo.is_external(&config);
+        let is_external = local_repo.is_external(config);
 
         if !is_read_only && !is_external {
             subdir_items.push(SubdirMenuItem {
@@ -649,7 +636,7 @@ pub fn handle_manage_subdirs(
         }
 
         // Add orphaned subdirs (enabled in config but not in metadata)
-        let orphaned = local_repo.get_orphaned_active_subdirs(&config);
+        let orphaned = local_repo.get_orphaned_active_subdirs(config);
         for subdir in orphaned {
             subdir_items.push(SubdirMenuItem {
                 subdir,
@@ -709,7 +696,7 @@ pub fn handle_manage_subdirs(
             };
 
             // Get repo path and add the directory
-            let local_path = local_repo.local_path(&config)?;
+            let local_path = local_repo.local_path(config)?;
             match crate::dot::meta::add_dots_dir(&local_path, &new_dir) {
                 Ok(()) => {
                     FzfWrapper::message(&format!(
@@ -726,12 +713,12 @@ pub fn handle_manage_subdirs(
 
         // Handle orphaned subdir with special resolution actions
         if is_orphaned {
-            handle_orphaned_subdir_actions(repo_name, &selected_subdir, &local_repo)?;
+            handle_orphaned_subdir_actions(repo_name, &selected_subdir, &local_repo, config)?;
             continue;
         }
 
         // Show action menu for the selected subdirectory
-        handle_subdir_actions(repo_name, &selected_subdir, &config, db, debug)?;
+        handle_subdir_actions(repo_name, &selected_subdir, config, db, debug)?;
     }
 }
 
@@ -800,6 +787,7 @@ fn handle_orphaned_subdir_actions(
     repo_name: &str,
     subdir_name: &str,
     local_repo: &LocalRepo,
+    config: &mut Config,
 ) -> Result<()> {
     let actions = vec![
         OrphanedAction::Disable,
@@ -832,17 +820,20 @@ fn handle_orphaned_subdir_actions(
 
     match action {
         OrphanedAction::Disable => {
-            let mut config = Config::load(None)?;
+            let mut should_save = false;
             if let Some(repo) = config.repos.iter_mut().find(|r| r.name == repo_name)
                 && let Some(active_subdirs) = repo.active_subdirectories.as_mut()
             {
                 active_subdirs.retain(|s| s != subdir_name);
+                should_save = true;
+            }
+            if should_save {
                 config.save(None)?;
                 FzfWrapper::message(&format!("Disabled '{}'. Mismatch resolved.", subdir_name))?;
             }
         }
         OrphanedAction::AddToMetadata => {
-            let repo_path = local_repo.local_path(&Config::load(None)?)?;
+            let repo_path = local_repo.local_path(config)?;
             match crate::dot::meta::add_dots_dir(&repo_path, subdir_name) {
                 Ok(()) => {
                     FzfWrapper::message(&format!(

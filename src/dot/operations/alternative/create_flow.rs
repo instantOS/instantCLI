@@ -247,11 +247,11 @@ fn create_new_subdir(config: &Config, repo_name: &str) -> Result<bool> {
 }
 
 fn clone_new_repo() -> Result<bool> {
-    let config = Config::load(None)?;
+    let mut config = Config::load(None)?;
     let db = Database::new(config.database_path().to_path_buf())?;
+    let original_count = config.repos.len();
 
-    crate::dot::menu::add_repo::handle_add_repo(&config, &db, false)?;
+    crate::dot::menu::add_repo::handle_add_repo(&mut config, &db, false)?;
 
-    let new_config = Config::load(None)?;
-    Ok(new_config.repos.len() > config.repos.len())
+    Ok(config.repos.len() > original_count)
 }

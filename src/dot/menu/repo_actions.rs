@@ -376,16 +376,14 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
 /// Handle repo actions
 pub fn handle_repo_actions(
     repo_name: &str,
-    _config: &Config,
-    _db: &Database,
+    config: &mut Config,
+    db: &Database,
     debug: bool,
 ) -> Result<()> {
     let mut cursor = MenuCursor::new();
 
     loop {
-        let config = Config::load(None)?;
-        let db = Database::new(config.database_path().to_path_buf())?;
-        let actions = build_repo_action_menu(repo_name, &config);
+        let actions = build_repo_action_menu(repo_name, config);
 
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Repository: {}", repo_name)))
@@ -418,16 +416,13 @@ pub fn handle_repo_actions(
                     .map(|r| r.enabled)
                     .unwrap_or(false);
 
-                let mut config = Config::load(None)?;
-                let db = Database::new(config.database_path().to_path_buf())?;
-
                 if is_enabled {
                     let clone_args = RepoCommands::Disable {
                         name: repo_name.to_string(),
                     };
                     crate::dot::repo::commands::handle_repo_command(
-                        &mut config,
-                        &db,
+                        config,
+                        db,
                         &clone_args,
                         debug,
                     )?;
@@ -437,48 +432,42 @@ pub fn handle_repo_actions(
                         name: repo_name.to_string(),
                     };
                     crate::dot::repo::commands::handle_repo_command(
-                        &mut config,
-                        &db,
+                        config,
+                        db,
                         &clone_args,
                         debug,
                     )?;
                     FzfWrapper::message(&format!("Repository '{}' has been enabled", repo_name))?;
                 }
             }
-            RepoAction::BumpPriority => {
-                let mut config = Config::load(None)?;
-                match config.move_repo_up(repo_name, None) {
-                    Ok(new_pos) => {
-                        FzfWrapper::message(&format!(
-                            "Repository '{}' moved to priority P{}",
-                            repo_name, new_pos
-                        ))?;
-                    }
-                    Err(e) => {
-                        FzfWrapper::message(&format!("Error: {}", e))?;
-                    }
+            RepoAction::BumpPriority => match config.move_repo_up(repo_name, None) {
+                Ok(new_pos) => {
+                    FzfWrapper::message(&format!(
+                        "Repository '{}' moved to priority P{}",
+                        repo_name, new_pos
+                    ))?;
                 }
-            }
-            RepoAction::LowerPriority => {
-                let mut config = Config::load(None)?;
-                match config.move_repo_down(repo_name, None) {
-                    Ok(new_pos) => {
-                        FzfWrapper::message(&format!(
-                            "Repository '{}' moved to priority P{}",
-                            repo_name, new_pos
-                        ))?;
-                    }
-                    Err(e) => {
-                        FzfWrapper::message(&format!("Error: {}", e))?;
-                    }
+                Err(e) => {
+                    FzfWrapper::message(&format!("Error: {}", e))?;
                 }
-            }
+            },
+            RepoAction::LowerPriority => match config.move_repo_down(repo_name, None) {
+                Ok(new_pos) => {
+                    FzfWrapper::message(&format!(
+                        "Repository '{}' moved to priority P{}",
+                        repo_name, new_pos
+                    ))?;
+                }
+                Err(e) => {
+                    FzfWrapper::message(&format!("Error: {}", e))?;
+                }
+            },
             RepoAction::ManageSubdirs => {
-                handle_manage_subdirs(repo_name, &config, &db, debug)?;
+                handle_manage_subdirs(repo_name, config, db, debug)?;
             }
             RepoAction::ShowInfo => {
                 // Build the info string using the preview builder
-                let info_text = build_repo_preview(repo_name, &config, &db);
+                let info_text = build_repo_preview(repo_name, config, db);
 
                 // Display in a message dialog
                 FzfWrapper::builder()
@@ -497,9 +486,6 @@ pub fn handle_repo_actions(
                     .confirm_dialog()?;
 
                 if matches!(confirm, ConfirmResult::Yes) {
-                    let mut config = Config::load(None)?;
-                    let db = Database::new(config.database_path().to_path_buf())?;
-
                     // Ask if we should keep files
                     let keep_files_result = FzfWrapper::builder()
                         .confirm("Keep local files?")
@@ -514,8 +500,8 @@ pub fn handle_repo_actions(
                         keep_files,
                     };
                     crate::dot::repo::commands::handle_repo_command(
-                        &mut config,
-                        &db,
+                        config,
+                        db,
                         &clone_args,
                         debug,
                     )?;
@@ -524,7 +510,7 @@ pub fn handle_repo_actions(
             }
             RepoAction::Back => return Ok(()),
             RepoAction::OpenInLazygit => {
-                let repo_manager = RepositoryManager::new(&config, &db);
+                let repo_manager = RepositoryManager::new(config, db);
                 if let Ok(local_repo) = repo_manager.get_repository_info(repo_name)
                     && let Ok(repo_path) = local_repo.local_path(config)
                 {
@@ -535,7 +521,7 @@ pub fn handle_repo_actions(
                 }
             }
             RepoAction::OpenInShell => {
-                let repo_manager = RepositoryManager::new(&config, &db);
+                let repo_manager = RepositoryManager::new(config, db);
                 if let Ok(local_repo) = repo_manager.get_repository_info(repo_name)
                     && let Ok(repo_path) = local_repo.local_path(config)
                 {
@@ -569,12 +555,7 @@ See: https://instantos.io/docs/insdot.html",
                         .confirm_dialog()?;
 
                     if matches!(confirm, ConfirmResult::Yes) {
-                        let mut config = Config::load(None)?;
-                        crate::dot::repo::commands::set_read_only_status(
-                            &mut config,
-                            repo_name,
-                            false,
-                        )?;
+                        crate::dot::repo::commands::set_read_only_status(config, repo_name, false)?;
                         FzfWrapper::message(&format!(
                             "Repository '{}' is now writable",
                             repo_name
@@ -582,8 +563,7 @@ See: https://instantos.io/docs/insdot.html",
                     }
                 } else {
                     // Making read-only
-                    let mut config = Config::load(None)?;
-                    crate::dot::repo::commands::set_read_only_status(&mut config, repo_name, true)?;
+                    crate::dot::repo::commands::set_read_only_status(config, repo_name, true)?;
                     FzfWrapper::message(&format!("Repository '{}' is now read-only", repo_name))?;
                 }
             }

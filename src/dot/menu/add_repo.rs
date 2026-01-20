@@ -206,7 +206,7 @@ fn handle_shorthand_input(shorthand: &str) -> Result<AddRepoInputResult> {
 }
 
 /// Handle plain name input - offer to create local repo
-fn handle_plain_name_input(name: &str) -> Result<AddRepoInputResult> {
+fn handle_plain_name_input(name: &str, config: &mut Config) -> Result<AddRepoInputResult> {
     let choices = vec![
         PlainNameChoice::CreateLocal,
         PlainNameChoice::EnterAnother,
@@ -220,8 +220,7 @@ fn handle_plain_name_input(name: &str) -> Result<AddRepoInputResult> {
         .select(choices)?
     {
         FzfResult::Selected(PlainNameChoice::CreateLocal) => {
-            let mut config = Config::load(None)?;
-            match crate::dot::meta::create_local_repo(&mut config, Some(name), false, true, true) {
+            match crate::dot::meta::create_local_repo(config, Some(name), false, true, true) {
                 Ok(outcome) => {
                     if let crate::dot::meta::InitOutcome::CreatedDefault { info } = outcome {
                         FzfWrapper::message(&format!(
@@ -303,7 +302,7 @@ fn prompt_optional_branch() -> Result<Option<String>> {
 // --- Main function ---
 
 /// Handle adding a new repository
-pub fn handle_add_repo(_config: &Config, _db: &Database, debug: bool) -> Result<()> {
+pub fn handle_add_repo(config: &mut Config, db: &Database, debug: bool) -> Result<()> {
     const DEFAULT_REPO: &str = "https://github.com/instantOS/dotfiles";
 
     // Loop for URL input (allows retrying)
@@ -318,7 +317,7 @@ pub fn handle_add_repo(_config: &Config, _db: &Database, debug: bool) -> Result<
                 let result = match classify_repo_input(&s) {
                     InputType::Url(url) => AddRepoInputResult::Url(url),
                     InputType::Shorthand(shorthand) => handle_shorthand_input(&shorthand)?,
-                    InputType::PlainName(name) => handle_plain_name_input(&name)?,
+                    InputType::PlainName(name) => handle_plain_name_input(&name, config)?,
                 };
 
                 match result {
@@ -353,10 +352,7 @@ pub fn handle_add_repo(_config: &Config, _db: &Database, debug: bool) -> Result<
         force_write: false,
     });
 
-    let mut config = Config::load(None)?;
-    let db = Database::new(config.database_path().to_path_buf())?;
-
-    crate::dot::repo::commands::handle_repo_command(&mut config, &db, &clone_args, debug)?;
+    crate::dot::repo::commands::handle_repo_command(config, db, &clone_args, debug)?;
 
     Ok(())
 }

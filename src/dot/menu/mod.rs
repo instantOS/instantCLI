@@ -180,13 +180,11 @@ fn select_dot_menu_entry(
 /// Main entry point for the dot menu
 pub fn dot_menu(debug: bool) -> Result<()> {
     let mut cursor = MenuCursor::new();
+    let mut config = Config::load(None)?;
+    let mut db = Database::new(config.database_path().to_path_buf())?;
 
     // Outer loop: main menu
     loop {
-        // Load config each iteration to pick up changes (e.g., newly added repos)
-        let config = Config::load(None)?;
-        let db = Database::new(config.database_path().to_path_buf())?;
-
         let entry = match select_dot_menu_entry(&config, &db, &mut cursor)? {
             Some(entry) => entry,
             None => return Ok(()),
@@ -194,17 +192,27 @@ pub fn dot_menu(debug: bool) -> Result<()> {
 
         match entry {
             DotMenuEntry::Repo(repo_name, _) => {
-                handle_repo_actions(&repo_name, &config, &db, debug)?;
+                handle_repo_actions(&repo_name, &mut config, &db, debug)?;
             }
             DotMenuEntry::AddRepo => {
-                handle_add_repo(&config, &db, debug)?;
+                handle_add_repo(&mut config, &db, debug)?;
             }
             DotMenuEntry::AlternateFiles => {
                 crate::dot::operations::alternative::handle_alternative(
                     &config, "~", false, false, false, None, None, None,
                 )?;
+                reload_menu_state(&mut config, &mut db)?;
             }
             DotMenuEntry::CloseMenu => return Ok(()),
         }
     }
+}
+
+fn reload_menu_state(config: &mut Config, db: &mut Database) -> Result<()> {
+    let new_config = Config::load(None)?;
+    if new_config.database_path() != config.database_path() {
+        *db = Database::new(new_config.database_path().to_path_buf())?;
+    }
+    *config = new_config;
+    Ok(())
 }
