@@ -42,10 +42,10 @@ fn partition_preview_command() -> String {
         .subtext("Verify the filesystem and mount point before selecting.")
         .blank()
         .line(colors::TEAL, None, "Overview")
-        .shell("lsblk -r -n -o NAME,SIZE,FSTYPE,MOUNTPOINT \"$part\" | sed 's/^/  /'")
+        .shell("lsblk -l -n -o NAME,SIZE,FSTYPE,MOUNTPOINT \"$part\" | sed \"s/^/  /\"")
         .blank()
         .line(colors::TEAL, None, "Identifiers")
-        .shell("lsblk -r -n -o NAME,UUID,PARTUUID \"$part\" | sed 's/^/  /'")
+        .shell("lsblk -l -n -o NAME,UUID,PARTUUID \"$part\" | sed \"s/^/  /\"")
         .build_shell_script()
 }
 

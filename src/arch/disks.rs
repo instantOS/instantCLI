@@ -4,7 +4,7 @@ use std::process::Command;
 
 use crate::arch::engine::DataKey;
 use crate::menu_utils::FzfPreview;
-use crate::ui::catppuccin::colors;
+use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -283,17 +283,45 @@ impl crate::menu_utils::FzfSelectable for DiskEntry {
 }
 
 fn disk_preview_command() -> String {
+    let warning = hex_to_ansi_fg(colors::YELLOW);
+    let ok = hex_to_ansi_fg(colors::GREEN);
+    let reset = "\x1b[0m";
+    let mount_status = format!(
+        r#"mounted_lines=$(lsblk -l -n -o NAME,MOUNTPOINT "${{disk}}" | while read -r name mount rest; do
+  if [ -n "${{mount}}" ]; then
+    mountpoint="${{mount}}"
+    if [ -n "${{rest}}" ]; then
+      mountpoint="${{mountpoint}} ${{rest}}"
+    fi
+    printf "%s -> %s\n" "${{name}}" "${{mountpoint}}"
+  fi
+done)
+if [ -n "${{mounted_lines}}" ]; then
+  printf "{warning}  Mounted partitions detected{reset}\n"
+  printf "%s\n" "${{mounted_lines}}" | sed "s/^/    /"
+  printf "{warning}  Unmount before proceeding.{reset}\n"
+else
+  printf "{ok}  No mounted partitions detected{reset}\n"
+fi"#,
+        warning = warning,
+        ok = ok,
+        reset = reset
+    );
+
     PreviewBuilder::new()
         .shell("disk=\"$1\"")
         .shell("if [ -z \"$disk\" ]; then exit 0; fi")
         .header(NerdFont::HardDrive, "Disk Overview")
         .subtext("Selecting a disk will erase all data on it.")
         .blank()
+        .line(colors::YELLOW, Some(NerdFont::Warning), "Mount Status")
+        .shell(&mount_status)
+        .blank()
         .line(colors::TEAL, None, "Device")
-        .shell("lsblk -d -r -n -o NAME,SIZE,MODEL,TYPE \"$disk\" | sed 's/^/  /'")
+        .shell("lsblk -d -l -n -o NAME,SIZE,MODEL,TYPE \"$disk\" | sed \"s/^/  /\"")
         .blank()
         .line(colors::TEAL, None, "Partitions")
-        .shell("lsblk -r -n -o NAME,SIZE,FSTYPE,MOUNTPOINT \"$disk\" | sed 's/^/  /'")
+        .shell("lsblk -l -n -o NAME,SIZE,FSTYPE,MOUNTPOINT \"$disk\" | sed \"s/^/  /\"")
         .build_shell_script()
 }
 
