@@ -235,7 +235,7 @@ pub async fn run_all_checks(
     let mut pending = checks.into_iter().enumerate();
     let mut results: Vec<Option<CheckResult>> = vec![None; total];
 
-    let mut spawn_check =
+    let spawn_check =
         |join_set: &mut JoinSet<(usize, CheckResult)>,
          (index, check): (usize, Box<dyn DoctorCheck + Send + Sync>)| {
             let completed = Arc::clone(&completed);
