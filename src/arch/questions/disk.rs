@@ -1,7 +1,9 @@
 use crate::arch::dualboot::feasibility::check_disk_dualboot_feasibility;
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::FzfWrapper;
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result};
 
 /// Attempts to prepare a disk for installation.
@@ -176,6 +178,82 @@ impl Question for DiskQuestion {
 
 pub struct PartitioningMethodQuestion;
 
+#[derive(Clone)]
+enum PartitioningMethodOption {
+    Automatic,
+    DualBoot,
+    Manual,
+}
+
+impl PartitioningMethodOption {
+    fn label(&self) -> &'static str {
+        match self {
+            PartitioningMethodOption::Automatic => "Automatic (Erase Disk)",
+            PartitioningMethodOption::DualBoot => "Dual Boot (Experimental)",
+            PartitioningMethodOption::Manual => "Manual (cfdisk)",
+        }
+    }
+
+    fn preview(&self) -> FzfPreview {
+        match self {
+            PartitioningMethodOption::Automatic => PreviewBuilder::new()
+                .header(NerdFont::HardDrive, "Automatic Partitioning")
+                .subtext("Erase the selected disk and create a recommended layout.")
+                .blank()
+                .line(colors::TEAL, None, "Best for")
+                .bullets([
+                    "Fresh installs with no data to keep",
+                    "Fast setup with sensible defaults",
+                ])
+                .blank()
+                .line(colors::YELLOW, None, "Warning")
+                .bullet("All data on the disk will be lost")
+                .build(),
+            PartitioningMethodOption::DualBoot => PreviewBuilder::new()
+                .header(NerdFont::HardDrive, "Dual Boot")
+                .subtext("Shrink an existing partition to make space for Linux.")
+                .blank()
+                .line(colors::TEAL, None, "Keeps")
+                .bullets(["Existing OS installation", "User data on other partitions"])
+                .blank()
+                .line(colors::YELLOW, None, "Notes")
+                .bullets([
+                    "Requires manual resize steps",
+                    "Filesystem limitations may apply",
+                ])
+                .build(),
+            PartitioningMethodOption::Manual => PreviewBuilder::new()
+                .header(NerdFont::HardDrive, "Manual Partitioning")
+                .subtext("Use cfdisk to create your own partition layout.")
+                .blank()
+                .line(colors::TEAL, None, "You will set")
+                .bullets([
+                    "Root partition",
+                    "Boot or EFI partition",
+                    "Optional swap partition",
+                ])
+                .blank()
+                .line(colors::TEAL, None, "Best for")
+                .bullets(["Custom layouts", "Advanced users"])
+                .build(),
+        }
+    }
+}
+
+impl FzfSelectable for PartitioningMethodOption {
+    fn fzf_display_text(&self) -> String {
+        self.label().to_string()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.label().to_string()
+    }
+}
+
 #[async_trait::async_trait]
 impl Question for PartitioningMethodQuestion {
     fn id(&self) -> QuestionId {
@@ -184,8 +262,8 @@ impl Question for PartitioningMethodQuestion {
 
     async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
         let mut options = vec![
-            "Automatic (Erase Disk)".to_string(),
-            "Manual (cfdisk)".to_string(),
+            PartitioningMethodOption::Automatic,
+            PartitioningMethodOption::Manual,
         ];
 
         // Check for dual boot possibility using shared feasibility logic
@@ -211,7 +289,7 @@ impl Question for PartitioningMethodQuestion {
             if let Ok(Ok(feasibility)) = feasibility_result
                 && feasibility.feasible
             {
-                options.insert(1, "Dual Boot (Experimental)".to_string());
+                options.insert(1, PartitioningMethodOption::DualBoot);
             }
         }
 
@@ -223,7 +301,9 @@ impl Question for PartitioningMethodQuestion {
             .select(options)?;
 
         match result {
-            crate::menu_utils::FzfResult::Selected(s) => Ok(QuestionResult::Answer(s)),
+            crate::menu_utils::FzfResult::Selected(option) => {
+                Ok(QuestionResult::Answer(option.label().to_string()))
+            }
             crate::menu_utils::FzfResult::Cancelled => Ok(QuestionResult::Cancelled),
             _ => Ok(QuestionResult::Cancelled),
         }

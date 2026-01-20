@@ -3,6 +3,10 @@ use serde_json::Value;
 use std::process::Command;
 
 use crate::arch::engine::DataKey;
+use crate::menu_utils::FzfPreview;
+use crate::ui::catppuccin::colors;
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
 /// Get the current root filesystem device (e.g., /dev/mapper/vg-root, /dev/sda2)
 pub fn get_root_device() -> Result<Option<String>> {
@@ -268,6 +272,29 @@ impl crate::menu_utils::FzfSelectable for DiskEntry {
     fn fzf_display_text(&self) -> String {
         format!("{} ({})", self.path, self.size)
     }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Command(disk_preview_command())
+    }
+
+    fn fzf_key(&self) -> String {
+        self.path.clone()
+    }
+}
+
+fn disk_preview_command() -> String {
+    PreviewBuilder::new()
+        .shell("disk=\"$1\"")
+        .shell("if [ -z \"$disk\" ]; then exit 0; fi")
+        .header(NerdFont::HardDrive, "Disk Overview")
+        .subtext("Selecting a disk will erase all data on it.")
+        .blank()
+        .line(colors::TEAL, None, "Device")
+        .shell("lsblk -d -r -n -o NAME,SIZE,MODEL,TYPE \"$disk\" | sed 's/^/  /'")
+        .blank()
+        .line(colors::TEAL, None, "Partitions")
+        .shell("lsblk -r -n -o NAME,SIZE,FSTYPE,MOUNTPOINT \"$disk\" | sed 's/^/  /'")
+        .build_shell_script()
 }
 
 pub struct DisksKey;

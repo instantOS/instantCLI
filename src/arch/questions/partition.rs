@@ -1,6 +1,8 @@
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 use anyhow::{Context, Result};
 
 /// Represents a partition entry with path and size information
@@ -22,6 +24,29 @@ impl FzfSelectable for PartitionEntry {
     fn fzf_display_text(&self) -> String {
         format!("{} ({})", self.path, self.size)
     }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        FzfPreview::Command(partition_preview_command())
+    }
+
+    fn fzf_key(&self) -> String {
+        self.path.clone()
+    }
+}
+
+fn partition_preview_command() -> String {
+    PreviewBuilder::new()
+        .shell("part=\"$1\"")
+        .shell("if [ -z \"$part\" ]; then exit 0; fi")
+        .header(NerdFont::Partition, "Partition Details")
+        .subtext("Verify the filesystem and mount point before selecting.")
+        .blank()
+        .line(colors::TEAL, None, "Overview")
+        .shell("lsblk -r -n -o NAME,SIZE,FSTYPE,MOUNTPOINT \"$part\" | sed 's/^/  /'")
+        .blank()
+        .line(colors::TEAL, None, "Identifiers")
+        .shell("lsblk -r -n -o NAME,UUID,PARTUUID \"$part\" | sed 's/^/  /'")
+        .build_shell_script()
 }
 
 /// Represents size in megabytes with parsing capabilities
