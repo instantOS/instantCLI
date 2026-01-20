@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 
 use crate::ui::prelude::{Level, emit};
 
-use super::audio_preprocessing::{PreprocessorType, create_preprocessor, parse_preprocessor_type};
-use super::cli::{ConvertArgs, TranscribeArgs};
-use super::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
-use super::markdown::{MarkdownMetadata, build_markdown};
 use super::transcribe::handle_transcribe;
-use super::transcript::parse_whisper_json;
-use super::utils::{canonicalize_existing, compute_file_hash};
+use crate::video::audio::{PreprocessorType, create_preprocessor, parse_preprocessor_type};
+use crate::video::cli::{ConvertArgs, TranscribeArgs};
+use crate::video::config::{VideoConfig, VideoDirectories, VideoProjectPaths};
+use crate::video::document::markdown::{MarkdownMetadata, build_markdown};
+use crate::video::support::transcript::parse_whisper_json;
+use crate::video::support::utils::{canonicalize_existing, compute_file_hash};
 
 pub async fn handle_convert(args: ConvertArgs) -> Result<()> {
     emit(

@@ -4,7 +4,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 
 use crate::video::document::MusicDirective;
-use crate::video::music::MusicResolver;
+use crate::video::support::music::MusicResolver;
 
 pub trait FfmpegRunner {
     fn run(&self, args: &[String]) -> Result<()>;

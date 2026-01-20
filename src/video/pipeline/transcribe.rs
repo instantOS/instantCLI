@@ -6,9 +6,11 @@ use std::path::Path;
 
 use crate::ui::prelude::{Level, emit};
 
-use super::cli::TranscribeArgs;
-use super::config::VideoDirectories;
-use super::utils::{canonicalize_existing, compute_file_hash, extension_or_default};
+use crate::video::cli::TranscribeArgs;
+use crate::video::config::VideoDirectories;
+use crate::video::support::utils::{
+    canonicalize_existing, compute_file_hash, extension_or_default,
+};
 
 pub fn handle_transcribe(args: TranscribeArgs) -> Result<()> {
     let video_path = canonicalize_existing(&args.video)?;

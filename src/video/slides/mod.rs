@@ -9,8 +9,8 @@ use sha2::{Digest, Sha256};
 
 pub mod cli;
 
-const DEFAULT_CSS: &str = include_str!("slide.css");
-const DEFAULT_JS: &str = include_str!("slide.js");
+const DEFAULT_CSS: &str = include_str!("assets/slide.css");
+const DEFAULT_JS: &str = include_str!("assets/slide.js");
 
 // Workaround for Chromium "new" headless mode viewport bug (grey bar artifacts).
 // Set to 0 to disable the workaround (oversize rendering + cropping) once Chromium fixes the issue.

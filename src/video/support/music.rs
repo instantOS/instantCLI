@@ -7,8 +7,8 @@ use anyhow::{Context, Result, bail};
 use dirs::{cache_dir, data_dir, home_dir};
 use sha2::{Digest, Sha256};
 
-use super::document::MusicDirective;
 use super::utils::canonicalize_existing;
+use crate::video::document::MusicDirective;
 
 pub struct MusicResolver {
     markdown_dir: PathBuf,

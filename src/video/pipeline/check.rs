@@ -4,14 +4,14 @@ use anyhow::Result;
 
 use crate::ui::prelude::{Level, emit};
 
-use super::cli::CheckArgs;
-use super::ffmpeg::probe_video_dimensions;
-use super::planner::TimelinePlanItem;
-use super::render::{
+use crate::video::cli::CheckArgs;
+use crate::video::planning::TimelinePlanItem;
+use crate::video::render::{
     build_timeline_plan, load_transcript_cues, load_video_document, resolve_source_video_path,
     resolve_transcript_path,
 };
-use super::utils::canonicalize_existing;
+use crate::video::support::ffmpeg::probe_video_dimensions;
+use crate::video::support::utils::canonicalize_existing;
 
 pub fn handle_check(args: CheckArgs) -> Result<()> {
     macro_rules! log {
@@ -97,14 +97,14 @@ pub fn handle_check(args: CheckArgs) -> Result<()> {
     Ok(())
 }
 
-fn plan_duration_seconds(plan: &super::planner::TimelinePlan) -> f64 {
+fn plan_duration_seconds(plan: &crate::video::planning::TimelinePlan) -> f64 {
     plan.items
         .iter()
         .map(|item| match item {
             TimelinePlanItem::Clip(clip) => (clip.end - clip.start).max(0.0),
             TimelinePlanItem::Standalone(standalone) => match standalone {
-                super::planner::StandalonePlan::Heading { .. } => 2.0,
-                super::planner::StandalonePlan::Pause {
+                crate::video::planning::StandalonePlan::Heading { .. } => 2.0,
+                crate::video::planning::StandalonePlan::Pause {
                     duration_seconds, ..
                 } => *duration_seconds,
             },

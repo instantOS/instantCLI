@@ -1,7 +1,7 @@
 use super::core::{TimelinePlan, TimelinePlanItem};
 use super::graph::{McmfEdge, add_edge, min_cost_max_flow};
 use crate::video::document::SegmentKind;
-use crate::video::transcript::TranscriptCue;
+use crate::video::support::transcript::TranscriptCue;
 use anyhow::{Result, bail};
 
 pub fn align_plan_with_subtitles(plan: &mut TimelinePlan, cues: &[TranscriptCue]) -> Result<()> {
@@ -489,8 +489,8 @@ fn overlap_seconds(a_start: f64, a_end: f64, b_start: f64, b_end: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::video::document::parse_video_document;
-    use crate::video::planner::{StandalonePlan, TimelinePlanItem, plan_timeline};
-    use crate::video::transcript::TranscriptCue;
+    use crate::video::planning::{StandalonePlan, TimelinePlanItem, plan_timeline};
+    use crate::video::support::transcript::TranscriptCue;
 
     use std::path::Path;
     use std::time::Duration;

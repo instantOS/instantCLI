@@ -9,7 +9,7 @@ use crate::common::config::DocumentedConfig;
 use crate::common::paths;
 use crate::documented_config;
 
-pub use super::audio_preprocessing::PreprocessorType;
+pub use super::audio::PreprocessorType;
 
 pub struct VideoDirectories {
     data_root: PathBuf,

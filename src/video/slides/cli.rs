@@ -2,9 +2,9 @@ use std::fs;
 
 use anyhow::{Context, Result};
 
-use super::super::cli::SlideArgs;
-use super::super::markdown_utils::strip_yaml_frontmatter;
 use super::SlideGenerator;
+use crate::video::cli::SlideArgs;
+use crate::video::document::frontmatter::strip_yaml_frontmatter;
 
 pub fn handle_slide(args: SlideArgs) -> Result<()> {
     let markdown_path = args.markdown.canonicalize().with_context(|| {

@@ -1,5 +1,5 @@
-use crate::video::transcript::TranscriptCue;
-use crate::video::utils::duration_to_tenths;
+use crate::video::support::transcript::TranscriptCue;
+use crate::video::support::utils::duration_to_tenths;
 use chrono::Utc;
 use std::path::Path;
 use std::time::Duration;

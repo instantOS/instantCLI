@@ -5,9 +5,9 @@ use reqwest::Client;
 use crate::menu_utils::FzfWrapper;
 use crate::ui::prelude::{Level, emit};
 
-use super::audio_preprocessing::auphonic;
-use super::cli::SetupArgs;
-use super::config::VideoConfig;
+use crate::video::audio::auphonic;
+use crate::video::cli::SetupArgs;
+use crate::video::config::VideoConfig;
 
 /// Checks account type and updates config accordingly
 async fn check_and_update_auphonic_config(

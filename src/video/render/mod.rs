@@ -1,13 +1,13 @@
-mod ffmpeg_compiler;
-mod path_resolver;
-mod services;
+mod ffmpeg;
+mod paths;
+pub mod timeline;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-pub use self::path_resolver::{resolve_transcript_path, resolve_video_path};
+pub use self::paths::{resolve_transcript_path, resolve_video_path};
 
 use crate::ui::prelude::{Level, emit};
 
@@ -57,16 +57,15 @@ use super::config::{VideoConfig, VideoDirectories};
 use super::document::{VideoMetadata, parse_video_document};
 use super::subtitles::{AssStyle, generate_ass_file, remap_subtitles_to_timeline};
 
-use self::ffmpeg_compiler::FfmpegCompiler;
-use self::path_resolver as paths;
-use self::services::{
+use self::ffmpeg::compiler::FfmpegCompiler;
+use self::ffmpeg::services::{
     DefaultMusicSourceResolver, FfmpegRunner, MusicSourceResolver, SystemFfmpegRunner,
 };
-use super::ffmpeg::probe_video_dimensions;
+use super::support::ffmpeg::probe_video_dimensions;
 
-use super::render_timeline::{Segment, Timeline, Transform};
-use super::slide::SlideGenerator;
-use super::transcript::parse_whisper_json;
+use self::timeline::{Segment, Timeline, Transform};
+use super::slides::SlideGenerator;
+use super::support::transcript::parse_whisper_json;
 
 trait SlideProvider {
     fn overlay_slide_image(&self, markdown: &str) -> Result<PathBuf>;
@@ -83,10 +82,10 @@ impl SlideProvider for SlideGenerator {
         self.ensure_video_for_duration(&asset, duration)
     }
 }
-use super::planner::{
+use super::planning::{
     StandalonePlan, TimelinePlan, TimelinePlanItem, align_plan_with_subtitles, plan_timeline,
 };
-use super::utils::canonicalize_existing;
+use super::support::utils::canonicalize_existing;
 
 macro_rules! log {
     ($level:expr, $code:expr, $($arg:tt)*) => {{
@@ -258,7 +257,7 @@ fn handle_render_with_services(args: RenderArgs, runner: &dyn FfmpegRunner) -> R
 /// Generate an ASS subtitle file for the timeline.
 fn generate_subtitle_file(
     timeline: &Timeline,
-    cues: &[super::transcript::TranscriptCue],
+    cues: &[super::support::transcript::TranscriptCue],
     output_path: &Path,
     play_res: (u32, u32),
 ) -> Result<PathBuf> {
@@ -320,7 +319,7 @@ pub(super) fn load_video_document(markdown_path: &Path) -> Result<super::documen
 pub(super) fn load_transcript_cues(
     metadata: &VideoMetadata,
     markdown_dir: &Path,
-) -> Result<Vec<super::transcript::TranscriptCue>> {
+) -> Result<Vec<super::support::transcript::TranscriptCue>> {
     let transcript_path = paths::resolve_transcript_path(metadata, markdown_dir)?;
     let transcript_path = canonicalize_existing(&transcript_path)?;
 
@@ -348,7 +347,7 @@ pub(super) fn load_transcript_cues(
 
 pub(super) fn build_timeline_plan(
     document: &super::document::VideoDocument,
-    cues: &[super::transcript::TranscriptCue],
+    cues: &[super::support::transcript::TranscriptCue],
     markdown_path: &Path,
 ) -> Result<TimelinePlan> {
     log!(
@@ -399,7 +398,7 @@ fn resolve_audio_path(video_path: &Path) -> Result<PathBuf> {
         "Computing hash for cache lookup"
     );
 
-    let video_hash = super::utils::compute_file_hash(video_path)?;
+    let video_hash = super::support::utils::compute_file_hash(video_path)?;
     let directories = VideoDirectories::new()?;
     let project_paths = directories.project_paths(&video_hash);
     let transcript_dir = project_paths.transcript_dir();
@@ -588,7 +587,7 @@ impl TimelineBuildState {
 
     fn add_clip(
         &mut self,
-        clip_plan: super::planner::ClipPlan,
+        clip_plan: super::planning::ClipPlan,
         generator: &dyn SlideProvider,
         source_video: &Path,
     ) -> Result<()> {
@@ -664,7 +663,7 @@ impl TimelineBuildState {
         Ok(())
     }
 
-    fn add_music_directive(&mut self, music_plan: super::planner::MusicPlan) -> Result<()> {
+    fn add_music_directive(&mut self, music_plan: super::planning::MusicPlan) -> Result<()> {
         finalize_music_segment(
             &mut self.timeline,
             &mut self.active_music,
@@ -779,8 +778,8 @@ impl<'a> RenderPipeline<'a> {
 mod tests {
     use super::*;
     use crate::video::document::SegmentKind;
-    use crate::video::planner::ClipPlan;
-    use crate::video::render_timeline::SegmentData;
+    use crate::video::planning::ClipPlan;
+    use crate::video::render::timeline::SegmentData;
     use std::path::Path;
 
     struct StubSlides;

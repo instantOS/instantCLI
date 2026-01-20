@@ -5,11 +5,11 @@ use anyhow::{Context, Result};
 
 use crate::ui::prelude::{Level, emit};
 
-use super::cli::StatsArgs;
-use super::document::parse_video_document;
-use super::planner::plan_timeline;
-use super::render::resolve_video_path;
-use super::utils::canonicalize_existing;
+use crate::video::cli::StatsArgs;
+use crate::video::document::parse_video_document;
+use crate::video::planning::plan_timeline;
+use crate::video::render::resolve_video_path;
+use crate::video::support::utils::canonicalize_existing;
 
 pub fn handle_stats(args: StatsArgs) -> Result<()> {
     let markdown_path = canonicalize_existing(&args.markdown)?;

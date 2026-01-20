@@ -12,7 +12,7 @@ use std::process::Command;
 use super::types::{AudioPreprocessor, PreprocessResult};
 use crate::ui::prelude::{Level, emit};
 use crate::video::config::VideoDirectories;
-use crate::video::utils::compute_file_hash;
+use crate::video::support::utils::compute_file_hash;
 
 /// Local preprocessor using DeepFilterNet + ffmpeg-normalize
 pub struct LocalPreprocessor;

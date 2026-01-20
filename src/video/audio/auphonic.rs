@@ -19,8 +19,8 @@ use tokio::time::sleep;
 use super::types::{AudioPreprocessor, PreprocessResult};
 use crate::ui::prelude::{Level, emit};
 use crate::video::config::{VideoConfig, VideoDirectories};
-use crate::video::ffmpeg::{extract_audio_to_mp3, probe_duration_seconds, trim_audio_mp3};
-use crate::video::utils::compute_file_hash;
+use crate::video::support::ffmpeg::{extract_audio_to_mp3, probe_duration_seconds, trim_audio_mp3};
+use crate::video::support::utils::compute_file_hash;
 
 const BASE_URL: &str = "https://auphonic.com/api";
 

@@ -68,7 +68,7 @@ impl AudioPreprocessor for NonePreprocessor {
 
 /// Handle the preprocess CLI command
 pub async fn handle_preprocess(args: super::cli::PreprocessArgs) -> Result<()> {
-    use super::utils::canonicalize_existing;
+    use crate::video::support::utils::canonicalize_existing;
 
     let input_path = canonicalize_existing(&args.input_file)?;
     let preprocessor_type = parse_preprocessor_type(&args.backend)?;

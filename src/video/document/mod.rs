@@ -1,3 +1,6 @@
+pub mod frontmatter;
+pub mod markdown;
+
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -5,7 +8,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde::Deserialize;
 
-use super::markdown_utils::split_frontmatter;
+use self::frontmatter::split_frontmatter;
 
 #[derive(Debug)]
 pub struct VideoDocument {

@@ -6,8 +6,8 @@
 
 use std::time::Duration;
 
-use crate::video::render_timeline::{SegmentData, Timeline};
-use crate::video::transcript::TranscriptCue;
+use crate::video::render::timeline::{SegmentData, Timeline};
+use crate::video::support::transcript::TranscriptCue;
 
 /// A remapped word with timing adjusted to the final timeline.
 #[derive(Debug, Clone)]
@@ -192,7 +192,7 @@ fn merge_overlapping_subtitles(subtitles: Vec<RemappedSubtitle>) -> Vec<Remapped
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::video::render_timeline::{Segment, SegmentData, Timeline};
+    use crate::video::render::timeline::{Segment, SegmentData, Timeline};
     use std::path::PathBuf;
 
     fn make_cue(start_ms: u64, end_ms: u64, text: &str) -> TranscriptCue {

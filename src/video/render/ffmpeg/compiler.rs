@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
 
-use super::RenderMode;
+use super::super::RenderMode;
 use crate::video::config::VideoConfig;
-use crate::video::render_timeline::{Segment, SegmentData, Timeline};
+use crate::video::render::timeline::{Segment, SegmentData, Timeline};
 
 #[derive(Debug, Clone)]
 pub struct FfmpegCompileOutput {
