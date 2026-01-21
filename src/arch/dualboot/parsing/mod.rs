@@ -5,4 +5,4 @@ mod sfdisk;
 
 // Re-export public functions from submodules
 pub use lsblk::parse_partition;
-pub use sfdisk::get_free_regions;
+pub use sfdisk::{PartitionLayout, get_free_regions, get_partition_layout};

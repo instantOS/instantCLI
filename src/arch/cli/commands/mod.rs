@@ -64,12 +64,12 @@ pub async fn handle_arch_command(command: ArchCommands, debug: bool) -> Result<(
 
 fn build_questions() -> Vec<Box<dyn Question>> {
     use crate::arch::questions::{
-        BooleanQuestion, DiskQuestion, DualBootPartitionQuestion, DualBootSizeQuestion,
-        EncryptionPasswordQuestion, EspPartitionValidator, HostnameQuestion, KernelQuestion,
-        KeymapQuestion, LocaleQuestion, MirrorRegionQuestion, PartitionSelectorQuestion,
-        PartitioningMethodQuestion, PasswordQuestion, ResizeInstructionsQuestion,
-        RunCfdiskQuestion, TimezoneQuestion, UsernameQuestion, VirtualBoxWarning,
-        WeakPasswordWarning,
+        BooleanQuestion, DiskQuestion, DualBootEspWarning, DualBootPartitionQuestion,
+        DualBootSizeQuestion, EncryptionPasswordQuestion, EspPartitionValidator, HostnameQuestion,
+        KernelQuestion, KeymapQuestion, LocaleQuestion, MirrorRegionQuestion,
+        PartitionSelectorQuestion, PartitioningMethodQuestion, PasswordQuestion,
+        ResizeInstructionsQuestion, RunCfdiskQuestion, TimezoneQuestion, UsernameQuestion,
+        VirtualBoxWarning, WeakPasswordWarning,
     };
 
     vec![
@@ -81,6 +81,7 @@ fn build_questions() -> Vec<Box<dyn Question>> {
         Box::new(RunCfdiskQuestion),
         Box::new(DualBootPartitionQuestion),
         Box::new(DualBootSizeQuestion),
+        Box::new(DualBootEspWarning),
         Box::new(ResizeInstructionsQuestion),
         Box::new(PartitionSelectorQuestion::new(
             crate::arch::engine::QuestionId::RootPartition,

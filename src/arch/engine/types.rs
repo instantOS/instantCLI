@@ -21,6 +21,7 @@ pub enum QuestionId {
     VirtualBoxWarning,
     WeakPasswordWarning,
     LowRamWarning,
+    DualBootEspWarning,
     MinimalMode,
     PartitioningMethod,
     RunCfdisk,

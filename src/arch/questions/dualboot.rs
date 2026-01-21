@@ -151,6 +151,11 @@ impl Question for DualBootPartitionQuestion {
         // Check if we already have enough free space
         if shrinkable_partitions.is_empty() {
             let free_space_bytes = disk_info.max_contiguous_free_space_bytes;
+            let bitlocker_detected = disk_info.partitions.iter().any(|p| {
+                p.filesystem
+                    .as_ref()
+                    .is_some_and(|fs| fs.fs_type.eq_ignore_ascii_case("bitlocker"))
+            });
 
             if disk_info.has_sufficient_free_space() {
                 // No resize needed - disk already has enough free space
@@ -165,13 +170,22 @@ impl Question for DualBootPartitionQuestion {
                 ))?;
                 return Ok(QuestionResult::Answer("__free_space__".to_string()));
             } else {
-                FzfWrapper::message(&format!(
+                let mut message = format!(
                     "{} No shrinkable partitions found on {} and not enough contiguous free space.\n\
                      Largest contiguous free region: {} (need at least 10 GB)",
                     NerdFont::Warning,
                     disk_path,
                     crate::arch::dualboot::format_size(free_space_bytes)
-                ))?;
+                );
+                if bitlocker_detected {
+                    message.push_str(
+                        "\n\nBitLocker-encrypted partitions detected.\n\
+                         Disable BitLocker in Windows before attempting dual boot.",
+                    );
+                }
+                message.push_str("\n\nSupported auto-resize filesystems: NTFS, ext4/ext3/ext2.");
+
+                FzfWrapper::message(&message)?;
                 return Ok(QuestionResult::Cancelled);
             }
         }
@@ -283,24 +297,26 @@ impl Question for DualBootSizeQuestion {
         let partition_size = partition.size_bytes;
         let min_existing = resize_info.min_size_bytes.unwrap_or(0);
 
-        // Minimum for Linux: 10GB
+        // Minimum for Linux + swap (swap can be capped but stays at least 1GB)
+        const GB: u64 = 1024 * 1024 * 1024;
         let min_linux = crate::arch::dualboot::MIN_LINUX_SIZE; // 10 GB
+        let min_total = min_linux + GB; // +1GB swap minimum
 
         // Calculate available space for Linux (Partition size - Existing OS min)
         let max_linux = partition_size.saturating_sub(min_existing);
 
-        if max_linux < min_linux {
+        if max_linux < min_total {
             FzfWrapper::message(&format!(
-                "{} Not enough free space on partition for Linux.\nNeed 10GB, but only {} available (after preserving existing OS).",
+                "{} Not enough free space on partition for Linux.\nNeed at least {}, but only {} available (after preserving existing OS).",
                 NerdFont::Warning,
+                crate::arch::dualboot::format_size(min_total),
                 crate::arch::dualboot::format_size(max_linux)
             ))?;
             return Ok(QuestionResult::Cancelled);
         }
 
         // Convert to GB for slider (easier to read/manage)
-        const GB: u64 = 1024 * 1024 * 1024;
-        let min_gb = min_linux / GB;
+        let min_gb = min_total.div_ceil(GB);
         let max_gb = max_linux / GB;
         let default_gb = (min_gb + max_gb) / 2;
 

@@ -4,7 +4,19 @@ use crate::arch::dualboot::types::ResizeInfo;
 
 /// Get resize information for other filesystems (non-NTFS/ext/Btrfs)
 pub fn get_other_resize_info(fs_type: &str) -> ResizeInfo {
-    match fs_type {
+    let normalized = fs_type.to_lowercase();
+
+    match normalized.as_str() {
+        "bitlocker" => ResizeInfo {
+            can_shrink: false,
+            min_size_bytes: None,
+            reason: Some("BitLocker encryption detected".to_string()),
+            prerequisites: vec![
+                "Decrypt the volume in Windows".to_string(),
+                "Disable Fast Startup and hibernation".to_string(),
+                "Reboot into Windows once after decrypting".to_string(),
+            ],
+        },
         "xfs" => ResizeInfo {
             can_shrink: false,
             min_size_bytes: None,
@@ -30,13 +42,13 @@ pub fn get_other_resize_info(fs_type: &str) -> ResizeInfo {
             reason: Some("ZFS pools cannot be shrunk".to_string()),
             prerequisites: vec![],
         },
-        "LVM2_member" | "lvm" => ResizeInfo {
+        "lvm2_member" | "lvm" => ResizeInfo {
             can_shrink: false,
             min_size_bytes: None,
             reason: Some("LVM requires manual handling".to_string()),
             prerequisites: vec!["Use lvreduce/pvresize for LVM operations".to_string()],
         },
-        "crypto_LUKS" | "luks" => ResizeInfo {
+        "crypto_luks" | "luks" => ResizeInfo {
             can_shrink: false,
             min_size_bytes: None,
             reason: Some("LUKS encryption requires special handling".to_string()),

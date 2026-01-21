@@ -22,10 +22,17 @@ pub struct SfdiskPartitionTable {
 
 #[derive(Debug, Deserialize)]
 pub struct SfdiskPartition {
-    // node: String, // e.g. "test.img1" - unused
+    pub node: Option<String>,
     pub start: u64,
     pub size: u64,
     // type: String, // unused
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PartitionLayout {
+    pub start: u64,
+    pub size: u64,
+    pub sector_size: u64,
 }
 
 /// Calculate free regions by finding gaps in the partition table
@@ -124,6 +131,42 @@ pub fn get_free_regions(
 
     let json_output = String::from_utf8_lossy(&output.stdout);
     calculate_free_regions_from_json(&json_output, disk_size_bytes)
+}
+
+/// Get the partition layout (start/size in sectors) for a specific partition
+pub fn get_partition_layout(device: &str, partition_path: &str) -> anyhow::Result<PartitionLayout> {
+    let output = Command::new("sfdisk")
+        .args(["-J", device])
+        .output()
+        .context("Failed to run sfdisk -J")?;
+
+    if !output.status.success() {
+        anyhow::bail!("sfdisk failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    let json_output = String::from_utf8_lossy(&output.stdout);
+    let parsed: SfdiskOutput =
+        serde_json::from_str(&json_output).context("Failed to parse sfdisk JSON output")?;
+
+    let partition_name = partition_path
+        .strip_prefix("/dev/")
+        .unwrap_or(partition_path);
+
+    let partitions = parsed.partitiontable.partitions.unwrap_or_default();
+    let partition = partitions
+        .iter()
+        .find(|p| {
+            p.node.as_ref().is_some_and(|node| {
+                node == partition_path || node == partition_name || node.ends_with(partition_name)
+            })
+        })
+        .context("Partition not found in sfdisk output")?;
+
+    Ok(PartitionLayout {
+        start: partition.start,
+        size: partition.size,
+        sector_size: parsed.partitiontable.sectorsize,
+    })
 }
 
 #[cfg(test)]

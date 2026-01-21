@@ -1,6 +1,6 @@
 use crate::arch::dualboot::feasibility::check_disk_dualboot_feasibility;
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
-use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -71,7 +71,95 @@ fn try_prepare_disk(device_name: &str) -> Result<bool> {
     }
 }
 
+#[derive(Clone)]
+enum DiskSelection {
+    Detected(crate::arch::disks::DiskEntry),
+    CustomPath,
+}
+
+impl DiskSelection {
+    fn custom_preview() -> FzfPreview {
+        PreviewBuilder::new()
+            .header(NerdFont::Edit, "Custom Disk Path")
+            .subtext("Type a disk device path manually when it is not listed.")
+            .blank()
+            .line(colors::TEAL, None, "Examples")
+            .bullets(["/dev/nvme0n1", "/dev/sda"])
+            .blank()
+            .line(colors::YELLOW, Some(NerdFont::Warning), "Important")
+            .bullet("Use a whole disk, not a partition (avoid /dev/sda1).")
+            .build()
+    }
+}
+
+impl FzfSelectable for DiskSelection {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            DiskSelection::Detected(disk) => disk.fzf_display_text(),
+            DiskSelection::CustomPath => {
+                format!("{} Enter custom disk path", NerdFont::Edit)
+            }
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            DiskSelection::Detected(disk) => disk.fzf_preview(),
+            DiskSelection::CustomPath => Self::custom_preview(),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            DiskSelection::Detected(disk) => disk.fzf_key(),
+            DiskSelection::CustomPath => "custom".to_string(),
+        }
+    }
+}
+
 pub struct DiskQuestion;
+
+impl DiskQuestion {
+    fn prompt_custom_disk_path(
+        &self,
+        context: &InstallContext,
+        last_custom_path: &mut Option<String>,
+    ) -> Result<Option<String>> {
+        loop {
+            let mut builder = FzfWrapper::builder()
+                .prompt("Custom disk path")
+                .ghost("/dev/nvme0n1")
+                .input();
+
+            if let Some(previous) = last_custom_path.as_ref() {
+                builder = builder.query(previous.clone());
+            }
+
+            let input = builder.input_result()?;
+            let path = match input {
+                FzfResult::Selected(value) => value.trim().to_string(),
+                FzfResult::Cancelled => return Ok(None),
+                _ => return Ok(None),
+            };
+
+            if path.is_empty() {
+                FzfWrapper::message("Disk path cannot be empty.")?;
+                continue;
+            }
+
+            if let Err(message) = self.validate(context, &path) {
+                FzfWrapper::message(&format!("{} {}", NerdFont::Warning, message))?;
+                continue;
+            }
+
+            *last_custom_path = Some(path.clone());
+
+            if try_prepare_disk(&path)? {
+                return Ok(Some(path));
+            }
+        }
+    }
+}
 
 #[async_trait::async_trait]
 impl Question for DiskQuestion {
@@ -88,24 +176,43 @@ impl Question for DiskQuestion {
             .get::<crate::arch::disks::DisksKey>()
             .unwrap_or_default();
 
-        if disks.is_empty() {
-            return Ok(QuestionResult::Cancelled);
+        let mut selections: Vec<DiskSelection> =
+            disks.into_iter().map(DiskSelection::Detected).collect();
+        let has_detected = !selections.is_empty();
+        selections.push(DiskSelection::CustomPath);
+
+        if !has_detected {
+            FzfWrapper::message(
+                "No disks were detected automatically. You can enter a custom disk path to continue.",
+            )?;
         }
+
+        let mut last_custom_path: Option<String> = None;
 
         loop {
             let result = FzfWrapper::builder()
                 .header(format!("{} Select Installation Disk", NerdFont::HardDrive))
-                .select(disks.clone())?;
+                .select(selections.clone())?;
 
-            let disk = match result {
+            let selection = match result {
                 crate::menu_utils::FzfResult::Selected(d) => d,
                 _ => return Ok(QuestionResult::Cancelled),
             };
 
-            // disk is now a DiskEntry, get just the path
-            if try_prepare_disk(&disk.path)? {
-                // Store just the path, not the formatted display string
-                return Ok(QuestionResult::Answer(disk.path));
+            match selection {
+                DiskSelection::Detected(disk) => {
+                    if try_prepare_disk(&disk.path)? {
+                        // Store just the path, not the formatted display string
+                        return Ok(QuestionResult::Answer(disk.path));
+                    }
+                }
+                DiskSelection::CustomPath => {
+                    if let Some(path) =
+                        self.prompt_custom_disk_path(context, &mut last_custom_path)?
+                    {
+                        return Ok(QuestionResult::Answer(path));
+                    }
+                }
             }
             // User declined or preparation failed - loop back to disk selection
         }
@@ -155,24 +262,8 @@ impl Question for DiskQuestion {
         vec![Box::new(crate::arch::disks::DiskProvider)]
     }
 
-    fn fatal_error_message(&self, context: &InstallContext) -> Option<String> {
-        let disks = context
-            .get::<crate::arch::disks::DisksKey>()
-            .unwrap_or_default();
-
-        if disks.is_empty() {
-            Some(
-                "No disks were detected on this system.\n\n\
-                Possible causes:\n\
-                • The system has no disks installed\n\
-                • You are not running with root/sudo privileges\n\
-                • The disk driver is not loaded\n\n\
-                Please check your hardware and ensure you are running as root."
-                    .to_string(),
-            )
-        } else {
-            None
-        }
+    fn fatal_error_message(&self, _context: &InstallContext) -> Option<String> {
+        None
     }
 }
 
@@ -189,7 +280,7 @@ impl PartitioningMethodOption {
     fn label(&self) -> &'static str {
         match self {
             PartitioningMethodOption::Automatic => "Automatic (Erase Disk)",
-            PartitioningMethodOption::DualBoot => "Dual Boot (Experimental)",
+            PartitioningMethodOption::DualBoot => "Dual Boot (Automatic)",
             PartitioningMethodOption::Manual => "Manual (cfdisk)",
         }
     }
@@ -211,15 +302,15 @@ impl PartitioningMethodOption {
                 .build(),
             PartitioningMethodOption::DualBoot => PreviewBuilder::new()
                 .header(NerdFont::HardDrive, "Dual Boot")
-                .subtext("Shrink an existing partition to make space for Linux.")
+                .subtext("Shrink an existing partition and create Linux partitions automatically.")
                 .blank()
                 .line(colors::TEAL, None, "Keeps")
                 .bullets(["Existing OS installation", "User data on other partitions"])
                 .blank()
                 .line(colors::YELLOW, None, "Notes")
                 .bullets([
-                    "Requires manual resize steps",
-                    "Filesystem limitations may apply",
+                    "Supported filesystems: NTFS, ext4/ext3/ext2",
+                    "Back up important data before resizing",
                 ])
                 .build(),
             PartitioningMethodOption::Manual => PreviewBuilder::new()

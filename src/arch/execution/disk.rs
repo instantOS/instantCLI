@@ -1,6 +1,6 @@
 use super::CommandExecutor;
-use crate::arch::dualboot::parsing::get_free_regions;
-use crate::arch::dualboot::types::MIN_ESP_SIZE;
+use crate::arch::dualboot::parsing::{PartitionLayout, get_free_regions, get_partition_layout};
+use crate::arch::dualboot::types::{FreeRegion, MIN_ESP_SIZE};
 use crate::arch::dualboot::{DisksKey, PartitionTableType};
 use crate::arch::engine::{
     BootMode, DualBootPartitionPaths, DualBootPartitions, EspNeedsFormat, InstallContext,
@@ -86,38 +86,110 @@ fn prepare_dualboot_disk(
     println!("Preparing dual boot installation...");
 
     // Get disk info from cached detection data; fallback to fresh detection if missing
-    let disks = if let Some(cached) = context.get::<DisksKey>() {
-        cached.clone()
-    } else {
-        let detected = crate::arch::dualboot::detect_disks()
-            .context("Disk detection data not available and re-detection failed")?;
-        context.set::<DisksKey>(detected.clone());
-        detected
-    };
+    let detected = crate::arch::dualboot::detect_disks()
+        .context("Disk detection data not available and re-detection failed")?;
+    context.set::<DisksKey>(detected.clone());
+    let mut disks = detected;
 
-    let disk_info = disks
+    let mut disk_info = disks
         .iter()
         .find(|d| d.device == disk_path)
         .context("Selected disk not found in detection data")?;
 
+    let mut resized_partition: Option<String> = None;
+    let mut resize_plan: Option<ResizePlan> = None;
+    let resize_choice = context
+        .get_answer(&QuestionId::DualBootInstructions)
+        .map(|choice| choice.as_str())
+        .unwrap_or("manual");
+    let auto_resize_selected = resize_choice == "auto";
+
+    if let Some(partition_path) = context.get_answer(&QuestionId::DualBootPartition) {
+        if partition_path != "__free_space__" {
+            resized_partition = Some(partition_path.to_string());
+
+            if auto_resize_selected {
+                let size_str = context
+                    .get_answer(&QuestionId::DualBootSize)
+                    .context("No size selected for dual boot")?;
+                let desired_free_space_bytes: u64 = size_str.parse()?;
+
+                resize_plan = Some(auto_resize_partition(
+                    executor,
+                    disk_info,
+                    disk_path,
+                    partition_path,
+                    desired_free_space_bytes,
+                )?);
+
+                let detected = crate::arch::dualboot::detect_disks()
+                    .context("Failed to refresh disk information after resize")?;
+                context.set::<DisksKey>(detected.clone());
+                disks = detected;
+                disk_info = disks
+                    .iter()
+                    .find(|d| d.device == disk_path)
+                    .context("Selected disk not found after resize")?;
+            }
+        }
+    }
+
     // Find existing ESP (already detected with is_efi flag), or create one if missing
-    let (esp_path, esp_needs_format) = if let Some(esp) = disk_info.find_reusable_esp() {
+    let mut esp_needs_format = false;
+    let esp_path = if let Some(esp) = disk_info.find_reusable_esp() {
         println!(
             "Reusing existing ESP: {} ({})",
             esp.device,
             crate::arch::dualboot::format_size(esp.size_bytes)
         );
-        (esp.device.clone(), false)
+        esp.device.clone()
     } else {
         println!("No suitable ESP found (need >= 260MB). Creating a new EFI System Partition...");
         let new_esp = create_esp_partition(disk_path, disk_info, executor)?;
         println!("Created new ESP: {}", new_esp);
-        (new_esp, true)
+        esp_needs_format = true;
+        new_esp
+    };
+
+    if esp_needs_format {
+        let detected = crate::arch::dualboot::detect_disks()
+            .context("Failed to refresh disk information after ESP creation")?;
+        context.set::<DisksKey>(detected.clone());
+        disks = detected;
+        disk_info = disks
+            .iter()
+            .find(|d| d.device == disk_path)
+            .context("Selected disk not found after ESP creation")?;
+    }
+
+    let preferred_region = if let Some(ref partition_path) = resized_partition {
+        match find_next_free_region_after_partition(disk_path, disk_info.size_bytes, partition_path)
+        {
+            Ok(Some(region)) => Some(region),
+            Ok(None) if executor.dry_run => resize_plan.map(|plan| plan.preferred_region),
+            Ok(None) => {
+                if auto_resize_selected {
+                    anyhow::bail!("No free region found after resizing {}", partition_path);
+                }
+                None
+            }
+            Err(err) => {
+                if auto_resize_selected {
+                    return Err(err.context("Failed to locate free space after resizing"));
+                }
+                None
+            }
+        }
+    } else {
+        None
     };
 
     // Validate we have enough free space (contiguous region reported by sfdisk)
     // Also cap swap so it is never larger than half of root: swap <= root / 2 => swap <= free / 3
-    let available_space = disk_info.max_contiguous_free_space_bytes;
+    let available_space = preferred_region
+        .as_ref()
+        .map(|region| region.size_bytes)
+        .unwrap_or(disk_info.max_contiguous_free_space_bytes);
     const GB: u64 = 1024 * 1024 * 1024;
     let mut swap_size_bytes = swap_size_gb * GB;
 
@@ -159,8 +231,13 @@ fn prepare_dualboot_disk(
 
     // Create partitions in free space only
     // sfdisk can append partitions to existing partition table
-    let (root_path, swap_path) =
-        create_dualboot_partitions(disk_path, swap_size_gb, disk_info.size_bytes, executor)?;
+    let (root_path, swap_path) = create_dualboot_partitions(
+        disk_path,
+        swap_size_gb,
+        disk_info.size_bytes,
+        executor,
+        preferred_region,
+    )?;
 
     // Store partition paths in context data store - CONVERGENCE POINT
     // This uses the data map which has interior mutability via Arc<Mutex>
@@ -177,6 +254,227 @@ fn prepare_dualboot_disk(
     format_and_mount_partitions(context, executor)?;
 
     Ok(())
+}
+
+struct ResizePlan {
+    preferred_region: FreeRegion,
+}
+
+fn auto_resize_partition(
+    executor: &CommandExecutor,
+    disk_info: &crate::arch::dualboot::DiskInfo,
+    disk_path: &str,
+    partition_path: &str,
+    desired_free_space_bytes: u64,
+) -> Result<ResizePlan> {
+    let partition = disk_info
+        .partitions
+        .iter()
+        .find(|p| p.device == partition_path)
+        .context("Selected partition not found for resize")?;
+
+    let resize_info = partition
+        .resize_info
+        .as_ref()
+        .context("No resize info for partition")?;
+
+    if !resize_info.can_shrink {
+        anyhow::bail!("Selected partition is not shrinkable");
+    }
+
+    let min_size_bytes = resize_info
+        .min_size_bytes
+        .context("Automatic resize requires a known minimum size")?;
+
+    let fs_type = partition
+        .filesystem
+        .as_ref()
+        .map(|f| f.fs_type.as_str())
+        .unwrap_or("unknown");
+
+    if !matches!(fs_type, "ntfs" | "ext4" | "ext3" | "ext2") {
+        anyhow::bail!(
+            "Filesystem {} is not supported for automatic resize",
+            fs_type
+        );
+    }
+
+    let layout = get_partition_layout(disk_path, partition_path)
+        .context("Failed to read partition layout")?;
+
+    let existing_free_region =
+        find_adjacent_free_region_after_partition(disk_path, disk_info.size_bytes, &layout)?;
+    let existing_free_bytes = existing_free_region
+        .as_ref()
+        .map(|region| region.size_bytes)
+        .unwrap_or(0);
+
+    let shrink_bytes = desired_free_space_bytes.saturating_sub(existing_free_bytes);
+    if shrink_bytes == 0 {
+        let expected_region = FreeRegion {
+            start: layout.start + layout.size,
+            sectors: existing_free_region
+                .as_ref()
+                .map(|region| region.sectors)
+                .unwrap_or(0),
+            size_bytes: existing_free_bytes,
+        };
+
+        println!(
+            "Skipping resize; existing free space after {} is {}",
+            partition_path,
+            crate::arch::dualboot::format_size(existing_free_bytes)
+        );
+
+        return Ok(ResizePlan {
+            preferred_region: expected_region,
+        });
+    }
+
+    let mut target_size_bytes = partition.size_bytes.saturating_sub(shrink_bytes);
+    if target_size_bytes < min_size_bytes {
+        anyhow::bail!(
+            "Requested resize would shrink below minimum size ({})",
+            crate::arch::dualboot::format_size(min_size_bytes)
+        );
+    }
+
+    let aligned_target_bytes = align_down(target_size_bytes, 1024 * 1024).max(min_size_bytes);
+    if aligned_target_bytes >= partition.size_bytes {
+        anyhow::bail!("Aligned target size is not smaller than current size");
+    }
+
+    target_size_bytes = aligned_target_bytes;
+
+    let freed_bytes = partition.size_bytes.saturating_sub(target_size_bytes);
+    let total_expected_free = freed_bytes.saturating_add(existing_free_bytes);
+
+    println!(
+        "Resizing {} from {} to {} (freeing {})",
+        partition_path,
+        crate::arch::dualboot::format_size(partition.size_bytes),
+        crate::arch::dualboot::format_size(target_size_bytes),
+        crate::arch::dualboot::format_size(freed_bytes)
+    );
+
+    if let Some(mount_point) = &partition.mount_point {
+        executor.run(Command::new("umount").arg(mount_point))?;
+    }
+
+    match fs_type {
+        "ntfs" => {
+            executor.run(Command::new("ntfsresize").args([
+                "--force",
+                "--size",
+                &target_size_bytes.to_string(),
+                partition_path,
+            ]))?;
+        }
+        "ext4" | "ext3" | "ext2" => {
+            executor.run(Command::new("e2fsck").args(["-f", partition_path]))?;
+            let size_kib = target_size_bytes / 1024;
+            executor.run(
+                Command::new("resize2fs")
+                    .arg(partition_path)
+                    .arg(format!("{}K", size_kib)),
+            )?;
+        }
+        _ => {
+            anyhow::bail!("Filesystem {} is not supported for resize", fs_type);
+        }
+    }
+
+    let new_size_sectors = target_size_bytes / layout.sector_size;
+    let part_num = parse_partition_number(disk_path, partition_path)?;
+
+    let mut script = format!("size={}", new_size_sectors);
+    if let Some(part_type) = partition.partition_type.as_deref() {
+        script.push_str(&format!(", type={}", part_type));
+    }
+    script.push('\n');
+
+    executor.run_with_input(
+        Command::new("sfdisk")
+            .arg("-N")
+            .arg(part_num.to_string())
+            .arg(disk_path),
+        &script,
+    )?;
+
+    if !executor.dry_run {
+        executor.run(Command::new("udevadm").arg("settle"))?;
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+
+    Ok(ResizePlan {
+        preferred_region: FreeRegion {
+            start: layout.start + new_size_sectors,
+            sectors: total_expected_free / layout.sector_size,
+            size_bytes: total_expected_free,
+        },
+    })
+}
+
+fn find_adjacent_free_region_after_partition(
+    disk_path: &str,
+    disk_size_bytes: u64,
+    layout: &PartitionLayout,
+) -> Result<Option<FreeRegion>> {
+    let regions = get_free_regions(disk_path, Some(disk_size_bytes))
+        .context("Failed to get free regions for resize")?;
+
+    let partition_end = layout.start + layout.size;
+    let alignment_slack = (1024 * 1024 / layout.sector_size).max(1);
+
+    Ok(regions.into_iter().find(|region| {
+        region.start >= partition_end && region.start <= partition_end + alignment_slack
+    }))
+}
+
+fn find_next_free_region_after_partition(
+    disk_path: &str,
+    disk_size_bytes: u64,
+    partition_path: &str,
+) -> Result<Option<FreeRegion>> {
+    let layout = get_partition_layout(disk_path, partition_path)
+        .context("Failed to read partition layout")?;
+    let regions = get_free_regions(disk_path, Some(disk_size_bytes))
+        .context("Failed to get free regions after resize")?;
+
+    let partition_end = layout.start + layout.size;
+
+    Ok(regions
+        .into_iter()
+        .filter(|region| region.start >= partition_end)
+        .min_by_key(|region| region.start))
+}
+
+fn parse_partition_number(disk_path: &str, partition_path: &str) -> Result<u32> {
+    let disk_name = disk_path.strip_prefix("/dev/").unwrap_or(disk_path);
+    let part_name = partition_path
+        .strip_prefix("/dev/")
+        .unwrap_or(partition_path);
+
+    if !part_name.starts_with(disk_name) {
+        anyhow::bail!(
+            "Partition {} does not belong to disk {}",
+            partition_path,
+            disk_path
+        );
+    }
+
+    let suffix = &part_name[disk_name.len()..];
+    let suffix = suffix.strip_prefix('p').unwrap_or(suffix);
+    suffix
+        .parse::<u32>()
+        .context("Failed to parse partition number")
+}
+
+fn align_down(value: u64, alignment: u64) -> u64 {
+    if alignment == 0 {
+        return value;
+    }
+    value - (value % alignment)
 }
 
 /// Create an EFI System Partition if none is present
@@ -248,6 +546,7 @@ fn create_dualboot_partitions(
     swap_size_gb: u64,
     disk_size_bytes: u64,
     executor: &CommandExecutor,
+    preferred_region: Option<FreeRegion>,
 ) -> Result<(String, String)> {
     println!("Creating partitions in free space (optimal placement)...");
 
@@ -255,8 +554,12 @@ fn create_dualboot_partitions(
     let partitions_before = get_current_partitions(disk_path)?;
 
     // Get free regions to calculate optimal layout
-    let regions = get_free_regions(disk_path, Some(disk_size_bytes))
-        .context("Failed to get free space regions")?;
+    let regions = if let Some(region) = preferred_region {
+        vec![region]
+    } else {
+        get_free_regions(disk_path, Some(disk_size_bytes))
+            .context("Failed to get free space regions")?
+    };
 
     if regions.is_empty() {
         anyhow::bail!("No free space regions detected!");

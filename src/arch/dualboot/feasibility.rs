@@ -3,6 +3,13 @@
 use crate::arch::dualboot::types::format_size;
 use crate::arch::dualboot::types::*;
 
+fn is_supported_auto_resize_fs(partition: &PartitionInfo) -> bool {
+    matches!(
+        partition.filesystem.as_ref().map(|fs| fs.fs_type.as_str()),
+        Some("ntfs") | Some("ext4") | Some("ext3") | Some("ext2")
+    )
+}
+
 /// Check if a partition is feasible for dual boot installation
 pub fn is_dualboot_feasible(partition: &PartitionInfo) -> bool {
     // Cannot resize EFI partitions
@@ -10,23 +17,27 @@ pub fn is_dualboot_feasible(partition: &PartitionInfo) -> bool {
         return false;
     }
 
+    if !is_supported_auto_resize_fs(partition) {
+        return false;
+    }
+
     // Must be shrinkable
-    let can_shrink = partition
-        .resize_info
-        .as_ref()
-        .map(|r| r.can_shrink)
-        .unwrap_or(false);
+    let resize_info = match partition.resize_info.as_ref() {
+        Some(info) => info,
+        None => return false,
+    };
+
+    let can_shrink = resize_info.can_shrink;
 
     if !can_shrink {
         return false;
     }
 
     // Must have enough space
-    let min_existing = partition
-        .resize_info
-        .as_ref()
-        .and_then(|r| r.min_size_bytes)
-        .unwrap_or(0);
+    let min_existing = match resize_info.min_size_bytes {
+        Some(min) => min,
+        None => return false,
+    };
 
     partition.size_bytes.saturating_sub(min_existing) >= crate::arch::dualboot::MIN_LINUX_SIZE
 }

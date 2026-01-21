@@ -1,7 +1,7 @@
-use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
+use crate::arch::engine::{BootMode, InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::FzfWrapper;
 use crate::ui::nerd_font::NerdFont;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub struct LowRamWarning;
 
@@ -84,6 +84,108 @@ impl Question for WeakPasswordWarning {
              This is considered insecure.",
             NerdFont::Warning
         ))?;
+        Ok(QuestionResult::Answer("acknowledged".to_string()))
+    }
+}
+
+pub struct DualBootEspWarning;
+
+#[async_trait::async_trait]
+impl Question for DualBootEspWarning {
+    fn id(&self) -> QuestionId {
+        QuestionId::DualBootEspWarning
+    }
+
+    fn should_ask(&self, context: &InstallContext) -> bool {
+        let is_dualboot = context
+            .get_answer(&QuestionId::PartitioningMethod)
+            .map(|s| s.contains("Dual Boot"))
+            .unwrap_or(false);
+
+        if !is_dualboot {
+            return false;
+        }
+
+        if !matches!(
+            context.system_info.boot_mode,
+            BootMode::UEFI32 | BootMode::UEFI64
+        ) {
+            return false;
+        }
+
+        let disk_path = match context.get_answer(&QuestionId::Disk) {
+            Some(path) => path,
+            None => return false,
+        };
+
+        let disks = context
+            .get::<crate::arch::dualboot::DisksKey>()
+            .unwrap_or_default();
+
+        if disks.is_empty() {
+            return false;
+        }
+
+        let Some(disk_info) = disks.iter().find(|d| d.device == *disk_path) else {
+            return false;
+        };
+
+        let esp_partitions: Vec<_> = disk_info.partitions.iter().filter(|p| p.is_efi).collect();
+
+        if esp_partitions.is_empty() {
+            return true;
+        }
+
+        esp_partitions
+            .iter()
+            .all(|p| p.size_bytes < crate::arch::dualboot::types::MIN_ESP_SIZE)
+    }
+
+    async fn ask(&self, context: &InstallContext) -> Result<QuestionResult> {
+        let disk_path = context
+            .get_answer(&QuestionId::Disk)
+            .context("No disk selected")?;
+
+        let disks = if let Some(cached) = context.get::<crate::arch::dualboot::DisksKey>() {
+            cached
+        } else {
+            let detected =
+                tokio::task::spawn_blocking(crate::arch::dualboot::detect_disks).await??;
+            context.set::<crate::arch::dualboot::DisksKey>(detected.clone());
+            detected
+        };
+
+        let disk_info = disks
+            .iter()
+            .find(|d| d.device == *disk_path)
+            .context("Selected disk not found")?;
+
+        let esp_partitions: Vec<_> = disk_info.partitions.iter().filter(|p| p.is_efi).collect();
+
+        let mut message = format!("{} EFI System Partition Warning\n\n", NerdFont::Warning);
+
+        if esp_partitions.is_empty() {
+            message.push_str(
+                "No EFI System Partition was detected on the selected disk.\n\
+                 The installer will create a new 260MB ESP if space is available.\n\
+                 If the disk is full, resize partitions or use manual partitioning.",
+            );
+        } else {
+            message.push_str("Existing EFI System Partitions are smaller than 260MB:\n");
+            for esp in esp_partitions {
+                message.push_str(&format!(
+                    "  {} ({})\n",
+                    esp.device,
+                    crate::arch::dualboot::format_size(esp.size_bytes)
+                ));
+            }
+            message.push_str(
+                "\nThe installer will create a new 260MB ESP if space is available.\n\
+                 Keep the existing ESP intact to preserve other operating systems.",
+            );
+        }
+
+        FzfWrapper::message(&message)?;
         Ok(QuestionResult::Answer("acknowledged".to_string()))
     }
 }

@@ -16,4 +16,4 @@ pub use system::{
     EncryptionPasswordQuestion, HostnameQuestion, KernelQuestion, KeymapQuestion, LocaleQuestion,
     MirrorRegionQuestion, PasswordQuestion, TimezoneQuestion, UsernameQuestion,
 };
-pub use warnings::{VirtualBoxWarning, WeakPasswordWarning};
+pub use warnings::{DualBootEspWarning, VirtualBoxWarning, WeakPasswordWarning};
