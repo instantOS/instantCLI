@@ -1,5 +1,5 @@
-use crate::arch::dualboot::{ResizeStatus, ResizeVerifier};
 use crate::arch::dualboot::types::ResizeInfo;
+use crate::arch::dualboot::{ResizeStatus, ResizeVerifier};
 use crate::arch::engine::{InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
 use crate::ui::nerd_font::NerdFont;
@@ -229,8 +229,8 @@ async fn run_manual_resize_flow(
         match result {
             FzfResult::Selected(opt) => {
                 if opt.contains("installer") {
-                    if let Some(auto_resize) = auto_resize.as_ref() {
-                        if confirm_auto_resize(
+                    if let Some(auto_resize) = auto_resize.as_ref()
+                        && confirm_auto_resize(
                             partition_path,
                             fs_type,
                             original_size,
@@ -238,9 +238,9 @@ async fn run_manual_resize_flow(
                             linux_size_bytes,
                             &auto_resize.resize_info,
                             auto_resize.mount_point.as_deref(),
-                        )? {
-                            return Ok(QuestionResult::Answer("auto".to_string()));
-                        }
+                        )?
+                    {
+                        return Ok(QuestionResult::Answer("auto".to_string()));
                     }
                 } else if opt.contains("Open cfdisk") {
                     let _ = crate::common::terminal::run_tui_program("cfdisk", &[disk_path]).await;

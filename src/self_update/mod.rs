@@ -11,33 +11,48 @@ use sudo::RunningAs;
 const REPO_OWNER: &str = "instantOS";
 const REPO_NAME: &str = "instantCLI";
 const BIN_NAME: &str = "ins";
+const CRATE_NAME: &str = "ins";
 const GITHUB_API_URL: &str = "https://api.github.com/repos";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InstallSource {
+    Cargo,
+    SystemPackage,
+    Standalone,
+}
 
 #[derive(Debug, Clone)]
 struct InstallLocation {
     path: PathBuf,
     needs_sudo: bool,
-    is_managed: bool,
+    install_source: InstallSource,
 }
 
-/// Check if the binary is installed in a package manager location
-fn is_package_managed_location(path: &Path) -> bool {
-    let path_str = path.to_string_lossy();
+fn cargo_bin_dir() -> Option<PathBuf> {
+    if let Ok(cargo_home) = env::var("CARGO_HOME")
+        && !cargo_home.trim().is_empty()
+    {
+        return Some(PathBuf::from(cargo_home).join("bin"));
+    }
 
+    dirs::home_dir().map(|home| home.join(".cargo").join("bin"))
+}
+
+/// Detect where the binary was installed from
+fn detect_install_source(path: &Path) -> InstallSource {
     // Check for system package manager locations
-    if path_str.starts_with("/usr/bin") {
-        return true;
+    if path.starts_with("/usr/bin") {
+        return InstallSource::SystemPackage;
     }
 
     // Check for cargo location
-    if let Some(home) = dirs::home_dir() {
-        let cargo_bin = home.join(".cargo").join("bin");
-        if path.starts_with(cargo_bin) {
-            return true;
-        }
+    if let Some(cargo_bin) = cargo_bin_dir()
+        && path.starts_with(cargo_bin)
+    {
+        return InstallSource::Cargo;
     }
 
-    false
+    InstallSource::Standalone
 }
 
 /// Check if a directory is writable
@@ -56,15 +71,14 @@ fn is_writable(path: &Path) -> bool {
 /// Get the current installation location
 fn get_install_location() -> Result<InstallLocation> {
     let current_exe = env::current_exe().context("Failed to get current executable path")?;
-
-    let is_managed = is_package_managed_location(&current_exe);
+    let install_source = detect_install_source(&current_exe);
 
     if let Some(parent) = current_exe.parent() {
         let needs_sudo = !is_writable(parent);
         Ok(InstallLocation {
             path: current_exe,
             needs_sudo,
-            is_managed,
+            install_source,
         })
     } else {
         Err(anyhow!(
@@ -99,6 +113,17 @@ struct GitHubAsset {
 struct GitHubRelease {
     tag_name: String,
     assets: Vec<GitHubAsset>,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct CratesIoResponse {
+    #[serde(rename = "crate")]
+    krate: CrateInfo,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct CrateInfo {
+    max_version: String,
 }
 
 /// Fetch the latest release from GitHub that has binaries available
@@ -143,6 +168,36 @@ async fn fetch_latest_release_with_binaries(target: &str) -> Result<GitHubReleas
     ))
 }
 
+/// Fetch the latest published crate version from crates.io
+async fn fetch_latest_crate_version(crate_name: &str) -> Result<String> {
+    let url = format!("https://crates.io/api/v1/crates/{}", crate_name);
+
+    let client = reqwest::Client::builder()
+        .user_agent(format!("{}/{}", BIN_NAME, env!("CARGO_PKG_VERSION")))
+        .build()
+        .context("Failed to create HTTP client")?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .context("Failed to fetch crate information")?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!(
+            "crates.io API returned status: {}",
+            response.status()
+        ));
+    }
+
+    let crate_info: CratesIoResponse = response
+        .json()
+        .await
+        .context("Failed to parse crate information")?;
+
+    Ok(crate_info.krate.max_version)
+}
+
 /// Compare version strings
 fn is_newer_version(current: &str, latest: &str) -> bool {
     let parse_version = |v: &str| {
@@ -164,6 +219,15 @@ fn is_newer_version(current: &str, latest: &str) -> bool {
     }
 
     latest_parts.len() > current_parts.len()
+}
+
+fn confirm_update() -> Result<bool> {
+    use dialoguer::Confirm;
+
+    Ok(Confirm::new()
+        .with_prompt("Do you want to update?")
+        .default(true)
+        .interact()?)
 }
 
 /// Find the appropriate asset for the target architecture
@@ -378,6 +442,133 @@ fn install_binary(binary_path: &Path, target_path: &Path, needs_sudo: bool) -> R
     Ok(())
 }
 
+async fn self_update_via_cargo(current_version: &str) -> Result<()> {
+    use std::io::ErrorKind;
+    use std::process::Command;
+
+    emit(
+        Level::Info,
+        "self_update.cargo.detected",
+        &format!(
+            "{} Detected Cargo installation; checking crates.io...",
+            char::from(NerdFont::Package)
+        ),
+        None,
+    );
+
+    let latest_version = fetch_latest_crate_version(CRATE_NAME).await?;
+
+    emit(
+        Level::Info,
+        "self_update.version.current",
+        &format!(
+            "{} Current version: {}",
+            char::from(NerdFont::Info),
+            current_version
+        ),
+        None,
+    );
+    emit(
+        Level::Info,
+        "self_update.version.latest",
+        &format!(
+            "{} Latest version: {}",
+            char::from(NerdFont::Info),
+            latest_version
+        ),
+        None,
+    );
+
+    if !is_newer_version(current_version, &latest_version) {
+        emit(
+            Level::Success,
+            "self_update.up_to_date",
+            &format!("{} Already up to date!", char::from(NerdFont::Check)),
+            None,
+        );
+        return Ok(());
+    }
+
+    emit(
+        Level::Success,
+        "self_update.available",
+        &format!(
+            "{} Update available: {} → {}",
+            char::from(NerdFont::Upgrade),
+            current_version,
+            latest_version
+        ),
+        None,
+    );
+
+    if !confirm_update()? {
+        emit(
+            Level::Info,
+            "self_update.cancelled",
+            &format!("{} Update cancelled", char::from(NerdFont::Info)),
+            None,
+        );
+        return Ok(());
+    }
+
+    emit(
+        Level::Info,
+        "self_update.cargo.installing",
+        &format!(
+            "{} Running cargo install --force {}...",
+            char::from(NerdFont::Package),
+            CRATE_NAME
+        ),
+        None,
+    );
+
+    let status = Command::new("cargo")
+        .arg("install")
+        .arg("--force")
+        .arg(CRATE_NAME)
+        .status();
+
+    match status {
+        Ok(status) => {
+            if !status.success() {
+                return Err(anyhow!("cargo install failed"));
+            }
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => {
+            emit(
+                Level::Warn,
+                "self_update.cargo.missing",
+                &format!(
+                    "{} Cargo was not found in PATH; unable to update automatically.",
+                    char::from(NerdFont::Warning)
+                ),
+                None,
+            );
+            println!(
+                "   {}: cargo install --force {}",
+                "Example".bright_black(),
+                CRATE_NAME
+            );
+            return Ok(());
+        }
+        Err(err) => return Err(err.into()),
+    }
+
+    emit(
+        Level::Success,
+        "self_update.complete",
+        &format!(
+            "{} Successfully updated: {} → {}",
+            char::from(NerdFont::Check),
+            current_version,
+            latest_version
+        ),
+        None,
+    );
+
+    Ok(())
+}
+
 /// Main self-update logic
 pub async fn self_update() -> Result<()> {
     emit(
@@ -387,34 +578,34 @@ pub async fn self_update() -> Result<()> {
         None,
     );
 
+    let current_version = env!("CARGO_PKG_VERSION");
     let location = get_install_location()?;
 
-    // Check if installed via package manager
-    if location.is_managed {
-        emit(
-            Level::Warn,
-            "self_update.package_managed",
-            &format!(
-                "{} This installation appears to be managed by a package manager.",
-                char::from(NerdFont::Warning)
-            ),
-            None,
-        );
-        println!("   Please use your package manager to update instead.");
-
-        if location.path.to_string_lossy().contains(".cargo/bin") {
-            println!("   {}: cargo install ins", "Example".bright_black());
-        } else {
+    match location.install_source {
+        InstallSource::SystemPackage => {
+            emit(
+                Level::Warn,
+                "self_update.package_managed",
+                &format!(
+                    "{} This installation appears to be managed by a package manager.",
+                    char::from(NerdFont::Warning)
+                ),
+                None,
+            );
+            println!("   Please use your package manager to update instead.");
             println!(
                 "   {}: sudo pacman -S ins  (or your package manager)",
                 "Example".bright_black()
             );
+            return Ok(());
         }
-
-        return Ok(());
+        InstallSource::Cargo => {
+            self_update_via_cargo(current_version).await?;
+            return Ok(());
+        }
+        InstallSource::Standalone => {}
     }
 
-    let current_version = env!("CARGO_PKG_VERSION");
     let target = detect_target()?;
     let release = fetch_latest_release_with_binaries(&target).await?;
 
@@ -463,13 +654,7 @@ pub async fn self_update() -> Result<()> {
         None,
     );
 
-    // Confirm update
-    use dialoguer::Confirm;
-    if !Confirm::new()
-        .with_prompt("Do you want to update?")
-        .default(true)
-        .interact()?
-    {
+    if !confirm_update()? {
         emit(
             Level::Info,
             "self_update.cancelled",

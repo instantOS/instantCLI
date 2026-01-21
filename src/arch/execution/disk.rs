@@ -104,33 +104,33 @@ fn prepare_dualboot_disk(
         .unwrap_or("manual");
     let auto_resize_selected = resize_choice == "auto";
 
-    if let Some(partition_path) = context.get_answer(&QuestionId::DualBootPartition) {
-        if partition_path != "__free_space__" {
-            resized_partition = Some(partition_path.to_string());
+    if let Some(partition_path) = context.get_answer(&QuestionId::DualBootPartition)
+        && partition_path != "__free_space__"
+    {
+        resized_partition = Some(partition_path.to_string());
 
-            if auto_resize_selected {
-                let size_str = context
-                    .get_answer(&QuestionId::DualBootSize)
-                    .context("No size selected for dual boot")?;
-                let desired_free_space_bytes: u64 = size_str.parse()?;
+        if auto_resize_selected {
+            let size_str = context
+                .get_answer(&QuestionId::DualBootSize)
+                .context("No size selected for dual boot")?;
+            let desired_free_space_bytes: u64 = size_str.parse()?;
 
-                resize_plan = Some(auto_resize_partition(
-                    executor,
-                    disk_info,
-                    disk_path,
-                    partition_path,
-                    desired_free_space_bytes,
-                )?);
+            resize_plan = Some(auto_resize_partition(
+                executor,
+                disk_info,
+                disk_path,
+                partition_path,
+                desired_free_space_bytes,
+            )?);
 
-                let detected = crate::arch::dualboot::detect_disks()
-                    .context("Failed to refresh disk information after resize")?;
-                context.set::<DisksKey>(detected.clone());
-                disks = detected;
-                disk_info = disks
-                    .iter()
-                    .find(|d| d.device == disk_path)
-                    .context("Selected disk not found after resize")?;
-            }
+            let detected = crate::arch::dualboot::detect_disks()
+                .context("Failed to refresh disk information after resize")?;
+            context.set::<DisksKey>(detected.clone());
+            disks = detected;
+            disk_info = disks
+                .iter()
+                .find(|d| d.device == disk_path)
+                .context("Selected disk not found after resize")?;
         }
     }
 
