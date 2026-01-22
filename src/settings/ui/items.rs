@@ -34,7 +34,7 @@ impl FolderMeta {
     }
 
     /// Create folder metadata for a named subcategory
-    pub fn from_name(name: &str) -> Self {
+    pub fn from_name(name: &str, description: Option<&str>) -> Self {
         let (icon, color) = match name {
             "GTK" => (NerdFont::Palette, colors::TEAL),
             "Wallpaper" => (NerdFont::Image, colors::LAVENDER),
@@ -45,7 +45,7 @@ impl FolderMeta {
             icon,
             color,
             title: name.to_string(),
-            description: None,
+            description: description.map(|s| s.to_string()),
         }
     }
 }
@@ -72,9 +72,9 @@ impl TreeNode {
     }
 
     /// Create a folder node from a name
-    pub fn from_name(name: &str, children: Vec<TreeNode>) -> Self {
+    pub fn from_name(name: &str, description: Option<&str>, children: Vec<TreeNode>) -> Self {
         TreeNode::Folder {
-            meta: FolderMeta::from_name(name),
+            meta: FolderMeta::from_name(name, description),
             children,
         }
     }
@@ -138,7 +138,7 @@ fn convert_category_node(node: crate::settings::category_tree::CategoryNode) -> 
             .into_iter()
             .map(convert_category_node)
             .collect();
-        TreeNode::from_name(node.name.unwrap_or("Unknown"), children)
+        TreeNode::from_name(node.name.unwrap_or("Unknown"), node.description, children)
     }
 }
 
@@ -430,6 +430,11 @@ fn build_setting_preview(
     setting: &dyn Setting,
     state: &SettingState,
 ) -> crate::menu_utils::FzfPreview {
+    // Check if setting has a custom preview command
+    if let Some(cmd) = setting.preview_command() {
+        return crate::menu_utils::FzfPreview::Command(cmd);
+    }
+
     let meta = setting.metadata();
     let category = crate::settings::category_tree::get_category_for_setting(meta.id)
         .unwrap_or(Category::System);

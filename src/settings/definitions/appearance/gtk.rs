@@ -302,7 +302,7 @@ impl Setting for GtkIconTheme {
                 .text("Select and apply a GTK icon theme.")
                 .blank()
                 .shell(
-                    r#"icon_theme=$(timeout 1s gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null || echo \"unknown\")
+                    r#"icon_theme=$(timeout 1s gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null | sed "s/^.//;s/.$//" || echo "unknown")
 echo "Current icon theme: $icon_theme""#,
                 )
                 .build_shell_script(),
@@ -419,7 +419,7 @@ impl Setting for GtkTheme {
                 .text("Select and apply a GTK theme.")
                 .blank()
                 .shell(
-                    r#"gtk_theme=$(timeout 1s gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null || echo \"unknown\")
+                    r#"gtk_theme=$(timeout 1s gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null | sed "s/'//g" || echo "unknown")
 echo "Current GTK theme: $gtk_theme""#,
                 )
                 .build_shell_script(),

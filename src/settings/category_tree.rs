@@ -11,6 +11,8 @@ pub struct CategoryNode {
     pub setting: Option<&'static dyn Setting>,
     /// Display name (used for groups, ignored if setting is present)
     pub name: Option<&'static str>,
+    /// Description for groups (ignored if setting is present)
+    pub description: Option<&'static str>,
     /// Child nodes (for grouping)
     pub children: Vec<CategoryNode>,
 }
@@ -21,6 +23,7 @@ impl CategoryNode {
         CategoryNode {
             setting: Some(setting),
             name: None,
+            description: None,
             children: Vec::new(),
         }
     }
@@ -30,8 +33,15 @@ impl CategoryNode {
         CategoryNode {
             setting: None,
             name: Some(name),
+            description: None,
             children: Vec::new(),
         }
+    }
+
+    /// Set the description for a group (builder pattern)
+    pub fn description(mut self, desc: &'static str) -> Self {
+        self.description = Some(desc);
+        self
     }
 
     /// Add a child node (builder pattern)
@@ -59,6 +69,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&appearance::DarkMode),
             CategoryNode::setting(&appearance::CursorTheme),
             CategoryNode::group("Wallpaper")
+                .description("Desktop background images and colored wallpapers.")
                 .child(CategoryNode::setting(&appearance::SetWallpaper))
                 .child(CategoryNode::setting(&appearance::RandomWallpaper))
                 .child(CategoryNode::setting(&appearance::WallpaperLogo))
@@ -66,11 +77,14 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
                 .child(CategoryNode::setting(&appearance::WallpaperFgColor))
                 .child(CategoryNode::setting(&appearance::ApplyColoredWallpaper)),
             CategoryNode::group("GTK")
+                .description("GTK application theming and icons.")
                 .child(CategoryNode::setting(&appearance::GtkTheme))
                 .child(CategoryNode::setting(&appearance::GtkIconTheme))
                 .child(CategoryNode::setting(&appearance::GtkMenuIcons))
                 .child(CategoryNode::setting(&appearance::ResetGtk)),
-            CategoryNode::group("Qt").child(CategoryNode::setting(&appearance::ResetQt)),
+            CategoryNode::group("Qt")
+                .description("Qt application theming.")
+                .child(CategoryNode::setting(&appearance::ResetQt)),
         ],
         Category::Network => vec![
             CategoryNode::setting(&network::IpInfo),

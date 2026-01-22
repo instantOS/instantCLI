@@ -92,22 +92,49 @@ impl Setting for DarkMode {
             .text("Updates GTK and icon themes when paired variants exist.")
             .text("Sets the GTK 4 color-scheme preference for compatible apps.")
             .blank()
-            .subtext("Current settings")
+            .subtext("Current state")
             .shell(
-                r#"scheme=$(timeout 1s gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "default")
-gtk_theme=$(timeout 1s gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null || echo "unknown")
-icon_theme=$(timeout 1s gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null || echo "unknown")
+                r#"scheme=$(timeout 1s gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null | sed "s/'//g" || echo "default")
+gtk_theme=$(timeout 1s gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null | sed "s/'//g" || echo "unknown")
+icon_theme=$(timeout 1s gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null | sed "s/'//g" || echo "unknown")
 
 if echo "$scheme" | grep -q "prefer-dark"; then
+    is_dark=1
     mode="Dark"
 else
+    is_dark=0
     mode="Light"
 fi
 
 echo "  Mode: $mode"
 echo "  GTK theme: $gtk_theme"
 echo "  Icon theme: $icon_theme"
-echo "  Color scheme hint: $scheme""#,
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Determine what will happen on toggle
+if [ "$is_dark" = "1" ]; then
+    target_mode="Light"
+    # Try to find light variant
+    new_gtk=$(echo "$gtk_theme" | sed "s/-dark$//")
+    new_icon=$(echo "$icon_theme" | sed "s/-dark$//")
+else
+    target_mode="Dark"
+    # Try to find dark variant
+    new_gtk="${gtk_theme%-light}"
+    new_gtk="${new_gtk}-dark"
+    new_icon="${icon_theme%-light}"
+    new_icon="${new_icon}-dark"
+fi
+
+echo "  Will switch to: $target_mode mode"
+if [ "$new_gtk" != "$gtk_theme" ]; then
+    echo "  GTK: $gtk_theme → $new_gtk"
+fi
+if [ "$new_icon" != "$icon_theme" ]; then
+    echo "  Icons: $icon_theme → $new_icon"
+fi"#,
             )
             .build_shell_script();
         Some(script)
