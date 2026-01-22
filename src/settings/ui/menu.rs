@@ -71,7 +71,7 @@ pub fn run_settings_ui(
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                         continue;
                     }
-                    if navigate_node(&mut ctx, category.meta().title, &tree, category_cursor)? {
+                    if navigate_node(&mut ctx, category.meta().title, None, &tree, category_cursor)? {
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                     } else {
                         break;
@@ -88,7 +88,7 @@ pub fn run_settings_ui(
             },
             InitialView::Category(category, cursor) => {
                 let tree = build_tree(category);
-                if navigate_node(&mut ctx, category.meta().title, &tree, cursor)? {
+                if navigate_node(&mut ctx, category.meta().title, None, &tree, cursor)? {
                     initial_view = InitialView::MainMenu(MenuCursor::new());
                 } else {
                     break;
@@ -249,6 +249,7 @@ fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<M
 fn navigate_node(
     ctx: &mut SettingsContext,
     title: &str,
+    parent_name: Option<&str>,
     nodes: &[TreeNode],
     mut cursor: MenuCursor,
 ) -> Result<bool> {
@@ -280,7 +281,9 @@ fn navigate_node(
             })
             .collect();
 
-        entries.push(CategoryPageItem::Back);
+        entries.push(CategoryPageItem::Back {
+            parent_name: parent_name.map(|s| s.to_string()),
+        });
 
         // Display selection menu
         let initial_cursor = cursor.initial_index(&entries);
@@ -291,8 +294,8 @@ fn navigate_node(
                 if let Some(idx) = nodes.iter().position(|n| n.name() == sub.name)
                     && let TreeNode::Folder { name, children } = &nodes[idx]
                 {
-                    // Recurse into subfolder
-                    if !navigate_node(ctx, name, children, MenuCursor::new())? {
+                    // Recurse into subfolder, current title becomes parent
+                    if !navigate_node(ctx, name, Some(title), children, MenuCursor::new())? {
                         return Ok(false); // Propagate exit
                     }
                 }
@@ -301,8 +304,13 @@ fn navigate_node(
                 cursor.update(&CategoryPageItem::Setting(item.clone()), &entries);
                 super::handlers::handle_trait_setting(ctx, item.setting)?;
             }
-            Some(CategoryPageItem::Back) => {
-                cursor.update(&CategoryPageItem::Back, &entries);
+            Some(CategoryPageItem::Back { .. }) => {
+                cursor.update(
+                    &CategoryPageItem::Back {
+                        parent_name: parent_name.map(|s| s.to_string()),
+                    },
+                    &entries,
+                );
                 return Ok(true);
             }
             None => return Ok(true),

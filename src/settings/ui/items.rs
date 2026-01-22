@@ -53,7 +53,8 @@ pub struct SettingItem {
 pub enum CategoryPageItem {
     SubCategory(SubCategoryItem),
     Setting(SettingItem),
-    Back,
+    /// Back navigation with optional parent name (None = main menu)
+    Back { parent_name: Option<String> },
 }
 
 /// Display item for a subcategory (folder)
@@ -298,16 +299,26 @@ impl FzfSelectable for CategoryPageItem {
         match self {
             CategoryPageItem::SubCategory(item) => item.fzf_display_text(),
             CategoryPageItem::Setting(item) => item.fzf_display_text(),
-            CategoryPageItem::Back => format!("{} Back", format_back_icon()),
+            CategoryPageItem::Back { .. } => format!("{} Back", format_back_icon()),
         }
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        use crate::ui::nerd_font::NerdFont;
+        use crate::ui::preview::PreviewBuilder;
+
         match self {
             CategoryPageItem::SubCategory(item) => item.fzf_preview(),
             CategoryPageItem::Setting(item) => item.fzf_preview(),
-            CategoryPageItem::Back => {
-                crate::menu_utils::FzfPreview::Text("Return to parent".to_string())
+            CategoryPageItem::Back { parent_name } => {
+                let destination = parent_name
+                    .as_ref()
+                    .map(|n| n.as_str())
+                    .unwrap_or("Main Menu");
+                PreviewBuilder::new()
+                    .header(NerdFont::ArrowLeft, "Go Back")
+                    .text(&format!("Return to {}", destination))
+                    .build()
             }
         }
     }
@@ -316,7 +327,7 @@ impl FzfSelectable for CategoryPageItem {
         match self {
             CategoryPageItem::SubCategory(item) => item.name.clone(),
             CategoryPageItem::Setting(item) => item.setting.metadata().id.to_string(),
-            CategoryPageItem::Back => "__back__".to_string(),
+            CategoryPageItem::Back { .. } => "__back__".to_string(),
         }
     }
 }
