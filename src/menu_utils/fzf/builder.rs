@@ -4,6 +4,7 @@ use anyhow::{self, Result};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use crate::common::shell::shell_quote;
 use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_bg, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 
@@ -353,7 +354,9 @@ impl FzfBuilder {
                     // Write a shell script that FZF can execute
                     let preview_path = preview_dir.join(format!("{}.sh", idx));
                     if let Ok(mut file) = std::fs::File::create(&preview_path) {
-                        let _ = file.write_all(cmd.as_bytes());
+                        let key = shell_quote(&item.fzf_key());
+                        let script = format!("set -- {key}\n{cmd}");
+                        let _ = file.write_all(script.as_bytes());
                     }
                 }
                 FzfPreview::None => {}
