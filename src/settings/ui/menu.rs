@@ -5,11 +5,12 @@
 use anyhow::{Context, Result};
 
 use crate::menu_utils::MenuCursor;
-use crate::settings::setting::{Category, Setting};
+use crate::settings::category_tree::category_tree;
+use crate::settings::setting::Category;
 
 use super::super::commands::SettingsNavigation;
 use super::super::context::SettingsContext;
-use super::items::{CategoryItem, CategoryMenuItem, CategoryPageItem, SearchItem, SettingItem};
+use super::items::{MainMenuItem, MenuItem, SearchItem, TreeNode, convert_category_tree};
 use crate::menu_utils::select_one_with_style_at;
 
 pub fn run_settings_ui(
@@ -24,21 +25,10 @@ pub fn run_settings_ui(
     let mut initial_view = match navigation {
         Some(SettingsNavigation::Setting(setting_id)) => {
             // Find the setting and jump to search view with it selected
-            let mut target_index = None;
-            let all = settings_by_category();
-            let mut idx = 0;
-            for (_cat, settings) in &all {
-                for s in settings {
-                    if s.metadata().id == setting_id {
-                        target_index = Some(idx);
-                        break;
-                    }
-                    idx += 1;
-                }
-                if target_index.is_some() {
-                    break;
-                }
-            }
+            let all_settings = all_settings_flat();
+            let target_index = all_settings
+                .iter()
+                .position(|s| s.metadata().id == setting_id);
 
             if target_index.is_none() {
                 anyhow::bail!("Setting '{}' not found", setting_id);
@@ -59,19 +49,20 @@ pub fn run_settings_ui(
         match initial_view {
             InitialView::MainMenu(cursor) => match run_main_menu(&mut ctx, cursor)? {
                 MenuAction::EnterCategory {
-                    category,
+                    tree,
                     main_menu_cursor,
                     category_cursor,
                 } => {
-                    let tree = build_tree(category);
-                    if tree.len() == 1
-                        && let TreeNode::Leaf(setting) = &tree[0]
+                    // If category has only one setting, activate it directly
+                    if let TreeNode::Folder { children, .. } = &tree
+                        && children.len() == 1
+                        && let TreeNode::Setting(setting) = &children[0]
                     {
                         super::handlers::handle_trait_setting(&mut ctx, *setting)?;
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                         continue;
                     }
-                    if navigate_node(&mut ctx, category.meta().title, None, &tree, category_cursor)? {
+                    if navigate_tree(&mut ctx, &tree, None, category_cursor)? {
                         initial_view = InitialView::MainMenu(main_menu_cursor);
                     } else {
                         break;
@@ -87,8 +78,8 @@ pub fn run_settings_ui(
                 MenuAction::Exit => break,
             },
             InitialView::Category(category, cursor) => {
-                let tree = build_tree(category);
-                if navigate_node(&mut ctx, category.meta().title, None, &tree, cursor)? {
+                let tree = convert_category_tree(category, category_tree(category));
+                if navigate_tree(&mut ctx, &tree, None, cursor)? {
                     initial_view = InitialView::MainMenu(MenuCursor::new());
                 } else {
                     break;
@@ -116,7 +107,7 @@ enum InitialView {
 
 enum MenuAction {
     EnterCategory {
-        category: Category,
+        tree: TreeNode,
         main_menu_cursor: MenuCursor,
         category_cursor: MenuCursor,
     },
@@ -124,84 +115,35 @@ enum MenuAction {
     Exit,
 }
 
-#[derive(Clone)]
-enum TreeNode {
-    Folder {
-        name: String,
-        children: Vec<TreeNode>,
-    },
-    Leaf(&'static dyn Setting),
-}
-
-impl TreeNode {
-    fn name(&self) -> &str {
-        match self {
-            TreeNode::Folder { name, .. } => name,
-            TreeNode::Leaf(s) => s.metadata().title,
-        }
-    }
-}
-
-fn build_tree(category: Category) -> Vec<TreeNode> {
-    use crate::settings::category_tree::category_tree;
-
-    let category_nodes = category_tree(category);
-    let mut nodes = Vec::new();
-
-    for node in category_nodes {
-        nodes.push(convert_category_node(node));
-    }
-
-    nodes
-}
-
-fn convert_category_node(node: crate::settings::category_tree::CategoryNode) -> TreeNode {
-    if let Some(setting) = node.setting {
-        TreeNode::Leaf(setting)
-    } else {
-        let converted_children = node
-            .children
-            .into_iter()
-            .map(convert_category_node)
-            .collect();
-        TreeNode::Folder {
-            name: node.name.unwrap_or("Unknown").to_string(),
-            children: converted_children,
-        }
-    }
-}
-
-fn settings_by_category() -> Vec<(Category, Vec<&'static dyn Setting>)> {
-    use crate::settings::category_tree::category_tree;
-
+/// Get all category trees
+fn build_category_trees() -> Vec<TreeNode> {
     Category::all()
         .iter()
-        .map(|&cat| {
-            let tree = category_tree(cat);
-            let settings = collect_settings_from_tree(&tree);
-            (cat, settings)
+        .filter_map(|&cat| {
+            let nodes = category_tree(cat);
+            if nodes.is_empty() {
+                None
+            } else {
+                Some(convert_category_tree(cat, nodes))
+            }
         })
-        .filter(|(_, settings)| !settings.is_empty())
         .collect()
 }
 
-fn collect_settings_from_tree(
-    nodes: &[crate::settings::category_tree::CategoryNode],
-) -> Vec<&'static dyn Setting> {
+/// Get all settings flattened (for search)
+fn all_settings_flat() -> Vec<&'static dyn crate::settings::setting::Setting> {
     let mut settings = Vec::new();
-    for node in nodes {
-        if let Some(setting) = node.setting {
-            settings.push(setting);
-        }
-        settings.extend(collect_settings_from_tree(&node.children));
+    for cat in Category::all() {
+        let tree = convert_category_tree(*cat, category_tree(*cat));
+        settings.extend(tree.collect_settings(usize::MAX));
     }
     settings
 }
 
 fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<MenuAction> {
-    let categories_with_settings = settings_by_category();
+    let category_trees = build_category_trees();
 
-    if categories_with_settings.is_empty() {
+    if category_trees.is_empty() {
         crate::ui::prelude::emit(
             crate::ui::prelude::Level::Warn,
             "settings.empty",
@@ -214,46 +156,49 @@ fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<M
         return Ok(MenuAction::Exit);
     }
 
-    let mut menu_items = Vec::with_capacity(categories_with_settings.len() + 2);
-    menu_items.push(CategoryMenuItem::SearchAll);
+    let mut menu_items = Vec::with_capacity(category_trees.len() + 2);
+    menu_items.push(MainMenuItem::SearchAll);
 
-    for (category, settings) in categories_with_settings {
-        menu_items.push(CategoryMenuItem::Category(CategoryItem::new(
-            category, settings,
-        )));
+    for tree in category_trees {
+        menu_items.push(MainMenuItem::Category(tree));
     }
-    menu_items.push(CategoryMenuItem::Close);
+    menu_items.push(MainMenuItem::Close);
 
     let initial_cursor = cursor.initial_index(&menu_items);
     let selection = select_one_with_style_at(menu_items.clone(), initial_cursor)?;
 
     let action = match selection {
-        Some(CategoryMenuItem::SearchAll) => {
-            cursor.update(&CategoryMenuItem::SearchAll, &menu_items);
+        Some(MainMenuItem::SearchAll) => {
+            cursor.update(&MainMenuItem::SearchAll, &menu_items);
             MenuAction::EnterSearch(cursor)
         }
-        Some(CategoryMenuItem::Category(item)) => {
-            cursor.update(&CategoryMenuItem::Category(item.clone()), &menu_items);
+        Some(MainMenuItem::Category(tree)) => {
+            cursor.update(&MainMenuItem::Category(tree.clone()), &menu_items);
             MenuAction::EnterCategory {
-                category: item.category,
+                tree,
                 main_menu_cursor: cursor,
                 category_cursor: MenuCursor::new(),
             }
         }
-        Some(CategoryMenuItem::Close) | None => MenuAction::Exit,
+        Some(MainMenuItem::Close) | None => MenuAction::Exit,
     };
 
     Ok(action)
 }
 
-fn navigate_node(
+/// Navigate a tree node (folder)
+fn navigate_tree(
     ctx: &mut SettingsContext,
-    title: &str,
+    node: &TreeNode,
     parent_name: Option<&str>,
-    nodes: &[TreeNode],
     mut cursor: MenuCursor,
 ) -> Result<bool> {
-    if nodes.is_empty() {
+    let (title, children) = match node {
+        TreeNode::Folder { meta, children } => (&meta.title, children),
+        TreeNode::Setting(_) => return Ok(true), // Settings are handled directly
+    };
+
+    if children.is_empty() {
         ctx.emit_info(
             "settings.category.empty",
             &format!("No settings available in {} yet.", title),
@@ -262,51 +207,44 @@ fn navigate_node(
     }
 
     loop {
-        use super::items::SubCategoryItem;
-
-        // Re-compute display items on every loop iteration to reflect state changes
-        let mut entries: Vec<CategoryPageItem> = nodes
+        // Build menu items from children
+        let mut entries: Vec<MenuItem> = children
             .iter()
-            .map(|node| match node {
-                TreeNode::Folder { name, children } => {
-                    CategoryPageItem::SubCategory(SubCategoryItem {
-                        name: name.clone(),
-                        count: children.len(),
-                    })
-                }
-                TreeNode::Leaf(s) => {
+            .map(|child| match child {
+                TreeNode::Folder { .. } => MenuItem::Folder(child.clone()),
+                TreeNode::Setting(s) => {
                     let state = s.get_display_state(ctx);
-                    CategoryPageItem::Setting(SettingItem { setting: *s, state })
+                    MenuItem::Setting { setting: *s, state }
                 }
             })
             .collect();
 
-        entries.push(CategoryPageItem::Back {
+        entries.push(MenuItem::Back {
             parent_name: parent_name.map(|s| s.to_string()),
         });
 
-        // Display selection menu
         let initial_cursor = cursor.initial_index(&entries);
         match select_one_with_style_at(entries.clone(), initial_cursor)? {
-            Some(CategoryPageItem::SubCategory(sub)) => {
-                cursor.update(&CategoryPageItem::SubCategory(sub.clone()), &entries);
-                // Find the node corresponding to the selection
-                if let Some(idx) = nodes.iter().position(|n| n.name() == sub.name)
-                    && let TreeNode::Folder { name, children } = &nodes[idx]
-                {
-                    // Recurse into subfolder, current title becomes parent
-                    if !navigate_node(ctx, name, Some(title), children, MenuCursor::new())? {
-                        return Ok(false); // Propagate exit
-                    }
+            Some(MenuItem::Folder(folder)) => {
+                cursor.update(&MenuItem::Folder(folder.clone()), &entries);
+                // Recurse into folder, current title becomes parent
+                if !navigate_tree(ctx, &folder, Some(title), MenuCursor::new())? {
+                    return Ok(false); // Propagate exit
                 }
             }
-            Some(CategoryPageItem::Setting(item)) => {
-                cursor.update(&CategoryPageItem::Setting(item.clone()), &entries);
-                super::handlers::handle_trait_setting(ctx, item.setting)?;
-            }
-            Some(CategoryPageItem::Back { .. }) => {
+            Some(MenuItem::Setting { setting, .. }) => {
                 cursor.update(
-                    &CategoryPageItem::Back {
+                    &MenuItem::Setting {
+                        setting,
+                        state: setting.get_display_state(ctx),
+                    },
+                    &entries,
+                );
+                super::handlers::handle_trait_setting(ctx, setting)?;
+            }
+            Some(MenuItem::Back { .. }) => {
+                cursor.update(
+                    &MenuItem::Back {
                         parent_name: parent_name.map(|s| s.to_string()),
                     },
                     &entries,
@@ -320,14 +258,14 @@ fn navigate_node(
 
 pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<bool> {
     loop {
-        let mut items = Vec::new();
-
-        for (_, settings) in settings_by_category() {
-            for setting in settings {
+        let all_settings = all_settings_flat();
+        let items: Vec<SearchItem> = all_settings
+            .into_iter()
+            .map(|setting| {
                 let state = setting.get_display_state(ctx);
-                items.push(SearchItem { setting, state });
-            }
-        }
+                SearchItem { setting, state }
+            })
+            .collect();
 
         if items.is_empty() {
             ctx.emit_info("settings.search.empty", "No settings found to search.");

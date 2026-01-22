@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
+use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
 
 use super::common::{
@@ -82,34 +83,34 @@ impl Setting for DarkMode {
     }
 
     fn preview_command(&self) -> Option<String> {
-        // Shell command that FZF runs lazily when this item is focused
         // Using timeout(1) to prevent gsettings DBus hangs from blocking fzf
-        Some(
-            r#"bash -c '
-scheme=$(timeout 1s gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "default")
+        let script = PreviewBuilder::new()
+            .line(colors::MAUVE, Some(NerdFont::Moon), "Dark Mode")
+            .separator()
+            .blank()
+            .text("Switch applications between light and dark variants.")
+            .text("Updates GTK and icon themes when paired variants exist.")
+            .text("Sets the GTK 4 color-scheme preference for compatible apps.")
+            .blank()
+            .subtext("Current settings")
+            .shell(
+                r#"scheme=$(timeout 1s gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "default")
 gtk_theme=$(timeout 1s gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null || echo "unknown")
 icon_theme=$(timeout 1s gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null || echo "unknown")
 
 if echo "$scheme" | grep -q "prefer-dark"; then
-    status="Dark"
+    mode="Dark"
 else
-    status="Light"
+    mode="Light"
 fi
 
-echo "Toggle between light and dark theme variants."
-echo ""
-echo "Switches between GTK and icon theme variants:"
-echo "  GTK: Pop ↔ Pop-dark"
-echo "  Icons: Papirus ↔ Papirus-Dark"
-echo "and sets color-scheme preference for GTK 4+ compatibility."
-echo "Changes apply instantly to running GTK applications."
-echo ""
-echo "Current GTK theme: $gtk_theme"
-echo "Current icon theme: $icon_theme"
-echo "Current mode: $status"
-'"#
-            .to_string(),
-        )
+echo "  Mode: $mode"
+echo "  GTK theme: $gtk_theme"
+echo "  Icon theme: $icon_theme"
+echo "  Color scheme hint: $scheme""#,
+            )
+            .build_shell_script();
+        Some(script)
     }
 }
 
