@@ -14,7 +14,7 @@ use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
     BoolSettingKey, OptionalStringSettingKey, SettingsStore, WALLPAPER_PATH_KEY,
 };
-use crate::ui::catppuccin::{colors, hex_to_ansi_bg, hex_to_ansi_fg};
+use crate::ui::catppuccin::hex_to_ansi_bg;
 use crate::ui::prelude::*;
 
 use super::common::pick_color_with_zenity;
@@ -48,21 +48,24 @@ fn resolve_color(
     }
 }
 
-fn background_swatch(color: &str) -> Option<String> {
+fn color_swatch_block(color: &str) -> Option<String> {
     let bg = hex_to_ansi_bg(color);
     if bg.is_empty() {
         return None;
     }
-    let fg = hex_to_ansi_fg(colors::CRUST);
-    Some(format!("{bg}{fg}          {ANSI_RESET}"))
-}
 
-fn foreground_swatch(color: &str) -> Option<String> {
-    let fg = hex_to_ansi_fg(color);
-    if fg.is_empty() {
-        return None;
+    let width = 24;
+    let height = 4;
+    let horizontal = "-".repeat(width);
+    let fill = " ".repeat(width);
+
+    let mut lines = Vec::with_capacity(height + 2);
+    lines.push(format!("+{horizontal}+"));
+    for _ in 0..height {
+        lines.push(format!("|{bg}{fill}{ANSI_RESET}|"));
     }
-    Some(format!("{fg}Sample logo color{ANSI_RESET}"))
+    lines.push(format!("+{horizontal}+"));
+    Some(lines.join("\n"))
 }
 
 // Color wallpaper settings
@@ -291,7 +294,7 @@ impl Setting for WallpaperBgColor {
                     .field("Current value", &value)
                     .field("Source", source);
 
-                if let Some(swatch) = background_swatch(&value) {
+                if let Some(swatch) = color_swatch_block(&value) {
                     builder = builder.subtext("Preview").raw(&swatch);
                 } else {
                     builder = builder.field("Preview", "Invalid color value");
@@ -348,7 +351,7 @@ impl Setting for WallpaperFgColor {
                     .field("Current value", &value)
                     .field("Source", source);
 
-                if let Some(swatch) = foreground_swatch(&value) {
+                if let Some(swatch) = color_swatch_block(&value) {
                     builder = builder.subtext("Preview").raw(&swatch);
                 } else {
                     builder = builder.field("Preview", "Invalid color value");
