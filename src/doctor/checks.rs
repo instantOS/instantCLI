@@ -31,7 +31,7 @@ pub use display::SwayDisplayCheck;
 pub use locale::LocaleCheck;
 pub use nerdfont::NerdFontCheck;
 pub use network::{InstantRepoCheck, InternetCheck};
-pub use security::PolkitAgentCheck;
+pub use security::{FaillockCheck, PolkitAgentCheck};
 pub use storage::{
     PacmanCacheCheck, PacmanDbSyncCheck, PacmanStaleDownloadsCheck, SmartHealthCheck, YayCacheCheck,
 };

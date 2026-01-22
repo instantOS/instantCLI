@@ -91,7 +91,26 @@ impl SettingsContext {
     }
 
     pub fn string(&self, key: StringSettingKey) -> String {
-        self.store.string(key)
+        if let Some(source) = sources::string_source_for(&key) {
+            match source.current() {
+                Ok(value) => value,
+                Err(err) => {
+                    emit(
+                        Level::Warn,
+                        "settings.state.read_failed",
+                        &format!(
+                            "{} Failed to read state for '{}': {err}",
+                            char::from(NerdFont::Warning),
+                            key.key
+                        ),
+                        None,
+                    );
+                    self.store.string(key)
+                }
+            }
+        } else {
+            self.store.string(key)
+        }
     }
 
     pub fn set_string(&mut self, key: StringSettingKey, value: &str) {
@@ -145,6 +164,22 @@ impl SettingsContext {
                 );
             }
         }
+
+        for &(key_ref, source) in sources::all_string_sources() {
+            let key = *key_ref;
+            if let Err(err) = self.update_string_from_source(key, source) {
+                emit(
+                    Level::Warn,
+                    "settings.state.sync_failed",
+                    &format!(
+                        "{} Failed to synchronize state for '{}': {err}",
+                        char::from(NerdFont::Warning),
+                        key.key
+                    ),
+                    None,
+                );
+            }
+        }
     }
 
     fn update_bool_from_source(
@@ -155,6 +190,19 @@ impl SettingsContext {
         let current = source.current()?;
         if self.store.bool(key) != current {
             self.store.set_bool(key, current);
+            self.dirty = true;
+        }
+        Ok(current)
+    }
+
+    fn update_string_from_source(
+        &mut self,
+        key: StringSettingKey,
+        source: &'static dyn sources::StringStateSource,
+    ) -> Result<String> {
+        let current = source.current()?;
+        if self.store.string(key) != current {
+            self.store.set_string(key, &current);
             self.dirty = true;
         }
         Ok(current)
@@ -180,6 +228,29 @@ impl SettingsContext {
             }
         } else {
             Ok(self.store.bool(key))
+        }
+    }
+
+    pub fn refresh_string_source(&mut self, key: StringSettingKey) -> Result<String> {
+        if let Some(source) = sources::string_source_for(&key) {
+            match self.update_string_from_source(key, source) {
+                Ok(value) => Ok(value),
+                Err(err) => {
+                    emit(
+                        Level::Warn,
+                        "settings.state.refresh_failed",
+                        &format!(
+                            "{} Failed to refresh state for '{}': {err}",
+                            char::from(NerdFont::Warning),
+                            key.key
+                        ),
+                        None,
+                    );
+                    Ok(self.store.string(key))
+                }
+            }
+        } else {
+            Ok(self.store.string(key))
         }
     }
 

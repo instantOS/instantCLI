@@ -5,7 +5,7 @@
 //!
 //! The builder can output:
 //! - Static text via [`PreviewBuilder::build`] for inline previews
-//! - Shell scripts via [`PreviewBuilder::build_shell_script`] for `preview_command()`
+//! - Shell script bodies via [`PreviewBuilder::build_shell_script`] for `preview_command()`
 
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +16,8 @@ use crate::ui::nerd_font::NerdFont;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum FzfPreview {
     Text(String),
+    /// Bash-compatible script body executed by the preview runner.
+    /// The selected item's key is passed as `$1` when available.
     Command(String),
     None,
 }
@@ -148,7 +150,7 @@ impl PreviewBuilder {
     pub fn line(mut self, color: &str, icon: Option<NerdFont>, content: &str) -> Self {
         let fg = hex_to_ansi_fg(color);
         let icon_str = icon
-            .map(|i| format!("{} ", char::from(i)))
+            .map(|i| format!("{}  ", char::from(i)))
             .unwrap_or_default();
         self.push_static(format!("{fg}{icon_str}{content}{RESET}"));
         self
@@ -311,10 +313,11 @@ done"#
             .join("\n")
     }
 
-    /// Build a bash script for use with `preview_command()`.
+    /// Build a bash-compatible script body for use with `preview_command()`.
     ///
     /// Static lines are converted to echo statements with proper escaping.
-    /// Shell commands are included directly.
+    /// Shell commands are included directly. The preview runner will execute
+    /// the returned script with bash and pass the item's key as `$1`.
     pub fn build_shell_script(self) -> String {
         let commands: Vec<String> = self
             .lines
@@ -339,8 +342,7 @@ done"#
             })
             .collect();
 
-        let script = commands.join("\n");
-        format!("bash -c '\n{script}\n'")
+        commands.join("\n")
     }
 }
 
@@ -419,7 +421,7 @@ mod tests {
             .text("World")
             .build_shell_script();
 
-        assert!(script.starts_with("bash -c '"));
         assert!(script.contains("echo -e"));
+        assert!(!script.starts_with("bash -c"));
     }
 }

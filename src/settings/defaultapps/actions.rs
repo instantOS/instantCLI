@@ -12,7 +12,7 @@ use crate::ui::prelude::*;
 use super::app_info::{ApplicationInfo, get_application_info};
 use super::mime_cache::{build_mime_to_apps_map, get_apps_for_mime};
 use super::mime_info::{MimeTypeInfo, get_all_mime_types, get_mime_type_info};
-use super::mime_sets::{AUDIO_MIME_TYPES, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES};
+use super::mime_sets::{ARCHIVE_MIME_TYPES, AUDIO_MIME_TYPES, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES};
 use super::system::{query_default_app, set_default_app};
 
 pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
@@ -156,7 +156,7 @@ pub fn set_default_pdf_viewer(ctx: &mut SettingsContext) -> Result<()> {
 }
 
 pub fn set_default_archive_manager(ctx: &mut SettingsContext) -> Result<()> {
-    manage_default_app_for_mimes(ctx, &["application/zip"], "Archive Manager")
+    manage_default_app_for_mimes(ctx, ARCHIVE_MIME_TYPES, "Archive Manager")
 }
 
 fn manage_default_app_for_mimes(

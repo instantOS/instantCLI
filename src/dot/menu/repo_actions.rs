@@ -49,7 +49,11 @@ impl FzfSelectable for RepoActionItem {
 }
 
 /// Build the repo action menu items
-pub fn build_repo_action_menu(repo_name: &str, config: &Config) -> Vec<RepoActionItem> {
+pub fn build_repo_action_menu(
+    repo_name: &str,
+    config: &Config,
+    db: &Database,
+) -> Vec<RepoActionItem> {
     let repo_config = config.repos.iter().find(|r| r.name == repo_name);
 
     let is_enabled = repo_config.map(|r| r.enabled).unwrap_or(false);
@@ -203,16 +207,13 @@ This helps keep the repository in sync with upstream.",
         action: RepoAction::OpenInShell,
     });
 
-    // Show info
+    // Show info - use the same preview that's shown when the action is selected
     actions.push(RepoActionItem {
         display: format!(
             "{} Show Info",
             format_icon_colored(NerdFont::Info, colors::BLUE)
         ),
-        preview: format!(
-            "Show detailed information about '{}'.\n\nDisplay repository URL, branch, subdirectories, and local path.",
-            repo_name
-        ),
+        preview: build_repo_preview(repo_name, config, db),
         action: RepoAction::ShowInfo,
     });
 
@@ -383,7 +384,7 @@ pub fn handle_repo_actions(
     let mut cursor = MenuCursor::new();
 
     loop {
-        let actions = build_repo_action_menu(repo_name, config);
+        let actions = build_repo_action_menu(repo_name, config, db);
 
         let mut builder = FzfWrapper::builder()
             .header(Header::fancy(&format!("Repository: {}", repo_name)))

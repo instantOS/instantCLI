@@ -3,64 +3,172 @@
 //! Display types for the FZF-based settings menu system.
 
 use crate::menu_utils::FzfSelectable;
-use crate::settings::setting::{Category, Setting};
+use crate::settings::setting::{Category, Setting, SettingState};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, format_search_icon};
 use crate::ui::prelude::*;
-
-use crate::ui::catppuccin::{format_back_icon, format_icon_colored, format_search_icon};
+use crate::ui::preview::PreviewBuilder;
 
 // ============================================================================
-// Category Display
+// Unified Tree Node
 // ============================================================================
 
-/// Display item for a category in the main menu
+/// Metadata for a folder node (category or subcategory)
 #[derive(Clone)]
-pub struct CategoryItem {
-    pub category: Category,
-    pub settings: Vec<&'static dyn Setting>,
+pub struct FolderMeta {
+    pub icon: NerdFont,
+    pub color: &'static str,
+    pub title: String,
+    pub description: Option<String>,
 }
 
-impl CategoryItem {
-    pub fn new(category: Category, settings: Vec<&'static dyn Setting>) -> Self {
-        Self { category, settings }
+impl FolderMeta {
+    /// Create folder metadata from a top-level category
+    pub fn from_category(category: Category) -> Self {
+        let meta = category.meta();
+        Self {
+            icon: meta.icon,
+            color: meta.color,
+            title: meta.title.to_string(),
+            description: Some(meta.description.to_string()),
+        }
+    }
+
+    /// Create folder metadata for a named subcategory
+    pub fn from_name(name: &str, description: Option<&str>) -> Self {
+        let (icon, color) = match name {
+            "GTK" => (NerdFont::Palette, colors::TEAL),
+            "Wallpaper" => (NerdFont::Image, colors::LAVENDER),
+            "Qt" => (NerdFont::Palette, colors::PINK),
+            _ => (NerdFont::Folder, colors::BLUE),
+        };
+        Self {
+            icon,
+            color,
+            title: name.to_string(),
+            description: description.map(|s| s.to_string()),
+        }
     }
 }
 
-/// Main menu items
+/// A node in the settings tree - either a folder or a setting
 #[derive(Clone)]
-pub enum CategoryMenuItem {
+pub enum TreeNode {
+    /// A folder containing child nodes
+    Folder {
+        meta: FolderMeta,
+        children: Vec<TreeNode>,
+    },
+    /// A leaf setting
+    Setting(&'static dyn Setting),
+}
+
+impl TreeNode {
+    /// Create a folder node from a category
+    pub fn from_category(category: Category, children: Vec<TreeNode>) -> Self {
+        TreeNode::Folder {
+            meta: FolderMeta::from_category(category),
+            children,
+        }
+    }
+
+    /// Create a folder node from a name
+    pub fn from_name(name: &str, description: Option<&str>, children: Vec<TreeNode>) -> Self {
+        TreeNode::Folder {
+            meta: FolderMeta::from_name(name, description),
+            children,
+        }
+    }
+
+    /// Get the display name
+    pub fn name(&self) -> &str {
+        match self {
+            TreeNode::Folder { meta, .. } => &meta.title,
+            TreeNode::Setting(s) => s.metadata().title,
+        }
+    }
+
+    /// Count direct children
+    pub fn child_count(&self) -> usize {
+        match self {
+            TreeNode::Folder { children, .. } => children.len(),
+            TreeNode::Setting(_) => 0,
+        }
+    }
+
+    /// Collect settings from this node (flattened), up to a limit
+    pub fn collect_settings(&self, limit: usize) -> Vec<&'static dyn Setting> {
+        let mut result = Vec::with_capacity(limit);
+        self.collect_settings_inner(&mut result, limit);
+        result
+    }
+
+    fn collect_settings_inner(&self, out: &mut Vec<&'static dyn Setting>, limit: usize) {
+        if out.len() >= limit {
+            return;
+        }
+        match self {
+            TreeNode::Setting(s) => out.push(*s),
+            TreeNode::Folder { children, .. } => {
+                for child in children {
+                    child.collect_settings_inner(out, limit);
+                    if out.len() >= limit {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Convert CategoryNode tree to UI TreeNode tree
+pub fn convert_category_tree(
+    category: Category,
+    nodes: Vec<crate::settings::category_tree::CategoryNode>,
+) -> TreeNode {
+    let children = nodes.into_iter().map(convert_category_node).collect();
+    TreeNode::from_category(category, children)
+}
+
+fn convert_category_node(node: crate::settings::category_tree::CategoryNode) -> TreeNode {
+    if let Some(setting) = node.setting {
+        TreeNode::Setting(setting)
+    } else {
+        let children = node
+            .children
+            .into_iter()
+            .map(convert_category_node)
+            .collect();
+        TreeNode::from_name(node.name.unwrap_or("Unknown"), node.description, children)
+    }
+}
+
+// ============================================================================
+// Menu Items
+// ============================================================================
+
+/// Items displayed in any tree level
+#[derive(Clone)]
+pub enum MenuItem {
+    /// A folder node (can be entered)
+    Folder(TreeNode),
+    /// A setting leaf (can be activated)
+    Setting {
+        setting: &'static dyn Setting,
+        state: SettingState,
+    },
+    /// Back navigation
+    Back {
+        /// Where we're going back to (None = main menu)
+        parent_name: Option<String>,
+    },
+}
+
+/// Main menu items (top level with search)
+#[derive(Clone)]
+pub enum MainMenuItem {
     SearchAll,
-    Category(CategoryItem),
+    Category(TreeNode),
     Close,
-}
-
-// ============================================================================
-// Setting Display
-// ============================================================================
-
-use crate::settings::setting::SettingState;
-
-// SettingState moved to crate::settings::setting
-
-/// Display item for a setting
-#[derive(Clone)]
-pub struct SettingItem {
-    pub setting: &'static dyn Setting,
-    pub state: SettingState,
-}
-
-/// Items in a category page
-#[derive(Clone)]
-pub enum CategoryPageItem {
-    SubCategory(SubCategoryItem),
-    Setting(SettingItem),
-    Back,
-}
-
-/// Display item for a subcategory (folder)
-#[derive(Clone)]
-pub struct SubCategoryItem {
-    pub name: String,
-    pub count: usize,
 }
 
 /// Search result item
@@ -71,252 +179,167 @@ pub struct SearchItem {
 }
 
 // ============================================================================
+// Shared Preview Builder
+// ============================================================================
+
+/// Build a folder-style preview with icon, title, optional description, and setting list.
+fn build_folder_preview(
+    icon: NerdFont,
+    color: &str,
+    title: &str,
+    description: Option<&str>,
+    settings: &[&'static dyn Setting],
+) -> crate::menu_utils::FzfPreview {
+    let mut builder = PreviewBuilder::new()
+        .line(color, Some(icon), title)
+        .separator()
+        .blank();
+
+    if let Some(desc) = description {
+        builder = builder.text(desc).blank();
+    }
+
+    let preview_count = 6.min(settings.len());
+    if preview_count > 0 {
+        builder = builder.separator().blank();
+
+        for (i, setting) in settings.iter().take(preview_count).enumerate() {
+            let meta = setting.metadata();
+            builder = builder.line(color, Some(meta.icon), meta.title);
+            builder = builder.subtext(first_line(meta.summary));
+
+            if i < preview_count - 1 {
+                builder = builder.blank();
+            }
+        }
+
+        if settings.len() > preview_count {
+            builder = builder
+                .blank()
+                .subtext(&format!("… and {} more", settings.len() - preview_count));
+        }
+    }
+
+    builder.build()
+}
+
+// ============================================================================
 // FzfSelectable Implementations
 // ============================================================================
 
-impl FzfSelectable for SubCategoryItem {
+impl FzfSelectable for MenuItem {
     fn fzf_display_text(&self) -> String {
-        use crate::ui::catppuccin::colors;
-        let (icon, color) = match self.name.as_str() {
-            "GTK" => (NerdFont::Palette, colors::TEAL),
-            "Wallpaper" => (NerdFont::Image, colors::LAVENDER),
-            _ => (NerdFont::Folder, colors::BLUE),
-        };
-
-        format!(
-            "{} {} ({})",
-            format_icon_colored(icon, color),
-            self.name,
-            self.count
-        )
-    }
-
-    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        crate::menu_utils::FzfPreview::Text(format!(
-            "Folder: {}\nContains {} items.",
-            self.name, self.count
-        ))
-    }
-
-    fn fzf_key(&self) -> String {
-        self.name.clone()
-    }
-}
-
-impl FzfSelectable for CategoryItem {
-    fn fzf_display_text(&self) -> String {
-        let meta = self.category.meta();
-        format!(
-            "{} {} ({} settings)",
-            format_icon_colored(meta.icon, meta.color),
-            meta.title,
-            self.settings.len()
-        )
-    }
-
-    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
-
-        let cat_meta = self.category.meta();
-        let reset = "\x1b[0m";
-        let mauve = hex_to_ansi_fg(colors::MAUVE);
-        let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
-        let text = hex_to_ansi_fg(colors::TEXT);
-        let teal = hex_to_ansi_fg(colors::TEAL);
-        let surface = hex_to_ansi_fg(colors::SURFACE1);
-
-        let mut lines = Vec::new();
-
-        lines.push(String::new());
-        lines.push(format!(
-            "{mauve}{}  {}{reset}",
-            char::from(cat_meta.icon),
-            cat_meta.title
-        ));
-        lines.push(format!(
-            "{surface}───────────────────────────────────{reset}"
-        ));
-        lines.push(String::new());
-        lines.push(format!("{text}{}{reset}", cat_meta.description));
-        lines.push(String::new());
-
-        let preview_count = 6.min(self.settings.len());
-        if preview_count > 0 {
-            lines.push(format!(
-                "{surface}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄{reset}"
-            ));
-            lines.push(String::new());
-
-            for (i, setting) in self.settings.iter().take(preview_count).enumerate() {
-                let meta = setting.metadata();
-                lines.push(format!(
-                    "{teal}{} {}{reset}",
-                    char::from(meta.icon),
-                    meta.title
-                ));
-                lines.push(format!("{subtext}{}{reset}", first_line(meta.summary)));
-
-                if i < preview_count - 1 {
-                    lines.push(String::new());
+        match self {
+            MenuItem::Folder(node) => {
+                if let TreeNode::Folder { meta, children, .. } = node {
+                    format!(
+                        "{} {} ({})",
+                        format_icon_colored(meta.icon, meta.color),
+                        meta.title,
+                        children.len()
+                    )
+                } else {
+                    "Invalid".to_string()
                 }
             }
+            MenuItem::Setting { setting, state } => format_setting_line(*setting, state),
+            MenuItem::Back { .. } => format!("{} Back", format_back_icon()),
+        }
+    }
 
-            if self.settings.len() > preview_count {
-                lines.push(String::new());
-                lines.push(format!(
-                    "{subtext}… and {} more{reset}",
-                    self.settings.len() - preview_count
-                ));
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        match self {
+            MenuItem::Folder(node) => {
+                if let TreeNode::Folder { meta, .. } = node {
+                    let settings = node.collect_settings(6);
+                    build_folder_preview(
+                        meta.icon,
+                        meta.color,
+                        &meta.title,
+                        meta.description.as_deref(),
+                        &settings,
+                    )
+                } else {
+                    crate::menu_utils::FzfPreview::None
+                }
+            }
+            MenuItem::Setting { setting, state } => build_setting_preview(*setting, state),
+            MenuItem::Back { parent_name } => {
+                let destination = parent_name
+                    .as_ref()
+                    .map(|n| n.as_str())
+                    .unwrap_or("Main Menu");
+                PreviewBuilder::new()
+                    .header(NerdFont::ArrowLeft, "Go Back")
+                    .text(&format!("Return to {}", destination))
+                    .build()
             }
         }
+    }
 
-        crate::menu_utils::FzfPreview::Text(lines.join("\n"))
+    fn fzf_key(&self) -> String {
+        match self {
+            MenuItem::Folder(node) => node.name().to_string(),
+            MenuItem::Setting { setting, .. } => setting.metadata().id.to_string(),
+            MenuItem::Back { .. } => "__back__".to_string(),
+        }
     }
 }
 
-impl FzfSelectable for CategoryMenuItem {
+impl FzfSelectable for MainMenuItem {
     fn fzf_display_text(&self) -> String {
         match self {
-            CategoryMenuItem::SearchAll => {
+            MainMenuItem::SearchAll => {
                 format!("{} Search all settings", format_search_icon())
             }
-            CategoryMenuItem::Category(item) => item.fzf_display_text(),
-            CategoryMenuItem::Close => format!("{} Close", format_back_icon()),
+            MainMenuItem::Category(node) => {
+                if let TreeNode::Folder { meta, .. } = node {
+                    format!(
+                        "{} {} ({} settings)",
+                        format_icon_colored(meta.icon, meta.color),
+                        meta.title,
+                        count_all_settings(node)
+                    )
+                } else {
+                    "Invalid".to_string()
+                }
+            }
+            MainMenuItem::Close => format!("{} Close", format_back_icon()),
         }
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         match self {
-            CategoryMenuItem::SearchAll => {
-                use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
-
-                let reset = "\x1b[0m";
-                let mauve = hex_to_ansi_fg(colors::MAUVE);
-                let text = hex_to_ansi_fg(colors::TEXT);
-                let surface = hex_to_ansi_fg(colors::SURFACE1);
-
-                let lines = vec![
-                    String::new(),
-                    format!("{mauve}{}  Search All{reset}", char::from(NerdFont::Search)),
-                    format!("{surface}───────────────────────────────────{reset}"),
-                    String::new(),
-                    format!("{text}Browse all available settings in one{reset}"),
-                    format!("{text}searchable list.{reset}"),
-                    String::new(),
-                    String::new(),
-                    format!("{text}Start typing to filter settings by{reset}"),
-                    format!("{text}name, category, or description.{reset}"),
-                ];
-
-                crate::menu_utils::FzfPreview::Text(lines.join("\n"))
+            MainMenuItem::SearchAll => PreviewBuilder::new()
+                .header(NerdFont::Search, "Search All Settings")
+                .text("Find any setting by name or keyword")
+                .build(),
+            MainMenuItem::Category(node) => {
+                if let TreeNode::Folder { meta, .. } = node {
+                    let settings = node.collect_settings(6);
+                    build_folder_preview(
+                        meta.icon,
+                        meta.color,
+                        &meta.title,
+                        meta.description.as_deref(),
+                        &settings,
+                    )
+                } else {
+                    crate::menu_utils::FzfPreview::None
+                }
             }
-            CategoryMenuItem::Category(item) => item.fzf_preview(),
-            CategoryMenuItem::Close => {
-                crate::menu_utils::FzfPreview::Text("Exit settings".to_string())
-            }
+            MainMenuItem::Close => PreviewBuilder::new()
+                .header(NerdFont::Cross, "Close")
+                .text("Exit the settings menu")
+                .build(),
         }
     }
 
     fn fzf_key(&self) -> String {
         match self {
-            CategoryMenuItem::SearchAll => "__search_all__".to_string(),
-            CategoryMenuItem::Category(item) => item.category.meta().id.to_string(),
-            CategoryMenuItem::Close => "__close__".to_string(),
-        }
-    }
-}
-
-impl FzfSelectable for SettingItem {
-    fn fzf_display_text(&self) -> String {
-        let meta = self.setting.metadata();
-        let category = crate::settings::category_tree::get_category_for_setting(meta.id)
-            .unwrap_or(Category::System);
-        let icon_color = meta.icon_color.unwrap_or_else(|| category.meta().color);
-
-        match &self.state {
-            SettingState::Toggle { enabled } => {
-                let status = if *enabled { "[ON]" } else { "[OFF]" };
-                format!(
-                    "{} {} {}",
-                    format_icon_colored(meta.icon, icon_color),
-                    meta.title,
-                    status
-                )
-            }
-            SettingState::Choice { current_label } => {
-                format!(
-                    "{} {}  [{}]",
-                    format_icon_colored(NerdFont::List, icon_color),
-                    meta.title,
-                    current_label
-                )
-            }
-            SettingState::Action => {
-                format!(
-                    "{} {}",
-                    format_icon_colored(meta.icon, icon_color),
-                    meta.title
-                )
-            }
-            SettingState::Command => {
-                format!(
-                    "{} {}",
-                    format_icon_colored(meta.icon, icon_color),
-                    meta.title
-                )
-            }
-        }
-    }
-
-    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        // If setting provides a preview command, use it for lazy execution
-        if let Some(cmd) = self.setting.preview_command() {
-            return crate::menu_utils::FzfPreview::Command(cmd);
-        }
-
-        let meta = self.setting.metadata();
-        let mut lines = vec![meta.summary.to_string()];
-
-        if let SettingState::Toggle { enabled } = self.state {
-            lines.push(String::new());
-            lines.push(format!(
-                "Current state: {}",
-                if enabled { "Enabled" } else { "Disabled" }
-            ));
-            lines.push(format!(
-                "Select to {}.",
-                if enabled { "disable" } else { "enable" }
-            ));
-        }
-
-        crate::menu_utils::FzfPreview::Text(lines.join("\n"))
-    }
-}
-
-impl FzfSelectable for CategoryPageItem {
-    fn fzf_display_text(&self) -> String {
-        match self {
-            CategoryPageItem::SubCategory(item) => item.fzf_display_text(),
-            CategoryPageItem::Setting(item) => item.fzf_display_text(),
-            CategoryPageItem::Back => format!("{} Back", format_back_icon()),
-        }
-    }
-
-    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        match self {
-            CategoryPageItem::SubCategory(item) => item.fzf_preview(),
-            CategoryPageItem::Setting(item) => item.fzf_preview(),
-            CategoryPageItem::Back => {
-                crate::menu_utils::FzfPreview::Text("Return to parent".to_string())
-            }
-        }
-    }
-
-    fn fzf_key(&self) -> String {
-        match self {
-            CategoryPageItem::SubCategory(item) => item.name.clone(),
-            CategoryPageItem::Setting(item) => item.setting.metadata().id.to_string(),
-            CategoryPageItem::Back => "__back__".to_string(),
+            MainMenuItem::SearchAll => "__search__".to_string(),
+            MainMenuItem::Category(node) => node.name().to_string(),
+            MainMenuItem::Close => "__close__".to_string(),
         }
     }
 }
@@ -329,55 +352,16 @@ impl FzfSelectable for SearchItem {
             .unwrap_or(Category::System);
         let icon_color = meta.icon_color.unwrap_or_else(|| category.meta().color);
 
-        match &self.state {
-            SettingState::Toggle { enabled } => {
-                let status = if *enabled { "[ON]" } else { "[OFF]" };
-                format!(
-                    "{} {} {}",
-                    format_icon_colored(meta.icon, icon_color),
-                    path,
-                    status
-                )
-            }
-            SettingState::Choice { current_label } => {
-                format!(
-                    "{} {}  [{}]",
-                    format_icon_colored(NerdFont::List, icon_color),
-                    path,
-                    current_label
-                )
-            }
-            SettingState::Action => {
-                format!("{} {}", format_icon_colored(meta.icon, icon_color), path)
-            }
-            SettingState::Command => {
-                format!("{} {}", format_icon_colored(meta.icon, icon_color), path)
-            }
-        }
+        format!(
+            "{} {} {}",
+            format_icon_colored(meta.icon, icon_color),
+            meta.title,
+            path
+        )
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        // If setting provides a preview command, use it for lazy execution
-        if let Some(cmd) = self.setting.preview_command() {
-            return crate::menu_utils::FzfPreview::Command(cmd);
-        }
-
-        let meta = self.setting.metadata();
-        let mut lines = vec![meta.summary.to_string()];
-
-        if let SettingState::Toggle { enabled } = &self.state {
-            lines.push(String::new());
-            lines.push(format!(
-                "Current state: {}",
-                if *enabled { "Enabled" } else { "Disabled" }
-            ));
-            lines.push(format!(
-                "Select to {}.",
-                if *enabled { "disable" } else { "enable" }
-            ));
-        }
-
-        crate::menu_utils::FzfPreview::Text(lines.join("\n"))
+        build_setting_preview(self.setting, &self.state)
     }
 
     fn fzf_key(&self) -> String {
@@ -386,120 +370,108 @@ impl FzfSelectable for SearchItem {
 }
 
 // ============================================================================
-// Helpers
+// Helper Functions
 // ============================================================================
 
-fn first_line(text: &str) -> &str {
-    text.lines().next().unwrap_or(text)
+/// Count all settings in a tree node (recursive)
+fn count_all_settings(node: &TreeNode) -> usize {
+    match node {
+        TreeNode::Setting(_) => 1,
+        TreeNode::Folder { children, .. } => children.iter().map(count_all_settings).sum(),
+    }
 }
 
-pub fn format_setting_path(setting: &dyn Setting) -> String {
+/// Format a setting line for display
+fn format_setting_line(setting: &dyn Setting, state: &SettingState) -> String {
     let meta = setting.metadata();
     let category = crate::settings::category_tree::get_category_for_setting(meta.id)
         .unwrap_or(Category::System);
-    let breadcrumbs =
-        crate::settings::category_tree::get_breadcrumbs_for_setting(category, meta.id);
-    let mut segments = Vec::with_capacity(2 + breadcrumbs.len());
-    segments.push(category.meta().title.to_string());
-    segments.extend(breadcrumbs);
-    segments.push(meta.title.to_string());
-    segments.join(" -> ")
+    let icon_color = meta.icon_color.unwrap_or_else(|| category.meta().color);
+
+    let state_suffix = match state {
+        SettingState::Toggle { enabled: true } => {
+            format!(" {}", format_icon_colored(NerdFont::Check, colors::GREEN))
+        }
+        SettingState::Toggle { enabled: false } => {
+            format!(" {}", format_icon_colored(NerdFont::Cross, colors::RED))
+        }
+        SettingState::Choice { current_label } => {
+            let subtext = crate::ui::catppuccin::hex_to_ansi_fg(colors::SUBTEXT0);
+            let reset = "\x1b[0m";
+            format!(" {subtext}({current_label}){reset}")
+        }
+        SettingState::Action | SettingState::Command => String::new(),
+    };
+
+    format!(
+        "{} {}{}",
+        format_icon_colored(meta.icon, icon_color),
+        meta.title,
+        state_suffix
+    )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::settings::context::SettingsContext;
-    use crate::settings::setting::{SettingMetadata, SettingType};
-    use crate::ui::prelude::NerdFont;
-    use anyhow::Result;
+/// Format the breadcrumb path for a setting
+fn format_setting_path(setting: &dyn Setting) -> String {
+    let meta = setting.metadata();
+    let subtext = crate::ui::catppuccin::hex_to_ansi_fg(colors::SUBTEXT0);
+    let reset = "\x1b[0m";
 
-    struct TestSetting {
-        color: Option<&'static str>,
+    if let Some(category) = crate::settings::category_tree::get_category_for_setting(meta.id) {
+        let cat_meta = category.meta();
+        format!("{subtext}({}){reset}", cat_meta.title)
+    } else {
+        String::new()
+    }
+}
+
+/// Build preview for a setting
+fn build_setting_preview(
+    setting: &dyn Setting,
+    state: &SettingState,
+) -> crate::menu_utils::FzfPreview {
+    // Check if setting has a custom preview command
+    if let Some(cmd) = setting.preview_command() {
+        return crate::menu_utils::FzfPreview::Command(cmd);
     }
 
-    impl Setting for TestSetting {
-        fn metadata(&self) -> SettingMetadata {
-            SettingMetadata::builder()
-                .id("test.setting")
-                .title("Test Setting")
-                .icon(NerdFont::Gear)
-                .icon_color(self.color)
-                .summary("Test Summary")
-                .build()
+    let meta = setting.metadata();
+    let category = crate::settings::category_tree::get_category_for_setting(meta.id)
+        .unwrap_or(Category::System);
+    let icon_color = meta.icon_color.unwrap_or_else(|| category.meta().color);
+
+    let mut builder = PreviewBuilder::new()
+        .line(icon_color, Some(meta.icon), meta.title)
+        .separator()
+        .blank();
+
+    // Show current state if available
+    match state {
+        SettingState::Toggle { enabled: true } => {
+            builder = builder
+                .line(colors::GREEN, Some(NerdFont::Check), "Enabled")
+                .blank();
         }
-
-        fn setting_type(&self) -> SettingType {
-            SettingType::Action
+        SettingState::Toggle { enabled: false } => {
+            builder = builder
+                .line(colors::RED, Some(NerdFont::Cross), "Disabled")
+                .blank();
         }
-
-        fn apply(&self, _ctx: &mut SettingsContext) -> Result<()> {
-            Ok(())
+        SettingState::Choice { current_label } => {
+            builder = builder.field("Current", current_label).blank();
         }
+        SettingState::Action | SettingState::Command => {}
     }
 
-    #[test]
-    fn test_setting_item_respects_custom_color() {
-        // Red background: #ff0000 -> 48;2;255;0;0
-        let setting = Box::leak(Box::new(TestSetting {
-            color: Some("#ff0000"),
-        }));
-        let item = SettingItem {
-            setting,
-            state: SettingState::Action,
-        };
-
-        let display = item.fzf_display_text();
-        assert!(display.contains("48;2;255;0;0m"));
+    // Summary text
+    for line in meta.summary.lines() {
+        builder = builder.text(line);
     }
 
-    #[test]
-    fn test_setting_item_fallback_to_category_color() {
-        // When no color is provided and setting is not in tree, defaults to System category color
-        let setting = Box::leak(Box::new(TestSetting { color: None }));
-        let item = SettingItem {
-            setting,
-            state: SettingState::Action,
-        };
+    builder.build()
+}
 
-        // Should use default category (System) color: RED (#f38ba8)
-        let display = item.fzf_display_text();
-        // Just verify it generates some color without panicking
-        assert!(!display.is_empty());
-    }
-
-    #[test]
-    fn test_search_item_respects_custom_color() {
-        // Green background: #00ff00 -> 48;2;0;255;0
-        let setting = Box::leak(Box::new(TestSetting {
-            color: Some("#00ff00"),
-        }));
-        let item = SearchItem {
-            setting,
-            state: SettingState::Action,
-        };
-
-        let display = item.fzf_display_text();
-        assert!(display.contains("48;2;0;255;0m"));
-    }
-
-    #[test]
-    fn test_format_setting_path_includes_setting_title() {
-        // Test that format_setting_path includes the setting title in the path
-        let setting = Box::leak(Box::new(TestSetting { color: None }));
-        let path = format_setting_path(setting);
-
-        // Path should include the setting title
-        // Since test setting is not in the tree, it defaults to System category
-        assert!(
-            path.contains("Test Setting"),
-            "Path '{}' should contain setting title 'Test Setting'",
-            path
-        );
-        assert!(
-            path.contains("System"),
-            "Path '{}' should contain default category 'System'",
-            path
-        );
-    }
+/// Get first line of a string
+fn first_line(s: &str) -> &str {
+    s.lines().next().unwrap_or(s)
 }

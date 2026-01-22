@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use duct::cmd;
+use nix::unistd::{AccessFlags, access};
 
 use crate::common::deps::TOPGRADE;
 use crate::common::package::{InstallResult, ensure_all};
@@ -40,9 +41,21 @@ pub async fn handle_update_command(debug: bool) -> Result<()> {
         None,
     );
 
+    let mut args = Vec::new();
+
+    // Check if topgrade is at a root-owned location or otherwise not writable
+    if let Ok(topgrade_path) = which::which("topgrade")
+        && let Some(parent) = topgrade_path.parent()
+    {
+        let is_writable = access(parent, AccessFlags::W_OK).is_ok();
+        if !is_writable {
+            args.push("--no-self-update".to_string());
+        }
+    }
+
     // We use duct to run topgrade and stream output to stdout/stderr
     // topgrade is interactive so we don't capture output
-    cmd("topgrade", Vec::<String>::new())
+    cmd("topgrade", args)
         .run()
         .context("Failed to run topgrade")?;
 

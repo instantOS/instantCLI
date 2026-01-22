@@ -236,15 +236,57 @@ default_app_setting!(
     defaultapps::set_default_pdf_viewer
 );
 
-default_app_setting!(
-    DefaultArchiveManager,
-    "apps.archive_manager",
-    "Archive Manager",
-    NerdFont::Archive,
-    None,
-    "Set your default archive manager for ZIP, TAR, and other compressed files.",
-    defaultapps::set_default_archive_manager
-);
+pub struct DefaultArchiveManager;
+
+impl Setting for DefaultArchiveManager {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("apps.archive_manager")
+            .title("Archive Manager")
+            .icon(NerdFont::Archive)
+            .icon_color(None)
+            .summary("Set your default archive manager for ZIP, TAR, and other compressed files.")
+            .requirements(vec![&XDG_UTILS])
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        defaultapps::set_default_archive_manager(ctx)
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        const ARCHIVE_TYPES: &[&str] = &[
+            "application/zip",
+            "application/x-tar",
+            "application/x-7z-compressed",
+            "application/x-rar",
+            "application/gzip",
+            "application/x-bzip2",
+            "application/x-xz",
+        ];
+
+        Some(
+            PreviewBuilder::new()
+                .header(NerdFont::Archive, "Archive Manager")
+                .subtext(
+                    "Set your default archive manager for ZIP, TAR, and other compressed files.",
+                )
+                .blank()
+                .line(colors::TEAL, None, "▸ MIME Types")
+                .bullets(ARCHIVE_TYPES.iter().copied())
+                .blank()
+                .subtext("Only apps supporting ALL formats are shown.")
+                .blank()
+                .line(colors::TEAL, None, "▸ Current Defaults")
+                .mime_defaults(ARCHIVE_TYPES.iter().copied())
+                .build_shell_script(),
+        )
+    }
+}
 
 default_app_setting!(
     ManageAllApps,

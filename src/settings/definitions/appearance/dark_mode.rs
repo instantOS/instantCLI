@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
+use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
 
 use super::common::{
@@ -82,34 +83,61 @@ impl Setting for DarkMode {
     }
 
     fn preview_command(&self) -> Option<String> {
-        // Shell command that FZF runs lazily when this item is focused
         // Using timeout(1) to prevent gsettings DBus hangs from blocking fzf
-        Some(
-            r#"bash -c '
-scheme=$(timeout 1s gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || echo "default")
-gtk_theme=$(timeout 1s gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null || echo "unknown")
-icon_theme=$(timeout 1s gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null || echo "unknown")
+        let script = PreviewBuilder::new()
+            .line(colors::MAUVE, Some(NerdFont::Moon), "Dark Mode")
+            .separator()
+            .blank()
+            .text("Switch applications between light and dark variants.")
+            .text("Updates GTK and icon themes when paired variants exist.")
+            .text("Sets the GTK 4 color-scheme preference for compatible apps.")
+            .blank()
+            .subtext("Current state")
+            .shell(
+                r#"scheme=$(timeout 1s gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null | sed "s/'//g" || echo "default")
+gtk_theme=$(timeout 1s gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null | sed "s/'//g" || echo "unknown")
+icon_theme=$(timeout 1s gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null | sed "s/'//g" || echo "unknown")
 
 if echo "$scheme" | grep -q "prefer-dark"; then
-    status="Dark"
+    is_dark=1
+    mode="Dark"
 else
-    status="Light"
+    is_dark=0
+    mode="Light"
 fi
 
-echo "Toggle between light and dark theme variants."
+echo "  Mode: $mode"
+echo "  GTK theme: $gtk_theme"
+echo "  Icon theme: $icon_theme"
 echo ""
-echo "Switches between GTK and icon theme variants:"
-echo "  GTK: Pop ↔ Pop-dark"
-echo "  Icons: Papirus ↔ Papirus-Dark"
-echo "and sets color-scheme preference for GTK 4+ compatibility."
-echo "Changes apply instantly to running GTK applications."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "Current GTK theme: $gtk_theme"
-echo "Current icon theme: $icon_theme"
-echo "Current mode: $status"
-'"#
-            .to_string(),
-        )
+
+# Determine what will happen on toggle
+if [ "$is_dark" = "1" ]; then
+    target_mode="Light"
+    # Try to find light variant
+    new_gtk=$(echo "$gtk_theme" | sed "s/-dark$//")
+    new_icon=$(echo "$icon_theme" | sed "s/-dark$//")
+else
+    target_mode="Dark"
+    # Try to find dark variant
+    new_gtk="${gtk_theme%-light}"
+    new_gtk="${new_gtk}-dark"
+    new_icon="${icon_theme%-light}"
+    new_icon="${new_icon}-dark"
+fi
+
+echo "  Will switch to: $target_mode mode"
+if [ "$new_gtk" != "$gtk_theme" ]; then
+    echo "  GTK: $gtk_theme → $new_gtk"
+fi
+if [ "$new_icon" != "$icon_theme" ]; then
+    echo "  Icons: $icon_theme → $new_icon"
+fi"#,
+            )
+            .build_shell_script();
+        Some(script)
     }
 }
 

@@ -11,7 +11,10 @@ use crate::menu_utils::{FzfWrapper, MenuWrapper};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{SWWW, YAZI, ZENITY};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
-use crate::settings::store::{BoolSettingKey, OptionalStringSettingKey};
+use crate::settings::store::{
+    BoolSettingKey, OptionalStringSettingKey, SettingsStore, WALLPAPER_PATH_KEY,
+};
+use crate::ui::catppuccin::hex_to_ansi_bg;
 use crate::ui::prelude::*;
 
 use super::common::pick_color_with_zenity;
@@ -30,6 +33,39 @@ fn ensure_hyprland_deps() -> Result<bool> {
     } else {
         Ok(true)
     }
+}
+
+const ANSI_RESET: &str = "\x1b[0m";
+
+fn resolve_color(
+    store: &SettingsStore,
+    key: OptionalStringSettingKey,
+    default: &str,
+) -> (String, &'static str) {
+    match store.optional_string(key) {
+        Some(value) => (value, "Saved"),
+        None => (default.to_string(), "Default"),
+    }
+}
+
+fn color_swatch_block(color: &str) -> Option<String> {
+    let bg = hex_to_ansi_bg(color);
+    if bg.is_empty() {
+        return None;
+    }
+
+    let width = 24;
+    let height = 4;
+    let horizontal = "-".repeat(width);
+    let fill = " ".repeat(width);
+
+    let mut lines = Vec::with_capacity(height + 2);
+    lines.push(format!("+{horizontal}+"));
+    for _ in 0..height {
+        lines.push(format!("|{bg}{fill}{ANSI_RESET}|"));
+    }
+    lines.push(format!("+{horizontal}+"));
+    Some(lines.join("\n"))
 }
 
 // Color wallpaper settings
@@ -85,6 +121,51 @@ impl Setting for SetWallpaper {
             }
         }
         Ok(())
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        let compositor_name = CompositorType::detect().name();
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Image, "Wallpaper")
+            .text("Select and set a new wallpaper image.")
+            .blank()
+            .field("Compositor", &compositor_name);
+
+        match SettingsStore::load() {
+            Ok(store) => {
+                if let Some(path) = store.optional_string(WALLPAPER_PATH_KEY) {
+                    let path_buf = std::path::PathBuf::from(&path);
+                    let file_name = path_buf
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or(&path);
+                    let folder = path_buf
+                        .parent()
+                        .and_then(|parent| parent.to_str())
+                        .unwrap_or("Unknown");
+                    let exists = path_buf.exists();
+
+                    builder = builder
+                        .field("Current file", file_name)
+                        .field("Location", folder)
+                        .field("Status", if exists { "Available" } else { "Missing" });
+
+                    if exists && let Ok(metadata) = std::fs::metadata(&path_buf) {
+                        builder = builder
+                            .field("Size", &crate::arch::dualboot::format_size(metadata.len()));
+                    }
+                } else {
+                    builder = builder
+                        .field("Current file", "Not set")
+                        .field("Status", "Select an image to configure");
+                }
+            }
+            Err(_) => {
+                builder = builder.field("Current file", "Unavailable");
+            }
+        }
+
+        Some(builder.build_shell_script())
     }
 }
 
@@ -197,6 +278,33 @@ impl Setting for WallpaperBgColor {
         }
         Ok(())
     }
+
+    fn preview_command(&self) -> Option<String> {
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Palette, "Background Color")
+            .text("Choose a background color for colored wallpapers.")
+            .blank();
+
+        match SettingsStore::load() {
+            Ok(store) => {
+                let (value, source) = resolve_color(&store, WALLPAPER_BG_COLOR_KEY, "#1a1a2e");
+                builder = builder
+                    .field("Current value", &value)
+                    .field("Source", source);
+
+                if let Some(swatch) = color_swatch_block(&value) {
+                    builder = builder.subtext("Preview").raw(&swatch);
+                } else {
+                    builder = builder.field("Preview", "Invalid color value");
+                }
+            }
+            Err(_) => {
+                builder = builder.field("Current value", "Unavailable");
+            }
+        }
+
+        Some(builder.build_shell_script())
+    }
 }
 
 pub struct WallpaperFgColor;
@@ -226,6 +334,33 @@ impl Setting for WallpaperFgColor {
             ctx.notify("Wallpaper", &format!("Foreground color set to {}", color));
         }
         Ok(())
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Palette, "Foreground Color")
+            .text("Choose a foreground/logo color for colored wallpapers.")
+            .blank();
+
+        match SettingsStore::load() {
+            Ok(store) => {
+                let (value, source) = resolve_color(&store, WALLPAPER_FG_COLOR_KEY, "#eaeaea");
+                builder = builder
+                    .field("Current value", &value)
+                    .field("Source", source);
+
+                if let Some(swatch) = color_swatch_block(&value) {
+                    builder = builder.subtext("Preview").raw(&swatch);
+                } else {
+                    builder = builder.field("Preview", "Invalid color value");
+                }
+            }
+            Err(_) => {
+                builder = builder.field("Current value", "Unavailable");
+            }
+        }
+
+        Some(builder.build_shell_script())
     }
 }
 

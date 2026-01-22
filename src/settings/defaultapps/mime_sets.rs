@@ -25,3 +25,13 @@ pub(crate) const AUDIO_MIME_TYPES: &[&str] = &[
     "audio/aac",
     "audio/opus",
 ];
+
+pub(crate) const ARCHIVE_MIME_TYPES: &[&str] = &[
+    "application/zip",
+    "application/x-tar",
+    "application/x-7z-compressed",
+    "application/x-rar",
+    "application/gzip",
+    "application/x-bzip2",
+    "application/x-xz",
+];

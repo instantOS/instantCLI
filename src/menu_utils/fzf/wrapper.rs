@@ -66,9 +66,9 @@ fn configure_preview_and_input(
         }
         PreviewStrategy::Command(command) => {
             // Use literal \x1f character for POSIX compatibility (works in dash/sh)
+            let encoded = general_purpose::STANDARD.encode(command.as_bytes());
             cmd.arg("--preview").arg(format!(
-                "{} bash \"$(echo {{}} | cut -d'\x1f' -f2)\"",
-                command
+                "key=$(echo {{}} | cut -d'\x1f' -f2); printf '%s' '{encoded}' | base64 -d | bash -s -- \"$key\""
             ));
 
             // Format: display\x1fkey
@@ -79,10 +79,10 @@ fn configure_preview_and_input(
                 .join("\n")
         }
         PreviewStrategy::CommandPerItem(command_map) => {
-            // Each item has its own command - base64 encode and execute via sh
+            // Each item has its own command - base64 encode and execute via bash
             // Preview extracts field 3, decodes, and executes as shell command
             cmd.arg("--preview")
-                .arg("echo {} | cut -d'\x1f' -f3 | base64 -d | sh");
+                .arg("key=$(echo {} | cut -d'\x1f' -f2); echo {} | cut -d'\x1f' -f3 | base64 -d | bash -s -- \"$key\"");
 
             // Format: display\x1fkey\x1fbase64_command
             display_with_keys
