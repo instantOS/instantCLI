@@ -11,7 +11,9 @@ use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEZ, BLUEZ_UTILS, CLIPMENU, UDISKIE};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
+use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
+use crate::ui::preview::PreviewBuilder;
 
 // ============================================================================
 // Clipboard Manager
@@ -303,6 +305,68 @@ impl Setting for BluetoothService {
         }
 
         Ok(())
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        // Helper to convert hex color to shell escape sequence
+        fn hex_to_shell_escape(hex: &str) -> String {
+            let hex = hex.trim_start_matches('#');
+            if hex.len() != 6 {
+                return String::new();
+            }
+            let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+            let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+            let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+            format!("\\033[38;2;{r};{g};{b}m")
+        }
+
+        let green = hex_to_shell_escape(colors::GREEN);
+        let red = hex_to_shell_escape(colors::RED);
+        let teal = hex_to_shell_escape(colors::TEAL);
+        let subtext = hex_to_shell_escape(colors::SUBTEXT0);
+        let mauve = hex_to_shell_escape(colors::MAUVE);
+        let reset = "\\033[0m";
+
+        Some(format!(
+            r#"bash -c '
+echo -e "{mauve}  Bluetooth{reset}"
+echo -e "{subtext}───────────────────────────────────{reset}"
+echo ""
+echo "Turn Bluetooth on or off."
+echo ""
+echo -e "{teal}▸ Features{reset}"
+echo "  • Connect wireless headphones & speakers"
+echo "  • Pair keyboards and mice"
+echo "  • Transfer files between devices"
+echo ""
+echo -e "{teal}▸ Current Status{reset}"
+if systemctl is-active bluetooth.service >/dev/null 2>&1; then
+    echo -e "  {green}● Bluetooth service is running{reset}"
+else
+    echo -e "  {red}○ Bluetooth service is stopped{reset}"
+fi
+if systemctl is-enabled bluetooth.service >/dev/null 2>&1; then
+    echo -e "  {teal}  Enabled at boot{reset}"
+else
+    echo -e "  {subtext}  Disabled at boot{reset}"
+fi
+echo ""
+echo -e "{teal}▸ Connected Devices{reset}"
+if command -v bluetoothctl >/dev/null 2>&1; then
+    devices=$(bluetoothctl devices Connected 2>/dev/null)
+    if [ -n "$devices" ]; then
+        echo "$devices" | while read -r line; do
+            name=$(echo "$line" | sed "s/Device [^ ]* //")
+            echo -e "  {mauve}•{reset} $name"
+        done
+    else
+        echo -e "  {subtext}No devices connected{reset}"
+    fi
+else
+    echo -e "  {subtext}bluetoothctl not installed{reset}"
+fi
+'"#
+        ))
     }
 
     // No restore needed - systemd handles service persistence
