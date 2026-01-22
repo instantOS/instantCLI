@@ -160,6 +160,12 @@ pub const WALLPAPER_BG_COLOR_KEY: OptionalStringSettingKey =
 pub const WALLPAPER_FG_COLOR_KEY: OptionalStringSettingKey =
     OptionalStringSettingKey::new("appearance.wallpaper_fg_color");
 
+// GTK appearance setting keys
+pub const GTK_THEME_KEY: StringSettingKey =
+    StringSettingKey::new("appearance.gtk_theme", "Unknown");
+pub const GTK_ICON_THEME_KEY: StringSettingKey =
+    StringSettingKey::new("appearance.gtk_icon_theme", "Unknown");
+
 // System setting keys
 pub const PACMAN_AUTOCLEAN_KEY: BoolSettingKey =
     BoolSettingKey::new("system.pacman_autoclean", false);

@@ -3,7 +3,7 @@
 //! Theming, animations, wallpaper, cursor, and dark mode settings.
 
 mod animations;
-mod common;
+pub(crate) mod common;
 mod cursor;
 mod dark_mode;
 mod gtk;
