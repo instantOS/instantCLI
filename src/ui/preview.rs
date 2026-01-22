@@ -148,7 +148,7 @@ impl PreviewBuilder {
     pub fn line(mut self, color: &str, icon: Option<NerdFont>, content: &str) -> Self {
         let fg = hex_to_ansi_fg(color);
         let icon_str = icon
-            .map(|i| format!("{} ", char::from(i)))
+            .map(|i| format!("{}  ", char::from(i)))
             .unwrap_or_default();
         self.push_static(format!("{fg}{icon_str}{content}{RESET}"));
         self
