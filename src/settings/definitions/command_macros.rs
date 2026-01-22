@@ -56,6 +56,16 @@ macro_rules! gui_command_setting {
                 $crate::settings::setting::SettingType::Command
             }
 
+            fn preview_command(&self) -> Option<String> {
+                let script = $crate::ui::preview::PreviewBuilder::new()
+                    .header($icon, $title)
+                    .text($summary)
+                    .separator()
+                    .field("Command", $command)
+                    .build_shell_script();
+                Some(script)
+            }
+
             fn apply(
                 &self,
                 ctx: &mut $crate::settings::context::SettingsContext,
@@ -173,6 +183,16 @@ macro_rules! tui_command_setting {
 
             fn setting_type(&self) -> $crate::settings::setting::SettingType {
                 $crate::settings::setting::SettingType::Command
+            }
+
+            fn preview_command(&self) -> Option<String> {
+                let script = $crate::ui::preview::PreviewBuilder::new()
+                    .header($icon, $title)
+                    .text($summary)
+                    .separator()
+                    .field("Command", $command)
+                    .build_shell_script();
+                Some(script)
             }
 
             fn apply(
