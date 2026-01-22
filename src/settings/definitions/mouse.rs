@@ -204,7 +204,7 @@ pub fn apply_natural_scrolling(ctx: &mut SettingsContext, enabled: bool) -> Resu
     let is_x11 = compositor.is_x11();
 
     if !is_sway && !is_x11 {
-        ctx.emit_info(
+        ctx.emit_unsupported(
             "settings.mouse.natural_scroll.unsupported",
             &format!(
                 "Natural scrolling configuration is not yet supported on {}. Setting saved but not applied.",
@@ -273,7 +273,7 @@ pub fn apply_swap_buttons(ctx: &mut SettingsContext, enabled: bool) -> Result<()
     let compositor = CompositorType::detect();
 
     if !compositor.is_x11() {
-        ctx.emit_info(
+        ctx.emit_unsupported(
             "settings.mouse.swap_buttons.unsupported",
             &format!(
                 "Swap mouse buttons configuration is not yet supported on {}. Setting saved but not applied.",

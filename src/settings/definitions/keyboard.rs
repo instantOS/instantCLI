@@ -103,7 +103,7 @@ impl Setting for KeyboardLayout {
         let is_x11 = compositor.is_x11();
 
         if !is_sway && !is_x11 {
-            ctx.emit_info(
+            ctx.emit_unsupported(
                 "settings.keyboard.unsupported",
                 "Keyboard layout configuration is currently only supported on Sway and X11 window managers.",
             );
