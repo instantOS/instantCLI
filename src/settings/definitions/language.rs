@@ -163,6 +163,15 @@ fn current_timezone() -> Result<Option<String>> {
 }
 
 pub fn configure_timezone(ctx: &mut SettingsContext) -> Result<()> {
+    // Check for systemd availability (timedatectl)
+    if which::which("timedatectl").is_err() {
+        ctx.emit_unsupported(
+            "settings.timezone.no_systemd",
+            "Timezone configuration requires systemd (timedatectl not found).",
+        );
+        return Ok(());
+    }
+
     let timezones = read_command_lines({
         let mut command = Command::new("timedatectl");
         command.arg("list-timezones");

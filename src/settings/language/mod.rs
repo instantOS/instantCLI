@@ -17,6 +17,15 @@ use menu::{LanguageMenuItem, LocaleActionItem, LocaleToggleItem, build_language_
 use state::LocaleState;
 
 pub fn configure_system_language(ctx: &mut SettingsContext) -> Result<()> {
+    // Check for systemd availability (localectl)
+    if which::which("localectl").is_err() {
+        ctx.emit_unsupported(
+            "settings.language.no_systemd",
+            "Language configuration requires systemd (localectl not found).",
+        );
+        return Ok(());
+    }
+
     loop {
         let state = LocaleState::load()?;
 

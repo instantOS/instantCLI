@@ -230,10 +230,13 @@ fn locale_base(locale: &str) -> &str {
 }
 
 fn current_system_locale() -> Result<Option<String>> {
-    let output = Command::new("localectl")
+    let output = match Command::new("localectl")
         .arg("status")
         .output()
-        .context("running localectl status")?;
+    {
+        Ok(output) => output,
+        Err(_) => return Ok(None), // localectl not available
+    };
 
     if !output.status.success() {
         return Ok(None);
