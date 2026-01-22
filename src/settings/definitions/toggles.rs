@@ -13,7 +13,6 @@ use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::BoolSettingKey;
 use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
-use crate::ui::preview::PreviewBuilder;
 
 // ============================================================================
 // Clipboard Manager

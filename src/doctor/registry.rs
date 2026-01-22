@@ -27,6 +27,7 @@ impl CheckRegistry {
         registry.register::<PacmanDbSyncCheck>("pacman-db-sync");
         registry.register::<SwayDisplayCheck>("sway-display");
         registry.register::<PolkitAgentCheck>("polkit-agent");
+        registry.register::<FaillockCheck>("faillock-status");
         registry.register::<BatCheck>("bat-cache");
         registry.register::<FzfVersionCheck>("fzf-version");
         registry.register::<GitConfigCheck>("git-config");

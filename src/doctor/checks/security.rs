@@ -141,3 +141,138 @@ impl DoctorCheck for PolkitAgentCheck {
         ))
     }
 }
+
+#[derive(Default)]
+pub struct FaillockCheck;
+
+#[async_trait]
+impl DoctorCheck for FaillockCheck {
+    fn name(&self) -> &'static str {
+        "Account Lockout Status (faillock)"
+    }
+
+    fn id(&self) -> &'static str {
+        "faillock-status"
+    }
+
+    fn check_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::User
+    }
+
+    fn fix_privilege_level(&self) -> PrivilegeLevel {
+        PrivilegeLevel::Root
+    }
+
+    async fn execute(&self) -> CheckStatus {
+        // Check if faillock is installed
+        if !is_command_available("faillock").await {
+            return CheckStatus::Skipped("faillock command not found".to_string());
+        }
+
+        // Run faillock to get failures for current user
+        let output = match TokioCommand::new("faillock").output().await {
+            Ok(o) => o,
+            Err(e) => return CheckStatus::Skipped(format!("Failed to run faillock: {}", e)),
+        };
+
+        if !output.status.success() {
+            return CheckStatus::Skipped("faillock command failed".to_string());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // Parse failures. Valid entries usually have 'V' in the Valid column (last column)
+        // Output format:
+        // user:
+        // When                Type  Source                                           Valid
+        // 2024-01-22 13:20:26 TTY   /dev/pts/11                                          V
+        let failure_count = stdout
+            .lines()
+            .skip(2) // Skip header
+            .filter(|line| line.trim().ends_with('V'))
+            .count();
+
+        if failure_count == 0 {
+            return CheckStatus::Pass("No failed login attempts detected".to_string());
+        }
+
+        // Determine deny limit
+        let deny_limit = get_faillock_deny_limit().await.unwrap_or(3);
+
+        if failure_count >= deny_limit {
+            return CheckStatus::Fail {
+                message: format!(
+                    "User account is locked! {} failed attempts (limit: {})",
+                    failure_count, deny_limit
+                ),
+                fixable: false, // Cannot use sudo if locked out
+            };
+        }
+
+        if failure_count > 0 {
+            return CheckStatus::Warning {
+                message: format!(
+                    "User account has failed login attempts: {} (limit: {})",
+                    failure_count, deny_limit
+                ),
+                fixable: true,
+            };
+        }
+
+        CheckStatus::Pass("No failed login attempts detected".to_string())
+    }
+
+    fn fix_message(&self) -> Option<String> {
+        Some("Reset failed login attempts for the current user. If the account is already locked, this must be run from an existing root shell or another admin account.".to_string())
+    }
+
+    async fn fix(&self) -> Result<()> {
+        let user = std::env::var("USER").unwrap_or_else(|_| "unknown".to_string());
+
+        let status = TokioCommand::new("faillock")
+            .arg("--user")
+            .arg(&user)
+            .arg("--reset")
+            .status()
+            .await?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Failed to reset faillock failures"))
+        }
+    }
+}
+
+async fn is_command_available(cmd: &str) -> bool {
+    TokioCommand::new("which")
+        .arg(cmd)
+        .output()
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+async fn get_faillock_deny_limit() -> Option<usize> {
+    use tokio::io::AsyncReadExt;
+
+    let path = "/etc/security/faillock.conf";
+    let mut file = tokio::fs::File::open(path).await.ok()?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).await.ok()?;
+
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with('#') || line.is_empty() {
+            continue;
+        }
+
+        if line.starts_with("deny")
+            && let Some(val_str) = line.split('=').nth(1)
+        {
+            return val_str.trim().parse().ok();
+        }
+    }
+
+    None
+}

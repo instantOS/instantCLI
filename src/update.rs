@@ -44,12 +44,12 @@ pub async fn handle_update_command(debug: bool) -> Result<()> {
     let mut args = Vec::new();
 
     // Check if topgrade is at a root-owned location or otherwise not writable
-    if let Ok(topgrade_path) = which::which("topgrade") {
-        if let Some(parent) = topgrade_path.parent() {
-            let is_writable = access(parent, AccessFlags::W_OK).is_ok();
-            if !is_writable {
-                args.push("--no-self-update".to_string());
-            }
+    if let Ok(topgrade_path) = which::which("topgrade")
+        && let Some(parent) = topgrade_path.parent()
+    {
+        let is_writable = access(parent, AccessFlags::W_OK).is_ok();
+        if !is_writable {
+            args.push("--no-self-update".to_string());
         }
     }
 
