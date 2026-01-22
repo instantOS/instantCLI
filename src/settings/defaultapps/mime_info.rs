@@ -32,44 +32,25 @@ impl FzfSelectable for MimeTypeInfo {
 }
 
 fn create_mime_preview_command() -> String {
-    let extensions_script = r#"extensions=$(for file in "$HOME/.local/share/mime/globs2" "/usr/local/share/mime/globs2" "/usr/share/mime/globs2"; do
+    let extensions_script = r#"canonical_mime="$mime_type"
+for alias_file in "$HOME/.local/share/mime/aliases" "/usr/local/share/mime/aliases" "/usr/share/mime/aliases"; do
+    [ -f "$alias_file" ] || continue
+    resolved=$(awk -v mt="$mime_type" '$1==mt {print $2; exit}' "$alias_file")
+    if [ -n "$resolved" ]; then
+        canonical_mime="$resolved"
+        break
+    fi
+done
+
+extensions=$(for file in "$HOME/.local/share/mime/globs2" "/usr/local/share/mime/globs2" "/usr/share/mime/globs2"; do
     [ -f "$file" ] || continue
-    awk -F: -v mt="$mime_type" '$2==mt {print $1 ":" $3}' "$file"
+    awk -F: -v mt="$canonical_mime" '$2==mt {print $1 ":" $3}' "$file"
 done | sort -t: -k1,1nr -k2,2 | awk -F: '!seen[$2]++ {print $2}')
 
 if [ -n "$extensions" ]; then
     printf "%s\n" "$extensions" | awk 'NF { sub(/^\*/, "", $0); printf "  • %s\n", $0; count++; if (count>=8) exit }'
 else
-    case "$mime_type" in
-        image/jpeg) echo "  • .jpg, .jpeg" ;;
-        image/png) echo "  • .png" ;;
-        image/gif) echo "  • .gif" ;;
-        image/webp) echo "  • .webp" ;;
-        image/svg+xml) echo "  • .svg" ;;
-        video/mp4) echo "  • .mp4" ;;
-        video/x-matroska) echo "  • .mkv" ;;
-        video/webm) echo "  • .webm" ;;
-        video/x-msvideo) echo "  • .avi" ;;
-        audio/mpeg) echo "  • .mp3" ;;
-        audio/ogg) echo "  • .ogg, .opus" ;;
-        audio/flac) echo "  • .flac" ;;
-        audio/x-wav) echo "  • .wav" ;;
-        application/pdf) echo "  • .pdf" ;;
-        application/zip) echo "  • .zip" ;;
-        application/x-tar) echo "  • .tar" ;;
-        application/x-7z-compressed) echo "  • .7z" ;;
-        application/x-rar) echo "  • .rar" ;;
-        application/gzip) echo "  • .gz" ;;
-        application/x-bzip2) echo "  • .bz2" ;;
-        application/x-xz) echo "  • .xz" ;;
-        text/plain) echo "  • .txt" ;;
-        text/html) echo "  • .html" ;;
-        text/markdown) echo "  • .md" ;;
-        application/json) echo "  • .json" ;;
-        application/xml) echo "  • .xml" ;;
-        application/x-appimage) echo "  • .AppImage" ;;
-        *) echo "  • (varies)" ;;
-    esac
+    echo "  • (none registered)"
 fi"#;
 
     let category_script = r#"category="Other"

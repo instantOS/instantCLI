@@ -2,16 +2,16 @@ use anyhow::{Context, Result};
 use std::collections::{BTreeSet, HashMap};
 
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::settings::SettingsContext;
 use crate::settings::installable_packages::{
-    self, InstallableApp, ARCHIVE_MANAGERS, FILE_MANAGERS, IMAGE_VIEWERS, PDF_VIEWERS,
+    self, ARCHIVE_MANAGERS, FILE_MANAGERS, IMAGE_VIEWERS, InstallableApp, PDF_VIEWERS,
     TEXT_EDITORS, VIDEO_PLAYERS, WEB_BROWSERS,
 };
-use crate::settings::SettingsContext;
 use crate::ui::prelude::*;
 
-use super::app_info::{get_application_info, ApplicationInfo};
+use super::app_info::{ApplicationInfo, get_application_info};
 use super::mime_cache::{build_mime_to_apps_map, get_apps_for_mime};
-use super::mime_info::{get_all_mime_types, get_mime_type_info, MimeTypeInfo};
+use super::mime_info::{MimeTypeInfo, get_all_mime_types, get_mime_type_info};
 use super::mime_sets::{ARCHIVE_MIME_TYPES, AUDIO_MIME_TYPES, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES};
 use super::system::{query_default_app, set_default_app};
 
