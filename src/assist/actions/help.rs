@@ -5,7 +5,7 @@ use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use std::io::IsTerminal;
 
 const RESET: &str = "\x1b[0m";
@@ -108,6 +108,9 @@ fn build_help_items(path: &str) -> Vec<AssistHelpItem> {
         let is_last = i == entries.len().saturating_sub(1);
         append_help_items(&mut items, entry, "", is_last, path);
     }
+
+    // FZF uses reverse layout by default; reverse input for top-down tree order.
+    items.reverse();
 
     items
 }
