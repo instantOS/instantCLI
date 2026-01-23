@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::path::{Path, PathBuf};
 
 use crate::dot::config::Config;
 use crate::dot::db::Database;
@@ -40,30 +41,67 @@ impl FzfSelectable for DetailActionItem {
 
 /// Handle editing repository details
 pub(super) fn handle_edit_details(repo_name: &str, config: &Config, db: &Database) -> Result<()> {
+    let Some((repo_path, mut metadata)) = load_edit_metadata(repo_name, config, db)? else {
+        return Ok(());
+    };
+
+    let mut cursor = MenuCursor::new();
+
+    loop {
+        let Some(action) = select_detail_action(repo_name, &metadata, &mut cursor)? else {
+            return Ok(());
+        };
+
+        match action {
+            DetailAction::EditAuthor => {
+                let Some(new_value) = prompt_metadata_value("Author", metadata.author.as_deref())?
+                else {
+                    continue;
+                };
+                metadata.author = new_value;
+                persist_metadata(&repo_path, &metadata, "Author updated successfully")?;
+            }
+            DetailAction::EditDescription => {
+                let Some(new_value) =
+                    prompt_metadata_value("Description", metadata.description.as_deref())?
+                else {
+                    continue;
+                };
+                metadata.description = new_value;
+                persist_metadata(&repo_path, &metadata, "Description updated successfully")?;
+            }
+            DetailAction::Back => return Ok(()),
+        }
+    }
+}
+
+fn load_edit_metadata(
+    repo_name: &str,
+    config: &Config,
+    db: &Database,
+) -> Result<Option<(PathBuf, crate::dot::types::RepoMetaData)>> {
     let repo_config = match config.repos.iter().find(|r| r.name == repo_name) {
         Some(rc) => rc,
         None => {
             FzfWrapper::message(&format!("Repository '{}' not found in config", repo_name))?;
-            return Ok(());
+            return Ok(None);
         }
     };
 
-    // Check if read-only
     if repo_config.read_only {
         FzfWrapper::message(&format!(
             "Repository '{}' is read-only. Cannot edit metadata.",
             repo_name
         ))?;
-        return Ok(());
+        return Ok(None);
     }
 
-    // External repos have metadata in global config - not supported for now
     if repo_config.metadata.is_some() {
         FzfWrapper::message(
             "External repositories have metadata in global config.\n\
             Editing external repo metadata is not currently supported.",
         )?;
-        return Ok(());
+        return Ok(None);
     }
 
     let repo_manager = RepositoryManager::new(config, db);
@@ -71,7 +109,7 @@ pub(super) fn handle_edit_details(repo_name: &str, config: &Config, db: &Databas
         Ok(lr) => lr,
         Err(e) => {
             FzfWrapper::message(&format!("Failed to load repository: {}", e))?;
-            return Ok(());
+            return Ok(None);
         }
     };
 
@@ -79,123 +117,92 @@ pub(super) fn handle_edit_details(repo_name: &str, config: &Config, db: &Databas
         Ok(p) => p,
         Err(e) => {
             FzfWrapper::message(&format!("Failed to get repository path: {}", e))?;
-            return Ok(());
+            return Ok(None);
         }
     };
 
-    // Read current metadata
-    let mut metadata = match meta::read_meta(&repo_path) {
+    let metadata = match meta::read_meta(&repo_path) {
         Ok(m) => m,
         Err(e) => {
             FzfWrapper::message(&format!("Failed to read metadata: {}", e))?;
-            return Ok(());
+            return Ok(None);
         }
     };
 
-    let mut cursor = MenuCursor::new();
+    Ok(Some((repo_path, metadata)))
+}
 
-    loop {
-        let actions = build_detail_action_menu(&metadata, repo_name);
+fn select_detail_action(
+    repo_name: &str,
+    metadata: &crate::dot::types::RepoMetaData,
+    cursor: &mut MenuCursor,
+) -> Result<Option<DetailAction>> {
+    let actions = build_detail_action_menu(metadata, repo_name);
 
-        let mut builder = FzfWrapper::builder()
-            .header(Header::fancy(&format!("Edit Details: {}", repo_name)))
-            .prompt("Select field to edit")
-            .args(fzf_mocha_args())
-            .responsive_layout();
+    let mut builder = FzfWrapper::builder()
+        .header(Header::fancy(&format!("Edit Details: {}", repo_name)))
+        .prompt("Select field to edit")
+        .args(fzf_mocha_args())
+        .responsive_layout();
 
-        if let Some(index) = cursor.initial_index(&actions) {
-            builder = builder.initial_index(index);
+    if let Some(index) = cursor.initial_index(&actions) {
+        builder = builder.initial_index(index);
+    }
+
+    let result = builder.select_padded(actions.clone())?;
+
+    match result {
+        FzfResult::Selected(item) => {
+            cursor.update(&item, &actions);
+            Ok(Some(item.action))
         }
+        FzfResult::Cancelled => Ok(None),
+        _ => Ok(None),
+    }
+}
 
-        let result = builder.select_padded(actions.clone())?;
+fn prompt_metadata_value(prompt: &str, current: Option<&str>) -> Result<Option<Option<String>>> {
+    let current = current.unwrap_or("");
+    let ghost_text = if current.is_empty() {
+        format!("(no {} set)", prompt.to_lowercase())
+    } else {
+        current.to_string()
+    };
 
-        let action = match result {
-            FzfResult::Selected(item) => {
-                cursor.update(&item, &actions);
-                item.action
-            }
-            FzfResult::Cancelled => return Ok(()),
-            _ => return Ok(()),
-        };
+    let new_value = match FzfWrapper::builder()
+        .input()
+        .prompt(prompt)
+        .ghost(&ghost_text)
+        .input_result()?
+    {
+        FzfResult::Selected(s) => Some(s.trim().to_string()),
+        FzfResult::Cancelled => return Ok(None),
+        _ => return Ok(None),
+    };
 
-        match action {
-            DetailAction::EditAuthor => {
-                let current = metadata.author.as_deref().unwrap_or("");
-                let ghost_text = if current.is_empty() {
-                    "(no author set)"
-                } else {
-                    current
-                };
+    let new_value = if new_value.as_ref().map(|s| s.is_empty()).unwrap_or(false) {
+        None
+    } else {
+        new_value
+    };
 
-                let new_value = match FzfWrapper::builder()
-                    .input()
-                    .prompt("Author")
-                    .ghost(ghost_text)
-                    .input_result()?
-                {
-                    FzfResult::Selected(s) => Some(s.trim().to_string()),
-                    FzfResult::Cancelled => continue,
-                    _ => continue,
-                };
+    Ok(Some(new_value))
+}
 
-                // Empty string means clear the field
-                let new_value = if new_value.as_ref().map(|s| s.is_empty()).unwrap_or(false) {
-                    None
-                } else {
-                    new_value
-                };
-
-                metadata.author = new_value;
-
-                match meta::update_meta(&repo_path, &metadata) {
-                    Ok(_) => {
-                        FzfWrapper::message("Author updated successfully")?;
-                    }
-                    Err(e) => {
-                        FzfWrapper::message(&format!("Failed to update metadata: {}", e))?;
-                    }
-                }
-            }
-            DetailAction::EditDescription => {
-                let current = metadata.description.as_deref().unwrap_or("");
-                let ghost_text = if current.is_empty() {
-                    "(no description set)"
-                } else {
-                    current
-                };
-
-                let new_value = match FzfWrapper::builder()
-                    .input()
-                    .prompt("Description")
-                    .ghost(ghost_text)
-                    .input_result()?
-                {
-                    FzfResult::Selected(s) => Some(s.trim().to_string()),
-                    FzfResult::Cancelled => continue,
-                    _ => continue,
-                };
-
-                // Empty string means clear the field
-                let new_value = if new_value.as_ref().map(|s| s.is_empty()).unwrap_or(false) {
-                    None
-                } else {
-                    new_value
-                };
-
-                metadata.description = new_value;
-
-                match meta::update_meta(&repo_path, &metadata) {
-                    Ok(_) => {
-                        FzfWrapper::message("Description updated successfully")?;
-                    }
-                    Err(e) => {
-                        FzfWrapper::message(&format!("Failed to update metadata: {}", e))?;
-                    }
-                }
-            }
-            DetailAction::Back => return Ok(()),
+fn persist_metadata(
+    repo_path: &Path,
+    metadata: &crate::dot::types::RepoMetaData,
+    success_message: &str,
+) -> Result<()> {
+    match meta::update_meta(repo_path, metadata) {
+        Ok(_) => {
+            FzfWrapper::message(success_message)?;
+        }
+        Err(e) => {
+            FzfWrapper::message(&format!("Failed to update metadata: {}", e))?;
         }
     }
+    Ok(())
 }
 
 /// Build the detail action menu items
