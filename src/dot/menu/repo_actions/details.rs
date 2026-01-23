@@ -6,7 +6,8 @@ use crate::dot::db::Database;
 use crate::dot::meta;
 use crate::dot::repo::RepositoryManager;
 use crate::menu_utils::{
-    FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, TextEditOutcome, prompt_text_edit,
+    prompt_text_edit, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, TextEditOutcome,
+    TextEditPrompt,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -179,7 +180,7 @@ fn apply_text_edit<F>(
 where
     F: FnOnce(&mut crate::dot::types::RepoMetaData, Option<String>),
 {
-    match prompt_text_edit(label, current)? {
+    match prompt_text_edit(TextEditPrompt::new(label, current))? {
         TextEditOutcome::Cancelled | TextEditOutcome::Unchanged => Ok(()),
         TextEditOutcome::Updated(value) => {
             apply_value(metadata, value);

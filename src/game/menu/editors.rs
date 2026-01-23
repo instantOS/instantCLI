@@ -1,8 +1,11 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use crate::game::utils::path::{path_selection_to_tilde, tilde_display_string};
-use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
-use crate::menu_utils::{FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder};
+use crate::game::utils::safeguards::{ensure_safe_path, PathUsage};
+use crate::menu_utils::{
+    prompt_text_edit, FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder,
+    TextEditOutcome, TextEditPrompt,
+};
 use crate::ui::nerd_font::NerdFont;
 
 use super::state::EditState;
@@ -51,51 +54,27 @@ pub fn edit_name(state: &mut EditState) -> Result<bool> {
 
 /// Edit the game description
 pub fn edit_description(state: &mut EditState) -> Result<bool> {
-    let current_desc = state.game().description.as_deref().unwrap_or("");
-
-    let result = FzfWrapper::builder()
-        .prompt("Enter new description (leave empty to remove)")
-        .header(format!(
-            "Current description: {}",
-            if current_desc.is_empty() {
-                "<not set>"
-            } else {
-                current_desc
-            }
-        ))
-        .input()
-        .query(current_desc)
-        .input_result()?;
-
-    let new_desc = match result {
-        FzfResult::Selected(desc) => desc,
-        FzfResult::Cancelled => {
-            FzfWrapper::message("Edit cancelled. Description unchanged.")?;
-            return Ok(false);
-        }
-        _ => return Ok(false),
+    let current_desc = state.game().description.clone();
+    let current_desc_str = current_desc.as_deref();
+    let current_display = match current_desc_str {
+        Some(value) if !value.trim().is_empty() => value,
+        _ => "<not set>",
     };
 
-    let trimmed = new_desc.trim();
+    let prompt = TextEditPrompt::new("Description", current_desc_str)
+        .header(format!("Current description: {}", current_display))
+        .ghost("Leave empty to remove");
 
-    if trimmed.is_empty() {
-        if state.game().description.is_none() {
-            FzfWrapper::message("Description already empty.")?;
-            return Ok(false);
-        }
-        state.game_mut().description = None;
-        FzfWrapper::message("Description removed")?;
-        return Ok(true);
-    }
-
-    if trimmed == current_desc {
-        FzfWrapper::message("Description unchanged.")?;
-        return Ok(false);
-    }
-
-    state.game_mut().description = Some(trimmed.to_string());
-    FzfWrapper::message("Description updated")?;
-    Ok(true)
+    edit_optional_text_value(
+        prompt,
+        current_desc_str,
+        "Description already empty.",
+        "Description removed",
+        "Description unchanged.",
+        "Edit cancelled. Description unchanged.",
+        "Description updated",
+        |value| state.game_mut().description = value,
+    )
 }
 
 /// Edit launch command (shows submenu for shared vs installation override)
@@ -188,17 +167,17 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
     let current = current_owned.as_deref();
     let header = format!("Current command: {}", current.unwrap_or("<not set>"));
 
-    edit_launch_command_value(
-        "Enter new launch command (leave empty to remove)",
-        header,
+    edit_optional_text_value(
+        TextEditPrompt::new("Launch command", current)
+            .header(header)
+            .ghost("Leave empty to remove"),
         current,
         "Launch command already empty.",
         "Launch command removed from games.toml",
         "Launch command unchanged.",
+        "Edit cancelled. Launch command unchanged.",
         "Launch command updated in games.toml",
-        |value| {
-            state.game_mut().launch_command = value;
-        },
+        |value| state.game_mut().launch_command = value,
     )
 }
 
@@ -214,13 +193,15 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
     let current = current_owned.as_deref();
     let header = format!("Current override: {}", current.unwrap_or("<not set>"));
 
-    edit_launch_command_value(
-        "Enter new launch command override (leave empty to remove override)",
-        header,
+    edit_optional_text_value(
+        TextEditPrompt::new("Launch command override", current)
+            .header(header)
+            .ghost("Leave empty to remove override"),
         current,
         "Launch command override already empty.",
         "Launch command override removed from installations.toml",
         "Launch command override unchanged.",
+        "Edit cancelled. Launch command override unchanged.",
         "Launch command override updated in installations.toml",
         |value| {
             if let Some(installation) = state.installation_mut() {
@@ -283,51 +264,39 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
     }
 }
 
-fn edit_launch_command_value(
-    prompt: &str,
-    header: String,
+fn edit_optional_text_value(
+    prompt: TextEditPrompt<'_>,
     current: Option<&str>,
     empty_feedback: &'static str,
     removed_feedback: &'static str,
     unchanged_feedback: &'static str,
+    cancelled_feedback: &'static str,
     updated_feedback: &'static str,
     mut setter: impl FnMut(Option<String>),
 ) -> Result<bool> {
-    let result = FzfWrapper::builder()
-        .prompt(prompt)
-        .header(header)
-        .input()
-        .query(current.unwrap_or_default())
-        .input_result()?;
-
-    let input = match result {
-        FzfResult::Selected(value) => value,
-        FzfResult::Cancelled => {
-            FzfWrapper::message("Edit cancelled. Launch command unchanged.")?;
-            return Ok(false);
+    match prompt_text_edit(prompt)? {
+        TextEditOutcome::Cancelled => {
+            FzfWrapper::message(cancelled_feedback)?;
+            Ok(false)
         }
-        _ => return Ok(false),
-    };
-
-    let trimmed = input.trim();
-
-    if trimmed.is_empty() {
-        if current.is_none() {
-            FzfWrapper::message(empty_feedback)?;
-            return Ok(false);
+        TextEditOutcome::Unchanged => {
+            FzfWrapper::message(unchanged_feedback)?;
+            Ok(false)
         }
+        TextEditOutcome::Updated(value) => {
+            if value.is_none() && current.is_none() {
+                FzfWrapper::message(empty_feedback)?;
+                return Ok(false);
+            }
 
-        setter(None);
-        FzfWrapper::message(removed_feedback)?;
-        return Ok(true);
+            let is_clearing = value.is_none();
+            setter(value);
+            if is_clearing {
+                FzfWrapper::message(removed_feedback)?;
+            } else {
+                FzfWrapper::message(updated_feedback)?;
+            }
+            Ok(true)
+        }
     }
-
-    if current == Some(trimmed) {
-        FzfWrapper::message(unchanged_feedback)?;
-        return Ok(false);
-    }
-
-    setter(Some(trimmed.to_string()));
-    FzfWrapper::message(updated_feedback)?;
-    Ok(true)
 }

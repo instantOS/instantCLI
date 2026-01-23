@@ -15,4 +15,4 @@ pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 pub use path_input::{PathInputBuilder, PathInputSelection};
 pub use slider::{SliderCommand, SliderConfig};
 pub use style::{select_one_with_style, select_one_with_style_at};
-pub use text_input::{TextEditOutcome, prompt_text_edit};
+pub use text_input::{TextEditOutcome, TextEditPrompt, prompt_text_edit};

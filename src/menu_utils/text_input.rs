@@ -9,11 +9,51 @@ pub enum TextEditOutcome {
     Updated(Option<String>),
 }
 
-pub fn prompt_text_edit(label: &str, current: Option<&str>) -> Result<TextEditOutcome> {
+#[derive(Debug, Clone)]
+pub struct TextEditPrompt<'a> {
+    label: &'a str,
+    current: Option<&'a str>,
+    header: Option<String>,
+    ghost: Option<String>,
+}
+
+impl<'a> TextEditPrompt<'a> {
+    pub fn new(label: &'a str, current: Option<&'a str>) -> Self {
+        Self {
+            label,
+            current,
+            header: None,
+            ghost: None,
+        }
+    }
+
+    pub fn header(mut self, header: impl Into<String>) -> Self {
+        self.header = Some(header.into());
+        self
+    }
+
+    pub fn ghost(mut self, ghost: impl Into<String>) -> Self {
+        self.ghost = Some(ghost.into());
+        self
+    }
+}
+
+pub fn prompt_text_edit(prompt: TextEditPrompt<'_>) -> Result<TextEditOutcome> {
+    let TextEditPrompt {
+        label,
+        current,
+        header,
+        ghost,
+    } = prompt;
+
     let mut builder = FzfWrapper::builder()
         .input()
         .prompt(label)
-        .ghost("Leave empty to clear");
+        .ghost(ghost.as_deref().unwrap_or("Leave empty to clear"));
+
+    if let Some(header) = header {
+        builder = builder.header(header);
+    }
 
     if let Some(value) = current {
         builder = builder.query(value);
