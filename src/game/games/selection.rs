@@ -14,6 +14,7 @@ pub enum GameMenuEntry {
     Game(String, bool), // name, is_installed (has local installation)
     AddGame,
     SetupGames,
+    SyncAll,
     CloseMenu,
 }
 
@@ -45,6 +46,12 @@ impl FzfSelectable for GameMenuEntry {
                     format_icon_colored(NerdFont::Wrench, colors::PEACH)
                 )
             }
+            GameMenuEntry::SyncAll => {
+                format!(
+                    "{} Sync All",
+                    format_icon_colored(NerdFont::CloudSync, colors::BLUE)
+                )
+            }
             GameMenuEntry::CloseMenu => format!("{} Close Menu", format_back_icon()),
         }
     }
@@ -54,6 +61,7 @@ impl FzfSelectable for GameMenuEntry {
             GameMenuEntry::Game(name, _) => name.clone(),
             GameMenuEntry::AddGame => "!__add_game__".to_string(),
             GameMenuEntry::SetupGames => "!__setup_games__".to_string(),
+            GameMenuEntry::SyncAll => "!__sync_all__".to_string(),
             GameMenuEntry::CloseMenu => "!__close_menu__".to_string(),
         }
     }
@@ -102,6 +110,17 @@ impl FzfSelectable for GameMenuEntry {
                 .bullet("Games registered but missing save paths")
                 .bullet("Games with pending dependencies")
                 .bullet("Restoring games from backups")
+                .build(),
+            GameMenuEntry::SyncAll => PreviewBuilder::new()
+                .header(NerdFont::CloudSync, "Sync All Games")
+                .text("Sync save data for all configured games.")
+                .blank()
+                .text("This will:")
+                .bullet("Backup local saves if they're newer")
+                .bullet("Restore from snapshots if they're newer")
+                .bullet("Skip games that are already up-to-date")
+                .blank()
+                .subtext("Games without installations will be skipped.")
                 .build(),
             GameMenuEntry::CloseMenu => PreviewBuilder::new()
                 .header(NerdFont::Cross, "Close Menu")
@@ -314,6 +333,7 @@ pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenu
     let mut entries = vec![
         GameMenuEntry::AddGame,
         GameMenuEntry::SetupGames,
+        GameMenuEntry::SyncAll,
         GameMenuEntry::CloseMenu,
     ];
 
