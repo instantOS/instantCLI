@@ -17,7 +17,7 @@ pub fn exec_game_command(command: Vec<OsString>) -> Result<()> {
 
     if check_internet() {
         println!("Internet connection detected; syncing saves before launch...");
-        sync_game_saves(None, false)?;
+        let _summary = sync_game_saves(None, false)?;
     } else {
         println!("No internet connection detected; skipping pre-launch sync.");
     }
@@ -49,7 +49,7 @@ pub fn exec_game_command(command: Vec<OsString>) -> Result<()> {
 
     if check_internet() {
         println!("Internet connection detected; syncing saves after exit...");
-        sync_game_saves(None, false)?;
+        let _summary = sync_game_saves(None, false)?;
     } else {
         println!("No internet connection detected; skipping post-launch sync.");
     }

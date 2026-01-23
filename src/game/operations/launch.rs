@@ -48,7 +48,7 @@ pub fn launch_game(game_name: Option<String>) -> Result<()> {
         selected.source.label()
     );
 
-    sync_game_saves(None, false)?;
+    let _summary = sync_game_saves(None, false)?;
 
     run_launch_command(&selected)?;
 
@@ -58,7 +58,7 @@ pub fn launch_game(game_name: Option<String>) -> Result<()> {
     );
     sleep(POST_LAUNCH_SYNC_DELAY);
 
-    sync_game_saves(None, false)?;
+    let _summary = sync_game_saves(None, false)?;
 
     println!("Finished launch workflow for {}", selected.name);
 

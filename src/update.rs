@@ -95,7 +95,7 @@ pub async fn handle_update_command(debug: bool) -> Result<()> {
     );
 
     // We pass None for game_name to sync all games, and false for force
-    sync_game_saves(None, false)?;
+    let _summary = sync_game_saves(None, false)?;
 
     emit(
         Level::Success,

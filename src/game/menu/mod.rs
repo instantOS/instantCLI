@@ -421,8 +421,28 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 continue;
             }
             GameMenuEntry::SyncAll => {
-                sync_game_saves(None, false)?;
-                // Return to menu after sync
+                match sync_game_saves(None, false) {
+                    Ok(summary) => {
+                        // Show summary in a message dialog
+                        let message = if summary.total() == 0 {
+                            "No games configured for syncing.".to_string()
+                        } else {
+                            format!(
+                                "{} Sync Summary\n\n✅ Synced: {}\n🔶 Skipped: {}\n❌ Errors: {}",
+                                char::from(NerdFont::Chart),
+                                summary.synced,
+                                summary.skipped,
+                                summary.errors
+                            )
+                        };
+
+                        FzfWrapper::message(&message)?;
+                    }
+                    Err(e) => {
+                        FzfWrapper::message(&format!("Sync failed: {}", e))?;
+                    }
+                }
+                // Return to menu after user dismisses the message
                 continue;
             }
             GameMenuEntry::Game(game_name, _) => {

@@ -8,7 +8,25 @@ use crate::game::utils::validation;
 use anyhow::{Context, Result};
 use types::SyncAction;
 
-pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
+/// Summary of sync operation results
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SyncSummary {
+    pub synced: usize,
+    pub skipped: usize,
+    pub errors: usize,
+}
+
+impl SyncSummary {
+    pub fn total(&self) -> usize {
+        self.synced + self.skipped + self.errors
+    }
+
+    pub fn is_success(&self) -> bool {
+        self.errors == 0
+    }
+}
+
+pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<SyncSummary> {
     // Load configurations
     let game_config = InstantGameConfig::load().context("Failed to load game configuration")?;
     let installations =
@@ -38,7 +56,7 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
 
     if games_to_sync.is_empty() {
         ui::report_no_games_configured();
-        return Ok(());
+        return Ok(SyncSummary::default());
     }
 
     let mut total_synced = 0;
@@ -129,12 +147,19 @@ pub fn sync_game_saves(game_name: Option<String>, force: bool) -> Result<()> {
     // Print summary
     ui::report_summary(total_synced, total_skipped, total_errors);
 
+    let summary = SyncSummary {
+        synced: total_synced as usize,
+        skipped: total_skipped as usize,
+        errors: total_errors as usize,
+    };
+
     if total_errors > 0 {
         return Err(anyhow::anyhow!(
             "sync completed with {} errors",
             total_errors
-        ));
+        ))
+        .with_context(|| format!("{:?}", summary));
     }
 
-    Ok(())
+    Ok(summary)
 }

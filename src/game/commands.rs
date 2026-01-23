@@ -116,7 +116,8 @@ fn handle_add(options: AddGameOptions) -> Result<()> {
 }
 
 fn handle_sync(game_name: Option<String>, force: bool) -> Result<()> {
-    sync_game_saves(game_name, force)
+    let _summary = sync_game_saves(game_name, force)?;
+    Ok(())
 }
 
 fn handle_launch(game_name: Option<String>) -> Result<()> {
