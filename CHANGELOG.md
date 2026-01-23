@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.2](https://github.com/instantOS/instantCLI/compare/v0.13.1...v0.13.2) - 2026-01-22
+
+### Fixed
+
+- fix file extension detection
+- fix the shell preview builder escaping
+- fix
+- fix repo readable action
+- fix circular dependency issue
+
+### Other
+
+- add more common file extensions
+- better archive manager setting
+- better group descriptions
+- improve styling
+- prettier subcategory preview
+- prettier color preview
+- better back button preview
+- add better colored wallpaper preview
+- better source for gtk themes
+- init faillock doctor
+- skip topgrade self-update
+- better looking command settings
+- better bluetooth settings preview
+- better repo preview
+- improve self_update
+- implement auto dualboot
+- add doctor concurrency flag
+- optimize config/db handling
+- prettier confirm
+- better looking confirm menu
+- better disk previews
+- add more previews
+- previews for `ins arch` questions
+- refactor `ins arch`
+- more video refactor
+- init video refactor
+- improve mime type preview
+- dot repo refactor
+- refactor defaultapps
+
 ## [0.13.1](https://github.com/instantOS/instantCLI/compare/v0.13.0...v0.13.1) - 2026-01-19
 
 ### Other
