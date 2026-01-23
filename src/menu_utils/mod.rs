@@ -5,6 +5,7 @@ mod keychord;
 mod path_input;
 mod slider;
 mod style;
+mod text_input;
 
 pub use crate::ui::preview::FzfPreview;
 pub use cursor::MenuCursor;
@@ -14,3 +15,4 @@ pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 pub use path_input::{PathInputBuilder, PathInputSelection};
 pub use slider::{SliderCommand, SliderConfig};
 pub use style::{select_one_with_style, select_one_with_style_at};
+pub use text_input::{TextEditOutcome, prompt_text_edit};

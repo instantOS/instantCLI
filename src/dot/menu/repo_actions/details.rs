@@ -5,7 +5,9 @@ use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::meta;
 use crate::dot::repo::RepositoryManager;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{
+    FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, TextEditOutcome, prompt_text_edit,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -54,21 +56,26 @@ pub(super) fn handle_edit_details(repo_name: &str, config: &Config, db: &Databas
 
         match action {
             DetailAction::EditAuthor => {
-                let Some(new_value) = prompt_metadata_value("Author", metadata.author.as_deref())?
-                else {
-                    continue;
-                };
-                metadata.author = new_value;
-                persist_metadata(&repo_path, &metadata, "Author updated successfully")?;
+                let current_author = metadata.author.clone();
+                apply_text_edit(
+                    "Author",
+                    current_author.as_deref(),
+                    &repo_path,
+                    &mut metadata,
+                    "Author updated successfully",
+                    |metadata, value| metadata.author = value,
+                )?;
             }
             DetailAction::EditDescription => {
-                let Some(new_value) =
-                    prompt_metadata_value("Description", metadata.description.as_deref())?
-                else {
-                    continue;
-                };
-                metadata.description = new_value;
-                persist_metadata(&repo_path, &metadata, "Description updated successfully")?;
+                let current_description = metadata.description.clone();
+                apply_text_edit(
+                    "Description",
+                    current_description.as_deref(),
+                    &repo_path,
+                    &mut metadata,
+                    "Description updated successfully",
+                    |metadata, value| metadata.description = value,
+                )?;
             }
             DetailAction::Back => return Ok(()),
         }
@@ -161,32 +168,24 @@ fn select_detail_action(
     }
 }
 
-fn prompt_metadata_value(prompt: &str, current: Option<&str>) -> Result<Option<Option<String>>> {
-    let current = current.unwrap_or("");
-    let ghost_text = if current.is_empty() {
-        format!("(no {} set)", prompt.to_lowercase())
-    } else {
-        current.to_string()
-    };
-
-    let new_value = match FzfWrapper::builder()
-        .input()
-        .prompt(prompt)
-        .ghost(&ghost_text)
-        .input_result()?
-    {
-        FzfResult::Selected(s) => Some(s.trim().to_string()),
-        FzfResult::Cancelled => return Ok(None),
-        _ => return Ok(None),
-    };
-
-    let new_value = if new_value.as_ref().map(|s| s.is_empty()).unwrap_or(false) {
-        None
-    } else {
-        new_value
-    };
-
-    Ok(Some(new_value))
+fn apply_text_edit<F>(
+    label: &str,
+    current: Option<&str>,
+    repo_path: &Path,
+    metadata: &mut crate::dot::types::RepoMetaData,
+    success_message: &str,
+    apply_value: F,
+) -> Result<()>
+where
+    F: FnOnce(&mut crate::dot::types::RepoMetaData, Option<String>),
+{
+    match prompt_text_edit(label, current)? {
+        TextEditOutcome::Cancelled | TextEditOutcome::Unchanged => Ok(()),
+        TextEditOutcome::Updated(value) => {
+            apply_value(metadata, value);
+            persist_metadata(repo_path, metadata, success_message)
+        }
+    }
 }
 
 fn persist_metadata(
