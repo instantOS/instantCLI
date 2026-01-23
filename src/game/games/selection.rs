@@ -3,14 +3,15 @@ use crate::game::utils::save_files::{
     format_file_size, format_system_time_for_display, get_save_directory_info,
 };
 use crate::menu::protocol::FzfPreview;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, MenuCursor};
+use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::nerd_font::NerdFont;
 use anyhow::{Context, Result};
 
 /// Menu entry for game selection - can be a game or a special action
 #[derive(Debug, Clone)]
 pub enum GameMenuEntry {
-    Game(String),
+    Game(String, bool), // name, is_installed (has local installation)
     AddGame,
     SetupGames,
     CloseMenu,
@@ -19,22 +20,38 @@ pub enum GameMenuEntry {
 impl FzfSelectable for GameMenuEntry {
     fn fzf_display_text(&self) -> String {
         match self {
-            GameMenuEntry::Game(name) => name.clone(),
+            GameMenuEntry::Game(name, is_installed) => {
+                let badge = if *is_installed {
+                    " \x1b[32m[installed]\x1b[0m".to_string()
+                } else {
+                    " \x1b[33m[not set up]\x1b[0m".to_string()
+                };
+                format!(
+                    "{} {}{}",
+                    format_icon_colored(NerdFont::Gamepad, colors::MAUVE),
+                    name,
+                    badge
+                )
+            }
             GameMenuEntry::AddGame => {
-                format!("{} Add Game", char::from(NerdFont::Plus))
+                format!(
+                    "{} Add Game",
+                    format_icon_colored(NerdFont::Plus, colors::GREEN)
+                )
             }
             GameMenuEntry::SetupGames => {
-                format!("{} Set Up Existing Games", char::from(NerdFont::Wrench))
+                format!(
+                    "{} Set Up Existing Games",
+                    format_icon_colored(NerdFont::Wrench, colors::PEACH)
+                )
             }
-            GameMenuEntry::CloseMenu => {
-                format!("{} Close Menu", char::from(NerdFont::Cross))
-            }
+            GameMenuEntry::CloseMenu => format!("{} Close Menu", format_back_icon()),
         }
     }
 
     fn fzf_key(&self) -> String {
         match self {
-            GameMenuEntry::Game(name) => name.clone(),
+            GameMenuEntry::Game(name, _) => name.clone(),
             GameMenuEntry::AddGame => "!__add_game__".to_string(),
             GameMenuEntry::SetupGames => "!__setup_games__".to_string(),
             GameMenuEntry::CloseMenu => "!__close_menu__".to_string(),
@@ -45,7 +62,7 @@ impl FzfSelectable for GameMenuEntry {
         use crate::ui::preview::PreviewBuilder;
 
         match self {
-            GameMenuEntry::Game(name) => {
+            GameMenuEntry::Game(name, _) => {
                 // Try to load game for preview
                 match (InstantGameConfig::load(), InstallationsConfig::load()) {
                     (Ok(game_config), Ok(installations)) => {
@@ -290,6 +307,8 @@ pub fn select_game_interactive(prompt_message: Option<&str>) -> Result<Option<St
 /// Returns Some(entry) if selected, None if cancelled
 pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenuEntry>> {
     let config = InstantGameConfig::load().context("Failed to load game configuration")?;
+    let installations =
+        InstallationsConfig::load().context("Failed to load installations configuration")?;
 
     // Build menu entries: special actions first, then games
     let mut entries = vec![
@@ -298,13 +317,17 @@ pub fn select_game_menu_entry(cursor: &mut MenuCursor) -> Result<Option<GameMenu
         GameMenuEntry::CloseMenu,
     ];
 
-    // Add all games
+    // Add all games with installation status
     for game in &config.games {
-        entries.push(GameMenuEntry::Game(game.name.0.clone()));
+        let is_installed = installations
+            .installations
+            .iter()
+            .any(|inst| inst.game_name.0 == game.name.0);
+        entries.push(GameMenuEntry::Game(game.name.0.clone(), is_installed));
     }
 
     let mut builder = FzfWrapper::builder()
-        .header("Game Menu")
+        .header(Header::fancy("Game Menu"))
         .prompt("Select")
         .args(crate::ui::catppuccin::fzf_mocha_args())
         .responsive_layout();

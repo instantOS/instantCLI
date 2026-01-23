@@ -419,7 +419,7 @@ pub fn game_menu(provided_game_name: Option<String>) -> Result<()> {
                 // Return to menu after setup
                 continue;
             }
-            GameMenuEntry::Game(game_name) => {
+            GameMenuEntry::Game(game_name, _) => {
                 // Inner loop: game action menu
                 let mut cursor = MenuCursor::new();
                 loop {
