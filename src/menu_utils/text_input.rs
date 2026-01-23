@@ -76,10 +76,10 @@ fn handle_text_selection(
         return confirm_empty_input(label);
     }
 
-    if let Some(current) = current {
-        if trimmed == current.trim() {
-            return Ok(TextEditOutcome::Unchanged);
-        }
+    if let Some(current) = current
+        && trimmed == current.trim()
+    {
+        return Ok(TextEditOutcome::Unchanged);
     }
 
     Ok(TextEditOutcome::Updated(Some(trimmed)))

@@ -6,8 +6,8 @@ use crate::dot::db::Database;
 use crate::dot::meta;
 use crate::dot::repo::RepositoryManager;
 use crate::menu_utils::{
-    prompt_text_edit, FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, TextEditOutcome,
-    TextEditPrompt,
+    FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor, TextEditOutcome, TextEditPrompt,
+    prompt_text_edit,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;

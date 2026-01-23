@@ -156,7 +156,7 @@ impl Game {
         use crate::ui::preview::PreviewBuilder;
 
         let mut builder = PreviewBuilder::new()
-            .title(colors::SKY, &self.name.0)
+            .header(NerdFont::Gamepad, &self.name.0)
             .blank();
 
         // Description
@@ -166,10 +166,10 @@ impl Game {
 
         // Launch command
         if let Some(command) = launch_command {
-            builder = builder.line(colors::BLUE, None, &format!("Launch: {}", command));
+            builder = builder.field("Launch", command);
         }
 
-        // Installation information
+        // Installation section
         if let Some(install) = installation {
             let path_display = install
                 .save_path
@@ -178,76 +178,55 @@ impl Game {
 
             builder = builder
                 .blank()
-                .line(colors::TEXT, Some(NerdFont::Folder), "Installation:")
-                .indented_line(
-                    colors::GREEN,
-                    Some(NerdFont::Folder),
-                    &format!("Save Path: {}", path_display),
-                );
+                .separator()
+                .blank()
+                .line(colors::GREEN, Some(NerdFont::Desktop), "This Device")
+                .blank()
+                .field_indented("Save Path", &path_display);
 
-            // Try to get save directory stats
+            // Save directory stats
             match get_save_directory_info(install.save_path.as_path()) {
-                Ok(info) => {
-                    if info.file_count > 0 {
-                        builder = builder
-                            .indented_line(colors::TEXT, Some(NerdFont::Save), "Local Saves:")
-                            .bullet(&format!(
-                                "Last modified: {}",
-                                format_system_time_for_display(info.last_modified)
-                            ))
-                            .bullet(&format!("Files: {}", info.file_count))
-                            .bullet(&format!(
-                                "Total size: {}",
-                                format_file_size(info.total_size)
-                            ));
-                    } else {
-                        builder = builder.indented_line(
-                            colors::SUBTEXT0,
-                            Some(NerdFont::Save),
-                            "Local Saves: No save files found",
-                        );
-                    }
+                Ok(info) if info.file_count > 0 => {
+                    builder = builder
+                        .field_indented(
+                            "Last Modified",
+                            &format_system_time_for_display(info.last_modified),
+                        )
+                        .field_indented("Files", &info.file_count.to_string())
+                        .field_indented("Size", &format_file_size(info.total_size));
+                }
+                Ok(_) => {
+                    builder = builder.field_indented("Local Saves", "No save files found");
                 }
                 Err(_) => {
-                    builder = builder.indented_line(
-                        colors::SUBTEXT0,
-                        Some(NerdFont::Save),
-                        "Local Saves: Unable to analyze",
-                    );
+                    builder = builder.field_indented("Local Saves", "Unable to analyze");
                 }
             }
 
-            // Dependencies count
-            if !install.dependencies.is_empty() {
-                builder = builder.indented_line(
-                    colors::TEXT,
-                    Some(NerdFont::Package),
-                    &format!("Dependencies: {}", install.dependencies.len()),
-                );
+            // Checkpoint
+            if let Some(checkpoint) = &install.nearest_checkpoint {
+                builder = builder.field_indented("Checkpoint", checkpoint);
             }
 
-            // Checkpoint info
-            if let Some(checkpoint) = &install.nearest_checkpoint {
-                builder = builder.indented_line(
-                    colors::TEXT,
-                    Some(NerdFont::Flag),
-                    &format!("Checkpoint: {}", checkpoint),
-                );
+            // Dependencies
+            if !install.dependencies.is_empty() {
+                builder =
+                    builder.field_indented("Dependencies", &install.dependencies.len().to_string());
             }
         } else {
-            builder = builder.blank().line(
+            builder = builder.blank().separator().blank().line(
                 colors::YELLOW,
                 Some(NerdFont::Warning),
-                "No installation data found",
+                "Not set up on this device",
             );
         }
 
-        // Game dependencies (from game config)
+        // Game dependencies (from config)
         if !self.dependencies.is_empty() {
-            builder = builder.blank().line(
-                colors::TEXT,
+            builder = builder.blank().separator().blank().line(
+                colors::MAUVE,
                 Some(NerdFont::Package),
-                &format!("Configured Dependencies: {}", self.dependencies.len()),
+                &format!("Dependencies ({})", self.dependencies.len()),
             );
 
             for dep in self.dependencies.iter().take(3) {
@@ -255,8 +234,7 @@ impl Game {
             }
 
             if self.dependencies.len() > 3 {
-                builder =
-                    builder.subtext(&format!("  ... and {} more", self.dependencies.len() - 3));
+                builder = builder.subtext(&format!("  … and {} more", self.dependencies.len() - 3));
             }
         }
 

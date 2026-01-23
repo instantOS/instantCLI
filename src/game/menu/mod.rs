@@ -11,14 +11,16 @@ use crate::game::games::selection::{GameMenuEntry, select_game_menu_entry};
 use crate::game::operations::launch_game;
 use crate::game::restic;
 use crate::game::setup;
+use crate::menu::protocol::FzfPreview;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
 use state::EditState;
 
 /// Game action selection
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GameAction {
     Launch,
     Edit,
@@ -31,8 +33,8 @@ enum GameAction {
 #[derive(Clone)]
 struct GameActionItem {
     display: String,
-    preview: String,
     action: GameAction,
+    preview: FzfPreview,
 }
 
 impl FzfSelectable for GameActionItem {
@@ -51,8 +53,8 @@ impl FzfSelectable for GameActionItem {
         }
     }
 
-    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
-        crate::menu::protocol::FzfPreview::Text(self.preview.clone())
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview.clone()
     }
 }
 
@@ -103,10 +105,6 @@ impl GameState {
             save_path,
         })
     }
-
-    fn has_launch_command(&self) -> bool {
-        self.launch_command.is_some()
-    }
 }
 
 /// Build the game action menu items
@@ -116,25 +114,39 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
     // Add setup option first if game needs it
     if state.needs_setup {
         actions.push(GameActionItem {
-            display: format!("{} Setup", format_icon_colored(NerdFont::Wrench, colors::PEACH)),
-            preview: format!(
-                "Configure save path for '{}' on this device.\n\nThis game is registered but has no save data location set up yet.",
-                game_name
+            display: format!(
+                "{} Setup",
+                format_icon_colored(NerdFont::Wrench, colors::PEACH)
             ),
             action: GameAction::Setup,
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Wrench, "Setup Game")
+                .text(&format!(
+                    "Configure save path for '{}' on this device.",
+                    game_name
+                ))
+                .blank()
+                .text("This game is registered but has no save data location set up yet.")
+                .build(),
         });
     }
 
-    let launch_preview = match &state.launch_command {
-        Some(cmd) => format!(
-            "Launch {} with automatic save sync.\n\nCommand: {}",
-            game_name, cmd
-        ),
-        None => format!(
-            "Launch {} with automatic save sync.\n\n{} No launch command configured. Use Edit to set one.",
-            game_name,
-            char::from(NerdFont::Warning)
-        ),
+    // Launch preview
+    let launch_preview = {
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Rocket, "Launch Game")
+            .text(&format!("Launch {} with automatic save sync.", game_name));
+
+        if let Some(cmd) = &state.launch_command {
+            builder = builder.blank().field("Command", cmd);
+        } else {
+            builder = builder.blank().line(
+                colors::YELLOW,
+                Some(NerdFont::Warning),
+                "No launch command configured. Use Edit to set one.",
+            );
+        }
+        builder.build()
     };
 
     actions.push(GameActionItem {
@@ -142,94 +154,98 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
             "{} Launch",
             format_icon_colored(NerdFont::Rocket, colors::GREEN)
         ),
-        preview: launch_preview,
         action: GameAction::Launch,
+        preview: launch_preview,
     });
 
-    // Build Edit preview showing current config
-    let edit_preview = build_edit_preview(game_name, state);
+    // Edit preview
+    let edit_preview = {
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::Edit, "Edit Configuration")
+            .text(&format!("Edit configuration for '{}'", game_name))
+            .blank()
+            .separator()
+            .blank()
+            .line(colors::MAUVE, Some(NerdFont::FileConfig), "games.toml")
+            .field_indented(
+                "Description",
+                state.description.as_deref().unwrap_or("<not set>"),
+            )
+            .field_indented(
+                "Launch Command",
+                state.launch_command.as_deref().unwrap_or("<not set>"),
+            );
+
+        if let Some(path) = &state.save_path {
+            builder = builder
+                .blank()
+                .line(colors::MAUVE, Some(NerdFont::Desktop), "installations.toml")
+                .field_indented("Save Path", path);
+        } else {
+            builder = builder.blank().subtext("No installation on this device");
+        }
+        builder.build()
+    };
 
     actions.push(GameActionItem {
         display: format!(
             "{} Edit",
             format_icon_colored(NerdFont::Edit, colors::SAPPHIRE)
         ),
-        preview: edit_preview,
         action: GameAction::Edit,
+        preview: edit_preview,
     });
 
     // Move option - only show if game has a save path configured
     if !state.needs_setup {
-        let move_preview = format!(
-            "Move '{}' save location to a new path.\n\nCurrent path: {}",
-            game_name,
-            state.save_path.as_deref().unwrap_or("<not set>")
-        );
-
-        actions.push(GameActionItem {
-            display: format!(
-                "{} Move",
-                format_icon_colored(NerdFont::Folder, colors::LAVENDER)
-            ),
-            preview: move_preview,
-            action: GameAction::Move,
-        });
-
-        // Checkpoint option - restore from a past backup
-        let checkpoint_preview = format!(
-            "Browse and restore from a past checkpoint for '{}'.\n\nView all available snapshots and select one to restore.\nIf local saves are newer, you will be warned before overwriting.",
-            game_name
-        );
+        if let Some(path) = &state.save_path {
+            actions.push(GameActionItem {
+                display: format!(
+                    "{} Move",
+                    format_icon_colored(NerdFont::Folder, colors::LAVENDER)
+                ),
+                action: GameAction::Move,
+                preview: PreviewBuilder::new()
+                    .header(NerdFont::Folder, "Move Save Location")
+                    .text(&format!(
+                        "Move '{}' save location to a new path.",
+                        game_name
+                    ))
+                    .blank()
+                    .field("Current path", path)
+                    .build(),
+            });
+        }
 
         actions.push(GameActionItem {
             display: format!(
                 "{} Checkpoint",
                 format_icon_colored(NerdFont::Clock, colors::YELLOW)
             ),
-            preview: checkpoint_preview,
             action: GameAction::Checkpoint,
+            preview: PreviewBuilder::new()
+                .header(NerdFont::Clock, "Restore Checkpoint")
+                .text(&format!(
+                    "Browse and restore from a past checkpoint for '{}'.",
+                    game_name
+                ))
+                .blank()
+                .text("View all available snapshots and select one to restore.")
+                .text("If local saves are newer, you will be warned before overwriting.")
+                .build(),
         });
     }
 
     actions.push(GameActionItem {
         display: format!("{} Back", format_back_icon()),
-        preview: "Return to game selection".to_string(),
         action: GameAction::Back,
+        preview: PreviewBuilder::new()
+            .header(NerdFont::ArrowLeft, "Back")
+            .text("Return to game selection.")
+            .build(),
     });
 
     actions
-}
-
-/// Build preview text for Edit option showing current config
-fn build_edit_preview(game_name: &str, state: &GameState) -> String {
-    use crate::ui::preview::PreviewBuilder;
-
-    let mut builder = PreviewBuilder::new()
-        .header(NerdFont::Edit, "Edit Configuration")
-        .text(&format!("Edit configuration for '{}'", game_name))
-        .blank()
-        .separator()
-        .blank()
-        .line(colors::MAUVE, Some(NerdFont::FileConfig), "games.toml")
-        .field_indented(
-            "Description",
-            state.description.as_deref().unwrap_or("<not set>"),
-        )
-        .field_indented(
-            "Launch Command",
-            state.launch_command.as_deref().unwrap_or("<not set>"),
-        );
-
-    if let Some(path) = &state.save_path {
-        builder = builder
-            .blank()
-            .line(colors::MAUVE, Some(NerdFont::Desktop), "installations.toml")
-            .field_indented("Save Path", path);
-    } else {
-        builder = builder.blank().subtext("No installation on this device");
-    }
-
-    builder.build_string()
 }
 
 /// Result of handling a game action
@@ -248,7 +264,7 @@ fn handle_action(
 ) -> Result<ActionResult> {
     match action {
         GameAction::Launch => {
-            if !state.has_launch_command() {
+            if state.launch_command.is_none() {
                 FzfWrapper::message(&format!(
                     "No launch command configured for '{}'.\n\nUse Edit to set a launch command first.",
                     game_name

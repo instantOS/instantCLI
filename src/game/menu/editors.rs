@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::game::utils::path::{path_selection_to_tilde, tilde_display_string};
-use crate::game::utils::safeguards::{ensure_safe_path, PathUsage};
+use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::menu_utils::{
-    prompt_text_edit, FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder,
-    TextEditOutcome, TextEditPrompt,
+    FilePickerScope, FzfResult, FzfSelectable, FzfWrapper, PathInputBuilder, TextEditOutcome,
+    TextEditPrompt, prompt_text_edit,
 };
 use crate::ui::nerd_font::NerdFont;
 
