@@ -67,28 +67,76 @@ pub fn build_repo_action_menu(
         .unwrap_or(1);
     let total_repos = config.repos.len();
 
+    // Get repo info for context in toggle preview
+    let repo_manager = RepositoryManager::new(config, db);
+    let active_subdirs_info =
+        repo_manager
+            .get_repository_info(repo_name)
+            .ok()
+            .and_then(|local_repo| {
+                let active = local_repo
+                    .dotfile_dirs
+                    .iter()
+                    .filter(|d| d.is_active)
+                    .count();
+                let total = local_repo.dotfile_dirs.len();
+                if total > 0 {
+                    Some((active, total))
+                } else {
+                    None
+                }
+            });
+
     let mut actions = Vec::new();
 
     // Toggle enable/disable
     let (icon, color, text, preview) = if is_enabled {
+        let mut builder = PreviewBuilder::new()
+            .line(
+                colors::RED,
+                Some(NerdFont::ToggleOff),
+                &format!("Disable '{}'", repo_name),
+            )
+            .blank()
+            .line(colors::GREEN, Some(NerdFont::Check), "Currently Enabled")
+            .blank()
+            .subtext("Disabled repositories won't be applied during 'ins dot apply'.");
+
+        if let Some((active, total)) = active_subdirs_info {
+            builder = builder
+                .blank()
+                .subtext(&format!("Active subdirectories: {active}/{total}"));
+        }
+
         (
             NerdFont::ToggleOff,
             colors::RED,
             "Disable",
-            format!(
-                "Disable '{}'.\n\nDisabled repositories won't be applied during 'ins dot apply'.",
-                repo_name
-            ),
+            builder.build_string(),
         )
     } else {
+        let mut builder = PreviewBuilder::new()
+            .line(
+                colors::GREEN,
+                Some(NerdFont::ToggleOn),
+                &format!("Enable '{}'", repo_name),
+            )
+            .blank()
+            .line(colors::RED, Some(NerdFont::Cross), "Currently Disabled")
+            .blank()
+            .subtext("Enabled repositories will be applied during 'ins dot apply'.");
+
+        if let Some((active, total)) = active_subdirs_info {
+            builder = builder
+                .blank()
+                .subtext(&format!("Available subdirectories: {active}/{total}"));
+        }
+
         (
             NerdFont::ToggleOn,
             colors::GREEN,
             "Enable",
-            format!(
-                "Enable '{}'.\n\nEnabled repositories will be applied during 'ins dot apply'.",
-                repo_name
-            ),
+            builder.build_string(),
         )
     };
 
@@ -105,12 +153,18 @@ pub fn build_repo_action_menu(
                 "{} Bump Priority",
                 format_icon_colored(NerdFont::ArrowUp, colors::PEACH)
             ),
-            preview: format!(
-                "Move '{}' up in priority.\n\nCurrent: P{} → New: P{}\n\nHigher priority repos override lower ones for the same file.",
-                repo_name,
-                current_position,
-                current_position - 1
-            ),
+            preview: PreviewBuilder::new()
+                .line(
+                    colors::PEACH,
+                    Some(NerdFont::ArrowUp),
+                    &format!("Move '{}' up in priority", repo_name),
+                )
+                .blank()
+                .field("Current", &format!("P{}", current_position))
+                .field("New", &format!("P{}", current_position - 1))
+                .blank()
+                .subtext("Higher priority repos override lower ones for the same file.")
+                .build_string(),
             action: RepoAction::BumpPriority,
         });
     }
@@ -122,12 +176,18 @@ pub fn build_repo_action_menu(
                 "{} Lower Priority",
                 format_icon_colored(NerdFont::ArrowDown, colors::LAVENDER)
             ),
-            preview: format!(
-                "Move '{}' down in priority.\n\nCurrent: P{} → New: P{}\n\nHigher priority repos override lower ones for the same file.",
-                repo_name,
-                current_position,
-                current_position + 1
-            ),
+            preview: PreviewBuilder::new()
+                .line(
+                    colors::LAVENDER,
+                    Some(NerdFont::ArrowDown),
+                    &format!("Move '{}' down in priority", repo_name),
+                )
+                .blank()
+                .field("Current", &format!("P{}", current_position))
+                .field("New", &format!("P{}", current_position + 1))
+                .blank()
+                .subtext("Lower priority repos are overridden by higher ones.")
+                .build_string(),
             action: RepoAction::LowerPriority,
         });
     }
@@ -138,10 +198,15 @@ pub fn build_repo_action_menu(
             "{} Manage Subdirs",
             format_icon_colored(NerdFont::Folder, colors::MAUVE)
         ),
-        preview: format!(
-            "Manage dotfile directories for '{}'.\n\nEnable or disable specific subdirectories within this repository.",
-            repo_name
-        ),
+        preview: PreviewBuilder::new()
+            .line(
+                colors::MAUVE,
+                Some(NerdFont::Folder),
+                &format!("Manage subdirectories for '{}'", repo_name),
+            )
+            .blank()
+            .subtext("Enable or disable specific subdirectories within this repository.")
+            .build_string(),
         action: RepoAction::ManageSubdirs,
     });
 
@@ -152,26 +217,38 @@ pub fn build_repo_action_menu(
             NerdFont::Lock,
             colors::YELLOW,
             "Make Writable",
-            format!(
-                "Make '{}' writable.\n\n\
-⚠️  WARNING: This will allow the repository to diverge from upstream.\n\
-You may be unable to receive updates without manual work.\n\n\
-Consider adding your own dotfile repository on top instead.\n\
-See: https://instantos.io/docs/insdot.html",
-                repo_name
-            ),
+            PreviewBuilder::new()
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Unlock),
+                    &format!("Make '{}' writable", repo_name),
+                )
+                .blank()
+                .line(colors::RED, Some(NerdFont::Warning), "WARNING")
+                .blank()
+                .subtext("This will allow the repository to diverge from upstream.")
+                .subtext("You may be unable to receive updates without manual work.")
+                .blank()
+                .separator()
+                .blank()
+                .subtext("Consider adding your own dotfile repository on top instead.")
+                .build_string(),
         )
     } else {
         (
             NerdFont::Lock,
             colors::GREEN,
             "Make Read-Only",
-            format!(
-                "Make '{}' read-only.\n\n\
-Read-only repositories cannot be modified by 'ins dot add'.\n\
-This helps keep the repository in sync with upstream.",
-                repo_name
-            ),
+            PreviewBuilder::new()
+                .line(
+                    colors::GREEN,
+                    Some(NerdFont::Lock),
+                    &format!("Make '{}' read-only", repo_name),
+                )
+                .blank()
+                .subtext("Read-only repositories cannot be modified by 'ins dot add'.")
+                .subtext("This helps keep the repository in sync with upstream.")
+                .build_string(),
         )
     };
 
@@ -187,10 +264,21 @@ This helps keep the repository in sync with upstream.",
             "{} Open in Lazygit",
             format_icon_colored(NerdFont::GitBranch, colors::PEACH)
         ),
-        preview: format!(
-            "Open '{}' in Lazygit.\n\nLazygit is a terminal UI for git commands.\nYou can view commits, branches, and manage the repository.",
-            repo_name
-        ),
+        preview: PreviewBuilder::new()
+            .line(
+                colors::PEACH,
+                Some(NerdFont::GitBranch),
+                &format!("Open '{}' in Lazygit", repo_name),
+            )
+            .blank()
+            .text("Lazygit is a terminal UI for git commands.")
+            .blank()
+            .bullets([
+                "View commits",
+                "Manage branches",
+                "Stage and commit changes",
+            ])
+            .build_string(),
         action: RepoAction::OpenInLazygit,
     });
 
@@ -200,10 +288,15 @@ This helps keep the repository in sync with upstream.",
             "{} Open in Shell",
             format_icon_colored(NerdFont::Terminal, colors::GREEN)
         ),
-        preview: format!(
-            "Open a new shell in '{}'.\n\nYou can use this to manually browse or modify files in the repository.",
-            repo_name
-        ),
+        preview: PreviewBuilder::new()
+            .line(
+                colors::GREEN,
+                Some(NerdFont::Terminal),
+                &format!("Open a shell in '{}'", repo_name),
+            )
+            .blank()
+            .subtext("Browse or manually modify files in the repository.")
+            .build_string(),
         action: RepoAction::OpenInShell,
     });
 
@@ -223,17 +316,32 @@ This helps keep the repository in sync with upstream.",
             "{} Remove",
             format_icon_colored(NerdFont::Trash, colors::RED)
         ),
-        preview: format!(
-            "Remove '{}' from your configuration.\n\nYou'll be asked whether to:\n• Keep files (just remove from config)\n• Delete files (remove from disk too)",
-            repo_name
-        ),
+        preview: PreviewBuilder::new()
+            .line(
+                colors::RED,
+                Some(NerdFont::Trash),
+                &format!("Remove '{}'", repo_name),
+            )
+            .blank()
+            .text("Remove this repository from your configuration.")
+            .blank()
+            .line(
+                colors::MAUVE,
+                Some(NerdFont::Help),
+                "You'll be asked whether to:",
+            )
+            .bullet("Keep files (just remove from config)")
+            .bullet("Delete files (remove from disk too)")
+            .build_string(),
         action: RepoAction::Remove,
     });
 
     // Back
     actions.push(RepoActionItem {
         display: format!("{} Back", format_back_icon()),
-        preview: "Return to repository selection".to_string(),
+        preview: PreviewBuilder::new()
+            .subtext("Return to repository selection")
+            .build_string(),
         action: RepoAction::Back,
     });
 

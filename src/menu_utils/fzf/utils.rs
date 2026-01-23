@@ -40,19 +40,19 @@ pub(crate) fn get_responsive_layout() -> ResponsiveLayout {
         // Use bottom if: too narrow (<60 cols) OR aspect ratio <2:1
         if cols < 60 || ratio < 2.0 {
             ResponsiveLayout {
-                preview_window: "--preview-window=down:50%",
+                preview_window: "--preview-window=down:50%:wrap",
                 margin: "2%,2%", // Minimal vertical margins for stacked layout
             }
         } else {
             ResponsiveLayout {
-                preview_window: "--preview-window=right:50%",
+                preview_window: "--preview-window=right:50%:wrap",
                 margin: "10%,2%", // More vertical margin when side-by-side layout allows it
             }
         }
     } else {
         // Fallback to down if terminal size can't be detected - safer for narrow terminals
         ResponsiveLayout {
-            preview_window: "--preview-window=down:50%",
+            preview_window: "--preview-window=down:50%:wrap",
             margin: "2%,2%",
         }
     }
