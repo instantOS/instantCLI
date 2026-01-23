@@ -458,6 +458,24 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
 
     // Try to get more info from LocalRepo
     if let Ok(local_repo) = repo_manager.get_repository_info(repo_name) {
+        // Show description if present
+        if let Some(desc) = &local_repo.meta.description {
+            builder = builder.blank().line(
+                colors::TEXT,
+                Some(NerdFont::FileText),
+                &format!("Description: {}", desc),
+            );
+        }
+
+        // Show author if present
+        if let Some(author) = &local_repo.meta.author {
+            builder = builder.line(
+                colors::BLUE,
+                Some(NerdFont::User),
+                &format!("Author: {}", author),
+            );
+        }
+
         builder = builder
             .blank()
             .line(colors::MAUVE, Some(NerdFont::Folder), "Subdirectories");
@@ -898,7 +916,10 @@ fn handle_edit_details(repo_name: &str, config: &Config, db: &Database) -> Resul
 }
 
 /// Build the detail action menu items
-fn build_detail_action_menu(metadata: &crate::dot::types::RepoMetaData, _repo_name: &str) -> Vec<DetailActionItem> {
+fn build_detail_action_menu(
+    metadata: &crate::dot::types::RepoMetaData,
+    _repo_name: &str,
+) -> Vec<DetailActionItem> {
     let mut actions = Vec::new();
 
     // Edit Author
