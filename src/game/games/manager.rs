@@ -193,8 +193,8 @@ impl GameManager {
         Ok(())
     }
 
-    /// Move a game's save location to a new path
-    pub fn move_game(game_name: Option<String>, new_path: Option<String>) -> Result<()> {
+    /// Relocate a game's save path to point to a new location (does not move files)
+    pub fn relocate_game(game_name: Option<String>, new_path: Option<String>) -> Result<()> {
         let mut context = GameCreationContext::load()?;
 
         let game_name = match game_name {
@@ -287,7 +287,7 @@ impl GameManager {
             .to_tilde_string()
             .unwrap_or_else(|_| new_path.as_path().to_string_lossy().to_string());
 
-        println!("✓ Game '{game_name}' moved successfully!");
+        println!("✓ Save path for '{game_name}' relocated successfully!");
         println!("New save path: {}", path_display);
 
         Ok(())

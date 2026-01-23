@@ -201,16 +201,16 @@ fn build_action_menu(game_name: &str, state: &GameState) -> Vec<GameActionItem> 
         if let Some(path) = &state.save_path {
             actions.push(GameActionItem {
                 display: format!(
-                    "{} Move",
+                    "{} Change Save Path",
                     format_icon_colored(NerdFont::Folder, colors::LAVENDER)
                 ),
                 action: GameAction::Move,
                 preview: PreviewBuilder::new()
-                    .header(NerdFont::Folder, "Move Save Location")
-                    .text(&format!(
-                        "Move '{}' save location to a new path.",
-                        game_name
-                    ))
+                    .header(NerdFont::Folder, "Change Save Path")
+                    .text(&format!("Select a new save location for '{}'.", game_name))
+                    .blank()
+                    .subtext("This updates where the game manager looks for saves.")
+                    .subtext("Files are not moved automatically.")
                     .blank()
                     .field("Current path", path)
                     .build(),
@@ -298,7 +298,7 @@ fn handle_action(
             }
         }
         GameAction::Move => {
-            GameManager::move_game(Some(game_name.to_string()), None)?;
+            GameManager::relocate_game(Some(game_name.to_string()), None)?;
             if exit_after {
                 Ok(ActionResult::Exit)
             } else {
