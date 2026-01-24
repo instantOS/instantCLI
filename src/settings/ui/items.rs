@@ -97,7 +97,10 @@ impl TreeNode {
 
     /// Collect settings from this node (flattened), up to a limit
     pub fn collect_settings(&self, limit: usize) -> Vec<&'static dyn Setting> {
-        let mut result = Vec::with_capacity(limit);
+        let mut result = Vec::new();
+        if limit != usize::MAX {
+            result.reserve(limit);
+        }
         self.collect_settings_inner(&mut result, limit);
         result
     }
