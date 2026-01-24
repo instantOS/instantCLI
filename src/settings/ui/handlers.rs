@@ -41,7 +41,28 @@ pub fn handle_trait_setting(
     ctx: &mut SettingsContext,
     setting: &'static dyn Setting,
 ) -> Result<()> {
-    // Check supported distros
+    // Check unsupported distros first (blacklist)
+    if let Some(unsupported) = setting.metadata().unsupported_distros {
+        let current_os = crate::common::distro::OperatingSystem::detect();
+
+        if current_os.is_supported_by(unsupported) {
+            use crate::menu_utils::FzfWrapper;
+            FzfWrapper::builder()
+                .message([
+                    &format!("Setting '{}' is not available on your system.", setting.metadata().title),
+                    &format!("Current system: {}", current_os),
+                    "",
+                    "This setting is not supported on:",
+                    &unsupported.iter().map(|d| format!("  • {}", d)).collect::<Vec<_>>().join("\n"),
+                ].join("\n"))
+                .title("Not Supported")
+                .message_dialog()?;
+
+            return Ok(());
+        }
+    }
+
+    // Check supported distros (whitelist)
     if let Some(supported) = setting.metadata().supported_distros {
         let current_os = crate::common::distro::OperatingSystem::detect();
 
@@ -62,7 +83,7 @@ pub fn handle_trait_setting(
             FzfWrapper::builder()
                 .message(messages.join("\n"))
                 .title("Not Supported")
-                .show_message()?;
+                .message_dialog()?;
 
             return Ok(());
         }

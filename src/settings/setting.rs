@@ -183,6 +183,8 @@ pub struct SettingMetadata {
     pub requires_reapply: bool,
     pub requirements: Vec<&'static Dependency>,
     pub supported_distros: Option<&'static [OperatingSystem]>,
+    /// Blacklist of distros where this setting should not be available
+    pub unsupported_distros: Option<&'static [OperatingSystem]>,
 }
 
 impl SettingMetadata {
@@ -201,6 +203,7 @@ pub struct SettingMetadataBuilder {
     requires_reapply: bool,
     requirements: Vec<&'static Dependency>,
     supported_distros: Option<&'static [OperatingSystem]>,
+    unsupported_distros: Option<&'static [OperatingSystem]>,
 }
 
 impl SettingMetadataBuilder {
@@ -253,6 +256,11 @@ impl SettingMetadataBuilder {
         self
     }
 
+    pub fn unsupported_distros(mut self, distros: &'static [OperatingSystem]) -> Self {
+        self.unsupported_distros = Some(distros);
+        self
+    }
+
     pub fn build(self) -> SettingMetadata {
         let title = self.title.expect("SettingMetadata: title is required");
 
@@ -265,6 +273,7 @@ impl SettingMetadataBuilder {
             requires_reapply: self.requires_reapply,
             requirements: self.requirements,
             supported_distros: self.supported_distros,
+            unsupported_distros: self.unsupported_distros,
         }
     }
 }

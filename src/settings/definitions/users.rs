@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 
+use crate::common::distro::OperatingSystem;
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::users;
@@ -20,6 +21,7 @@ impl Setting for ManageUsers {
             .title("Manage Users")
             .icon(NerdFont::Users)
             .summary("Create, modify, and delete user accounts.\n\nManage user groups, shells, and permissions.")
+            .unsupported_distros(&[OperatingSystem::Termux])
             .build()
     }
 
