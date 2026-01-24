@@ -5,7 +5,7 @@ use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header
 use crate::ui::catppuccin::{colors, format_icon_colored, fzf_mocha_args, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::io::IsTerminal;
 
 const RESET: &str = "\x1b[0m";
@@ -58,8 +58,28 @@ pub fn show_help_for_path(path: &str) -> Result<()> {
         .responsive_layout()
         .select(items)?;
 
-    if let FzfResult::Error(err) = result {
-        return Err(anyhow!(err));
+    match result {
+        FzfResult::Error(err) => return Err(anyhow!(err)),
+        FzfResult::Cancelled => return Ok(()),
+        FzfResult::Selected(item) => {
+            // Parse the key format: "action:key" or "group:key"
+            if let Some((item_type, key_sequence)) = item.key.split_once(':') {
+                match item_type {
+                    "action" => {
+                        // Execute the assist action
+                        if let Some(action) = crate::assist::registry::find_action(key_sequence) {
+                            return crate::assist::execute::execute_assist(action, key_sequence);
+                        }
+                    }
+                    "group" => {
+                        // Recursively show help for the group
+                        return show_help_for_path(key_sequence);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        FzfResult::MultiSelected(_) => {} // Should not happen with single select
     }
 
     Ok(())
@@ -223,7 +243,7 @@ fn build_action_preview(action: &registry::AssistAction, key_chord: &str) -> Fzf
     } else {
         builder = builder.blank().title(colors::SAPPHIRE, "Dependencies");
         for dep in action.dependencies {
-            builder = builder.bullet(&format!("{}", dep.name));
+            builder = builder.bullet(&dep.name.to_string());
         }
     }
 
