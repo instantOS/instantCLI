@@ -282,6 +282,38 @@ impl FzfSelectable for MenuItem {
 
 impl FzfSelectable for DiscoveredDotfile {
     fn fzf_display_text(&self) -> String {
+        let status = if let Some(override_status) = &self.override_status {
+            let status_color = if override_status.exists {
+                colors::PEACH
+            } else {
+                colors::YELLOW
+            };
+            let label = if override_status.exists {
+                "override"
+            } else {
+                "override missing"
+            };
+            format!(
+                " {} {}: {} / {}",
+                format_icon_colored(NerdFont::Star, status_color),
+                label,
+                override_status.source.repo_name,
+                override_status.source.subdir_name
+            )
+        } else if let Some(default_source) = &self.default_source {
+            format!(
+                " {} default (no override): {} / {}",
+                format_icon_colored(NerdFont::Check, colors::GREEN),
+                default_source.repo_name,
+                default_source.subdir_name
+            )
+        } else {
+            format!(
+                " {} no active default",
+                format_icon_colored(NerdFont::Warning, colors::YELLOW)
+            )
+        };
+
         // Show warning indicator if there's an override but only 1 source
         let warning = if self.has_override && self.sources.len() == 1 {
             format!(
@@ -293,12 +325,13 @@ impl FzfSelectable for DiscoveredDotfile {
         };
 
         format!(
-            "{} {} ({} source{}){}",
+            "{} {} ({} source{}){}{}",
             format_icon_colored(NerdFont::File, colors::SKY),
             self.display_path,
             self.sources.len(),
             if self.sources.len() == 1 { "" } else { "s" },
-            warning
+            warning,
+            status
         )
     }
 
@@ -310,6 +343,48 @@ impl FzfSelectable for DiscoveredDotfile {
         let mut b = PreviewBuilder::new()
             .header(NerdFont::File, &self.display_path)
             .blank();
+
+        if let Some(override_status) = &self.override_status {
+            let status_color = if override_status.exists {
+                colors::PEACH
+            } else {
+                colors::YELLOW
+            };
+            let label = if override_status.exists {
+                "Override active"
+            } else {
+                "Override set but source missing"
+            };
+            b = b
+                .line(
+                    status_color,
+                    Some(NerdFont::Star),
+                    &format!(
+                        "{}: {} / {}",
+                        label, override_status.source.repo_name, override_status.source.subdir_name
+                    ),
+                )
+                .blank();
+        } else if let Some(default_source) = &self.default_source {
+            b = b
+                .line(
+                    colors::GREEN,
+                    Some(NerdFont::Check),
+                    &format!(
+                        "Default (no override): {} / {}",
+                        default_source.repo_name, default_source.subdir_name
+                    ),
+                )
+                .blank();
+        } else {
+            b = b
+                .line(
+                    colors::YELLOW,
+                    Some(NerdFont::Warning),
+                    "No active default source found",
+                )
+                .blank();
+        }
 
         // Show warning if there's an override but only 1 source
         if self.has_override && self.sources.len() == 1 {
@@ -328,10 +403,35 @@ impl FzfSelectable for DiscoveredDotfile {
         b = b.line(colors::MAUVE, Some(NerdFont::List), "Available sources:");
 
         for (i, source) in self.sources.iter().enumerate() {
+            let status = if let Some(override_status) = &self.override_status {
+                if override_status.source.repo_name == source.repo_name
+                    && override_status.source.subdir_name == source.subdir_name
+                {
+                    " (override)"
+                } else {
+                    ""
+                }
+            } else if let Some(default_source) = &self.default_source {
+                if default_source.repo_name == source.repo_name
+                    && default_source.subdir_name == source.subdir_name
+                {
+                    " (default)"
+                } else {
+                    ""
+                }
+            } else {
+                ""
+            };
             b = b.indented_line(
                 colors::TEXT,
                 None,
-                &format!("{}. {} / {}", i + 1, source.repo_name, source.subdir_name),
+                &format!(
+                    "{}. {} / {}{}",
+                    i + 1,
+                    source.repo_name,
+                    source.subdir_name,
+                    status
+                ),
             );
         }
         FzfPreview::Text(b.build_string())

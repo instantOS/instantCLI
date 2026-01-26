@@ -12,7 +12,7 @@ use crate::dot::config::Config;
 use crate::dot::localrepo::LocalRepo;
 use crate::dot::override_config::{DotfileSource, OverrideConfig};
 use crate::ui::nerd_font::NerdFont;
-use crate::ui::{Level, emit};
+use crate::ui::{emit, Level};
 
 /// A dotfile with all its available sources across repos.
 #[derive(Clone)]
@@ -22,6 +22,16 @@ pub struct DiscoveredDotfile {
     pub sources: Vec<DotfileSource>,
     /// Whether this file has an override set (even if only 1 source exists)
     pub has_override: bool,
+    /// Override details (even if source is missing)
+    pub override_status: Option<OverrideStatus>,
+    /// Default source when no override is set (priority-based)
+    pub default_source: Option<DotfileSource>,
+}
+
+#[derive(Clone)]
+pub struct OverrideStatus {
+    pub source: DotfileSource,
+    pub exists: bool,
 }
 
 /// Filter for dotfile discovery.
@@ -91,14 +101,18 @@ pub fn discover_dotfiles(
     }
 
     // Load overrides to include files with explicit overrides even if they only have 1 source
-    let overridden_paths: HashSet<PathBuf> = OverrideConfig::load()
-        .map(|o| {
-            o.overrides
-                .iter()
-                .map(|ov| ov.target_path.as_path().to_path_buf())
-                .collect()
-        })
-        .unwrap_or_default();
+    let overrides = OverrideConfig::load().unwrap_or_default();
+    let mut override_lookup = HashMap::new();
+    for override_entry in &overrides.overrides {
+        override_lookup.insert(
+            override_entry.target_path.as_path().to_path_buf(),
+            (
+                override_entry.source_repo.clone(),
+                override_entry.source_subdir.clone(),
+            ),
+        );
+    }
+    let overridden_paths: HashSet<PathBuf> = override_lookup.keys().cloned().collect();
 
     let mut results: Vec<DiscoveredDotfile> = sources_by_target
         .into_iter()
@@ -113,9 +127,32 @@ pub fn discover_dotfiles(
         })
         .map(|(target_path, sources)| {
             let has_override = overridden_paths.contains(&target_path);
+            let override_status =
+                override_lookup
+                    .get(&target_path)
+                    .map(|(repo_name, subdir_name)| {
+                        let relative_path =
+                            target_path.strip_prefix(home_dir()).unwrap_or(&target_path);
+                        let source_path = config
+                            .repos_path()
+                            .join(repo_name)
+                            .join(subdir_name)
+                            .join(relative_path);
+                        OverrideStatus {
+                            source: DotfileSource {
+                                repo_name: repo_name.clone(),
+                                subdir_name: subdir_name.clone(),
+                                source_path: source_path.clone(),
+                            },
+                            exists: source_path.exists(),
+                        }
+                    });
+            let default_source = sources.last().cloned();
             DiscoveredDotfile {
                 display_path: to_display_path(&target_path),
                 has_override,
+                override_status,
+                default_source,
                 target_path,
                 sources,
             }
