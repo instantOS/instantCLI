@@ -64,6 +64,14 @@ pub enum FzfResult<T> {
     Error(String),
 }
 
+/// Result type for checklist dialogs
+#[derive(Debug, Clone, PartialEq)]
+pub enum ChecklistResult<T> {
+    Confirmed(Vec<T>),
+    Action(ChecklistAction),
+    Cancelled,
+}
+
 /// Result type for confirmation dialogs
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConfirmResult {
@@ -239,6 +247,55 @@ impl FzfSelectable for ChecklistConfirm {
     }
 }
 
+/// Non-checkbox action item for checklists (e.g., "Auto defaults")
+#[derive(Clone)]
+pub struct ChecklistAction {
+    pub key: String,
+    pub text: String,
+    pub preview: FzfPreview,
+    pub color: &'static str,
+}
+
+impl ChecklistAction {
+    pub fn new<K: Into<String>, T: Into<String>>(key: K, text: T) -> Self {
+        Self {
+            key: key.into(),
+            text: text.into(),
+            preview: FzfPreview::None,
+            color: colors::BLUE,
+        }
+    }
+
+    pub fn with_preview(mut self, preview: FzfPreview) -> Self {
+        self.preview = preview;
+        self
+    }
+
+    pub fn with_color(mut self, color: &'static str) -> Self {
+        self.color = color;
+        self
+    }
+}
+
+impl FzfSelectable for ChecklistAction {
+    fn fzf_display_text(&self) -> String {
+        let color = hex_to_ansi_fg(self.color);
+        format!("{color}→ {RESET}{}", self.text)
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.key.clone()
+    }
+
+    fn fzf_initial_checked_state(&self) -> bool {
+        false
+    }
+}
+
 /// Intermediate result from a single checklist iteration.
 /// Used internally during the loop/reload pattern.
 pub(crate) enum ChecklistSelection {
@@ -247,4 +304,5 @@ pub(crate) enum ChecklistSelection {
     NotFound,       // User typed a query that doesn't match any item
     Toggled(usize), // Index of item that was toggled
     Confirmed,      // User selected confirm option
+    Action(String), // Selected action key
 }

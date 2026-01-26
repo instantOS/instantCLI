@@ -516,14 +516,17 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                 .checklist(confirm)
                 .checklist_dialog(item_list)?
             {
-                FzfResult::MultiSelected(selected) => {
+                crate::menu_utils::ChecklistResult::Confirmed(selected) => {
                     for item in selected {
                         println!("{}", item);
                     }
                     Ok(0)
                 }
-                FzfResult::Cancelled => Ok(1),
-                _ => Ok(2),
+                crate::menu_utils::ChecklistResult::Action(action) => {
+                    println!("{}", action.text);
+                    Ok(0)
+                }
+                crate::menu_utils::ChecklistResult::Cancelled => Ok(1),
             }
         }
         MenuCommands::Server { command } => handle_server_command(command).await,

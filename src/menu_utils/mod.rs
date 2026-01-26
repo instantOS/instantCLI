@@ -10,7 +10,9 @@ mod text_input;
 pub use crate::ui::preview::FzfPreview;
 pub use cursor::MenuCursor;
 pub use file_picker::{FilePickerResult, FilePickerScope, MenuWrapper};
-pub use fzf::{ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header};
+pub use fzf::{
+    ChecklistAction, ChecklistResult, ConfirmResult, FzfResult, FzfSelectable, FzfWrapper, Header,
+};
 pub use keychord::{KeyChord, KeyChordAction, KeyChordChild, KeyChordNode};
 pub use path_input::{PathInputBuilder, PathInputSelection};
 pub use slider::{SliderCommand, SliderConfig};

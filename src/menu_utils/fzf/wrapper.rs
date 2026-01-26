@@ -394,9 +394,9 @@ impl FzfWrapper {
             .checklist("Continue")
             .checklist_dialog(items)?
         {
-            FzfResult::MultiSelected(items) => Ok(Some(items)),
-            FzfResult::Cancelled => Ok(None),
-            _ => Ok(None),
+            ChecklistResult::Confirmed(items) => Ok(Some(items)),
+            ChecklistResult::Cancelled => Ok(None),
+            ChecklistResult::Action(_) => Ok(None),
         }
     }
 }

@@ -7,10 +7,12 @@ use crate::dot::config::Config;
 use crate::dot::localrepo::LocalRepo;
 use crate::dot::meta;
 use crate::dot::types::RepoMetaData;
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header};
-use crate::ui::catppuccin::fzf_mocha_args;
+use crate::menu_utils::{ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, Header};
+use crate::ui::catppuccin::{colors, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
+
+const AUTO_DEFAULTS_KEY: &str = "__auto_defaults__";
 
 #[derive(Clone)]
 struct DefaultSubdirItem {
@@ -76,8 +78,17 @@ pub(crate) fn handle_edit_default_subdirs(
 
     let repo_path = local_repo.local_path(config)?;
     let mut metadata = local_repo.meta.clone();
-    let current_defaults = resolve_default_active_subdirs(&metadata);
-    let current_set: HashSet<String> = current_defaults.into_iter().collect();
+    let current_set: HashSet<String> = metadata
+        .default_active_subdirs
+        .as_ref()
+        .map(|defaults| {
+            defaults
+                .iter()
+                .filter(|dir| metadata.dots_dirs.contains(*dir))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
 
     let items: Vec<DefaultSubdirItem> = metadata
         .dots_dirs
@@ -88,22 +99,42 @@ pub(crate) fn handle_edit_default_subdirs(
         })
         .collect();
 
+    let auto_action = ChecklistAction::new(AUTO_DEFAULTS_KEY, format_auto_option_label(&metadata))
+        .with_color(colors::YELLOW)
+        .with_preview(crate::menu::protocol::FzfPreview::Text(
+            PreviewBuilder::new()
+                .header(NerdFont::Star, "Auto defaults")
+                .text("Remove explicit defaults so the first subdir is enabled by default.")
+                .text("Use this when you want defaults to follow the repo's first subdir.")
+                .build_string(),
+        ));
+
     let selection = FzfWrapper::builder()
         .checklist("Save Defaults")
         .prompt("Toggle defaults")
-        .header(Header::fancy(&format!("Default enabled: {}", repo_name)))
+        .header(Header::fancy(&format!(
+            "Default enabled: {}\nUse Auto to reset | Select none to disable defaults",
+            repo_name
+        )))
+        .checklist_actions(vec![auto_action])
         .args(fzf_mocha_args())
         .responsive_layout()
         .checklist_dialog(items)?;
 
-    let selected = match selection {
-        FzfResult::MultiSelected(items) => items,
-        FzfResult::Cancelled => return Ok(()),
-        _ => return Ok(()),
+    let new_defaults = match selection {
+        ChecklistResult::Confirmed(items) => {
+            let selected_names: Vec<String> = items.into_iter().map(|item| item.name).collect();
+            Some(normalize_default_active_subdirs(&metadata, selected_names))
+        }
+        ChecklistResult::Action(action) => {
+            if action.key == AUTO_DEFAULTS_KEY {
+                None
+            } else {
+                return Ok(());
+            }
+        }
+        ChecklistResult::Cancelled => return Ok(()),
     };
-
-    let selected_names: Vec<String> = selected.into_iter().map(|item| item.name).collect();
-    let new_defaults = normalize_default_active_subdirs(&metadata, selected_names);
 
     if metadata.default_active_subdirs == new_defaults {
         FzfWrapper::message("Default enabled subdirectories unchanged.")?;
@@ -158,10 +189,7 @@ fn resolve_default_active_subdirs(meta: &RepoMetaData) -> Vec<String> {
     meta.dots_dirs.first().cloned().into_iter().collect()
 }
 
-fn normalize_default_active_subdirs(
-    meta: &RepoMetaData,
-    selected: Vec<String>,
-) -> Option<Vec<String>> {
+fn normalize_default_active_subdirs(meta: &RepoMetaData, selected: Vec<String>) -> Vec<String> {
     let selected_set: HashSet<String> = selected.into_iter().collect();
     let normalized: Vec<String> = meta
         .dots_dirs
@@ -170,20 +198,16 @@ fn normalize_default_active_subdirs(
         .cloned()
         .collect();
 
-    let implicit_default = meta.dots_dirs.first().cloned();
+    normalized
+}
 
-    if normalized.is_empty() {
-        return Some(Vec::new());
-    }
-
-    if let Some(default_dir) = implicit_default
-        && normalized.len() == 1
-        && normalized[0] == default_dir
-    {
-        return None;
-    }
-
-    Some(normalized)
+fn format_auto_option_label(meta: &RepoMetaData) -> String {
+    let default = meta
+        .dots_dirs
+        .first()
+        .map(|dir| dir.as_str())
+        .unwrap_or("none");
+    format!("Auto (first: {default})")
 }
 
 pub(crate) fn format_default_active_label(meta: &RepoMetaData) -> String {

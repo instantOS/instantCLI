@@ -101,8 +101,10 @@ impl FzfSelectable for SubdirMenuItem {
                     .blank()
                     .field("Current", current)
                     .blank()
+                    .subtext(
+                        "Select Auto (first subdir) to remove defaults and use the first subdir.",
+                    )
                     .subtext("Select none to disable the repo by default.")
-                    .subtext("Select only the first subdir to reset to auto.")
                     .build_string(),
             )
         } else if self.is_orphaned {

@@ -23,6 +23,7 @@ pub struct FzfBuilder {
     initial_query: Option<String>,
     ghost_text: Option<String>,
     responsive_layout: bool,
+    checklist_actions: Vec<ChecklistAction>,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +88,7 @@ impl FzfBuilder {
             initial_query: None,
             ghost_text: None,
             responsive_layout: false,
+            checklist_actions: Vec::new(),
         }
     }
 
@@ -211,6 +213,15 @@ impl FzfBuilder {
         self
     }
 
+    /// Add action buttons (non-checkbox items) to a checklist dialog.
+    pub fn checklist_actions<I>(mut self, actions: I) -> Self
+    where
+        I: IntoIterator<Item = ChecklistAction>,
+    {
+        self.checklist_actions = actions.into_iter().collect();
+        self
+    }
+
     /// Set whether the checklist allows confirming with no items checked.
     pub fn allow_empty_confirm(mut self, allow: bool) -> Self {
         if let DialogType::Checklist { allow_empty, .. } = &mut self.dialog_type {
@@ -219,9 +230,11 @@ impl FzfBuilder {
         self
     }
 
-    /// Execute checklist dialog and return checked items.
-    /// Returns FzfResult::MultiSelected(Vec<T>) with checked items.
-    pub fn checklist_dialog<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
+    /// Execute checklist dialog and return checked items or selected action.
+    pub fn checklist_dialog<T: FzfSelectable + Clone>(
+        self,
+        items: Vec<T>,
+    ) -> Result<ChecklistResult<T>> {
         if !matches!(self.dialog_type, DialogType::Checklist { .. }) {
             return Err(anyhow::anyhow!("Builder not configured for checklist"));
         }
@@ -827,9 +840,9 @@ impl FzfBuilder {
         output_lines
     }
 
-    fn execute_checklist<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<FzfResult<T>> {
+    fn execute_checklist<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<ChecklistResult<T>> {
         if items.is_empty() {
-            return Ok(FzfResult::Cancelled);
+            return Ok(ChecklistResult::Cancelled);
         }
 
         let (confirm_text, allow_empty) = match &self.dialog_type {
@@ -847,6 +860,13 @@ impl FzfBuilder {
         // Create confirm option
         let confirm_item = ChecklistConfirm::new(&confirm_text);
 
+        let action_items = self.checklist_actions;
+        let mut action_map: std::collections::HashMap<String, ChecklistAction> =
+            std::collections::HashMap::new();
+        for action in &action_items {
+            action_map.insert(action.fzf_key(), action.clone());
+        }
+
         // Track cursor position across FZF restarts
         let mut cursor: Option<usize> = None;
 
@@ -863,6 +883,13 @@ impl FzfBuilder {
                 input_lines.push(format!("{}\x1f{}", display, key));
             }
 
+            // Add action items (non-checkbox)
+            for action in &action_items {
+                let display = action.fzf_display_text();
+                let key = action.fzf_key();
+                input_lines.push(format!("{}\x1f{}", display, key));
+            }
+
             // Add confirm option at the end
             let confirm_display = confirm_item.fzf_display_text();
             let confirm_key = confirm_item.fzf_key();
@@ -871,10 +898,11 @@ impl FzfBuilder {
             let input_text = input_lines.join("\n");
 
             // Execute FZF with current state and cursor position
-            let result = self.run_checklist_fzf(&input_text, &key_to_index, cursor)?;
+            let result =
+                self.run_checklist_fzf(&input_text, &key_to_index, &action_map, cursor)?;
 
             match result {
-                ChecklistSelection::Cancelled => return Ok(FzfResult::Cancelled),
+                ChecklistSelection::Cancelled => return Ok(ChecklistResult::Cancelled),
                 ChecklistSelection::EmptyQuery => {
                     // User pressed Enter with empty query - ask if they want to discard selections
                     // Check if there are any checked items
@@ -887,7 +915,7 @@ impl FzfBuilder {
                             .no_text("Keep")
                             .confirm_dialog()?
                         {
-                            ConfirmResult::Yes => return Ok(FzfResult::Cancelled),
+                            ConfirmResult::Yes => return Ok(ChecklistResult::Cancelled),
                             ConfirmResult::No => continue,
                             ConfirmResult::Cancelled => continue,
                         }
@@ -934,7 +962,12 @@ impl FzfBuilder {
                         .map(|(_, item)| item.item)
                         .collect();
 
-                    return Ok(FzfResult::MultiSelected(checked));
+                    return Ok(ChecklistResult::Confirmed(checked));
+                }
+                ChecklistSelection::Action(key) => {
+                    if let Some(action) = action_map.get(&key) {
+                        return Ok(ChecklistResult::Action(action.clone()));
+                    }
                 }
             }
         }
@@ -944,6 +977,7 @@ impl FzfBuilder {
         &self,
         input_text: &str,
         key_to_index: &std::collections::HashMap<String, usize>,
+        action_map: &std::collections::HashMap<String, ChecklistAction>,
         cursor: Option<usize>,
     ) -> Result<ChecklistSelection> {
         let mut cmd = Command::new("fzf");
@@ -1000,13 +1034,14 @@ impl FzfBuilder {
         crate::menu::server::unregister_menu_process(pid);
 
         // Parse output
-        self.parse_checklist_output(output, key_to_index)
+        self.parse_checklist_output(output, key_to_index, action_map)
     }
 
     fn parse_checklist_output(
         &self,
         result: std::process::Output,
         key_to_index: &std::collections::HashMap<String, usize>,
+        action_map: &std::collections::HashMap<String, ChecklistAction>,
     ) -> Result<ChecklistSelection> {
         let exit_code = result.status.code();
 
@@ -1054,6 +1089,10 @@ impl FzfBuilder {
             // Check if it's the confirm action
             if key == ChecklistConfirm::confirm_key() {
                 return Ok(ChecklistSelection::Confirmed);
+            }
+
+            if action_map.contains_key(key) {
+                return Ok(ChecklistSelection::Action(key.to_string()));
             }
 
             // Look up the index for this key
