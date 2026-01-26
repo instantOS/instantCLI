@@ -23,9 +23,11 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
             Level::Warn,
             "dot.merge.not_found",
             &format!(
-                "{} No tracked dotfiles found at ~/{}",
+                "{} No tracked dotfiles found at ~/{}\n   Try {} or {}",
                 char::from(NerdFont::Warning),
-                relative_path.display()
+                relative_path.display(),
+                "ins dot status".yellow(),
+                "ins dot add".yellow()
             ),
             None,
         );
