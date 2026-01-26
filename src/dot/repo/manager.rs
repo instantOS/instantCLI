@@ -33,10 +33,8 @@ impl<'a> RepositoryManager<'a> {
 
             match LocalRepo::new(self.config, repo_config.name.clone()) {
                 Ok(local_repo) => {
-                    for dir in &local_repo.dotfile_dirs {
-                        if dir.is_active {
-                            active_dirs.push(dir.path.clone());
-                        }
+                    for dir in local_repo.active_dotfile_dirs() {
+                        active_dirs.push(dir.path.clone());
                     }
                 }
                 Err(e) => {

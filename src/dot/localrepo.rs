@@ -90,12 +90,8 @@ impl LocalRepo {
         let active_subdirs = cfg.get_active_subdirs(&name);
 
         // Create dotfile_dirs
-        let dotfile_dirs = Self::dotfile_dirs_from_path(
-            &local_path,
-            &meta.dots_dirs,
-            &active_subdirs,
-            repo_config.active_subdirectories.as_ref(),
-        )?;
+        let dotfile_dirs =
+            Self::dotfile_dirs_from_path(&local_path, &meta.dots_dirs, &active_subdirs)?;
 
         Ok(LocalRepo {
             url: repo_config.url.clone(),
@@ -118,7 +114,7 @@ impl LocalRepo {
     ///
     /// Arguments:
     /// - available_subdirs: All subdirectories configured in the repo metadata
-    /// - active_subdirs: Subdirectories that should be marked as active (from config)
+    /// - active_subdirs: Effective active subdirectories (from config + defaults)
     ///
     /// This creates DotfileDir instances for ALL available subdirectories.
     /// The ORDER of active_subdirs determines priority - earlier entries have higher priority.
@@ -127,14 +123,11 @@ impl LocalRepo {
         repo_path: &Path,
         available_subdirs: &[String],
         active_subdirs: &[String],
-        configured_subdirs: Option<&Vec<String>>,
     ) -> Result<Vec<DotfileDir>> {
         let mut dotfile_dirs = Vec::new();
         let mut added_subdirs = std::collections::HashSet::new();
 
         // Phase 1: Active subdirs in priority order
-        // - If configured in global config: mark active
-        // - If inferred from metadata defaults: include but treat as inactive
         // Include if in metadata OR if the directory exists on disk
         for subdir_name in active_subdirs {
             let in_metadata = available_subdirs.contains(subdir_name);
@@ -142,9 +135,7 @@ impl LocalRepo {
             let exists_on_disk = subdir_path.exists();
 
             if in_metadata || exists_on_disk {
-                let is_active = configured_subdirs
-                    .map(|configured| configured.contains(subdir_name))
-                    .unwrap_or(false);
+                let is_active = true;
                 let dotfile_dir = DotfileDir::new_no_create(subdir_name, repo_path, is_active)?;
                 dotfile_dirs.push(dotfile_dir);
                 added_subdirs.insert(subdir_name.clone());
@@ -160,6 +151,10 @@ impl LocalRepo {
         }
 
         Ok(dotfile_dirs)
+    }
+
+    pub fn active_dotfile_dirs(&self) -> impl Iterator<Item = &DotfileDir> {
+        self.dotfile_dirs.iter().filter(|dir| dir.is_active)
     }
 
     pub fn get_checked_out_branch(&self, cfg: &Config) -> Result<String> {

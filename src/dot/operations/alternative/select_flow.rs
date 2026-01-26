@@ -153,7 +153,7 @@ fn run_source_selection_menu(
     overrides: &OverrideConfig,
 ) -> Result<Flow> {
     let current = overrides.get_override(path);
-    let default_source = sources.last().cloned();
+    let default_source = super::default_source_for(&sources);
     let mut cursor = MenuCursor::new();
 
     let items: Vec<SourceOption> = sources

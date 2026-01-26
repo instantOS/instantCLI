@@ -63,7 +63,7 @@ pub fn discover_dotfiles(
             Err(_) => continue,
         };
 
-        for dotfile_dir in &local_repo.dotfile_dirs {
+        for dotfile_dir in local_repo.active_dotfile_dirs() {
             for entry in WalkDir::new(&dotfile_dir.path)
                 .into_iter()
                 .filter_map(|e| e.ok())
@@ -157,7 +157,7 @@ pub fn discover_dotfiles(
                             }
                         }
                     });
-            let default_source = sources.last().cloned();
+            let default_source = super::default_source_for(&sources);
             DiscoveredDotfile {
                 display_path: to_display_path(&target_path),
                 has_override,
@@ -196,9 +196,9 @@ pub fn get_destinations(config: &Config) -> Vec<DotfileSource> {
             }
         };
 
-        let active_subdirs = repo.active_subdirectories.as_deref().unwrap_or(&[]);
+        let active_subdirs = config.resolve_active_subdirs(repo);
 
-        for subdir in active_subdirs {
+        for subdir in &active_subdirs {
             if valid_subdirs.contains(subdir) {
                 // Valid destination - in metadata
                 destinations.push(DotfileSource {

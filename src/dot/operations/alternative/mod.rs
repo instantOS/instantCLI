@@ -17,3 +17,9 @@ mod select_flow;
 pub use apply::add_to_destination;
 pub use create_flow::pick_destination_and_add;
 pub use handle::handle_alternative;
+
+use crate::dot::override_config::DotfileSource;
+
+pub(crate) fn default_source_for(sources: &[DotfileSource]) -> Option<DotfileSource> {
+    sources.first().cloned()
+}

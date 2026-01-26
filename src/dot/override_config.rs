@@ -5,12 +5,12 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::common::TildePath;
 use crate::common::paths;
+use crate::common::TildePath;
 use crate::dot::config::Config;
 use crate::dot::dotfile::Dotfile;
 use crate::dot::localrepo::LocalRepo;
@@ -150,7 +150,7 @@ pub fn find_all_sources(config: &Config, target_path: &Path) -> Result<Vec<Dotfi
             Err(_) => continue,
         };
 
-        for dotfile_dir in &local_repo.dotfile_dirs {
+        for dotfile_dir in local_repo.active_dotfile_dirs() {
             let source_path = dotfile_dir.path.join(relative_path);
             if source_path.exists() {
                 let subdir_name = dotfile_dir
@@ -174,7 +174,8 @@ pub fn find_all_sources(config: &Config, target_path: &Path) -> Result<Vec<Dotfi
 /// Apply overrides to a merged dotfiles map
 ///
 /// This modifies the source_path of dotfiles that have an active override,
-/// pointing them to the override source instead of the default.
+/// pointing them to the override source instead of the default. Overrides
+/// are only applied when the source repo/subdir is enabled and active.
 pub fn apply_overrides(
     dotfiles: &mut HashMap<PathBuf, Dotfile>,
     overrides: &OverrideConfig,
@@ -182,9 +183,30 @@ pub fn apply_overrides(
 ) -> Result<()> {
     let home = PathBuf::from(shellexpand::tilde("~").to_string());
     let lookup = overrides.build_lookup_map();
+    let mut active_subdirs_by_repo: HashMap<String, HashSet<String>> = HashMap::new();
+
+    for repo in &config.repos {
+        if !repo.enabled {
+            continue;
+        }
+
+        active_subdirs_by_repo.insert(
+            repo.name.clone(),
+            config.resolve_active_subdirs(repo).into_iter().collect(),
+        );
+    }
 
     for (target_path, dotfile) in dotfiles.iter_mut() {
         if let Some(override_entry) = lookup.get(target_path) {
+            let Some(active_subdirs) = active_subdirs_by_repo.get(&override_entry.source_repo)
+            else {
+                continue;
+            };
+
+            if !active_subdirs.contains(&override_entry.source_subdir) {
+                continue;
+            }
+
             // Construct the overridden source path
             let relative_path = target_path.strip_prefix(&home).unwrap_or(target_path);
             let repo_path = config.repos_path().join(&override_entry.source_repo);
