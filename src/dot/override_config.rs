@@ -9,8 +9,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::common::paths;
 use crate::common::TildePath;
+use crate::common::paths;
 use crate::dot::config::Config;
 use crate::dot::dotfile::Dotfile;
 use crate::dot::localrepo::LocalRepo;
