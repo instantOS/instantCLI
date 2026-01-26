@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.3](https://github.com/instantOS/instantCLI/compare/v0.13.2...v0.13.3) - 2026-01-26
+
+### Fixed
+
+- fix picker
+- fix subdir enablement bug
+- fix crash
+- fix help tree order
+- fix unsupported
+
+### Other
+
+- prettier repo select
+- better args
+- better structure
+- better status
+- better status message
+- fmt
+- more intuitive UX
+- less io
+- display status in alternative picker
+- better alternative flow
+- init better auto option and checkbox actions
+- fmt
+- refactor subdir actions
+- better empty default handling
+- better default subdir handling
+- default subdirs action
+- add unsupported thingy
+- better help menu
+- better assist help tree
+- add sync all option
+- better looking `ins game menu`
+- better label
+- better ins game previews
+- better edit pattern
+- better text edit helper
+- refactor long functions
+- refactor repo actions
+- better preview
+- better repo actions
+- prettier preview
+- check systemd
+
 ## [0.13.2](https://github.com/instantOS/instantCLI/compare/v0.13.1...v0.13.2) - 2026-01-22
 
 ### Fixed
