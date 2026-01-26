@@ -1,11 +1,14 @@
 //! Subdirectory action handling for the dot menu
 
 use anyhow::Result;
+use std::collections::HashSet;
 
 use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::localrepo::LocalRepo;
+use crate::dot::meta;
 use crate::dot::repo::cli::RepoCommands;
+use crate::dot::types::RepoMetaData;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
@@ -437,6 +440,10 @@ fn handle_delete_subdir(repo_name: &str, subdir_name: &str, config: &mut Config)
     Ok(())
 }
 
+const ADD_NEW_SENTINEL: &str = "__add_new__";
+const EDIT_DEFAULTS_SENTINEL: &str = "__edit_defaults__";
+const BACK_SENTINEL: &str = "..";
+
 #[derive(Clone)]
 struct SubdirMenuItem {
     subdir: String,
@@ -444,16 +451,22 @@ struct SubdirMenuItem {
     is_orphaned: bool,
     priority: Option<usize>,
     total_active: usize,
+    default_label: Option<String>,
 }
 
 impl FzfSelectable for SubdirMenuItem {
     fn fzf_display_text(&self) -> String {
-        if self.subdir == ".." {
+        if self.subdir == BACK_SENTINEL {
             format!("{} Back", format_back_icon())
-        } else if self.subdir == "__add_new__" {
+        } else if self.subdir == ADD_NEW_SENTINEL {
             format!(
                 "{} Add Dotfile Dir",
                 format_icon_colored(NerdFont::Plus, colors::GREEN)
+            )
+        } else if self.subdir == EDIT_DEFAULTS_SENTINEL {
+            format!(
+                "{} Edit Default Enabled",
+                format_icon_colored(NerdFont::Star, colors::YELLOW)
             )
         } else if self.is_orphaned {
             // Orphaned: enabled in config but not in metadata
@@ -488,9 +501,9 @@ impl FzfSelectable for SubdirMenuItem {
     fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
         use crate::menu::protocol::FzfPreview;
 
-        if self.subdir == ".." {
+        if self.subdir == BACK_SENTINEL {
             FzfPreview::Text("Return to repo menu".to_string())
-        } else if self.subdir == "__add_new__" {
+        } else if self.subdir == ADD_NEW_SENTINEL {
             FzfPreview::Text(
                 PreviewBuilder::new()
                     .header(NerdFont::Plus, "Add Dotfile Directory")
@@ -500,6 +513,22 @@ impl FzfSelectable for SubdirMenuItem {
                     .bullet("Create the directory in the repository")
                     .bullet("Add it to instantdots.toml")
                     .bullet("You can then enable it from this menu")
+                    .build_string(),
+            )
+        } else if self.subdir == EDIT_DEFAULTS_SENTINEL {
+            let current = self
+                .default_label
+                .as_deref()
+                .unwrap_or("Auto (first subdir)");
+            FzfPreview::Text(
+                PreviewBuilder::new()
+                    .header(NerdFont::Star, "Default Enabled")
+                    .text("Defaults are only used when you haven't enabled subdirs for this repo.")
+                    .blank()
+                    .field("Current", current)
+                    .blank()
+                    .subtext("Select none to disable the repo by default.")
+                    .subtext("Select only the first subdir to reset to auto.")
                     .build_string(),
             )
         } else if self.is_orphaned {
@@ -616,6 +645,7 @@ pub fn handle_manage_subdirs(
                     } else {
                         0
                     },
+                    default_label: None,
                 }
             })
             .collect();
@@ -625,13 +655,25 @@ pub fn handle_manage_subdirs(
         let is_read_only = repo_config.map(|r| r.read_only).unwrap_or(false);
         let is_external = local_repo.is_external(config);
 
-        if !is_read_only && !is_external {
+        if !is_read_only && !is_external && local_repo.meta.dots_dirs.len() > 1 {
             subdir_items.push(SubdirMenuItem {
-                subdir: "__add_new__".to_string(),
+                subdir: EDIT_DEFAULTS_SENTINEL.to_string(),
                 is_active: false,
                 is_orphaned: false,
                 priority: None,
                 total_active: 0,
+                default_label: Some(format_default_active_label(&local_repo.meta)),
+            });
+        }
+
+        if !is_read_only && !is_external {
+            subdir_items.push(SubdirMenuItem {
+                subdir: ADD_NEW_SENTINEL.to_string(),
+                is_active: false,
+                is_orphaned: false,
+                priority: None,
+                total_active: 0,
+                default_label: None,
             });
         }
 
@@ -644,16 +686,18 @@ pub fn handle_manage_subdirs(
                 is_orphaned: true,
                 priority: None,
                 total_active: 0,
+                default_label: None,
             });
         }
 
         // Add back option
         subdir_items.push(SubdirMenuItem {
-            subdir: "..".to_string(),
+            subdir: BACK_SENTINEL.to_string(),
             is_active: false,
             is_orphaned: false,
             priority: None,
             total_active: 0,
+            default_label: None,
         });
 
         let mut builder = FzfWrapper::builder()
@@ -677,12 +721,17 @@ pub fn handle_manage_subdirs(
             _ => return Ok(()),
         };
 
-        if selected_subdir == ".." {
+        if selected_subdir == BACK_SENTINEL {
             return Ok(());
         }
 
+        if selected_subdir == EDIT_DEFAULTS_SENTINEL {
+            handle_edit_default_subdirs(repo_name, &local_repo, config)?;
+            continue;
+        }
+
         // Handle add new subdirectory
-        if selected_subdir == "__add_new__" {
+        if selected_subdir == ADD_NEW_SENTINEL {
             // Prompt for new directory name
             let new_dir = match FzfWrapper::builder()
                 .input()
@@ -719,6 +768,184 @@ pub fn handle_manage_subdirs(
 
         // Show action menu for the selected subdirectory
         handle_subdir_actions(repo_name, &selected_subdir, config, db, debug)?;
+    }
+}
+
+#[derive(Clone)]
+struct DefaultSubdirItem {
+    name: String,
+    checked: bool,
+}
+
+impl FzfSelectable for DefaultSubdirItem {
+    fn fzf_display_text(&self) -> String {
+        self.name.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.name.clone()
+    }
+
+    fn fzf_preview(&self) -> crate::menu::protocol::FzfPreview {
+        crate::menu::protocol::FzfPreview::Text(
+            PreviewBuilder::new()
+                .header(NerdFont::Folder, &self.name)
+                .text("Include this subdirectory in the default enabled set.")
+                .build_string(),
+        )
+    }
+
+    fn fzf_initial_checked_state(&self) -> bool {
+        self.checked
+    }
+}
+
+fn handle_edit_default_subdirs(
+    repo_name: &str,
+    local_repo: &LocalRepo,
+    config: &Config,
+) -> Result<()> {
+    if local_repo.is_external(config) {
+        FzfWrapper::message(
+            "External repositories use metadata from the global config and cannot be edited here.",
+        )?;
+        return Ok(());
+    }
+
+    let repo_config = match config.repos.iter().find(|r| r.name == repo_name) {
+        Some(repo) => repo,
+        None => {
+            FzfWrapper::message(&format!("Repository '{}' not found", repo_name))?;
+            return Ok(());
+        }
+    };
+
+    if repo_config.read_only {
+        FzfWrapper::message(&format!(
+            "Repository '{}' is read-only. Cannot edit default subdirectories.",
+            repo_name
+        ))?;
+        return Ok(());
+    }
+
+    if local_repo.meta.dots_dirs.is_empty() {
+        FzfWrapper::message("No dotfile directories are defined for this repository.")?;
+        return Ok(());
+    }
+
+    let repo_path = local_repo.local_path(config)?;
+    let mut metadata = local_repo.meta.clone();
+    let current_defaults = resolve_default_active_subdirs(&metadata);
+    let current_set: HashSet<String> = current_defaults.into_iter().collect();
+
+    let items: Vec<DefaultSubdirItem> = metadata
+        .dots_dirs
+        .iter()
+        .map(|dir| DefaultSubdirItem {
+            name: dir.clone(),
+            checked: current_set.contains(dir),
+        })
+        .collect();
+
+    let selection = FzfWrapper::builder()
+        .checklist("Save Defaults")
+        .prompt("Toggle defaults")
+        .header(Header::fancy(&format!("Default enabled: {}", repo_name)))
+        .args(fzf_mocha_args())
+        .responsive_layout()
+        .checklist_dialog(items)?;
+
+    let selected = match selection {
+        FzfResult::MultiSelected(items) => items,
+        FzfResult::Cancelled => return Ok(()),
+        _ => return Ok(()),
+    };
+
+    let selected_names: Vec<String> = selected.into_iter().map(|item| item.name).collect();
+    let new_defaults = normalize_default_active_subdirs(&metadata, selected_names);
+
+    if metadata.default_active_subdirs == new_defaults {
+        FzfWrapper::message("Default enabled subdirectories unchanged.")?;
+        return Ok(());
+    }
+
+    metadata.default_active_subdirs = new_defaults.clone();
+
+    match meta::update_meta(&repo_path, &metadata) {
+        Ok(()) => match new_defaults {
+            Some(defaults) => {
+                FzfWrapper::message(&format!(
+                    "Default enabled subdirectories updated: {}",
+                    defaults.join(", ")
+                ))?;
+            }
+            None => {
+                let fallback = metadata
+                    .dots_dirs
+                    .first()
+                    .map(|dir| dir.as_str())
+                    .unwrap_or("(none)");
+                FzfWrapper::message(&format!(
+                    "Default enabled subdirectories reset to auto (first: {}).",
+                    fallback
+                ))?;
+            }
+        },
+        Err(e) => {
+            FzfWrapper::message(&format!("Error: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
+
+fn resolve_default_active_subdirs(meta: &RepoMetaData) -> Vec<String> {
+    let mut defaults = meta.default_active_subdirs.clone().unwrap_or_default();
+    defaults.retain(|dir| meta.dots_dirs.contains(dir));
+
+    if defaults.is_empty() {
+        if let Some(first) = meta.dots_dirs.first() {
+            defaults.push(first.clone());
+        }
+    }
+
+    defaults
+}
+
+fn normalize_default_active_subdirs(
+    meta: &RepoMetaData,
+    selected: Vec<String>,
+) -> Option<Vec<String>> {
+    let selected_set: HashSet<String> = selected.into_iter().collect();
+    let normalized: Vec<String> = meta
+        .dots_dirs
+        .iter()
+        .filter(|dir| selected_set.contains(*dir))
+        .cloned()
+        .collect();
+
+    let implicit_default = meta.dots_dirs.first().cloned();
+
+    match (normalized.is_empty(), implicit_default) {
+        (true, _) => None,
+        (false, Some(default_dir)) if normalized.len() == 1 && normalized[0] == default_dir => None,
+        _ => Some(normalized),
+    }
+}
+
+fn format_default_active_label(meta: &RepoMetaData) -> String {
+    let defaults = resolve_default_active_subdirs(meta);
+
+    if meta
+        .default_active_subdirs
+        .as_ref()
+        .map(|dirs| dirs.is_empty())
+        .unwrap_or(true)
+    {
+        let default = defaults.first().map(|s| s.as_str()).unwrap_or("none");
+        format!("Auto (first: {})", default)
+    } else {
+        defaults.join(", ")
     }
 }
 
