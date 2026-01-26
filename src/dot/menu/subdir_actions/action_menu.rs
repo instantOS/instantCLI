@@ -8,6 +8,7 @@ use crate::dot::repo::cli::RepoCommands;
 use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper, Header, MenuCursor};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
 use super::delete::handle_delete_subdir;
 
@@ -112,26 +113,32 @@ fn build_subdir_action_menu(
 
     let mut actions = Vec::new();
 
-    // Toggle enable/disable
+    // Toggle enable/disable (show current state, select to toggle)
     let (icon, color, text, preview) = if is_active {
-        (
-            NerdFont::ToggleOff,
-            colors::RED,
-            "Disable",
-            format!(
-                "Disable '{}'.\n\nDisabled subdirectories won't be applied during 'ins dot apply'.",
-                subdir_name
-            ),
-        )
-    } else {
         (
             NerdFont::ToggleOn,
             colors::GREEN,
-            "Enable",
-            format!(
-                "Enable '{}'.\n\nEnabled subdirectories will be applied during 'ins dot apply'.",
-                subdir_name
-            ),
+            "Enabled",
+            PreviewBuilder::new()
+                .line(colors::GREEN, Some(NerdFont::ToggleOn), "Status: Enabled")
+                .blank()
+                .line(colors::RED, Some(NerdFont::ToggleOff), "Select to disable")
+                .blank()
+                .subtext("Disabled subdirectories won't be applied during 'ins dot apply'.")
+                .build_string(),
+        )
+    } else {
+        (
+            NerdFont::ToggleOff,
+            colors::RED,
+            "Disabled",
+            PreviewBuilder::new()
+                .line(colors::RED, Some(NerdFont::ToggleOff), "Status: Disabled")
+                .blank()
+                .line(colors::GREEN, Some(NerdFont::ToggleOn), "Select to enable")
+                .blank()
+                .subtext("Enabled subdirectories will be applied during 'ins dot apply'.")
+                .build_string(),
         )
     };
 

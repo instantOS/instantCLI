@@ -86,16 +86,12 @@ pub(super) fn build_repo_action_menu(
 
     let mut actions = Vec::new();
 
-    // Toggle enable/disable
+    // Toggle enable/disable (show current state, select to toggle)
     let (icon, color, text, preview) = if is_enabled {
         let mut builder = PreviewBuilder::new()
-            .line(
-                colors::RED,
-                Some(NerdFont::ToggleOff),
-                &format!("Disable '{}'", repo_name),
-            )
+            .line(colors::GREEN, Some(NerdFont::ToggleOn), "Status: Enabled")
             .blank()
-            .line(colors::GREEN, Some(NerdFont::Check), "Currently Enabled")
+            .line(colors::RED, Some(NerdFont::ToggleOff), "Select to disable")
             .blank()
             .subtext("Disabled repositories won't be applied during 'ins dot apply'.");
 
@@ -106,20 +102,16 @@ pub(super) fn build_repo_action_menu(
         }
 
         (
-            NerdFont::ToggleOff,
-            colors::RED,
-            "Disable",
+            NerdFont::ToggleOn,
+            colors::GREEN,
+            "Enabled",
             builder.build_string(),
         )
     } else {
         let mut builder = PreviewBuilder::new()
-            .line(
-                colors::GREEN,
-                Some(NerdFont::ToggleOn),
-                &format!("Enable '{}'", repo_name),
-            )
+            .line(colors::RED, Some(NerdFont::ToggleOff), "Status: Disabled")
             .blank()
-            .line(colors::RED, Some(NerdFont::Cross), "Currently Disabled")
+            .line(colors::GREEN, Some(NerdFont::ToggleOn), "Select to enable")
             .blank()
             .subtext("Enabled repositories will be applied during 'ins dot apply'.");
 
@@ -130,9 +122,9 @@ pub(super) fn build_repo_action_menu(
         }
 
         (
-            NerdFont::ToggleOn,
-            colors::GREEN,
-            "Enable",
+            NerdFont::ToggleOff,
+            colors::RED,
+            "Disabled",
             builder.build_string(),
         )
     };
