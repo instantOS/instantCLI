@@ -346,15 +346,16 @@ pub async fn handle_menu_command(command: MenuCommands, _debug: bool) -> Result<
                     }
                 }
             } else {
-                match slide::run_slider_command(
-                    min_value,
-                    max_value,
-                    initial_value,
-                    step_value,
-                    big_step_value,
-                    label_value,
-                    command_args,
-                ) {
+                let request = protocol::SliderRequest {
+                    min: min_value,
+                    max: max_value,
+                    value: initial_value,
+                    step: step_value,
+                    big_step: big_step_value,
+                    label: label_value,
+                    command: command_args,
+                };
+                match slide::run_slider_command(&request) {
                     Ok(Some(result)) => {
                         println!("{result}");
                         Ok(0)

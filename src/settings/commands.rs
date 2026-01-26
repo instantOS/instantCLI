@@ -159,43 +159,34 @@ fn first_line(s: &str) -> &str {
     s.lines().next().unwrap_or(s)
 }
 
+impl SettingsNavigation {
+    pub fn from_args(setting: &Option<String>, category: &Option<String>, search: bool) -> Option<Self> {
+        if let Some(id) = setting {
+            Some(Self::Setting(id.clone()))
+        } else if let Some(id) = category {
+            Some(Self::Category(id.clone()))
+        } else if search {
+            Some(Self::Search)
+        } else {
+            None
+        }
+    }
+}
+
 pub fn handle_settings_command(
     command: &Option<SettingsCommands>,
-    setting: &Option<String>,
-    category: &Option<String>,
-    search: bool,
+    navigation: Option<SettingsNavigation>,
     gui: bool,
     debug: bool,
     internal_privileged_mode: bool,
 ) -> Result<()> {
-    // If --gui is set, launch settings in a kitty terminal
     if gui {
-        return launch_settings_in_terminal(setting, category, search, debug);
+        return launch_settings_in_terminal(&navigation, debug);
     }
-
-    let navigation = if let Some(setting_id) = setting {
-        Some(SettingsNavigation::Setting(setting_id.clone()))
-    } else if let Some(category_id) = category {
-        Some(SettingsNavigation::Category(category_id.clone()))
-    } else if search {
-        Some(SettingsNavigation::Search)
-    } else {
-        None
-    };
-
     dispatch_settings_command(debug, internal_privileged_mode, command.clone(), navigation)
 }
 
-/// Launch the settings UI in a terminal window
-///
-/// The terminal will automatically close when settings exits.
-/// Respects the user's $TERMINAL environment variable.
-fn launch_settings_in_terminal(
-    setting: &Option<String>,
-    category: &Option<String>,
-    search: bool,
-    debug: bool,
-) -> Result<()> {
+fn launch_settings_in_terminal(navigation: &Option<SettingsNavigation>, debug: bool) -> Result<()> {
     let mut args: Vec<String> = vec![];
 
     if debug {
@@ -204,15 +195,19 @@ fn launch_settings_in_terminal(
 
     args.push("settings".to_string());
 
-    // Forward navigation options
-    if let Some(setting_id) = setting {
-        args.push("--setting".to_string());
-        args.push(setting_id.clone());
-    } else if let Some(category_id) = category {
-        args.push("--category".to_string());
-        args.push(category_id.clone());
-    } else if search {
-        args.push("--search".to_string());
+    match navigation {
+        Some(SettingsNavigation::Setting(id)) => {
+            args.push("--setting".to_string());
+            args.push(id.clone());
+        }
+        Some(SettingsNavigation::Category(id)) => {
+            args.push("--category".to_string());
+            args.push(id.clone());
+        }
+        Some(SettingsNavigation::Search) => {
+            args.push("--search".to_string());
+        }
+        None => {}
     }
 
     let current_exe = std::env::current_exe()?;

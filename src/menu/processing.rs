@@ -154,15 +154,7 @@ impl RequestProcessor {
 
     /// Handle slider request
     fn handle_slider_request(&self, request: SliderRequest) -> Result<MenuResponse> {
-        match slide::run_slider_command(
-            request.min,
-            request.max,
-            request.value,
-            request.step,
-            request.big_step,
-            request.label,
-            request.command,
-        ) {
+        match slide::run_slider_command(&request) {
             Ok(Some(value)) => Ok(MenuResponse::SlideResult(value)),
             Ok(None) => Ok(MenuResponse::Cancelled),
             Err(e) => Ok(MenuResponse::Error(format!("Slider error: {e}"))),

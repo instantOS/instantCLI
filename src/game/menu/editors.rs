@@ -65,16 +65,10 @@ pub fn edit_description(state: &mut EditState) -> Result<bool> {
         .header(format!("Current description: {}", current_display))
         .ghost("Leave empty to remove");
 
-    edit_optional_text_value(
-        prompt,
-        current_desc_str,
-        "Description already empty.",
-        "Description removed",
-        "Description unchanged.",
-        "Edit cancelled. Description unchanged.",
-        "Description updated",
-        |value| state.game_mut().description = value,
-    )
+    OptionalTextEditor::new(prompt, current_desc_str, "Description", |value| {
+        state.game_mut().description = value;
+    })
+    .run()
 }
 
 /// Edit launch command (shows submenu for shared vs installation override)
@@ -167,18 +161,16 @@ fn edit_game_launch_command(state: &mut EditState) -> Result<bool> {
     let current = current_owned.as_deref();
     let header = format!("Current command: {}", current.unwrap_or("<not set>"));
 
-    edit_optional_text_value(
+    OptionalTextEditor::new(
         TextEditPrompt::new("Launch command", current)
             .header(header)
             .ghost("Leave empty to remove"),
         current,
-        "Launch command already empty.",
-        "Launch command removed from games.toml",
-        "Launch command unchanged.",
-        "Edit cancelled. Launch command unchanged.",
-        "Launch command updated in games.toml",
+        "Launch command",
         |value| state.game_mut().launch_command = value,
     )
+    .suffix("in games.toml")
+    .run()
 }
 
 /// Edit the installation-specific launch command override
@@ -193,22 +185,20 @@ fn edit_installation_launch_command(state: &mut EditState) -> Result<bool> {
     let current = current_owned.as_deref();
     let header = format!("Current override: {}", current.unwrap_or("<not set>"));
 
-    edit_optional_text_value(
+    OptionalTextEditor::new(
         TextEditPrompt::new("Launch command override", current)
             .header(header)
             .ghost("Leave empty to remove override"),
         current,
-        "Launch command override already empty.",
-        "Launch command override removed from installations.toml",
-        "Launch command override unchanged.",
-        "Edit cancelled. Launch command override unchanged.",
-        "Launch command override updated in installations.toml",
+        "Launch command override",
         |value| {
             if let Some(installation) = state.installation_mut() {
                 installation.launch_command = value;
             }
         },
     )
+    .suffix("in installations.toml")
+    .run()
 }
 
 /// Edit the save path
@@ -264,39 +254,52 @@ pub fn edit_save_path(state: &mut EditState) -> Result<bool> {
     }
 }
 
-fn edit_optional_text_value(
-    prompt: TextEditPrompt<'_>,
-    current: Option<&str>,
-    empty_feedback: &'static str,
-    removed_feedback: &'static str,
-    unchanged_feedback: &'static str,
-    cancelled_feedback: &'static str,
-    updated_feedback: &'static str,
-    mut setter: impl FnMut(Option<String>),
-) -> Result<bool> {
-    match prompt_text_edit(prompt)? {
-        TextEditOutcome::Cancelled => {
-            FzfWrapper::message(cancelled_feedback)?;
-            Ok(false)
-        }
-        TextEditOutcome::Unchanged => {
-            FzfWrapper::message(unchanged_feedback)?;
-            Ok(false)
-        }
-        TextEditOutcome::Updated(value) => {
-            if value.is_none() && current.is_none() {
-                FzfWrapper::message(empty_feedback)?;
-                return Ok(false);
-            }
+struct OptionalTextEditor<'a, F: FnMut(Option<String>)> {
+    prompt: TextEditPrompt<'a>,
+    current: Option<&'a str>,
+    field_name: &'a str,
+    setter: F,
+    suffix: Option<&'a str>,
+}
 
-            let is_clearing = value.is_none();
-            setter(value);
-            if is_clearing {
-                FzfWrapper::message(removed_feedback)?;
-            } else {
-                FzfWrapper::message(updated_feedback)?;
+impl<'a, F: FnMut(Option<String>)> OptionalTextEditor<'a, F> {
+    fn new(prompt: TextEditPrompt<'a>, current: Option<&'a str>, field_name: &'a str, setter: F) -> Self {
+        Self { prompt, current, field_name, setter, suffix: None }
+    }
+
+    fn suffix(mut self, suffix: &'a str) -> Self {
+        self.suffix = Some(suffix);
+        self
+    }
+
+    fn run(mut self) -> Result<bool> {
+        let field = self.field_name;
+        let suffix = self.suffix.map(|s| format!(" {s}")).unwrap_or_default();
+
+        match prompt_text_edit(self.prompt)? {
+            TextEditOutcome::Cancelled => {
+                FzfWrapper::message(&format!("Edit cancelled. {field} unchanged."))?;
+                Ok(false)
             }
-            Ok(true)
+            TextEditOutcome::Unchanged => {
+                FzfWrapper::message(&format!("{field} unchanged."))?;
+                Ok(false)
+            }
+            TextEditOutcome::Updated(value) => {
+                if value.is_none() && self.current.is_none() {
+                    FzfWrapper::message(&format!("{field} already empty."))?;
+                    return Ok(false);
+                }
+
+                let is_clearing = value.is_none();
+                (self.setter)(value);
+                if is_clearing {
+                    FzfWrapper::message(&format!("{field} removed{suffix}"))?;
+                } else {
+                    FzfWrapper::message(&format!("{field} updated{suffix}"))?;
+                }
+                Ok(true)
+            }
         }
     }
 }

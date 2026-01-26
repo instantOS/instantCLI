@@ -313,12 +313,12 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
             search,
             gui,
         }) => {
+            let navigation =
+                settings::commands::SettingsNavigation::from_args(setting, category, *search);
             execute_with_error_handling(
                 settings::commands::handle_settings_command(
                     command,
-                    setting,
-                    category,
-                    *search,
+                    navigation,
                     *gui,
                     cli.debug,
                     cli.internal_privileged_mode,
