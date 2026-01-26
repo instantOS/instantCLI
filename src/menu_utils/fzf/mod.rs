@@ -21,7 +21,9 @@ mod utils;
 mod wrapper;
 
 // Re-export public API for backward compatibility
-pub use types::{ConfirmResult, FzfResult, FzfSelectable, Header};
+pub use types::{
+    ChecklistAction, ChecklistResult, ConfirmResult, FzfResult, FzfSelectable, Header,
+};
 
 // Re-export main user-facing types
 pub use wrapper::FzfWrapper;

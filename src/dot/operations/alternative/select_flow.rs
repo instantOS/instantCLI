@@ -13,7 +13,7 @@ use crate::ui::prelude::*;
 
 use super::apply::{is_safe_to_switch, remove_override, set_alternative};
 use super::create_flow::run_create_flow;
-use super::flow::{Flow, message_and_done};
+use super::flow::{Flow, message_and_continue, message_and_done};
 use super::picker::{MenuItem, SourceOption};
 
 pub(crate) fn run_select_flow(path: &Path, display: &str) -> Result<Flow> {
@@ -171,18 +171,10 @@ fn run_source_selection_menu(
         .collect();
 
     if !is_safe_to_switch(path, &items)? {
-        emit(
-            Level::Error,
-            "dot.alternative.modified",
-            &format!(
-                "{} Cannot switch {} - file modified. Use 'ins dot reset {}' first.",
-                char::from(NerdFont::CrossCircle),
-                display.yellow(),
-                display
-            ),
-            None,
-        );
-        return Ok(Flow::Cancelled);
+        return message_and_continue(&format!(
+            "Cannot switch {} - file modified.\n\nUse 'ins dot reset {}' first.",
+            display, display
+        ));
     }
 
     loop {

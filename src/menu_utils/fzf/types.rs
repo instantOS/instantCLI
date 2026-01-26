@@ -248,7 +248,7 @@ impl FzfSelectable for ChecklistConfirm {
 }
 
 /// Non-checkbox action item for checklists (e.g., "Auto defaults")
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChecklistAction {
     pub key: String,
     pub text: String,

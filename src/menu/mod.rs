@@ -1,6 +1,5 @@
 use crate::menu_utils::{
-    ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfResult, FzfWrapper,
-    MenuWrapper,
+    ConfirmResult, FilePickerResult, FilePickerScope, FzfPreview, FzfWrapper, MenuWrapper,
 };
 use anyhow::{Context, Result, anyhow};
 use clap::ValueEnum;

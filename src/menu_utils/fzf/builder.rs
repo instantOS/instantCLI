@@ -840,7 +840,10 @@ impl FzfBuilder {
         output_lines
     }
 
-    fn execute_checklist<T: FzfSelectable + Clone>(self, items: Vec<T>) -> Result<ChecklistResult<T>> {
+    fn execute_checklist<T: FzfSelectable + Clone>(
+        self,
+        items: Vec<T>,
+    ) -> Result<ChecklistResult<T>> {
         if items.is_empty() {
             return Ok(ChecklistResult::Cancelled);
         }
@@ -860,7 +863,7 @@ impl FzfBuilder {
         // Create confirm option
         let confirm_item = ChecklistConfirm::new(&confirm_text);
 
-        let action_items = self.checklist_actions;
+        let action_items = self.checklist_actions.clone();
         let mut action_map: std::collections::HashMap<String, ChecklistAction> =
             std::collections::HashMap::new();
         for action in &action_items {
@@ -898,8 +901,7 @@ impl FzfBuilder {
             let input_text = input_lines.join("\n");
 
             // Execute FZF with current state and cursor position
-            let result =
-                self.run_checklist_fzf(&input_text, &key_to_index, &action_map, cursor)?;
+            let result = self.run_checklist_fzf(&input_text, &key_to_index, &action_map, cursor)?;
 
             match result {
                 ChecklistSelection::Cancelled => return Ok(ChecklistResult::Cancelled),
