@@ -88,6 +88,22 @@ pub(super) fn show_repository_info(config: &Config, db: &Database, name: &str) -
     println!();
     println!("{} {}", char::from(NerdFont::List), "Subdirectories".bold());
 
+    let defaults_disabled = repo_config.active_subdirectories.is_none()
+        && local_repo
+            .meta
+            .default_active_subdirs
+            .as_ref()
+            .map(|dirs| dirs.is_empty())
+            .unwrap_or(false);
+
+    if defaults_disabled {
+        println!(
+            "  {} {}",
+            char::from(NerdFont::Warning),
+            "Defaults disabled - repo inactive until you enable subdirs".yellow()
+        );
+    }
+
     if local_repo.dotfile_dirs.is_empty() {
         println!(
             "  {} {}",

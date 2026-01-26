@@ -700,8 +700,27 @@ pub fn handle_manage_subdirs(
             default_label: None,
         });
 
+        let defaults_disabled = repo_config
+            .map(|repo| repo.active_subdirectories.is_none())
+            .unwrap_or(false)
+            && local_repo
+                .meta
+                .default_active_subdirs
+                .as_ref()
+                .map(|dirs| dirs.is_empty())
+                .unwrap_or(false);
+
+        let header_text = if defaults_disabled {
+            format!(
+                "Subdirectories: {}\nDefaults disabled - repo inactive until you enable subdirs",
+                repo_name
+            )
+        } else {
+            format!("Subdirectories: {}", repo_name)
+        };
+
         let mut builder = FzfWrapper::builder()
-            .header(Header::fancy(&format!("Subdirectories: {}", repo_name)))
+            .header(Header::fancy(&header_text))
             .prompt("Select subdirectory")
             .args(fzf_mocha_args())
             .responsive_layout();
@@ -874,10 +893,16 @@ fn handle_edit_default_subdirs(
     match meta::update_meta(&repo_path, &metadata) {
         Ok(()) => match new_defaults {
             Some(defaults) => {
-                FzfWrapper::message(&format!(
-                    "Default enabled subdirectories updated: {}",
-                    defaults.join(", ")
-                ))?;
+                if defaults.is_empty() {
+                    FzfWrapper::message(
+                        "Default enabled subdirectories cleared. Repo is disabled until you enable subdirs.",
+                    )?;
+                } else {
+                    FzfWrapper::message(&format!(
+                        "Default enabled subdirectories updated: {}",
+                        defaults.join(", ")
+                    ))?;
+                }
             }
             None => {
                 let fallback = metadata
@@ -900,16 +925,15 @@ fn handle_edit_default_subdirs(
 }
 
 fn resolve_default_active_subdirs(meta: &RepoMetaData) -> Vec<String> {
-    let mut defaults = meta.default_active_subdirs.clone().unwrap_or_default();
-    defaults.retain(|dir| meta.dots_dirs.contains(dir));
-
-    if defaults.is_empty() {
-        if let Some(first) = meta.dots_dirs.first() {
-            defaults.push(first.clone());
-        }
+    if let Some(defaults) = meta.default_active_subdirs.as_ref() {
+        return defaults
+            .iter()
+            .filter(|dir| meta.dots_dirs.contains(*dir))
+            .cloned()
+            .collect();
     }
 
-    defaults
+    meta.dots_dirs.first().cloned().into_iter().collect()
 }
 
 fn normalize_default_active_subdirs(
@@ -926,26 +950,30 @@ fn normalize_default_active_subdirs(
 
     let implicit_default = meta.dots_dirs.first().cloned();
 
-    match (normalized.is_empty(), implicit_default) {
-        (true, _) => None,
-        (false, Some(default_dir)) if normalized.len() == 1 && normalized[0] == default_dir => None,
-        _ => Some(normalized),
+    if normalized.is_empty() {
+        return Some(Vec::new());
     }
+
+    if let Some(default_dir) = implicit_default
+        && normalized.len() == 1
+        && normalized[0] == default_dir
+    {
+        return None;
+    }
+
+    Some(normalized)
 }
 
 fn format_default_active_label(meta: &RepoMetaData) -> String {
     let defaults = resolve_default_active_subdirs(meta);
 
-    if meta
-        .default_active_subdirs
-        .as_ref()
-        .map(|dirs| dirs.is_empty())
-        .unwrap_or(true)
-    {
-        let default = defaults.first().map(|s| s.as_str()).unwrap_or("none");
-        format!("Auto (first: {})", default)
-    } else {
-        defaults.join(", ")
+    match meta.default_active_subdirs.as_ref() {
+        None => {
+            let default = defaults.first().map(|s| s.as_str()).unwrap_or("none");
+            format!("Auto (first: {})", default)
+        }
+        Some(dirs) if dirs.is_empty() || defaults.is_empty() => "Disabled (none)".to_string(),
+        Some(_) => defaults.join(", "),
     }
 }
 

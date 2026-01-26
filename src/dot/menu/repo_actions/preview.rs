@@ -90,6 +90,14 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
 
     // Try to get more info from LocalRepo
     if let Ok(local_repo) = repo_manager.get_repository_info(repo_name) {
+        let defaults_disabled = repo_config.active_subdirectories.is_none()
+            && local_repo
+                .meta
+                .default_active_subdirs
+                .as_ref()
+                .map(|dirs| dirs.is_empty())
+                .unwrap_or(false);
+
         // Show description if present
         if let Some(desc) = &local_repo.meta.description {
             builder = builder.blank().line(
@@ -112,6 +120,14 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
             .blank()
             .line(colors::MAUVE, Some(NerdFont::Folder), "Subdirectories");
 
+        if defaults_disabled {
+            builder = builder.indented_line(
+                colors::YELLOW,
+                Some(NerdFont::Warning),
+                "Defaults disabled - enable subdirs to activate this repo",
+            );
+        }
+
         if local_repo.meta.dots_dirs.is_empty() {
             builder = builder.indented_line(colors::SUBTEXT0, None, "No subdirectories configured");
         } else {
@@ -128,7 +144,10 @@ pub fn build_repo_preview(repo_name: &str, config: &Config, db: &Database) -> St
                 let repo_path = config.repos_path().join(&repo_config.name);
                 let effective_active = config.resolve_active_subdirs(repo_config);
                 if effective_active.is_empty() {
-                    if repo_path.join("instantdots.toml").exists() || repo_config.metadata.is_some()
+                    if defaults_disabled {
+                        "(disabled by defaults)".to_string()
+                    } else if repo_path.join("instantdots.toml").exists()
+                        || repo_config.metadata.is_some()
                     {
                         "(none configured)".to_string()
                     } else {
