@@ -2,9 +2,11 @@ use crate::dot::config::{self, Config};
 use crate::dot::db::Database;
 use crate::dot::dotfile::Dotfile;
 use crate::dot::localrepo::{DotfileDir, LocalRepo};
-use crate::dot::types::{DotsDirSelectItem, RepoSelectItem};
+use crate::dot::menu::repo_actions::build_repo_preview;
+use crate::dot::types::{DotsDirSelectItem, RepoMenuItem};
 use crate::dot::utils::{filter_dotfiles_by_path, get_all_dotfiles, resolve_dotfile_path};
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::menu_utils::{FzfResult, FzfWrapper, Header};
+use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
@@ -36,7 +38,7 @@ impl DirectoryAddStats {
 }
 
 /// Prompt the user to select one of the configured repositories
-fn select_repo(config: &Config) -> Result<config::Repo> {
+fn select_repo(config: &Config, db: &Database) -> Result<config::Repo> {
     if config.repos.is_empty() {
         return Err(anyhow::anyhow!("No repositories configured"));
     }
@@ -49,7 +51,7 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
         // If the only repo is read-only, fall through to filtering logic which will return error
     }
 
-    let items: Vec<RepoSelectItem> = config
+    let items: Vec<RepoMenuItem> = config
         .repos
         .iter()
         .filter(|r| {
@@ -64,8 +66,10 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
                 true
             }
         })
-        .cloned()
-        .map(|repo| RepoSelectItem { repo })
+        .map(|repo| RepoMenuItem {
+            preview: build_repo_preview(&repo.name, config, db),
+            repo: repo.clone(),
+        })
         .collect();
 
     if items.is_empty() {
@@ -73,7 +77,10 @@ fn select_repo(config: &Config) -> Result<config::Repo> {
     }
 
     match FzfWrapper::builder()
-        .prompt("Select repository to add the dotfile to: ")
+        .header(Header::fancy("Select Repository"))
+        .prompt("Select")
+        .args(fzf_mocha_args())
+        .responsive_layout()
         .select(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {
@@ -109,10 +116,10 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
         .collect();
 
     match FzfWrapper::builder()
-        .prompt(format!(
-            "Select target dots_dir in repo '{}': ",
-            local_repo.name
-        ))
+        .header(Header::fancy(&format!("Select Directory in '{}'", local_repo.name)))
+        .prompt("Select")
+        .args(fzf_mocha_args())
+        .responsive_layout()
         .select(items)
         .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
     {
@@ -204,7 +211,7 @@ fn add_new_file(config: &Config, db: &Database, full_path: &Path) -> Result<Path
     use crate::dot::override_config::DotfileSource;
 
     // Repository selection
-    let repo_config = select_repo(config)?;
+    let repo_config = select_repo(config, db)?;
     let local_repo = LocalRepo::new(config, repo_config.name.clone())?;
 
     // dots_dir selection

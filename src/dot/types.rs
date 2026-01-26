@@ -73,24 +73,33 @@ impl AsRef<str> for RepoName {
     }
 }
 
-/// Helper struct for repository selection
-#[derive(Debug, Clone)]
-pub struct RepoSelectItem {
+/// Repository selection item with precomputed preview for fzf menus
+#[derive(Clone)]
+pub struct RepoMenuItem {
     pub repo: config::Repo,
+    pub preview: String,
 }
 
-impl FzfSelectable for RepoSelectItem {
+impl FzfSelectable for RepoMenuItem {
     fn fzf_display_text(&self) -> String {
-        self.repo.name.clone()
+        use crate::ui::catppuccin::{colors, format_icon_colored};
+        use crate::ui::nerd_font::NerdFont;
+
+        let badge = if self.repo.metadata.is_some() {
+            " \x1b[33m[external]\x1b[0m".to_string()
+        } else {
+            String::new()
+        };
+        format!(
+            "{} {}{}",
+            format_icon_colored(NerdFont::Folder, colors::MAUVE),
+            self.repo.name,
+            badge
+        )
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        crate::menu_utils::FzfPreview::Text(format!(
-            "URL: {}\nBranch: {}\nEnabled: {}",
-            self.repo.url,
-            self.repo.branch.as_deref().unwrap_or("default"),
-            if self.repo.enabled { "Yes" } else { "No" }
-        ))
+        crate::menu_utils::FzfPreview::Text(self.preview.clone())
     }
 }
 
@@ -103,20 +112,40 @@ pub struct DotsDirSelectItem {
 
 impl FzfSelectable for DotsDirSelectItem {
     fn fzf_display_text(&self) -> String {
-        self.dots_dir
+        use crate::ui::catppuccin::{colors, format_icon_colored};
+        use crate::ui::nerd_font::NerdFont;
+
+        let name = self
+            .dots_dir
             .path
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| self.dots_dir.path.display().to_string())
+            .unwrap_or_else(|| self.dots_dir.path.display().to_string());
+
+        let status_icon = if self.dots_dir.is_active {
+            format_icon_colored(NerdFont::Check, colors::GREEN)
+        } else {
+            format_icon_colored(NerdFont::Folder, colors::SURFACE2)
+        };
+
+        format!(
+            "{} {}",
+            status_icon,
+            name
+        )
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
-        crate::menu_utils::FzfPreview::Text(format!(
-            "Repository: {}\nPath: {}\nActive: {}",
-            self.repo_name,
-            self.dots_dir.path.display(),
-            if self.dots_dir.is_active { "Yes" } else { "No" }
-        ))
+        use crate::ui::nerd_font::NerdFont;
+        use crate::ui::preview::PreviewBuilder;
+
+        PreviewBuilder::new()
+            .header(NerdFont::Folder, "Dots Directory")
+            .blank()
+            .field("Repository", &self.repo_name)
+            .field("Path", &self.dots_dir.path.display().to_string())
+            .field("Active", if self.dots_dir.is_active { "Yes" } else { "No" })
+            .build()
     }
 }
 

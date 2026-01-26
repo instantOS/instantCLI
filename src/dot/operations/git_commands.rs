@@ -1,7 +1,11 @@
 use crate::dot::config::{Config, Repo};
+use crate::dot::db::Database;
 use crate::dot::git::repo_ops::{run_git_command, run_interactive_git_command};
 use crate::dot::localrepo::LocalRepo;
-use crate::menu_utils::{FzfResult, FzfWrapper};
+use crate::dot::menu::repo_actions::build_repo_preview;
+use crate::dot::types::RepoMenuItem;
+use crate::menu_utils::{FzfResult, FzfWrapper, Header};
+use crate::ui::catppuccin::fzf_mocha_args;
 use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
@@ -180,14 +184,22 @@ pub fn git_run_any(config: &Config, args: &[String], debug: bool) -> Result<()> 
     let target_repo = if repos.len() == 1 {
         repos[0].clone()
     } else {
-        // Let user choose a repo
-        let items: Vec<crate::dot::types::RepoSelectItem> = repos
+        // Open database for rich previews
+        let db = Database::new(config.database_path().to_path_buf())?;
+
+        let items: Vec<RepoMenuItem> = repos
             .iter()
-            .map(|&repo| crate::dot::types::RepoSelectItem { repo: repo.clone() })
+            .map(|&repo| RepoMenuItem {
+                preview: build_repo_preview(&repo.name, config, &db),
+                repo: repo.clone(),
+            })
             .collect();
 
         match FzfWrapper::builder()
-            .prompt("Select repository to run git command in: ")
+            .header(Header::fancy("Select Repository"))
+            .prompt("Select")
+            .args(fzf_mocha_args())
+            .responsive_layout()
             .select(items)
             .map_err(|e| anyhow::anyhow!("Selection error: {}", e))?
         {
