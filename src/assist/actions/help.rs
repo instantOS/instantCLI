@@ -243,7 +243,7 @@ fn build_action_preview(action: &registry::AssistAction, key_chord: &str) -> Fzf
     } else {
         builder = builder.blank().title(colors::SAPPHIRE, "Dependencies");
         for dep in action.dependencies {
-            builder = builder.bullet(&dep.name.to_string());
+            builder = builder.bullet(dep.name);
         }
     }
 

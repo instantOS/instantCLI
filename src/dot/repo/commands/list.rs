@@ -2,8 +2,8 @@ use crate::common::TildePath;
 use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::repo::RepositoryManager;
-use crate::ui::prelude::*;
 use crate::ui::Level;
+use crate::ui::prelude::*;
 use anyhow::Result;
 use colored::*;
 
