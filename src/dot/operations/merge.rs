@@ -32,6 +32,9 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
         return Ok(());
     }
 
+    let mut unmodified_count = 0;
+    let mut modified_count = 0;
+
     for dotfile in dotfiles_in_path {
         let relative_path = dotfile
             .target_path
@@ -40,6 +43,7 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
 
         // Check if file is modified
         if dotfile.is_target_unmodified(db)? {
+            unmodified_count += 1;
             if verbose {
                 emit(
                     Level::Info,
@@ -54,6 +58,8 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
             }
             continue;
         }
+
+        modified_count += 1;
 
         // Store original source hash for comparison after merge
         let original_source_hash = dotfile.get_file_hash(&dotfile.source_path, true, db)?;
@@ -196,6 +202,34 @@ pub fn merge_dotfile(config: &Config, db: &Database, path: &str, verbose: bool) 
                 );
             }
         }
+    }
+
+    if modified_count == 0 {
+        let relative_path = target_path.strip_prefix(&home).unwrap_or(&target_path);
+        let tracked_text = if unmodified_count == 1 {
+            "1 tracked file".to_string()
+        } else {
+            format!("{} tracked files", unmodified_count)
+        };
+
+        let message = if verbose {
+            format!(
+                "{} All tracked dotfiles are already up to date at ~/{} ({})",
+                char::from(NerdFont::Info),
+                relative_path.display(),
+                tracked_text
+            )
+        } else {
+            format!(
+                "{} No modified dotfiles found at ~/{} ({}). Use {} to list clean files",
+                char::from(NerdFont::Info),
+                relative_path.display(),
+                tracked_text,
+                "--verbose".yellow()
+            )
+        };
+
+        emit(Level::Info, "dot.merge.no_changes", &message, None);
     }
 
     Ok(())
