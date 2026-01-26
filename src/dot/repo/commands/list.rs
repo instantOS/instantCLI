@@ -2,8 +2,8 @@ use crate::common::TildePath;
 use crate::dot::config::Config;
 use crate::dot::db::Database;
 use crate::dot::repo::RepositoryManager;
-use crate::ui::Level;
 use crate::ui::prelude::*;
+use crate::ui::Level;
 use anyhow::Result;
 use colored::*;
 
@@ -115,13 +115,31 @@ pub(super) fn list_repositories(config: &Config, db: &Database) -> Result<()> {
 
                 // Show subdir priority when multiple active subdirs
                 let effective_active_subdirs = config.resolve_active_subdirs(repo_config);
+                let defaults_disabled = repo_config.active_subdirectories.is_none()
+                    && repo_manager
+                        .get_repository_info(&repo_config.name)
+                        .ok()
+                        .map(|local_repo| {
+                            local_repo
+                                .meta
+                                .default_active_subdirs
+                                .as_ref()
+                                .map(|dirs| dirs.is_empty())
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(false);
                 let active_subdirs = if effective_active_subdirs.is_empty() {
-                    let repo_path = config.repos_path().join(&repo_config.name);
-                    if repo_path.join("instantdots.toml").exists() || repo_config.metadata.is_some()
-                    {
-                        "(none configured)".to_string()
+                    if defaults_disabled {
+                        "(disabled by defaults)".to_string()
                     } else {
-                        "(none detected)".to_string()
+                        let repo_path = config.repos_path().join(&repo_config.name);
+                        if repo_path.join("instantdots.toml").exists()
+                            || repo_config.metadata.is_some()
+                        {
+                            "(none configured)".to_string()
+                        } else {
+                            "(none detected)".to_string()
+                        }
                     }
                 } else {
                     let subdirs = effective_active_subdirs.join(", ");
