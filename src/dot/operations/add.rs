@@ -116,7 +116,10 @@ fn select_dots_dir(local_repo: &LocalRepo) -> Result<DotfileDir> {
         .collect();
 
     match FzfWrapper::builder()
-        .header(Header::fancy(&format!("Select Directory in '{}'", local_repo.name)))
+        .header(Header::fancy(&format!(
+            "Select Directory in '{}'",
+            local_repo.name
+        )))
         .prompt("Select")
         .args(fzf_mocha_args())
         .responsive_layout()
@@ -266,7 +269,7 @@ fn scan_and_categorize_files(
 }
 
 /// Update a single tracked dotfile and return whether it was updated or unchanged
-fn update_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<bool> {
+fn update_single_dotfile(dotfile: &Dotfile, config: &Config, db: &Database) -> Result<bool> {
     let old_source_hash = if dotfile.source_path.exists() {
         Some(Dotfile::compute_hash(&dotfile.source_path)?)
     } else {
@@ -289,6 +292,16 @@ fn update_single_dotfile(dotfile: &Dotfile, db: &Database) -> Result<bool> {
             "{} Updated ~/{} (changes detected)",
             char::from(NerdFont::Check),
             relative_path.display().to_string().green()
+        );
+    } else {
+        let repo_name = crate::dot::git::get_repo_name_for_dotfile(dotfile, config);
+        let subdir_name = crate::dot::git::get_dotfile_dir_name(dotfile, config);
+        println!(
+            "{} ~/{} is already up to date in {}/{}",
+            char::from(NerdFont::Check).to_string().dimmed(),
+            relative_path.display().to_string().dimmed(),
+            repo_name.as_str().dimmed(),
+            subdir_name.dimmed()
         );
     }
 
@@ -317,7 +330,7 @@ fn update_tracked_dotfiles(
             continue;
         }
 
-        let was_updated = update_single_dotfile(dotfile, db)?;
+        let was_updated = update_single_dotfile(dotfile, config, db)?;
         if was_updated {
             stats.updated_count += 1;
             let local_repo = LocalRepo::new(config, repo_name.to_string())?;

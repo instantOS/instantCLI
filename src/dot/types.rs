@@ -98,6 +98,10 @@ impl FzfSelectable for RepoMenuItem {
         )
     }
 
+    fn fzf_key(&self) -> String {
+        self.repo.name.clone()
+    }
+
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
         crate::menu_utils::FzfPreview::Text(self.preview.clone())
     }
@@ -128,11 +132,18 @@ impl FzfSelectable for DotsDirSelectItem {
             format_icon_colored(NerdFont::Folder, colors::SURFACE2)
         };
 
-        format!(
-            "{} {}",
-            status_icon,
-            name
-        )
+        format!("{} {}", status_icon, name)
+    }
+
+    fn fzf_key(&self) -> String {
+        // Use a unique key combining repo name and subdir path
+        let subdir_name = self
+            .dots_dir
+            .path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| self.dots_dir.path.display().to_string());
+        format!("{}/{}", self.repo_name, subdir_name)
     }
 
     fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
