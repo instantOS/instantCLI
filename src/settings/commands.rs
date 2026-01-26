@@ -160,7 +160,11 @@ fn first_line(s: &str) -> &str {
 }
 
 impl SettingsNavigation {
-    pub fn from_args(setting: &Option<String>, category: &Option<String>, search: bool) -> Option<Self> {
+    pub fn from_args(
+        setting: &Option<String>,
+        category: &Option<String>,
+        search: bool,
+    ) -> Option<Self> {
         if let Some(id) = setting {
             Some(Self::Setting(id.clone()))
         } else if let Some(id) = category {

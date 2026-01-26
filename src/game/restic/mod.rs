@@ -314,14 +314,13 @@ pub fn restore_game_saves(
         })),
     );
 
-    match backup_handler.restore_backup(
-        &game_selection.game_name,
-        &snapshot_id,
-        save_path,
-        game_selection.installation.save_path_type,
-        save_path,
-        snapshot.paths.first().map(|path| path.as_str()),
-    ) {
+    match backup_handler.restore_backup(backup::RestoreRequest {
+        game_name: &game_selection.game_name,
+        snapshot_id: &snapshot_id,
+        path: save_path,
+        save_path_type: game_selection.installation.save_path_type,
+        snapshot_source_path: snapshot.paths.first().map(|path| path.as_str()),
+    }) {
         Ok(output) => {
             let output_clone = output.clone();
             emit_restic_event(

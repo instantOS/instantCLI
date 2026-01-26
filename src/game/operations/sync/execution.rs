@@ -1,6 +1,6 @@
 use crate::game::checkpoint;
 use crate::game::config::{GameInstallation, InstantGameConfig};
-use crate::game::restic::backup::GameBackup;
+use crate::game::restic::backup::{GameBackup, RestoreRequest};
 use crate::game::restic::cache;
 use anyhow::{Context, Result};
 
@@ -44,14 +44,13 @@ pub fn perform_restore(
 
     // Use the appropriate restore method based on save path type
     backup_handler
-        .restore_backup(
-            &installation.game_name.0,
+        .restore_backup(RestoreRequest {
+            game_name: &installation.game_name.0,
             snapshot_id,
-            save_path,
-            installation.save_path_type,
-            save_path,
-            snapshot_hint.as_deref(),
-        )
+            path: save_path,
+            save_path_type: installation.save_path_type,
+            snapshot_source_path: snapshot_hint.as_deref(),
+        })
         .context("Failed to restore from snapshot")?;
 
     // Update the installation with the checkpoint

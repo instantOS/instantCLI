@@ -263,8 +263,19 @@ struct OptionalTextEditor<'a, F: FnMut(Option<String>)> {
 }
 
 impl<'a, F: FnMut(Option<String>)> OptionalTextEditor<'a, F> {
-    fn new(prompt: TextEditPrompt<'a>, current: Option<&'a str>, field_name: &'a str, setter: F) -> Self {
-        Self { prompt, current, field_name, setter, suffix: None }
+    fn new(
+        prompt: TextEditPrompt<'a>,
+        current: Option<&'a str>,
+        field_name: &'a str,
+        setter: F,
+    ) -> Self {
+        Self {
+            prompt,
+            current,
+            field_name,
+            setter,
+            suffix: None,
+        }
     }
 
     fn suffix(mut self, suffix: &'a str) -> Self {

@@ -5,6 +5,16 @@ use crate::game::config::{GameInstallation, InstantGameConfig, PathContentKind};
 use crate::game::restic::{cache, single_file, tags};
 use crate::restic::ResticWrapper;
 
+/// Request parameters for restoring a game backup
+pub struct RestoreRequest<'a> {
+    pub game_name: &'a str,
+    pub snapshot_id: &'a str,
+    pub path: &'a Path,
+    pub save_path_type: PathContentKind,
+    /// Optional hint for the snapshot source path (from cached snapshot metadata)
+    pub snapshot_source_path: Option<&'a str>,
+}
+
 /// Backup game saves to restic repository with proper tagging
 pub struct GameBackup {
     pub config: InstantGameConfig,
@@ -127,19 +137,12 @@ impl GameBackup {
     }
 
     /// Restore a game backup (handles both files and directories)
-    pub fn restore_backup(
-        &self,
-        game_name: &str,
-        snapshot_id: &str,
-        target_path: &Path,
-        save_path_type: PathContentKind,
-        original_save_path: &Path,
-        snapshot_source_path: Option<&str>,
-    ) -> Result<String> {
-        match save_path_type {
+    pub fn restore_backup(&self, request: RestoreRequest<'_>) -> Result<String> {
+        match request.save_path_type {
             PathContentKind::Directory => {
                 // For directories, use the standard restore
-                let summary = self.restore_game_backup(game_name, snapshot_id, target_path)?;
+                let summary =
+                    self.restore_game_backup(request.game_name, request.snapshot_id, request.path)?;
                 Ok(summary)
             }
             PathContentKind::File => {
@@ -166,28 +169,28 @@ impl GameBackup {
                 })?;
 
                 let mut candidate_paths = Vec::new();
-                if let Some(source_path) = snapshot_source_path {
+                if let Some(source_path) = request.snapshot_source_path {
                     candidate_paths.push(source_path.to_string());
                 }
 
                 let resolved_snapshot_path = single_file::resolve_snapshot_file_path(
                     &restic,
-                    snapshot_id,
+                    request.snapshot_id,
                     &candidate_paths,
-                    Some(original_save_path),
+                    Some(request.path),
                 )?;
 
                 // Restore to temp directory
                 let (restored_file, progress) = single_file::restore_single_file_into_temp(
                     &restic,
-                    snapshot_id,
+                    request.snapshot_id,
                     &resolved_snapshot_path,
                     &temp_restore,
-                    original_save_path,
+                    request.path,
                 )?;
 
                 // Ensure target parent directory exists
-                if let Some(parent) = target_path.parent() {
+                if let Some(parent) = request.path.parent() {
                     fs::create_dir_all(parent).with_context(|| {
                         format!("Failed to create target directory: {}", parent.display())
                     })?;
@@ -197,17 +200,17 @@ impl GameBackup {
                 let source_mtime = fs::metadata(&restored_file).and_then(|m| m.modified()).ok();
 
                 // Move the file to final location
-                fs::copy(&restored_file, target_path).with_context(|| {
+                fs::copy(&restored_file, request.path).with_context(|| {
                     format!(
                         "Failed to copy restored file from {} to {}",
                         restored_file.display(),
-                        target_path.display()
+                        request.path.display()
                     )
                 })?;
 
                 // Preserve the original modification time after copy
                 if let Some(mtime) = source_mtime
-                    && let Ok(file) = fs::File::options().write(true).open(target_path)
+                    && let Ok(file) = fs::File::options().write(true).open(request.path)
                 {
                     let times = std::fs::FileTimes::new().set_modified(mtime);
                     let _ = file.set_times(times);

@@ -8,7 +8,7 @@ use crate::game::checkpoint;
 use crate::game::config::{
     GameInstallation, InstallationsConfig, InstantGameConfig, PathContentKind,
 };
-use crate::game::restic::backup::GameBackup;
+use crate::game::restic::backup::{GameBackup, RestoreRequest};
 use crate::game::restic::cache;
 use crate::game::utils::safeguards::{PathUsage, ensure_safe_path};
 use crate::game::utils::save_files::{SaveDirectoryInfo, get_save_directory_info};
@@ -640,19 +640,18 @@ fn restore_latest_backup(
     save_path: &TildePath,
     snapshot_id: &str,
     game_config: &InstantGameConfig,
-    save_path_type: crate::game::config::PathContentKind,
+    save_path_type: PathContentKind,
     snapshot_source_path: Option<&str>,
 ) -> Result<String> {
     let backup_handler = GameBackup::new(game_config.clone());
     let summary = backup_handler
-        .restore_backup(
+        .restore_backup(RestoreRequest {
             game_name,
             snapshot_id,
-            save_path.as_path(),
+            path: save_path.as_path(),
             save_path_type,
-            save_path.as_path(),
             snapshot_source_path,
-        )
+        })
         .context("Failed to restore latest backup")?;
 
     let repo_path = game_config.repo.as_path().to_string_lossy().to_string();
