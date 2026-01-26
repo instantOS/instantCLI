@@ -131,20 +131,30 @@ pub fn discover_dotfiles(
                 override_lookup
                     .get(&target_path)
                     .map(|(repo_name, subdir_name)| {
-                        let relative_path =
-                            target_path.strip_prefix(home_dir()).unwrap_or(&target_path);
-                        let source_path = config
-                            .repos_path()
-                            .join(repo_name)
-                            .join(subdir_name)
-                            .join(relative_path);
-                        OverrideStatus {
-                            source: DotfileSource {
-                                repo_name: repo_name.clone(),
-                                subdir_name: subdir_name.clone(),
-                                source_path: source_path.clone(),
-                            },
-                            exists: source_path.exists(),
+                        if let Some(source) = sources
+                            .iter()
+                            .find(|s| s.repo_name == *repo_name && s.subdir_name == *subdir_name)
+                        {
+                            OverrideStatus {
+                                source: source.clone(),
+                                exists: true,
+                            }
+                        } else {
+                            let relative_path =
+                                target_path.strip_prefix(home_dir()).unwrap_or(&target_path);
+                            let source_path = config
+                                .repos_path()
+                                .join(repo_name)
+                                .join(subdir_name)
+                                .join(relative_path);
+                            OverrideStatus {
+                                source: DotfileSource {
+                                    repo_name: repo_name.clone(),
+                                    subdir_name: subdir_name.clone(),
+                                    source_path,
+                                },
+                                exists: false,
+                            }
                         }
                     });
             let default_source = sources.last().cloned();
