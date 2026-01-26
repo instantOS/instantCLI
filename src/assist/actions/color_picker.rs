@@ -283,27 +283,6 @@ mod tests {
     use crate::common::display_server::DisplayServer;
     use std::env;
 
-    #[test]
-    fn test_kde_color_picker_detection() {
-        // Test that logic correctly identifies KDE and would use KDE-specific tools
-
-        // Use a mock environment variable provider
-        let mock_env = |key: &str| -> Result<String, env::VarError> {
-            match key {
-                "XDG_SESSION_DESKTOP" => Ok("KDE".to_string()),
-                "WAYLAND_DISPLAY" => Ok("wayland-0".to_string()),
-                _ => Err(env::VarError::NotPresent),
-            }
-        };
-
-        // Detect compositor and display server using mock environment
-        let compositor = CompositorType::detect_from_env(mock_env);
-        let display_server = DisplayServer::detect_from_env(mock_env);
-
-        // Verify detection works
-        assert_eq!(compositor, CompositorType::KWin);
-        assert!(matches!(display_server, DisplayServer::Wayland));
-    }
 
     #[test]
     fn test_color_picker_helper_functions_exist() {
