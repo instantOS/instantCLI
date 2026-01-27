@@ -248,13 +248,22 @@ pub const ASSISTS: &[AssistEntry] = &[
         key: 't',
         description: "Tools: System tools and tweaks",
         icon: NerdFont::Gear,
-        children: &[AssistEntry::Action(AssistAction {
-            key: 'm',
-            description: "Mouse Speed: Adjust mouse sensitivity",
-            icon: NerdFont::MousePointer,
-            dependencies: &[],
-            execute: actions::mouse::mouse_speed_slider,
-        })],
+        children: &[
+            AssistEntry::Action(AssistAction {
+                key: 'm',
+                description: "Mouse Speed: Adjust mouse sensitivity",
+                icon: NerdFont::MousePointer,
+                dependencies: &[],
+                execute: actions::mouse::mouse_speed_slider,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'w',
+                description: "Screen Mirror: Mirror a display output with wl-mirror",
+                icon: NerdFont::Monitor,
+                dependencies: &[&WL_MIRROR],
+                execute: actions::wl_mirror::mirror_output,
+            }),
+        ],
     }),
     AssistEntry::Group(AssistGroup {
         key: 'v',
