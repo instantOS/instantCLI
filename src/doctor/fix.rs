@@ -628,6 +628,7 @@ pub async fn fix_interactive(max_concurrency: usize) -> Result<()> {
             .prompt("Select issues to fix:")
             .header("System Diagnostics - Fixable Issues\n\nSelect issues to fix or press Esc to cancel")
             .args(fzf_mocha_args())
+            .args(["--preview-window=right:50%:wrap"])
             .select(menu_items)?
         {
             FzfResult::MultiSelected(selected) => {
