@@ -16,6 +16,13 @@ struct PreviewData {
 
 pub struct PreviewUtils;
 
+/// Content type for mixed previews
+#[derive(Clone)]
+pub(crate) enum MixedPreviewContent {
+    Text(String),
+    Command(String),
+}
+
 pub(crate) enum PreviewStrategy {
     /// No previews
     None,
@@ -25,8 +32,8 @@ pub(crate) enum PreviewStrategy {
     Command(String),
     /// Each item has its own command preview (stored as shell commands to execute)
     CommandPerItem(HashMap<String, String>),
-    /// Mixed text and command previews (fallback to text encoding)
-    Mixed(HashMap<String, String>),
+    /// Mixed text and command previews - each item knows its type
+    Mixed(HashMap<String, MixedPreviewContent>),
 }
 
 impl PreviewUtils {
@@ -37,7 +44,8 @@ impl PreviewUtils {
         }
 
         let mut first_command: Option<String> = None;
-        let mut text_map = HashMap::new();
+        let mut text_map: HashMap<String, String> = HashMap::new();
+        let mut mixed_map: HashMap<String, MixedPreviewContent> = HashMap::new();
         let mut has_text = false;
         let mut has_command = false;
         let mut all_same_command = true;
@@ -49,7 +57,8 @@ impl PreviewUtils {
             match item.fzf_preview() {
                 FzfPreview::Text(text) => {
                     has_text = true;
-                    text_map.insert(display.clone(), text);
+                    text_map.insert(display.clone(), text.clone());
+                    mixed_map.insert(display, MixedPreviewContent::Text(text));
                 }
                 FzfPreview::Command(cmd) => {
                     has_command = true;
@@ -61,7 +70,8 @@ impl PreviewUtils {
                         first_command = Some(cmd.clone());
                     }
                     // Store the actual command for per-item command execution
-                    text_map.insert(display.clone(), cmd);
+                    text_map.insert(display.clone(), cmd.clone());
+                    mixed_map.insert(display, MixedPreviewContent::Command(cmd));
                 }
                 FzfPreview::None => {
                     // No preview for this item
@@ -83,8 +93,8 @@ impl PreviewUtils {
             // All text previews - use existing base64 approach
             Ok(PreviewStrategy::Text(text_map))
         } else {
-            // Mixed text and command previews - fall back to text encoding
-            Ok(PreviewStrategy::Mixed(text_map))
+            // Mixed text and command previews - track type per item
+            Ok(PreviewStrategy::Mixed(mixed_map))
         }
     }
 }

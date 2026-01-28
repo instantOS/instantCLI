@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 
 use crate::common::shell::shell_quote;
 
+use super::preview::MixedPreviewContent;
 use super::preview::PreviewStrategy;
 use super::preview::PreviewUtils;
 use super::types::*;
@@ -95,7 +96,7 @@ fn configure_preview_and_input(
                 .collect::<Vec<_>>()
                 .join("\n")
         }
-        PreviewStrategy::Text(preview_map) | PreviewStrategy::Mixed(preview_map) => {
+        PreviewStrategy::Text(preview_map) => {
             // Use field 3 for base64-encoded preview
             // Use literal \x1f character for POSIX compatibility
             cmd.arg("--preview")
@@ -108,6 +109,30 @@ fn configure_preview_and_input(
                     let preview = preview_map.get(display).cloned().unwrap_or_default();
                     let encoded = general_purpose::STANDARD.encode(preview.as_bytes());
                     format!("{display}\x1f{key}\x1f{encoded}")
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        PreviewStrategy::Mixed(mixed_map) => {
+            // Mixed previews: field 3 is 'T' (text) or 'C' (command), field 4 is base64 content
+            // Preview decodes field 4 and either echoes it (text) or pipes to bash (command)
+            cmd.arg("--preview").arg(
+                "type=$(echo {} | cut -d'\x1f' -f3); content=$(echo {} | cut -d'\x1f' -f4 | base64 -d); \
+                 key=$(echo {} | cut -d'\x1f' -f2); \
+                 if [ \"$type\" = 'C' ]; then echo \"$content\" | bash -s -- \"$key\"; else echo \"$content\"; fi",
+            );
+
+            // Format: display\x1fkey\x1ftype\x1fbase64_content
+            display_with_keys
+                .iter()
+                .map(|(display, key)| {
+                    let (type_marker, content) = match mixed_map.get(display) {
+                        Some(MixedPreviewContent::Text(text)) => ("T", text.clone()),
+                        Some(MixedPreviewContent::Command(cmd)) => ("C", cmd.clone()),
+                        None => ("T", String::new()),
+                    };
+                    let encoded = general_purpose::STANDARD.encode(content.as_bytes());
+                    format!("{display}\x1f{key}\x1f{type_marker}\x1f{encoded}")
                 })
                 .collect::<Vec<_>>()
                 .join("\n")
