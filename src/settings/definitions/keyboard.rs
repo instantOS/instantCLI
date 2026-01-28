@@ -423,7 +423,7 @@ fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> Resu
     }
 
     if matches!(compositor, CompositorType::Sway) {
-        let cmd = format!("input type:keyboard xkb_layout {joined}");
+        let cmd = format!("input type:keyboard xkb_layout \"{joined}\"");
         sway::swaymsg(&cmd)?;
     } else if compositor.is_x11() {
         let mut command = std::process::Command::new("setxkbmap");
