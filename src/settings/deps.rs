@@ -334,3 +334,20 @@ pub static WIREMIX: Dependency = Dependency {
     packages: &[PackageDefinition::new("wiremix", PackageManager::Pacman)],
     tests: &[InstallTest::WhichSucceeds("wiremix")],
 };
+
+// =============================================================================
+// AppImages
+// =============================================================================
+
+pub static GEARLEVER: Dependency = Dependency {
+    name: "Gear Lever",
+    description: Some("AppImage manager"),
+    packages: &[PackageDefinition::new(
+        "it.mijorus.gearlever",
+        PackageManager::Flatpak,
+    )],
+    tests: &[InstallTest::CommandSucceeds {
+        program: "flatpak",
+        args: &["info", "it.mijorus.gearlever"],
+    }],
+};

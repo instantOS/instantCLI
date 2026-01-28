@@ -7,6 +7,7 @@
 mod command_macros;
 
 pub mod appearance;
+pub mod appimages;
 pub mod apps;
 pub mod brightness;
 pub mod desktop;
