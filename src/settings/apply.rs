@@ -27,6 +27,37 @@ pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()>
         );
     }
 
+    // Also apply wallpaper on supported compositors
+    if let Err(e) = apply_wallpaper_if_configured() {
+        if debug {
+            eprintln!("Wallpaper apply skipped: {e}");
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_wallpaper_if_configured() -> Result<()> {
+    use crate::common::compositor::CompositorType;
+    use crate::wallpaper::{gnome, hyprland, sway, x11};
+
+    let store = SettingsStore::load().context("loading settings")?;
+    let path = match store.optional_string(crate::settings::store::WALLPAPER_PATH_KEY) {
+        Some(p) => p,
+        None => return Ok(()), // No wallpaper configured, silently skip
+    };
+
+    let compositor = CompositorType::detect();
+    match compositor {
+        CompositorType::Sway => sway::apply_wallpaper(&path)?,
+        CompositorType::I3 | CompositorType::Dwm | CompositorType::InstantWM => {
+            x11::apply_wallpaper(&path)?
+        }
+        CompositorType::Gnome => gnome::apply_wallpaper(&path)?,
+        CompositorType::Hyprland => hyprland::apply_wallpaper(&path)?,
+        _ => {} // Unsupported compositor, silently skip
+    }
+
     Ok(())
 }
 

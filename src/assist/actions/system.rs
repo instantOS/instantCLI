@@ -28,3 +28,7 @@ pub fn volume() -> Result<()> {
 pub fn brightness() -> Result<()> {
     crate::assist::utils::menu_command(&["slide", "--preset", "brightness", "--gui"])
 }
+
+pub fn theme_settings() -> Result<()> {
+    crate::settings::apply::run_nonpersistent_apply(false, false)
+}

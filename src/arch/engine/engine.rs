@@ -29,14 +29,22 @@ impl PauseMenuItem {
                 .header(NerdFont::Play, "Resume Installation")
                 .text("Continue the current question flow.")
                 .blank()
-                .line(colors::GREEN, Some(NerdFont::Check), "Keeps all current answers.")
+                .line(
+                    colors::GREEN,
+                    Some(NerdFont::Check),
+                    "Keeps all current answers.",
+                )
                 .build(),
             PauseMenuItem::ReviewAnswers => review_answers_preview(),
             PauseMenuItem::GoBack => PreviewBuilder::new()
                 .header(NerdFont::ArrowLeft, "Go Back")
                 .text("Return to the previous question.")
                 .blank()
-                .line(colors::PEACH, Some(NerdFont::ArrowLeft), "Re-answer the previous step.")
+                .line(
+                    colors::PEACH,
+                    Some(NerdFont::ArrowLeft),
+                    "Re-answer the previous step.",
+                )
                 .build(),
             PauseMenuItem::AbortInstallation => abort_installation_preview(),
         }
@@ -47,7 +55,10 @@ impl FzfSelectable for PauseMenuItem {
     fn fzf_display_text(&self) -> String {
         match self {
             PauseMenuItem::Resume => {
-                format!("{} Resume", format_icon_colored(NerdFont::Play, colors::GREEN))
+                format!(
+                    "{} Resume",
+                    format_icon_colored(NerdFont::Play, colors::GREEN)
+                )
             }
             PauseMenuItem::ReviewAnswers => format!(
                 "{} Review Answers",
@@ -90,7 +101,11 @@ impl FinalReviewItem {
                 .header(NerdFont::Download, "Start Installation")
                 .text("Apply the selected configuration.")
                 .blank()
-                .line(colors::GREEN, Some(NerdFont::Check), "Begins the install process.")
+                .line(
+                    colors::GREEN,
+                    Some(NerdFont::Check),
+                    "Begins the install process.",
+                )
                 .build(),
             FinalReviewItem::ReviewAnswers => review_answers_preview(),
             FinalReviewItem::AdvancedOptions => PreviewBuilder::new()
@@ -154,7 +169,11 @@ fn abort_installation_preview() -> FzfPreview {
         .header(NerdFont::CrossCircle, "Abort Installation")
         .text("Stop the installer and return to the shell.")
         .blank()
-        .line(colors::RED, Some(NerdFont::Warning), "Exits before installation starts.")
+        .line(
+            colors::RED,
+            Some(NerdFont::Warning),
+            "Exits before installation starts.",
+        )
         .build()
 }
 

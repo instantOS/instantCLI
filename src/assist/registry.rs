@@ -257,6 +257,13 @@ pub const ASSISTS: &[AssistEntry] = &[
                 execute: actions::mouse::mouse_speed_slider,
             }),
             AssistEntry::Action(AssistAction {
+                key: 's',
+                description: "Theme Settings: Reapply non-persistent settings and wallpaper",
+                icon: NerdFont::Palette,
+                dependencies: &[],
+                execute: actions::system::theme_settings,
+            }),
+            AssistEntry::Action(AssistAction {
                 key: 'w',
                 description: "Screen Mirror: Mirror a display output with wl-mirror",
                 icon: NerdFont::Monitor,
