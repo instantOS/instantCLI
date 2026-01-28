@@ -1,7 +1,9 @@
 use anyhow::Result;
 
-use crate::menu_utils::{ConfirmResult, FzfResult, FzfWrapper};
+use crate::menu_utils::{ConfirmResult, FzfPreview, FzfResult, FzfSelectable, FzfWrapper, Header};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored, fzf_mocha_args};
 use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
 
 use super::context::InstallContext;
 use super::question::{Question, QuestionResult};
@@ -10,6 +12,150 @@ pub struct QuestionEngine {
     questions: Vec<Box<dyn Question>>,
     pub context: InstallContext,
     is_tty: bool,
+}
+
+#[derive(Clone)]
+enum PauseMenuItem {
+    Resume,
+    ReviewAnswers,
+    GoBack,
+    AbortInstallation,
+}
+
+impl PauseMenuItem {
+    fn preview(&self) -> FzfPreview {
+        match self {
+            PauseMenuItem::Resume => PreviewBuilder::new()
+                .header(NerdFont::Play, "Resume Installation")
+                .text("Continue the current question flow.")
+                .blank()
+                .line(colors::GREEN, Some(NerdFont::Check), "Keeps all current answers.")
+                .build(),
+            PauseMenuItem::ReviewAnswers => review_answers_preview(),
+            PauseMenuItem::GoBack => PreviewBuilder::new()
+                .header(NerdFont::ArrowLeft, "Go Back")
+                .text("Return to the previous question.")
+                .blank()
+                .line(colors::PEACH, Some(NerdFont::ArrowLeft), "Re-answer the previous step.")
+                .build(),
+            PauseMenuItem::AbortInstallation => abort_installation_preview(),
+        }
+    }
+}
+
+impl FzfSelectable for PauseMenuItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            PauseMenuItem::Resume => {
+                format!("{} Resume", format_icon_colored(NerdFont::Play, colors::GREEN))
+            }
+            PauseMenuItem::ReviewAnswers => format!(
+                "{} Review Answers",
+                format_icon_colored(NerdFont::List, colors::BLUE)
+            ),
+            PauseMenuItem::GoBack => format!("{} Go Back", format_back_icon()),
+            PauseMenuItem::AbortInstallation => format!(
+                "{} Abort Installation",
+                format_icon_colored(NerdFont::CrossCircle, colors::RED)
+            ),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview()
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            PauseMenuItem::Resume => "resume".to_string(),
+            PauseMenuItem::ReviewAnswers => "review_answers".to_string(),
+            PauseMenuItem::GoBack => "go_back".to_string(),
+            PauseMenuItem::AbortInstallation => "abort_installation".to_string(),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum FinalReviewItem {
+    Install,
+    ReviewAnswers,
+    AdvancedOptions,
+    AbortInstallation,
+}
+
+impl FinalReviewItem {
+    fn preview(&self) -> FzfPreview {
+        match self {
+            FinalReviewItem::Install => PreviewBuilder::new()
+                .header(NerdFont::Download, "Start Installation")
+                .text("Apply the selected configuration.")
+                .blank()
+                .line(colors::GREEN, Some(NerdFont::Check), "Begins the install process.")
+                .build(),
+            FinalReviewItem::ReviewAnswers => review_answers_preview(),
+            FinalReviewItem::AdvancedOptions => PreviewBuilder::new()
+                .header(NerdFont::Sliders, "Advanced Options")
+                .text("Configure optional steps before installing.")
+                .blank()
+                .line(colors::TEAL, None, "Optional questions and tweaks.")
+                .build(),
+            FinalReviewItem::AbortInstallation => abort_installation_preview(),
+        }
+    }
+}
+
+impl FzfSelectable for FinalReviewItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            FinalReviewItem::Install => format!(
+                "{} Install",
+                format_icon_colored(NerdFont::Download, colors::GREEN)
+            ),
+            FinalReviewItem::ReviewAnswers => format!(
+                "{} Review Answers",
+                format_icon_colored(NerdFont::List, colors::BLUE)
+            ),
+            FinalReviewItem::AdvancedOptions => format!(
+                "{} Advanced Options",
+                format_icon_colored(NerdFont::Sliders, colors::PEACH)
+            ),
+            FinalReviewItem::AbortInstallation => format!(
+                "{} Abort Installation",
+                format_icon_colored(NerdFont::CrossCircle, colors::RED)
+            ),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview()
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            FinalReviewItem::Install => "install".to_string(),
+            FinalReviewItem::ReviewAnswers => "review_answers".to_string(),
+            FinalReviewItem::AdvancedOptions => "advanced_options".to_string(),
+            FinalReviewItem::AbortInstallation => "abort_installation".to_string(),
+        }
+    }
+}
+
+fn review_answers_preview() -> FzfPreview {
+    PreviewBuilder::new()
+        .header(NerdFont::List, "Review Answers")
+        .text("Browse and edit your previous responses.")
+        .blank()
+        .line(colors::TEAL, None, "Pick a question to revisit.")
+        .build()
+}
+
+fn abort_installation_preview() -> FzfPreview {
+    PreviewBuilder::new()
+        .header(NerdFont::CrossCircle, "Abort Installation")
+        .text("Stop the installer and return to the shell.")
+        .blank()
+        .line(colors::RED, Some(NerdFont::Warning), "Exits before installation starts.")
+        .build()
 }
 
 impl QuestionEngine {
@@ -194,43 +340,43 @@ impl QuestionEngine {
 
     async fn handle_navigation_menu(&mut self, current_idx: usize) -> Result<bool> {
         let options = vec![
-            format!("{} Resume", NerdFont::Play),
-            format!("{} Review Answers", NerdFont::List),
-            format!("{} Go Back", NerdFont::ArrowLeft),
-            format!("{} Abort Installation", NerdFont::Cross),
+            PauseMenuItem::Resume,
+            PauseMenuItem::ReviewAnswers,
+            PauseMenuItem::GoBack,
+            PauseMenuItem::AbortInstallation,
         ];
         let nav = FzfWrapper::builder()
-            .header("Installation Paused")
+            .header(Header::fancy("Installation Paused"))
+            .prompt("Select")
+            .args(fzf_mocha_args())
+            .responsive_layout()
             .select(options)?;
 
         match nav {
-            FzfResult::Selected(opt) => {
-                if opt.contains("Resume") {
-                    Ok(false)
-                } else if opt.contains("Review Answers") {
-                    while let Some(review_idx) = self.handle_review(current_idx)? {
-                        self.force_ask_question(review_idx).await?;
-                    }
-                    Ok(false)
-                } else if opt.contains("Go Back") {
-                    let prev_idx = self.handle_go_back(current_idx);
-                    if prev_idx != current_idx {
-                        let q_id = self.questions[prev_idx].id();
-                        self.context.answers.remove(&q_id);
-                        Ok(true)
-                    } else {
-                        Ok(false)
-                    }
-                } else if opt.contains("Abort Installation") {
-                    if let Ok(ConfirmResult::Yes) =
-                        FzfWrapper::confirm("Are you sure you want to abort?")
-                    {
-                        std::process::exit(0);
-                    }
-                    Ok(false)
+            FzfResult::Selected(PauseMenuItem::Resume) => Ok(false),
+            FzfResult::Selected(PauseMenuItem::ReviewAnswers) => {
+                while let Some(review_idx) = self.handle_review(current_idx)? {
+                    self.force_ask_question(review_idx).await?;
+                }
+                Ok(false)
+            }
+            FzfResult::Selected(PauseMenuItem::GoBack) => {
+                let prev_idx = self.handle_go_back(current_idx);
+                if prev_idx != current_idx {
+                    let q_id = self.questions[prev_idx].id();
+                    self.context.answers.remove(&q_id);
+                    Ok(true)
                 } else {
                     Ok(false)
                 }
+            }
+            FzfResult::Selected(PauseMenuItem::AbortInstallation) => {
+                if let Ok(ConfirmResult::Yes) =
+                    FzfWrapper::confirm("Are you sure you want to abort?")
+                {
+                    std::process::exit(0);
+                }
+                Ok(false)
             }
             _ => Ok(false),
         }
@@ -238,40 +384,39 @@ impl QuestionEngine {
 
     async fn handle_final_review(&mut self) -> Result<bool> {
         let options = vec![
-            format!("{} Install", NerdFont::Download),
-            format!("{} Review Answers", NerdFont::List),
-            format!("{} Advanced Options", NerdFont::Gear),
-            format!("{} Abort Installation", NerdFont::Cross),
+            FinalReviewItem::Install,
+            FinalReviewItem::ReviewAnswers,
+            FinalReviewItem::AdvancedOptions,
+            FinalReviewItem::AbortInstallation,
         ];
         let nav = FzfWrapper::builder()
-            .header("Installation Configuration Complete")
+            .header(Header::fancy("Installation Configuration Complete"))
+            .prompt("Select")
+            .args(fzf_mocha_args())
+            .responsive_layout()
             .select(options)?;
 
         match nav {
-            FzfResult::Selected(opt) => {
-                if opt.contains("Install") {
-                    Ok(true)
-                } else if opt.contains("Review Answers") {
-                    while let Some(review_idx) = self.handle_review(self.questions.len())? {
-                        self.force_ask_question(review_idx).await?;
-                    }
-                    Ok(false)
-                } else if opt.contains("Advanced Options") {
-                    if let Some(adv_idx) = self.handle_advanced_options()? {
-                        // Force ask the selected optional question
-                        self.force_ask_question(adv_idx).await?;
-                    }
-                    Ok(false)
-                } else if opt.contains("Abort Installation") {
-                    if let Ok(ConfirmResult::Yes) =
-                        FzfWrapper::confirm("Are you sure you want to abort?")
-                    {
-                        std::process::exit(0);
-                    }
-                    Ok(false)
-                } else {
-                    Ok(false)
+            FzfResult::Selected(FinalReviewItem::Install) => Ok(true),
+            FzfResult::Selected(FinalReviewItem::ReviewAnswers) => {
+                while let Some(review_idx) = self.handle_review(self.questions.len())? {
+                    self.force_ask_question(review_idx).await?;
                 }
+                Ok(false)
+            }
+            FzfResult::Selected(FinalReviewItem::AdvancedOptions) => {
+                if let Some(adv_idx) = self.handle_advanced_options()? {
+                    self.force_ask_question(adv_idx).await?;
+                }
+                Ok(false)
+            }
+            FzfResult::Selected(FinalReviewItem::AbortInstallation) => {
+                if let Ok(ConfirmResult::Yes) =
+                    FzfWrapper::confirm("Are you sure you want to abort?")
+                {
+                    std::process::exit(0);
+                }
+                Ok(false)
             }
             _ => Ok(false),
         }
