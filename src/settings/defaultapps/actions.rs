@@ -79,6 +79,7 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
     }
 
     let current_default = query_default_app(selected_mime)?;
+    let current_default_id = current_default.as_deref();
     let header_text = if let Some(ref default) = current_default {
         format!(
             "MIME type: {} {}\nCurrent default: {}",
@@ -96,14 +97,24 @@ pub fn manage_default_apps(ctx: &mut SettingsContext) -> Result<()> {
 
     let app_infos: Vec<ApplicationInfo> = apps
         .iter()
-        .map(|desktop_id| get_application_info(desktop_id))
+        .map(|desktop_id| {
+            let mut info = get_application_info(desktop_id);
+            info.is_default = current_default_id == Some(desktop_id.as_str());
+            info
+        })
         .collect();
 
-    let selected_app_info = match FzfWrapper::builder()
+    let initial_index = app_infos.iter().position(|info| info.is_default);
+
+    let mut app_menu = FzfWrapper::builder()
         .prompt("Select application: ")
-        .header(&header_text)
-        .select(app_infos)?
-    {
+        .header(&header_text);
+
+    if let Some(index) = initial_index {
+        app_menu = app_menu.initial_index(index);
+    }
+
+    let selected_app_info = match app_menu.select(app_infos)? {
         FzfResult::Selected(app_info) => app_info,
         _ => {
             ctx.emit_info("settings.defaultapps.cancelled", "No application selected.");

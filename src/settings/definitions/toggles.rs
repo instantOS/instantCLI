@@ -8,10 +8,10 @@ use std::path::Path;
 use std::process::Command;
 use which::which;
 
-use crate::common::package::{ensure_all, InstallResult};
+use crate::common::package::{InstallResult, ensure_all};
 use crate::common::systemd::{SystemdManager, UserServiceConfig};
 use crate::menu_utils::{ConfirmResult, FzfWrapper};
-use crate::preview::{preview_command, PreviewId};
+use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEZ, BLUEZ_UTILS, CLIPMENU, UDISKIE};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};

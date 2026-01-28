@@ -4,6 +4,11 @@ use std::path::PathBuf;
 use freedesktop_file_parser::parse;
 
 use crate::menu_utils::{FzfPreview, FzfSelectable};
+use crate::ui::catppuccin::{colors, hex_to_ansi_fg};
+use crate::ui::nerd_font::NerdFont;
+use crate::ui::preview::PreviewBuilder;
+
+const RESET: &str = "\x1b[0m";
 
 #[derive(Debug, Clone)]
 pub(crate) struct ApplicationInfo {
@@ -12,15 +17,23 @@ pub(crate) struct ApplicationInfo {
     pub comment: Option<String>,
     pub icon: Option<String>,
     pub exec: Option<String>,
+    pub is_default: bool,
 }
 
 impl FzfSelectable for ApplicationInfo {
     fn fzf_display_text(&self) -> String {
-        if let Some(name) = &self.name {
+        let mut text = if let Some(name) = &self.name {
             format!("󰘔 {} ({})", name, self.desktop_id)
         } else {
             format!("󰘔 {}", self.desktop_id)
+        };
+
+        if self.is_default {
+            let subtext = hex_to_ansi_fg(colors::SUBTEXT0);
+            text.push_str(&format!(" {subtext}(current){RESET}"));
         }
+
+        text
     }
 
     fn fzf_key(&self) -> String {
@@ -28,29 +41,37 @@ impl FzfSelectable for ApplicationInfo {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        let mut preview = String::new();
+        let title = self.name.as_deref().unwrap_or(&self.desktop_id);
+        let mut builder = PreviewBuilder::new().header(NerdFont::Desktop, title);
 
-        if let Some(name) = &self.name {
-            preview.push_str(&format!("Application: {}\n", name));
-        } else {
-            preview.push_str(&format!("Desktop ID: {}\n", self.desktop_id));
+        if self.is_default {
+            builder = builder
+                .line(colors::GREEN, Some(NerdFont::CheckCircle), "Current default")
+                .subtext("Selected for this MIME type.")
+                .blank();
         }
 
         if let Some(comment) = &self.comment {
-            preview.push_str(&format!("\nDescription:\n{}\n", comment));
+            builder = builder.subtext(comment).blank();
+        }
+
+        builder = builder
+            .line(colors::TEAL, Some(NerdFont::ChevronRight), "Details")
+            .field_indented("Desktop ID", &self.desktop_id);
+
+        if self.is_default {
+            builder = builder.field_indented("Default", "Current");
         }
 
         if let Some(exec) = &self.exec {
-            preview.push_str(&format!("\nCommand:\n{}\n", exec));
+            builder = builder.field_indented("Command", exec);
         }
 
         if let Some(icon) = &self.icon {
-            preview.push_str(&format!("\nIcon: {}\n", icon));
+            builder = builder.field_indented("Icon", icon);
         }
 
-        preview.push_str(&format!("\nDesktop File:\n{}\n", self.desktop_id));
-
-        FzfPreview::Text(preview)
+        builder.build()
     }
 }
 
@@ -86,6 +107,7 @@ pub(crate) fn get_application_info(desktop_id: &str) -> ApplicationInfo {
                     .map(|c| c.default.clone()),
                 icon: desktop_file.entry.icon.as_ref().map(|i| i.content.clone()),
                 exec,
+                is_default: false,
             };
         }
     }
@@ -96,5 +118,6 @@ pub(crate) fn get_application_info(desktop_id: &str) -> ApplicationInfo {
         comment: None,
         icon: None,
         exec: None,
+        is_default: false,
     }
 }
