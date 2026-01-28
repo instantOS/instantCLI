@@ -181,6 +181,28 @@ pub struct SearchItem {
     pub state: SettingState,
 }
 
+/// Tree search item - displays settings and categories in a tree structure
+#[derive(Clone)]
+pub enum TreeSearchItem {
+    /// A category folder in the tree
+    Category {
+        category: Category,
+        tree_prefix: String,
+    },
+    /// A subcategory folder in the tree
+    Folder {
+        meta: FolderMeta,
+        tree_prefix: String,
+        path: String,
+    },
+    /// A setting leaf in the tree
+    Setting {
+        setting: &'static dyn Setting,
+        state: SettingState,
+        tree_prefix: String,
+    },
+}
+
 // ============================================================================
 // Shared Preview Builder
 // ============================================================================
@@ -369,6 +391,187 @@ impl FzfSelectable for SearchItem {
 
     fn fzf_key(&self) -> String {
         self.setting.metadata().id.to_string()
+    }
+}
+
+const RESET: &str = "\x1b[0m";
+const BOLD: &str = "\x1b[1m";
+
+impl FzfSelectable for TreeSearchItem {
+    fn fzf_display_text(&self) -> String {
+        let tree_color = crate::ui::catppuccin::hex_to_ansi_fg(colors::SURFACE1);
+        let text_color = crate::ui::catppuccin::hex_to_ansi_fg(colors::TEXT);
+
+        match self {
+            TreeSearchItem::Category {
+                category,
+                tree_prefix,
+            } => {
+                let meta = category.meta();
+                let icon = format_icon_colored(meta.icon, meta.color);
+                let title_color = crate::ui::catppuccin::hex_to_ansi_fg(meta.color);
+                format!(
+                    "{tree_color}{tree_prefix}{RESET} {icon} {BOLD}{title_color}{}{RESET}",
+                    meta.title
+                )
+            }
+            TreeSearchItem::Folder {
+                meta, tree_prefix, ..
+            } => {
+                let icon = format_icon_colored(meta.icon, meta.color);
+                let title_color = crate::ui::catppuccin::hex_to_ansi_fg(meta.color);
+                format!(
+                    "{tree_color}{tree_prefix}{RESET} {icon} {BOLD}{title_color}{}{RESET}",
+                    meta.title
+                )
+            }
+            TreeSearchItem::Setting {
+                setting,
+                state,
+                tree_prefix,
+            } => {
+                let meta = setting.metadata();
+                let category = crate::settings::category_tree::get_category_for_setting(meta.id)
+                    .unwrap_or(Category::System);
+                let icon_color = meta.icon_color.unwrap_or_else(|| category.meta().color);
+                let icon = format_icon_colored(meta.icon, icon_color);
+
+                let state_suffix = match state {
+                    SettingState::Toggle { enabled: true } => {
+                        format!(" {}", format_icon_colored(NerdFont::Check, colors::GREEN))
+                    }
+                    SettingState::Toggle { enabled: false } => {
+                        format!(" {}", format_icon_colored(NerdFont::Cross, colors::RED))
+                    }
+                    SettingState::Choice { current_label } => {
+                        let subtext = crate::ui::catppuccin::hex_to_ansi_fg(colors::SUBTEXT0);
+                        format!(" {subtext}({current_label}){RESET}")
+                    }
+                    SettingState::Action | SettingState::Command => String::new(),
+                };
+
+                format!(
+                    "{tree_color}{tree_prefix}{RESET} {icon} {text_color}{}{RESET}{state_suffix}",
+                    meta.title
+                )
+            }
+        }
+    }
+
+    fn fzf_preview(&self) -> crate::menu_utils::FzfPreview {
+        match self {
+            TreeSearchItem::Category { category, .. } => {
+                let meta = category.meta();
+                let tree = crate::settings::category_tree::category_tree(*category);
+                let settings = collect_category_settings(&tree);
+                build_folder_preview(
+                    meta.icon,
+                    meta.color,
+                    meta.title,
+                    Some(meta.description),
+                    &settings,
+                )
+            }
+            TreeSearchItem::Folder { meta, .. } => build_folder_preview(
+                meta.icon,
+                meta.color,
+                &meta.title,
+                meta.description.as_deref(),
+                &[],
+            ),
+            TreeSearchItem::Setting { setting, state, .. } => {
+                build_setting_preview(*setting, state)
+            }
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self {
+            TreeSearchItem::Category { category, .. } => format!("cat:{}", category.meta().title),
+            TreeSearchItem::Folder { path, .. } => format!("folder:{path}"),
+            TreeSearchItem::Setting { setting, .. } => format!("setting:{}", setting.metadata().id),
+        }
+    }
+}
+
+fn collect_category_settings(
+    nodes: &[crate::settings::category_tree::CategoryNode],
+) -> Vec<&'static dyn Setting> {
+    let mut settings = Vec::new();
+    for node in nodes {
+        if let Some(s) = node.setting {
+            settings.push(s);
+        }
+        settings.extend(collect_category_settings(&node.children));
+    }
+    settings
+}
+
+/// Build tree search items from all categories
+pub fn build_tree_search_items(
+    ctx: &crate::settings::context::SettingsContext,
+) -> Vec<TreeSearchItem> {
+    let mut items = Vec::new();
+    let categories = Category::all();
+    let total_categories = categories.len();
+
+    for (cat_idx, category) in categories.iter().enumerate() {
+        let is_last_category = cat_idx == total_categories - 1;
+        let cat_connector = if is_last_category { "└─" } else { "├─" };
+        let cat_child_prefix = if is_last_category { "   " } else { "│  " };
+
+        items.push(TreeSearchItem::Category {
+            category: *category,
+            tree_prefix: cat_connector.to_string(),
+        });
+
+        let tree = crate::settings::category_tree::category_tree(*category);
+        append_tree_items(
+            &mut items,
+            &tree,
+            cat_child_prefix,
+            category.meta().title,
+            ctx,
+        );
+    }
+
+    items.reverse();
+    items
+}
+
+fn append_tree_items(
+    items: &mut Vec<TreeSearchItem>,
+    nodes: &[crate::settings::category_tree::CategoryNode],
+    prefix: &str,
+    path: &str,
+    ctx: &crate::settings::context::SettingsContext,
+) {
+    for (i, node) in nodes.iter().enumerate() {
+        let is_last = i == nodes.len() - 1;
+        let connector = if is_last { "└─" } else { "├─" };
+        let child_prefix = if is_last {
+            format!("{prefix}   ")
+        } else {
+            format!("{prefix}│  ")
+        };
+
+        if let Some(setting) = node.setting {
+            let state = setting.get_display_state(ctx);
+            items.push(TreeSearchItem::Setting {
+                setting,
+                state,
+                tree_prefix: format!("{prefix}{connector}"),
+            });
+        } else if let Some(name) = node.name {
+            let folder_path = format!("{path}/{name}");
+            items.push(TreeSearchItem::Folder {
+                meta: FolderMeta::from_name(name, node.description),
+                tree_prefix: format!("{prefix}{connector}"),
+                path: folder_path.clone(),
+            });
+
+            append_tree_items(items, &node.children, &child_prefix, &folder_path, ctx);
+        }
     }
 }
 

@@ -10,7 +10,10 @@ use crate::settings::setting::Category;
 
 use super::super::commands::SettingsNavigation;
 use super::super::context::SettingsContext;
-use super::items::{MainMenuItem, MenuItem, SearchItem, TreeNode, convert_category_tree};
+use super::items::{
+    MainMenuItem, MenuItem, TreeNode, TreeSearchItem, build_tree_search_items,
+    convert_category_tree,
+};
 use crate::menu_utils::select_one_with_style_at;
 
 pub fn run_settings_ui(
@@ -24,11 +27,11 @@ pub fn run_settings_ui(
     // Determine initial state based on navigation
     let mut initial_view = match navigation {
         Some(SettingsNavigation::Setting(setting_id)) => {
-            // Find the setting and jump to search view with it selected
-            let all_settings = all_settings_flat();
-            let target_index = all_settings
-                .iter()
-                .position(|s| s.metadata().id == setting_id);
+            // Find the setting in the tree view and jump to it
+            let tree_items = build_tree_search_items(&ctx);
+            let target_index = tree_items.iter().position(|item| {
+                matches!(item, TreeSearchItem::Setting { setting, .. } if setting.metadata().id == setting_id)
+            });
 
             if target_index.is_none() {
                 anyhow::bail!("Setting '{}' not found", setting_id);
@@ -128,16 +131,6 @@ fn build_category_trees() -> Vec<TreeNode> {
             }
         })
         .collect()
-}
-
-/// Get all settings flattened (for search)
-fn all_settings_flat() -> Vec<&'static dyn crate::settings::setting::Setting> {
-    let mut settings = Vec::new();
-    for cat in Category::all() {
-        let tree = convert_category_tree(*cat, category_tree(*cat));
-        settings.extend(tree.collect_settings(usize::MAX));
-    }
-    settings
 }
 
 fn run_main_menu(_ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<MenuAction> {
@@ -257,28 +250,61 @@ fn navigate_tree(
 }
 
 pub fn handle_search_all(ctx: &mut SettingsContext, mut cursor: MenuCursor) -> Result<bool> {
+    use crate::menu_utils::{FzfResult, FzfWrapper, Header};
+    use crate::ui::catppuccin::{colors, fzf_mocha_args, hex_to_ansi_fg};
+
     loop {
-        let all_settings = all_settings_flat();
-        let items: Vec<SearchItem> = all_settings
-            .into_iter()
-            .map(|setting| {
-                let state = setting.get_display_state(ctx);
-                SearchItem { setting, state }
-            })
-            .collect();
+        let items = build_tree_search_items(ctx);
 
         if items.is_empty() {
             ctx.emit_info("settings.search.empty", "No settings found to search.");
             return Ok(true);
         }
 
+        let title_color = hex_to_ansi_fg(colors::MAUVE);
+        let tip_color = hex_to_ansi_fg(colors::SUBTEXT0);
+        let reset = "\x1b[0m";
+        let header = format!(
+            "{title_color}All Settings{reset}\n{tip_color}Browse all settings organized by category{reset}"
+        );
+
+        let prompt = format!(
+            "{} Search",
+            char::from(crate::ui::nerd_font::NerdFont::Search)
+        );
+
         let initial_cursor = cursor.initial_index(&items);
-        match select_one_with_style_at(items.clone(), initial_cursor)? {
-            Some(selection) => {
+        let result = FzfWrapper::builder()
+            .prompt(prompt)
+            .header(Header::fancy(&header))
+            .args(fzf_mocha_args())
+            .args(["--no-sort"])
+            .initial_index(initial_cursor.unwrap_or(0))
+            .responsive_layout()
+            .select(items.clone())?;
+
+        match result {
+            FzfResult::Selected(selection) => {
                 cursor.update(&selection, &items);
-                super::handlers::handle_trait_setting(ctx, selection.setting)?;
+                match &selection {
+                    TreeSearchItem::Setting { setting, .. } => {
+                        super::handlers::handle_trait_setting(ctx, *setting)?;
+                    }
+                    TreeSearchItem::Category { category, .. } => {
+                        let tree = convert_category_tree(*category, category_tree(*category));
+                        navigate_tree(ctx, &tree, None, MenuCursor::new())?;
+                    }
+                    TreeSearchItem::Folder { .. } => {
+                        // Folders are visual only in the tree view
+                    }
+                }
             }
-            None => return Ok(true),
+            FzfResult::Cancelled => return Ok(true),
+            FzfResult::Error(err) => {
+                ctx.emit_info("settings.search.error", &format!("Search error: {err}"));
+                return Ok(true);
+            }
+            _ => return Ok(true),
         }
     }
 }

@@ -96,7 +96,11 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
             CategoryNode::setting(&toggles::BluetoothService),
             CategoryNode::setting(&desktop::BluetoothManager),
         ],
-        Category::Mouse => vec![
+        Category::InputDevices => vec![
+            CategoryNode::setting(&keyboard::KeyboardLayout),
+            CategoryNode::setting(&keyboard::TtyKeymap),
+            CategoryNode::setting(&keyboard::LoginScreenLayout),
+            CategoryNode::setting(&swap_escape::SwapEscape),
             CategoryNode::setting(&mouse::NaturalScroll),
             CategoryNode::setting(&mouse::SwapButtons),
             CategoryNode::setting(&mouse::MouseSensitivity),
@@ -105,7 +109,6 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         Category::Desktop => vec![
             CategoryNode::setting(&desktop::WindowLayout),
             CategoryNode::setting(&toggles::ClipboardManager),
-            CategoryNode::setting(&swap_escape::SwapEscape),
         ],
         Category::Display => vec![CategoryNode::setting(&display::ConfigureDisplay)],
         Category::Audio => vec![CategoryNode::setting(&wiremix::LaunchWiremix)],
@@ -134,11 +137,6 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         Category::Language => vec![
             CategoryNode::setting(&language::SystemLanguage),
             CategoryNode::setting(&language::Timezone),
-            CategoryNode::group("Keyboard")
-                .description("Keyboard layout for desktop, TTYs, and login screens.")
-                .child(CategoryNode::setting(&keyboard::KeyboardLayout))
-                .child(CategoryNode::setting(&keyboard::TtyKeymap))
-                .child(CategoryNode::setting(&keyboard::LoginScreenLayout)),
         ],
         Category::System => vec![
             CategoryNode::setting(&system::AboutSystem),
