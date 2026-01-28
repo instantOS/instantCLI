@@ -165,6 +165,18 @@ pub static GRIM: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("grim")],
 };
 
+/// wl-mirror - Wayland screen mirroring
+pub static WL_MIRROR: Dependency = Dependency {
+    name: "wl-mirror",
+    description: Some("Wayland screen mirroring tool"),
+    packages: &[
+        PackageDefinition::new("wl-mirror", PackageManager::Pacman),
+        PackageDefinition::new("wl-mirror", PackageManager::Apt),
+        PackageDefinition::new("wl-mirror", PackageManager::Dnf),
+    ],
+    tests: &[InstallTest::WhichSucceeds("wl-mirror")],
+};
+
 /// ImageMagick - image manipulation
 pub static IMAGEMAGICK: Dependency = Dependency {
     name: "imagemagick",

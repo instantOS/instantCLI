@@ -10,3 +10,4 @@ pub mod password;
 pub mod qr;
 pub mod screenshot;
 pub mod system;
+pub mod wl_mirror;
