@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.4](https://github.com/instantOS/instantCLI/compare/v0.13.3...v0.13.4) - 2026-01-28
+
+### Fixed
+
+- fix sway bug
+- fix mixed previews
+
+### Other
+
+- better app selection preview
+- init appimage management setting
+- init bluetooth detection setting
+- better structure
+- better keyboard menu
+- better previews
+- add ts assist, make apply restore wallpaper
+- prettier `ins arch` menu
+- better xdg mime detection
+- refactor preview
+- actual command
+- init migration away from bash previews
+- better keyboard previews
+- better keyboard settings
+- add preview wrapping for doctor
+
 ## [0.13.4](https://github.com/instantOS/instantCLI/compare/v0.13.3...v0.13.4) - 2026-01-27
 
 ### Other
