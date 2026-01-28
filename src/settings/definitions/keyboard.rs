@@ -9,11 +9,11 @@ use std::process::Command;
 use crate::arch::annotations::{annotate_list, KeymapAnnotationProvider};
 use crate::common::compositor::{sway, CompositorType};
 use crate::menu_utils::{ChecklistResult, FzfResult, FzfSelectable, FzfWrapper};
+use crate::preview::{preview_command, PreviewId};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::StringSettingKey;
 use crate::ui::prelude::*;
-use crate::ui::preview::PreviewBuilder;
 use serde_json::Value;
 use which::which;
 
@@ -127,7 +127,7 @@ fn join_layout_codes(codes: &[String]) -> String {
     cleaned.join(",")
 }
 
-fn current_x11_layouts() -> Vec<String> {
+pub(crate) fn current_x11_layouts() -> Vec<String> {
     let output = match Command::new("setxkbmap").arg("-query").output() {
         Ok(output) if output.status.success() => output,
         _ => return Vec::new(),
@@ -240,7 +240,7 @@ fn list_keymaps() -> Result<Vec<String>> {
         .collect())
 }
 
-fn current_vconsole_keymap() -> Option<String> {
+pub(crate) fn current_vconsole_keymap() -> Option<String> {
     std::fs::read_to_string("/etc/vconsole.conf")
         .ok()
         .and_then(|content| {
@@ -256,7 +256,7 @@ fn current_vconsole_keymap() -> Option<String> {
         })
 }
 
-fn current_x11_layout() -> Option<String> {
+pub(crate) fn current_x11_layout() -> Option<String> {
     let output = Command::new("localectl").arg("status").output().ok()?;
     if !output.status.success() {
         return None;
@@ -286,193 +286,6 @@ fn ensure_localectl(ctx: &mut SettingsContext, code: &str, message: &str) -> boo
         return false;
     }
     true
-}
-
-fn keyboard_layout_preview_command() -> String {
-    PreviewBuilder::new()
-        .header(NerdFont::Keyboard, "Keyboard Layout")
-        .subtext("Active layout for the current desktop session.")
-        .blank()
-        .text("Current State")
-        .shell(
-            r#"session="Unsupported"
-
-if [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1; then
-  session="Sway"
-  echo "Session: $session"
-
-  py=$(command -v python3 || command -v python || true)
-  if [ -n "$py" ]; then
-    swaymsg -t get_inputs -r 2>/dev/null | "$py" -c "
-import json
-import sys
-
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    print('Active: Not detected')
-    print('Layouts: Not detected')
-    print('Keyboards: 0')
-    sys.exit(0)
-
-keyboards = [d for d in data if d.get('type') == 'keyboard']
-if not keyboards:
-    print('Active: Not detected')
-    print('Layouts: Not detected')
-    print('Keyboards: 0')
-    sys.exit(0)
-
-def truncate(name, limit=40):
-    if not name:
-        return 'Keyboard'
-    name = str(name)
-    return name if len(name) <= limit else name[: limit - 3] + '...'
-
-unique_layouts = []
-unique_active = []
-device_lines = []
-
-for dev in keyboards:
-    layouts = dev.get('xkb_layout_names') or []
-    active_index = dev.get('xkb_active_layout_index')
-    active_name = dev.get('xkb_active_layout_name')
-
-    if active_name and active_name not in unique_active:
-        unique_active.append(active_name)
-    for layout in layouts:
-        if layout not in unique_layouts:
-            unique_layouts.append(layout)
-
-    active_label = None
-    if active_name:
-        active_label = active_name
-    elif isinstance(active_index, int) and 0 <= active_index < len(layouts):
-        active_label = layouts[active_index]
-    elif layouts:
-        active_label = layouts[0]
-
-    if active_label:
-        suffix = ''
-        if isinstance(active_index, int) and layouts:
-            suffix = ' ({}/{})'.format(active_index + 1, len(layouts))
-        device_lines.append('{}: {}{}'.format(truncate(dev.get('name')), active_label, suffix))
-    else:
-        device_lines.append('{}: Unknown'.format(truncate(dev.get('name'))))
-
-active_label = ', '.join(unique_active) if unique_active else (
-    ', '.join(unique_layouts) if unique_layouts else 'Unknown'
-)
-layout_label = ', '.join(unique_layouts) if unique_layouts else 'Unknown'
-
-print('Active: {}'.format(active_label))
-print('Layouts: {}'.format(layout_label))
-print('Keyboards: {}'.format(len(keyboards)))
-
-for line in device_lines[:3]:
-    print('  - {}'.format(line))
-if len(device_lines) > 3:
-    print('  - ... and {} more'.format(len(device_lines) - 3))
-"
-  else
-    echo "Active: Not detected"
-    echo "Layouts: Not detected"
-    echo "Keyboards: 0"
-  fi
-  exit 0
-fi
-
-if [ -n "${DISPLAY:-}" ] && command -v setxkbmap >/dev/null 2>&1; then
-  session="X11"
-  layout=$(setxkbmap -query 2>/dev/null | awk '/layout/{print $2; exit}')
-  if [ -z "$layout" ]; then
-    layout="Not detected"
-  fi
-  echo "Session: $session"
-  echo "Layout: $layout"
-  if [ "$layout" != "Not detected" ]; then
-    echo "Layouts: $layout"
-  fi
-  exit 0
-fi
-
-echo "Session: $session"
-echo "Layout: Not detected""#,
-        )
-        .blank()
-        .text("Info")
-        .text("Sway can have multiple layouts per keyboard.")
-        .text("Applies via swaymsg (Sway) or setxkbmap (X11).")
-        .text("Saved value is reapplied on login.")
-        .build_shell_script()
-}
-
-fn tty_keymap_preview_command() -> String {
-    PreviewBuilder::new()
-        .header(NerdFont::Keyboard, "TTY Keymap")
-        .subtext("Console keymap for virtual terminals.")
-        .blank()
-        .text("Current State")
-        .shell(
-            r#"keymap=""
-if [ -r /etc/vconsole.conf ]; then
-  keymap=$(awk -F= '/^KEYMAP=/{print $2; exit}' /etc/vconsole.conf)
-fi
-if [ -z "$keymap" ]; then
-  keymap="Not set"
-fi
-
-echo "Keymap: $keymap"
-echo "File: /etc/vconsole.conf""#,
-        )
-        .blank()
-        .text("Info")
-        .text("Applies to virtual consoles and login TTYs.")
-        .text("Configured via localectl set-keymap.")
-        .build_shell_script()
-}
-
-fn login_screen_layout_preview_command() -> String {
-    PreviewBuilder::new()
-        .header(NerdFont::Keyboard, "Login Screen Layout")
-        .subtext("X11 layout used by GDM/LightDM login screens.")
-        .blank()
-        .text("Current State")
-        .shell(
-            r#"layout=""
-source=""
-
-if [ -r /etc/X11/xorg.conf.d/00-keyboard.conf ]; then
-  layout=$(awk -F'"' '/XkbLayout/{print $4; exit}' /etc/X11/xorg.conf.d/00-keyboard.conf)
-  if [ -n "$layout" ]; then
-    source="/etc/X11/xorg.conf.d/00-keyboard.conf"
-  fi
-fi
-
-if [ -z "$layout" ] && command -v localectl >/dev/null 2>&1; then
-  layout=$(localectl status 2>/dev/null | awk -F: '/X11 Layout/{
-    gsub(/^[ \t]+/, "", $2)
-    split($2, parts, /[ ,\t]+/)
-    print parts[1]
-    exit
-  }')
-  if [ -n "$layout" ]; then
-    source="localectl status"
-  fi
-fi
-
-if [ -z "$layout" ]; then
-  layout="Not set"
-fi
-
-echo "Layout: $layout"
-if [ -n "$source" ]; then
-  echo "Source: $source"
-fi"#,
-        )
-        .blank()
-        .text("Info")
-        .text("Configured via localectl set-x11-keymap.")
-        .build_shell_script()
 }
 
 /// Apply keyboard layout(s) via swaymsg or setxkbmap depending on compositor
@@ -612,7 +425,7 @@ impl Setting for KeyboardLayout {
     }
 
     fn preview_command(&self) -> Option<String> {
-        Some(keyboard_layout_preview_command())
+        Some(preview_command(PreviewId::KeyboardLayout))
     }
 
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
@@ -739,7 +552,7 @@ impl Setting for TtyKeymap {
     }
 
     fn preview_command(&self) -> Option<String> {
-        Some(tty_keymap_preview_command())
+        Some(preview_command(PreviewId::TtyKeymap))
     }
 }
 
@@ -828,6 +641,6 @@ impl Setting for LoginScreenLayout {
     }
 
     fn preview_command(&self) -> Option<String> {
-        Some(login_screen_layout_preview_command())
+        Some(preview_command(PreviewId::LoginScreenLayout))
     }
 }

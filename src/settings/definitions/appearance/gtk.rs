@@ -6,10 +6,11 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::menu_utils::{FzfSelectable, FzfWrapper};
+use crate::preview::{preview_command, PreviewId};
 use crate::settings::context::SettingsContext;
 use crate::settings::installable_packages::{self, GTK_ICON_THEMES, GTK_THEMES};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
-use crate::settings::store::{BoolSettingKey, GTK_ICON_THEME_KEY, GTK_THEME_KEY, StringSettingKey};
+use crate::settings::store::{BoolSettingKey, StringSettingKey, GTK_ICON_THEME_KEY, GTK_THEME_KEY};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::prelude::*;
 
@@ -296,17 +297,7 @@ impl Setting for GtkIconTheme {
     }
 
     fn preview_command(&self) -> Option<String> {
-        Some(
-            PreviewBuilder::new()
-                .header(NerdFont::Image, "Icon Theme")
-                .text("Select and apply a GTK icon theme.")
-                .blank()
-                .shell(
-                    r#"icon_theme=$(timeout 1s gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null | sed "s/^.//;s/.$//" || echo "unknown")
-echo "Current icon theme: $icon_theme""#,
-                )
-                .build_shell_script(),
-        )
+        Some(preview_command(PreviewId::IconTheme))
     }
 }
 
@@ -413,17 +404,7 @@ impl Setting for GtkTheme {
     }
 
     fn preview_command(&self) -> Option<String> {
-        Some(
-            PreviewBuilder::new()
-                .header(NerdFont::Palette, "GTK Theme")
-                .text("Select and apply a GTK theme.")
-                .blank()
-                .shell(
-                    r#"gtk_theme=$(timeout 1s gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null | sed "s/'//g" || echo "unknown")
-echo "Current GTK theme: $gtk_theme""#,
-                )
-                .build_shell_script(),
-        )
+        Some(preview_command(PreviewId::GtkTheme))
     }
 }
 

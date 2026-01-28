@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 
+use crate::preview::{preview_command, PreviewId};
 use crate::settings::context::SettingsContext;
 use crate::settings::defaultapps;
 use crate::settings::deps::XDG_UTILS;
@@ -101,30 +102,7 @@ impl Setting for DefaultImageViewer {
     }
 
     fn preview_command(&self) -> Option<String> {
-        const IMAGE_TYPES: &[&str] = &[
-            "image/png",
-            "image/jpeg",
-            "image/gif",
-            "image/webp",
-            "image/bmp",
-            "image/tiff",
-            "image/svg+xml",
-        ];
-
-        Some(
-            PreviewBuilder::new()
-                .header(NerdFont::Image, "Image Viewer")
-                .subtext("Set your default image viewer for photos and pictures.")
-                .blank()
-                .line(colors::TEAL, None, "▸ MIME Types")
-                .bullets(IMAGE_TYPES.iter().copied())
-                .blank()
-                .subtext("Only apps supporting ALL formats are shown.")
-                .blank()
-                .line(colors::TEAL, None, "▸ Current Defaults")
-                .mime_defaults(IMAGE_TYPES.iter().copied())
-                .build_shell_script(),
-        )
+        Some(preview_command(PreviewId::DefaultImageViewer))
     }
 }
 
@@ -151,29 +129,7 @@ impl Setting for DefaultVideoPlayer {
     }
 
     fn preview_command(&self) -> Option<String> {
-        const VIDEO_TYPES: &[&str] = &[
-            "video/mp4",
-            "video/x-matroska",
-            "video/webm",
-            "video/quicktime",
-            "video/x-msvideo",
-            "video/ogg",
-        ];
-
-        Some(
-            PreviewBuilder::new()
-                .header(NerdFont::Video, "Video Player")
-                .subtext("Set your default video player for movies and videos.")
-                .blank()
-                .line(colors::TEAL, None, "▸ MIME Types")
-                .bullets(VIDEO_TYPES.iter().copied())
-                .blank()
-                .subtext("Only apps supporting ALL formats are shown.")
-                .blank()
-                .line(colors::TEAL, None, "▸ Current Defaults")
-                .mime_defaults(VIDEO_TYPES.iter().copied())
-                .build_shell_script(),
-        )
+        Some(preview_command(PreviewId::DefaultVideoPlayer))
     }
 }
 
@@ -200,29 +156,7 @@ impl Setting for DefaultAudioPlayer {
     }
 
     fn preview_command(&self) -> Option<String> {
-        const AUDIO_TYPES: &[&str] = &[
-            "audio/mpeg",
-            "audio/ogg",
-            "audio/flac",
-            "audio/x-wav",
-            "audio/aac",
-            "audio/opus",
-        ];
-
-        Some(
-            PreviewBuilder::new()
-                .header(NerdFont::Music, "Audio Player")
-                .subtext("Set your default audio player for music and podcasts.")
-                .blank()
-                .line(colors::TEAL, None, "▸ MIME Types")
-                .bullets(AUDIO_TYPES.iter().copied())
-                .blank()
-                .subtext("Only apps supporting ALL formats are shown.")
-                .blank()
-                .line(colors::TEAL, None, "▸ Current Defaults")
-                .mime_defaults(AUDIO_TYPES.iter().copied())
-                .build_shell_script(),
-        )
+        Some(preview_command(PreviewId::DefaultAudioPlayer))
     }
 }
 
@@ -259,32 +193,7 @@ impl Setting for DefaultArchiveManager {
     }
 
     fn preview_command(&self) -> Option<String> {
-        const ARCHIVE_TYPES: &[&str] = &[
-            "application/zip",
-            "application/x-tar",
-            "application/x-7z-compressed",
-            "application/x-rar",
-            "application/gzip",
-            "application/x-bzip2",
-            "application/x-xz",
-        ];
-
-        Some(
-            PreviewBuilder::new()
-                .header(NerdFont::Archive, "Archive Manager")
-                .subtext(
-                    "Set your default archive manager for ZIP, TAR, and other compressed files.",
-                )
-                .blank()
-                .line(colors::TEAL, None, "▸ MIME Types")
-                .bullets(ARCHIVE_TYPES.iter().copied())
-                .blank()
-                .subtext("Only apps supporting ALL formats are shown.")
-                .blank()
-                .line(colors::TEAL, None, "▸ Current Defaults")
-                .mime_defaults(ARCHIVE_TYPES.iter().copied())
-                .build_shell_script(),
-        )
+        Some(preview_command(PreviewId::DefaultArchiveManager))
     }
 }
 

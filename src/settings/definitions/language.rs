@@ -2,10 +2,11 @@
 //!
 //! System language/locale configuration and timezone.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::process::Command;
 
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
+use crate::preview::{preview_command, PreviewId};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
@@ -71,41 +72,6 @@ struct TimezoneChoice {
     is_current: bool,
 }
 
-fn timezone_preview_command() -> String {
-    r#"bash -c '
-tz="$1"
-
-if [ -z "$tz" ]; then
-  exit 0
-fi
-
-printf "═══════════════════════════════════════════════════\n"
-printf "Timezone: %s\n" "$tz"
-printf "═══════════════════════════════════════════════════\n\n"
-
-current_local=$(TZ="$tz" date +"%Y-%m-%d %H:%M:%S %Z")
-day_line=$(TZ="$tz" date +"%A, %d %B %Y")
-twelve_hour=$(TZ="$tz" date +"%I:%M %p")
-twenty_four=$(TZ="$tz" date +"%H:%M")
-local_system=$(date +"%Y-%m-%d %H:%M:%S %Z")
-
-printf "Current time:\n  %s\n  %s\n\n" "$current_local" "$day_line"
-
-offset=$(TZ="$tz" date +%z)
-sign=${offset:0:1}
-hours=${offset:1:2}
-mins=${offset:3:2}
-
-printf "UTC offset:\n  UTC%s%s:%s\n\n" "$sign" "$hours" "$mins"
-
-printf "12-hour clock:\n  %s\n" "$twelve_hour"
-printf "24-hour clock:\n  %s\n\n" "$twenty_four"
-
-printf "Local system time:\n  %s\n" "$local_system"
-'"#
-    .to_string()
-}
-
 impl FzfSelectable for TimezoneChoice {
     fn fzf_display_text(&self) -> String {
         let marker = if self.is_current {
@@ -121,7 +87,7 @@ impl FzfSelectable for TimezoneChoice {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Command(timezone_preview_command())
+        FzfPreview::Command(preview_command(PreviewId::Timezone))
     }
 }
 

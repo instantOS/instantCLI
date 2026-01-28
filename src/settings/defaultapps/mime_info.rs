@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::menu_utils::{FzfPreview, FzfSelectable};
-use crate::ui::catppuccin::colors;
+use crate::preview::{preview_command, PreviewId};
 use crate::ui::prelude::*;
 
 /// Information about a MIME type for display purposes
@@ -27,101 +27,8 @@ impl FzfSelectable for MimeTypeInfo {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Command(create_mime_preview_command())
+        FzfPreview::Command(preview_command(PreviewId::MimeType))
     }
-}
-
-fn create_mime_preview_command() -> String {
-    let extensions_script = r#"canonical_mime="$mime_type"
-for alias_file in "$HOME/.local/share/mime/aliases" "/usr/local/share/mime/aliases" "/usr/share/mime/aliases"; do
-    [ -f "$alias_file" ] || continue
-    resolved=$(awk -v mt="$mime_type" '$1==mt {print $2; exit}' "$alias_file")
-    if [ -n "$resolved" ]; then
-        canonical_mime="$resolved"
-        break
-    fi
-done
-
-extensions=$(for file in "$HOME/.local/share/mime/globs2" "/usr/local/share/mime/globs2" "/usr/share/mime/globs2"; do
-    [ -f "$file" ] || continue
-    awk -F: -v mt="$canonical_mime" '$2==mt {print $1 ":" $3}' "$file"
-done | sort -t: -k1,1nr -k2,2 | awk -F: '!seen[$2]++ {print $2}')
-
-if [ -n "$extensions" ]; then
-    printf "%s\n" "$extensions" | awk 'NF { sub(/^\*/, "", $0); printf "  • %s\n", $0; count++; if (count>=8) exit }'
-else
-    echo "  • (none registered)"
-fi"#;
-
-    let category_script = r#"category="Other"
-case "$mime_type" in
-    image/*) category="Image file" ;;
-    video/*) category="Video file" ;;
-    audio/*) category="Audio file" ;;
-    text/*) category="Text document" ;;
-    application/pdf) category="PDF document" ;;
-    application/*zip*|application/*tar*|application/*rar*|application/*7z*) category="Archive file" ;;
-    application/x-appimage) category="AppImage executable" ;;
-    application/*) category="Application data" ;;
-    *) category="Other" ;;
-esac
-printf "  Category: %s\n" "$category""#;
-
-    let available_apps_script = r#"default=$(xdg-mime query default "$mime_type" 2>/dev/null || echo "")
-count=0
-for dir in "$HOME/.local/share/applications" "/usr/share/applications" "/var/lib/flatpak/exports/share/applications" "$HOME/.local/share/flatpak/exports/share/applications"; do
-    cache="$dir/mimeinfo.cache"
-    [ ! -f "$cache" ] && continue
-
-    apps=$(grep "^$mime_type=" "$cache" 2>/dev/null | cut -d= -f2 | tr ";" "\n" | grep -v "^$")
-    [ -z "$apps" ] && continue
-
-    while IFS= read -r app; do
-        if [ -z "$app" ] || [ $count -ge 8 ]; then
-            continue
-        fi
-
-        for adir in "$HOME/.local/share/applications" "/usr/share/applications" "/var/lib/flatpak/exports/share/applications" "$HOME/.local/share/flatpak/exports/share/applications"; do
-            dfile="$adir/$app"
-            if [ -f "$dfile" ]; then
-                name=$(grep "^Name=" "$dfile" 2>/dev/null | head -1 | cut -d= -f2)
-                if [ -n "$name" ]; then
-                    if [ "$app" = "$default" ]; then
-                        echo "  • $name (current)"
-                    else
-                        echo "  • $name"
-                    fi
-                    count=$((count + 1))
-                    break
-                fi
-            fi
-        done
-    done <<< "$apps"
-done
-
-if [ $count -eq 0 ]; then
-    echo "  • (none registered)"
-fi"#;
-
-    PreviewBuilder::new()
-        .shell("mime_type=\"$1\"")
-        .shell("if [ -z \"$mime_type\" ]; then exit 0; fi")
-        .header(NerdFont::File, "MIME Type")
-        .subtext("Select a default application for this MIME type.")
-        .blank()
-        .line(colors::TEAL, None, "▸ Details")
-        .shell("printf \"  Type: %s\\n\" \"$mime_type\"")
-        .shell(category_script)
-        .blank()
-        .line(colors::TEAL, None, "▸ Common Extensions")
-        .shell(extensions_script)
-        .blank()
-        .line(colors::TEAL, None, "▸ Current Default")
-        .mime_defaults(["$mime_type"])
-        .blank()
-        .line(colors::TEAL, None, "▸ Available Applications")
-        .shell(available_apps_script)
-        .build_shell_script()
 }
 
 pub(crate) fn get_mime_type_info(mime_type: &str) -> MimeTypeInfo {

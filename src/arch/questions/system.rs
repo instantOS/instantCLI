@@ -1,6 +1,7 @@
 use crate::arch::annotations::AnnotatedValue;
 use crate::arch::engine::{DataKey, InstallContext, Question, QuestionId, QuestionResult};
 use crate::menu_utils::{FzfPreview, FzfSelectable, FzfWrapper};
+use crate::preview::{PreviewId, preview_command};
 use crate::ui::catppuccin::colors;
 use crate::ui::nerd_font::NerdFont;
 use crate::ui::preview::PreviewBuilder;
@@ -53,30 +54,12 @@ impl FzfSelectable for TimezoneOption {
     }
 
     fn fzf_preview(&self) -> FzfPreview {
-        FzfPreview::Command(timezone_preview_command())
+        FzfPreview::Command(preview_command(PreviewId::Timezone))
     }
 
     fn fzf_key(&self) -> String {
         self.value.clone()
     }
-}
-
-fn timezone_preview_command() -> String {
-    PreviewBuilder::new()
-        .shell("tz=\"$1\"")
-        .shell("if [ -z \"$tz\" ]; then exit 0; fi")
-        .header(NerdFont::Clock, "Timezone")
-        .subtext("Used for system clock and timestamps.")
-        .blank()
-        .line(colors::TEAL, None, "Current Time")
-        .shell("TZ=\"$tz\" date '+  %Y-%m-%d %H:%M:%S (%Z)'")
-        .blank()
-        .line(colors::TEAL, None, "UTC Offset")
-        .shell("TZ=\"$tz\" date '+  UTC %z'")
-        .blank()
-        .line(colors::TEAL, None, "Zoneinfo")
-        .shell("printf '  /usr/share/zoneinfo/%s\\n' \"$tz\"")
-        .build_shell_script()
 }
 
 #[derive(Clone)]
