@@ -134,7 +134,11 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         Category::Language => vec![
             CategoryNode::setting(&language::SystemLanguage),
             CategoryNode::setting(&language::Timezone),
-            CategoryNode::setting(&keyboard::KeyboardLayout),
+            CategoryNode::group("Keyboard")
+                .description("Keyboard layout for desktop, TTYs, and login screens.")
+                .child(CategoryNode::setting(&keyboard::KeyboardLayout))
+                .child(CategoryNode::setting(&keyboard::TtyKeymap))
+                .child(CategoryNode::setting(&keyboard::LoginScreenLayout)),
         ],
         Category::System => vec![
             CategoryNode::setting(&system::AboutSystem),
