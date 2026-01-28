@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 
-use crate::preview::{preview_command, PreviewId};
+use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::defaultapps;
 use crate::settings::deps::XDG_UTILS;

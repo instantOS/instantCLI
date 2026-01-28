@@ -196,7 +196,8 @@ impl PreviewBuilder {
     /// Add a bullet list item.
     pub fn bullet(mut self, content: &str) -> Self {
         let text_color = hex_to_ansi_fg(colors::TEXT);
-        self.push_static(format!("{text_color}  • {content}{RESET}"));
+        let bullet = char::from(NerdFont::Bullet);
+        self.push_static(format!("{text_color}  {bullet} {content}{RESET}"));
         self
     }
 

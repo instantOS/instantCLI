@@ -14,6 +14,7 @@ mod game;
 mod launch;
 mod menu;
 mod menu_utils;
+mod preview;
 mod restic;
 mod scratchpad;
 mod self_update;
@@ -157,6 +158,16 @@ enum Commands {
         #[command(subcommand)]
         command: menu::MenuCommands,
     },
+    /// Internal preview renderer for fzf
+    #[command(hide = true)]
+    Preview {
+        /// Preview identifier
+        #[arg(long, value_enum)]
+        id: preview::PreviewId,
+        /// Optional key for preview context (selection key)
+        #[arg(long)]
+        key: Option<String>,
+    },
     /// Scratchpad terminal management
     Scratchpad {
         #[command(subcommand)]
@@ -293,6 +304,9 @@ async fn dispatch_command(cli: &Cli) -> Result<()> {
         Some(Commands::Menu { command }) => {
             let exit_code = menu::handle_menu_command(command.clone(), cli.debug).await?;
             std::process::exit(exit_code);
+        }
+        Some(Commands::Preview { id, key }) => {
+            preview::handle_preview_command(*id, key.clone())?;
         }
         Some(Commands::Scratchpad { command }) => {
             let compositor = common::compositor::CompositorType::detect();

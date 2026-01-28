@@ -8,8 +8,8 @@ use std::process::Command;
 
 use crate::common::shell::shell_quote;
 use crate::settings::defaultapps::{
-    build_mime_to_apps_map, get_application_info, get_apps_for_mime, query_default_app,
     ARCHIVE_MIME_TYPES, AUDIO_MIME_TYPES, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES,
+    build_mime_to_apps_map, get_application_info, get_apps_for_mime, query_default_app,
 };
 use crate::settings::definitions::appearance::common::{
     get_current_gtk_theme, get_current_icon_theme, icon_theme_exists, is_dark_mode, theme_exists,
@@ -177,7 +177,7 @@ fn render_timezone_preview(ctx: &PreviewContext) -> Result<String> {
 
     let offset = format_utc_offset(&offset_raw);
 
-    let mut builder = PreviewBuilder::new()
+    let builder = PreviewBuilder::new()
         .header(NerdFont::Clock, "Timezone")
         .subtext("Preview of the selected timezone.")
         .blank()
@@ -320,11 +320,15 @@ fn render_mime_type_preview(ctx: &PreviewContext) -> Result<String> {
         .header(NerdFont::File, "MIME Type")
         .subtext("Select a default application for this MIME type.")
         .blank()
-        .line(colors::TEAL, None, "▸ Details")
+        .line(colors::TEAL, Some(NerdFont::ChevronRight), "Details")
         .field_indented("Type", mime_type)
         .raw(&format!("  Category: {category}"))
         .blank()
-        .line(colors::TEAL, None, "▸ Common Extensions");
+        .line(
+            colors::TEAL,
+            Some(NerdFont::ChevronRight),
+            "Common Extensions",
+        );
 
     if extensions.is_empty() {
         builder = builder.bullet("(none registered)");
@@ -334,10 +338,18 @@ fn render_mime_type_preview(ctx: &PreviewContext) -> Result<String> {
 
     builder = builder
         .blank()
-        .line(colors::TEAL, None, "▸ Current Default")
+        .line(
+            colors::TEAL,
+            Some(NerdFont::ChevronRight),
+            "Current Default",
+        )
         .field_indented(mime_type, &default)
         .blank()
-        .line(colors::TEAL, None, "▸ Available Applications");
+        .line(
+            colors::TEAL,
+            Some(NerdFont::ChevronRight),
+            "Available Applications",
+        );
 
     if app_lines.is_empty() {
         builder = builder.bullet("(none registered)");
@@ -366,19 +378,25 @@ fn render_bluetooth_preview() -> Result<String> {
         .blank()
         .text("Turn Bluetooth on or off.")
         .blank()
-        .line(colors::TEAL, None, "▸ Features")
+        .line(colors::TEAL, Some(NerdFont::ChevronRight), "Features")
         .bullets([
             "Connect wireless headphones & speakers",
             "Pair keyboards and mice",
             "Transfer files between devices",
         ])
         .blank()
-        .line(colors::TEAL, None, "▸ Current Status");
+        .line(colors::TEAL, Some(NerdFont::ChevronRight), "Current Status");
 
     if active {
-        builder = builder.raw(&format!("  {green}● Bluetooth service is running{reset}"));
+        let icon = char::from(NerdFont::CircleCheck);
+        builder = builder.raw(&format!(
+            "  {green}{icon}{reset} Bluetooth service is running"
+        ));
     } else {
-        builder = builder.raw(&format!("  {red}○ Bluetooth service is stopped{reset}"));
+        let icon = char::from(NerdFont::Circle);
+        builder = builder.raw(&format!(
+            "  {red}{icon}{reset} Bluetooth service is stopped"
+        ));
     }
 
     if enabled {
@@ -387,9 +405,11 @@ fn render_bluetooth_preview() -> Result<String> {
         builder = builder.raw(&format!("  {subtext}  Disabled at boot{reset}"));
     }
 
-    builder = builder
-        .blank()
-        .line(colors::TEAL, None, "▸ Connected Devices");
+    builder = builder.blank().line(
+        colors::TEAL,
+        Some(NerdFont::ChevronRight),
+        "Connected Devices",
+    );
 
     if which::which("bluetoothctl").is_err() {
         builder = builder.raw(&format!("  {subtext}bluetoothctl not installed{reset}"));
@@ -401,7 +421,8 @@ fn render_bluetooth_preview() -> Result<String> {
         builder = builder.raw(&format!("  {subtext}No devices connected{reset}"));
     } else {
         for device in devices {
-            builder = builder.raw(&format!("  {mauve}•{reset} {device}"));
+            let bullet = char::from(NerdFont::Bullet);
+            builder = builder.raw(&format!("  {mauve}{bullet}{reset} {device}"));
         }
     }
 
@@ -436,11 +457,12 @@ fn render_dark_mode_preview() -> Result<String> {
         .blank()
         .raw(&format!("  Will switch to: {target_mode} mode"));
 
+    let arrow = char::from(NerdFont::ArrowPointer);
     if gtk_changed {
-        builder = builder.raw(&format!("  GTK: {gtk_theme} → {new_gtk}"));
+        builder = builder.raw(&format!("  GTK: {gtk_theme} {arrow} {new_gtk}"));
     }
     if icon_changed {
-        builder = builder.raw(&format!("  Icons: {icon_theme} → {new_icon}"));
+        builder = builder.raw(&format!("  Icons: {icon_theme} {arrow} {new_icon}"));
     }
 
     Ok(builder.build_string())
@@ -476,12 +498,16 @@ fn render_default_app_preview(
         .header(icon, title)
         .subtext(summary)
         .blank()
-        .line(colors::TEAL, None, "▸ MIME Types")
+        .line(colors::TEAL, Some(NerdFont::ChevronRight), "MIME Types")
         .bullets(mime_types.iter().copied())
         .blank()
         .subtext("Only apps supporting ALL formats are shown.")
         .blank()
-        .line(colors::TEAL, None, "▸ Current Defaults");
+        .line(
+            colors::TEAL,
+            Some(NerdFont::ChevronRight),
+            "Current Defaults",
+        );
 
     for mime in mime_types {
         let label = query_default_app(mime)
@@ -668,15 +694,15 @@ fn sway_keyboard_lines() -> Vec<String> {
 
     for dev in &keyboards {
         let layouts = dev.xkb_layout_names.clone().unwrap_or_default();
-        let active_index =
-            dev.xkb_active_layout_index
-                .and_then(|idx| if idx >= 0 { Some(idx as usize) } else { None });
+        let active_index = dev
+            .xkb_active_layout_index
+            .and_then(|idx| if idx >= 0 { Some(idx as usize) } else { None });
         let active_name = dev.xkb_active_layout_name.clone();
 
-        if let Some(ref name) = active_name {
-            if seen_active.insert(name.clone()) {
-                unique_active.push(name.clone());
-            }
+        if let Some(ref name) = active_name
+            && seen_active.insert(name.clone())
+        {
+            unique_active.push(name.clone());
         }
 
         for layout in &layouts {
@@ -765,10 +791,10 @@ fn read_xkb_layout_from_xorg(path: &Path) -> Option<String> {
         if !trimmed.contains("XkbLayout") {
             continue;
         }
-        if let Some(value) = extract_quoted_value(trimmed) {
-            if !value.is_empty() {
-                return Some(value);
-            }
+        if let Some(value) = extract_quoted_value(trimmed)
+            && !value.is_empty()
+        {
+            return Some(value);
         }
     }
 

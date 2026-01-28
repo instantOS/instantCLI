@@ -1,15 +1,15 @@
 //! Keyboard layout setting
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 
-use crate::arch::annotations::{annotate_list, KeymapAnnotationProvider};
-use crate::common::compositor::{sway, CompositorType};
+use crate::arch::annotations::{KeymapAnnotationProvider, annotate_list};
+use crate::common::compositor::{CompositorType, sway};
 use crate::menu_utils::{ChecklistResult, FzfResult, FzfSelectable, FzfWrapper};
-use crate::preview::{preview_command, PreviewId};
+use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::StringSettingKey;
@@ -185,20 +185,16 @@ fn current_sway_layout_names() -> Option<Vec<String>> {
 
         if let Some(layouts) = input.get("xkb_layout_names").and_then(|v| v.as_array()) {
             for layout in layouts {
-                if let Some(name) = layout.as_str() {
-                    if seen.insert(name.to_string()) {
-                        names.push(name.to_string());
-                    }
+                if let Some(name) = layout.as_str()
+                    && seen.insert(name.to_string())
+                {
+                    names.push(name.to_string());
                 }
             }
         }
     }
 
-    if names.is_empty() {
-        None
-    } else {
-        Some(names)
-    }
+    if names.is_empty() { None } else { Some(names) }
 }
 
 fn map_layout_names_to_codes(names: &[String], layouts: &[LayoutChoice]) -> Vec<String> {
@@ -210,10 +206,10 @@ fn map_layout_names_to_codes(names: &[String], layouts: &[LayoutChoice]) -> Vec<
     let mut result = Vec::new();
     let mut seen = HashSet::new();
     for name in names {
-        if let Some(code) = map.get(name) {
-            if seen.insert(code.clone()) {
-                result.push(code.clone());
-            }
+        if let Some(code) = map.get(name)
+            && seen.insert(code.clone())
+        {
+            result.push(code.clone());
         }
     }
 

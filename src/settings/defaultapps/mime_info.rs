@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::menu_utils::{FzfPreview, FzfSelectable};
-use crate::preview::{preview_command, PreviewId};
+use crate::preview::{PreviewId, preview_command};
 use crate::ui::prelude::*;
 
 /// Information about a MIME type for display purposes

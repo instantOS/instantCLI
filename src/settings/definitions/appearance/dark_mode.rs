@@ -4,10 +4,9 @@
 
 use anyhow::{Context, Result};
 
-use crate::preview::{preview_command, PreviewId};
+use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
-use crate::ui::catppuccin::colors;
 use crate::ui::prelude::*;
 
 use super::common::{

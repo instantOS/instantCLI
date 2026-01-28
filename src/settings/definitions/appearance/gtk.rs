@@ -6,11 +6,11 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::menu_utils::{FzfSelectable, FzfWrapper};
-use crate::preview::{preview_command, PreviewId};
+use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::installable_packages::{self, GTK_ICON_THEMES, GTK_THEMES};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
-use crate::settings::store::{BoolSettingKey, StringSettingKey, GTK_ICON_THEME_KEY, GTK_THEME_KEY};
+use crate::settings::store::{BoolSettingKey, GTK_ICON_THEME_KEY, GTK_THEME_KEY, StringSettingKey};
 use crate::ui::catppuccin::{colors, format_icon_colored};
 use crate::ui::prelude::*;
 

@@ -2,11 +2,11 @@
 //!
 //! System language/locale configuration and timezone.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
-use crate::preview::{preview_command, PreviewId};
+use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
