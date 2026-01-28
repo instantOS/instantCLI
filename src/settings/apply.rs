@@ -28,10 +28,10 @@ pub fn run_nonpersistent_apply(debug: bool, privileged_flag: bool) -> Result<()>
     }
 
     // Also apply wallpaper on supported compositors
-    if let Err(e) = apply_wallpaper_if_configured() {
-        if debug {
-            eprintln!("Wallpaper apply skipped: {e}");
-        }
+    if let Err(e) = apply_wallpaper_if_configured()
+        && debug
+    {
+        eprintln!("Wallpaper apply skipped: {e}");
     }
 
     Ok(())

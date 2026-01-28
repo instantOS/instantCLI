@@ -207,10 +207,10 @@ fn mime_subclass_paths() -> Vec<PathBuf> {
 }
 
 fn xdg_data_home() -> Option<PathBuf> {
-    if let Some(path) = env::var_os("XDG_DATA_HOME") {
-        if !path.is_empty() {
-            return Some(PathBuf::from(path));
-        }
+    if let Some(path) = env::var_os("XDG_DATA_HOME")
+        && !path.is_empty()
+    {
+        return Some(PathBuf::from(path));
     }
 
     env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))

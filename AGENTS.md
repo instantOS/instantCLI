@@ -6,7 +6,7 @@ Guidance for automated agents in this repository.
 - Use package managers for deps; do not hand-edit Cargo.toml versions.
 - Build/check after changes: `cargo check` (preferred) or `cargo build` (debug only; avoid `--release`).
 - Single binary build uses `cargo build --bin ins`; jobs pinned by `.cargo/config.toml`.
-- Lint/format: `cargo fmt`, `cargo clippy --all-targets --all-features` (fixes via `cargo clippy --fix --allow-dirty`), `shfmt -w *.sh`, `yamlfmt .github`.
+- Lint/format: `cargo fmt`, `cargo clippy` (fixes via `cargo clippy --fix --allow-dirty`), `shfmt -w *.sh`, `yamlfmt .github`.
 - Tests default to 1 thread (`.cargo/config.toml`); run `cargo test` for unit/integration.
 - Run shell E2E suite with `just test` (calls `./tests/run_all.sh`).
 - Run a single Rust test with `cargo test <module_or_case>` (respects test-threads=1).

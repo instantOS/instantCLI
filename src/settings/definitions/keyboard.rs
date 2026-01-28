@@ -8,12 +8,14 @@ use std::process::Command;
 
 use crate::arch::annotations::{KeymapAnnotationProvider, annotate_list};
 use crate::common::compositor::{CompositorType, sway};
-use crate::menu_utils::{ChecklistResult, FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper, select_one_with_style};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::StringSettingKey;
+use crate::ui::catppuccin::{colors, format_icon, format_icon_colored};
 use crate::ui::prelude::*;
+use crate::ui::preview::PreviewBuilder;
 use serde_json::Value;
 use which::which;
 
@@ -43,15 +45,144 @@ struct LayoutChoice {
 
 impl FzfSelectable for LayoutChoice {
     fn fzf_display_text(&self) -> String {
-        format!("{} ({})", self.name, self.code)
+        format!("{} {}", format_icon(NerdFont::Keyboard), self.name)
     }
 
     fn fzf_key(&self) -> String {
         self.code.clone()
     }
 
-    fn fzf_initial_checked_state(&self) -> bool {
-        self.checked
+    fn fzf_preview(&self) -> FzfPreview {
+        PreviewBuilder::new()
+            .header(NerdFont::Keyboard, &self.name)
+            .line(
+                colors::TEAL,
+                Some(NerdFont::Tag),
+                &format!("Code: {}", self.code),
+            )
+            .build()
+    }
+}
+
+#[derive(Clone)]
+enum LayoutMenuItem {
+    Layout {
+        code: String,
+        name: String,
+        position: usize,
+        total: usize,
+    },
+    Add,
+    Back,
+}
+
+impl FzfSelectable for LayoutMenuItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            LayoutMenuItem::Layout {
+                name,
+                position,
+                total,
+                ..
+            } => {
+                let priority = if *total > 1 {
+                    format!(" [{}]", position + 1)
+                } else {
+                    String::new()
+                };
+                format!("{} {}{}", format_icon(NerdFont::Keyboard), name, priority)
+            }
+            LayoutMenuItem::Add => {
+                format!(
+                    "{} Add layout",
+                    format_icon_colored(NerdFont::Plus, colors::GREEN)
+                )
+            }
+            LayoutMenuItem::Back => {
+                format!(
+                    "{} Back",
+                    format_icon_colored(NerdFont::ArrowLeft, colors::OVERLAY0)
+                )
+            }
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self {
+            LayoutMenuItem::Layout {
+                code,
+                name,
+                position,
+                total,
+            } => {
+                let mut builder = PreviewBuilder::new().header(NerdFont::Keyboard, name).line(
+                    colors::TEAL,
+                    Some(NerdFont::Tag),
+                    &format!("Code: {}", code),
+                );
+
+                if *total > 1 {
+                    builder = builder
+                        .line(
+                            colors::TEAL,
+                            Some(NerdFont::List),
+                            &format!("Priority: {} of {}", position + 1, total),
+                        )
+                        .blank()
+                        .separator()
+                        .blank()
+                        .subtext("Select to change priority or remove");
+                }
+
+                builder.build()
+            }
+            LayoutMenuItem::Add => PreviewBuilder::new()
+                .header(NerdFont::Plus, "Add Layout")
+                .text("Add a new keyboard layout")
+                .blank()
+                .text("You can have multiple layouts")
+                .text("and switch between them.")
+                .build(),
+            LayoutMenuItem::Back => FzfPreview::Text("Return to settings".to_string()),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum LayoutActionItem {
+    MoveUp,
+    MoveDown,
+    Replace,
+    Remove,
+    Back,
+}
+
+impl FzfSelectable for LayoutActionItem {
+    fn fzf_display_text(&self) -> String {
+        match self {
+            LayoutActionItem::MoveUp => format!(
+                "{} Move up (higher priority)",
+                format_icon(NerdFont::ArrowUp)
+            ),
+            LayoutActionItem::MoveDown => format!(
+                "{} Move down (lower priority)",
+                format_icon(NerdFont::ArrowDown)
+            ),
+            LayoutActionItem::Replace => format!("{} Replace", format_icon(NerdFont::Sync)),
+            LayoutActionItem::Remove => format!("{} Remove", format_icon(NerdFont::Minus)),
+            LayoutActionItem::Back => format!("{} Back", format_icon(NerdFont::ArrowLeft)),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let text = match self {
+            LayoutActionItem::MoveUp => "Increase priority (will be tried first when switching)",
+            LayoutActionItem::MoveDown => "Decrease priority",
+            LayoutActionItem::Replace => "Replace this layout with a different one",
+            LayoutActionItem::Remove => "Remove this layout",
+            LayoutActionItem::Back => "Return to layout list",
+        };
+        FzfPreview::Text(text.to_string())
     }
 }
 
@@ -307,6 +438,127 @@ fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> Resu
     Ok(())
 }
 
+fn build_layout_menu_items(
+    active_codes: &[String],
+    code_to_name: &HashMap<String, String>,
+) -> Vec<LayoutMenuItem> {
+    let total = active_codes.len();
+    let mut items: Vec<LayoutMenuItem> = active_codes
+        .iter()
+        .enumerate()
+        .map(|(position, code)| {
+            let name = code_to_name
+                .get(code)
+                .cloned()
+                .unwrap_or_else(|| code.clone());
+            LayoutMenuItem::Layout {
+                code: code.clone(),
+                name,
+                position,
+                total,
+            }
+        })
+        .collect();
+
+    items.push(LayoutMenuItem::Add);
+    items.push(LayoutMenuItem::Back);
+    items
+}
+
+fn handle_layout_action(
+    ctx: &mut SettingsContext,
+    active_codes: &mut Vec<String>,
+    all_layouts: &[LayoutChoice],
+    code: &str,
+    position: usize,
+) -> Result<Option<bool>> {
+    let total = active_codes.len();
+
+    let mut actions = Vec::new();
+    if position > 0 {
+        actions.push(LayoutActionItem::MoveUp);
+    }
+    if position < total.saturating_sub(1) {
+        actions.push(LayoutActionItem::MoveDown);
+    }
+    actions.push(LayoutActionItem::Replace);
+    if total > 1 {
+        actions.push(LayoutActionItem::Remove);
+    }
+    actions.push(LayoutActionItem::Back);
+
+    match select_one_with_style(actions)? {
+        Some(LayoutActionItem::MoveUp) => {
+            active_codes.swap(position, position - 1);
+            Ok(Some(true))
+        }
+        Some(LayoutActionItem::MoveDown) => {
+            active_codes.swap(position, position + 1);
+            Ok(Some(true))
+        }
+        Some(LayoutActionItem::Replace) => {
+            if let Some(new_code) = select_layout(all_layouts, active_codes, Some(code))? {
+                active_codes[position] = new_code;
+                Ok(Some(true))
+            } else {
+                Ok(Some(false))
+            }
+        }
+        Some(LayoutActionItem::Remove) => {
+            active_codes.remove(position);
+            ctx.emit_info("settings.keyboard.removed", "Layout removed");
+            Ok(Some(true))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn add_layout(
+    ctx: &mut SettingsContext,
+    active_codes: &mut Vec<String>,
+    all_layouts: &[LayoutChoice],
+) -> Result<bool> {
+    if let Some(code) = select_layout(all_layouts, active_codes, None)? {
+        active_codes.push(code);
+        ctx.emit_info("settings.keyboard.added", "Layout added");
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+fn select_layout(
+    all_layouts: &[LayoutChoice],
+    active_codes: &[String],
+    exclude_code: Option<&str>,
+) -> Result<Option<String>> {
+    let active_set: HashSet<&str> = active_codes.iter().map(|s| s.as_str()).collect();
+
+    let available: Vec<LayoutChoice> = all_layouts
+        .iter()
+        .filter(|l| {
+            let dominated = active_set.contains(l.code.as_str());
+            let is_excluded = exclude_code.is_some_and(|ex| ex == l.code);
+            !dominated || is_excluded
+        })
+        .cloned()
+        .collect();
+
+    if available.is_empty() {
+        return Ok(None);
+    }
+
+    let result = FzfWrapper::builder()
+        .header("Select Keyboard Layout")
+        .prompt("Layout")
+        .select(available)?;
+
+    match result {
+        FzfResult::Selected(layout) => Ok(Some(layout.code)),
+        _ => Ok(None),
+    }
+}
+
 impl Setting for KeyboardLayout {
     fn metadata(&self) -> SettingMetadata {
         SettingMetadata::builder()
@@ -335,7 +587,7 @@ impl Setting for KeyboardLayout {
             return Ok(());
         }
 
-        let layouts = match parse_xkb_layouts() {
+        let all_layouts = match parse_xkb_layouts() {
             Ok(l) => l,
             Err(e) => {
                 ctx.emit_info(
@@ -353,10 +605,10 @@ impl Setting for KeyboardLayout {
         };
 
         let stored_codes = split_layout_codes(&ctx.string(current_layout_key));
-        let mut selected_codes = if stored_codes.is_empty() {
+        let mut active_codes = if stored_codes.is_empty() {
             if is_sway {
                 current_sway_layout_names()
-                    .map(|names| map_layout_names_to_codes(&names, &layouts))
+                    .map(|names| map_layout_names_to_codes(&names, &all_layouts))
                     .unwrap_or_default()
             } else {
                 current_x11_layouts()
@@ -365,56 +617,52 @@ impl Setting for KeyboardLayout {
             stored_codes
         };
 
-        selected_codes.retain(|code| layouts.iter().any(|layout| layout.code == code.as_str()));
-        let selected_set: HashSet<String> = selected_codes.iter().cloned().collect();
-        let mut order_map = HashMap::new();
-        for (idx, code) in selected_codes.iter().enumerate() {
-            order_map.insert(code.clone(), idx);
-        }
-
-        let mut ordered: Vec<(usize, LayoutChoice)> = layouts.into_iter().enumerate().collect();
-        ordered.sort_by(|(idx_a, layout_a), (idx_b, layout_b)| {
-            let key_a = order_map.get(&layout_a.code).copied().unwrap_or(usize::MAX);
-            let key_b = order_map.get(&layout_b.code).copied().unwrap_or(usize::MAX);
-            key_a.cmp(&key_b).then(idx_a.cmp(idx_b))
+        active_codes.retain(|code| {
+            all_layouts
+                .iter()
+                .any(|layout| layout.code == code.as_str())
         });
 
-        let choices: Vec<LayoutChoice> = ordered
-            .into_iter()
-            .map(|(_, mut layout)| {
-                layout.checked = selected_set.contains(&layout.code);
-                layout
-            })
+        let code_to_name: HashMap<String, String> = all_layouts
+            .iter()
+            .map(|l| (l.code.clone(), l.name.clone()))
             .collect();
 
-        let result = FzfWrapper::builder()
-            .header("Select Keyboard Layouts")
-            .prompt("Layout")
-            .checklist("Apply")
-            .allow_empty_confirm(false)
-            .checklist_dialog(choices)?;
+        let mut changed = false;
 
-        match result {
-            ChecklistResult::Confirmed(layouts) => {
-                let codes: Vec<String> = layouts.iter().map(|layout| layout.code.clone()).collect();
-                if codes.is_empty() {
-                    return Ok(());
+        loop {
+            let items = build_layout_menu_items(&active_codes, &code_to_name);
+
+            match select_one_with_style(items)? {
+                Some(LayoutMenuItem::Layout { code, position, .. }) => {
+                    if let Some(action) =
+                        handle_layout_action(ctx, &mut active_codes, &all_layouts, &code, position)?
+                        && action
+                    {
+                        changed = true;
+                    }
                 }
-
-                if let Err(e) = apply_keyboard_layouts(&codes, &compositor) {
-                    ctx.emit_info(
-                        "settings.keyboard.apply_error",
-                        &format!("Failed to apply keyboard layout: {e}"),
-                    );
-                    return Ok(());
+                Some(LayoutMenuItem::Add) => {
+                    if add_layout(ctx, &mut active_codes, &all_layouts)? {
+                        changed = true;
+                    }
                 }
-
-                let joined = join_layout_codes(&codes);
-                ctx.set_string(current_layout_key, &joined);
-                ctx.notify("Keyboard Layout", &format!("Set to: {joined}"));
+                _ => break,
             }
-            ChecklistResult::Cancelled => {}
-            ChecklistResult::Action(_) => {}
+        }
+
+        if changed && !active_codes.is_empty() {
+            if let Err(e) = apply_keyboard_layouts(&active_codes, &compositor) {
+                ctx.emit_info(
+                    "settings.keyboard.apply_error",
+                    &format!("Failed to apply keyboard layout: {e}"),
+                );
+                return Ok(());
+            }
+
+            let joined = join_layout_codes(&active_codes);
+            ctx.set_string(current_layout_key, &joined);
+            ctx.notify("Keyboard Layout", &format!("Set to: {joined}"));
         }
 
         Ok(())
