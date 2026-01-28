@@ -7,6 +7,7 @@ use std::process::Command;
 
 use crate::common::compositor::CompositorType;
 use crate::menu_utils::FzfWrapper;
+use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::ui::prelude::*;
@@ -27,6 +28,10 @@ impl Setting for CursorTheme {
 
     fn setting_type(&self) -> SettingType {
         SettingType::Action
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        Some(preview_command(PreviewId::CursorTheme))
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {

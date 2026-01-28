@@ -8,6 +8,7 @@ use std::process::Command;
 use crate::common::compositor::{CompositorType, sway};
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
+use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{BoolSettingKey, IntSettingKey};
@@ -126,6 +127,10 @@ impl Setting for MouseSensitivity {
 
     fn setting_type(&self) -> SettingType {
         SettingType::Action
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        Some(preview_command(PreviewId::MouseSensitivity))
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {

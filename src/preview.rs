@@ -16,6 +16,7 @@ mod disks;
 mod helpers;
 mod keyboard;
 mod mime;
+mod mouse;
 mod timezone;
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -38,6 +39,10 @@ pub enum PreviewId {
     GtkTheme,
     #[value(name = "icon-theme")]
     IconTheme,
+    #[value(name = "cursor-theme")]
+    CursorTheme,
+    #[value(name = "mouse-sensitivity")]
+    MouseSensitivity,
     #[value(name = "default-image-viewer")]
     DefaultImageViewer,
     #[value(name = "default-video-player")]
@@ -64,6 +69,8 @@ impl PreviewId {
             PreviewId::DarkMode => "dark-mode",
             PreviewId::GtkTheme => "gtk-theme",
             PreviewId::IconTheme => "icon-theme",
+            PreviewId::CursorTheme => "cursor-theme",
+            PreviewId::MouseSensitivity => "mouse-sensitivity",
             PreviewId::DefaultImageViewer => "default-image-viewer",
             PreviewId::DefaultVideoPlayer => "default-video-player",
             PreviewId::DefaultAudioPlayer => "default-audio-player",
@@ -126,6 +133,8 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
         PreviewId::DarkMode => appearance::render_dark_mode_preview(),
         PreviewId::GtkTheme => appearance::render_gtk_theme_preview(),
         PreviewId::IconTheme => appearance::render_icon_theme_preview(),
+        PreviewId::CursorTheme => appearance::render_cursor_theme_preview(),
+        PreviewId::MouseSensitivity => mouse::render_mouse_sensitivity_preview(),
         PreviewId::DefaultImageViewer => default_apps::render_default_app_preview(
             "Image Viewer",
             NerdFont::Image,

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::process::Command;
 
 use crate::settings::definitions::appearance::common::{
     get_current_gtk_theme, get_current_icon_theme, icon_theme_exists, is_dark_mode, theme_exists,
@@ -64,6 +65,38 @@ pub(crate) fn render_icon_theme_preview() -> Result<String> {
         .blank()
         .field("Current icon theme", &theme)
         .build_string())
+}
+
+pub(crate) fn render_cursor_theme_preview() -> Result<String> {
+    let theme = get_current_cursor_theme().unwrap_or_else(|| "unknown".to_string());
+    Ok(PreviewBuilder::new()
+        .header(NerdFont::Mouse, "Cursor Theme")
+        .text("Select and apply a cursor theme for Sway.")
+        .text("Updates gsettings cursor-theme setting.")
+        .text("Only supported on Sway.")
+        .blank()
+        .field("Current cursor theme", &theme)
+        .build_string())
+}
+
+fn get_current_cursor_theme() -> Option<String> {
+    let output = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "cursor-theme"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let theme = String::from_utf8_lossy(&output.stdout);
+    Some(
+        theme
+            .trim()
+            .trim_matches('\'')
+            .trim_matches('"')
+            .to_string(),
+    )
 }
 
 fn find_theme_variant<F>(current_theme: &str, switch_to_dark: bool, exists_fn: F) -> (String, bool)
