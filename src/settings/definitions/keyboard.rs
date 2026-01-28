@@ -1,17 +1,20 @@
 //! Keyboard layout setting
 
 use anyhow::{bail, Context, Result};
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 
 use crate::arch::annotations::{annotate_list, KeymapAnnotationProvider};
 use crate::common::compositor::{sway, CompositorType};
-use crate::menu_utils::{FzfResult, FzfSelectable, FzfWrapper};
+use crate::menu_utils::{ChecklistResult, FzfResult, FzfSelectable, FzfWrapper};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::StringSettingKey;
 use crate::ui::prelude::*;
+use crate::ui::preview::PreviewBuilder;
+use serde_json::Value;
 use which::which;
 
 pub struct KeyboardLayout;
@@ -35,6 +38,7 @@ impl LoginScreenLayout {
 struct LayoutChoice {
     code: String,
     name: String,
+    checked: bool,
 }
 
 impl FzfSelectable for LayoutChoice {
@@ -44,6 +48,10 @@ impl FzfSelectable for LayoutChoice {
 
     fn fzf_key(&self) -> String {
         self.code.clone()
+    }
+
+    fn fzf_initial_checked_state(&self) -> bool {
+        self.checked
     }
 }
 
@@ -73,12 +81,143 @@ fn parse_xkb_layouts() -> Result<Vec<LayoutChoice>> {
             if parts.len() == 2 {
                 let code = parts[0].trim().to_string();
                 let name = parts[1].trim().to_string();
-                layouts.push(LayoutChoice { code, name });
+                layouts.push(LayoutChoice {
+                    code,
+                    name,
+                    checked: false,
+                });
             }
         }
     }
 
     Ok(layouts)
+}
+
+fn split_layout_codes(value: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+
+    for part in value.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if seen.insert(trimmed.to_string()) {
+            result.push(trimmed.to_string());
+        }
+    }
+
+    result
+}
+
+fn join_layout_codes(codes: &[String]) -> String {
+    let mut seen = HashSet::new();
+    let mut cleaned = Vec::new();
+
+    for code in codes {
+        let trimmed = code.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if seen.insert(trimmed.to_string()) {
+            cleaned.push(trimmed.to_string());
+        }
+    }
+
+    cleaned.join(",")
+}
+
+fn current_x11_layouts() -> Vec<String> {
+    let output = match Command::new("setxkbmap").arg("-query").output() {
+        Ok(output) if output.status.success() => output,
+        _ => return Vec::new(),
+    };
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("layout:") {
+            return split_layout_codes(rest);
+        }
+    }
+
+    Vec::new()
+}
+
+fn current_x11_options() -> Option<String> {
+    let output = Command::new("setxkbmap").arg("-query").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("options:") {
+            let options = rest.trim();
+            if options.is_empty() {
+                return None;
+            }
+            return Some(options.to_string());
+        }
+    }
+
+    None
+}
+
+fn current_sway_layout_names() -> Option<Vec<String>> {
+    let output = Command::new("swaymsg")
+        .args(["-t", "get_inputs", "-r"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let data: Value = serde_json::from_slice(&output.stdout).ok()?;
+    let inputs = data.as_array()?;
+
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+
+    for input in inputs {
+        if input.get("type").and_then(|v| v.as_str()) != Some("keyboard") {
+            continue;
+        }
+
+        if let Some(layouts) = input.get("xkb_layout_names").and_then(|v| v.as_array()) {
+            for layout in layouts {
+                if let Some(name) = layout.as_str() {
+                    if seen.insert(name.to_string()) {
+                        names.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    if names.is_empty() {
+        None
+    } else {
+        Some(names)
+    }
+}
+
+fn map_layout_names_to_codes(names: &[String], layouts: &[LayoutChoice]) -> Vec<String> {
+    let mut map = HashMap::new();
+    for layout in layouts {
+        map.insert(layout.name.clone(), layout.code.clone());
+    }
+
+    let mut result = Vec::new();
+    let mut seen = HashSet::new();
+    for name in names {
+        if let Some(code) = map.get(name) {
+            if seen.insert(code.clone()) {
+                result.push(code.clone());
+            }
+        }
+    }
+
+    result
 }
 
 fn list_keymaps() -> Result<Vec<String>> {
@@ -149,16 +288,212 @@ fn ensure_localectl(ctx: &mut SettingsContext, code: &str, message: &str) -> boo
     true
 }
 
-/// Apply keyboard layout via swaymsg or setxkbmap depending on compositor
-fn apply_keyboard_layout(code: &str, compositor: &CompositorType) -> Result<()> {
+fn keyboard_layout_preview_command() -> String {
+    PreviewBuilder::new()
+        .header(NerdFont::Keyboard, "Keyboard Layout")
+        .subtext("Active layout for the current desktop session.")
+        .blank()
+        .text("Current State")
+        .shell(
+            r#"session="Unsupported"
+
+if [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1; then
+  session="Sway"
+  echo "Session: $session"
+
+  py=$(command -v python3 || command -v python || true)
+  if [ -n "$py" ]; then
+    swaymsg -t get_inputs -r 2>/dev/null | "$py" -c "
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print('Active: Not detected')
+    print('Layouts: Not detected')
+    print('Keyboards: 0')
+    sys.exit(0)
+
+keyboards = [d for d in data if d.get('type') == 'keyboard']
+if not keyboards:
+    print('Active: Not detected')
+    print('Layouts: Not detected')
+    print('Keyboards: 0')
+    sys.exit(0)
+
+def truncate(name, limit=40):
+    if not name:
+        return 'Keyboard'
+    name = str(name)
+    return name if len(name) <= limit else name[: limit - 3] + '...'
+
+unique_layouts = []
+unique_active = []
+device_lines = []
+
+for dev in keyboards:
+    layouts = dev.get('xkb_layout_names') or []
+    active_index = dev.get('xkb_active_layout_index')
+    active_name = dev.get('xkb_active_layout_name')
+
+    if active_name and active_name not in unique_active:
+        unique_active.append(active_name)
+    for layout in layouts:
+        if layout not in unique_layouts:
+            unique_layouts.append(layout)
+
+    active_label = None
+    if active_name:
+        active_label = active_name
+    elif isinstance(active_index, int) and 0 <= active_index < len(layouts):
+        active_label = layouts[active_index]
+    elif layouts:
+        active_label = layouts[0]
+
+    if active_label:
+        suffix = ''
+        if isinstance(active_index, int) and layouts:
+            suffix = ' ({}/{})'.format(active_index + 1, len(layouts))
+        device_lines.append('{}: {}{}'.format(truncate(dev.get('name')), active_label, suffix))
+    else:
+        device_lines.append('{}: Unknown'.format(truncate(dev.get('name'))))
+
+active_label = ', '.join(unique_active) if unique_active else (
+    ', '.join(unique_layouts) if unique_layouts else 'Unknown'
+)
+layout_label = ', '.join(unique_layouts) if unique_layouts else 'Unknown'
+
+print('Active: {}'.format(active_label))
+print('Layouts: {}'.format(layout_label))
+print('Keyboards: {}'.format(len(keyboards)))
+
+for line in device_lines[:3]:
+    print('  - {}'.format(line))
+if len(device_lines) > 3:
+    print('  - ... and {} more'.format(len(device_lines) - 3))
+"
+  else
+    echo "Active: Not detected"
+    echo "Layouts: Not detected"
+    echo "Keyboards: 0"
+  fi
+  exit 0
+fi
+
+if [ -n "${DISPLAY:-}" ] && command -v setxkbmap >/dev/null 2>&1; then
+  session="X11"
+  layout=$(setxkbmap -query 2>/dev/null | awk '/layout/{print $2; exit}')
+  if [ -z "$layout" ]; then
+    layout="Not detected"
+  fi
+  echo "Session: $session"
+  echo "Layout: $layout"
+  if [ "$layout" != "Not detected" ]; then
+    echo "Layouts: $layout"
+  fi
+  exit 0
+fi
+
+echo "Session: $session"
+echo "Layout: Not detected""#,
+        )
+        .blank()
+        .text("Info")
+        .text("Sway can have multiple layouts per keyboard.")
+        .text("Applies via swaymsg (Sway) or setxkbmap (X11).")
+        .text("Saved value is reapplied on login.")
+        .build_shell_script()
+}
+
+fn tty_keymap_preview_command() -> String {
+    PreviewBuilder::new()
+        .header(NerdFont::Keyboard, "TTY Keymap")
+        .subtext("Console keymap for virtual terminals.")
+        .blank()
+        .text("Current State")
+        .shell(
+            r#"keymap=""
+if [ -r /etc/vconsole.conf ]; then
+  keymap=$(awk -F= '/^KEYMAP=/{print $2; exit}' /etc/vconsole.conf)
+fi
+if [ -z "$keymap" ]; then
+  keymap="Not set"
+fi
+
+echo "Keymap: $keymap"
+echo "File: /etc/vconsole.conf""#,
+        )
+        .blank()
+        .text("Info")
+        .text("Applies to virtual consoles and login TTYs.")
+        .text("Configured via localectl set-keymap.")
+        .build_shell_script()
+}
+
+fn login_screen_layout_preview_command() -> String {
+    PreviewBuilder::new()
+        .header(NerdFont::Keyboard, "Login Screen Layout")
+        .subtext("X11 layout used by GDM/LightDM login screens.")
+        .blank()
+        .text("Current State")
+        .shell(
+            r#"layout=""
+source=""
+
+if [ -r /etc/X11/xorg.conf.d/00-keyboard.conf ]; then
+  layout=$(awk -F'"' '/XkbLayout/{print $4; exit}' /etc/X11/xorg.conf.d/00-keyboard.conf)
+  if [ -n "$layout" ]; then
+    source="/etc/X11/xorg.conf.d/00-keyboard.conf"
+  fi
+fi
+
+if [ -z "$layout" ] && command -v localectl >/dev/null 2>&1; then
+  layout=$(localectl status 2>/dev/null | awk -F: '/X11 Layout/{
+    gsub(/^[ \t]+/, "", $2)
+    split($2, parts, /[ ,\t]+/)
+    print parts[1]
+    exit
+  }')
+  if [ -n "$layout" ]; then
+    source="localectl status"
+  fi
+fi
+
+if [ -z "$layout" ]; then
+  layout="Not set"
+fi
+
+echo "Layout: $layout"
+if [ -n "$source" ]; then
+  echo "Source: $source"
+fi"#,
+        )
+        .blank()
+        .text("Info")
+        .text("Configured via localectl set-x11-keymap.")
+        .build_shell_script()
+}
+
+/// Apply keyboard layout(s) via swaymsg or setxkbmap depending on compositor
+fn apply_keyboard_layouts(codes: &[String], compositor: &CompositorType) -> Result<()> {
+    let joined = join_layout_codes(codes);
+    if joined.is_empty() {
+        bail!("No keyboard layouts selected");
+    }
+
     if matches!(compositor, CompositorType::Sway) {
-        let cmd = format!("input type:keyboard xkb_layout {code}");
+        let cmd = format!("input type:keyboard xkb_layout {joined}");
         sway::swaymsg(&cmd)?;
     } else if compositor.is_x11() {
-        std::process::Command::new("setxkbmap")
-            .arg(code)
+        let mut command = std::process::Command::new("setxkbmap");
+        command.arg("-layout").arg(&joined);
+        if let Some(options) = current_x11_options() {
+            command.arg("-option").arg(options);
+        }
+        command
             .status()
-            .with_context(|| format!("Failed to execute setxkbmap for layout '{code}'"))?;
+            .with_context(|| format!("Failed to execute setxkbmap for layout '{joined}'"))?;
     }
     Ok(())
 }
@@ -169,7 +504,7 @@ impl Setting for KeyboardLayout {
             .id("language.keyboard_layout")
             .title("Keyboard Layout")
             .icon(NerdFont::Keyboard)
-            .summary("Select the keyboard layout for the current desktop session (e.g., us, de, fr).\n\nSupports Sway and X11 window managers. Use the TTY and login screen settings for system-wide layouts.")
+            .summary("Select one or more keyboard layouts for the current desktop session (e.g., us, de, fr).\n\nSupports Sway and X11 window managers. Use the TTY and login screen settings for system-wide layouts.")
             .requires_reapply(true)
             .build()
     }
@@ -208,18 +543,56 @@ impl Setting for KeyboardLayout {
             Self::KEY_X11
         };
 
-        let current_code = ctx.string(current_layout_key);
-        let initial_index = layouts.iter().position(|l| l.code == current_code);
+        let stored_codes = split_layout_codes(&ctx.string(current_layout_key));
+        let mut selected_codes = if stored_codes.is_empty() {
+            if is_sway {
+                current_sway_layout_names()
+                    .map(|names| map_layout_names_to_codes(&names, &layouts))
+                    .unwrap_or_default()
+            } else {
+                current_x11_layouts()
+            }
+        } else {
+            stored_codes
+        };
+
+        selected_codes.retain(|code| layouts.iter().any(|layout| layout.code == code.as_str()));
+        let selected_set: HashSet<String> = selected_codes.iter().cloned().collect();
+        let mut order_map = HashMap::new();
+        for (idx, code) in selected_codes.iter().enumerate() {
+            order_map.insert(code.clone(), idx);
+        }
+
+        let mut ordered: Vec<(usize, LayoutChoice)> = layouts.into_iter().enumerate().collect();
+        ordered.sort_by(|(idx_a, layout_a), (idx_b, layout_b)| {
+            let key_a = order_map.get(&layout_a.code).copied().unwrap_or(usize::MAX);
+            let key_b = order_map.get(&layout_b.code).copied().unwrap_or(usize::MAX);
+            key_a.cmp(&key_b).then(idx_a.cmp(idx_b))
+        });
+
+        let choices: Vec<LayoutChoice> = ordered
+            .into_iter()
+            .map(|(_, mut layout)| {
+                layout.checked = selected_set.contains(&layout.code);
+                layout
+            })
+            .collect();
 
         let result = FzfWrapper::builder()
-            .header("Select Keyboard Layout")
-            .prompt("Layout > ")
-            .initial_index(initial_index.unwrap_or(0))
-            .select(layouts)?;
+            .header("Select Keyboard Layouts")
+            .prompt("Layout")
+            .checklist("Apply")
+            .allow_empty_confirm(false)
+            .checklist_dialog(choices)?;
 
         match result {
-            FzfResult::Selected(layout) => {
-                if let Err(e) = apply_keyboard_layout(&layout.code, &compositor) {
+            ChecklistResult::Confirmed(layouts) => {
+                let codes: Vec<String> = layouts.iter().map(|layout| layout.code.clone()).collect();
+                if codes.is_empty() {
+                    return Ok(());
+                }
+
+                if let Err(e) = apply_keyboard_layouts(&codes, &compositor) {
                     ctx.emit_info(
                         "settings.keyboard.apply_error",
                         &format!("Failed to apply keyboard layout: {e}"),
@@ -227,19 +600,19 @@ impl Setting for KeyboardLayout {
                     return Ok(());
                 }
 
-                ctx.set_string(current_layout_key, &layout.code);
-                ctx.notify(
-                    "Keyboard Layout",
-                    &format!("Set to: {} ({})", layout.name, layout.code),
-                );
+                let joined = join_layout_codes(&codes);
+                ctx.set_string(current_layout_key, &joined);
+                ctx.notify("Keyboard Layout", &format!("Set to: {joined}"));
             }
-            FzfResult::Error(e) => {
-                bail!("fzf error: {e}");
-            }
-            _ => {}
+            ChecklistResult::Cancelled => {}
+            ChecklistResult::Action(_) => {}
         }
 
         Ok(())
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        Some(keyboard_layout_preview_command())
     }
 
     fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
@@ -256,12 +629,12 @@ impl Setting for KeyboardLayout {
         } else {
             Self::KEY_X11
         };
-        let code = ctx.string(key);
-        if code.is_empty() {
+        let codes = split_layout_codes(&ctx.string(key));
+        if codes.is_empty() {
             return None;
         }
 
-        if let Err(e) = apply_keyboard_layout(&code, &compositor) {
+        if let Err(e) = apply_keyboard_layouts(&codes, &compositor) {
             emit(
                 Level::Warn,
                 "settings.keyboard.restore_failed",
@@ -272,7 +645,7 @@ impl Setting for KeyboardLayout {
             emit(
                 Level::Debug,
                 "settings.keyboard.restored",
-                &format!("Restored keyboard layout: {code}"),
+                &format!("Restored keyboard layout: {}", join_layout_codes(&codes)),
                 None,
             );
         }
@@ -364,6 +737,10 @@ impl Setting for TtyKeymap {
 
         Ok(())
     }
+
+    fn preview_command(&self) -> Option<String> {
+        Some(tty_keymap_preview_command())
+    }
 }
 
 impl Setting for LoginScreenLayout {
@@ -448,5 +825,9 @@ impl Setting for LoginScreenLayout {
         }
 
         Ok(())
+    }
+
+    fn preview_command(&self) -> Option<String> {
+        Some(login_screen_layout_preview_command())
     }
 }
