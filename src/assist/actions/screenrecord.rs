@@ -4,6 +4,7 @@
 //! Designed for quick recordings to share on GitHub issues, messengers, etc.
 
 use anyhow::{Context, Result};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -12,10 +13,7 @@ use crate::assist::utils::{AreaSelectionConfig, copy_to_clipboard, show_notifica
 use crate::common::paths;
 use crate::common::shell::shell_quote;
 use crate::menu::client::MenuClient;
-use crate::settings::store::{
-    SettingsStore, SCREEN_RECORD_AUDIO_KEY, SCREEN_RECORD_DESKTOP_AUDIO_KEY,
-    SCREEN_RECORD_MIC_AUDIO_KEY,
-};
+use crate::settings::store::{SettingsStore, SCREEN_RECORD_AUDIO_SOURCES_KEY};
 
 const MAX_RECORDING_SECONDS: u64 = 300;
 const PID_FILE: &str = "wf-recorder.pid";
@@ -59,32 +57,16 @@ fn get_pid_file() -> PathBuf {
     get_runtime_dir().join(PID_FILE)
 }
 
-#[derive(Debug, Clone, Copy)]
-struct AudioSettings {
-    enabled: bool,
-    desktop: bool,
-    microphone: bool,
-}
-
 #[derive(Debug)]
-enum AudioTarget {
-    Default,
-    Device { name: String, module_id: Option<u32> },
+struct AudioTarget {
+    name: String,
+    module_id: Option<u32>,
 }
 
 impl AudioTarget {
     fn module_id(&self) -> Option<u32> {
-        match self {
-            AudioTarget::Device { module_id, .. } => *module_id,
-            AudioTarget::Default => None,
-        }
+        self.module_id
     }
-}
-
-#[derive(Debug)]
-struct PactlDefaults {
-    sink: Option<String>,
-    source: Option<String>,
 }
 
 #[derive(Debug)]
@@ -93,127 +75,99 @@ struct CombinedSource {
     module_id: u32,
 }
 
-fn load_audio_settings() -> AudioSettings {
+fn load_selected_audio_sources() -> Vec<String> {
     match SettingsStore::load() {
-        Ok(store) => AudioSettings {
-            enabled: store.bool(SCREEN_RECORD_AUDIO_KEY),
-            desktop: store.bool(SCREEN_RECORD_DESKTOP_AUDIO_KEY),
-            microphone: store.bool(SCREEN_RECORD_MIC_AUDIO_KEY),
-        },
-        Err(_) => AudioSettings {
-            enabled: SCREEN_RECORD_AUDIO_KEY.default,
-            desktop: SCREEN_RECORD_DESKTOP_AUDIO_KEY.default,
-            microphone: SCREEN_RECORD_MIC_AUDIO_KEY.default,
-        },
+        Ok(store) => parse_audio_sources(store.optional_string(SCREEN_RECORD_AUDIO_SOURCES_KEY)),
+        Err(_) => Vec::new(),
     }
 }
 
-fn notify_audio_fallback(message: &str) {
+fn parse_audio_sources(raw: Option<String>) -> Vec<String> {
+    raw.unwrap_or_default()
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_string())
+        .collect()
+}
+
+fn notify_audio_issue(message: &str) {
     let _ = show_notification("Screen Recording", message);
 }
 
-fn resolve_audio_target(settings: AudioSettings) -> Result<Option<AudioTarget>> {
-    if !settings.enabled {
+fn resolve_audio_target(selected_sources: Vec<String>) -> Result<Option<AudioTarget>> {
+    let mut sources = dedup_audio_sources(selected_sources);
+    if sources.is_empty() {
         return Ok(None);
     }
 
-    if !settings.desktop && !settings.microphone {
-        notify_audio_fallback("Audio enabled but no sources selected; recording video only.");
-        return Ok(None);
-    }
-
-    let defaults = match pactl_defaults() {
-        Ok(defaults) => defaults,
-        Err(_) => {
-            notify_audio_fallback("Audio source detection failed; using default audio source.");
-            return Ok(Some(AudioTarget::Default));
-        }
-    };
-
-    let sources = match pactl_list_sources() {
+    let available = match pactl_list_sources() {
         Ok(sources) => sources,
         Err(_) => {
-            notify_audio_fallback("Audio source listing failed; using default audio source.");
-            return Ok(Some(AudioTarget::Default));
+            notify_audio_issue("Unable to list audio sources; recording video only.");
+            return Ok(None);
         }
     };
 
-    let mut selected_sources = Vec::new();
-    let mut missing_sources = Vec::new();
-
-    if settings.desktop {
-        if let Some(source) = desktop_audio_source(&defaults, &sources) {
-            selected_sources.push(source);
+    let available_set: HashSet<String> = available.into_iter().collect();
+    let mut missing = Vec::new();
+    sources.retain(|source| {
+        if available_set.contains(source) {
+            true
         } else {
-            missing_sources.push("desktop");
+            missing.push(source.clone());
+            false
         }
+    });
+
+    if !missing.is_empty() {
+        notify_audio_issue("Some selected audio sources were unavailable; recording available sources only.");
     }
 
-    if settings.microphone {
-        if let Some(source) = microphone_audio_source(&defaults, &sources) {
-            selected_sources.push(source);
-        } else {
-            missing_sources.push("microphone");
-        }
+    if sources.is_empty() {
+        notify_audio_issue("No selected audio sources available; recording video only.");
+        return Ok(None);
     }
 
-    if !missing_sources.is_empty() {
-        notify_audio_fallback("Some audio sources were unavailable; recording available sources only.");
-    }
-
-    selected_sources.sort();
-    selected_sources.dedup();
-
-    if selected_sources.is_empty() {
-        notify_audio_fallback("No matching audio sources found; using default audio source.");
-        return Ok(Some(AudioTarget::Default));
-    }
-
-    if selected_sources.len() == 1 {
-        return Ok(Some(AudioTarget::Device {
-            name: selected_sources[0].clone(),
+    if sources.len() == 1 {
+        return Ok(Some(AudioTarget {
+            name: sources[0].clone(),
             module_id: None,
         }));
     }
 
-    match create_combined_source(&selected_sources) {
-        Ok(combined) => Ok(Some(AudioTarget::Device {
-            name: combined.name,
-            module_id: Some(combined.module_id),
-        })),
+    match create_combined_source(&sources) {
+        Ok(combined) => {
+            if !wait_for_audio_source(&combined.name) {
+                unload_audio_module(combined.module_id);
+                notify_audio_issue("Combined audio source was not ready; recording first source only.");
+                return Ok(Some(AudioTarget {
+                    name: sources[0].clone(),
+                    module_id: None,
+                }));
+            }
+
+            Ok(Some(AudioTarget {
+                name: combined.name,
+                module_id: Some(combined.module_id),
+            }))
+        }
         Err(_) => {
-            notify_audio_fallback("Unable to combine audio sources; using default audio source.");
-            Ok(Some(AudioTarget::Default))
+            notify_audio_issue("Unable to combine audio sources; recording first source only.");
+            Ok(Some(AudioTarget {
+                name: sources[0].clone(),
+                module_id: None,
+            }))
         }
     }
 }
 
-fn pactl_defaults() -> Result<PactlDefaults> {
-    let output = Command::new("pactl")
-        .arg("info")
-        .output()
-        .context("Failed to run pactl info")?;
-
-    if !output.status.success() {
-        anyhow::bail!("pactl info failed");
-    }
-
-    let info = String::from_utf8_lossy(&output.stdout);
-    let mut defaults = PactlDefaults {
-        sink: None,
-        source: None,
-    };
-
-    for line in info.lines() {
-        if let Some(value) = line.strip_prefix("Default Sink:") {
-            defaults.sink = Some(value.trim().to_string());
-        }
-        if let Some(value) = line.strip_prefix("Default Source:") {
-            defaults.source = Some(value.trim().to_string());
-        }
-    }
-
-    Ok(defaults)
+fn dedup_audio_sources(sources: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    sources
+        .into_iter()
+        .filter(|source| seen.insert(source.clone()))
+        .collect()
 }
 
 fn pactl_list_sources() -> Result<Vec<String>> {
@@ -240,30 +194,18 @@ fn pactl_list_sources() -> Result<Vec<String>> {
     Ok(sources)
 }
 
-fn desktop_audio_source(defaults: &PactlDefaults, sources: &[String]) -> Option<String> {
-    let sink = defaults.sink.as_ref()?;
-    let monitor = format!("{}.monitor", sink);
-
-    if sources.iter().any(|source| source == &monitor) {
-        return Some(monitor);
-    }
-
-    if let Some(source) = defaults.source.as_ref() {
-        if source.ends_with(".monitor") && sources.iter().any(|entry| entry == source) {
-            return Some(source.clone());
+fn wait_for_audio_source(name: &str) -> bool {
+    for _ in 0..10 {
+        if let Ok(sources) = pactl_list_sources() {
+            if sources.iter().any(|source| source == name) {
+                return true;
+            }
         }
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    None
-}
-
-fn microphone_audio_source(defaults: &PactlDefaults, sources: &[String]) -> Option<String> {
-    let source = defaults.source.as_ref()?;
-    if sources.iter().any(|entry| entry == source) {
-        Some(source.clone())
-    } else {
-        None
-    }
+    false
 }
 
 fn create_combined_source(slaves: &[String]) -> Result<CombinedSource> {
@@ -383,8 +325,8 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
     let filename = generate_recording_filename(format);
     let output_path = paths::videos_dir()?.join(&filename);
 
-    let audio_settings = load_audio_settings();
-    let audio_target = resolve_audio_target(audio_settings)?;
+    let selected_sources = load_selected_audio_sources();
+    let audio_target = resolve_audio_target(selected_sources)?;
     let audio_module_id = audio_target.as_ref().and_then(|target| target.module_id());
 
     let mut cmd = Command::new("wf-recorder");
@@ -394,14 +336,7 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
     }
 
     if let Some(target) = &audio_target {
-        match target {
-            AudioTarget::Default => {
-                cmd.arg("-a");
-            }
-            AudioTarget::Device { name, .. } => {
-                cmd.arg(format!("--audio={}", name));
-            }
-        }
+        cmd.arg(format!("--audio={}", target.name));
     }
 
     cmd.arg("-f")

@@ -171,12 +171,8 @@ pub const PACMAN_AUTOCLEAN_KEY: BoolSettingKey =
     BoolSettingKey::new("system.pacman_autoclean", false);
 
 // Screen recording setting keys
-pub const SCREEN_RECORD_AUDIO_KEY: BoolSettingKey =
-    BoolSettingKey::new("assist.screen_record_audio", false);
-pub const SCREEN_RECORD_DESKTOP_AUDIO_KEY: BoolSettingKey =
-    BoolSettingKey::new("assist.screen_record_desktop_audio", true);
-pub const SCREEN_RECORD_MIC_AUDIO_KEY: BoolSettingKey =
-    BoolSettingKey::new("assist.screen_record_mic_audio", false);
+pub const SCREEN_RECORD_AUDIO_SOURCES_KEY: OptionalStringSettingKey =
+    OptionalStringSettingKey::new("assist.screen_record_audio_sources");
 
 #[derive(Debug)]
 pub struct SettingsStore {
