@@ -13,8 +13,7 @@ use crate::common::display::SwayDisplayProvider;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{
-    ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuCursor,
-    select_one_with_style_at,
+    ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEMAN, PIPER};
@@ -278,7 +277,7 @@ gui_command_setting!(
 );
 
 // ============================================================================
-// Screen Recording Audio Sources
+// Screen Recording
 // ============================================================================
 
 #[derive(Clone)]
@@ -493,6 +492,114 @@ fn run_screen_record_fps_slider(start_value: i64, max_fps: i64) -> Result<Option
     client.slide(request)
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum AudioSourceMode {
+    Defaults,
+    Custom,
+}
+
+#[derive(Clone)]
+struct AudioSourceModeItem {
+    mode: AudioSourceMode,
+    is_current: bool,
+    default_sources: Vec<String>,
+    selected_sources: Vec<String>,
+}
+
+impl AudioSourceModeItem {
+    fn new(
+        mode: AudioSourceMode,
+        is_current: bool,
+        default_sources: &[String],
+        selected_sources: &[String],
+    ) -> Self {
+        Self {
+            mode,
+            is_current,
+            default_sources: default_sources.to_vec(),
+            selected_sources: selected_sources.to_vec(),
+        }
+    }
+}
+
+impl FzfSelectable for AudioSourceModeItem {
+    fn fzf_display_text(&self) -> String {
+        let icon = if self.is_current {
+            format_icon_colored(NerdFont::CheckSquare, colors::GREEN)
+        } else {
+            format_icon_colored(NerdFont::Square, colors::OVERLAY1)
+        };
+        match self.mode {
+            AudioSourceMode::Defaults => format!(
+                "{} Auto-detect defaults ({})",
+                icon,
+                format_source_count(self.default_sources.len())
+            ),
+            AudioSourceMode::Custom => format!(
+                "{} Select sources ({})",
+                icon,
+                format_source_count(self.selected_sources.len())
+            ),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        match self.mode {
+            AudioSourceMode::Defaults => PreviewBuilder::new()
+                .header(NerdFont::Star, "Auto-detect defaults")
+                .text("Record the current default desktop output and mic input each time.")
+                .blank()
+                .line(
+                    colors::TEAL,
+                    Some(NerdFont::Target),
+                    &format!(
+                        "Current defaults: {}",
+                        format_sources_list(&self.default_sources)
+                    ),
+                )
+                .build(),
+            AudioSourceMode::Custom => PreviewBuilder::new()
+                .header(NerdFont::List, "Select sources")
+                .text("Choose specific sources to include with recordings.")
+                .blank()
+                .line(
+                    colors::TEAL,
+                    Some(NerdFont::CheckCircle),
+                    &format!("Selected: {}", format_sources_list(&self.selected_sources)),
+                )
+                .line(
+                    colors::SKY,
+                    Some(NerdFont::InfoCircle),
+                    "Defaults are ignored while using a custom list.",
+                )
+                .build(),
+        }
+    }
+
+    fn fzf_key(&self) -> String {
+        match self.mode {
+            AudioSourceMode::Defaults => "defaults".to_string(),
+            AudioSourceMode::Custom => "custom".to_string(),
+        }
+    }
+}
+
+fn format_source_count(count: usize) -> String {
+    match count {
+        0 => "none".to_string(),
+        1 => "1 source".to_string(),
+        _ => format!("{} sources", count),
+    }
+}
+
+fn format_sources_list(sources: &[String]) -> String {
+    if sources.is_empty() {
+        "None".to_string()
+    } else {
+        sources.join(", ")
+    }
+}
+
 pub struct ScreenRecordAudioSources;
 
 impl ScreenRecordAudioSources {
@@ -505,7 +612,7 @@ impl Setting for ScreenRecordAudioSources {
             .id("assist.screen_record_audio_sources")
             .title("Screen Recording Audio Sources")
             .icon(NerdFont::VolumeUp)
-            .summary("Choose which audio sources to include in screen recordings.\n\nEnter toggles sources, then select Save to apply.")
+            .summary("Choose auto-detected defaults or a custom list of audio sources for screen recordings.\n\nDefaults follow your current output and mic; custom selection overrides them.")
             .build()
     }
 
@@ -533,7 +640,6 @@ impl Setting for ScreenRecordAudioSources {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         let stored = ctx.optional_string(Self::KEY);
-        let use_defaults = is_audio_sources_default(&stored);
         let sources = match list_audio_sources_short() {
             Ok(list) if !list.is_empty() => list,
             Ok(_) => {
@@ -552,88 +658,98 @@ impl Setting for ScreenRecordAudioSources {
         });
 
         let default_sources = default_source_names(&defaults, &sources);
-        let selected = if use_defaults {
+        let mut mode = if is_audio_sources_default(&stored) {
+            AudioSourceMode::Defaults
+        } else {
+            AudioSourceMode::Custom
+        };
+        let selected = if matches!(mode, AudioSourceMode::Defaults) {
             default_sources.clone()
         } else {
             parse_audio_source_selection(stored)
         };
 
-        let selected_set: std::collections::HashSet<String> = selected.iter().cloned().collect();
-        let items: Vec<AudioSourceItem> = sources
-            .into_iter()
-            .map(|source| {
-                let checked = selected_set.contains(&source.name);
-                AudioSourceItem::new(source, checked, &defaults)
-            })
-            .collect();
-
-        let mode_hint = if use_defaults {
-            "Mode: defaults (dynamic)"
-        } else {
-            "Mode: custom selection"
-        };
-        let header_text = format!(
-            "Select audio sources to include with recordings.\nEnter toggles, select Save to confirm.\n{mode_hint}\nUse the action below to follow defaults automatically."
-        );
-        let header = Header::default(&header_text);
-
-        let defaults_preview = PreviewBuilder::new()
-            .header(NerdFont::Star, "Use Default Sources")
-            .text("Record the current default desktop output and mic input each time.")
-            .blank()
-            .line(
-                colors::TEAL,
-                Some(NerdFont::Target),
-                &format!(
-                    "Current defaults: {}",
-                    if default_sources.is_empty() {
-                        "None".to_string()
-                    } else {
-                        default_sources.join(", ")
-                    }
+        loop {
+            let items = vec![
+                AudioSourceModeItem::new(
+                    AudioSourceMode::Defaults,
+                    matches!(mode, AudioSourceMode::Defaults),
+                    &default_sources,
+                    &selected,
                 ),
-            )
-            .build();
+                AudioSourceModeItem::new(
+                    AudioSourceMode::Custom,
+                    matches!(mode, AudioSourceMode::Custom),
+                    &default_sources,
+                    &selected,
+                ),
+            ];
+            let initial_index = match mode {
+                AudioSourceMode::Defaults => Some(0),
+                AudioSourceMode::Custom => Some(1),
+            };
 
-        let default_action_label = if use_defaults {
-            "Use default sources (current)"
-        } else {
-            "Use default sources"
-        };
-        let actions = vec![
-            ChecklistAction::new("audio_defaults", default_action_label)
-                .with_color(colors::GREEN)
-                .with_preview(defaults_preview),
-        ];
+            let selection = select_one_with_style_at(items.clone(), initial_index)?;
+            let Some(choice) = selection else {
+                break;
+            };
 
-        let selection = FzfWrapper::builder()
-            .prompt("Audio sources")
-            .header(header)
-            .checklist("Save")
-            .allow_empty_confirm(true)
-            .checklist_actions(actions)
-            .checklist_dialog(items)?;
+            match choice.mode {
+                AudioSourceMode::Defaults => {
+                    ctx.set_optional_string(Self::KEY, Some(SCREEN_RECORD_AUDIO_SOURCES_DEFAULT));
+                    ctx.notify("Screen Recording", "Using default audio sources");
+                    break;
+                }
+                AudioSourceMode::Custom => {
+                    mode = AudioSourceMode::Custom;
+                    let selected_set: std::collections::HashSet<String> =
+                        selected.iter().cloned().collect();
+                    let items: Vec<AudioSourceItem> = sources
+                        .iter()
+                        .cloned()
+                        .map(|source| {
+                            let checked = selected_set.contains(&source.name);
+                            AudioSourceItem::new(source, checked, &defaults)
+                        })
+                        .collect();
 
-        match selection {
-            ChecklistResult::Action(action) if action.key == "audio_defaults" => {
-                ctx.set_optional_string(Self::KEY, Some(SCREEN_RECORD_AUDIO_SOURCES_DEFAULT));
-                ctx.notify("Screen Recording", "Using default audio sources");
-            }
-            ChecklistResult::Confirmed(items) => {
-                let chosen: Vec<String> = items.into_iter().map(|item| item.name).collect();
-
-                if chosen.is_empty() {
-                    ctx.set_optional_string(Self::KEY, None::<String>);
-                    ctx.notify("Screen Recording", "Audio sources cleared");
-                } else {
-                    ctx.set_optional_string(Self::KEY, Some(chosen.join("\n")));
-                    ctx.notify(
-                        "Screen Recording",
-                        &format!("Selected {} audio sources", chosen.len()),
+                    let header_text = format!(
+                        "Select audio sources to include with recordings.\nEnter toggles, select Save to confirm.\nDefaults (ignored in custom mode): {}",
+                        format_sources_list(&default_sources)
                     );
+                    let header = Header::default(&header_text);
+
+                    let selection = FzfWrapper::builder()
+                        .prompt("Audio sources")
+                        .header(header)
+                        .checklist("Save")
+                        .allow_empty_confirm(true)
+                        .checklist_dialog(items)?;
+
+                    match selection {
+                        ChecklistResult::Confirmed(items) => {
+                            let chosen: Vec<String> =
+                                items.into_iter().map(|item| item.name).collect();
+
+                            if chosen.is_empty() {
+                                ctx.set_optional_string(Self::KEY, None::<String>);
+                                ctx.notify("Screen Recording", "Audio sources cleared");
+                            } else {
+                                ctx.set_optional_string(Self::KEY, Some(chosen.join("\n")));
+                                ctx.notify(
+                                    "Screen Recording",
+                                    &format!("Selected {} audio sources", chosen.len()),
+                                );
+                            }
+                            break;
+                        }
+                        ChecklistResult::Cancelled => {
+                            continue;
+                        }
+                        ChecklistResult::Action(_) => {}
+                    }
                 }
             }
-            _ => {}
         }
 
         Ok(())
