@@ -8,9 +8,10 @@ use crate::common::shell::shell_quote;
 use crate::ui::catppuccin::{colors, format_icon_colored, hex_to_ansi_bg, hex_to_ansi_fg};
 use crate::ui::nerd_font::NerdFont;
 
+use super::preview::PreviewUtils;
 use super::types::*;
 use super::utils::*;
-use super::wrapper::FzfWrapper;
+use super::wrapper::{configure_preview_and_input, FzfWrapper};
 
 #[derive(Debug, Clone)]
 pub struct FzfBuilder {
@@ -53,6 +54,37 @@ struct ConfirmOption {
     color: &'static str,
     icon: NerdFont,
     result: ConfirmResult,
+}
+
+#[derive(Clone)]
+struct ChecklistEntry {
+    display: String,
+    key: String,
+    preview: FzfPreview,
+}
+
+impl ChecklistEntry {
+    fn new(display: String, key: String, preview: FzfPreview) -> Self {
+        Self {
+            display,
+            key,
+            preview,
+        }
+    }
+}
+
+impl FzfSelectable for ChecklistEntry {
+    fn fzf_display_text(&self) -> String {
+        self.display.clone()
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        self.preview.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        self.key.clone()
+    }
 }
 
 impl ConfirmOption {
@@ -877,31 +909,34 @@ impl FzfBuilder {
             // Build key-to-index map and input text
             let mut key_to_index: std::collections::HashMap<String, usize> =
                 std::collections::HashMap::new();
-            let mut input_lines = Vec::new();
+            let mut entries = Vec::new();
 
             for (idx, item) in checklist_items.iter().enumerate() {
                 let display = item.fzf_display_text();
                 let key = item.fzf_key();
+                let preview = item.fzf_preview();
                 key_to_index.insert(key.clone(), idx);
-                input_lines.push(format!("{}\x1f{}", display, key));
+                entries.push(ChecklistEntry::new(display, key, preview));
             }
 
             // Add action items (non-checkbox)
             for action in &action_items {
-                let display = action.fzf_display_text();
-                let key = action.fzf_key();
-                input_lines.push(format!("{}\x1f{}", display, key));
+                entries.push(ChecklistEntry::new(
+                    action.fzf_display_text(),
+                    action.fzf_key(),
+                    action.fzf_preview(),
+                ));
             }
 
             // Add confirm option at the end
-            let confirm_display = confirm_item.fzf_display_text();
-            let confirm_key = confirm_item.fzf_key();
-            input_lines.push(format!("{}\x1f{}", confirm_display, confirm_key));
-
-            let input_text = input_lines.join("\n");
+            entries.push(ChecklistEntry::new(
+                confirm_item.fzf_display_text(),
+                confirm_item.fzf_key(),
+                confirm_item.fzf_preview(),
+            ));
 
             // Execute FZF with current state and cursor position
-            let result = self.run_checklist_fzf(&input_text, &key_to_index, &action_map, cursor)?;
+            let result = self.run_checklist_fzf(&entries, &key_to_index, &action_map, cursor)?;
 
             match result {
                 ChecklistSelection::Cancelled => return Ok(ChecklistResult::Cancelled),
@@ -977,7 +1012,7 @@ impl FzfBuilder {
 
     fn run_checklist_fzf(
         &self,
-        input_text: &str,
+        entries: &[ChecklistEntry],
         key_to_index: &std::collections::HashMap<String, usize>,
         action_map: &std::collections::HashMap<String, ChecklistAction>,
         cursor: Option<usize>,
@@ -988,9 +1023,6 @@ impl FzfBuilder {
         cmd.arg("--tiebreak=index");
         cmd.arg("--layout=reverse");
         cmd.arg("--print-query"); // Always print the query, even if no match
-
-        // Use delimiter to separate display from key
-        cmd.arg("--delimiter=\x1f").arg("--with-nth=1");
 
         // Configure prompt
         if let Some(prompt) = &self.prompt {
@@ -1018,6 +1050,14 @@ impl FzfBuilder {
             cmd.arg(layout.preview_window);
             cmd.arg("--margin").arg(layout.margin);
         }
+
+        let preview_strategy = PreviewUtils::analyze_preview_strategy(entries)?;
+        let display_with_keys: Vec<(String, String)> = entries
+            .iter()
+            .map(|entry| (entry.fzf_display_text(), entry.fzf_key()))
+            .collect();
+        let input_text =
+            configure_preview_and_input(&mut cmd, preview_strategy, &display_with_keys);
 
         let mut child = cmd
             .stdin(Stdio::piped())

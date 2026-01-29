@@ -48,7 +48,7 @@ fn calculate_cursor_position(
 
 /// Configure fzf preview and build input text based on the preview strategy.
 /// Always includes the fzf_key after a tab so we can reliably match items.
-fn configure_preview_and_input(
+pub(crate) fn configure_preview_and_input(
     cmd: &mut Command,
     strategy: PreviewStrategy,
     display_with_keys: &[(String, String)],
