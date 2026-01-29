@@ -235,7 +235,7 @@ impl FzfBuilder {
     }
 
     /// Configure the builder as a checklist dialog.
-    /// Users can toggle items with Tab or Enter, then confirm by selecting the confirm option.
+    /// Users can toggle items with Enter, then confirm by selecting the confirm option.
     pub fn checklist<S: Into<String>>(mut self, confirm_text: S) -> Self {
         self.dialog_type = DialogType::Checklist {
             confirm_text: confirm_text.into(),

@@ -67,12 +67,12 @@ fn get_pid_file() -> PathBuf {
 #[derive(Debug)]
 struct AudioTarget {
     name: String,
-    module_id: Option<u32>,
+    module_ids: Vec<u32>,
 }
 
 impl AudioTarget {
-    fn module_id(&self) -> Option<u32> {
-        self.module_id
+    fn module_ids(&self) -> &[u32] {
+        &self.module_ids
     }
 }
 
@@ -80,12 +80,6 @@ impl AudioTarget {
 enum AudioSelectionMode {
     Defaults,
     Explicit(Vec<String>),
-}
-
-#[derive(Debug)]
-struct CombinedSource {
-    name: String,
-    module_id: u32,
 }
 
 fn load_audio_selection_mode() -> AudioSelectionMode {
@@ -165,7 +159,7 @@ fn filter_unavailable_sources(
 fn primary_audio_target(name: &str) -> AudioTarget {
     AudioTarget {
         name: name.to_string(),
-        module_id: None,
+        module_ids: Vec::new(),
     }
 }
 
@@ -174,21 +168,8 @@ fn build_audio_target_from_sources(sources: Vec<String>) -> Result<AudioTarget> 
         return Ok(primary_audio_target(&sources[0]));
     }
 
-    match create_combined_source(&sources) {
-        Ok(combined) => {
-            if !wait_for_audio_source(&combined.name) {
-                unload_audio_module(combined.module_id);
-                notify_audio_issue(
-                    "Combined audio source was not ready; recording first source only.",
-                );
-                return Ok(primary_audio_target(&sources[0]));
-            }
-
-            Ok(AudioTarget {
-                name: combined.name,
-                module_id: Some(combined.module_id),
-            })
-        }
+    match create_recording_mix(&sources) {
+        Ok(target) => Ok(target),
         Err(_) => {
             notify_audio_issue("Unable to combine audio sources; recording first source only.");
             Ok(primary_audio_target(&sources[0]))
@@ -245,36 +226,76 @@ fn wait_for_audio_source(name: &str) -> bool {
     false
 }
 
-fn create_combined_source(slaves: &[String]) -> Result<CombinedSource> {
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let source_name = format!("ins_record_mix_{}", timestamp);
-    let source_arg = format!("source_name={}", source_name);
-    let slaves_arg = format!("slaves={}", slaves.join(","));
+fn create_recording_mix(sources: &[String]) -> Result<AudioTarget> {
+    let sink_name = format!(
+        "ins_record_mix_{}",
+        chrono::Local::now().format("%Y%m%d_%H%M%S")
+    );
+    let mut module_ids = Vec::new();
+
+    let sink_module_id = create_null_sink(&sink_name)?;
+    module_ids.push(sink_module_id);
+
+    for source in sources {
+        match create_loopback(source, &sink_name) {
+            Ok(module_id) => module_ids.push(module_id),
+            Err(err) => {
+                unload_audio_modules(&module_ids);
+                return Err(err);
+            }
+        }
+    }
+
+    let monitor_name = format!("{}.monitor", sink_name);
+    if !wait_for_audio_source(&monitor_name) {
+        unload_audio_modules(&module_ids);
+        anyhow::bail!("Mixed audio source was not ready");
+    }
+
+    Ok(AudioTarget {
+        name: monitor_name,
+        module_ids,
+    })
+}
+
+fn create_null_sink(name: &str) -> Result<u32> {
+    let sink_arg = format!("sink_name={}", name);
+    let props_arg = format!("sink_properties=device.description={}", name);
 
     let output = Command::new("pactl")
-        .args([
-            "load-module",
-            "module-combine-source",
-            &source_arg,
-            &slaves_arg,
-        ])
+        .args(["load-module", "module-null-sink", &sink_arg, &props_arg])
         .output()
-        .context("Failed to load module-combine-source")?;
+        .context("Failed to load module-null-sink")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to create combined audio source: {}", stderr.trim());
+        anyhow::bail!("Failed to create null sink: {}", stderr.trim());
     }
 
-    let module_id = String::from_utf8_lossy(&output.stdout)
+    String::from_utf8_lossy(&output.stdout)
         .trim()
         .parse::<u32>()
-        .context("Failed to parse pactl module id")?;
+        .context("Failed to parse null sink module id")
+}
 
-    Ok(CombinedSource {
-        name: source_name,
-        module_id,
-    })
+fn create_loopback(source: &str, sink: &str) -> Result<u32> {
+    let source_arg = format!("source={}", source);
+    let sink_arg = format!("sink={}", sink);
+
+    let output = Command::new("pactl")
+        .args(["load-module", "module-loopback", &source_arg, &sink_arg])
+        .output()
+        .context("Failed to load module-loopback")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Failed to create loopback: {}", stderr.trim());
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u32>()
+        .context("Failed to parse loopback module id")
 }
 
 fn unload_audio_module(module_id: u32) {
@@ -283,8 +304,11 @@ fn unload_audio_module(module_id: u32) {
         .status();
 }
 
-fn unload_audio_module_if_present(module_id: Option<u32>) {
-    if let Some(module_id) = module_id {
+fn unload_audio_modules(module_ids: &[u32]) {
+    let mut ids: Vec<u32> = module_ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    for module_id in ids.into_iter().rev() {
         unload_audio_module(module_id);
     }
 }
@@ -295,17 +319,20 @@ fn is_recording() -> bool {
         return false;
     }
 
-    if let Ok(content) = fs::read_to_string(&pid_file)
-        && let Some(first_line) = content.lines().next()
-        && let Ok(pid) = first_line.trim().parse::<i32>()
-    {
-        let proc_path = format!("/proc/{}", pid);
-        if std::path::Path::new(&proc_path).exists() {
-            return true;
+    match read_recording_pid_info(&pid_file) {
+        Ok(info) => {
+            let proc_path = format!("/proc/{}", info.pid);
+            if std::path::Path::new(&proc_path).exists() {
+                return true;
+            }
+
+            cleanup_recording_state(&pid_file, &info.audio_module_ids);
+        }
+        Err(_) => {
+            let _ = fs::remove_file(&pid_file);
         }
     }
 
-    let _ = fs::remove_file(&pid_file);
     false
 }
 
@@ -313,7 +340,7 @@ fn is_recording() -> bool {
 struct RecordingPidInfo {
     pid: i32,
     output_path: Option<PathBuf>,
-    audio_module_id: Option<u32>,
+    audio_module_ids: Vec<u32>,
 }
 
 fn read_recording_pid_info(pid_file: &Path) -> Result<RecordingPidInfo> {
@@ -328,15 +355,21 @@ fn read_recording_pid_info(pid_file: &Path) -> Result<RecordingPidInfo> {
         .context("Invalid PID in file")?;
 
     let output_path = lines.next().map(|s| PathBuf::from(s.trim()));
-    let audio_module_id = lines
-        .next()
-        .and_then(|line| line.trim().parse::<u32>().ok());
+    let audio_module_ids = lines.next().map(parse_audio_module_ids).unwrap_or_default();
 
     Ok(RecordingPidInfo {
         pid,
         output_path,
-        audio_module_id,
+        audio_module_ids,
     })
+}
+
+fn parse_audio_module_ids(line: &str) -> Vec<u32> {
+    line.split(',')
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u32>().ok())
+        .collect()
 }
 
 fn signal_wf_recorder_stop(pid: i32) -> Result<()> {
@@ -357,9 +390,9 @@ fn wait_for_process_exit(pid: i32) {
     }
 }
 
-fn cleanup_recording_state(pid_file: &Path, audio_module_id: Option<u32>) {
+fn cleanup_recording_state(pid_file: &Path, audio_module_ids: &[u32]) {
     let _ = fs::remove_file(pid_file);
-    unload_audio_module_if_present(audio_module_id);
+    unload_audio_modules(audio_module_ids);
 }
 
 fn stop_recording() -> Result<Option<PathBuf>> {
@@ -371,7 +404,7 @@ fn stop_recording() -> Result<Option<PathBuf>> {
     let info = read_recording_pid_info(&pid_file)?;
     signal_wf_recorder_stop(info.pid)?;
     wait_for_process_exit(info.pid);
-    cleanup_recording_state(&pid_file, info.audio_module_id);
+    cleanup_recording_state(&pid_file, &info.audio_module_ids);
 
     Ok(info.output_path)
 }
@@ -410,6 +443,10 @@ fn build_wf_recorder_args(
 
     if let Some(target) = audio_target {
         args.push(format!("--audio={}", target.name));
+        if matches!(format, RecordingFormat::WebM) {
+            args.push("-C".to_string());
+            args.push("libopus".to_string());
+        }
     }
 
     args.push("-f".to_string());
@@ -434,7 +471,7 @@ fn build_wf_recorder_args(
     Ok(args)
 }
 
-fn spawn_wf_recorder(args: &[String], audio_module_id: Option<u32>) -> Result<u32> {
+fn spawn_wf_recorder(args: &[String], audio_module_ids: &[u32]) -> Result<u32> {
     let mut setsid_cmd = Command::new("setsid");
     setsid_cmd
         .arg("--fork")
@@ -445,7 +482,7 @@ fn spawn_wf_recorder(args: &[String], audio_module_id: Option<u32>) -> Result<u3
         .stderr(Stdio::null());
 
     if let Err(err) = setsid_cmd.spawn() {
-        unload_audio_module_if_present(audio_module_id);
+        unload_audio_modules(audio_module_ids);
         return Err(err).context("Failed to start wf-recorder via setsid");
     }
 
@@ -454,13 +491,13 @@ fn spawn_wf_recorder(args: &[String], audio_module_id: Option<u32>) -> Result<u3
     let pgrep_output = match Command::new("pgrep").arg("-n").arg("wf-recorder").output() {
         Ok(output) => output,
         Err(err) => {
-            unload_audio_module_if_present(audio_module_id);
+            unload_audio_modules(audio_module_ids);
             return Err(err).context("Failed to find wf-recorder PID");
         }
     };
 
     if !pgrep_output.status.success() {
-        unload_audio_module_if_present(audio_module_id);
+        unload_audio_modules(audio_module_ids);
         anyhow::bail!("wf-recorder failed to start");
     }
 
@@ -469,21 +506,23 @@ fn spawn_wf_recorder(args: &[String], audio_module_id: Option<u32>) -> Result<u3
         .trim()
         .parse()
         .inspect_err(|_err| {
-            unload_audio_module_if_present(audio_module_id);
+            unload_audio_modules(audio_module_ids);
         })
         .context("Failed to parse wf-recorder PID")?;
 
     Ok(pid)
 }
 
-fn write_recording_pid_file(
-    pid: u32,
-    output_path: &Path,
-    audio_module_id: Option<u32>,
-) -> Result<()> {
-    let pid_content = match audio_module_id {
-        Some(module_id) => format!("{}\n{}\n{}", pid, output_path.display(), module_id),
-        None => format!("{}\n{}", pid, output_path.display()),
+fn write_recording_pid_file(pid: u32, output_path: &Path, audio_module_ids: &[u32]) -> Result<()> {
+    let pid_content = if audio_module_ids.is_empty() {
+        format!("{}\n{}", pid, output_path.display())
+    } else {
+        let module_list = audio_module_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<String>>()
+            .join(",");
+        format!("{}\n{}\n{}", pid, output_path.display(), module_list)
     };
 
     fs::write(get_pid_file(), pid_content).context("Failed to write PID file")
@@ -513,13 +552,16 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
 
     let selection_mode = load_audio_selection_mode();
     let audio_target = resolve_audio_target(selection_mode)?;
-    let audio_module_id = audio_target.as_ref().and_then(|target| target.module_id());
+    let audio_module_ids = audio_target
+        .as_ref()
+        .map(|target| target.module_ids().to_vec())
+        .unwrap_or_default();
 
     let wf_args = build_wf_recorder_args(geometry, format, &output_path, audio_target.as_ref())?;
-    let pid = spawn_wf_recorder(&wf_args, audio_module_id)?;
+    let pid = spawn_wf_recorder(&wf_args, &audio_module_ids)?;
 
-    if let Err(err) = write_recording_pid_file(pid, &output_path, audio_module_id) {
-        unload_audio_module_if_present(audio_module_id);
+    if let Err(err) = write_recording_pid_file(pid, &output_path, &audio_module_ids) {
+        unload_audio_modules(&audio_module_ids);
         return Err(err);
     }
 

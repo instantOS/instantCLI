@@ -419,7 +419,7 @@ impl Setting for ScreenRecordAudioSources {
             .id("assist.screen_record_audio_sources")
             .title("Screen Recording Audio Sources")
             .icon(NerdFont::VolumeUp)
-            .summary("Choose which audio sources to include in screen recordings.\n\nUse Tab or Space to toggle sources, then select Save to apply.")
+            .summary("Choose which audio sources to include in screen recordings.\n\nEnter toggles sources, then select Save to apply.")
             .build()
     }
 
@@ -487,7 +487,7 @@ impl Setting for ScreenRecordAudioSources {
             "Mode: custom selection"
         };
         let header_text = format!(
-            "Select audio sources to include with recordings.\nTab/Space toggles, Enter confirms.\n{mode_hint}\nUse the action below to follow defaults automatically."
+            "Select audio sources to include with recordings.\nEnter toggles, select Save to confirm.\n{mode_hint}\nUse the action below to follow defaults automatically."
         );
         let header = Header::default(&header_text);
 
