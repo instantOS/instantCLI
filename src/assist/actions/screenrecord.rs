@@ -13,7 +13,9 @@ use crate::assist::utils::{AreaSelectionConfig, copy_to_clipboard, show_notifica
 use crate::common::paths;
 use crate::common::shell::shell_quote;
 use crate::menu::client::MenuClient;
-use crate::settings::store::{SCREEN_RECORD_AUDIO_SOURCES_KEY, SettingsStore};
+use crate::settings::store::{
+    SCREEN_RECORD_AUDIO_SOURCES_DEFAULT, SCREEN_RECORD_AUDIO_SOURCES_KEY, SettingsStore,
+};
 
 const MAX_RECORDING_SECONDS: u64 = 300;
 const PID_FILE: &str = "wf-recorder.pid";
@@ -70,15 +72,38 @@ impl AudioTarget {
 }
 
 #[derive(Debug)]
+struct PactlDefaults {
+    sink: Option<String>,
+    source: Option<String>,
+}
+
+#[derive(Debug)]
+enum AudioSelectionMode {
+    Defaults,
+    Explicit(Vec<String>),
+}
+
+#[derive(Debug)]
 struct CombinedSource {
     name: String,
     module_id: u32,
 }
 
-fn load_selected_audio_sources() -> Vec<String> {
+fn load_audio_selection_mode() -> AudioSelectionMode {
     match SettingsStore::load() {
-        Ok(store) => parse_audio_sources(store.optional_string(SCREEN_RECORD_AUDIO_SOURCES_KEY)),
-        Err(_) => Vec::new(),
+        Ok(store) => {
+            let raw = store.optional_string(SCREEN_RECORD_AUDIO_SOURCES_KEY);
+            if raw
+                .as_deref()
+                .map(|value| value.trim() == SCREEN_RECORD_AUDIO_SOURCES_DEFAULT)
+                .unwrap_or(false)
+            {
+                AudioSelectionMode::Defaults
+            } else {
+                AudioSelectionMode::Explicit(parse_audio_sources(raw))
+            }
+        }
+        Err(_) => AudioSelectionMode::Explicit(Vec::new()),
     }
 }
 
@@ -87,6 +112,7 @@ fn parse_audio_sources(raw: Option<String>) -> Vec<String> {
         .lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty())
+        .filter(|line| *line != SCREEN_RECORD_AUDIO_SOURCES_DEFAULT)
         .map(|line| line.to_string())
         .collect()
 }
@@ -95,12 +121,7 @@ fn notify_audio_issue(message: &str) {
     let _ = show_notification("Screen Recording", message);
 }
 
-fn resolve_audio_target(selected_sources: Vec<String>) -> Result<Option<AudioTarget>> {
-    let mut sources = dedup_audio_sources(selected_sources);
-    if sources.is_empty() {
-        return Ok(None);
-    }
-
+fn resolve_audio_target(selection_mode: AudioSelectionMode) -> Result<Option<AudioTarget>> {
     let available = match pactl_list_sources() {
         Ok(sources) => sources,
         Err(_) => {
@@ -108,8 +129,24 @@ fn resolve_audio_target(selected_sources: Vec<String>) -> Result<Option<AudioTar
             return Ok(None);
         }
     };
-
     let available_set: HashSet<String> = available.into_iter().collect();
+
+    let mut sources = match selection_mode {
+        AudioSelectionMode::Defaults => match resolve_default_sources(&available_set) {
+            Ok(sources) => sources,
+            Err(_) => {
+                notify_audio_issue("Unable to detect default audio sources; recording video only.");
+                return Ok(None);
+            }
+        },
+        AudioSelectionMode::Explicit(list) => list,
+    };
+
+    sources = dedup_audio_sources(sources);
+    if sources.is_empty() {
+        return Ok(None);
+    }
+
     let mut missing = Vec::new();
     sources.retain(|source| {
         if available_set.contains(source) {
@@ -172,6 +209,56 @@ fn dedup_audio_sources(sources: Vec<String>) -> Vec<String> {
         .into_iter()
         .filter(|source| seen.insert(source.clone()))
         .collect()
+}
+
+fn resolve_default_sources(available_set: &HashSet<String>) -> Result<Vec<String>> {
+    let defaults = pactl_defaults()?;
+    let mut sources = Vec::new();
+
+    if let Some(sink) = defaults.sink {
+        let monitor = format!("{}.monitor", sink);
+        if available_set.contains(&monitor) {
+            sources.push(monitor);
+        }
+    }
+
+    if let Some(source) = defaults.source {
+        if available_set.contains(&source) {
+            sources.push(source);
+        }
+    }
+
+    sources.sort();
+    sources.dedup();
+    Ok(sources)
+}
+
+fn pactl_defaults() -> Result<PactlDefaults> {
+    let output = Command::new("pactl")
+        .arg("info")
+        .output()
+        .context("Failed to run pactl info")?;
+
+    if !output.status.success() {
+        anyhow::bail!("pactl info failed");
+    }
+
+    let info = String::from_utf8_lossy(&output.stdout);
+    let mut defaults = PactlDefaults {
+        sink: None,
+        source: None,
+    };
+
+    for line in info.lines() {
+        if let Some(value) = line.strip_prefix("Default Sink:") {
+            defaults.sink = Some(value.trim().to_string());
+        }
+        if let Some(value) = line.strip_prefix("Default Source:") {
+            defaults.source = Some(value.trim().to_string());
+        }
+    }
+
+    Ok(defaults)
 }
 
 fn pactl_list_sources() -> Result<Vec<String>> {
@@ -326,8 +413,8 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
     let filename = generate_recording_filename(format);
     let output_path = paths::videos_dir()?.join(&filename);
 
-    let selected_sources = load_selected_audio_sources();
-    let audio_target = resolve_audio_target(selected_sources)?;
+    let selection_mode = load_audio_selection_mode();
+    let audio_target = resolve_audio_target(selection_mode)?;
     let audio_module_id = audio_target.as_ref().and_then(|target| target.module_id());
 
     let mut cmd = Command::new("wf-recorder");
@@ -402,7 +489,7 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
     let pid: u32 = pid_str
         .trim()
         .parse()
-        .inspect_err(|err| {
+        .inspect_err(|_err| {
             if let Some(module_id) = audio_module_id {
                 unload_audio_module(module_id);
             }
@@ -414,7 +501,7 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
         None => format!("{}\n{}", pid, output_path.display()),
     };
     fs::write(get_pid_file(), pid_content)
-        .inspect_err(|err| {
+        .inspect_err(|_err| {
             if let Some(module_id) = audio_module_id {
                 unload_audio_module(module_id);
             }

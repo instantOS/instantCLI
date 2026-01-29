@@ -6,12 +6,16 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::common::compositor::CompositorType;
-use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at};
+use crate::menu_utils::{
+    select_one_with_style_at, ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, Header,
+    MenuCursor,
+};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEMAN, PIPER};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
-    OptionalStringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_KEY, StringSettingKey,
+    OptionalStringSettingKey, StringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT,
+    SCREEN_RECORD_AUDIO_SOURCES_KEY,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
@@ -422,12 +426,22 @@ impl FzfSelectable for AudioSourceItem {
 }
 
 fn parse_audio_sources(raw: Option<String>) -> Vec<String> {
-    raw.unwrap_or_default()
-        .lines()
+    let raw = raw.unwrap_or_default();
+    if raw.trim() == SCREEN_RECORD_AUDIO_SOURCES_DEFAULT {
+        return Vec::new();
+    }
+
+    raw.lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty())
         .map(|line| line.to_string())
         .collect()
+}
+
+fn is_default_audio_selection(raw: &Option<String>) -> bool {
+    raw.as_deref()
+        .map(|value| value.trim() == SCREEN_RECORD_AUDIO_SOURCES_DEFAULT)
+        .unwrap_or(false)
 }
 
 fn list_audio_sources() -> Result<Vec<AudioSourceInfo>> {
@@ -489,6 +503,31 @@ fn audio_defaults() -> Result<AudioDefaults> {
     Ok(defaults)
 }
 
+fn default_audio_source_names(
+    defaults: &AudioDefaults,
+    sources: &[AudioSourceInfo],
+) -> Vec<String> {
+    let available: std::collections::HashSet<&str> =
+        sources.iter().map(|source| source.name.as_str()).collect();
+    let mut names = Vec::new();
+
+    if let Some(default_output) = defaults.default_output_monitor() {
+        if available.contains(default_output.as_str()) {
+            names.push(default_output);
+        }
+    }
+
+    if let Some(default_input) = defaults.source.as_ref() {
+        if available.contains(default_input.as_str()) {
+            names.push(default_input.clone());
+        }
+    }
+
+    names.sort();
+    names.dedup();
+    names
+}
+
 pub struct ScreenRecordAudioSources;
 
 impl ScreenRecordAudioSources {
@@ -510,11 +549,16 @@ impl Setting for ScreenRecordAudioSources {
     }
 
     fn get_display_state(&self, ctx: &SettingsContext) -> crate::settings::setting::SettingState {
-        let selected = parse_audio_sources(ctx.optional_string(Self::KEY));
-        let label = match selected.len() {
-            0 => "None".to_string(),
-            1 => "1 source".to_string(),
-            count => format!("{} sources", count),
+        let stored = ctx.optional_string(Self::KEY);
+        let label = if is_default_audio_selection(&stored) {
+            "Defaults".to_string()
+        } else {
+            let selected = parse_audio_sources(stored);
+            match selected.len() {
+                0 => "None".to_string(),
+                1 => "1 source".to_string(),
+                count => format!("{} sources", count),
+            }
         };
 
         crate::settings::setting::SettingState::Choice {
@@ -523,7 +567,8 @@ impl Setting for ScreenRecordAudioSources {
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
-        let selected = parse_audio_sources(ctx.optional_string(Self::KEY));
+        let stored = ctx.optional_string(Self::KEY);
+        let use_defaults = is_default_audio_selection(&stored);
         let sources = match list_audio_sources() {
             Ok(list) if !list.is_empty() => list,
             Ok(_) => {
@@ -541,6 +586,13 @@ impl Setting for ScreenRecordAudioSources {
             source: None,
         });
 
+        let default_sources = default_audio_source_names(&defaults, &sources);
+        let selected = if use_defaults {
+            default_sources.clone()
+        } else {
+            parse_audio_sources(stored)
+        };
+
         let selected_set: std::collections::HashSet<String> = selected.iter().cloned().collect();
         let items: Vec<AudioSourceItem> = sources
             .into_iter()
@@ -550,30 +602,71 @@ impl Setting for ScreenRecordAudioSources {
             })
             .collect();
 
-        let header = Header::default(
-            "Select audio sources to include with recordings.\nTab/Space toggles, Enter confirms.",
+        let mode_hint = if use_defaults {
+            "Mode: defaults (dynamic)"
+        } else {
+            "Mode: custom selection"
+        };
+        let header_text = format!(
+            "Select audio sources to include with recordings.\nTab/Space toggles, Enter confirms.\n{mode_hint}\nUse the action below to follow defaults automatically."
         );
+        let header = Header::default(&header_text);
+
+        let defaults_preview = PreviewBuilder::new()
+            .header(NerdFont::Star, "Use Default Sources")
+            .text("Record the current default desktop output and mic input each time.")
+            .blank()
+            .line(
+                colors::TEAL,
+                Some(NerdFont::Target),
+                &format!(
+                    "Current defaults: {}",
+                    if default_sources.is_empty() {
+                        "None".to_string()
+                    } else {
+                        default_sources.join(", ")
+                    }
+                ),
+            )
+            .build();
+
+        let default_action_label = if use_defaults {
+            "Use default sources (current)"
+        } else {
+            "Use default sources"
+        };
+        let actions = vec![ChecklistAction::new("audio_defaults", default_action_label)
+            .with_color(colors::GREEN)
+            .with_preview(defaults_preview)];
 
         let selection = FzfWrapper::builder()
             .prompt("Audio sources")
             .header(header)
             .checklist("Save")
             .allow_empty_confirm(true)
+            .checklist_actions(actions)
             .checklist_dialog(items)?;
 
-        if let crate::menu_utils::ChecklistResult::Confirmed(items) = selection {
-            let chosen: Vec<String> = items.into_iter().map(|item| item.name).collect();
-
-            if chosen.is_empty() {
-                ctx.set_optional_string(Self::KEY, None::<String>);
-                ctx.notify("Screen Recording", "Audio sources cleared");
-            } else {
-                ctx.set_optional_string(Self::KEY, Some(chosen.join("\n")));
-                ctx.notify(
-                    "Screen Recording",
-                    &format!("Selected {} audio sources", chosen.len()),
-                );
+        match selection {
+            ChecklistResult::Action(action) if action.key == "audio_defaults" => {
+                ctx.set_optional_string(Self::KEY, Some(SCREEN_RECORD_AUDIO_SOURCES_DEFAULT));
+                ctx.notify("Screen Recording", "Using default audio sources");
             }
+            ChecklistResult::Confirmed(items) => {
+                let chosen: Vec<String> = items.into_iter().map(|item| item.name).collect();
+
+                if chosen.is_empty() {
+                    ctx.set_optional_string(Self::KEY, None::<String>);
+                    ctx.notify("Screen Recording", "Audio sources cleared");
+                } else {
+                    ctx.set_optional_string(Self::KEY, Some(chosen.join("\n")));
+                    ctx.notify(
+                        "Screen Recording",
+                        &format!("Selected {} audio sources", chosen.len()),
+                    );
+                }
+            }
+            _ => {}
         }
 
         Ok(())
