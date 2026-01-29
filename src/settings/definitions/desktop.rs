@@ -6,13 +6,16 @@ use anyhow::Result;
 use std::process::Command;
 
 use crate::common::compositor::CompositorType;
+use crate::menu_utils::select_one_with_style_at;
 use crate::menu_utils::FzfSelectable;
 use crate::menu_utils::MenuCursor;
-use crate::menu_utils::select_one_with_style_at;
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEMAN, PIPER};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
-use crate::settings::store::StringSettingKey;
+use crate::settings::store::{
+    BoolSettingKey, StringSettingKey, SCREEN_RECORD_AUDIO_KEY, SCREEN_RECORD_DESKTOP_AUDIO_KEY,
+    SCREEN_RECORD_MIC_AUDIO_KEY,
+};
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
 
@@ -264,3 +267,135 @@ gui_command_setting!(
     "blueman-manager",
     &BLUEMAN
 );
+
+// ============================================================================
+// Screen Recording Audio Toggle
+// ============================================================================
+
+pub struct ScreenRecordAudio;
+
+impl ScreenRecordAudio {
+    pub const KEY: BoolSettingKey = SCREEN_RECORD_AUDIO_KEY;
+}
+
+impl Setting for ScreenRecordAudio {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("assist.screen_record_audio")
+            .title("Screen Recording Audio")
+            .icon(NerdFont::VolumeUp)
+            .summary("Enable audio capture when screen recording with ins assist.\n\nChoose which sources to include below (desktop audio and/or microphone).")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Toggle { key: Self::KEY }
+    }
+
+    fn get_display_state(&self, ctx: &SettingsContext) -> crate::settings::setting::SettingState {
+        crate::settings::setting::SettingState::Toggle {
+            enabled: ctx.bool(Self::KEY),
+        }
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let current = ctx.bool(Self::KEY);
+        ctx.set_bool(Self::KEY, !current);
+
+        if !current {
+            ctx.notify("Screen Recording", "Audio capture enabled");
+        } else {
+            ctx.notify("Screen Recording", "Audio capture disabled");
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Screen Recording Desktop Audio Toggle
+// ============================================================================
+
+pub struct ScreenRecordDesktopAudio;
+
+impl ScreenRecordDesktopAudio {
+    pub const KEY: BoolSettingKey = SCREEN_RECORD_DESKTOP_AUDIO_KEY;
+}
+
+impl Setting for ScreenRecordDesktopAudio {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("assist.screen_record_desktop_audio")
+            .title("Screen Recording Desktop Audio")
+            .icon(NerdFont::VolumeUp)
+            .summary("Include desktop (system output) audio in screen recordings.\n\nUses the default sink monitor from PipeWire/PulseAudio.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Toggle { key: Self::KEY }
+    }
+
+    fn get_display_state(&self, ctx: &SettingsContext) -> crate::settings::setting::SettingState {
+        crate::settings::setting::SettingState::Toggle {
+            enabled: ctx.bool(Self::KEY),
+        }
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let current = ctx.bool(Self::KEY);
+        ctx.set_bool(Self::KEY, !current);
+
+        if !current {
+            ctx.notify("Screen Recording", "Desktop audio capture enabled");
+        } else {
+            ctx.notify("Screen Recording", "Desktop audio capture disabled");
+        }
+
+        Ok(())
+    }
+}
+
+// ============================================================================
+// Screen Recording Microphone Audio Toggle
+// ============================================================================
+
+pub struct ScreenRecordMicrophoneAudio;
+
+impl ScreenRecordMicrophoneAudio {
+    pub const KEY: BoolSettingKey = SCREEN_RECORD_MIC_AUDIO_KEY;
+}
+
+impl Setting for ScreenRecordMicrophoneAudio {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("assist.screen_record_mic_audio")
+            .title("Screen Recording Microphone Audio")
+            .icon(NerdFont::VolumeDown)
+            .summary("Include microphone input in screen recordings.\n\nUses the default input source from PipeWire/PulseAudio.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Toggle { key: Self::KEY }
+    }
+
+    fn get_display_state(&self, ctx: &SettingsContext) -> crate::settings::setting::SettingState {
+        crate::settings::setting::SettingState::Toggle {
+            enabled: ctx.bool(Self::KEY),
+        }
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let current = ctx.bool(Self::KEY);
+        ctx.set_bool(Self::KEY, !current);
+
+        if !current {
+            ctx.notify("Screen Recording", "Microphone audio capture enabled");
+        } else {
+            ctx.notify("Screen Recording", "Microphone audio capture disabled");
+        }
+
+        Ok(())
+    }
+}
