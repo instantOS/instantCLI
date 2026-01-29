@@ -1,6 +1,7 @@
 pub mod compositor;
 pub mod config;
 pub mod deps;
+pub mod audio;
 pub mod display;
 pub mod display_server;
 pub mod distro;

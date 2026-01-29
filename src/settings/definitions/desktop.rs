@@ -2,9 +2,12 @@
 //!
 //! Window layout and other desktop settings.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::process::Command;
 
+use crate::common::audio::{
+    default_source_names, list_audio_sources_short, pactl_defaults, AudioDefaults, AudioSourceInfo,
+};
 use crate::common::compositor::CompositorType;
 use crate::menu_utils::{
     select_one_with_style_at, ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, Header,
@@ -14,8 +17,8 @@ use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEMAN, PIPER};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
-    OptionalStringSettingKey, StringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT,
-    SCREEN_RECORD_AUDIO_SOURCES_KEY,
+    is_audio_sources_default, parse_audio_source_selection, OptionalStringSettingKey,
+    StringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT, SCREEN_RECORD_AUDIO_SOURCES_KEY,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
@@ -275,27 +278,6 @@ gui_command_setting!(
 // ============================================================================
 
 #[derive(Clone)]
-struct AudioDefaults {
-    sink: Option<String>,
-    source: Option<String>,
-}
-
-impl AudioDefaults {
-    fn default_output_monitor(&self) -> Option<String> {
-        self.sink.as_ref().map(|sink| format!("{}.monitor", sink))
-    }
-}
-
-#[derive(Clone)]
-struct AudioSourceInfo {
-    name: String,
-    driver: Option<String>,
-    sample_spec: Option<String>,
-    channel_map: Option<String>,
-    state: Option<String>,
-}
-
-#[derive(Clone)]
 struct AudioSourceItem {
     name: String,
     label: String,
@@ -425,109 +407,6 @@ impl FzfSelectable for AudioSourceItem {
     }
 }
 
-fn parse_audio_sources(raw: Option<String>) -> Vec<String> {
-    let raw = raw.unwrap_or_default();
-    if raw.trim() == SCREEN_RECORD_AUDIO_SOURCES_DEFAULT {
-        return Vec::new();
-    }
-
-    raw.lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .map(|line| line.to_string())
-        .collect()
-}
-
-fn is_default_audio_selection(raw: &Option<String>) -> bool {
-    raw.as_deref()
-        .map(|value| value.trim() == SCREEN_RECORD_AUDIO_SOURCES_DEFAULT)
-        .unwrap_or(false)
-}
-
-fn list_audio_sources() -> Result<Vec<AudioSourceInfo>> {
-    let output = Command::new("pactl")
-        .args(["list", "sources", "short"])
-        .output()
-        .context("Failed to run pactl list sources")?;
-
-    if !output.status.success() {
-        anyhow::bail!("pactl list sources failed");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut sources = Vec::new();
-
-    for line in stdout.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 2 {
-            continue;
-        }
-
-        sources.push(AudioSourceInfo {
-            name: parts[1].to_string(),
-            driver: parts.get(2).map(|value| value.to_string()),
-            sample_spec: parts.get(3).map(|value| value.to_string()),
-            channel_map: parts.get(4).map(|value| value.to_string()),
-            state: parts.get(5).map(|value| value.to_string()),
-        });
-    }
-
-    Ok(sources)
-}
-
-fn audio_defaults() -> Result<AudioDefaults> {
-    let output = Command::new("pactl")
-        .arg("info")
-        .output()
-        .context("Failed to run pactl info")?;
-
-    if !output.status.success() {
-        anyhow::bail!("pactl info failed");
-    }
-
-    let info = String::from_utf8_lossy(&output.stdout);
-    let mut defaults = AudioDefaults {
-        sink: None,
-        source: None,
-    };
-
-    for line in info.lines() {
-        if let Some(value) = line.strip_prefix("Default Sink:") {
-            defaults.sink = Some(value.trim().to_string());
-        }
-        if let Some(value) = line.strip_prefix("Default Source:") {
-            defaults.source = Some(value.trim().to_string());
-        }
-    }
-
-    Ok(defaults)
-}
-
-fn default_audio_source_names(
-    defaults: &AudioDefaults,
-    sources: &[AudioSourceInfo],
-) -> Vec<String> {
-    let available: std::collections::HashSet<&str> =
-        sources.iter().map(|source| source.name.as_str()).collect();
-    let mut names = Vec::new();
-
-    if let Some(default_output) = defaults.default_output_monitor() {
-        if available.contains(default_output.as_str()) {
-            names.push(default_output);
-        }
-    }
-
-    if let Some(default_input) = defaults.source.as_ref() {
-        if available.contains(default_input.as_str()) {
-            names.push(default_input.clone());
-        }
-    }
-
-    names.sort();
-    names.dedup();
-    names
-}
-
 pub struct ScreenRecordAudioSources;
 
 impl ScreenRecordAudioSources {
@@ -550,10 +429,10 @@ impl Setting for ScreenRecordAudioSources {
 
     fn get_display_state(&self, ctx: &SettingsContext) -> crate::settings::setting::SettingState {
         let stored = ctx.optional_string(Self::KEY);
-        let label = if is_default_audio_selection(&stored) {
+        let label = if is_audio_sources_default(&stored) {
             "Defaults".to_string()
         } else {
-            let selected = parse_audio_sources(stored);
+            let selected = parse_audio_source_selection(stored);
             match selected.len() {
                 0 => "None".to_string(),
                 1 => "1 source".to_string(),
@@ -568,8 +447,8 @@ impl Setting for ScreenRecordAudioSources {
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
         let stored = ctx.optional_string(Self::KEY);
-        let use_defaults = is_default_audio_selection(&stored);
-        let sources = match list_audio_sources() {
+        let use_defaults = is_audio_sources_default(&stored);
+        let sources = match list_audio_sources_short() {
             Ok(list) if !list.is_empty() => list,
             Ok(_) => {
                 ctx.show_message("No audio sources found. Is PipeWire/PulseAudio running?");
@@ -581,16 +460,16 @@ impl Setting for ScreenRecordAudioSources {
             }
         };
 
-        let defaults = audio_defaults().unwrap_or(AudioDefaults {
+        let defaults = pactl_defaults().unwrap_or(AudioDefaults {
             sink: None,
             source: None,
         });
 
-        let default_sources = default_audio_source_names(&defaults, &sources);
+        let default_sources = default_source_names(&defaults, &sources);
         let selected = if use_defaults {
             default_sources.clone()
         } else {
-            parse_audio_sources(stored)
+            parse_audio_source_selection(stored)
         };
 
         let selected_set: std::collections::HashSet<String> = selected.iter().cloned().collect();

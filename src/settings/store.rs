@@ -175,6 +175,22 @@ pub const SCREEN_RECORD_AUDIO_SOURCES_KEY: OptionalStringSettingKey =
     OptionalStringSettingKey::new("assist.screen_record_audio_sources");
 pub const SCREEN_RECORD_AUDIO_SOURCES_DEFAULT: &str = "__use_default__";
 
+pub fn is_audio_sources_default(raw: &Option<String>) -> bool {
+    raw.as_deref()
+        .map(|value| value.trim() == SCREEN_RECORD_AUDIO_SOURCES_DEFAULT)
+        .unwrap_or(false)
+}
+
+pub fn parse_audio_source_selection(raw: Option<String>) -> Vec<String> {
+    raw.unwrap_or_default()
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .filter(|line| *line != SCREEN_RECORD_AUDIO_SOURCES_DEFAULT)
+        .map(|line| line.to_string())
+        .collect()
+}
+
 #[derive(Debug)]
 pub struct SettingsStore {
     path: PathBuf,

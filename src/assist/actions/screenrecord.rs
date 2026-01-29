@@ -10,11 +10,15 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use crate::assist::utils::{AreaSelectionConfig, copy_to_clipboard, show_notification};
+use crate::common::audio::{
+    default_source_names, list_audio_source_names, list_audio_sources_short, pactl_defaults,
+};
 use crate::common::paths;
 use crate::common::shell::shell_quote;
 use crate::menu::client::MenuClient;
 use crate::settings::store::{
-    SCREEN_RECORD_AUDIO_SOURCES_DEFAULT, SCREEN_RECORD_AUDIO_SOURCES_KEY, SettingsStore,
+    SCREEN_RECORD_AUDIO_SOURCES_KEY, SettingsStore, is_audio_sources_default,
+    parse_audio_source_selection,
 };
 
 const MAX_RECORDING_SECONDS: u64 = 300;
@@ -72,12 +76,6 @@ impl AudioTarget {
 }
 
 #[derive(Debug)]
-struct PactlDefaults {
-    sink: Option<String>,
-    source: Option<String>,
-}
-
-#[derive(Debug)]
 enum AudioSelectionMode {
     Defaults,
     Explicit(Vec<String>),
@@ -93,28 +91,14 @@ fn load_audio_selection_mode() -> AudioSelectionMode {
     match SettingsStore::load() {
         Ok(store) => {
             let raw = store.optional_string(SCREEN_RECORD_AUDIO_SOURCES_KEY);
-            if raw
-                .as_deref()
-                .map(|value| value.trim() == SCREEN_RECORD_AUDIO_SOURCES_DEFAULT)
-                .unwrap_or(false)
-            {
+            if is_audio_sources_default(&raw) {
                 AudioSelectionMode::Defaults
             } else {
-                AudioSelectionMode::Explicit(parse_audio_sources(raw))
+                AudioSelectionMode::Explicit(parse_audio_source_selection(raw))
             }
         }
         Err(_) => AudioSelectionMode::Explicit(Vec::new()),
     }
-}
-
-fn parse_audio_sources(raw: Option<String>) -> Vec<String> {
-    raw.unwrap_or_default()
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .filter(|line| *line != SCREEN_RECORD_AUDIO_SOURCES_DEFAULT)
-        .map(|line| line.to_string())
-        .collect()
 }
 
 fn notify_audio_issue(message: &str) {
@@ -122,23 +106,29 @@ fn notify_audio_issue(message: &str) {
 }
 
 fn resolve_audio_target(selection_mode: AudioSelectionMode) -> Result<Option<AudioTarget>> {
-    let available = match pactl_list_sources() {
+    let source_info = match list_audio_sources_short() {
         Ok(sources) => sources,
         Err(_) => {
             notify_audio_issue("Unable to list audio sources; recording video only.");
             return Ok(None);
         }
     };
-    let available_set: HashSet<String> = available.into_iter().collect();
+    let available_set: HashSet<String> =
+        source_info.iter().map(|source| source.name.clone()).collect();
 
     let mut sources = match selection_mode {
-        AudioSelectionMode::Defaults => match resolve_default_sources(&available_set) {
-            Ok(sources) => sources,
-            Err(_) => {
-                notify_audio_issue("Unable to detect default audio sources; recording video only.");
-                return Ok(None);
-            }
-        },
+        AudioSelectionMode::Defaults => {
+            let defaults = match pactl_defaults() {
+                Ok(defaults) => defaults,
+                Err(_) => {
+                    notify_audio_issue(
+                        "Unable to detect default audio sources; recording video only.",
+                    );
+                    return Ok(None);
+                }
+            };
+            default_source_names(&defaults, &source_info)
+        }
         AudioSelectionMode::Explicit(list) => list,
     };
 
@@ -211,86 +201,12 @@ fn dedup_audio_sources(sources: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-fn resolve_default_sources(available_set: &HashSet<String>) -> Result<Vec<String>> {
-    let defaults = pactl_defaults()?;
-    let mut sources = Vec::new();
-
-    if let Some(sink) = defaults.sink {
-        let monitor = format!("{}.monitor", sink);
-        if available_set.contains(&monitor) {
-            sources.push(monitor);
-        }
-    }
-
-    if let Some(source) = defaults.source {
-        if available_set.contains(&source) {
-            sources.push(source);
-        }
-    }
-
-    sources.sort();
-    sources.dedup();
-    Ok(sources)
-}
-
-fn pactl_defaults() -> Result<PactlDefaults> {
-    let output = Command::new("pactl")
-        .arg("info")
-        .output()
-        .context("Failed to run pactl info")?;
-
-    if !output.status.success() {
-        anyhow::bail!("pactl info failed");
-    }
-
-    let info = String::from_utf8_lossy(&output.stdout);
-    let mut defaults = PactlDefaults {
-        sink: None,
-        source: None,
-    };
-
-    for line in info.lines() {
-        if let Some(value) = line.strip_prefix("Default Sink:") {
-            defaults.sink = Some(value.trim().to_string());
-        }
-        if let Some(value) = line.strip_prefix("Default Source:") {
-            defaults.source = Some(value.trim().to_string());
-        }
-    }
-
-    Ok(defaults)
-}
-
-fn pactl_list_sources() -> Result<Vec<String>> {
-    let output = Command::new("pactl")
-        .args(["list", "sources", "short"])
-        .output()
-        .context("Failed to run pactl list sources")?;
-
-    if !output.status.success() {
-        anyhow::bail!("pactl list sources failed");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut sources = Vec::new();
-
-    for line in stdout.lines() {
-        let mut parts = line.split_whitespace();
-        let _ = parts.next();
-        if let Some(name) = parts.next() {
-            sources.push(name.to_string());
-        }
-    }
-
-    Ok(sources)
-}
-
 fn wait_for_audio_source(name: &str) -> bool {
     for _ in 0..10 {
-        if let Ok(sources) = pactl_list_sources()
-            && sources.iter().any(|source| source == name)
-        {
-            return true;
+        if let Ok(sources) = list_audio_source_names() {
+            if sources.iter().any(|source| source == name) {
+                return true;
+            }
         }
 
         std::thread::sleep(std::time::Duration::from_millis(100));
