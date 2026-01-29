@@ -86,6 +86,11 @@ impl WmConfigManager {
         &self.config_path
     }
 
+    /// Get the path to the main WM config file.
+    pub fn main_config_path(&self) -> &PathBuf {
+        &self.main_config_path
+    }
+
     /// Compute hash of the config file for change detection.
     pub fn hash_config(&self) -> Result<u64> {
         if !self.config_path.exists() {
