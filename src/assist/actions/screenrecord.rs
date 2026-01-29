@@ -8,8 +8,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use crate::assist::utils::{copy_to_clipboard, show_notification, AreaSelectionConfig};
+use crate::assist::utils::{AreaSelectionConfig, copy_to_clipboard, show_notification};
 use crate::common::paths;
+use crate::common::shell::shell_quote;
+use crate::menu::client::MenuClient;
 
 const MAX_RECORDING_SECONDS: u64 = 300;
 const PID_FILE: &str = "wf-recorder.pid";
@@ -238,19 +240,97 @@ pub fn screen_record_fullscreen() -> Result<()> {
 pub fn toggle_recording() -> Result<()> {
     if is_recording() {
         if let Some(output_path) = stop_recording()? {
-            let config = AreaSelectionConfig::new();
-
-            copy_to_clipboard(output_path.to_string_lossy().as_bytes(), config.display_server())?;
-
-            show_notification(
-                "Recording saved",
-                &format!("{}\n(path copied to clipboard)", output_path.display()),
-            )?;
+            show_post_recording_menu(&output_path)?;
         } else {
             show_notification("Recording stopped", "No output file found")?;
         }
     } else {
         anyhow::bail!("No recording in progress");
+    }
+
+    Ok(())
+}
+
+fn show_post_recording_menu(output_path: &std::path::Path) -> Result<()> {
+    let path_str = output_path.to_string_lossy().to_string();
+    let parent_dir = output_path
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".to_string());
+
+    let chords = vec![
+        "p:Play video".to_string(),
+        "c:Copy path to clipboard".to_string(),
+        "f:Open in file manager".to_string(),
+        "y:Open with yazi".to_string(),
+        "t:Open terminal in directory".to_string(),
+        "d:Done (close menu)".to_string(),
+    ];
+
+    let client = MenuClient::new();
+    let selected = client.chord(chords)?;
+
+    match selected.as_deref() {
+        Some("p") => {
+            // Play the video with xdg-open
+            Command::new("xdg-open")
+                .arg(&path_str)
+                .spawn()
+                .context("Failed to open video")?;
+        }
+        Some("c") => {
+            // Copy path to clipboard
+            let config = AreaSelectionConfig::new();
+            copy_to_clipboard(path_str.as_bytes(), config.display_server())?;
+            show_notification("Path copied", &path_str)?;
+        }
+        Some("f") => {
+            // Try D-Bus FileManager1 first, fallback to xdg-open on directory
+            let file_uri = format!("file://{}", &path_str);
+            let dbus_result = Command::new("gdbus")
+                .args([
+                    "call",
+                    "--session",
+                    "--dest",
+                    "org.freedesktop.FileManager1",
+                    "--object-path",
+                    "/org/freedesktop/FileManager1",
+                    "--method",
+                    "org.freedesktop.FileManager1.ShowItems",
+                    &format!("['{}']", file_uri),
+                    "''",
+                ])
+                .status();
+
+            if dbus_result.is_err() || !dbus_result.unwrap().success() {
+                Command::new("xdg-open")
+                    .arg(&parent_dir)
+                    .spawn()
+                    .context("Failed to open file manager")?;
+            }
+        }
+        Some("y") => {
+            // Open yazi in a terminal with the file selected
+            crate::common::terminal::TerminalLauncher::new("yazi")
+                .title("Recording")
+                .arg(&path_str)
+                .launch()?;
+        }
+        Some("t") => {
+            // Open terminal in the directory
+            crate::common::terminal::TerminalLauncher::new("bash")
+                .title("Recording Directory")
+                .args([
+                    "-c",
+                    &format!("cd {} && exec bash", shell_quote(&parent_dir)),
+                ])
+                .launch()?;
+        }
+        Some("d") | None => {
+            // Just show notification and exit
+            show_notification("Recording saved", &path_str)?;
+        }
+        _ => {}
     }
 
     Ok(())
