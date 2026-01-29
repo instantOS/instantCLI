@@ -8,8 +8,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use crate::assist::utils::{copy_to_clipboard, show_notification};
-use crate::common::display_server::DisplayServer;
+use crate::assist::utils::{copy_to_clipboard, show_notification, AreaSelectionConfig};
 use crate::common::paths;
 
 const MAX_RECORDING_SECONDS: u64 = 300;
@@ -60,11 +59,13 @@ fn is_recording() -> bool {
         return false;
     }
 
-    if let Ok(pid_str) = fs::read_to_string(&pid_file) {
-        if let Ok(pid) = pid_str.trim().parse::<i32>() {
-            let proc_path = format!("/proc/{}", pid);
-            if std::path::Path::new(&proc_path).exists() {
-                return true;
+    if let Ok(content) = fs::read_to_string(&pid_file) {
+        if let Some(first_line) = content.lines().next() {
+            if let Ok(pid) = first_line.trim().parse::<i32>() {
+                let proc_path = format!("/proc/{}", pid);
+                if std::path::Path::new(&proc_path).exists() {
+                    return true;
+                }
             }
         }
     }
@@ -109,37 +110,14 @@ fn stop_recording() -> Result<Option<PathBuf>> {
     Ok(output_path)
 }
 
-fn select_area_wayland() -> Result<String> {
-    let output = Command::new("slurp")
-        .arg("-d")
-        .output()
-        .context("Failed to run slurp for area selection")?;
-
-    if !output.status.success() {
-        anyhow::bail!("Area selection cancelled");
-    }
-
-    let geometry = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if geometry.is_empty() {
-        anyhow::bail!("No area selected");
-    }
-
-    Ok(geometry)
-}
-
 fn generate_recording_filename(format: RecordingFormat) -> String {
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     format!("recording_{}.{}", timestamp, format.extension())
 }
 
 fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Result<()> {
-    if is_recording() {
-        anyhow::bail!("Recording already in progress. Use stop to end it.");
-    }
-
-    let display_server = DisplayServer::detect();
-    if !display_server.is_wayland() {
+    let config = AreaSelectionConfig::new();
+    if !config.display_server().is_wayland() {
         anyhow::bail!("Screen recording currently only supports Wayland/Sway");
     }
 
@@ -163,13 +141,44 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
 
     cmd.arg("-x").arg("yuv420p");
 
-    cmd.stdin(Stdio::null())
+    // Build the full command string for setsid
+    let wf_args: Vec<String> = cmd
+        .get_args()
+        .map(|s| s.to_string_lossy().to_string())
+        .collect();
+
+    let mut setsid_cmd = Command::new("setsid");
+    setsid_cmd
+        .arg("--fork")
+        .arg("wf-recorder")
+        .args(&wf_args)
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::null());
 
-    let child = cmd.spawn().context("Failed to start wf-recorder")?;
+    setsid_cmd
+        .spawn()
+        .context("Failed to start wf-recorder via setsid")?;
 
-    let pid = child.id();
+    // Give wf-recorder a moment to start and get its PID
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    // Find the actual wf-recorder PID
+    let pgrep_output = Command::new("pgrep")
+        .arg("-n") // newest
+        .arg("wf-recorder")
+        .output()
+        .context("Failed to find wf-recorder PID")?;
+
+    if !pgrep_output.status.success() {
+        anyhow::bail!("wf-recorder failed to start");
+    }
+
+    let pid_str = String::from_utf8_lossy(&pgrep_output.stdout);
+    let pid: u32 = pid_str
+        .trim()
+        .parse()
+        .context("Failed to parse wf-recorder PID")?;
 
     let pid_content = format!("{}\n{}", pid, output_path.display());
     fs::write(get_pid_file(), pid_content).context("Failed to write PID file")?;
@@ -192,7 +201,7 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
 
     show_notification(
         "Recording started",
-        "Run 'ins assist sr' again to stop recording",
+        "Press the same key combo again to stop",
     )?;
 
     Ok(())
@@ -203,7 +212,8 @@ pub fn screen_record_area() -> Result<()> {
         return toggle_recording();
     }
 
-    let geometry = select_area_wayland()?;
+    let config = AreaSelectionConfig::new();
+    let geometry = config.select_area()?;
     start_recording_impl(Some(&geometry), RecordingFormat::Mp4)
 }
 
@@ -212,7 +222,8 @@ pub fn screen_record_area_webm() -> Result<()> {
         return toggle_recording();
     }
 
-    let geometry = select_area_wayland()?;
+    let config = AreaSelectionConfig::new();
+    let geometry = config.select_area()?;
     start_recording_impl(Some(&geometry), RecordingFormat::WebM)
 }
 
@@ -227,9 +238,9 @@ pub fn screen_record_fullscreen() -> Result<()> {
 pub fn toggle_recording() -> Result<()> {
     if is_recording() {
         if let Some(output_path) = stop_recording()? {
-            let display_server = DisplayServer::detect();
+            let config = AreaSelectionConfig::new();
 
-            copy_to_clipboard(output_path.to_string_lossy().as_bytes(), &display_server)?;
+            copy_to_clipboard(output_path.to_string_lossy().as_bytes(), config.display_server())?;
 
             show_notification(
                 "Recording saved",
