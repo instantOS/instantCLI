@@ -18,8 +18,8 @@ use crate::common::paths;
 use crate::common::shell::shell_quote;
 use crate::menu::client::MenuClient;
 use crate::settings::store::{
-    SCREEN_RECORD_AUDIO_SOURCES_KEY, SettingsStore, is_audio_sources_default,
-    parse_audio_source_selection,
+    SCREEN_RECORD_AUDIO_SOURCES_KEY, SCREEN_RECORD_FRAMERATE_KEY, SettingsStore,
+    is_audio_sources_default, parse_audio_source_selection,
 };
 
 const MAX_RECORDING_SECONDS: u64 = 300;
@@ -94,6 +94,15 @@ fn load_audio_selection_mode() -> AudioSelectionMode {
         }
         Err(_) => AudioSelectionMode::Explicit(Vec::new()),
     }
+}
+
+fn load_recording_framerate() -> Option<i64> {
+    let value = match SettingsStore::load() {
+        Ok(store) => store.int(SCREEN_RECORD_FRAMERATE_KEY),
+        Err(_) => SCREEN_RECORD_FRAMERATE_KEY.default,
+    };
+
+    if value > 0 { Some(value) } else { None }
 }
 
 fn notify_audio_issue(message: &str) {
@@ -433,6 +442,7 @@ fn build_wf_recorder_args(
     format: RecordingFormat,
     output_path: &Path,
     audio_target: Option<&AudioTarget>,
+    framerate: Option<i64>,
 ) -> Result<Vec<String>> {
     let mut args = Vec::new();
 
@@ -447,6 +457,11 @@ fn build_wf_recorder_args(
             args.push("-C".to_string());
             args.push("libopus".to_string());
         }
+    }
+
+    if let Some(fps) = framerate {
+        args.push("-r".to_string());
+        args.push(fps.to_string());
     }
 
     args.push("-f".to_string());
@@ -556,8 +571,15 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
         .as_ref()
         .map(|target| target.module_ids().to_vec())
         .unwrap_or_default();
+    let framerate = load_recording_framerate();
 
-    let wf_args = build_wf_recorder_args(geometry, format, &output_path, audio_target.as_ref())?;
+    let wf_args = build_wf_recorder_args(
+        geometry,
+        format,
+        &output_path,
+        audio_target.as_ref(),
+        framerate,
+    )?;
     let pid = spawn_wf_recorder(&wf_args, &audio_module_ids)?;
 
     if let Err(err) = write_recording_pid_file(pid, &output_path, &audio_module_ids) {

@@ -110,6 +110,7 @@ pub fn category_tree(category: Category) -> Vec<CategoryNode> {
         Category::Desktop => vec![
             CategoryNode::setting(&desktop::WindowLayout),
             CategoryNode::setting(&toggles::ClipboardManager),
+            CategoryNode::setting(&desktop::ScreenRecordFramerate),
             CategoryNode::setting(&desktop::ScreenRecordAudioSources),
         ],
         Category::Display => vec![CategoryNode::setting(&display::ConfigureDisplay)],

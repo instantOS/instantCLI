@@ -9,6 +9,9 @@ use crate::common::audio::{
     AudioDefaults, AudioSourceInfo, default_source_names, list_audio_sources_short, pactl_defaults,
 };
 use crate::common::compositor::CompositorType;
+use crate::common::display::SwayDisplayProvider;
+use crate::menu::client::MenuClient;
+use crate::menu::protocol::SliderRequest;
 use crate::menu_utils::{
     ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuCursor,
     select_one_with_style_at,
@@ -17,8 +20,9 @@ use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEMAN, PIPER};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
-    OptionalStringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT, SCREEN_RECORD_AUDIO_SOURCES_KEY,
-    StringSettingKey, is_audio_sources_default, parse_audio_source_selection,
+    IntSettingKey, OptionalStringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT,
+    SCREEN_RECORD_AUDIO_SOURCES_KEY, SCREEN_RECORD_FRAMERATE_KEY, StringSettingKey,
+    is_audio_sources_default, parse_audio_source_selection,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
@@ -405,6 +409,88 @@ impl FzfSelectable for AudioSourceItem {
 
         builder.build()
     }
+}
+
+pub struct ScreenRecordFramerate;
+
+impl ScreenRecordFramerate {
+    const KEY: IntSettingKey = SCREEN_RECORD_FRAMERATE_KEY;
+}
+
+const SCREEN_RECORD_MIN_FPS: i64 = 15;
+const SCREEN_RECORD_FALLBACK_MAX_FPS: i64 = 240;
+
+impl Setting for ScreenRecordFramerate {
+    fn metadata(&self) -> SettingMetadata {
+        SettingMetadata::builder()
+            .id("assist.screen_record_framerate")
+            .title("Screen Recording Framerate")
+            .icon(NerdFont::Timer)
+            .summary("Choose the target FPS for screen recordings.\n\n30 fps is a good default for sharing. Higher values match your display refresh rate for smoother motion.")
+            .build()
+    }
+
+    fn setting_type(&self) -> SettingType {
+        SettingType::Action
+    }
+
+    fn get_display_state(&self, ctx: &SettingsContext) -> crate::settings::setting::SettingState {
+        let fps = ctx.int(Self::KEY);
+        crate::settings::setting::SettingState::Choice {
+            current_label: format!("{} fps", fps),
+        }
+    }
+
+    fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
+        let max_fps = screen_record_max_fps();
+        let start_value = ctx.int(Self::KEY).clamp(SCREEN_RECORD_MIN_FPS, max_fps);
+
+        if let Some(value) = run_screen_record_fps_slider(start_value, max_fps)? {
+            ctx.set_int(Self::KEY, value);
+            ctx.notify(
+                "Screen Recording",
+                &format!("Recording framerate set to {} fps", value),
+            );
+        }
+
+        Ok(())
+    }
+}
+
+fn screen_record_max_fps() -> i64 {
+    let detected = detect_display_refresh_hz().unwrap_or(SCREEN_RECORD_FALLBACK_MAX_FPS);
+    detected
+        .max(SCREEN_RECORD_FRAMERATE_KEY.default)
+        .max(SCREEN_RECORD_MIN_FPS + 1)
+}
+
+fn detect_display_refresh_hz() -> Option<i64> {
+    if !matches!(CompositorType::detect(), CompositorType::Sway) {
+        return None;
+    }
+
+    let outputs = SwayDisplayProvider::get_outputs_sync().ok()?;
+    outputs
+        .iter()
+        .map(|output| output.current_mode.refresh_hz().round() as i64)
+        .max()
+}
+
+fn run_screen_record_fps_slider(start_value: i64, max_fps: i64) -> Result<Option<i64>> {
+    let client = MenuClient::new();
+    client.ensure_server_running()?;
+
+    let request = SliderRequest {
+        min: SCREEN_RECORD_MIN_FPS,
+        max: max_fps,
+        value: Some(start_value),
+        step: Some(1),
+        big_step: Some(10),
+        label: Some(format!("Screen Recording FPS (max {})", max_fps)),
+        command: Vec::new(),
+    };
+
+    client.slide(request)
 }
 
 pub struct ScreenRecordAudioSources;

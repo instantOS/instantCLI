@@ -171,6 +171,8 @@ pub const PACMAN_AUTOCLEAN_KEY: BoolSettingKey =
     BoolSettingKey::new("system.pacman_autoclean", false);
 
 // Screen recording setting keys
+pub const SCREEN_RECORD_FRAMERATE_KEY: IntSettingKey =
+    IntSettingKey::new("assist.screen_record_framerate", 30);
 pub const SCREEN_RECORD_AUDIO_SOURCES_KEY: OptionalStringSettingKey =
     OptionalStringSettingKey::new("assist.screen_record_audio_sources");
 pub const SCREEN_RECORD_AUDIO_SOURCES_DEFAULT: &str = "__use_default__";
