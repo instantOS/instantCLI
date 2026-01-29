@@ -13,7 +13,7 @@ use crate::assist::utils::{AreaSelectionConfig, copy_to_clipboard, show_notifica
 use crate::common::paths;
 use crate::common::shell::shell_quote;
 use crate::menu::client::MenuClient;
-use crate::settings::store::{SettingsStore, SCREEN_RECORD_AUDIO_SOURCES_KEY};
+use crate::settings::store::{SCREEN_RECORD_AUDIO_SOURCES_KEY, SettingsStore};
 
 const MAX_RECORDING_SECONDS: u64 = 300;
 const PID_FILE: &str = "wf-recorder.pid";
@@ -121,7 +121,9 @@ fn resolve_audio_target(selected_sources: Vec<String>) -> Result<Option<AudioTar
     });
 
     if !missing.is_empty() {
-        notify_audio_issue("Some selected audio sources were unavailable; recording available sources only.");
+        notify_audio_issue(
+            "Some selected audio sources were unavailable; recording available sources only.",
+        );
     }
 
     if sources.is_empty() {
@@ -140,7 +142,9 @@ fn resolve_audio_target(selected_sources: Vec<String>) -> Result<Option<AudioTar
         Ok(combined) => {
             if !wait_for_audio_source(&combined.name) {
                 unload_audio_module(combined.module_id);
-                notify_audio_issue("Combined audio source was not ready; recording first source only.");
+                notify_audio_issue(
+                    "Combined audio source was not ready; recording first source only.",
+                );
                 return Ok(Some(AudioTarget {
                     name: sources[0].clone(),
                     module_id: None,
@@ -196,10 +200,10 @@ fn pactl_list_sources() -> Result<Vec<String>> {
 
 fn wait_for_audio_source(name: &str) -> bool {
     for _ in 0..10 {
-        if let Ok(sources) = pactl_list_sources() {
-            if sources.iter().any(|source| source == name) {
-                return true;
-            }
+        if let Ok(sources) = pactl_list_sources()
+            && sources.iter().any(|source| source == name)
+        {
+            return true;
         }
 
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -226,10 +230,7 @@ fn create_combined_source(slaves: &[String]) -> Result<CombinedSource> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "Failed to create combined audio source: {}",
-            stderr.trim()
-        );
+        anyhow::bail!("Failed to create combined audio source: {}", stderr.trim());
     }
 
     let module_id = String::from_utf8_lossy(&output.stdout)
@@ -401,11 +402,10 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
     let pid: u32 = pid_str
         .trim()
         .parse()
-        .map_err(|err| {
+        .inspect_err(|err| {
             if let Some(module_id) = audio_module_id {
                 unload_audio_module(module_id);
             }
-            err
         })
         .context("Failed to parse wf-recorder PID")?;
 
@@ -414,11 +414,10 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
         None => format!("{}\n{}", pid, output_path.display()),
     };
     fs::write(get_pid_file(), pid_content)
-        .map_err(|err| {
+        .inspect_err(|err| {
             if let Some(module_id) = audio_module_id {
                 unload_audio_module(module_id);
             }
-            err
         })
         .context("Failed to write PID file")?;
 

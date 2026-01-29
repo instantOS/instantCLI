@@ -6,15 +6,16 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::common::compositor::CompositorType;
-use crate::menu_utils::{select_one_with_style_at, FzfSelectable, FzfWrapper, Header, MenuCursor};
+use crate::menu_utils::{FzfSelectable, FzfWrapper, Header, MenuCursor, select_one_with_style_at};
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEMAN, PIPER};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
-    OptionalStringSettingKey, StringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_KEY,
+    OptionalStringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_KEY, StringSettingKey,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
+use crate::ui::preview::{FzfPreview, PreviewBuilder};
 
 // ============================================================================
 // Window Layout (interactive selection, can't use macro)
@@ -270,24 +271,78 @@ gui_command_setting!(
 // ============================================================================
 
 #[derive(Clone)]
+struct AudioDefaults {
+    sink: Option<String>,
+    source: Option<String>,
+}
+
+impl AudioDefaults {
+    fn default_output_monitor(&self) -> Option<String> {
+        self.sink.as_ref().map(|sink| format!("{}.monitor", sink))
+    }
+}
+
+#[derive(Clone)]
+struct AudioSourceInfo {
+    name: String,
+    driver: Option<String>,
+    sample_spec: Option<String>,
+    channel_map: Option<String>,
+    state: Option<String>,
+}
+
+#[derive(Clone)]
 struct AudioSourceItem {
     name: String,
     label: String,
     checked: bool,
+    is_default_input: bool,
+    is_default_output: bool,
+    is_monitor: bool,
+    driver: Option<String>,
+    sample_spec: Option<String>,
+    channel_map: Option<String>,
+    state: Option<String>,
 }
 
 impl AudioSourceItem {
-    fn new(name: &str, checked: bool) -> Self {
-        let label = if name.ends_with(".monitor") {
-            format!("Desktop: {name}")
+    fn new(info: AudioSourceInfo, checked: bool, defaults: &AudioDefaults) -> Self {
+        let is_monitor = info.name.ends_with(".monitor");
+        let default_output = defaults.default_output_monitor();
+        let is_default_output = default_output.as_deref() == Some(&info.name);
+        let is_default_input = defaults.source.as_deref() == Some(&info.name);
+
+        let mut tags = Vec::new();
+        if is_default_output {
+            tags.push("default output");
+        }
+        if is_default_input {
+            tags.push("default input");
+        }
+
+        let tag_suffix = if tags.is_empty() {
+            String::new()
         } else {
-            format!("Input: {name}")
+            format!(" [{}]", tags.join(", "))
+        };
+
+        let label = if is_monitor {
+            format!("Desktop: {}{}", info.name, tag_suffix)
+        } else {
+            format!("Input: {}{}", info.name, tag_suffix)
         };
 
         Self {
-            name: name.to_string(),
+            name: info.name,
             label,
             checked,
+            is_default_input,
+            is_default_output,
+            is_monitor,
+            driver: info.driver,
+            sample_spec: info.sample_spec,
+            channel_map: info.channel_map,
+            state: info.state,
         }
     }
 }
@@ -304,6 +359,66 @@ impl FzfSelectable for AudioSourceItem {
     fn fzf_initial_checked_state(&self) -> bool {
         self.checked
     }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let kind = if self.is_monitor {
+            "Desktop output (monitor)"
+        } else {
+            "Input source"
+        };
+        let selected = if self.checked { "Yes" } else { "No" };
+
+        let mut builder = PreviewBuilder::new()
+            .header(NerdFont::VolumeUp, &self.name)
+            .line(
+                colors::TEAL,
+                Some(NerdFont::Tag),
+                &format!("Type: {}", kind),
+            )
+            .line(
+                colors::TEAL,
+                Some(NerdFont::CheckCircle),
+                &format!("Selected: {}", selected),
+            );
+
+        if self.is_default_output {
+            builder = builder.line(colors::GREEN, Some(NerdFont::Star), "Default output source");
+        }
+        if self.is_default_input {
+            builder = builder.line(colors::GREEN, Some(NerdFont::Star), "Default input source");
+        }
+
+        if let Some(state) = &self.state {
+            builder = builder.line(
+                colors::SKY,
+                Some(NerdFont::InfoCircle),
+                &format!("State: {}", state),
+            );
+        }
+        if let Some(driver) = &self.driver {
+            builder = builder.line(
+                colors::SKY,
+                Some(NerdFont::InfoCircle),
+                &format!("Driver: {}", driver),
+            );
+        }
+        if let Some(spec) = &self.sample_spec {
+            builder = builder.line(
+                colors::SKY,
+                Some(NerdFont::InfoCircle),
+                &format!("Sample: {}", spec),
+            );
+        }
+        if let Some(map) = &self.channel_map {
+            builder = builder.line(
+                colors::SKY,
+                Some(NerdFont::InfoCircle),
+                &format!("Channels: {}", map),
+            );
+        }
+
+        builder.build()
+    }
 }
 
 fn parse_audio_sources(raw: Option<String>) -> Vec<String> {
@@ -315,7 +430,7 @@ fn parse_audio_sources(raw: Option<String>) -> Vec<String> {
         .collect()
 }
 
-fn list_audio_sources() -> Result<Vec<String>> {
+fn list_audio_sources() -> Result<Vec<AudioSourceInfo>> {
     let output = Command::new("pactl")
         .args(["list", "sources", "short"])
         .output()
@@ -329,14 +444,49 @@ fn list_audio_sources() -> Result<Vec<String>> {
     let mut sources = Vec::new();
 
     for line in stdout.lines() {
-        let mut parts = line.split_whitespace();
-        let _ = parts.next();
-        if let Some(name) = parts.next() {
-            sources.push(name.to_string());
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 {
+            continue;
         }
+
+        sources.push(AudioSourceInfo {
+            name: parts[1].to_string(),
+            driver: parts.get(2).map(|value| value.to_string()),
+            sample_spec: parts.get(3).map(|value| value.to_string()),
+            channel_map: parts.get(4).map(|value| value.to_string()),
+            state: parts.get(5).map(|value| value.to_string()),
+        });
     }
 
     Ok(sources)
+}
+
+fn audio_defaults() -> Result<AudioDefaults> {
+    let output = Command::new("pactl")
+        .arg("info")
+        .output()
+        .context("Failed to run pactl info")?;
+
+    if !output.status.success() {
+        anyhow::bail!("pactl info failed");
+    }
+
+    let info = String::from_utf8_lossy(&output.stdout);
+    let mut defaults = AudioDefaults {
+        sink: None,
+        source: None,
+    };
+
+    for line in info.lines() {
+        if let Some(value) = line.strip_prefix("Default Sink:") {
+            defaults.sink = Some(value.trim().to_string());
+        }
+        if let Some(value) = line.strip_prefix("Default Source:") {
+            defaults.source = Some(value.trim().to_string());
+        }
+    }
+
+    Ok(defaults)
 }
 
 pub struct ScreenRecordAudioSources;
@@ -386,10 +536,18 @@ impl Setting for ScreenRecordAudioSources {
             }
         };
 
+        let defaults = audio_defaults().unwrap_or(AudioDefaults {
+            sink: None,
+            source: None,
+        });
+
         let selected_set: std::collections::HashSet<String> = selected.iter().cloned().collect();
         let items: Vec<AudioSourceItem> = sources
-            .iter()
-            .map(|source| AudioSourceItem::new(source, selected_set.contains(source)))
+            .into_iter()
+            .map(|source| {
+                let checked = selected_set.contains(&source.name);
+                AudioSourceItem::new(source, checked, &defaults)
+            })
             .collect();
 
         let header = Header::default(

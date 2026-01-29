@@ -11,7 +11,7 @@ use crate::ui::nerd_font::NerdFont;
 use super::preview::PreviewUtils;
 use super::types::*;
 use super::utils::*;
-use super::wrapper::{configure_preview_and_input, FzfWrapper};
+use super::wrapper::{FzfWrapper, configure_preview_and_input};
 
 #[derive(Debug, Clone)]
 pub struct FzfBuilder {
