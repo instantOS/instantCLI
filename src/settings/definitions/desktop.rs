@@ -531,7 +531,7 @@ impl FzfSelectable for AudioSourceModeItem {
         };
         match self.mode {
             AudioSourceMode::Defaults => format!(
-                "{} Auto-detect defaults ({})",
+                "{} Auto-detect sources ({})",
                 icon,
                 format_source_count(self.default_sources.len())
             ),
@@ -546,14 +546,14 @@ impl FzfSelectable for AudioSourceModeItem {
     fn fzf_preview(&self) -> FzfPreview {
         match self.mode {
             AudioSourceMode::Defaults => PreviewBuilder::new()
-                .header(NerdFont::Star, "Auto-detect defaults")
-                .text("Record the current default desktop output and mic input each time.")
+                .header(NerdFont::Star, "Auto-detect sources")
+                .text("Record the current output and mic each time.")
                 .blank()
                 .line(
                     colors::TEAL,
                     Some(NerdFont::Target),
                     &format!(
-                        "Current defaults: {}",
+                        "Auto-detected sources: {}",
                         format_sources_list(&self.default_sources)
                     ),
                 )
@@ -570,7 +570,7 @@ impl FzfSelectable for AudioSourceModeItem {
                 .line(
                     colors::SKY,
                     Some(NerdFont::InfoCircle),
-                    "Defaults are ignored while using a custom list.",
+                    "Auto-detect is ignored while using a custom list.",
                 )
                 .build(),
         }
@@ -578,7 +578,7 @@ impl FzfSelectable for AudioSourceModeItem {
 
     fn fzf_key(&self) -> String {
         match self.mode {
-            AudioSourceMode::Defaults => "defaults".to_string(),
+            AudioSourceMode::Defaults => "auto".to_string(),
             AudioSourceMode::Custom => "custom".to_string(),
         }
     }
@@ -612,7 +612,7 @@ impl Setting for ScreenRecordAudioSources {
             .id("assist.screen_record_audio_sources")
             .title("Screen Recording Audio Sources")
             .icon(NerdFont::VolumeUp)
-            .summary("Choose auto-detected defaults or a custom list of audio sources for screen recordings.\n\nDefaults follow your current output and mic; custom selection overrides them.")
+            .summary("Choose auto-detect or a custom list of audio sources for screen recordings.\n\nAuto-detect follows your current output and mic; custom selection overrides it.")
             .build()
     }
 
@@ -623,7 +623,7 @@ impl Setting for ScreenRecordAudioSources {
     fn get_display_state(&self, ctx: &SettingsContext) -> crate::settings::setting::SettingState {
         let stored = ctx.optional_string(Self::KEY);
         let label = if is_audio_sources_default(&stored) {
-            "Defaults".to_string()
+            "Auto-detect".to_string()
         } else {
             let selected = parse_audio_source_selection(stored);
             match selected.len() {
@@ -658,13 +658,14 @@ impl Setting for ScreenRecordAudioSources {
         });
 
         let default_sources = default_source_names(&defaults, &sources);
-        let mut mode = if is_audio_sources_default(&stored) {
+        let use_defaults = is_audio_sources_default(&stored);
+        let mut mode = if use_defaults {
             AudioSourceMode::Defaults
         } else {
             AudioSourceMode::Custom
         };
-        let selected = if matches!(mode, AudioSourceMode::Defaults) {
-            default_sources.clone()
+        let mut custom_selected = if use_defaults {
+            Vec::new()
         } else {
             parse_audio_source_selection(stored)
         };
@@ -675,13 +676,13 @@ impl Setting for ScreenRecordAudioSources {
                     AudioSourceMode::Defaults,
                     matches!(mode, AudioSourceMode::Defaults),
                     &default_sources,
-                    &selected,
+                    &custom_selected,
                 ),
                 AudioSourceModeItem::new(
                     AudioSourceMode::Custom,
                     matches!(mode, AudioSourceMode::Custom),
                     &default_sources,
-                    &selected,
+                    &custom_selected,
                 ),
             ];
             let initial_index = match mode {
@@ -696,14 +697,20 @@ impl Setting for ScreenRecordAudioSources {
 
             match choice.mode {
                 AudioSourceMode::Defaults => {
+                    mode = AudioSourceMode::Defaults;
                     ctx.set_optional_string(Self::KEY, Some(SCREEN_RECORD_AUDIO_SOURCES_DEFAULT));
-                    ctx.notify("Screen Recording", "Using default audio sources");
-                    break;
+                    ctx.notify("Screen Recording", "Using auto-detect audio sources");
+                    continue;
                 }
                 AudioSourceMode::Custom => {
                     mode = AudioSourceMode::Custom;
+                    let seed_selection = if custom_selected.is_empty() {
+                        default_sources.clone()
+                    } else {
+                        custom_selected.clone()
+                    };
                     let selected_set: std::collections::HashSet<String> =
-                        selected.iter().cloned().collect();
+                        seed_selection.iter().cloned().collect();
                     let items: Vec<AudioSourceItem> = sources
                         .iter()
                         .cloned()
@@ -714,7 +721,7 @@ impl Setting for ScreenRecordAudioSources {
                         .collect();
 
                     let header_text = format!(
-                        "Select audio sources to include with recordings.\nEnter toggles, select Save to confirm.\nDefaults (ignored in custom mode): {}",
+                        "Select audio sources to include with recordings.\nEnter toggles, select Save to confirm.\nAuto-detected sources (ignored in custom mode): {}",
                         format_sources_list(&default_sources)
                     );
                     let header = Header::default(&header_text);
@@ -730,6 +737,7 @@ impl Setting for ScreenRecordAudioSources {
                         ChecklistResult::Confirmed(items) => {
                             let chosen: Vec<String> =
                                 items.into_iter().map(|item| item.name).collect();
+                            custom_selected = chosen.clone();
 
                             if chosen.is_empty() {
                                 ctx.set_optional_string(Self::KEY, None::<String>);
@@ -741,11 +749,9 @@ impl Setting for ScreenRecordAudioSources {
                                     &format!("Selected {} audio sources", chosen.len()),
                                 );
                             }
-                            break;
-                        }
-                        ChecklistResult::Cancelled => {
                             continue;
                         }
+                        ChecklistResult::Cancelled => continue,
                         ChecklistResult::Action(_) => {}
                     }
                 }
