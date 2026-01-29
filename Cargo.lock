@@ -1176,7 +1176,7 @@ dependencies = [
 
 [[package]]
 name = "ins"
-version = "0.13.4"
+version = "0.13.5"
 dependencies = [
  "anyhow",
  "async-trait",

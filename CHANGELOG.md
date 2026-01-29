@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.5](https://github.com/instantOS/instantCLI/compare/v0.13.4...v0.13.5) - 2026-01-29
+
+### Fixed
+
+- fix audio source building
+- fix sway bug
+- fix mixed previews
+
+### Other
+
+- better naming
+- better audio source settings
+- add recording framerate setting
+- recording refactor
+- refactor audio source handling
+- add default mode
+- add audio source previews
+- add preview support to checklists
+- better source selection
+- init audio setting
+- file action
+- use existing utils
+- init screenrecording
+- better app selection preview
+- init appimage management setting
+- init bluetooth detection setting
+- better structure
+- better keyboard menu
+- better previews
+- add ts assist, make apply restore wallpaper
+- prettier `ins arch` menu
+- better xdg mime detection
+- refactor preview
+- actual command
+- init migration away from bash previews
+- better keyboard previews
+- better keyboard settings
+
 ## [0.13.4](https://github.com/instantOS/instantCLI/compare/v0.13.3...v0.13.4) - 2026-01-27
 
 ### Other
