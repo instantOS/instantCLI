@@ -83,3 +83,17 @@ pub fn pictures_dir() -> Result<PathBuf> {
 
     Ok(pictures_dir)
 }
+
+/// Get the user's Videos directory
+pub fn videos_dir() -> Result<PathBuf> {
+    let video_dir = dirs::video_dir().unwrap_or_else(|| {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("~"))
+            .join("Videos")
+    });
+
+    std::fs::create_dir_all(&video_dir)
+        .with_context(|| format!("creating videos directory at {}", video_dir.display()))?;
+
+    Ok(video_dir)
+}

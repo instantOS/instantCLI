@@ -272,3 +272,15 @@ pub static EMOTE: Dependency = Dependency {
         args: &["info", "com.tomjwatson.Emote"],
     }],
 };
+
+/// wf-recorder - Wayland screen recorder
+pub static WF_RECORDER: Dependency = Dependency {
+    name: "wf-recorder",
+    description: Some("Screen recorder for wlroots-based compositors"),
+    packages: &[
+        PackageDefinition::new("wf-recorder", PackageManager::Pacman),
+        PackageDefinition::new("wf-recorder", PackageManager::Apt),
+        PackageDefinition::new("wf-recorder", PackageManager::Dnf),
+    ],
+    tests: &[InstallTest::WhichSucceeds("wf-recorder")],
+};

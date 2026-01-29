@@ -8,6 +8,7 @@ pub mod media;
 pub mod mouse;
 pub mod password;
 pub mod qr;
+pub mod screenrecord;
 pub mod screenshot;
 pub mod system;
 pub mod wl_mirror;

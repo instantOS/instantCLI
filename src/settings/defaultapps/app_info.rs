@@ -46,7 +46,11 @@ impl FzfSelectable for ApplicationInfo {
 
         if self.is_default {
             builder = builder
-                .line(colors::GREEN, Some(NerdFont::CheckCircle), "Current default")
+                .line(
+                    colors::GREEN,
+                    Some(NerdFont::CheckCircle),
+                    "Current default",
+                )
                 .subtext("Selected for this MIME type.")
                 .blank();
         }

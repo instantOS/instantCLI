@@ -242,6 +242,34 @@ pub const ASSISTS: &[AssistEntry] = &[
                 ],
                 execute: actions::screenshot::screenshot_ocr,
             }),
+            AssistEntry::Action(AssistAction {
+                key: 'v',
+                description: "Record Area (MP4): Screen record selected area (toggle)",
+                icon: NerdFont::Video,
+                dependencies: &[&WF_RECORDER, &SLURP, &WL_CLIPBOARD, &LIBNOTIFY],
+                execute: actions::screenrecord::screen_record_area,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'w',
+                description: "Record Area (WebM): Smaller file, good browser support",
+                icon: NerdFont::Video,
+                dependencies: &[&WF_RECORDER, &SLURP, &WL_CLIPBOARD, &LIBNOTIFY],
+                execute: actions::screenrecord::screen_record_area_webm,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'g',
+                description: "Record Fullscreen: Record entire screen (toggle)",
+                icon: NerdFont::Desktop,
+                dependencies: &[&WF_RECORDER, &WL_CLIPBOARD, &LIBNOTIFY],
+                execute: actions::screenrecord::screen_record_fullscreen,
+            }),
+            AssistEntry::Action(AssistAction {
+                key: 'x',
+                description: "Stop Recording: Stop current screen recording",
+                icon: NerdFont::CircleStop,
+                dependencies: &[&WL_CLIPBOARD, &LIBNOTIFY],
+                execute: actions::screenrecord::stop_recording_action,
+            }),
         ],
     }),
     AssistEntry::Group(AssistGroup {
@@ -519,6 +547,46 @@ mod tests {
         assert_eq!(
             action.unwrap().description,
             "Control Media: Select player to play/pause"
+        );
+    }
+
+    #[test]
+    fn test_find_screen_record_area_action() {
+        let action = find_action("sv");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Record Area (MP4): Screen record selected area (toggle)"
+        );
+    }
+
+    #[test]
+    fn test_find_screen_record_webm_action() {
+        let action = find_action("sw");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Record Area (WebM): Smaller file, good browser support"
+        );
+    }
+
+    #[test]
+    fn test_find_screen_record_fullscreen_action() {
+        let action = find_action("sg");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Record Fullscreen: Record entire screen (toggle)"
+        );
+    }
+
+    #[test]
+    fn test_find_screen_record_stop_action() {
+        let action = find_action("sx");
+        assert!(action.is_some());
+        assert_eq!(
+            action.unwrap().description,
+            "Stop Recording: Stop current screen recording"
         );
     }
 }

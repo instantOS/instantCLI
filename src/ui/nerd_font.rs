@@ -267,6 +267,9 @@ pub enum NerdFont {
 
     // Boot and Firmware
     Efi,
+
+    // Recording
+    CircleStop,
 }
 
 impl NerdFont {
@@ -534,6 +537,9 @@ impl NerdFont {
 
             // Boot and Firmware
             Self::Efi => '󰒘', // cod-circuit-board (UEFI/firmware icon)
+
+            // Recording
+            Self::CircleStop => '\u{f28d}', // fa-stop-circle (stop recording)
         }
     }
 }
