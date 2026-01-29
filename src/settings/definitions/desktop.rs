@@ -6,19 +6,19 @@ use anyhow::Result;
 use std::process::Command;
 
 use crate::common::audio::{
-    default_source_names, list_audio_sources_short, pactl_defaults, AudioDefaults, AudioSourceInfo,
+    AudioDefaults, AudioSourceInfo, default_source_names, list_audio_sources_short, pactl_defaults,
 };
 use crate::common::compositor::CompositorType;
 use crate::menu_utils::{
-    select_one_with_style_at, ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, Header,
-    MenuCursor,
+    ChecklistAction, ChecklistResult, FzfSelectable, FzfWrapper, Header, MenuCursor,
+    select_one_with_style_at,
 };
 use crate::settings::context::SettingsContext;
 use crate::settings::deps::{BLUEMAN, PIPER};
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::{
-    is_audio_sources_default, parse_audio_source_selection, OptionalStringSettingKey,
-    StringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT, SCREEN_RECORD_AUDIO_SOURCES_KEY,
+    OptionalStringSettingKey, SCREEN_RECORD_AUDIO_SOURCES_DEFAULT, SCREEN_RECORD_AUDIO_SOURCES_KEY,
+    StringSettingKey, is_audio_sources_default, parse_audio_source_selection,
 };
 use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
@@ -514,9 +514,11 @@ impl Setting for ScreenRecordAudioSources {
         } else {
             "Use default sources"
         };
-        let actions = vec![ChecklistAction::new("audio_defaults", default_action_label)
-            .with_color(colors::GREEN)
-            .with_preview(defaults_preview)];
+        let actions = vec![
+            ChecklistAction::new("audio_defaults", default_action_label)
+                .with_color(colors::GREEN)
+                .with_preview(defaults_preview),
+        ];
 
         let selection = FzfWrapper::builder()
             .prompt("Audio sources")

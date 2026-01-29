@@ -91,16 +91,16 @@ pub fn list_audio_source_names() -> Result<Vec<String>> {
 pub fn default_source_names(defaults: &AudioDefaults, sources: &[AudioSourceInfo]) -> Vec<String> {
     let mut names = Vec::new();
 
-    if let Some(default_output) = defaults.default_output_monitor() {
-        if sources.iter().any(|source| source.name == default_output) {
-            names.push(default_output);
-        }
+    if let Some(default_output) = defaults.default_output_monitor()
+        && sources.iter().any(|source| source.name == default_output)
+    {
+        names.push(default_output);
     }
 
-    if let Some(default_input) = defaults.source.as_ref() {
-        if sources.iter().any(|source| &source.name == default_input) {
-            names.push(default_input.clone());
-        }
+    if let Some(default_input) = defaults.source.as_ref()
+        && sources.iter().any(|source| &source.name == default_input)
+    {
+        names.push(default_input.clone());
     }
 
     names.sort();

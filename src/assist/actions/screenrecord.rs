@@ -6,12 +6,13 @@
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::assist::utils::{AreaSelectionConfig, copy_to_clipboard, show_notification};
 use crate::common::audio::{
-    default_source_names, list_audio_source_names, list_audio_sources_short, pactl_defaults,
+    AudioSourceInfo, default_source_names, list_audio_source_names, list_audio_sources_short,
+    pactl_defaults,
 };
 use crate::common::paths;
 use crate::common::shell::shell_quote;
@@ -105,38 +106,43 @@ fn notify_audio_issue(message: &str) {
     let _ = show_notification("Screen Recording", message);
 }
 
-fn resolve_audio_target(selection_mode: AudioSelectionMode) -> Result<Option<AudioTarget>> {
-    let source_info = match list_audio_sources_short() {
-        Ok(sources) => sources,
+fn load_available_audio_sources() -> Option<Vec<AudioSourceInfo>> {
+    match list_audio_sources_short() {
+        Ok(sources) => Some(sources),
         Err(_) => {
             notify_audio_issue("Unable to list audio sources; recording video only.");
-            return Ok(None);
+            None
         }
-    };
-    let available_set: HashSet<String> =
-        source_info.iter().map(|source| source.name.clone()).collect();
-
-    let mut sources = match selection_mode {
-        AudioSelectionMode::Defaults => {
-            let defaults = match pactl_defaults() {
-                Ok(defaults) => defaults,
-                Err(_) => {
-                    notify_audio_issue(
-                        "Unable to detect default audio sources; recording video only.",
-                    );
-                    return Ok(None);
-                }
-            };
-            default_source_names(&defaults, &source_info)
-        }
-        AudioSelectionMode::Explicit(list) => list,
-    };
-
-    sources = dedup_audio_sources(sources);
-    if sources.is_empty() {
-        return Ok(None);
     }
+}
 
+fn select_audio_sources(
+    selection_mode: AudioSelectionMode,
+    source_info: &[AudioSourceInfo],
+) -> Option<Vec<String>> {
+    match selection_mode {
+        AudioSelectionMode::Defaults => match pactl_defaults() {
+            Ok(defaults) => Some(default_source_names(&defaults, source_info)),
+            Err(_) => {
+                notify_audio_issue("Unable to detect default audio sources; recording video only.");
+                None
+            }
+        },
+        AudioSelectionMode::Explicit(list) => Some(list),
+    }
+}
+
+fn build_available_source_set(source_info: &[AudioSourceInfo]) -> HashSet<String> {
+    source_info
+        .iter()
+        .map(|source| source.name.clone())
+        .collect()
+}
+
+fn filter_unavailable_sources(
+    mut sources: Vec<String>,
+    available_set: &HashSet<String>,
+) -> Vec<String> {
     let mut missing = Vec::new();
     sources.retain(|source| {
         if available_set.contains(source) {
@@ -153,16 +159,19 @@ fn resolve_audio_target(selection_mode: AudioSelectionMode) -> Result<Option<Aud
         );
     }
 
-    if sources.is_empty() {
-        notify_audio_issue("No selected audio sources available; recording video only.");
-        return Ok(None);
-    }
+    sources
+}
 
+fn primary_audio_target(name: &str) -> AudioTarget {
+    AudioTarget {
+        name: name.to_string(),
+        module_id: None,
+    }
+}
+
+fn build_audio_target_from_sources(sources: Vec<String>) -> Result<AudioTarget> {
     if sources.len() == 1 {
-        return Ok(Some(AudioTarget {
-            name: sources[0].clone(),
-            module_id: None,
-        }));
+        return Ok(primary_audio_target(&sources[0]));
     }
 
     match create_combined_source(&sources) {
@@ -172,25 +181,46 @@ fn resolve_audio_target(selection_mode: AudioSelectionMode) -> Result<Option<Aud
                 notify_audio_issue(
                     "Combined audio source was not ready; recording first source only.",
                 );
-                return Ok(Some(AudioTarget {
-                    name: sources[0].clone(),
-                    module_id: None,
-                }));
+                return Ok(primary_audio_target(&sources[0]));
             }
 
-            Ok(Some(AudioTarget {
+            Ok(AudioTarget {
                 name: combined.name,
                 module_id: Some(combined.module_id),
-            }))
+            })
         }
         Err(_) => {
             notify_audio_issue("Unable to combine audio sources; recording first source only.");
-            Ok(Some(AudioTarget {
-                name: sources[0].clone(),
-                module_id: None,
-            }))
+            Ok(primary_audio_target(&sources[0]))
         }
     }
+}
+
+fn resolve_audio_target(selection_mode: AudioSelectionMode) -> Result<Option<AudioTarget>> {
+    let source_info = match load_available_audio_sources() {
+        Some(info) => info,
+        None => return Ok(None),
+    };
+    let available_set = build_available_source_set(&source_info);
+
+    let mut sources = match select_audio_sources(selection_mode, &source_info) {
+        Some(sources) => sources,
+        None => return Ok(None),
+    };
+
+    sources = dedup_audio_sources(sources);
+    if sources.is_empty() {
+        return Ok(None);
+    }
+
+    let sources = filter_unavailable_sources(sources, &available_set);
+
+    if sources.is_empty() {
+        notify_audio_issue("No selected audio sources available; recording video only.");
+        return Ok(None);
+    }
+
+    Ok(Some(build_audio_target_from_sources(sources)?))
 }
 
 fn dedup_audio_sources(sources: Vec<String>) -> Vec<String> {
@@ -203,10 +233,10 @@ fn dedup_audio_sources(sources: Vec<String>) -> Vec<String> {
 
 fn wait_for_audio_source(name: &str) -> bool {
     for _ in 0..10 {
-        if let Ok(sources) = list_audio_source_names() {
-            if sources.iter().any(|source| source == name) {
-                return true;
-            }
+        if let Ok(sources) = list_audio_source_names()
+            && sources.iter().any(|source| source == name)
+        {
+            return true;
         }
 
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -253,6 +283,12 @@ fn unload_audio_module(module_id: u32) {
         .status();
 }
 
+fn unload_audio_module_if_present(module_id: Option<u32>) {
+    if let Some(module_id) = module_id {
+        unload_audio_module(module_id);
+    }
+}
+
 fn is_recording() -> bool {
     let pid_file = get_pid_file();
     if !pid_file.exists() {
@@ -273,13 +309,15 @@ fn is_recording() -> bool {
     false
 }
 
-fn stop_recording() -> Result<Option<PathBuf>> {
-    let pid_file = get_pid_file();
-    if !pid_file.exists() {
-        return Ok(None);
-    }
+#[derive(Debug)]
+struct RecordingPidInfo {
+    pid: i32,
+    output_path: Option<PathBuf>,
+    audio_module_id: Option<u32>,
+}
 
-    let content = fs::read_to_string(&pid_file).context("Failed to read PID file")?;
+fn read_recording_pid_info(pid_file: &Path) -> Result<RecordingPidInfo> {
+    let content = fs::read_to_string(pid_file).context("Failed to read PID file")?;
     let mut lines = content.lines();
 
     let pid: i32 = lines
@@ -290,15 +328,26 @@ fn stop_recording() -> Result<Option<PathBuf>> {
         .context("Invalid PID in file")?;
 
     let output_path = lines.next().map(|s| PathBuf::from(s.trim()));
-    let module_id = lines
+    let audio_module_id = lines
         .next()
         .and_then(|line| line.trim().parse::<u32>().ok());
 
+    Ok(RecordingPidInfo {
+        pid,
+        output_path,
+        audio_module_id,
+    })
+}
+
+fn signal_wf_recorder_stop(pid: i32) -> Result<()> {
     Command::new("kill")
         .args(["-INT", &pid.to_string()])
         .status()
         .context("Failed to send SIGINT to wf-recorder")?;
+    Ok(())
+}
 
+fn wait_for_process_exit(pid: i32) {
     for _ in 0..50 {
         std::thread::sleep(std::time::Duration::from_millis(100));
         let proc_path = format!("/proc/{}", pid);
@@ -306,13 +355,25 @@ fn stop_recording() -> Result<Option<PathBuf>> {
             break;
         }
     }
+}
 
-    let _ = fs::remove_file(&pid_file);
-    if let Some(module_id) = module_id {
-        unload_audio_module(module_id);
+fn cleanup_recording_state(pid_file: &Path, audio_module_id: Option<u32>) {
+    let _ = fs::remove_file(pid_file);
+    unload_audio_module_if_present(audio_module_id);
+}
+
+fn stop_recording() -> Result<Option<PathBuf>> {
+    let pid_file = get_pid_file();
+    if !pid_file.exists() {
+        return Ok(None);
     }
 
-    Ok(output_path)
+    let info = read_recording_pid_info(&pid_file)?;
+    signal_wf_recorder_stop(info.pid)?;
+    wait_for_process_exit(info.pid);
+    cleanup_recording_state(&pid_file, info.audio_module_id);
+
+    Ok(info.output_path)
 }
 
 fn generate_recording_filename(format: RecordingFormat) -> String {
@@ -320,84 +381,86 @@ fn generate_recording_filename(format: RecordingFormat) -> String {
     format!("recording_{}.{}", timestamp, format.extension())
 }
 
-fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Result<()> {
+fn ensure_wayland_recording() -> Result<()> {
     let config = AreaSelectionConfig::new();
     if !config.display_server().is_wayland() {
         anyhow::bail!("Screen recording currently only supports Wayland/Sway");
     }
 
+    Ok(())
+}
+
+fn recording_output_path(format: RecordingFormat) -> Result<PathBuf> {
     let filename = generate_recording_filename(format);
-    let output_path = paths::videos_dir()?.join(&filename);
+    Ok(paths::videos_dir()?.join(&filename))
+}
 
-    let selection_mode = load_audio_selection_mode();
-    let audio_target = resolve_audio_target(selection_mode)?;
-    let audio_module_id = audio_target.as_ref().and_then(|target| target.module_id());
-
-    let mut cmd = Command::new("wf-recorder");
+fn build_wf_recorder_args(
+    geometry: Option<&str>,
+    format: RecordingFormat,
+    output_path: &Path,
+    audio_target: Option<&AudioTarget>,
+) -> Result<Vec<String>> {
+    let mut args = Vec::new();
 
     if let Some(geom) = geometry {
-        cmd.arg("-g").arg(geom);
+        args.push("-g".to_string());
+        args.push(geom.to_string());
     }
 
-    if let Some(target) = &audio_target {
-        cmd.arg(format!("--audio={}", target.name));
+    if let Some(target) = audio_target {
+        args.push(format!("--audio={}", target.name));
     }
 
-    cmd.arg("-f")
-        .arg(output_path.to_str().context("Invalid path encoding")?);
+    args.push("-f".to_string());
+    args.push(
+        output_path
+            .to_str()
+            .context("Invalid path encoding")?
+            .to_string(),
+    );
 
-    cmd.arg("-c").arg(format.codec());
+    args.push("-c".to_string());
+    args.push(format.codec().to_string());
 
     for (key, value) in format.codec_params() {
-        cmd.arg("-p").arg(format!("{}={}", key, value));
+        args.push("-p".to_string());
+        args.push(format!("{}={}", key, value));
     }
 
-    cmd.arg("-x").arg("yuv420p");
+    args.push("-x".to_string());
+    args.push("yuv420p".to_string());
 
-    // Build the full command string for setsid
-    let wf_args: Vec<String> = cmd
-        .get_args()
-        .map(|s| s.to_string_lossy().to_string())
-        .collect();
+    Ok(args)
+}
 
+fn spawn_wf_recorder(args: &[String], audio_module_id: Option<u32>) -> Result<u32> {
     let mut setsid_cmd = Command::new("setsid");
     setsid_cmd
         .arg("--fork")
         .arg("wf-recorder")
-        .args(&wf_args)
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
     if let Err(err) = setsid_cmd.spawn() {
-        if let Some(module_id) = audio_module_id {
-            unload_audio_module(module_id);
-        }
+        unload_audio_module_if_present(audio_module_id);
         return Err(err).context("Failed to start wf-recorder via setsid");
     }
 
-    // Give wf-recorder a moment to start and get its PID
     std::thread::sleep(std::time::Duration::from_millis(200));
 
-    // Find the actual wf-recorder PID
-    let pgrep_output = match Command::new("pgrep")
-        .arg("-n") // newest
-        .arg("wf-recorder")
-        .output()
-    {
+    let pgrep_output = match Command::new("pgrep").arg("-n").arg("wf-recorder").output() {
         Ok(output) => output,
         Err(err) => {
-            if let Some(module_id) = audio_module_id {
-                unload_audio_module(module_id);
-            }
+            unload_audio_module_if_present(audio_module_id);
             return Err(err).context("Failed to find wf-recorder PID");
         }
     };
 
     if !pgrep_output.status.success() {
-        if let Some(module_id) = audio_module_id {
-            unload_audio_module(module_id);
-        }
+        unload_audio_module_if_present(audio_module_id);
         anyhow::bail!("wf-recorder failed to start");
     }
 
@@ -406,25 +469,27 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
         .trim()
         .parse()
         .inspect_err(|_err| {
-            if let Some(module_id) = audio_module_id {
-                unload_audio_module(module_id);
-            }
+            unload_audio_module_if_present(audio_module_id);
         })
         .context("Failed to parse wf-recorder PID")?;
 
+    Ok(pid)
+}
+
+fn write_recording_pid_file(
+    pid: u32,
+    output_path: &Path,
+    audio_module_id: Option<u32>,
+) -> Result<()> {
     let pid_content = match audio_module_id {
         Some(module_id) => format!("{}\n{}\n{}", pid, output_path.display(), module_id),
         None => format!("{}\n{}", pid, output_path.display()),
     };
-    fs::write(get_pid_file(), pid_content)
-        .inspect_err(|_err| {
-            if let Some(module_id) = audio_module_id {
-                unload_audio_module(module_id);
-            }
-        })
-        .context("Failed to write PID file")?;
 
-    let output_path_clone = output_path.clone();
+    fs::write(get_pid_file(), pid_content).context("Failed to write PID file")
+}
+
+fn schedule_recording_timeout(output_path: PathBuf) {
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(MAX_RECORDING_SECONDS));
         if is_recording() {
@@ -434,11 +499,31 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
                 &format!(
                     "Max {} seconds reached. Saved to {}",
                     MAX_RECORDING_SECONDS,
-                    output_path_clone.display()
+                    output_path.display()
                 ),
             );
         }
     });
+}
+
+fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Result<()> {
+    ensure_wayland_recording()?;
+
+    let output_path = recording_output_path(format)?;
+
+    let selection_mode = load_audio_selection_mode();
+    let audio_target = resolve_audio_target(selection_mode)?;
+    let audio_module_id = audio_target.as_ref().and_then(|target| target.module_id());
+
+    let wf_args = build_wf_recorder_args(geometry, format, &output_path, audio_target.as_ref())?;
+    let pid = spawn_wf_recorder(&wf_args, audio_module_id)?;
+
+    if let Err(err) = write_recording_pid_file(pid, &output_path, audio_module_id) {
+        unload_audio_module_if_present(audio_module_id);
+        return Err(err);
+    }
+
+    schedule_recording_timeout(output_path.clone());
 
     show_notification(
         "Recording started",
@@ -490,89 +575,142 @@ pub fn toggle_recording() -> Result<()> {
     Ok(())
 }
 
-fn show_post_recording_menu(output_path: &std::path::Path) -> Result<()> {
-    let path_str = output_path.to_string_lossy().to_string();
-    let parent_dir = output_path
-        .parent()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| ".".to_string());
+#[derive(Debug, Clone, Copy)]
+enum PostRecordingAction {
+    Play,
+    CopyPath,
+    ShowInFileManager,
+    OpenYazi,
+    OpenTerminal,
+    Done,
+}
 
-    let chords = vec![
+impl PostRecordingAction {
+    fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "p" => Some(Self::Play),
+            "c" => Some(Self::CopyPath),
+            "f" => Some(Self::ShowInFileManager),
+            "y" => Some(Self::OpenYazi),
+            "t" => Some(Self::OpenTerminal),
+            "d" => Some(Self::Done),
+            _ => None,
+        }
+    }
+}
+
+fn post_recording_menu_options() -> Vec<String> {
+    vec![
         "p:Play video".to_string(),
         "c:Copy path to clipboard".to_string(),
         "f:Open in file manager".to_string(),
         "y:Open with yazi".to_string(),
         "t:Open terminal in directory".to_string(),
         "d:Done (close menu)".to_string(),
-    ];
+    ]
+}
 
-    let client = MenuClient::new();
-    let selected = client.chord(chords)?;
+fn recording_parent_dir(output_path: &Path) -> String {
+    output_path
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".to_string())
+}
 
-    match selected.as_deref() {
-        Some("p") => {
-            // Play the video with xdg-open
-            Command::new("xdg-open")
-                .arg(&path_str)
-                .spawn()
-                .context("Failed to open video")?;
-        }
-        Some("c") => {
-            // Copy path to clipboard
-            let config = AreaSelectionConfig::new();
-            copy_to_clipboard(path_str.as_bytes(), config.display_server())?;
-            show_notification("Path copied", &path_str)?;
-        }
-        Some("f") => {
-            // Try D-Bus FileManager1 first, fallback to xdg-open on directory
-            let file_uri = format!("file://{}", &path_str);
-            let dbus_result = Command::new("gdbus")
-                .args([
-                    "call",
-                    "--session",
-                    "--dest",
-                    "org.freedesktop.FileManager1",
-                    "--object-path",
-                    "/org/freedesktop/FileManager1",
-                    "--method",
-                    "org.freedesktop.FileManager1.ShowItems",
-                    &format!("['{}']", file_uri),
-                    "''",
-                ])
-                .status();
+fn play_recording(path_str: &str) -> Result<()> {
+    Command::new("xdg-open")
+        .arg(path_str)
+        .spawn()
+        .context("Failed to open video")?;
+    Ok(())
+}
 
-            if dbus_result.is_err() || !dbus_result.unwrap().success() {
-                Command::new("xdg-open")
-                    .arg(&parent_dir)
-                    .spawn()
-                    .context("Failed to open file manager")?;
-            }
-        }
-        Some("y") => {
-            // Open yazi in a terminal with the file selected
-            crate::common::terminal::TerminalLauncher::new("yazi")
-                .title("Recording")
-                .arg(&path_str)
-                .launch()?;
-        }
-        Some("t") => {
-            // Open terminal in the directory
-            crate::common::terminal::TerminalLauncher::new("bash")
-                .title("Recording Directory")
-                .args([
-                    "-c",
-                    &format!("cd {} && exec bash", shell_quote(&parent_dir)),
-                ])
-                .launch()?;
-        }
-        Some("d") | None => {
-            // Just show notification and exit
-            show_notification("Recording saved", &path_str)?;
-        }
-        _ => {}
+fn copy_recording_path(path_str: &str) -> Result<()> {
+    let config = AreaSelectionConfig::new();
+    copy_to_clipboard(path_str.as_bytes(), config.display_server())?;
+    show_notification("Path copied", path_str)?;
+    Ok(())
+}
+
+fn open_recording_in_file_manager(path_str: &str, parent_dir: &str) -> Result<()> {
+    let file_uri = format!("file://{}", path_str);
+    let dbus_result = Command::new("gdbus")
+        .args([
+            "call",
+            "--session",
+            "--dest",
+            "org.freedesktop.FileManager1",
+            "--object-path",
+            "/org/freedesktop/FileManager1",
+            "--method",
+            "org.freedesktop.FileManager1.ShowItems",
+            &format!("['{}']", file_uri),
+            "''",
+        ])
+        .status();
+
+    if dbus_result.is_err() || !dbus_result.unwrap().success() {
+        Command::new("xdg-open")
+            .arg(parent_dir)
+            .spawn()
+            .context("Failed to open file manager")?;
     }
 
     Ok(())
+}
+
+fn open_recording_in_yazi(path_str: &str) -> Result<()> {
+    crate::common::terminal::TerminalLauncher::new("yazi")
+        .title("Recording")
+        .arg(path_str)
+        .launch()?;
+    Ok(())
+}
+
+fn open_terminal_in_directory(parent_dir: &str) -> Result<()> {
+    crate::common::terminal::TerminalLauncher::new("bash")
+        .title("Recording Directory")
+        .args([
+            "-c",
+            &format!("cd {} && exec bash", shell_quote(parent_dir)),
+        ])
+        .launch()?;
+    Ok(())
+}
+
+fn notify_recording_saved(path_str: &str) -> Result<()> {
+    show_notification("Recording saved", path_str)
+}
+
+fn handle_post_recording_action(
+    action: PostRecordingAction,
+    path_str: &str,
+    parent_dir: &str,
+) -> Result<()> {
+    match action {
+        PostRecordingAction::Play => play_recording(path_str),
+        PostRecordingAction::CopyPath => copy_recording_path(path_str),
+        PostRecordingAction::ShowInFileManager => {
+            open_recording_in_file_manager(path_str, parent_dir)
+        }
+        PostRecordingAction::OpenYazi => open_recording_in_yazi(path_str),
+        PostRecordingAction::OpenTerminal => open_terminal_in_directory(parent_dir),
+        PostRecordingAction::Done => notify_recording_saved(path_str),
+    }
+}
+
+fn show_post_recording_menu(output_path: &std::path::Path) -> Result<()> {
+    let path_str = output_path.to_string_lossy().to_string();
+    let parent_dir = recording_parent_dir(output_path);
+
+    let client = MenuClient::new();
+    let selected = client.chord(post_recording_menu_options())?;
+    let action = selected
+        .as_deref()
+        .and_then(PostRecordingAction::from_key)
+        .unwrap_or(PostRecordingAction::Done);
+
+    handle_post_recording_action(action, &path_str, &parent_dir)
 }
 
 pub fn stop_recording_action() -> Result<()> {
