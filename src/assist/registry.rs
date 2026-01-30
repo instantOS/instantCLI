@@ -309,10 +309,10 @@ pub const ASSISTS: &[AssistEntry] = &[
             }),
             AssistEntry::Action(AssistAction {
                 key: 'w',
-                description: "Screen Mirror: Mirror a display output with wl-mirror",
+                description: "Screen Mirror: Mirror a display output",
                 icon: NerdFont::Monitor,
-                dependencies: &[&WL_MIRROR],
-                execute: actions::wl_mirror::mirror_output,
+                dependencies: &[&WL_MIRROR, &XRANDR, &AUTORANDR],
+                execute: actions::mirror::mirror_output,
             }),
         ],
     }),

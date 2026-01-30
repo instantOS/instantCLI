@@ -6,6 +6,12 @@ use crate::common::shell::shell_quote;
 use crate::settings::defaultapps::{
     ARCHIVE_MIME_TYPES, AUDIO_MIME_TYPES, IMAGE_MIME_TYPES, VIDEO_MIME_TYPES,
 };
+
+const BROWSER_MIME_TYPES: &[&str] = &["text/html"];
+const TEXT_EDITOR_MIME_TYPES: &[&str] = &["text/plain"];
+const EMAIL_MIME_TYPES: &[&str] = &["x-scheme-handler/mailto"];
+const FILE_MANAGER_MIME_TYPES: &[&str] = &["inode/directory"];
+const PDF_VIEWER_MIME_TYPES: &[&str] = &["application/pdf"];
 use crate::ui::prelude::NerdFont;
 use crate::ui::preview::PreviewBuilder;
 
@@ -51,6 +57,16 @@ pub enum PreviewId {
     DefaultAudioPlayer,
     #[value(name = "default-archive-manager")]
     DefaultArchiveManager,
+    #[value(name = "default-browser")]
+    DefaultBrowser,
+    #[value(name = "default-text-editor")]
+    DefaultTextEditor,
+    #[value(name = "default-email")]
+    DefaultEmail,
+    #[value(name = "default-file-manager")]
+    DefaultFileManager,
+    #[value(name = "default-pdf-viewer")]
+    DefaultPdfViewer,
     #[value(name = "disk")]
     Disk,
     #[value(name = "partition")]
@@ -75,6 +91,11 @@ impl PreviewId {
             PreviewId::DefaultVideoPlayer => "default-video-player",
             PreviewId::DefaultAudioPlayer => "default-audio-player",
             PreviewId::DefaultArchiveManager => "default-archive-manager",
+            PreviewId::DefaultBrowser => "default-browser",
+            PreviewId::DefaultTextEditor => "default-text-editor",
+            PreviewId::DefaultEmail => "default-email",
+            PreviewId::DefaultFileManager => "default-file-manager",
+            PreviewId::DefaultPdfViewer => "default-pdf-viewer",
             PreviewId::Disk => "disk",
             PreviewId::Partition => "partition",
         }
@@ -158,6 +179,36 @@ fn render_preview(id: PreviewId, ctx: &PreviewContext) -> Result<String> {
             NerdFont::Archive,
             "Set your default archive manager for ZIP, TAR, and other compressed files.",
             ARCHIVE_MIME_TYPES,
+        ),
+        PreviewId::DefaultBrowser => default_apps::render_default_app_preview(
+            "Web Browser",
+            NerdFont::Globe,
+            "Set your default web browser for opening links and HTML files.",
+            BROWSER_MIME_TYPES,
+        ),
+        PreviewId::DefaultTextEditor => default_apps::render_default_app_preview(
+            "Text Editor",
+            NerdFont::FileText,
+            "Set your default text editor for opening text files.",
+            TEXT_EDITOR_MIME_TYPES,
+        ),
+        PreviewId::DefaultEmail => default_apps::render_default_app_preview(
+            "Email Client",
+            NerdFont::ExternalLink,
+            "Set your default email client for mailto: links.",
+            EMAIL_MIME_TYPES,
+        ),
+        PreviewId::DefaultFileManager => default_apps::render_default_app_preview(
+            "File Manager",
+            NerdFont::Folder,
+            "Set your default file manager for browsing folders.",
+            FILE_MANAGER_MIME_TYPES,
+        ),
+        PreviewId::DefaultPdfViewer => default_apps::render_default_app_preview(
+            "PDF Viewer",
+            NerdFont::FilePdf,
+            "Set your default PDF viewer for documents.",
+            PDF_VIEWER_MIME_TYPES,
         ),
         PreviewId::Disk => disks::render_disk_preview(ctx),
         PreviewId::Partition => disks::render_partition_preview(ctx),

@@ -177,6 +177,30 @@ pub static WL_MIRROR: Dependency = Dependency {
     tests: &[InstallTest::WhichSucceeds("wl-mirror")],
 };
 
+/// xrandr - X11 extension for screen configuration
+pub static XRANDR: Dependency = Dependency {
+    name: "xrandr",
+    description: Some("X11 display configuration tool"),
+    packages: &[
+        PackageDefinition::new("xorg-xrandr", PackageManager::Pacman),
+        PackageDefinition::new("x11-xserver-utils", PackageManager::Apt),
+        PackageDefinition::new("xrandr", PackageManager::Dnf),
+    ],
+    tests: &[InstallTest::WhichSucceeds("xrandr")],
+};
+
+/// autorandr - Automatic X11 display configuration
+pub static AUTORANDR: Dependency = Dependency {
+    name: "autorandr",
+    description: Some("Automatic X11 display configuration"),
+    packages: &[
+        PackageDefinition::new("autorandr", PackageManager::Pacman),
+        PackageDefinition::new("autorandr", PackageManager::Apt),
+        PackageDefinition::new("autorandr", PackageManager::Dnf),
+    ],
+    tests: &[InstallTest::WhichSucceeds("autorandr")],
+};
+
 /// ImageMagick - image manipulation
 pub static IMAGEMAGICK: Dependency = Dependency {
     name: "imagemagick",

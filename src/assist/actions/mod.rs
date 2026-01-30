@@ -11,4 +11,4 @@ pub mod qr;
 pub mod screenrecord;
 pub mod screenshot;
 pub mod system;
-pub mod wl_mirror;
+pub mod mirror;

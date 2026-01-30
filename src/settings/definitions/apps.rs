@@ -14,6 +14,18 @@ use crate::ui::prelude::*;
 
 macro_rules! default_app_setting {
     ($struct_name:ident, $id:expr, $title:expr, $icon:expr, $color:expr, $summary:expr, $handler:path) => {
+        default_app_setting!(
+            $struct_name,
+            $id,
+            $title,
+            $icon,
+            $color,
+            $summary,
+            $handler,
+            None
+        );
+    };
+    ($struct_name:ident, $id:expr, $title:expr, $icon:expr, $color:expr, $summary:expr, $handler:path, $preview_id:expr) => {
         pub struct $struct_name;
 
         impl Setting for $struct_name {
@@ -35,6 +47,10 @@ macro_rules! default_app_setting {
             fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
                 $handler(ctx)
             }
+
+            fn preview_command(&self) -> Option<String> {
+                $preview_id.map(|id: PreviewId| preview_command(id))
+            }
         }
     };
 }
@@ -46,7 +62,8 @@ default_app_setting!(
     NerdFont::Globe,
     None,
     "Set your default web browser for opening links and HTML files.",
-    defaultapps::set_default_browser
+    defaultapps::set_default_browser,
+    Some(PreviewId::DefaultBrowser)
 );
 
 default_app_setting!(
@@ -56,7 +73,8 @@ default_app_setting!(
     NerdFont::ExternalLink,
     None,
     "Set your default email client for mailto: links.",
-    defaultapps::set_default_email
+    defaultapps::set_default_email,
+    Some(PreviewId::DefaultEmail)
 );
 
 default_app_setting!(
@@ -66,7 +84,8 @@ default_app_setting!(
     NerdFont::Folder,
     None,
     "Set your default file manager for browsing folders.",
-    defaultapps::set_default_file_manager
+    defaultapps::set_default_file_manager,
+    Some(PreviewId::DefaultFileManager)
 );
 
 default_app_setting!(
@@ -76,7 +95,8 @@ default_app_setting!(
     NerdFont::FileText,
     None,
     "Set your default text editor for opening text files.",
-    defaultapps::set_default_text_editor
+    defaultapps::set_default_text_editor,
+    Some(PreviewId::DefaultTextEditor)
 );
 
 pub struct DefaultImageViewer;
@@ -167,7 +187,8 @@ default_app_setting!(
     NerdFont::FilePdf,
     None,
     "Set your default PDF viewer for documents.",
-    defaultapps::set_default_pdf_viewer
+    defaultapps::set_default_pdf_viewer,
+    Some(PreviewId::DefaultPdfViewer)
 );
 
 pub struct DefaultArchiveManager;
