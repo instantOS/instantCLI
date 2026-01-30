@@ -288,7 +288,9 @@ pub static WF_RECORDER: Dependency = Dependency {
 /// FFmpeg - Multimedia framework
 pub static FFMPEG: Dependency = Dependency {
     name: "ffmpeg",
-    description: Some("Complete, cross-platform solution to record, convert and stream audio and video"),
+    description: Some(
+        "Complete, cross-platform solution to record, convert and stream audio and video",
+    ),
     packages: &[
         PackageDefinition::new("ffmpeg", PackageManager::Pacman),
         PackageDefinition::new("ffmpeg", PackageManager::Apt),

@@ -381,11 +381,11 @@ fn parse_audio_module_ids(line: &str) -> Vec<u32> {
         .collect()
 }
 
-fn signal_wf_recorder_stop(pid: i32) -> Result<()> {
+fn signal_recorder_stop(pid: i32) -> Result<()> {
     Command::new("kill")
         .args(["-INT", &pid.to_string()])
         .status()
-        .context("Failed to send SIGINT to wf-recorder")?;
+        .context("Failed to send SIGINT to recorder")?;
     Ok(())
 }
 
@@ -411,7 +411,7 @@ fn stop_recording() -> Result<Option<PathBuf>> {
     }
 
     let info = read_recording_pid_info(&pid_file)?;
-    signal_wf_recorder_stop(info.pid)?;
+    signal_recorder_stop(info.pid)?;
     wait_for_process_exit(info.pid);
     cleanup_recording_state(&pid_file, &info.audio_module_ids);
 
@@ -423,10 +423,10 @@ fn generate_recording_filename(format: RecordingFormat) -> String {
     format!("recording_{}.{}", timestamp, format.extension())
 }
 
-fn ensure_wayland_recording() -> Result<()> {
+fn ensure_recording_support() -> Result<()> {
     let config = AreaSelectionConfig::new();
-    if !config.display_server().is_wayland() {
-        anyhow::bail!("Screen recording currently only supports Wayland/Sway");
+    if !config.display_server().is_wayland() && !config.display_server().is_x11() {
+        anyhow::bail!("Screen recording currently only supports Wayland/Sway and X11");
     }
 
     Ok(())
@@ -435,6 +435,154 @@ fn ensure_wayland_recording() -> Result<()> {
 fn recording_output_path(format: RecordingFormat) -> Result<PathBuf> {
     let filename = generate_recording_filename(format);
     Ok(paths::videos_dir()?.join(&filename))
+}
+
+fn parse_geometry_string(geometry: &str) -> Option<(String, String, String)> {
+    // Expected format: WxH+X+Y
+    let x_idx = geometry.find('x')?;
+    let w = &geometry[..x_idx];
+    let rest = &geometry[x_idx + 1..];
+
+    // Find where H ends (at first + or -)
+    let offset_idx = rest.find(|c| c == '+' || c == '-')?;
+    let h = &rest[..offset_idx];
+    let offsets = &rest[offset_idx..];
+
+    // Find the second sign for Y offset
+    let second_sign_idx = offsets[1..].find(|c| c == '+' || c == '-')? + 1;
+    let x = &offsets[..second_sign_idx];
+    let y = &offsets[second_sign_idx..];
+
+    // Return (WxH, X, Y) with leading + stripped from X/Y
+    Some((
+        format!("{}x{}", w, h),
+        x.trim_start_matches('+').to_string(),
+        y.trim_start_matches('+').to_string(),
+    ))
+}
+
+fn build_ffmpeg_args(
+    geometry: Option<&str>,
+    format: RecordingFormat,
+    output_path: &Path,
+    audio_target: Option<&AudioTarget>,
+    framerate: Option<i64>,
+) -> Result<Vec<String>> {
+    let mut args = Vec::new();
+
+    // Input options
+    args.push("-f".to_string());
+    args.push("x11grab".to_string());
+
+    args.push("-draw_mouse".to_string());
+    args.push("1".to_string());
+
+    if let Some(geom) = geometry {
+        if let Some((size, x, y)) = parse_geometry_string(geom) {
+            args.push("-video_size".to_string());
+            args.push(size);
+            args.push("-i".to_string());
+            args.push(format!(":0.0+{},{}", x, y));
+        } else {
+            // Fallback if parsing fails - try full screen or error?
+            // Safer to error or fallback to full screen
+            args.push("-i".to_string());
+            args.push(":0.0".to_string());
+        }
+    } else {
+        // Fullscreen
+        args.push("-i".to_string());
+        args.push(":0.0".to_string());
+    }
+
+    // Audio options
+    if let Some(target) = audio_target {
+        args.push("-f".to_string());
+        args.push("pulse".to_string());
+        args.push("-i".to_string());
+        args.push(target.name.clone());
+        args.push("-ac".to_string());
+        args.push("2".to_string());
+    }
+
+    // Framerate
+    if let Some(fps) = framerate {
+        args.push("-framerate".to_string());
+        args.push(fps.to_string());
+    }
+
+    // Output options
+    args.push("-c:v".to_string());
+    args.push(format.codec().to_string());
+
+    // Mapping codec params
+    for (key, value) in format.codec_params() {
+        if key == "b" {
+            args.push("-b:v".to_string());
+            args.push(value.to_string());
+        } else {
+            args.push(format!("-{}", key));
+            args.push(value.to_string());
+        }
+    }
+
+    // Pixel format
+    args.push("-pix_fmt".to_string());
+    args.push("yuv420p".to_string());
+
+    // Overwrite output
+    args.push("-y".to_string());
+
+    args.push(
+        output_path
+            .to_str()
+            .context("Invalid path encoding")?
+            .to_string(),
+    );
+
+    Ok(args)
+}
+
+fn spawn_ffmpeg(args: &[String], audio_module_ids: &[u32]) -> Result<u32> {
+    let mut setsid_cmd = Command::new("setsid");
+    setsid_cmd
+        .arg("--fork")
+        .arg("ffmpeg")
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    if let Err(err) = setsid_cmd.spawn() {
+        unload_audio_modules(audio_module_ids);
+        return Err(err).context("Failed to start ffmpeg via setsid");
+    }
+
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    let pgrep_output = match Command::new("pgrep").arg("-n").arg("ffmpeg").output() {
+        Ok(output) => output,
+        Err(err) => {
+            unload_audio_modules(audio_module_ids);
+            return Err(err).context("Failed to find ffmpeg PID");
+        }
+    };
+
+    if !pgrep_output.status.success() {
+        unload_audio_modules(audio_module_ids);
+        anyhow::bail!("ffmpeg failed to start");
+    }
+
+    let pid_str = String::from_utf8_lossy(&pgrep_output.stdout);
+    let pid: u32 = pid_str
+        .trim()
+        .parse()
+        .inspect_err(|_err| {
+            unload_audio_modules(audio_module_ids);
+        })
+        .context("Failed to parse ffmpeg PID")?;
+
+    Ok(pid)
 }
 
 fn build_wf_recorder_args(
@@ -561,7 +709,7 @@ fn schedule_recording_timeout(output_path: PathBuf) {
 }
 
 fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Result<()> {
-    ensure_wayland_recording()?;
+    ensure_recording_support()?;
 
     let output_path = recording_output_path(format)?;
 
@@ -573,14 +721,26 @@ fn start_recording_impl(geometry: Option<&str>, format: RecordingFormat) -> Resu
         .unwrap_or_default();
     let framerate = load_recording_framerate();
 
-    let wf_args = build_wf_recorder_args(
-        geometry,
-        format,
-        &output_path,
-        audio_target.as_ref(),
-        framerate,
-    )?;
-    let pid = spawn_wf_recorder(&wf_args, &audio_module_ids)?;
+    let config = AreaSelectionConfig::new();
+    let pid = if config.display_server().is_wayland() {
+        let wf_args = build_wf_recorder_args(
+            geometry,
+            format,
+            &output_path,
+            audio_target.as_ref(),
+            framerate,
+        )?;
+        spawn_wf_recorder(&wf_args, &audio_module_ids)?
+    } else {
+        let ffmpeg_args = build_ffmpeg_args(
+            geometry,
+            format,
+            &output_path,
+            audio_target.as_ref(),
+            framerate,
+        )?;
+        spawn_ffmpeg(&ffmpeg_args, &audio_module_ids)?
+    };
 
     if let Err(err) = write_recording_pid_file(pid, &output_path, &audio_module_ids) {
         unload_audio_modules(&audio_module_ids);
