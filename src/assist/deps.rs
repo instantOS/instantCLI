@@ -284,3 +284,15 @@ pub static WF_RECORDER: Dependency = Dependency {
     ],
     tests: &[InstallTest::WhichSucceeds("wf-recorder")],
 };
+
+/// FFmpeg - Multimedia framework
+pub static FFMPEG: Dependency = Dependency {
+    name: "ffmpeg",
+    description: Some("Complete, cross-platform solution to record, convert and stream audio and video"),
+    packages: &[
+        PackageDefinition::new("ffmpeg", PackageManager::Pacman),
+        PackageDefinition::new("ffmpeg", PackageManager::Apt),
+        PackageDefinition::new("ffmpeg", PackageManager::Dnf),
+    ],
+    tests: &[InstallTest::WhichSucceeds("ffmpeg")],
+};
