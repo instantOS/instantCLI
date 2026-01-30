@@ -27,7 +27,7 @@ pub mod tools;
 // Re-export all check types for easy access
 pub use audio::PipewireSessionManagerCheck;
 pub use completions::ShellCompletionCheck;
-pub use display::SwayDisplayCheck;
+pub use display::{SwayDisplayCheck, SwaySetupCheck};
 pub use locale::LocaleCheck;
 pub use nerdfont::NerdFontCheck;
 pub use network::{InstantRepoCheck, InternetCheck};

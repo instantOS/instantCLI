@@ -162,7 +162,7 @@ fn setup_wm(wm: WindowManager) -> Result<()> {
 }
 
 /// Generate the full sway config content.
-fn generate_sway_config() -> Result<String> {
+pub(crate) fn generate_sway_config() -> Result<String> {
     use std::fmt::Write;
 
     let mut content = String::new();
