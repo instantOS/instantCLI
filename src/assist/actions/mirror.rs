@@ -9,234 +9,299 @@ use crate::common::display_server::DisplayServer;
 use crate::menu::client::MenuClient;
 use crate::menu::protocol::{FzfPreview, SerializableMenuItem};
 
-struct MirrorOutput {
+/// Represents a display output for mirroring operations
+#[derive(Debug, Clone)]
+struct Output {
     name: String,
     description: String,
     active: bool,
     geometry: Option<String>,
 }
 
+/// Actions available in the mirror menu
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum MirrorAction {
+    Stop,
+    Mirror,
+}
+
+/// User selection from the mirror menu
+#[derive(Debug, Clone)]
+struct MirrorSelection {
+    action: MirrorAction,
+    output_name: Option<String>,
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
+
 pub fn mirror_output() -> Result<()> {
     let display_server = DisplayServer::detect();
 
     match display_server {
-        DisplayServer::Wayland => mirror_output_wayland(),
-        DisplayServer::X11 => mirror_output_x11(),
-        _ => {
-            anyhow::bail!("Unsupported display server for screen mirroring");
+        DisplayServer::Wayland => wayland::mirror(),
+        DisplayServer::X11 => x11::mirror(),
+        _ => anyhow::bail!("Unsupported display server for screen mirroring"),
+    }
+}
+
+// ============================================================================
+// Wayland Implementation
+// ============================================================================
+
+mod wayland {
+    use super::*;
+
+    pub fn mirror() -> Result<()> {
+        validate_compositor()?;
+
+        let outputs = fetch_outputs()?;
+        if outputs.is_empty() {
+            show_notification("Mirror", "No outputs detected")?;
+            return Ok(());
+        }
+        if outputs.len() == 1 && !is_wl_mirror_running() {
+            show_notification("Mirror", "Only one display connected - nothing to mirror")?;
+            return Ok(());
+        }
+
+        let menu_items = build_menu(&outputs);
+        let selection = show_menu("Screen Mirroring (Wayland)", menu_items)?;
+
+        match selection {
+            Some(sel) => handle_selection(sel),
+            None => Ok(()),
         }
     }
-}
 
-fn is_wl_mirror_running() -> bool {
-    Command::new("pgrep")
-        .arg("-x")
-        .arg("wl-mirror")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-fn mirror_output_wayland() -> Result<()> {
-    let compositor = CompositorType::detect();
-    if !matches!(compositor, CompositorType::Sway) {
-        anyhow::bail!(
-            "wl-mirror assist currently supports Sway only. Detected: {}.",
-            compositor.name()
-        );
+    fn validate_compositor() -> Result<()> {
+        let compositor = CompositorType::detect();
+        if !matches!(compositor, CompositorType::Sway) {
+            anyhow::bail!(
+                "wl-mirror assist currently supports Sway only. Detected: {}.",
+                compositor.name()
+            );
+        }
+        Ok(())
     }
 
-    let sway_outputs =
-        SwayDisplayProvider::get_outputs_sync().context("Failed to query Sway outputs")?;
+    fn fetch_outputs() -> Result<Vec<Output>> {
+        let sway_outputs =
+            SwayDisplayProvider::get_outputs_sync().context("Failed to query Sway outputs")?;
 
-    if sway_outputs.is_empty() {
-        show_notification("Mirror", "No outputs detected")?;
-        return Ok(());
+        Ok(sway_outputs
+            .into_iter()
+            .map(|o| Output {
+                name: o.name.clone(),
+                description: o.display_label(),
+                active: true,
+                geometry: None,
+            })
+            .collect())
     }
 
-    let outputs: Vec<MirrorOutput> = sway_outputs
-        .into_iter()
-        .map(|o| MirrorOutput {
-            name: o.name.clone(),
-            description: o.display_label(),
-            active: true,
-            geometry: None, // Geometry not needed for Wayland/wl-mirror detection logic
-        })
-        .collect();
+    fn build_menu(outputs: &[Output]) -> Vec<SerializableMenuItem> {
+        let mut items = Vec::new();
 
-    let mut options = Vec::new();
+        if is_wl_mirror_running() {
+            items.push(create_menu_item(
+                "Stop Mirroring (Close wl-mirror)",
+                MirrorAction::Stop,
+                None,
+            ));
+        }
 
-    // If wl-mirror is already running, offer to stop it (restore extended/original state)
-    if is_wl_mirror_running() {
-        options.push(SerializableMenuItem {
-            display_text: "Stop Mirroring (Close wl-mirror)".to_string(),
-            preview: FzfPreview::None,
-            metadata: Some(HashMap::from([("action".to_string(), "stop".to_string())])),
-        });
+        for output in outputs {
+            items.push(create_menu_item(
+                &format!("Mirror {}", output.description),
+                MirrorAction::Mirror,
+                Some(&output.name),
+            ));
+        }
+
+        items
     }
 
-    for output in &outputs {
-        options.push(SerializableMenuItem {
-            display_text: format!("Mirror {}", output.description),
-            preview: FzfPreview::None,
-            metadata: Some(HashMap::from([
-                ("action".to_string(), "mirror".to_string()),
-                ("output".to_string(), output.name.clone()),
-            ])),
-        });
+    fn handle_selection(selection: MirrorSelection) -> Result<()> {
+        match selection.action {
+            MirrorAction::Stop => stop_mirroring(),
+            MirrorAction::Mirror => {
+                let output = selection
+                    .output_name
+                    .context("No output specified for mirroring")?;
+                start_mirroring(&output)
+            }
+        }
     }
 
-    let client = MenuClient::new();
-    let selected = client.choice("Screen Mirroring (Wayland)".to_string(), options, false)?;
-
-    let item = match selected.first() {
-        Some(item) => item,
-        None => return Ok(()),
-    };
-
-    let metadata = item.metadata.as_ref().context("No metadata in selection")?;
-    let action = metadata
-        .get("action")
-        .map(|s| s.as_str())
-        .unwrap_or("mirror");
-
-    if action == "stop" {
+    fn stop_mirroring() -> Result<()> {
         show_notification("Mirror", "Stopping wl-mirror...")?;
         Command::new("pkill")
             .arg("-x")
             .arg("wl-mirror")
             .spawn()
             .context("Failed to kill wl-mirror")?;
-        return Ok(());
+        Ok(())
     }
 
-    let output_name = metadata.get("output").context("No output specified")?;
+    fn start_mirroring(output: &str) -> Result<()> {
+        Command::new("wl-mirror")
+            .arg(output)
+            .spawn()
+            .context("Failed to launch wl-mirror")?;
+        Ok(())
+    }
 
-    Command::new("wl-mirror")
-        .arg(output_name)
-        .spawn()
-        .context("Failed to launch wl-mirror")?;
-
-    Ok(())
+    fn is_wl_mirror_running() -> bool {
+        Command::new("pgrep")
+            .arg("-x")
+            .arg("wl-mirror")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
 }
 
-fn mirror_output_x11() -> Result<()> {
-    let outputs = get_x11_outputs()?;
-    if outputs.is_empty() {
-        show_notification("Mirror", "No connected outputs detected")?;
-        return Ok(());
+// ============================================================================
+// X11 Implementation
+// ============================================================================
+
+mod x11 {
+    use super::*;
+
+    pub fn mirror() -> Result<()> {
+        let outputs = fetch_outputs()?;
+        if outputs.is_empty() {
+            show_notification("Mirror", "No connected outputs detected")?;
+            return Ok(());
+        }
+        if outputs.len() == 1 {
+            show_notification("Mirror", "Only one display connected - nothing to mirror")?;
+            return Ok(());
+        }
+
+        let is_mirrored = detect_mirror_state(&outputs);
+        let menu_items = build_menu(&outputs, is_mirrored);
+        let selection = show_menu("Screen Mirroring (X11)", menu_items)?;
+
+        match selection {
+            Some(sel) => handle_selection(sel, &outputs),
+            None => Ok(()),
+        }
     }
 
-    // Detect if mirroring is active by checking for duplicate geometries among active outputs
-    let mut active_geometries = HashMap::new();
-    let mut is_mirrored = false;
-    for output in &outputs {
-        if output.active {
-            if let Some(geo) = &output.geometry {
-                // If we've seen this geometry before, it's a mirror (overlap)
-                if active_geometries.contains_key(geo) {
-                    is_mirrored = true;
+    fn detect_mirror_state(outputs: &[Output]) -> bool {
+        let mut seen_geometries = HashMap::new();
+
+        for output in outputs {
+            if output.active
+                && let Some(geo) = &output.geometry
+            {
+                if seen_geometries.contains_key(geo) {
+                    return true;
                 }
-                active_geometries.insert(geo.clone(), true);
+                seen_geometries.insert(geo.clone(), true);
+            }
+        }
+
+        false
+    }
+
+    fn build_menu(outputs: &[Output], is_mirrored: bool) -> Vec<SerializableMenuItem> {
+        let mut items = Vec::new();
+
+        let stop_label = if is_mirrored {
+            "Restore Extended Mode (Mirrored Detected)"
+        } else {
+            "Stop Mirroring (Restore Profile)"
+        };
+        items.push(create_menu_item(stop_label, MirrorAction::Stop, None));
+
+        for output in outputs {
+            let label = if output.active {
+                format!("{} (Active)", output.name)
+            } else {
+                output.name.clone()
+            };
+            items.push(create_menu_item(
+                &format!("Mirror {}", label),
+                MirrorAction::Mirror,
+                Some(&output.name),
+            ));
+        }
+
+        items
+    }
+
+    fn handle_selection(selection: MirrorSelection, outputs: &[Output]) -> Result<()> {
+        match selection.action {
+            MirrorAction::Stop => stop_mirroring(),
+            MirrorAction::Mirror => {
+                let source = selection
+                    .output_name
+                    .context("No source output specified")?;
+                mirror_to_target(&source, outputs)
             }
         }
     }
 
-    let mut options = Vec::new();
-
-    let stop_label = if is_mirrored {
-        "Restore Extended Mode (Mirrored Detected)"
-    } else {
-        "Stop Mirroring (Restore Profile)"
-    };
-
-    options.push(SerializableMenuItem {
-        display_text: stop_label.to_string(),
-        preview: FzfPreview::None,
-        metadata: Some(HashMap::from([("action".to_string(), "stop".to_string())])),
-    });
-
-    for output in &outputs {
-        let label = if output.active {
-            format!("{} (Active)", output.name)
-        } else {
-            output.name.clone()
-        };
-
-        options.push(SerializableMenuItem {
-            display_text: format!("Mirror {}", label),
-            preview: FzfPreview::None,
-            metadata: Some(HashMap::from([
-                ("action".to_string(), "mirror".to_string()),
-                ("output".to_string(), output.name.clone()),
-            ])),
-        });
-    }
-
-    let client = MenuClient::new();
-    let selected = client.choice("Screen Mirroring (X11)".to_string(), options, false)?;
-
-    let item = match selected.first() {
-        Some(item) => item,
-        None => return Ok(()),
-    };
-
-    let metadata = item.metadata.as_ref().context("No metadata in selection")?;
-    let action = metadata
-        .get("action")
-        .map(|s| s.as_str())
-        .unwrap_or("mirror");
-
-    if action == "stop" {
+    fn stop_mirroring() -> Result<()> {
         show_notification("Mirror", "Restoring display profile...")?;
         Command::new("autorandr")
             .arg("--change")
             .spawn()
             .context("Failed to run autorandr")?;
-        return Ok(());
+        Ok(())
     }
 
-    let source = metadata.get("output").context("No output specified")?;
+    fn mirror_to_target(source: &str, outputs: &[Output]) -> Result<()> {
+        let targets: Vec<&Output> = outputs.iter().filter(|o| o.name != source).collect();
 
-    // Now select target(s)
-    let potential_targets: Vec<MirrorOutput> = outputs
-        .iter()
-        .filter(|o| &o.name != source)
-        .map(|o| MirrorOutput {
-            name: o.name.clone(),
-            description: o.description.clone(),
-            active: o.active,
-            geometry: o.geometry.clone(),
-        })
-        .collect();
-
-    if potential_targets.is_empty() {
-        show_notification("Mirror", "No other outputs to mirror to")?;
-        return Ok(());
-    }
-
-    let target = if potential_targets.len() == 1 {
-        potential_targets[0].name.clone()
-    } else {
-        match select_output(&potential_targets, "Mirror TO which display?")? {
-            Some(name) => name,
-            None => return Ok(()),
+        if targets.is_empty() {
+            show_notification("Mirror", "No other outputs to mirror to")?;
+            return Ok(());
         }
-    };
 
-    show_notification("Mirror", &format!("Mirroring {} to {}", source, target))?;
+        let target_name = if targets.len() == 1 {
+            targets[0].name.clone()
+        } else {
+            match select_target(targets)? {
+                Some(name) => name,
+                None => return Ok(()),
+            }
+        };
 
-    // Execute xrandr command
-    // xrandr --output <Target> --same-as <Source> --auto
-    Command::new("xrandr")
-        .args(["--output", &target, "--same-as", source, "--auto"])
-        .spawn()
-        .context("Failed to run xrandr")?;
+        execute_mirror_command(source, &target_name)
+    }
 
-    Ok(())
+    fn select_target(targets: Vec<&Output>) -> Result<Option<String>> {
+        let items: Vec<SerializableMenuItem> = targets
+            .iter()
+            .map(|output| create_menu_item(&output.name, MirrorAction::Mirror, Some(&output.name)))
+            .collect();
+
+        let selection = show_menu("Mirror TO which display?", items)?;
+        Ok(selection.and_then(|s| s.output_name))
+    }
+
+    fn execute_mirror_command(source: &str, target: &str) -> Result<()> {
+        show_notification("Mirror", &format!("Mirroring {} to {}", source, target))?;
+
+        Command::new("xrandr")
+            .args(["--output", target, "--same-as", source, "--auto"])
+            .spawn()
+            .context("Failed to run xrandr")?;
+
+        Ok(())
+    }
 }
 
-fn get_x11_outputs() -> Result<Vec<MirrorOutput>> {
+// ============================================================================
+// Output Fetching (X11)
+// ============================================================================
+
+fn fetch_outputs() -> Result<Vec<Output>> {
     let output = Command::new("xrandr")
         .arg("--query")
         .output()
@@ -246,71 +311,73 @@ fn get_x11_outputs() -> Result<Vec<MirrorOutput>> {
     let mut outputs = Vec::new();
 
     for line in stdout.lines() {
-        if line.contains(" connected") {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if let Some(name) = parts.first() {
-                // Parse line to find geometry
-                // Line format: "HDMI-1 connected primary 1920x1080+0+0 ..." or "HDMI-1 connected 1920x1080+0+0 ..."
-                // Geometry token usually contains "+".
-
-                let mut geometry = None;
-                let mut description = "Connected".to_string();
-                let _is_primary = line.contains(" primary ");
-
-                // Identify the geometry token
-                // It's usually the token after "connected" (and optionally "primary")
-                // And it should contain "+" (e.g., 1920x1080+0+0)
-
-                for part in &parts {
-                    if part.contains('x') && part.contains('+') {
-                        geometry = Some(part.to_string());
-                        description = part.to_string();
-                        break;
-                    }
-                }
-
-                if description == "Connected" && !line.contains('+') {
-                    description = "Connected (Inactive)".to_string();
-                }
-
-                outputs.push(MirrorOutput {
-                    name: name.to_string(),
-                    description,
-                    active: line.contains("connected primary") || line.contains('+'),
-                    geometry,
-                });
-            }
+        if line.contains(" connected")
+            && let Some(output) = parse_xrandr_line(line)
+        {
+            outputs.push(output);
         }
     }
 
     Ok(outputs)
 }
 
-fn select_output(outputs: &[MirrorOutput], prompt: &str) -> Result<Option<String>> {
-    let items: Vec<SerializableMenuItem> = outputs
-        .iter()
-        .map(|output| {
-            let mut metadata = HashMap::new();
-            metadata.insert("output".to_string(), output.name.clone());
+fn parse_xrandr_line(line: &str) -> Option<Output> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    let name = parts.first()?.to_string();
 
-            let label = if !output.description.is_empty() {
-                if output.description != output.name {
-                    output.description.clone()
-                } else {
-                    output.name.clone()
-                }
-            } else {
-                output.name.clone()
-            };
+    let mut geometry = None;
+    let mut description = "Connected".to_string();
 
-            SerializableMenuItem {
-                display_text: label,
-                preview: FzfPreview::None,
-                metadata: Some(metadata),
-            }
-        })
-        .collect();
+    for part in &parts {
+        if part.contains('x') && part.contains('+') {
+            geometry = Some(part.to_string());
+            description = part.to_string();
+            break;
+        }
+    }
 
+    if description == "Connected" && !line.contains('+') {
+        description = "Connected (Inactive)".to_string();
+    }
+
+    Some(Output {
+        name,
+        description,
+        active: line.contains("connected primary") || line.contains('+'),
+        geometry,
+    })
+}
+
+// ============================================================================
+// Common UI Helpers
+// ============================================================================
+
+fn create_menu_item(
+    display_text: &str,
+    action: MirrorAction,
+    output_name: Option<&str>,
+) -> SerializableMenuItem {
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        "action".to_string(),
+        match action {
+            MirrorAction::Stop => "stop".to_string(),
+            MirrorAction::Mirror => "mirror".to_string(),
+        },
+    );
+
+    if let Some(name) = output_name {
+        metadata.insert("output".to_string(), name.to_string());
+    }
+
+    SerializableMenuItem {
+        display_text: display_text.to_string(),
+        preview: FzfPreview::None,
+        metadata: Some(metadata),
+    }
+}
+
+fn show_menu(prompt: &str, items: Vec<SerializableMenuItem>) -> Result<Option<MirrorSelection>> {
     let client = MenuClient::new();
     let selected = client.choice(prompt.to_string(), items, false)?;
 
@@ -319,16 +386,24 @@ fn select_output(outputs: &[MirrorOutput], prompt: &str) -> Result<Option<String
         None => return Ok(None),
     };
 
-    let output_name = item
-        .metadata
-        .as_ref()
-        .and_then(|metadata| metadata.get("output").cloned())
-        .or_else(|| {
-            item.display_text
-                .split_whitespace()
-                .next()
-                .map(|s| s.to_string())
-        });
+    parse_menu_selection(item)
+}
 
-    Ok(output_name)
+fn parse_menu_selection(item: &SerializableMenuItem) -> Result<Option<MirrorSelection>> {
+    let metadata = item.metadata.as_ref().context("No metadata in selection")?;
+
+    let action = metadata
+        .get("action")
+        .map(|s| match s.as_str() {
+            "stop" => MirrorAction::Stop,
+            _ => MirrorAction::Mirror,
+        })
+        .unwrap_or(MirrorAction::Mirror);
+
+    let output_name = metadata.get("output").cloned();
+
+    Ok(Some(MirrorSelection {
+        action,
+        output_name,
+    }))
 }

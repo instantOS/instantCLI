@@ -444,12 +444,12 @@ fn parse_geometry_string(geometry: &str) -> Option<(String, String, String)> {
     let rest = &geometry[x_idx + 1..];
 
     // Find where H ends (at first + or -)
-    let offset_idx = rest.find(|c| c == '+' || c == '-')?;
+    let offset_idx = rest.find(['+', '-'])?;
     let h = &rest[..offset_idx];
     let offsets = &rest[offset_idx..];
 
     // Find the second sign for Y offset
-    let second_sign_idx = offsets[1..].find(|c| c == '+' || c == '-')? + 1;
+    let second_sign_idx = offsets[1..].find(['+', '-'])? + 1;
     let x = &offsets[..second_sign_idx];
     let y = &offsets[second_sign_idx..];
 
