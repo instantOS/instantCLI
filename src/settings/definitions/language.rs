@@ -8,7 +8,7 @@ use std::process::Command;
 use crate::menu_utils::{FzfPreview, FzfResult, FzfSelectable, FzfWrapper};
 use crate::preview::{PreviewId, preview_command};
 use crate::settings::context::SettingsContext;
-use crate::settings::setting::{Setting, SettingMetadata, SettingType};
+use crate::settings::setting::{Setting, SettingMetadata, SettingState, SettingType};
 use crate::ui::prelude::*;
 
 // ============================================================================
@@ -30,6 +30,13 @@ impl Setting for SystemLanguage {
 
     fn setting_type(&self) -> SettingType {
         SettingType::Action
+    }
+
+    fn get_display_state(&self, _ctx: &SettingsContext) -> SettingState {
+        let current = current_system_language().unwrap_or_default();
+        SettingState::Choice {
+            current_label: current.unwrap_or_else(|| "Not set".to_string()),
+        }
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
@@ -55,6 +62,13 @@ impl Setting for Timezone {
 
     fn setting_type(&self) -> SettingType {
         SettingType::Action
+    }
+
+    fn get_display_state(&self, _ctx: &SettingsContext) -> SettingState {
+        let current = current_timezone().unwrap_or_default();
+        SettingState::Choice {
+            current_label: current.unwrap_or_else(|| "Not set".to_string()),
+        }
     }
 
     fn apply(&self, ctx: &mut SettingsContext) -> Result<()> {
@@ -110,6 +124,30 @@ fn read_command_lines(mut command: Command) -> Result<Vec<String>> {
         .map(|line| line.trim().to_string())
         .filter(|line| !line.is_empty())
         .collect())
+}
+
+fn current_system_language() -> Result<Option<String>> {
+    let output = Command::new("localectl")
+        .arg("status")
+        .output()
+        .context("running localectl status")?;
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("System Locale:") {
+            for part in rest.split_whitespace() {
+                if let Some(lang) = part.strip_prefix("LANG=") {
+                    return Ok(Some(lang.to_string()));
+                }
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 fn current_timezone() -> Result<Option<String>> {
