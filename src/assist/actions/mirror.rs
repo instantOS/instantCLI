@@ -13,6 +13,7 @@ struct MirrorOutput {
     name: String,
     description: String,
     active: bool,
+    geometry: Option<String>,
 }
 
 pub fn mirror_output() -> Result<()> {
@@ -25,6 +26,15 @@ pub fn mirror_output() -> Result<()> {
             anyhow::bail!("Unsupported display server for screen mirroring");
         }
     }
+}
+
+fn is_wl_mirror_running() -> bool {
+    Command::new("pgrep")
+        .arg("-x")
+        .arg("wl-mirror")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 fn mirror_output_wayland() -> Result<()> {
@@ -49,21 +59,61 @@ fn mirror_output_wayland() -> Result<()> {
         .map(|o| MirrorOutput {
             name: o.name.clone(),
             description: o.display_label(),
-            active: true, // Sway outputs from this provider are generally active
+            active: true,
+            geometry: None, // Geometry not needed for Wayland/wl-mirror detection logic
         })
         .collect();
 
-    let output_name = if outputs.len() == 1 {
-        outputs[0].name.clone()
-    } else {
-        match select_output(&outputs, "Mirror which output?")? {
-            Some(name) => name,
-            None => return Ok(()),
-        }
+    let mut options = Vec::new();
+
+    // If wl-mirror is already running, offer to stop it (restore extended/original state)
+    if is_wl_mirror_running() {
+        options.push(SerializableMenuItem {
+            display_text: "Stop Mirroring (Close wl-mirror)".to_string(),
+            preview: FzfPreview::None,
+            metadata: Some(HashMap::from([("action".to_string(), "stop".to_string())])),
+        });
+    }
+
+    for output in &outputs {
+        options.push(SerializableMenuItem {
+            display_text: format!("Mirror {}", output.description),
+            preview: FzfPreview::None,
+            metadata: Some(HashMap::from([
+                ("action".to_string(), "mirror".to_string()),
+                ("output".to_string(), output.name.clone()),
+            ])),
+        });
+    }
+
+    let client = MenuClient::new();
+    let selected = client.choice("Screen Mirroring (Wayland)".to_string(), options, false)?;
+
+    let item = match selected.first() {
+        Some(item) => item,
+        None => return Ok(()),
     };
 
+    let metadata = item.metadata.as_ref().context("No metadata in selection")?;
+    let action = metadata
+        .get("action")
+        .map(|s| s.as_str())
+        .unwrap_or("mirror");
+
+    if action == "stop" {
+        show_notification("Mirror", "Stopping wl-mirror...")?;
+        Command::new("pkill")
+            .arg("-x")
+            .arg("wl-mirror")
+            .spawn()
+            .context("Failed to kill wl-mirror")?;
+        return Ok(());
+    }
+
+    let output_name = metadata.get("output").context("No output specified")?;
+
     Command::new("wl-mirror")
-        .arg(&output_name)
+        .arg(output_name)
         .spawn()
         .context("Failed to launch wl-mirror")?;
 
@@ -77,10 +127,31 @@ fn mirror_output_x11() -> Result<()> {
         return Ok(());
     }
 
-    // Add special option to stop mirroring (revert to autorandr profile)
+    // Detect if mirroring is active by checking for duplicate geometries among active outputs
+    let mut active_geometries = HashMap::new();
+    let mut is_mirrored = false;
+    for output in &outputs {
+        if output.active {
+            if let Some(geo) = &output.geometry {
+                // If we've seen this geometry before, it's a mirror (overlap)
+                if active_geometries.contains_key(geo) {
+                    is_mirrored = true;
+                }
+                active_geometries.insert(geo.clone(), true);
+            }
+        }
+    }
+
     let mut options = Vec::new();
+
+    let stop_label = if is_mirrored {
+        "Restore Extended Mode (Mirrored Detected)"
+    } else {
+        "Stop Mirroring (Restore Profile)"
+    };
+
     options.push(SerializableMenuItem {
-        display_text: "Stop Mirroring (Restore Profile)".to_string(),
+        display_text: stop_label.to_string(),
         preview: FzfPreview::None,
         metadata: Some(HashMap::from([("action".to_string(), "stop".to_string())])),
     });
@@ -103,7 +174,7 @@ fn mirror_output_x11() -> Result<()> {
     }
 
     let client = MenuClient::new();
-    let selected = client.choice("Screen Mirroring".to_string(), options, false)?;
+    let selected = client.choice("Screen Mirroring (X11)".to_string(), options, false)?;
 
     let item = match selected.first() {
         Some(item) => item,
@@ -135,6 +206,7 @@ fn mirror_output_x11() -> Result<()> {
             name: o.name.clone(),
             description: o.description.clone(),
             active: o.active,
+            geometry: o.geometry.clone(),
         })
         .collect();
 
@@ -177,21 +249,35 @@ fn get_x11_outputs() -> Result<Vec<MirrorOutput>> {
         if line.contains(" connected") {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if let Some(name) = parts.first() {
-                // Try to parse resolution if active, otherwise just "connected"
-                let description = if let Some(res) = parts.get(2) {
-                    if res.contains('x') && res.contains('+') {
-                        res.to_string()
-                    } else {
-                        "Connected (Inactive)".to_string()
+                // Parse line to find geometry
+                // Line format: "HDMI-1 connected primary 1920x1080+0+0 ..." or "HDMI-1 connected 1920x1080+0+0 ..."
+                // Geometry token usually contains "+".
+
+                let mut geometry = None;
+                let mut description = "Connected".to_string();
+                let _is_primary = line.contains(" primary ");
+
+                // Identify the geometry token
+                // It's usually the token after "connected" (and optionally "primary")
+                // And it should contain "+" (e.g., 1920x1080+0+0)
+
+                for part in &parts {
+                    if part.contains('x') && part.contains('+') {
+                        geometry = Some(part.to_string());
+                        description = part.to_string();
+                        break;
                     }
-                } else {
-                    "Connected".to_string()
-                };
+                }
+
+                if description == "Connected" && !line.contains('+') {
+                    description = "Connected (Inactive)".to_string();
+                }
 
                 outputs.push(MirrorOutput {
                     name: name.to_string(),
                     description,
-                    active: line.contains("connected primary") || line.contains("+"),
+                    active: line.contains("connected primary") || line.contains('+'),
+                    geometry,
                 });
             }
         }
