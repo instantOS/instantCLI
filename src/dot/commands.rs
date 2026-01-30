@@ -600,13 +600,15 @@ pub fn handle_dot_command(
         } => {
             super::operations::alternative::handle_alternative(
                 &config,
-                path,
-                *reset,
-                *create,
-                *list,
-                set.as_deref(),
-                repo.as_deref(),
-                subdir.as_deref(),
+                super::operations::alternative::AlternativeOptions {
+                    path,
+                    reset: *reset,
+                    create: *create,
+                    list: *list,
+                    set: set.as_deref(),
+                    repo: repo.as_deref(),
+                    subdir: subdir.as_deref(),
+                },
             )?;
         }
         DotCommands::Priority { command } => {

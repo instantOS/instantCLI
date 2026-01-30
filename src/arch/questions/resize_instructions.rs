@@ -97,18 +97,18 @@ impl Question for ResizeInstructionsQuestion {
                 mount_point: partition.mount_point.clone(),
             });
 
-        run_manual_resize_flow(
+        let ctx = ResizeFlowContext {
             disk_path,
             partition_path,
             fs_type,
             original_size,
             target_size,
-            new_linux_size_bytes,
+            linux_size_bytes: new_linux_size_bytes,
             disk_info,
             partition,
             auto_resize,
-        )
-        .await
+        };
+        run_manual_resize_flow(ctx).await
     }
 }
 
@@ -120,6 +120,19 @@ fn is_auto_resize_supported(fs_type: &str, resize_info: &ResizeInfo) -> bool {
 struct AutoResizeContext {
     resize_info: ResizeInfo,
     mount_point: Option<String>,
+}
+
+/// Context for resize flow operations
+struct ResizeFlowContext<'a> {
+    disk_path: &'a str,
+    partition_path: &'a str,
+    fs_type: &'a str,
+    original_size: u64,
+    target_size: u64,
+    linux_size_bytes: u64,
+    disk_info: &'a crate::arch::dualboot::DiskInfo,
+    partition: &'a crate::arch::dualboot::PartitionInfo,
+    auto_resize: Option<AutoResizeContext>,
 }
 
 fn confirm_auto_resize(
@@ -168,21 +181,11 @@ fn confirm_auto_resize(
     Ok(matches!(FzfWrapper::confirm(&message)?, ConfirmResult::Yes))
 }
 
-async fn run_manual_resize_flow(
-    disk_path: &str,
-    partition_path: &str,
-    fs_type: &str,
-    original_size: u64,
-    target_size: u64,
-    linux_size_bytes: u64,
-    disk_info: &crate::arch::dualboot::DiskInfo,
-    partition: &crate::arch::dualboot::PartitionInfo,
-    auto_resize: Option<AutoResizeContext>,
-) -> Result<QuestionResult> {
-    let verifier = ResizeVerifier::with_target(disk_info, partition, target_size);
+async fn run_manual_resize_flow(ctx: ResizeFlowContext<'_>) -> Result<QuestionResult> {
+    let verifier = ResizeVerifier::with_target(ctx.disk_info, ctx.partition, ctx.target_size);
 
-    let target_size_gb = target_size as f64 / 1024.0 / 1024.0 / 1024.0;
-    let linux_size_gb = linux_size_bytes as f64 / 1024.0 / 1024.0 / 1024.0;
+    let target_size_gb = ctx.target_size as f64 / 1024.0 / 1024.0 / 1024.0;
+    let linux_size_gb = ctx.linux_size_bytes as f64 / 1024.0 / 1024.0 / 1024.0;
 
     let mut last_status: Option<ResizeStatus> = None;
 
@@ -191,31 +194,31 @@ async fn run_manual_resize_flow(
         format!("{} Open cfdisk to verify/edit", NerdFont::HardDrive),
         format!("{} Go Back", NerdFont::ArrowLeft),
     ];
-    if auto_resize.is_some() {
+    if ctx.auto_resize.is_some() {
         options.insert(0, format!("{} Let installer resize", NerdFont::Gear));
     }
 
     loop {
         let (current_size_human, shrink_remaining_gb) = if let Some(ref status) = last_status {
-            let current_size = status.current_partition_size.unwrap_or(original_size);
+            let current_size = status.current_partition_size.unwrap_or(ctx.original_size);
             let human = crate::arch::dualboot::format_size(current_size);
             let shrink_remaining =
-                current_size.saturating_sub(target_size) as f64 / 1024.0 / 1024.0 / 1024.0;
+                current_size.saturating_sub(ctx.target_size) as f64 / 1024.0 / 1024.0 / 1024.0;
             (human, shrink_remaining)
         } else {
             (
-                crate::arch::dualboot::format_size(original_size),
+                crate::arch::dualboot::format_size(ctx.original_size),
                 linux_size_gb,
             )
         };
 
         let mut full_message = build_instructions_message(
-            partition_path,
-            fs_type,
+            ctx.partition_path,
+            ctx.fs_type,
             &current_size_human,
             target_size_gb,
             shrink_remaining_gb,
-            linux_size_bytes,
+            ctx.linux_size_bytes,
         );
 
         if let Some(ref status) = last_status {
@@ -229,13 +232,13 @@ async fn run_manual_resize_flow(
         match result {
             FzfResult::Selected(opt) => {
                 if opt.contains("installer") {
-                    if let Some(auto_resize) = auto_resize.as_ref()
+                    if let Some(auto_resize) = ctx.auto_resize.as_ref()
                         && confirm_auto_resize(
-                            partition_path,
-                            fs_type,
-                            original_size,
-                            target_size,
-                            linux_size_bytes,
+                            ctx.partition_path,
+                            ctx.fs_type,
+                            ctx.original_size,
+                            ctx.target_size,
+                            ctx.linux_size_bytes,
                             &auto_resize.resize_info,
                             auto_resize.mount_point.as_deref(),
                         )?
@@ -243,7 +246,8 @@ async fn run_manual_resize_flow(
                         return Ok(QuestionResult::Answer("auto".to_string()));
                     }
                 } else if opt.contains("Open cfdisk") {
-                    let _ = crate::common::terminal::run_tui_program("cfdisk", &[disk_path]).await;
+                    let _ =
+                        crate::common::terminal::run_tui_program("cfdisk", &[ctx.disk_path]).await;
                     last_status = Some(verifier.check_async().await?);
                 } else if opt.contains("I have resized") {
                     let status = verifier.check_async().await?;

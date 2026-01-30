@@ -13,7 +13,7 @@ use crate::dot::config::Config;
 use crate::dot::db::Database;
 use anyhow::Result;
 
-pub use clone::clone_repository;
+pub use clone::{CloneOptions, clone_repository};
 pub use toggle::set_read_only_status;
 
 /// Handle repository subcommands
@@ -28,12 +28,14 @@ pub fn handle_repo_command(
         RepoCommands::Clone(args) => clone::clone_repository(
             config,
             db,
-            &args.url,
-            args.name.as_deref(),
-            args.branch.as_deref(),
-            args.read_only,
-            args.force_write,
-            debug,
+            CloneOptions {
+                url: &args.url,
+                name: args.name.as_deref(),
+                branch: args.branch.as_deref(),
+                read_only: args.read_only,
+                force_write: args.force_write,
+                debug,
+            },
         ),
         RepoCommands::Remove { name, keep_files } => {
             remove::remove_repository(config, db, name, !*keep_files)

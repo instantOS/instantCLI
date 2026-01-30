@@ -16,19 +16,28 @@ use super::discovery::to_display_path;
 use super::lists::{list_directory, list_file};
 use super::select_flow::run_select_flow;
 
+/// Options for the alternative command.
+pub struct AlternativeOptions<'a> {
+    pub path: &'a str,
+    pub reset: bool,
+    pub create: bool,
+    pub list: bool,
+    pub set: Option<&'a str>,
+    pub repo: Option<&'a str>,
+    pub subdir: Option<&'a str>,
+}
+
 /// Main entry point for the alternative command.
-pub fn handle_alternative(
-    config: &Config,
-    path: &str,
-    reset: bool,
-    create: bool,
-    list: bool,
-    set: Option<&str>,
-    repo: Option<&str>,
-    subdir: Option<&str>,
-) -> Result<()> {
-    let action = Action::from_flags(reset, create, list, set, repo, subdir);
-    let target_path = resolve_dotfile_path(path)?;
+pub fn handle_alternative(config: &Config, opts: AlternativeOptions<'_>) -> Result<()> {
+    let action = Action::from_flags(
+        opts.reset,
+        opts.create,
+        opts.list,
+        opts.set,
+        opts.repo,
+        opts.subdir,
+    );
+    let target_path = resolve_dotfile_path(opts.path)?;
     let display_path = to_display_path(&target_path);
 
     if target_path.is_dir() {

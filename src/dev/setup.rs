@@ -111,12 +111,14 @@ fn setup_dotfiles(debug: bool) -> Result<()> {
         crate::dot::repo::commands::clone_repository(
             &mut config,
             &db,
-            repo_url,
-            Some(repo_name),
-            None, // Default branch
-            debug,
-            true,  // read_only
-            false, // force_write
+            crate::dot::repo::commands::CloneOptions {
+                url: repo_url,
+                name: Some(repo_name),
+                branch: None, // Default branch
+                read_only: true,
+                force_write: false,
+                debug,
+            },
         )?;
     }
 

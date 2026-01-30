@@ -82,32 +82,33 @@ fn handle_read_only_metadata(config: &mut Config, db: &Database, repo_name: &str
     Ok(())
 }
 
+/// Options for cloning a repository
+pub struct CloneOptions<'a> {
+    pub url: &'a str,
+    pub name: Option<&'a str>,
+    pub branch: Option<&'a str>,
+    pub read_only: bool,
+    pub force_write: bool,
+    pub debug: bool,
+}
+
 /// Clone a new repository
-pub fn clone_repository(
-    config: &mut Config,
-    db: &Database,
-    url: &str,
-    name: Option<&str>,
-    branch: Option<&str>,
-    read_only_flag: bool,
-    force_write_flag: bool,
-    debug: bool,
-) -> Result<()> {
-    if read_only_flag && force_write_flag {
+pub fn clone_repository(config: &mut Config, db: &Database, opts: CloneOptions<'_>) -> Result<()> {
+    if opts.read_only && opts.force_write {
         return Err(anyhow::anyhow!(
             "Cannot use both --read-only and --force-write flags at the same time"
         ));
     }
 
-    let repo_name = resolve_repo_name(url, name);
+    let repo_name = resolve_repo_name(opts.url, opts.name);
 
     let repo_config = crate::dot::config::Repo {
-        url: url.to_string(),
+        url: opts.url.to_string(),
         name: repo_name.clone(),
-        branch: branch.map(|s| s.to_string()),
+        branch: opts.branch.map(|s| s.to_string()),
         active_subdirectories: None,
         enabled: true,
-        read_only: read_only_flag,
+        read_only: opts.read_only,
         metadata: None,
     };
 
@@ -120,12 +121,12 @@ pub fn clone_repository(
             "{} Cloning repository '{}' from {}",
             char::from(NerdFont::Check),
             repo_name,
-            url
+            opts.url
         ),
         None,
     );
 
-    match git_clone_repo(config, repo_config, debug) {
+    match git_clone_repo(config, repo_config, opts.debug) {
         Ok(path) => {
             emit(
                 Level::Info,
@@ -140,7 +141,7 @@ pub fn clone_repository(
 
             // Detect and configure external (yadm/stow) repos
             if !path.join("instantdots.toml").exists() {
-                configure_external_repo(config, &repo_name, read_only_flag)?;
+                configure_external_repo(config, &repo_name, opts.read_only)?;
             }
 
             // Apply dotfiles
@@ -166,7 +167,7 @@ pub fn clone_repository(
             }
 
             // Handle read-only metadata request
-            if !read_only_flag && !force_write_flag {
+            if !opts.read_only && !opts.force_write {
                 handle_read_only_metadata(config, db, &repo_name)?;
             }
         }
