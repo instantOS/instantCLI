@@ -297,60 +297,85 @@ fn is_combined_sink_enabled() -> bool {
         .unwrap_or(false)
 }
 
-/// Parse stored configuration into a set of node names
-fn parse_stored_config(ctx: &SettingsContext) -> HashSet<String> {
-    ctx.optional_string(COMBINED_SINK_KEY)
-        .map(|s| {
-            s.lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
+/// Generate a sanitized node name from a display name
+/// Converts "My Combined Output" -> "ins_combined_my_combined_output"
+fn display_name_to_node_name(display_name: &str) -> String {
+    let sanitized = display_name
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect::<String>();
+    // Collapse multiple underscores
+    let collapsed = sanitized
+        .split('_')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    format!("{}{}", INS_COMBINED_SINK_PREFIX, collapsed)
 }
 
-/// Filter stored config to only include valid/available devices
-/// Returns the filtered node names and whether any were removed
-fn filter_valid_devices(
-    ctx: &mut SettingsContext,
-    available_sinks: &[SinkInfo],
-) -> (Vec<String>, bool) {
-    let stored = parse_stored_config(ctx);
-    if stored.is_empty() {
-        return (Vec::new(), false);
-    }
+/// Parse config file to extract device node names and display name
+fn parse_config_file() -> Result<Option<(Vec<String>, String)>> {
+    let content = match read_current_config()? {
+        Some(c) => c,
+        None => return Ok(None),
+    };
 
-    // Build set of available node names
-    let available: HashSet<String> = available_sinks
-        .iter()
-        .map(|s| s.node_name.clone())
-        .collect();
-
-    // Filter stored devices to only include available ones
-    let valid: Vec<String> = stored
-        .iter()
-        .filter(|name| available.contains(*name))
-        .cloned()
-        .collect();
-
-    let removed = stored.len() - valid.len();
-    let was_filtered = removed > 0;
-
-    // Update stored config if devices were removed
-    if was_filtered {
-        if valid.is_empty() {
-            ctx.set_optional_string(COMBINED_SINK_KEY, None::<String>);
-        } else {
-            ctx.set_optional_string(COMBINED_SINK_KEY, Some(valid.join("\n")));
+    // Extract device node names from `node.name = "..."` inside stream.rules matches
+    let mut devices = Vec::new();
+    let mut in_matches = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("matches = [") {
+            in_matches = true;
+            continue;
+        }
+        if in_matches && trimmed.starts_with(']') {
+            in_matches = false;
+            continue;
+        }
+        if in_matches {
+            // Look for: { node.name = "device_name" }
+            if let Some(start) = trimmed.find("node.name = \"") {
+                let after = &trimmed[start + 13..]; // after `node.name = "`
+                if let Some(end) = after.find('"') {
+                    devices.push(after[..end].to_string());
+                }
+            }
         }
     }
 
-    (valid, was_filtered)
+    // Extract display name from node.description
+    let display_name = content
+        .lines()
+        .find_map(|line| {
+            let trimmed = line.trim();
+            if let Some(start) = trimmed.strip_prefix("node.description = \"") {
+                start.strip_suffix('"').map(|s| s.to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| DEFAULT_COMBINED_SINK_NAME.to_string());
+
+    if devices.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some((devices, display_name)))
+    }
 }
 
-/// Disable the combined sink by removing the config file and clearing all settings
+/// Get the current combined sink configuration from the config file
+fn get_current_config() -> (HashSet<String>, String) {
+    match parse_config_file() {
+        Ok(Some((devices, name))) => (devices.into_iter().collect(), name),
+        _ => (HashSet::new(), DEFAULT_COMBINED_SINK_NAME.to_string()),
+    }
+}
+
+/// Disable the combined sink by removing the config file
 /// Returns true if a restart is needed (config file existed and was removed)
-fn disable_combined_sink(ctx: &mut SettingsContext) -> Result<bool> {
+fn disable_combined_sink(ctx: &SettingsContext) -> Result<bool> {
     let config_path = combine_sink_config_file()?;
 
     // Only restart if there was actually a config to remove
@@ -359,16 +384,9 @@ fn disable_combined_sink(ctx: &mut SettingsContext) -> Result<bool> {
     if needs_restart {
         fs::remove_file(&config_path)
             .with_context(|| format!("Failed to remove {:?}", config_path))?;
-    }
-
-    // Clear all stored configuration
-    ctx.set_optional_string(COMBINED_SINK_KEY, None::<String>);
-    ctx.set_optional_string(COMBINED_SINK_NAME_KEY, None::<String>);
-
-    if needs_restart {
         ctx.notify(
             "Combined Audio Sink",
-            "Combined sink disabled and configuration cleared.",
+            "Combined sink disabled.",
         );
     } else {
         ctx.notify("Combined Audio Sink", "Combined sink was already disabled.");
@@ -380,16 +398,19 @@ fn disable_combined_sink(ctx: &mut SettingsContext) -> Result<bool> {
 /// Enable and configure the combined sink
 /// Returns true if a restart is needed (config changed), false otherwise
 fn enable_combined_sink(
-    ctx: &mut SettingsContext,
+    ctx: &SettingsContext,
     selected_node_names: &[String],
-    sink_name: &str,
+    display_name: &str,
 ) -> Result<bool> {
     if selected_node_names.len() < 2 {
         bail!("Select at least 2 devices to combine");
     }
 
     // Check if anything actually changed
-    let needs_restart = config_changed(selected_node_names, sink_name)?;
+    let needs_restart = config_changed(selected_node_names, display_name)?;
+
+    // Generate the node.name with our prefix for detection
+    let node_name = display_name_to_node_name(display_name);
 
     // Build the matches array for the config
     let matches: Vec<String> = selected_node_names
@@ -397,13 +418,13 @@ fn enable_combined_sink(
         .map(|name| format!("                    {{ node.name = \"{}\" }}", name))
         .collect();
 
-    // Generate the PipeWire config
+    // Generate the PipeWire config with prefixed node.name for detection
     let config = format!(
         r#"context.modules = [
 {{   name = libpipewire-module-combine-stream
     args = {{
         combine.mode = sink
-        node.name = "combined_output"
+        node.name = "{}"
         node.description = "{}"
         combine.props = {{
             audio.position = [ FL FR ]
@@ -422,7 +443,8 @@ fn enable_combined_sink(
 }}
 ]
 "#,
-        sink_name,
+        node_name,
+        display_name,
         matches.join("\n")
     );
 
@@ -436,16 +458,12 @@ fn enable_combined_sink(
     fs::write(&config_path, config)
         .with_context(|| format!("Failed to write config to {:?}", config_path))?;
 
-    // Store the configuration
-    ctx.set_optional_string(COMBINED_SINK_KEY, Some(selected_node_names.join("\n")));
-    ctx.set_optional_string(COMBINED_SINK_NAME_KEY, Some(sink_name.to_string()));
-
     if needs_restart {
         ctx.notify(
             "Combined Audio Sink",
             &format!(
                 "Combined sink '{}' configured with {} devices. Restart required to activate.",
-                sink_name,
+                display_name,
                 selected_node_names.len()
             ),
         );
@@ -454,7 +472,7 @@ fn enable_combined_sink(
             "Combined Audio Sink",
             &format!(
                 "Combined sink '{}' already active with these settings.",
-                sink_name
+                display_name
             ),
         );
     }
@@ -483,7 +501,7 @@ fn restart_pipewire_services(ctx: &SettingsContext) -> Result<()> {
     Ok(())
 }
 
-/// Find the ID of the combined sink from wpctl status
+/// Find the ID of the combined sink from wpctl status by looking for our prefix
 /// The combined sink may appear in Sinks or Filters section depending on PipeWire version
 fn find_combined_sink_id() -> Result<String> {
     let output = Command::new("wpctl")
@@ -497,13 +515,13 @@ fn find_combined_sink_id() -> Result<String> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Search all lines for combined_output - it can appear in Sinks or Filters section
+    // Search all lines for our prefix - it can appear in Sinks or Filters section
     for line in stdout.lines() {
-        if line.contains("combined_output") {
+        if line.contains(INS_COMBINED_SINK_PREFIX) {
             // Parse the ID from lines like:
-            // │     85. combined_output [vol: 1.00]
-            // │ *   85. combined_output [vol: 1.00]
-            // │  *   47. combined_output                                              [Audio/Sink]
+            // │     85. ins_combined_output [vol: 1.00]
+            // │ *   85. ins_combined_output [vol: 1.00]
+            // │  *   47. ins_combined_my_sink                                         [Audio/Sink]
             let cleaned = line
                 .replace('│', "")
                 .replace('├', "")
@@ -561,11 +579,11 @@ fn is_combined_sink_default() -> Result<bool> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Search all lines for combined_output marked with * (indicating default)
+    // Search all lines for our prefix marked with * (indicating default)
     // It can appear in Sinks or Filters section
     for line in stdout.lines() {
-        // Check if this is the default (marked with *) and is combined_output
-        if line.contains('*') && line.contains("combined_output") {
+        // Check if this is the default (marked with *) and has our prefix
+        if line.contains('*') && line.contains(INS_COMBINED_SINK_PREFIX) {
             return Ok(true);
         }
     }
@@ -605,10 +623,9 @@ fn offer_restart(ctx: &SettingsContext) -> Result<()> {
     Ok(())
 }
 
-/// Get the current combined sink name, or the default if none is set
-fn get_current_sink_name(ctx: &SettingsContext) -> String {
-    ctx.optional_string(COMBINED_SINK_NAME_KEY)
-        .unwrap_or_else(|| DEFAULT_COMBINED_SINK_NAME.to_string())
+/// Get the current combined sink name from the config file, or the default if none is set
+fn get_current_sink_name() -> String {
+    get_current_config().1
 }
 
 /// Read the current config file content if it exists
@@ -673,12 +690,11 @@ impl MenuItem {
 
     fn preview(
         &self,
-        ctx: &SettingsContext,
         currently_enabled: bool,
         is_default: bool,
         device_count: usize,
     ) -> FzfPreview {
-        let name = get_current_sink_name(ctx);
+        let name = get_current_sink_name();
 
         match self.action {
             MenuAction::Disable => PreviewBuilder::new()
@@ -810,8 +826,8 @@ impl FzfSelectable for MenuItemWithPreview {
 
 /// Rename the combined sink
 /// Returns true if a restart is needed (sink was enabled and name changed)
-fn rename_combined_sink(ctx: &mut SettingsContext) -> Result<bool> {
-    let current_name = get_current_sink_name(ctx);
+fn rename_combined_sink(ctx: &SettingsContext) -> Result<bool> {
+    let current_name = get_current_sink_name();
 
     let result = prompt_text_edit(
         crate::menu_utils::TextEditPrompt::new("Combined sink name", None)
@@ -830,14 +846,11 @@ fn rename_combined_sink(ctx: &mut SettingsContext) -> Result<bool> {
         return Ok(false);
     }
 
-    // Update the stored name
-    ctx.set_optional_string(COMBINED_SINK_NAME_KEY, Some(new_name.clone()));
-
-    // If combined sink is enabled, we need to regenerate the config
+    // If combined sink is enabled, we need to regenerate the config with the new name
     let needs_restart = if is_combined_sink_enabled() {
-        let stored = parse_stored_config(ctx);
-        if stored.len() >= 2 {
-            let node_names: Vec<String> = stored.into_iter().collect();
+        let (stored_devices, _) = get_current_config();
+        if stored_devices.len() >= 2 {
+            let node_names: Vec<String> = stored_devices.into_iter().collect();
             // This will write the new config and return if restart is needed
             enable_combined_sink(ctx, &node_names, &new_name)?
         } else {
@@ -869,16 +882,12 @@ impl Setting for CombinedAudioSink {
         SettingType::Action
     }
 
-    fn get_display_state(&self, ctx: &SettingsContext) -> crate::settings::setting::SettingState {
+    fn get_display_state(&self, _ctx: &SettingsContext) -> crate::settings::setting::SettingState {
         let enabled = is_combined_sink_enabled();
-        let stored = ctx.optional_string(COMBINED_SINK_KEY);
-        let name = ctx
-            .optional_string(COMBINED_SINK_NAME_KEY)
-            .unwrap_or_else(|| DEFAULT_COMBINED_SINK_NAME.to_string());
+        let (devices, name) = get_current_config();
 
         let label = if enabled {
-            let device_count = stored.map(|s| s.lines().count()).unwrap_or(0);
-            format!("{} ({} devices)", name, device_count)
+            format!("{} ({} devices)", name, devices.len())
         } else {
             "Not configured".to_string()
         };
@@ -903,10 +912,7 @@ impl Setting for CombinedAudioSink {
             // Get current state from actual sink status
             let currently_enabled = is_combined_sink_enabled();
             let is_default = is_combined_sink_default().unwrap_or(false);
-            let current_name = get_current_sink_name(ctx);
-
-            // Get stored device count (only meaningful when enabled)
-            let stored_config = parse_stored_config(ctx);
+            let (stored_config, current_name) = get_current_config();
             let device_count = stored_config.len();
 
             // Build menu items
@@ -963,7 +969,7 @@ impl Setting for CombinedAudioSink {
             let items_with_preview: Vec<MenuItemWithPreview> = items
                 .into_iter()
                 .map(|item| {
-                    let preview = item.preview(ctx, currently_enabled, is_default, device_count);
+                    let preview = item.preview(currently_enabled, is_default, device_count);
                     MenuItemWithPreview::new(item, preview)
                 })
                 .collect();
@@ -1047,7 +1053,7 @@ impl Setting for CombinedAudioSink {
 
                                 // For new sinks, prompt for name
                                 let name = if is_changing {
-                                    get_current_sink_name(ctx)
+                                    get_current_sink_name()
                                 } else {
                                     match prompt_text_edit(
                                         crate::menu_utils::TextEditPrompt::new("Sink name", None)
@@ -1110,25 +1116,8 @@ impl Setting for CombinedAudioSink {
         Ok(())
     }
 
-    fn restore(&self, ctx: &mut SettingsContext) -> Option<Result<()>> {
-        if !is_combined_sink_enabled() {
-            let stored = ctx.optional_string(COMBINED_SINK_KEY)?;
-            let name = ctx
-                .optional_string(COMBINED_SINK_NAME_KEY)
-                .unwrap_or_else(|| DEFAULT_COMBINED_SINK_NAME.to_string());
-
-            let node_names: Vec<String> = stored
-                .lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect();
-
-            if node_names.len() >= 2 {
-                return Some(enable_combined_sink(ctx, &node_names, &name).map(|_| ()));
-            }
-        }
-        None
-    }
+    // No restore needed - the config file is the single source of truth.
+    // If the config file exists, the sink is configured. If not, it's disabled.
 }
 
 #[cfg(test)]
