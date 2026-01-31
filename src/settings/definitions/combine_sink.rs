@@ -4,14 +4,17 @@
 //! enabling simultaneous playback to multiple devices (e.g., speakers + headphones).
 //! Uses PipeWire's libpipewire-module-combine-stream.
 
-use crate::menu_utils::{ChecklistResult, FzfSelectable, FzfWrapper, Header};
+use crate::menu_utils::{
+    prompt_text_edit, ChecklistResult, FzfSelectable, FzfWrapper, Header, TextEditOutcome,
+};
+use crate::menu_utils::{select_one_with_style_at, MenuCursor};
 use crate::settings::context::SettingsContext;
 use crate::settings::setting::{Setting, SettingMetadata, SettingType};
 use crate::settings::store::OptionalStringSettingKey;
-use crate::ui::catppuccin::{colors, format_icon_colored};
+use crate::ui::catppuccin::{colors, format_back_icon, format_icon_colored};
 use crate::ui::prelude::*;
 use crate::ui::preview::{FzfPreview, PreviewBuilder};
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
@@ -158,19 +161,19 @@ fn parse_wpctl_status(output: &str) -> Result<Vec<SinkInfo>> {
 fn parse_sink_line(line: &str) -> Option<SinkInfo> {
     // Remove tree drawing characters
     let cleaned = line
-        .replace("│", "")
-        .replace("├", "")
-        .replace("└", "")
-        .replace("─", "")
+        .replace('│', "")
+        .replace('├', "")
+        .replace('└', "")
+        .replace('─', "")
         .trim()
         .to_string();
 
     // Check if this is the default sink (marked with *)
-    let is_default = cleaned.contains("*");
+    let is_default = cleaned.contains('*');
 
     // Extract ID and description
     // Format: "*   78. Description [vol: 0.95]" or "48. Description [vol: 1.00]"
-    let without_star = cleaned.replace("*", "").trim().to_string();
+    let without_star = cleaned.replace('*', "").trim().to_string();
 
     // Find the ID (number followed by dot)
     let parts: Vec<&str> = without_star.splitn(2, ". ").collect();
@@ -265,6 +268,45 @@ fn parse_stored_config(ctx: &SettingsContext) -> HashSet<String> {
         .unwrap_or_default()
 }
 
+/// Filter stored config to only include valid/available devices
+/// Returns the filtered node names and whether any were removed
+fn filter_valid_devices(
+    ctx: &mut SettingsContext,
+    available_sinks: &[SinkInfo],
+) -> (Vec<String>, bool) {
+    let stored = parse_stored_config(ctx);
+    if stored.is_empty() {
+        return (Vec::new(), false);
+    }
+
+    // Build set of available node names
+    let available: HashSet<String> = available_sinks
+        .iter()
+        .map(|s| s.node_name.clone())
+        .collect();
+
+    // Filter stored devices to only include available ones
+    let valid: Vec<String> = stored
+        .iter()
+        .filter(|name| available.contains(*name))
+        .cloned()
+        .collect();
+
+    let removed = stored.len() - valid.len();
+    let was_filtered = removed > 0;
+
+    // Update stored config if devices were removed
+    if was_filtered {
+        if valid.is_empty() {
+            ctx.set_optional_string(COMBINED_SINK_KEY, None::<String>);
+        } else {
+            ctx.set_optional_string(COMBINED_SINK_KEY, Some(valid.join("\n")));
+        }
+    }
+
+    (valid, was_filtered)
+}
+
 /// Disable the combined sink by removing the config file
 fn disable_combined_sink(ctx: &mut SettingsContext) -> Result<()> {
     let config_path = combine_sink_config_file()?;
@@ -287,9 +329,10 @@ fn disable_combined_sink(ctx: &mut SettingsContext) -> Result<()> {
 }
 
 /// Enable and configure the combined sink
+/// This overwrites the existing config file if it exists
 fn enable_combined_sink(
     ctx: &mut SettingsContext,
-    _sinks: &[SinkInfo],
+    _available_sinks: &[SinkInfo],
     selected_node_names: &[String],
     sink_name: &str,
 ) -> Result<()> {
@@ -337,7 +380,7 @@ fn enable_combined_sink(
     fs::create_dir_all(&config_dir)
         .with_context(|| format!("Failed to create directory {:?}", config_dir))?;
 
-    // Write the config file
+    // Write the config file (overwrites if exists)
     let config_path = config_dir.join(COMBINE_SINK_CONFIG_FILE);
     fs::write(&config_path, config)
         .with_context(|| format!("Failed to write config to {:?}", config_path))?;
@@ -358,40 +401,119 @@ fn enable_combined_sink(
     Ok(())
 }
 
-/// Get a name for the combined sink
-fn prompt_for_sink_name(ctx: &SettingsContext, default: &str) -> Result<Option<String>> {
+/// Menu items for name selection
+#[derive(Clone)]
+struct NameOption {
+    action: NameAction,
+    label: String,
+    current_name: String,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum NameAction {
+    KeepCurrent,
+    EnterNew,
+    Back,
+}
+
+impl NameOption {
+    fn new(action: NameAction, current_name: &str) -> Self {
+        let label = match action {
+            NameAction::KeepCurrent => {
+                format!("{} Keep: {}", NerdFont::Check, current_name)
+            }
+            NameAction::EnterNew => format!("{} Enter new name...", NerdFont::Edit),
+            NameAction::Back => format!("{} Back", format_back_icon()),
+        };
+        Self {
+            action,
+            label,
+            current_name: current_name.to_string(),
+        }
+    }
+}
+
+impl FzfSelectable for NameOption {
+    fn fzf_display_text(&self) -> String {
+        self.label.clone()
+    }
+
+    fn fzf_key(&self) -> String {
+        match self.action {
+            NameAction::KeepCurrent => "keep".to_string(),
+            NameAction::EnterNew => "new".to_string(),
+            NameAction::Back => "back".to_string(),
+        }
+    }
+
+    fn fzf_preview(&self) -> FzfPreview {
+        let content = match self.action {
+            NameAction::KeepCurrent => PreviewBuilder::new()
+                .text("Use the current name for the combined sink.")
+                .blank()
+                .field("Current name", &self.current_name)
+                .build(),
+            NameAction::EnterNew => PreviewBuilder::new()
+                .text("Enter a new custom name for your combined audio sink.")
+                .blank()
+                .field("Current name", &self.current_name)
+                .build(),
+            NameAction::Back => PreviewBuilder::new()
+                .text("Go back without changing the name.")
+                .build(),
+        };
+        content
+    }
+}
+
+/// Prompt for combined sink name using menu_utils
+fn prompt_for_sink_name(ctx: &SettingsContext, default: &str) -> Result<Option<(String, bool)>> {
     let current_name = ctx
         .optional_string(COMBINED_SINK_NAME_KEY)
         .unwrap_or_else(|| default.to_string());
 
+    // Build menu items
     let items = vec![
-        ("keep", format!("Keep current: {}", current_name)),
-        ("new", "Enter new name...".to_string()),
+        NameOption::new(NameAction::KeepCurrent, &current_name),
+        NameOption::new(NameAction::EnterNew, &current_name),
+        NameOption::new(NameAction::Back, &current_name),
     ];
 
-    let selection = dialoguer::Select::new()
-        .with_prompt("Combined sink name")
-        .items(
-            &items
-                .iter()
-                .map(|(_, label)| label.as_str())
-                .collect::<Vec<_>>(),
-        )
-        .default(0)
-        .interact_opt()
-        .context("Failed to show name selection dialog")?;
+    let mut cursor = MenuCursor::new();
 
-    match selection {
-        Some(0) => Ok(Some(current_name)),
-        Some(1) => {
-            let name: String = dialoguer::Input::new()
-                .with_prompt("Enter name for combined sink")
-                .default(current_name)
-                .interact_text()
-                .context("Failed to read name input")?;
-            Ok(Some(name))
+    loop {
+        let current_items = items.clone();
+        let initial_cursor = cursor.initial_index(&current_items);
+        let selection = select_one_with_style_at(current_items, initial_cursor)?;
+
+        match selection {
+            Some(option) => {
+                cursor.update(&option, &items);
+
+                match option.action {
+                    NameAction::KeepCurrent => return Ok(Some((current_name.clone(), true))),
+                    NameAction::EnterNew => {
+                        // Use text input for new name
+                        let result = prompt_text_edit(
+                            crate::menu_utils::TextEditPrompt::new("Combined sink name", None)
+                                .header("Enter a name for your combined audio sink")
+                                .ghost(&current_name),
+                        )?;
+
+                        match result {
+                            TextEditOutcome::Updated(Some(name)) => return Ok(Some((name, true))),
+                            TextEditOutcome::Updated(None) => {
+                                // User cleared the name - use default
+                                return Ok(Some((DEFAULT_COMBINED_SINK_NAME.to_string(), true)));
+                            }
+                            TextEditOutcome::Cancelled | TextEditOutcome::Unchanged => continue,
+                        }
+                    }
+                    NameAction::Back => return Ok(None),
+                }
+            }
+            None => return Ok(None),
         }
-        _ => Ok(None),
     }
 }
 
@@ -447,8 +569,17 @@ impl Setting for CombinedAudioSink {
             }
         };
 
+        // Filter stored config to only include valid devices
+        let (valid_devices, devices_removed) = filter_valid_devices(ctx, &sinks);
+        if devices_removed {
+            ctx.emit_info(
+                "audio.combined_sink.devices_removed",
+                "Some previously selected devices are no longer available and have been removed from the configuration.",
+            );
+        }
+
         let currently_enabled = is_combined_sink_enabled();
-        let stored_config = parse_stored_config(ctx);
+        let stored_config: HashSet<String> = valid_devices.iter().cloned().collect();
 
         // Main configuration loop
         loop {
@@ -470,6 +601,23 @@ impl Setting for CombinedAudioSink {
                         "{} Reconfigure devices ({} currently selected)",
                         format_icon_colored(NerdFont::Settings, colors::YELLOW),
                         stored_config.len()
+                    ),
+                ));
+            } else if !valid_devices.is_empty() {
+                // Show re-enable option if we have stored devices but config was removed
+                items.push((
+                    "enable".to_string(),
+                    format!(
+                        "{} Re-enable combined sink ({} devices)",
+                        format_icon_colored(NerdFont::Plus, colors::GREEN),
+                        valid_devices.len()
+                    ),
+                ));
+                items.push((
+                    "reconfigure".to_string(),
+                    format!(
+                        "{} Reconfigure devices",
+                        format_icon_colored(NerdFont::Settings, colors::YELLOW)
                     ),
                 ));
             } else {
@@ -518,15 +666,28 @@ impl Setting for CombinedAudioSink {
                         }
                         "enable" | "reconfigure" => {
                             // Show checklist of available sinks
-                            let mut checklist_sinks = sinks.clone();
+                            // Pre-select previously configured devices
+                            let available_node_names: HashSet<String> =
+                                sinks.iter().map(|s| s.node_name.clone()).collect();
 
-                            // Mark already selected sinks
-                            for sink in &mut checklist_sinks {
-                                if stored_config.contains(&sink.node_name) {
-                                    // This is a bit hacky - we can't modify FzfSelectable trait
-                                    // So we'll handle the pre-selection via the stored config
-                                }
-                            }
+                            // If reconfiguring with valid stored devices, use those as initial selection
+                            let initial_selection: HashSet<String> = if action == "reconfigure" {
+                                stored_config
+                                    .intersection(&available_node_names)
+                                    .cloned()
+                                    .collect()
+                            } else {
+                                HashSet::new()
+                            };
+
+                            // Build checklist items with proper initial state
+                            let checklist_items: Vec<(SinkInfo, bool)> = sinks
+                                .iter()
+                                .map(|sink| {
+                                    let checked = initial_selection.contains(&sink.node_name);
+                                    (sink.clone(), checked)
+                                })
+                                .collect();
 
                             let header_text = format!(
                                 "Select at least 2 audio devices to combine into '{}'\nSelected devices will receive audio simultaneously.",
@@ -535,11 +696,16 @@ impl Setting for CombinedAudioSink {
                             );
                             let header = Header::default(&header_text);
 
+                            // Convert to SinkInfo for the checklist dialog
+                            // We need to mark checked items
                             let result = FzfWrapper::builder()
                                 .prompt("Select devices")
                                 .header(header)
                                 .checklist("Combine")
-                                .checklist_dialog(checklist_sinks)?;
+                                .checklist_dialog_with_initial(
+                                    checklist_items.into_iter().map(|(item, _)| item).collect(),
+                                    &initial_selection,
+                                )?;
 
                             match result {
                                 ChecklistResult::Confirmed(selected) => {
@@ -555,7 +721,7 @@ impl Setting for CombinedAudioSink {
 
                                     // Get name for the sink
                                     match prompt_for_sink_name(ctx, DEFAULT_COMBINED_SINK_NAME) {
-                                        Ok(Some(name)) => {
+                                        Ok(Some((name, _))) => {
                                             if let Err(e) = enable_combined_sink(
                                                 ctx,
                                                 &sinks,
@@ -608,6 +774,7 @@ impl Setting for CombinedAudioSink {
 
             if node_names.len() >= 2 {
                 // Re-create the config file with stored settings
+                // The config file is overwritten, not appended
                 return Some(enable_combined_sink(ctx, &[], &node_names, &name));
             }
         }
