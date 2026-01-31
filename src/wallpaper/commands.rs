@@ -9,7 +9,7 @@ use crate::settings::store::{
 };
 use crate::wallpaper::cli::{SetArgs, WallpaperCommands};
 
-use crate::wallpaper::{gnome, hyprland, sway, x11};
+use crate::wallpaper::{gnome, hyprland, kwin, sway, x11};
 
 pub async fn handle_wallpaper_command(command: WallpaperCommands, _debug: bool) -> Result<()> {
     match command {
@@ -94,6 +94,10 @@ pub async fn apply_configured_wallpaper() -> Result<()> {
         }
         CompositorType::Hyprland => {
             hyprland::apply_wallpaper(&path)?;
+            println!("{}", "Wallpaper applied successfully".green());
+        }
+        CompositorType::KWin => {
+            kwin::apply_wallpaper(&path)?;
             println!("{}", "Wallpaper applied successfully".green());
         }
         _ => {
